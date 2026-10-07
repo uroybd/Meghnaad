@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" width="960" height="420" role="img" aria-labelledby="t d">
+  <title id="t">Why Meghnaad: the warrior and the cloud</title>
+  <desc id="d">Meghnaad, the warrior of the Ramayana who fought from behind clouds, maps to Taskwarrior (the warrior) running on Cloudflare (the cloud), with Cloudflare Access as the cover.</desc>
+  <style>
+    :root { --card:#ffffff; --line:#d8d8d2; --text:#1c1c1a; --dim:#6b6b65; --warrior:#b4531a; --cloud:#1f6feb; --pill:#f3f3f1; }
+    @media (prefers-color-scheme: dark) {
+      :root { --card:#1c1d17; --line:#3a3b32; --text:#ecece5; --dim:#a3a39a; --warrior:#f08c4b; --cloud:#58a6ff; --pill:#24251e; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--text); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .dim { fill: var(--dim); }
+    .card { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
+    .w { stroke: var(--warrior); fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .c { stroke: var(--cloud); fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .link { stroke: var(--line); stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+  </style>
+
+  <!-- the name -->
+  <text x="480" y="52" text-anchor="middle" font-size="38" font-weight="700">Meghnaad</text>
+  <text x="480" y="82" text-anchor="middle" font-size="15" class="dim">megh = cloud  ·  naad = roar  ·  the Ramayana's warrior who fought from behind the clouds</text>
+
+  <!-- warrior -->
+  <rect class="card" x="40" y="116" width="400" height="168" rx="14"/>
+  <g transform="translate(70 148)">
+    <path class="w" d="M34 4 L34 66"/>            <!-- blade -->
+    <path class="w" d="M34 4 L29 14 M34 4 L39 14"/><!-- point -->
+    <path class="w" d="M16 42 L52 42"/>           <!-- crossguard -->
+    <path class="w" d="M34 66 L34 78"/>           <!-- grip -->
+    <circle class="w" cx="34" cy="82" r="3"/>
+  </g>
+  <text x="150" y="150" font-size="13" font-weight="700" letter-spacing="1.5" style="fill:var(--warrior)">THE WARRIOR</text>
+  <text x="150" y="184" font-size="28" font-weight="700">Taskwarrior</text>
+  <text x="150" y="214" font-size="14" class="dim">Your tasks and your <tspan class="mono">task</tspan> CLI,</text>
+  <text x="150" y="236" font-size="14" class="dim">TaskChampion sync, filters, urgency</text>
+
+  <!-- cloud -->
+  <rect class="card" x="520" y="116" width="400" height="168" rx="14"/>
+  <g transform="translate(532 156)">
+    <path class="c" d="M18 62 H62 A16 16 0 0 0 64 30 A22 22 0 0 0 22 26 A18 18 0 0 0 18 62 Z"/>
+  </g>
+  <text x="630" y="150" font-size="13" font-weight="700" letter-spacing="1.5" style="fill:var(--cloud)">THE CLOUD</text>
+  <text x="630" y="184" font-size="28" font-weight="700">Cloudflare</text>
+  <text x="630" y="214" font-size="14" class="dim">Workers (Rust → WASM) for the app,</text>
+  <text x="630" y="236" font-size="14" class="dim">R2 for the data, Access for the login</text>
+
+  <!-- plus -->
+  <text x="480" y="212" text-anchor="middle" font-size="34" class="dim">+</text>
+
+  <!-- converge -->
+  <path class="link" d="M240 284 V322 Q240 340 262 340 H400"/>
+  <path class="link" d="M720 284 V322 Q720 340 698 340 H560"/>
+
+  <!-- the cover -->
+  <rect x="330" y="316" width="300" height="76" rx="38" style="fill:var(--pill);stroke:var(--line);stroke-width:1.5"/>
+  <text x="480" y="348" text-anchor="middle" font-size="17" font-weight="700">Taskwarrior, behind the clouds</text>
+  <text x="480" y="372" text-anchor="middle" font-size="13" class="dim">Cloudflare Access is the cover: only you get in</text>
+</svg>
