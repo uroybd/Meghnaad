@@ -88,7 +88,9 @@ makes the local server skip the Cloudflare Access check, which is why you can us
 
 ## Deploy to Cloudflare
 
-You need a Cloudflare account with R2 and Access (the free plans work). Pick one way:
+You need a Cloudflare account with R2 and Access (the free plans work). Routes A and C also need Node.js 20+ and
+[Rust](https://rustup.rs) on your machine (the build compiles the Worker to WASM; the `wasm32-unknown-unknown` target
+and `worker-build` are installed for you if missing). Route B builds on Cloudflare instead. Pick one way:
 
 ### A. Guided: `npm run setup` (recommended)
 
@@ -97,7 +99,8 @@ npm install
 npm run setup
 ```
 
-It checks your build tools, logs you in, then asks for the things that differ between people:
+It checks your build tools (offering to install what's missing), logs you in with `wrangler login`, then asks for the
+things that differ between people:
 
 | Question | Notes |
 | --- | --- |
@@ -145,11 +148,16 @@ build needs the Rust toolchain; treat route B as the supported dashboard path un
 ```bash
 npx wrangler login
 npx wrangler r2 bucket create <name>             # skip if the bucket exists
+echo "R2_BUCKET=<name>" > .deploy.vars           # skip if it is the default, taskwarrior-sync
+npm run deploy                                   # builds, then prints the URL (Access can't be connected before this)
 npx wrangler secret put TC_ENCRYPTION_SECRET     # the same value as sync.encryption_secret
-npm run deploy                                   # prints the URL (Access can't be connected before this)
-# create the Access application, then put TEAM_DOMAIN and POLICY_AUD into .deploy.vars and:
+# create the Access application, add TEAM_DOMAIN=... and POLICY_AUD=... to .deploy.vars, then:
 npm run deploy
 ```
+
+`.deploy.vars` takes `R2_BUCKET`, `CUSTOM_DOMAIN`, `TEAM_DOMAIN`, `POLICY_AUD` and `WORKER_NAME`, one `KEY=value` per
+line. The tracked `wrangler.jsonc` never needs editing: `npm run deploy` overlays these values into a git-ignored
+`wrangler.deploy.jsonc`.
 
 > **Heads-up:** after `wrangler r2 bucket create`, wrangler may offer to add the bucket to `wrangler.jsonc` as a *new*
 > binding (named after the bucket, with `"remote": true`). Answer **no**, or delete it afterwards: the app uses exactly
@@ -329,12 +337,13 @@ completions can be tapped. Install it to your home screen from the browser menu 
 crates/tc-core/   protocol, crypto, filter/report/urgency engine, command parser, taskrc  (pure Rust)
 crates/worker/    the Cloudflare Worker: routes, Access check, R2 store, session cache
 web/              the Svelte 5 app (Vite)
-scripts/          seed-dev.sh (demo data) · interop-local.sh (real-CLI regression)
+scripts/          setup.mjs / deploy.mjs (guided and repeat deploys) · build.mjs (web + Worker build) ·
+                  seed-dev.sh (demo data) · interop-local.sh (real-CLI regression)
 assets/           the logo master
 ```
 
 ```bash
-npm test                      # cargo test + the web unit tests
+npm test                      # cargo test + the web unit tests + the deploy-script tests
 npm run check                 # svelte-check (types, accessibility)
 npm run test:auth             # Cloudflare Access: forged, expired, wrong-audience tokens... all refused
 ./scripts/interop-local.sh    # real `task` ⇄ the Worker, both directions
