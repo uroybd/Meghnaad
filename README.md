@@ -28,9 +28,34 @@ it (tables, forms, a detail view), and both go through the same command engine.
 > directions: tasks, UDAs, custom reports, timed due dates). It has **not yet been run against a real R2 bucket**;
 > see [Known limitations](#known-limitations).
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/tasks.png" alt="The Tasks view: the next report as a table, with the console prompt underneath" width="900" />
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/projects.png" alt="The Projects tab: projects with their sub-projects and tasks underneath" /></td>
+    <td width="50%"><img src="docs/screenshots/task-detail.png" alt="A task's detail drawer with tracked time and annotations" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Projects, with sub-projects grouped under their parent (<code>Home.Kitchen</code> sits under <code>Home</code>)</sub></td>
+    <td align="center"><sub>Task detail, with time tracking and annotations</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/console.png" alt="The console running task projects and task info" /></td>
+    <td align="center"><img src="docs/screenshots/mobile.png" alt="The phone layout" width="240" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>The console: type <code>task</code>-style commands</sub></td>
+    <td align="center"><sub>On a phone</sub></td>
+  </tr>
+</table>
+
 ## Contents
 
-[How it works](#how-it-works) · [Quick start (local)](#quick-start-local) · [Deploy to Cloudflare](#deploy-to-cloudflare) ·
+[Screenshots](#screenshots) · [How it works](#how-it-works) · [Quick start (local)](#quick-start-local) · [Deploy to Cloudflare](#deploy-to-cloudflare) ·
 [Connect your `task` CLI](#connect-your-task-cli) · [Using Meghnaad](#using-meghnaad) · [Configuration](#configuration-reference) ·
 [Security](#security-notes) · [Development](#development) · [Troubleshooting](#troubleshooting) ·
 [Known limitations](#known-limitations)
