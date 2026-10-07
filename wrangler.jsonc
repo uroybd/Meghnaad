@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "taskwarrior-web",
+  "main": "crates/worker/build/worker/shim.mjs",
+  "compatibility_date": "2026-10-01",
+  "build": {
+    "command": "cd crates/worker && worker-build --release",
+    "watch_dir": ["crates/worker/src", "crates/tc-core/src"]
+  },
+  // The Svelte app (built into web/dist). Only /api/* runs the Worker first; everything else is a
+  // static asset with SPA fallback.
+  "assets": {
+    "directory": "web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // The same bucket the `task` CLI syncs to (via R2's S3 endpoint).
+  "r2_buckets": [{ "binding": "TASKS", "bucket_name": "taskwarrior-sync" }],
+  "vars": {
+    // Zero Trust > Settings > Custom Pages shows the team name.
+    "TEAM_DOMAIN": "https://YOUR-TEAM.cloudflareaccess.com",
+    // Zero Trust > Access > Applications > (this app) > Application Audience (AUD) Tag.
+    "POLICY_AUD": "REPLACE_WITH_AUD_TAG"
+  }
+  // Secret (not here): `wrangler secret put TC_ENCRYPTION_SECRET`
+}

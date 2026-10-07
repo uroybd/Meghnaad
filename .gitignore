@@ -1,0 +1,8 @@
+/target
+node_modules
+.wrangler
+.dev.vars
+crates/worker/build
+web/dist
+web/.svelte-kit
+*.log

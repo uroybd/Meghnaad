@@ -1,0 +1,16 @@
+{
+  "name": "taskwarrior-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build:web": "npm --prefix web run build",
+    "deploy": "npm --prefix web run build && wrangler deploy",
+    "test": "cargo test && npm --prefix web test",
+    "test:auth": "node scripts/auth-check.mjs",
+    "check": "npm --prefix web run check"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

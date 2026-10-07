@@ -1,0 +1,9 @@
+# Copy to `.dev.vars` for local development (that file is git-ignored; wrangler never deploys it).
+#
+# Any string works locally. To try a real Taskwarrior against your local bucket, use the same
+# value as `sync.encryption_secret` in your taskrc.
+TC_ENCRYPTION_SECRET=dev-secret-change-me
+
+# Skips the Cloudflare Access login check so you can use the app on localhost.
+# LOCAL ONLY. Never put this in wrangler.jsonc `vars`, and never set it on a deployed Worker.
+DEV_AUTH_BYPASS=1

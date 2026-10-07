@@ -1,0 +1,88 @@
+//! [`ObjectStore`] over an R2 bucket binding.
+
+use tc_core::{Error, ObjectStore, Result};
+use worker::{Bucket, Conditional};
+
+pub struct R2Store(pub Bucket);
+
+fn err(e: worker::Error) -> Error {
+    Error::Store(e.to_string())
+}
+
+impl ObjectStore for R2Store {
+    async fn get(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        let Some(obj) = self.0.get(name).execute().await.map_err(err)? else {
+            return Ok(None);
+        };
+        let Some(body) = obj.body() else {
+            return Ok(None);
+        };
+        Ok(Some(body.bytes().await.map_err(err)?))
+    }
+
+    async fn put(&self, name: &str, value: &[u8]) -> Result<()> {
+        self.0.put(name, value.to_vec()).execute().await.map_err(err)?;
+        Ok(())
+    }
+
+    async fn del(&self, name: &str) -> Result<()> {
+        self.0.delete(name).await.map_err(err)
+    }
+
+    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        let mut names = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut req = self.0.list().prefix(prefix);
+            if let Some(c) = cursor.take() {
+                req = req.cursor(c);
+            }
+            let page = req.execute().await.map_err(err)?;
+            names.extend(page.objects().iter().map(|o| o.key()));
+            match (page.truncated(), page.cursor()) {
+                (true, Some(c)) => cursor = Some(c),
+                _ => return Ok(names),
+            }
+        }
+    }
+
+    /// Compare-and-swap via R2 conditional puts: `etagMatches` for replacing an existing value,
+    /// `etagDoesNotMatch: "*"` for create-if-absent. A failed condition makes `put` resolve to
+    /// `null`, surfaced by workers-rs as `None`.
+    async fn compare_and_swap(
+        &self,
+        name: &str,
+        expected: Option<&[u8]>,
+        new: &[u8],
+    ) -> Result<bool> {
+        let current = self.0.get(name).execute().await.map_err(err)?;
+        let condition = match (current, expected) {
+            (None, None) => Conditional {
+                etag_does_not_match: Some("*".into()),
+                ..Default::default()
+            },
+            (None, Some(_)) | (Some(_), None) => return Ok(false),
+            (Some(obj), Some(expected)) => {
+                let etag = obj.etag();
+                let Some(body) = obj.body() else {
+                    return Ok(false);
+                };
+                if body.bytes().await.map_err(err)? != expected {
+                    return Ok(false);
+                }
+                Conditional {
+                    etag_matches: Some(etag),
+                    ..Default::default()
+                }
+            }
+        };
+        let stored = self
+            .0
+            .put(name, new.to_vec())
+            .only_if(condition)
+            .execute()
+            .await
+            .map_err(err)?;
+        Ok(stored.is_some())
+    }
+}

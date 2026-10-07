@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/tc-core", "crates/worker"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+rust-version = "1.91"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = "debuginfo"
+
+# Key derivation is 600k PBKDF2 iterations; keep it fast in debug builds and tests.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
