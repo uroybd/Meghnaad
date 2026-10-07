@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
-  import { Bell, BellOff, FileText, ListChecks, Menu, Plus, Terminal, TriangleAlert, X } from './lib/icons';
+  import { Bell, BellOff, FileText, Folder, ListChecks, Menu, Plus, Terminal, TriangleAlert, X } from './lib/icons';
   import ConsoleView from './lib/ConsoleView.svelte';
+  import ProjectsView from './lib/ProjectsView.svelte';
   import DetailDrawer from './lib/DetailDrawer.svelte';
   import NotifyDialog from './lib/NotifyDialog.svelte';
   import { getSetup, type SetupStatus } from './lib/api';
@@ -72,6 +73,7 @@
     </span>
     <nav class="tabs" aria-label="View">
       <button class:on={store.view === 'tasks'} aria-label="Tasks" onclick={() => (store.view = 'tasks')}><ListChecks size={15} /> <span class="lbl">Tasks</span></button>
+      <button class:on={store.view === 'projects'} aria-label="Projects" onclick={() => (store.view = 'projects')}><Folder size={15} /> <span class="lbl">Projects</span></button>
       <button class:on={store.view === 'console'} aria-label="Console" onclick={() => (store.view = 'console')}><Terminal size={15} /> <span class="lbl">Console</span></button>
     </nav>
     <span class="grow"></span>
@@ -120,7 +122,7 @@
   </aside>
 
   <main class="main">
-    {#if store.view === 'tasks'}<TasksView />{:else}<ConsoleView />{/if}
+    {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView />{:else}<ConsoleView />{/if}
   </main>
 
   <button class="fab primary" aria-label="New task" title="New task" onclick={() => (store.adding = { description: '', n: (store.adding?.n ?? 0) + 1 })}>

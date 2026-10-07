@@ -41,7 +41,7 @@
     }
     // Reports focus the Tasks view; everything else lands in the console scrollback.
     // Show the console first so a write or an error is visible; `run` switches back for reports.
-    if (store.view === 'tasks' && !looksLikeReport(l)) store.view = 'console';
+    if (store.view !== 'console' && !looksLikeReport(l)) store.view = 'console';
     store.run({ line: l });
   }
 

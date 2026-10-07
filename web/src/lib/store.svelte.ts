@@ -50,7 +50,7 @@ class Store {
   entries = $state<Entry[]>([]);
   /** The live table in the Tasks view: the report currently in focus. */
   live = $state<Entry | null>(null);
-  view = $state<'tasks' | 'console'>('tasks');
+  view = $state<'tasks' | 'projects' | 'console'>('tasks');
   /** The report and extra filter in focus. Running a report in the console sets these too. */
   report = $state('next');
   filter = $state('');

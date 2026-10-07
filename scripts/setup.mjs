@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // `npm run setup`: a guided, re-runnable first deployment.
-//   1 build tools · 2 Cloudflare login · 3 your choices (bucket, custom domain) · 4 deploy
+//   1 build tools · 2 Cloudflare login · 3 your choices (bucket, custom domain, name) · 4 deploy
 //   5 encryption secret · 6 Cloudflare Access, then a final deploy that locks the app to you.
 // Every step checks first and skips what is already done, so running it again is safe.
 import { createInterface } from 'node:readline/promises';
 import {
-  accessReady, capture, deploy, missingTools, problem, readBaseConfig, readSettings, run, workerUrl, writeSettings,
+  accessReady, capture, DEPLOY_CONFIG, deploy, missingTools, problem, readBaseConfig, readSettings, run, workerUrl, writeSettings,
 } from './deploy-lib.mjs';
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -54,6 +54,9 @@ s.R2_BUCKET = await askValid('R2_BUCKET', '   Bucket name:', s.R2_BUCKET || defa
 console.log('   Custom domain: optional, e.g. tasks.example.com. The domain must already be on your Cloudflare account.');
 console.log('   Leave empty to use the free *.workers.dev address.');
 s.CUSTOM_DOMAIN = await askValid('CUSTOM_DOMAIN', '   Custom domain:', s.CUSTOM_DOMAIN);
+console.log(`   Worker name: optional, only to run a second copy (default "${base.name}").`);
+const name = await askValid('WORKER_NAME', '   Worker name:', s.WORKER_NAME || base.name);
+s.WORKER_NAME = name === base.name ? '' : name;
 writeSettings(s);
 
 const names = [...wrangler('r2', 'bucket', 'list').out.matchAll(/^name:\s+(\S+)/gm)].map((m) => m[1]);
@@ -76,11 +79,11 @@ if (!accessReady(s)) console.log('   Until Access is connected (step 6) every re
 
 // ---- 5
 step(5, 'Encryption secret');
-const have = wrangler('secret', 'list', '--format', 'json').out.includes('TC_ENCRYPTION_SECRET');
+const have = wrangler('secret', 'list', '--format', 'json', '--config', DEPLOY_CONFIG).out.includes('TC_ENCRYPTION_SECRET');
 if (have && !(await yes('A secret is already set. Replace it?', false))) done('keeping the existing secret');
 else {
   console.log('   Enter the SAME value as `sync.encryption_secret` in your taskrc (it is not echoed).');
-  if (run('npx', ['wrangler', 'secret', 'put', 'TC_ENCRYPTION_SECRET']).status !== 0) die('Setting the secret failed.');
+  if (run('npx', ['wrangler', 'secret', 'put', 'TC_ENCRYPTION_SECRET', '--config', DEPLOY_CONFIG]).status !== 0) die('Setting the secret failed.');
   done('secret stored in Cloudflare');
 }
 

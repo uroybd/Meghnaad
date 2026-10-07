@@ -7,6 +7,7 @@ export { default as Bell } from '@lucide/svelte/icons/bell';
 export { default as BellOff } from '@lucide/svelte/icons/bell-off';
 export { default as Calendar } from '@lucide/svelte/icons/calendar';
 export { default as Check } from '@lucide/svelte/icons/check';
+export { default as ChevronDown } from '@lucide/svelte/icons/chevron-down';
 export { default as ChevronUp } from '@lucide/svelte/icons/chevron-up';
 export { default as ChevronRight } from '@lucide/svelte/icons/chevron-right';
 export { default as CornerUpLeft } from '@lucide/svelte/icons/corner-up-left';
@@ -14,6 +15,7 @@ export { default as CornerDownLeft } from '@lucide/svelte/icons/corner-down-left
 export { default as Copy } from '@lucide/svelte/icons/copy';
 export { default as Eraser } from '@lucide/svelte/icons/eraser';
 export { default as FileText } from '@lucide/svelte/icons/file-text';
+export { default as Folder } from '@lucide/svelte/icons/folder';
 export { default as ListChecks } from '@lucide/svelte/icons/list-checks';
 export { default as Lock } from '@lucide/svelte/icons/lock';
 export { default as Menu } from '@lucide/svelte/icons/menu';
