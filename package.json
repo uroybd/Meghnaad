@@ -1,6 +1,7 @@
 {
   "name": "taskwarrior-web",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "setup": "node scripts/setup.mjs",

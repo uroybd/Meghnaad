@@ -58,7 +58,7 @@ it (tables, forms, a detail view), and both go through the same command engine.
 [Screenshots](#screenshots) · [How it works](#how-it-works) · [Quick start (local)](#quick-start-local) · [Deploy to Cloudflare](#deploy-to-cloudflare) ·
 [Connect your `task` CLI](#connect-your-task-cli) · [Using Meghnaad](#using-meghnaad) · [Configuration](#configuration-reference) ·
 [Security](#security-notes) · [Development](#development) · [Troubleshooting](#troubleshooting) ·
-[Known limitations](#known-limitations) · [About the name](#about-the-name)
+[Known limitations](#known-limitations) · [About the name](#about-the-name) · [License](#license)
 
 ## How it works
 
@@ -418,3 +418,7 @@ changing filters, sorting, urgency or journalling, read the C++ first.
 
 Meghnaad is the warrior of the Ramayana who fought from behind the clouds. This app is Taskwarrior (the warrior)
 running on Cloudflare (the cloud), with Cloudflare Access as the cover.
+
+## License
+
+[MIT](LICENSE) © 2026 Utsob Roy
