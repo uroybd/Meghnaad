@@ -157,7 +157,7 @@ async fn multi_task_writes_need_confirmation() {
     assert!(load_facts(&mut r).await.unwrap().iter().all(|f| f.status == "pending"));
 
     let (res, wrote) =
-        run_opts(&mut r, &cfg, "project:P done", Options { confirmed: true, seed: 0 }).await;
+        run_opts(&mut r, &cfg, "project:P done", Options { confirmed: true, ..Options::default() }).await;
     assert!(wrote);
     assert_eq!(message(&res), "Completed 3 tasks.");
 }
@@ -295,7 +295,7 @@ async fn bad_input_gives_errors_not_changes() {
         ("project:Home add x", "not a filter"),
         ("list due:garbage", "valid date"),
         ("1 modify depends:99", "no task with id 99"),
-        ("1 modify recur:weekly", "recurrence"),
+        ("1 modify recur:weekly", "due date"),
         ("1 modify status:completed", "can't be set"),
         ("99 done", "No matches"),
     ] {
@@ -660,4 +660,241 @@ async fn info_rows_carry_the_sessions_when_journalling() {
     // Off by default: no sessions without journal.time.
     let CliResult::Info { tasks } = run(&mut r, &Config::default(), "1 info").await.0 else { panic!() };
     assert!(tasks[0].sessions.is_empty());
+}
+
+mod recurrence {
+    use super::*;
+    use tc_core::model::Facts;
+
+    async fn all(r: &mut R) -> Vec<Facts> {
+        load_facts(r).await.unwrap()
+    }
+
+    fn template(v: &[Facts]) -> &Facts {
+        let mut t = v.iter().filter(|f| f.status == "recurring");
+        let one = t.next().expect("a template");
+        assert!(t.next().is_none(), "exactly one template");
+        one
+    }
+
+    fn instances(v: &[Facts]) -> Vec<&Facts> {
+        let mut c: Vec<_> = v.iter().filter(|f| f.parent.is_some()).collect();
+        c.sort_by_key(|f| f.imask);
+        c
+    }
+
+    #[tokio::test]
+    async fn adding_with_recur_makes_a_template_that_generates_nothing_while_recurrence_is_off() {
+        let cfg = Config::default();
+        let mut r = replica();
+        let (res, _) = run(&mut r, &cfg, "add Water plants recur:daily due:yesterday").await;
+        assert_eq!(message(&res), "Created task 1.");
+        run(&mut r, &cfg, "list").await;
+        let v = all(&mut r).await;
+        assert_eq!(v.len(), 1, "no instances without recurrence=on");
+        assert_eq!(template(&v).recur.as_deref(), Some("daily"));
+    }
+
+    #[tokio::test]
+    async fn recur_needs_a_due_date_and_a_valid_period() {
+        let cfg = Config::default();
+        let mut r = replica();
+        let (res, wrote) = run(&mut r, &cfg, "add Nope recur:weekly").await;
+        assert!(!wrote);
+        assert!(message(&res).contains("due"), "{}", message(&res));
+        let (res, _) = run(&mut r, &cfg, "add Nope due:tomorrow recur:fortnightish").await;
+        assert!(message(&res).starts_with("ERROR"), "{}", message(&res));
+        assert!(all(&mut r).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn with_recurrence_on_due_instances_appear_and_track_their_parents_mask() {
+        // `recurrence.limit` counts upcoming instances, finished or not, so ask for two.
+        let cfg = parse("recurrence=on\nrecurrence.limit=2\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Water plants recur:daily due:3d").await;
+        run(&mut r, &cfg, "list").await;
+        let v = all(&mut r).await;
+        let kids = instances(&v);
+        assert_eq!(kids.len(), 2, "{kids:?}");
+        let parent = template(&v);
+        assert_eq!(kids[0].parent, Some(parent.uuid));
+        assert_eq!(kids[0].description, "Water plants");
+        assert_eq!(kids[0].status, "pending");
+        assert_eq!(kids[0].recur.as_deref(), Some("daily"));
+        assert_eq!(kids[0].due, parent.due);
+        assert_eq!(kids[1].due, parent.due.map(|d| d + DAY));
+        assert_eq!(parent.mask.as_deref(), Some("--"));
+
+        // Completing an instance is recorded in the parent's mask; the other stays pending.
+        // By uuid: both instances share an entry time, so their numeric ids aren't ordered by index.
+        let first = kids[0].uuid.to_string();
+        let (res, _) = run(&mut r, &cfg, &format!("{} done", &first[..8])).await;
+        assert!(message(&res).contains("Completed"), "{}", message(&res));
+        let v = all(&mut r).await;
+        assert_eq!(template(&v).mask.as_deref(), Some("+-"));
+        let kids = instances(&v);
+        assert_eq!(kids.len(), 2, "completing doesn't create or lose instances: {kids:?}");
+        assert_eq!(kids[0].status, "completed");
+        assert_eq!(kids[1].status, "pending");
+    }
+
+    #[tokio::test]
+    async fn the_template_cannot_be_completed_or_started_but_can_be_edited() {
+        let cfg = Config::default();
+        let mut r = replica();
+        run(&mut r, &cfg, "add Pay rent recur:monthly due:1d").await;
+        let (res, _) = run(&mut r, &cfg, "1 done").await;
+        assert!(message(&res).contains("not pending"), "{}", message(&res));
+        assert_eq!(template(&all(&mut r).await).status, "recurring");
+        let (res, _) = run(&mut r, &cfg, "1 modify priority:H").await;
+        assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
+        assert_eq!(template(&all(&mut r).await).priority.as_deref(), Some("H"));
+    }
+
+    #[tokio::test]
+    async fn editing_the_template_updates_its_pending_instances_but_not_their_dates() {
+        let cfg = parse("recurrence=on\nrecurrence.confirmation=yes\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Water plants recur:daily due:3d").await;
+        run(&mut r, &cfg, "list").await;
+        let before = instances(&all(&mut r).await)[0].due;
+        run(&mut r, &cfg, "1 modify Feed plants priority:H +green").await;
+        let v = all(&mut r).await;
+        let kid = instances(&v)[0];
+        assert_eq!(kid.description, "Feed plants");
+        assert_eq!(kid.priority.as_deref(), Some("H"));
+        assert!(kid.tags.contains("green"));
+        assert_eq!(kid.due, before, "dates stay per instance");
+    }
+
+    #[tokio::test]
+    async fn deleting_the_template_asks_then_removes_its_pending_instances_too() {
+        let cfg = parse("recurrence=on\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Water plants recur:daily due:3d").await;
+        run(&mut r, &cfg, "list").await;
+        let (res, wrote) = run(&mut r, &cfg, "1 delete").await;
+        assert!(!wrote);
+        assert!(message(&res).starts_with("CONFIRM"), "{}", message(&res));
+        let (res, wrote) = run(&mut r, &cfg, "1 delete").await;
+        assert!(!wrote, "still asking: {}", message(&res));
+        let (_, wrote) = run_opts(&mut r, &cfg, "1 delete", Options { confirmed: true, ..Options::default() }).await;
+        assert!(wrote);
+        let v = all(&mut r).await;
+        assert!(v.iter().all(|f| f.status == "deleted"), "{:?}", v.iter().map(|f| &f.status).collect::<Vec<_>>());
+    }
+
+    #[tokio::test]
+    async fn an_until_date_in_the_past_expires_instances_and_the_template() {
+        let cfg = parse("recurrence=on\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Old habit recur:daily due:3d until:yesterday").await;
+        // Pass 1 creates and expires the instance; the series is retired once none is pending.
+        for _ in 0..3 {
+            run(&mut r, &cfg, "list").await;
+        }
+        let v = all(&mut r).await;
+        assert!(v.iter().all(|f| f.status == "deleted"), "{:?}", v.iter().map(|f| &f.status).collect::<Vec<_>>());
+    }
+
+    // ---- recurrence.confirmation
+
+    /// A template with two open instances, `recurrence.confirmation` set to `mode`.
+    async fn series(mode: &str) -> (R, Config) {
+        let cfg = parse(&format!("recurrence=on\nrecurrence.limit=2\nrecurrence.confirmation={mode}\n")).config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Water plants recur:daily due:3d").await;
+        run(&mut r, &cfg, "list").await;
+        (r, cfg)
+    }
+
+    async fn descriptions(r: &mut R) -> Vec<(String, String)> {
+        let mut v: Vec<_> = all(r).await.into_iter().map(|f| (f.status, f.description)).collect();
+        v.sort();
+        v
+    }
+
+    fn answer(yes: bool) -> Options {
+        Options { recurrence: Some(yes), ..Options::default() }
+    }
+
+    #[tokio::test]
+    async fn by_default_editing_a_recurring_task_asks_and_changes_nothing_until_answered() {
+        let (mut r, cfg) = series("prompt").await;
+        let before = descriptions(&mut r).await;
+        let (res, wrote) = run(&mut r, &cfg, "1 modify Feed plants").await;
+        assert!(!wrote);
+        assert!(
+            matches!(&res, CliResult::Confirm { recurrence: true, message, .. } if message.contains("pending recurrences")),
+            "{res:?}"
+        );
+        assert_eq!(descriptions(&mut r).await, before, "asking must not write");
+        // Unset means the same as `prompt`.
+        let cfg = parse("recurrence=on\nrecurrence.limit=2\n").config;
+        let (res, _) = run(&mut r, &cfg, "1 modify Feed plants").await;
+        assert!(matches!(res, CliResult::Confirm { recurrence: true, .. }), "{res:?}");
+    }
+
+    #[tokio::test]
+    async fn answering_yes_changes_the_whole_series_and_no_changes_only_the_task() {
+        let (mut r, cfg) = series("prompt").await;
+        let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(true)).await;
+        assert!(wrote);
+        assert!(all(&mut r).await.iter().all(|f| f.description == "Feed plants"), "{:?}", descriptions(&mut r).await);
+
+        let (mut r, cfg) = series("prompt").await;
+        let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(false)).await;
+        assert!(wrote);
+        let v = all(&mut r).await;
+        assert_eq!(template(&v).description, "Feed plants", "the edited task itself always changes");
+        assert!(instances(&v).iter().all(|f| f.description == "Water plants"), "{:?}", descriptions(&mut r).await);
+    }
+
+    #[tokio::test]
+    async fn yes_propagates_without_asking_and_no_never_does() {
+        let (mut r, cfg) = series("yes").await;
+        let (res, wrote) = run(&mut r, &cfg, "1 modify +green").await;
+        assert!(wrote, "{res:?}");
+        assert!(all(&mut r).await.iter().all(|f| f.tags.contains("green")));
+
+        for off in ["no", "off", "false", "whatever"] {
+            let (mut r, cfg) = series(off).await;
+            let (res, wrote) = run(&mut r, &cfg, "1 modify +green").await;
+            assert!(wrote && !matches!(res, CliResult::Confirm { .. }), "{off}: {res:?}");
+            let v = all(&mut r).await;
+            assert!(template(&v).tags.contains("green"));
+            assert!(instances(&v).iter().all(|f| !f.tags.contains("green")), "{off}");
+        }
+    }
+
+    #[tokio::test]
+    async fn editing_an_instance_reaches_its_siblings_and_the_template() {
+        let (mut r, cfg) = series("yes").await;
+        let v = all(&mut r).await;
+        let first = instances(&v)[0].uuid.to_string();
+        let (_, wrote) = run(&mut r, &cfg, &format!("{} modify priority:H project:Garden", &first[..8])).await;
+        assert!(wrote);
+        let v = all(&mut r).await;
+        assert!(v.iter().all(|f| f.priority.as_deref() == Some("H") && f.project.as_deref() == Some("Garden")), "{v:?}");
+
+        // Dates stay per instance: moving one instance does not move the others.
+        let due_before: Vec<_> = instances(&v).iter().map(|f| f.due).collect();
+        let first = instances(&v)[0].uuid.to_string();
+        let (res, _) = run(&mut r, &cfg, &format!("{} modify due:10d", &first[..8])).await;
+        assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
+        let v = all(&mut r).await;
+        let due_after: Vec<_> = instances(&v).iter().map(|f| f.due).collect();
+        assert_ne!(due_before[0], due_after[0]);
+        assert_eq!(due_before[1], due_after[1], "the sibling's date is untouched");
+    }
+
+    #[tokio::test]
+    async fn ordinary_tasks_are_never_asked_about() {
+        let cfg = parse("recurrence.confirmation=prompt\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add plain").await;
+        let (res, wrote) = run(&mut r, &cfg, "1 modify +x").await;
+        assert!(wrote && !matches!(res, CliResult::Confirm { .. }), "{res:?}");
+    }
 }

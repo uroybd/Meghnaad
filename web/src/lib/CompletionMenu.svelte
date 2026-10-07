@@ -2,14 +2,34 @@
   import type { Completer } from './completer.svelte';
 
   // Shown above (console) or below (filter bar) its input.
-  let { completer, placement = 'above' }: { completer: Completer; placement?: 'above' | 'below' } = $props();
+  let {
+    completer,
+    placement = 'above',
+    onpick,
+  }: {
+    completer: Completer;
+    placement?: 'above' | 'below';
+    /** Tapped an option (touch has no Tab key): the parent applies it to its input. */
+    onpick?: (index: number) => void;
+  } = $props();
   const menu = $derived(completer.menu);
 </script>
 
 {#if menu}
   <ul class="menu {placement} mono" role="listbox" aria-label="Completions">
     {#each menu.options as o, i (o.value)}
-      <li role="option" aria-selected={i === menu.sel} class:sel={i === menu.sel}>
+      <!-- Act on click, not pointerdown: on touch the menu would vanish mid-tap and the click would land
+           on whatever is underneath. mousedown's default is the focus change that would blur the input
+           (and close the menu) before the click, so it is cancelled. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- Keyboard users drive the menu from the input (Tab, arrows, Enter), not by focusing options. -->
+      <li
+        role="option"
+        aria-selected={i === menu.sel}
+        class:sel={i === menu.sel}
+        onmousedown={(e) => e.preventDefault()}
+        onclick={() => onpick?.(i)}
+      >
         <span class="v">{o.value}</span>
         {#if o.hint}<span class="h dim">{o.hint}</span>{/if}
       </li>
@@ -26,8 +46,9 @@
   }
   .menu.above { bottom: calc(100% + 4px); }
   .menu.below { top: calc(100% + 4px); }
-  li { display: flex; gap: 14px; justify-content: space-between; padding: 1px 8px; border-radius: 4px; white-space: nowrap; }
+  li { cursor: pointer; display: flex; gap: 14px; justify-content: space-between; padding: 1px 8px; border-radius: 4px; white-space: nowrap; }
   li.sel { background: var(--accent); color: var(--accent-text); }
   li.sel .h { color: inherit; opacity: 0.85; }
   .h { overflow: hidden; text-overflow: ellipsis; }
+  @media (pointer: coarse) { li { padding: 9px 8px; } }
 </style>

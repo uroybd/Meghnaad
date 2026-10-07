@@ -60,30 +60,18 @@ it (tables, forms, a detail view), and both go through the same command engine.
 
 You can run everything on your machine without a Cloudflare account; wrangler simulates R2 locally.
 
-**Prerequisites**
-
-| Tool | Version | Notes |
-| --- | --- | --- |
-| Rust | 1.91+ | via [rustup](https://rustup.rs); needs the `wasm32-unknown-unknown` target |
-| Node.js | 20+ | developed on 24 |
-| `worker-build` | 0.8 | compiles the Rust Worker to WASM |
+**Prerequisites:** [Rust](https://rustup.rs) 1.91+ and Node.js 20+ (developed on 24). The build installs the
+`wasm32-unknown-unknown` target and `worker-build` for you if they're missing.
 
 ```bash
 git clone <this repo> && cd Meghnaad
-
-rustup target add wasm32-unknown-unknown
-cargo install worker-build
-
-npm install                      # wrangler
-npm --prefix web install         # the Svelte app
+npm install                      # one install covers the Worker tooling and the Svelte app (npm workspace)
 cp .dev.vars.example .dev.vars   # local-only secret + Access bypass
-
-npm --prefix web run build       # wrangler needs web/dist to exist
-npm run dev                      # builds the Worker, then serves everything
+npm run dev                      # builds the web app and the Worker, then serves everything
 ```
 
 The first `npm run dev` compiles the Worker to WASM (about a minute on a recent laptop, longer on a slow machine);
-after that it rebuilds incrementally when you edit `crates/`. Open **http://127.0.0.1:8787**.
+after that it rebuilds when you edit `crates/`. Open **http://127.0.0.1:8787**.
 
 **Hot-reloading UI** (optional): in a second terminal run `npm --prefix web run dev`. It serves the app with live
 reload and proxies `/api` to the Worker on 8787. If Vite's default port 5173 is taken it picks the next free one;
@@ -100,60 +88,76 @@ makes the local server skip the Cloudflare Access check, which is why you can us
 
 ## Deploy to Cloudflare
 
-You need a Cloudflare account with R2 and Zero Trust (the free plans work).
+You need a Cloudflare account with R2 and Access (the free plans work). Pick one way:
 
-**1. Log in and choose the bucket.**
+### A. Guided: `npm run setup` (recommended)
+
+```bash
+npm install
+npm run setup
+```
+
+It checks your build tools, logs you in, then asks for the things that differ between people:
+
+| Question | Notes |
+| --- | --- |
+| **R2 bucket** | Your **existing** sync bucket is used as is; a name that doesn't exist yet is created. Nothing in the bucket is changed |
+| **Custom domain** | Optional, e.g. `tasks.example.com`. The domain must already be a zone on your Cloudflare account. Empty = the free `*.workers.dev` address. With a custom domain the `workers.dev` address is switched off |
+| **Encryption secret** | The same value as `sync.encryption_secret` in your taskrc (new bucket? invent a strong passphrase and use it for the CLI too). Stored as a Worker secret |
+| **Cloudflare Access** | It tells you exactly what to click (see below) and asks for the team domain and AUD tag, then deploys again |
+
+Your answers are saved in `.deploy.vars` (git-ignored). Run **`npm run deploy`** whenever you update the code, or
+`npm run setup` again to change something; both are safe to repeat. `npm run deploy -- --check` prints the exact
+config that would be deployed. `.deploy.vars` can also hold `WORKER_NAME` to run a second copy, and any of its keys
+can be given as environment variables instead (handy in CI).
+
+**You can stop after the first deploy.** Until Access is connected, the app refuses every request and shows a
+**setup page** explaining what's left, with your hostname filled in. Nothing about your tasks is reachable.
+
+**Connecting Access** (the one part that needs the dashboard, because the AUD tag only exists once the application does):
+
+1. Cloudflare dashboard → **Access controls → Applications → Add an application → Self-hosted**.
+2. Destination: your hostname (the custom domain if you set one, otherwise the `workers.dev` address).
+3. Add an **Allow** policy with the selector **Emails** and your address. *One-time PIN* login works without setup.
+4. Copy the application's **Application Audience (AUD) tag**. Your team domain, `https://<team>.cloudflareaccess.com`,
+   is under Access controls → **Settings**.
+
+Cloudflare Access signs people in; the Worker then **re-verifies the signed token on every API call** (signature,
+issuer, audience, expiry), so your data stays protected even if someone finds a way around Access. Make the Access
+application cover the **whole hostname**: the static app shell (HTML and JavaScript, nothing private) is served
+without running the Worker, so Access is what guards it.
+
+### B. From the dashboard (no terminal)
+
+Fork this repo to your GitHub account, then in the Cloudflare dashboard: **Workers & Pages → Create → Import a
+repository**. Set the build command to `node scripts/build.mjs` (the Rust and web parts) and leave the deploy command
+as `npx wrangler deploy`. Before the first build, edit `wrangler.jsonc` in your fork if you need a different bucket
+(`bucket_name`) or a custom domain (`routes`). Then open the deployed address: the setup page walks you through Access
+and the two **Text variables** (`TEAM_DOMAIN`, `POLICY_AUD`) to add under *Settings → Variables and Secrets*; add
+`TC_ENCRYPTION_SECRET` there as a **Secret**. (`keep_vars` is on, so redeploys don't remove what you added.)
+
+There's also a **Deploy to Cloudflare** button flow (`https://deploy.workers.cloudflare.com/?url=<your public repo URL>`)
+and `package.json` carries the descriptions it shows. **It hasn't been tried with this repo yet**, mainly because the
+build needs the Rust toolchain; treat route B as the supported dashboard path until you have confirmed it.
+
+### C. By hand
 
 ```bash
 npx wrangler login
-
-# Already syncing Taskwarrior to R2? Use that bucket and skip this line.
-npx wrangler r2 bucket create taskwarrior-sync
-```
-
-In `wrangler.jsonc`, set `r2_buckets[0].bucket_name` to your bucket's name.
-
-**2. Set the encryption secret** to the *same value* as `sync.encryption_secret` in your Taskwarrior config.
-
-```bash
-npx wrangler secret put TC_ENCRYPTION_SECRET
-```
-
-If the bucket is new, pick any strong passphrase now and use it for the CLI in the next section. Anyone who can read
-this secret can decrypt your tasks, so treat it like a password.
-
-**3. Deploy once** to get a URL (`https://taskwarrior-web.<your-subdomain>.workers.dev`, or attach a custom domain):
-
-```bash
+npx wrangler r2 bucket create <name>             # skip if the bucket exists
+npx wrangler secret put TC_ENCRYPTION_SECRET     # the same value as sync.encryption_secret
+npm run deploy                                   # prints the URL (Access can't be connected before this)
+# create the Access application, then put TEAM_DOMAIN and POLICY_AUD into .deploy.vars and:
 npm run deploy
 ```
 
-Until step 4 is done every `/api/*` request is answered with `403`: the Worker is closed by default, including
-when `TEAM_DOMAIN` and `POLICY_AUD` still hold their placeholders.
+> **Heads-up:** after `wrangler r2 bucket create`, wrangler may offer to add the bucket to `wrangler.jsonc` as a *new*
+> binding (named after the bucket, with `"remote": true`). Answer **no**, or delete it afterwards: the app uses exactly
+> one binding, `TASKS`, and `wrangler dev` refuses to start with an extra remote binding unless you've registered a
+> workers.dev subdomain. (`npm run dev` runs in local mode, so it ignores remote bindings either way.)
 
-**4. Put Cloudflare Access in front.**
-
-1. Zero Trust dashboard → **Access → Applications → Add an application → Self-hosted**.
-2. Application domain: the hostname from step 3. Add an **Allow** policy for your own email (or your identity group).
-3. Open the application and copy its **Application Audience (AUD) Tag**. Your team name is under **Settings →
-   Custom Pages** (`<team>.cloudflareaccess.com`).
-4. Put both in `wrangler.jsonc`:
-
-   ```jsonc
-   "vars": {
-     "TEAM_DOMAIN": "https://<your-team>.cloudflareaccess.com",
-     "POLICY_AUD": "<the AUD tag>"
-   }
-   ```
-
-5. Redeploy: `npm run deploy`.
-
-Cloudflare Access signs people in; the Worker then **re-verifies the signed token on every API call** (signature,
-issuer, audience, expiry), so your data stays protected even if someone finds a way around Access, such as the
-`workers.dev` address. Make the Access application cover the **whole hostname**: the static app shell (HTML and
-JavaScript, nothing private) is served without running the Worker, so Access is what guards it.
-
-**5. Open the URL**, sign in, and import your `taskrc` (the **taskrc** button) to get your UDAs and custom reports.
+**Last step, whichever way:** open the URL, sign in, and import your `taskrc` (the **taskrc** button) to get your UDAs
+and custom reports.
 
 ## Connect your `task` CLI
 
@@ -227,12 +231,17 @@ commands · `Esc` closes a menu · `Ctrl+L` clears.
 - **Add tasks** from the sidebar. *More fields…* opens the full form: project, priority, due/wait/scheduled/until,
   tags, dependencies, UDAs, "start now", and a first note.
 - Every **date field takes a date and an optional time**. Leave the time empty for a whole day.
+- **Dates are shown the way your taskrc says**: `dateformat`, `dateformat.report` (tables), `dateformat.info` (detail
+  view), `dateformat.annotation` (notes) and a report's own `report.<name>.dateformat`, with Taskwarrior's fallbacks and
+  tokens (`Y y M m D d H h N n S s A a B b V v J j w`, e.g. `dateformat=D/M/Y`, `dateformat.info=A, d B Y H:N`).
+  Without one, dates show as `2026-12-25` plus the time only when there is one. Column styles such as `due.relative` or
+  `due.epoch` are unaffected.
 
 ### Your taskrc
 
 UDAs, custom reports and contexts live in `~/.taskrc`, not in your synced data, so the app keeps its own copy. Open
 **taskrc**, paste or choose your file, and save. Only these are kept: `uda.*`, `report.*`, `context*`, `urgency.*`,
-`journal.*`, `default.command`, `due`, `weekstart`, `dateformat*`.
+`journal.*`, `recurrence*`, `default.command`, `due`, `weekstart`, `dateformat*`.
 
 - **Sync settings and anything credential-like are blocked** (`sync.*`, `taskd.*`, names containing `secret`,
   `password`, `token`, …). Only the *names* of what was dropped are shown. The raw text is never stored.
@@ -240,6 +249,42 @@ UDAs, custom reports and contexts live in `~/.taskrc`, not in your synced data, 
   previous** undoes the last save.
 - `include` lines can't be followed; paste the included files' contents too.
 - A UDA that exists on a task but isn't defined in your taskrc is shown but **read-only**.
+
+### Recurring tasks
+
+Add one with `recur:` and a `due` date, in the console or with the **Repeat** field of the form:
+
+```
+add Water plants recur:weekly due:friday
+add Pay rent recur:monthly due:eom until:2027-12-31
+3 modify recur:2w                      # change the period of a recurring task
+```
+
+Periods are Taskwarrior's: `daily` `weekdays` `weekly` `biweekly` `monthly` `quarterly` `yearly`, counts such as
+`3d` `2w` `6mo`, and ISO durations like `P1M`. The first instance has the `due` you gave; later ones follow the period.
+A repeating task shows a **repeat icon**; its detail view lists its instances, and an instance links back to it.
+
+- **The web app only creates instances when your taskrc says `recurrence=on`** (add it under **taskrc**; optional
+  `recurrence.limit=N` keeps N upcoming instances, default 1). Taskwarrior itself defaults to *on*, and two replicas that
+  both create instances while out of sync make duplicates, so if your desktop `task` already does this, leave it off
+  here. Either way the web app shows and edits recurring tasks, and reads instances made elsewhere. With it on, instances
+  are created, finished series retired and `until` honoured before each command, as in Taskwarrior. (Both can safely
+  run side by side: instances are numbered the same way, so a second replica finds nothing missing.)
+- The recurring task itself is a template: you can edit it but not complete or start it.
+- **Editing one task of a series** (the template, or one of its instances) follows `recurrence.confirmation`, as in
+  Taskwarrior: `prompt` (the default) asks whether to change **all pending recurrences** or **only this task**; `yes`
+  always changes the whole series; `no` only the task you edited. Descriptive changes (description, project, priority,
+  tags, UDAs, ...) are shared; dates and the period itself stay per task, so moving one instance never moves the others.
+  In the console the question has three buttons; in the form it is a browser prompt.
+- Deleting a recurring task asks first, because it deletes its open instances too.
+- `recurrence.indicator` (default `R`) is what the `recur.indicator` column shows.
+
+### On a phone
+
+The layout adapts below ~760px wide: the report list moves into a menu (☰), tasks become cards with big buttons, the
+header sort becomes a **Sort** picker, forms and the detail view go full screen, and a **+** button adds a task.
+The prompt gets **Complete** (⇥) and **Previous command** (⌃) buttons since there's no Tab or arrow key, and
+completions can be tapped. Install it to your home screen from the browser menu if you like.
 
 ### Time tracking and reminders
 
@@ -256,8 +301,9 @@ UDAs, custom reports and contexts live in `~/.taskrc`, not in your synced data, 
 | --- | --- | --- |
 | `TASKS` | R2 binding (`wrangler.jsonc`) | The bucket your `task` CLI syncs to |
 | `TC_ENCRYPTION_SECRET` | Worker secret | Same value as the CLI's `sync.encryption_secret` |
-| `TEAM_DOMAIN` | var | `https://<team>.cloudflareaccess.com` |
-| `POLICY_AUD` | var | The Access application's AUD tag |
+| `TEAM_DOMAIN` | var (not in `wrangler.jsonc`) | `https://<team>.cloudflareaccess.com`. Set by `npm run setup` (via `.deploy.vars`) or as a Text variable in the dashboard |
+| `POLICY_AUD` | var (not in `wrangler.jsonc`) | The Access application's AUD tag; same two ways |
+| `R2_BUCKET`, `CUSTOM_DOMAIN`, `WORKER_NAME` | `.deploy.vars` | Optional deploy choices; see *Deploy to Cloudflare* |
 | `DEV_AUTH_BYPASS` | `.dev.vars` only | Skips the Access check for local development. It is only honoured for loopback hosts (`localhost`, `127.x.x.x`, `::1`); on any other host it is ignored and logged. Still: never set it on a deployed Worker |
 
 ## Security notes
@@ -297,7 +343,7 @@ npm run test:auth             # Cloudflare Access: forged, expired, wrong-audien
 `test:auth` needs only Node and a built Worker (`cd crates/worker && worker-build --release`). It starts a mock
 Access, runs the Worker with the dev bypass off, and checks a matrix of ~30 requests.
 
-`interop-local.sh` needs `task`, the `aws` CLI, `sqlite3`, a built Worker, and a local S3-compatible server that
+`interop-local.sh` (tasks, UDAs, reports, recurring series) needs `task`, the `aws` CLI, `sqlite3`, a built Worker, and a local S3-compatible server that
 enforces conditional writes, for example
 `docker run -d --name tw-s3 -p 18333:8333 chrislusf/seaweedfs server -s3 -dir=/data`. It is self-contained (own port,
 own storage) and does not touch a dev server you have running.
@@ -309,9 +355,11 @@ changing filters, sorting, urgency or journalling, read the C++ first.
 
 | Symptom | Likely cause |
 | --- | --- |
+| The app shows an "Almost there" page | Access isn't connected yet: follow the page, or `npm run setup` |
 | `403` from `/api/*` after deploying | `TEAM_DOMAIN` / `POLICY_AUD` not set or wrong (the `iss`/`aud` of the token must match them exactly), or you're not signed in through Access. The Worker log says why (`auth rejected: …`) |
 | "task storage error" (502) | Wrong `TC_ENCRYPTION_SECRET` or the wrong bucket. The cached state resets on the next request |
 | `wrangler dev` says the assets directory is missing | Run `npm --prefix web run build` once |
+| `wrangler dev` exits with "register a workers.dev subdomain" | `wrangler.jsonc` has an extra `"remote": true` R2 binding (added when you ran `wrangler r2 bucket create`). Delete it, keeping only `TASKS`. `npm run dev` already runs in local mode and ignores it |
 | `task sync` fails with `PermanentRedirect` | `AWS_ENDPOINT_URL` isn't set in that environment, so it's talking to AWS |
 | Banner: "saved taskrc settings couldn't be read" | The stored settings are corrupt; nothing was deleted. Open **taskrc** and save again (the unreadable copy is kept aside) |
 | Reminders never appear | The tab must be open; the page needs HTTPS or `localhost`; check the browser's notification permission |
@@ -322,7 +370,8 @@ changing filters, sorting, urgency or journalling, read the C++ first.
 
 - **Not yet tested against real R2.** The CLI's own use of R2's conditional writes is a good sign, but run a
   `task sync` and a web edit against a scratch bucket before trusting it with data you can't lose.
-- **Recurring tasks** aren't supported yet (`recur:` is rejected with a clear message); existing ones display.
+- **Recurring tasks** follow Taskwarrior's rules and were checked against real `task` 3.5.0 in both directions, but the web app only creates instances when the taskrc has `recurrence=on` (see above).
+- **Phone layout** was verified in an emulated phone browser (touch, 390px); try it on your own device before relying on it, in particular the on-screen keyboard and safe-area insets.
 - **Snapshots and cleanup** of old versions are left to the CLI.
-- `dateformat*` settings are stored but the UI shows ISO dates.
+- **Dates you type** aren't parsed with your `dateformat`: use `2026-12-25`, `2026-12-25T08:30` or words like `friday`, `3d`. (Dates *shown* follow it; see Tasks view.)
 - Single user: one set of settings and one shared replica per Worker instance.

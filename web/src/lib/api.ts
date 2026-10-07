@@ -41,6 +41,8 @@ export interface CliInput {
   line?: string;
   args?: string[];
   confirmed?: boolean;
+  /** Answer to a recurring-series question: change every pending recurrence, or only this task. */
+  recurrence?: boolean;
 }
 
 export function runCli(input: CliInput): Promise<CliResponse> {
@@ -78,4 +80,23 @@ export function putTaskrc(text: string): Promise<TaskrcResponse> {
     headers: { 'content-type': 'text/plain' },
     body: text,
   });
+}
+
+export interface SetupStatus {
+  configured: boolean;
+  /** Names of the Worker settings still to fill in (TEAM_DOMAIN, POLICY_AUD). */
+  missing: string[];
+  /** The hostname this page is served from, for the Access application. */
+  host: string;
+}
+
+/** Whether the Worker has its sign-in settings. Needs no sign-in itself; null if it can't be told. */
+export async function getSetup(): Promise<SetupStatus | null> {
+  try {
+    const res = await fetch('/api/setup');
+    if (!res.ok) return null;
+    return (await res.json()) as SetupStatus;
+  } catch {
+    return null;
+  }
 }

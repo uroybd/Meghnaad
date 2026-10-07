@@ -47,6 +47,10 @@ pub struct Facts {
     pub blocking: bool,
     pub recur: Option<String>,
     pub parent: Option<Uuid>,
+    /// On a recurring parent: one letter per instance (`-` pending, `+` done, `X` deleted, `W` waiting).
+    pub mask: Option<String>,
+    /// On an instance: its position in the parent's mask.
+    pub imask: Option<usize>,
     /// Properties that aren't core attributes: candidate UDA values (and orphans).
     pub extra: BTreeMap<String, String>,
 }
@@ -111,6 +115,8 @@ impl Facts {
             blocking: t.is_blocking(),
             recur: t.get_value("recur").and_then(nonempty),
             parent: t.get_value("parent").and_then(|p| Uuid::parse_str(p).ok()),
+            mask: t.get_value("mask").and_then(nonempty),
+            imask: t.get_value("imask").and_then(|v| v.parse().ok()),
             // taskchampion only knows a subset of Taskwarrior's attributes (it reports
             // `project`, `scheduled`, ... as "UDAs"), so filter those out ourselves.
             extra: t
@@ -237,7 +243,8 @@ impl Facts {
             "ANNOTATED" => !self.annotations.is_empty(),
             "TAGGED" => !self.tags.is_empty(),
             "CHILD" | "INSTANCE" => self.parent.is_some(),
-            "PARENT" | "TEMPLATE" => self.status == "recurring",
+            // Taskwarrior: a template is a task that has a mask (i.e. has had instances made).
+            "PARENT" | "TEMPLATE" => self.mask.is_some(),
             "WAITING" => self.is_waiting(clock),
             "PENDING" => self.status == "pending",
             "COMPLETED" => self.status == "completed",

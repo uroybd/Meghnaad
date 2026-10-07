@@ -1,9 +1,11 @@
 <script lang="ts">
   import DateTimeInput from './DateTimeInput.svelte';
+  import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
   import { udaLabel } from './format';
-  import { Lock, RotateCcw, X } from './icons';
+  import { CornerUpLeft, Lock, Repeat, RotateCcw, X } from './icons';
   import { visibleNotes } from './journal';
+  import { describeRecur, presetFor, PRESETS } from './recurrence';
   import { store, type Entry } from './store.svelte';
   import type { Row, UdaDef } from './types';
 
@@ -51,6 +53,7 @@
     scheduled: wire(row?.scheduled),
     until: wire(row?.until),
     tags: (row?.tags ?? []).join(' '),
+    recur: row?.recur ?? '',
   };
   /* svelte-ignore state_referenced_locally */
   const udaStart = Object.fromEntries(Object.values(store.config?.config.udas ?? {}).map((u) => [u.name, uda(u, row)]));
@@ -71,6 +74,19 @@
   let until = $state(start.until);
   /* svelte-ignore state_referenced_locally */
   let tags = $state(start.tags);
+  // Repeat: a preset, or "custom" with a free-text period (`3d`, `P2W`, ...). The server validates it.
+  /* svelte-ignore state_referenced_locally */
+  let recurChoice = $state(start.recur === '' ? '' : presetFor(start.recur) || 'custom');
+  /* svelte-ignore state_referenced_locally */
+  let recurCustom = $state(presetFor(start.recur) ? '' : start.recur);
+  const recur = $derived(recurChoice === 'custom' ? recurCustom.trim() : recurChoice);
+  // Instances follow their template: its period is shown but changed on the template.
+  /* svelte-ignore state_referenced_locally */
+  const instance = row?.parent != null;
+  // A template can't stop repeating (Taskwarrior refuses); delete it instead.
+  /* svelte-ignore state_referenced_locally */
+  const template = row?.status === 'recurring';
+  const needsDue = $derived(!instance && recur !== '' && due === '');
   /* svelte-ignore state_referenced_locally */
   let udaValues = $state<Record<string, string>>({ ...udaStart });
   let startNow = $state(false);
@@ -92,6 +108,7 @@
     set('wait', wait, start.wait);
     set('scheduled', scheduled, start.scheduled);
     set('until', until, start.until);
+    if (!instance) set('recur', recur, start.recur);
     const want = new Set(tags.split(/[\s,]+/).filter(Boolean).map((t) => t.replace(/^\+/, '')));
     const had = new Set(start.tags.split(' ').filter(Boolean));
     for (const t of want) if (!had.has(t)) a.push(`+${t}`);
@@ -103,7 +120,7 @@
     return a;
   }
 
-  const dirty = $derived(adding ? description.trim().length > 0 : changes().length > 0);
+  const dirty = $derived((adding ? description.trim().length > 0 : changes().length > 0) && !needsDue);
   const command = $derived(
     adding
       ? ['add', ...changes()].join(' ') + (startNow ? '  then: start' : '')
@@ -171,6 +188,45 @@
     <label for="te-sched">Scheduled</label><DateTimeInput id="te-sched" label="Scheduled" bind:value={scheduled} />
     <label for="te-until">Until</label><DateTimeInput id="te-until" label="Until" bind:value={until} />
 
+    <label for="te-recur">Repeat</label>
+    {#if instance}
+      <div>
+        <span class="chip"><Repeat size={12} /> {describeRecur(row?.recur)}</span>
+        <span class="dim hint">This task is one instance of a series.</span>
+        {#if row?.parent}
+          <button type="button" class="ghost link" onclick={() => { const p = row!.parent!; onclose(); store.openDetail(p, from); }}>
+            <CornerUpLeft size={13} /> open the recurring task
+          </button>
+        {/if}
+      </div>
+    {:else}
+      <div class="repeat">
+        <div class="row wrapline">
+          <select id="te-recur" bind:value={recurChoice} aria-label="Repeat">
+            {#if !template}<option value="">Doesn't repeat</option>{/if}
+            {#each PRESETS as p}<option value={p.value}>{p.label}</option>{/each}
+            <option value="custom">Custom…</option>
+          </select>
+          {#if recurChoice === 'custom'}
+            <input
+              bind:value={recurCustom}
+              aria-label="Custom repeat period"
+              placeholder="3d, 2w, P1M, 6mo…"
+              autocapitalize="off"
+              spellcheck="false"
+            />
+          {/if}
+        </div>
+        {#if needsDue}
+          <div class="err hint" role="alert">A repeating task needs a due date.</div>
+        {:else if recur && !template}
+          <div class="dim hint">Repeats {describeRecur(recur)}, starting from the due date.</div>
+        {:else if template}
+          <div class="dim hint">Changes to a repeating task also apply to its open instances (not their dates).</div>
+        {/if}
+      </div>
+    {/if}
+
     <label for="te-tags">Tags</label>
     <input id="te-tags" bind:value={tags} list="te-tag-list" placeholder="space separated" />
     <datalist id="te-tag-list">{#each store.tags as t}<option value={t}></option>{/each}</datalist>
@@ -228,7 +284,7 @@
     <div>
       {#each visibleNotes(row?.annotations ?? [], store.config?.journal) as a}
         <div class="ann">
-          <span class="dim">{formatMoment(a.entry)}</span> {a.text}
+          <span class="dim">{formatMoment(a.entry, undefined, formatFor('infoNote', store.config?.config.settings))}</span> {a.text}
           <button type="button" class="ghost x" aria-label="Remove annotation" onclick={() => denotate(a.text)}><X size={12} /></button>
         </div>
       {/each}
@@ -250,19 +306,32 @@
 </dialog>
 
 <style>
-  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 16px 20px; width: min(640px, 96vw); max-height: 94vh; overflow: auto; }
+  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 24px 28px; width: min(760px, 96vw); max-height: 94vh; overflow: auto; }
   dialog::backdrop { background: rgb(0 0 0 / 0.4); }
-  form { display: grid; grid-template-columns: 7.5em 1fr; gap: 8px 12px; align-items: start; }
+  form { display: grid; grid-template-columns: 8.5em 1fr; gap: 12px 16px; align-items: start; }
   h3 { grid-column: 1 / -1; margin: 0 0 4px; }
   label, .lbl { color: var(--dim); padding-top: 5px; }
   label.check { padding-top: 5px; color: var(--text); }
   footer { grid-column: 1 / -1; margin-top: 8px; position: sticky; bottom: -16px; background: var(--panel); padding: 8px 0; }
   .preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  .x { padding: 0 4px; font-size: 11px; display: inline-flex; vertical-align: middle; }
+  .x { padding: 0 4px; font-size: 12px; display: inline-flex; vertical-align: middle; }
   .chip { display: inline-flex; align-items: center; gap: 2px; }
   .gone { opacity: 0.5; text-decoration: line-through; }
   .ann { margin-bottom: 4px; }
   .orphans { opacity: 0.8; }
   .hint { font-size: 12px; }
+  .link { display: inline-flex; align-items: center; gap: 4px; padding: 0 4px; }
+  .wrapline { flex-wrap: wrap; }
   select, input:not([type='checkbox']) { max-width: 100%; }
+  .repeat { display: grid; gap: 4px; }
+  /* Phones: labels sit above their fields, and the buttons stack under the command preview. */
+  @media (max-width: 760px) {
+    form { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    label, .lbl { padding-top: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    label.check { text-transform: none; font-size: inherit; display: flex; align-items: center; gap: 8px; padding-top: 4px; }
+    footer { flex-wrap: wrap; bottom: calc(-1 * max(14px, env(safe-area-inset-bottom))); padding-bottom: max(8px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+    footer .preview { flex-basis: 100%; }
+    footer button { flex: 1 1 auto; white-space: nowrap; }
+    h3 { position: sticky; top: calc(-1 * max(14px, env(safe-area-inset-top))); background: var(--panel); padding: 6px 0; z-index: 1; }
+  }
 </style>

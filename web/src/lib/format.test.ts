@@ -10,7 +10,7 @@ function row(over: Partial<Row> = {}): Row {
     uuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', status: 'pending', description: 'Buy milk',
     project: null, priority: null, tags: [], annotations: [], entry: NOW - 3 * DAY, modified: null,
     start: null, end: null, due: null, wait: null, scheduled: null, until: null, depends: [],
-    blocked: false, blocking: false, recur: null, parent: null, extra: {},
+    blocked: false, blocking: false, recur: null, parent: null, mask: null, imask: null, extra: {},
     urgency: 4.5, id: 3, virtual_tags: [], orphans: [], active_seconds: null, sessions: [], ...over,
   };
 }

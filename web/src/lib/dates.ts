@@ -4,6 +4,8 @@
 // `YYYY-MM-DD` (a whole day) or `YYYY-MM-DDTHH:MM` (a moment), both in the user's local zone
 // (the request carries the zone's offset).
 
+import { formatPattern, type DateFmt } from './dateformat';
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 export interface DateParts {
@@ -40,8 +42,12 @@ export function isValidTime(s: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 }
 
-/** Display: date, plus the time only when there is one. */
-export function formatMoment(epoch: number | null | undefined, tzOffsetSec?: number): string {
+/**
+ * Display: with a taskrc `dateformat` pattern, exactly that; otherwise the date, plus the time only
+ * when there is one.
+ */
+export function formatMoment(epoch: number | null | undefined, tzOffsetSec?: number, fmt?: DateFmt): string {
+  if (epoch != null && fmt) return formatPattern(epoch, fmt, tzOffsetSec);
   const p = toParts(epoch, tzOffsetSec);
   if (!p.date) return '';
   return p.time ? `${p.date} ${p.time}` : p.date;

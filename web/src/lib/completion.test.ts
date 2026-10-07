@@ -188,4 +188,10 @@ describe('rc. overrides', () => {
   it('rc.context: lists contexts', () => {
     expect(c('rc.context:w').options).toEqual(['rc.context:work']);
   });
+
+  it('recur: offers the common periods with a plain-English hint', () => {
+    expect(c('recur:we').options).toEqual(['recur:weekdays', 'recur:weekly']);
+    expect(complete('recur:bi', 8, vocab).options[0].hint).toBe('every 2 weeks');
+    expect(c('rec').options).toContain('recur:');
+  });
 });

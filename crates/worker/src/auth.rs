@@ -153,26 +153,46 @@ fn decode<T: for<'de> Deserialize<'de>>(part: &str) -> Result<T, AuthError> {
     serde_json::from_slice(&bytes).map_err(|_| AuthError::Rejected("malformed token"))
 }
 
+/// A deployment setting, or `None` when it is missing, blank or still the placeholder shipped in
+/// `wrangler.jsonc` (so a half-configured Worker is reported as "not set up", not as a crypto error).
+fn setting(env: &Env, name: &str) -> Option<String> {
+    let v = env.var(name).ok()?.to_string();
+    let v = v.trim();
+    let placeholder = v.is_empty() || v.contains("YOUR-TEAM") || v.contains("REPLACE_WITH") || v == "pending";
+    (!placeholder).then(|| v.to_owned())
+}
+
+/// Local development only. Even if `DEV_AUTH_BYPASS` is set by mistake on a deployed Worker, it
+/// has no effect unless the request really is addressed to a loopback host.
+fn dev_bypass(req: &Request, env: &Env) -> bool {
+    if !env.var("DEV_AUTH_BYPASS").map(|v| v.to_string() == "1").unwrap_or(false) {
+        return false;
+    }
+    let host = req.url().ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default();
+    if tc_core::guard::is_local_host(&host) {
+        return true;
+    }
+    worker::console_error!("DEV_AUTH_BYPASS is set but ignored: {host:?} is not a loopback host");
+    false
+}
+
+/// Names of the Access settings that still need a value; empty when sign-in checking can work
+/// (or when this is a local request with the dev bypass).
+pub fn missing_settings(req: &Request, env: &Env) -> Vec<&'static str> {
+    if dev_bypass(req, env) {
+        return Vec::new();
+    }
+    ["TEAM_DOMAIN", "POLICY_AUD"].into_iter().filter(|n| setting(env, n).is_none()).collect()
+}
+
 pub async fn verify(req: &Request, env: &Env) -> Result<Identity, AuthError> {
-    // Local development only. Even if this variable is set by mistake on a deployed Worker, it
-    // has no effect unless the request really is addressed to a loopback host.
-    if env.var("DEV_AUTH_BYPASS").map(|v| v.to_string() == "1").unwrap_or(false) {
-        let host = req.url().ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default();
-        if tc_core::guard::is_local_host(&host) {
-            return Ok(Identity { email: Some("dev@localhost".into()) });
-        }
-        worker::console_error!("DEV_AUTH_BYPASS is set but ignored: {host:?} is not a loopback host");
+    if dev_bypass(req, env) {
+        return Ok(Identity { email: Some("dev@localhost".into()) });
     }
 
-    let team_domain = env
-        .var("TEAM_DOMAIN")
-        .map_err(|_| AuthError::Config("TEAM_DOMAIN is not set".into()))?
-        .to_string();
+    let team_domain = setting(env, "TEAM_DOMAIN").ok_or_else(|| AuthError::Config("TEAM_DOMAIN is not set".into()))?;
     let team_domain = team_domain.trim_end_matches('/').to_owned();
-    let audience = env
-        .var("POLICY_AUD")
-        .map_err(|_| AuthError::Config("POLICY_AUD is not set".into()))?
-        .to_string();
+    let audience = setting(env, "POLICY_AUD").ok_or_else(|| AuthError::Config("POLICY_AUD is not set".into()))?;
 
     let token = req
         .headers()

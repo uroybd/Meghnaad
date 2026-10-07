@@ -205,4 +205,75 @@ assert t["sized thing"]["estimate"] == "big", t["sized thing"]
 ' || fail "CLI did not receive the UDA value written by the web"
 ok "the CLI received the UDA written from the web"
 
+echo "== recurring tasks: web-made series seen by the CLI, CLI-made series seen by the web"
+# The web only creates instances when its taskrc says recurrence=on (the CLI does by default), so a
+# desktop CLI and the web never both generate them unless the user asks for it.
+s3_to_r2
+start_dev
+curl -sf -X PUT "$WEB/api/config/taskrc" --data-binary $'recurrence=on\nrecurrence.limit=2\n' >/dev/null || fail "taskrc upload failed"
+webcli '{"line":"add Water plants recur:weekly due:3d"}' | grep -q 'Created' || fail "web add of a recurring task failed"
+webcli '{"line":"add rejected recur:weekly"}' | grep -q 'due' || fail "web accepted a recurring task without a due date"
+webrows "all Water" | python3 -c '
+import sys, json
+r = json.load(sys.stdin)
+tpl = [x for x in r if x["status"] == "recurring"]
+kids = [x for x in r if x.get("parent")]
+assert len(tpl) == 1 and tpl[0]["recur"] == "weekly" and tpl[0]["mask"] == "--", r
+assert len(kids) == 2 and all(k["parent"] == tpl[0]["uuid"] for k in kids), r
+' || fail "web did not produce one template and two instances"
+stop_dev
+r2_to_s3
+tw "$B" sync
+tw "$B" export | python3 -c '
+import sys, json
+r = [x for x in json.load(sys.stdin) if "Water plants" in x["description"]]
+tpl = [x for x in r if x["status"] == "recurring"]
+kids = sorted((x for x in r if x.get("parent")), key=lambda x: int(x["imask"]))
+assert len(tpl) == 1, r
+t = tpl[0]
+assert t["recur"] == "weekly" and t["mask"] == "--", t
+# The CLI ran its own recurrence housekeeping on export: it must accept ours, not duplicate it.
+assert len(kids) == 2, ("duplicates or missing", [(k["imask"], k["due"]) for k in kids])
+assert [int(k["imask"]) for k in kids] == [0, 1] and all(k["parent"] == t["uuid"] for k in kids), kids
+assert kids[0]["due"] == t["due"] and all(k["status"] == "pending" and k["recur"] == "weekly" for k in kids), kids
+' || fail "the CLI does not read the web's recurring series as its own"
+ok "CLI reads the web-made series (status, mask, parent/imask, due) without generating duplicates"
+
+kid=$(tw "$B" export | python3 -c '
+import sys, json
+print(sorted((x for x in json.load(sys.stdin) if x.get("parent") and "Water plants" in x["description"]), key=lambda x: int(x["imask"]))[0]["uuid"])')
+tw "$B" "$kid" done >/dev/null
+tw "$B" add "From the CLI" recur:daily due:tomorrow >/dev/null
+tw "$B" export >/dev/null   # runs the CLI's own instance generation
+tw "$B" sync
+s3_to_r2
+start_dev
+webrows "all" | python3 -c '
+import sys, json
+r = json.load(sys.stdin)
+water = [x for x in r if "Water plants" in x["description"]]
+t = [x for x in water if x["status"] == "recurring"][0]
+assert t["mask"].startswith("+"), ("the CLI completing an instance must show in the mask", t["mask"])
+mine = [x for x in r if x["description"] == "From the CLI"]
+tpl = [x for x in mine if x["status"] == "recurring"]
+kids = sorted((x for x in mine if x.get("parent")), key=lambda x: int(x["imask"]))
+assert len(tpl) == 1 and tpl[0]["recur"] == "daily", mine
+# The web (limit=2) tops the CLI series up to two instances: same indexes, no duplicate dates.
+assert [int(k["imask"]) for k in kids] == [0, 1], [(k["imask"], k["due"]) for k in kids]
+assert kids[1]["due"] - kids[0]["due"] == 86400, [k["due"] for k in kids]
+' || fail "web did not read the CLI's recurring series, or duplicated an instance"
+ok "web reads the CLI-made series and its completed instance, and tops it up without duplicates"
+webcli '{"line":"1 info"}' >/dev/null
+stop_dev
+r2_to_s3
+tw "$B" sync
+tw "$B" export | python3 -c '
+import sys, json
+r = json.load(sys.stdin)
+mine = [x for x in r if x["description"] == "From the CLI"]
+kids = [x for x in mine if x.get("parent")]
+assert len(kids) == 2 and sorted(int(k["imask"]) for k in kids) == [0, 1], [(k["imask"], k["due"]) for k in kids]
+' || fail "the CLI saw duplicate or missing instances after the web topped up its series"
+ok "CLI accepted the web's top-up of its series"
+
 echo "ALL INTEROP CHECKS PASSED  (work dir: $WORK)"

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Completer } from './completer.svelte';
   import CompletionMenu from './CompletionMenu.svelte';
-  import { Check, Copy, CornerDownLeft, Pencil } from './icons';
+  import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
   import { store } from './store.svelte';
 
   let cursor = $state(-1); // -1 = the line being typed
@@ -58,6 +58,26 @@
     return true;
   }
 
+  function older() {
+    const h = store.history;
+    if (h.length === 0) return false;
+    if (cursor === -1) saved = line;
+    cursor = Math.min(h.length - 1, cursor + 1);
+    line = h[h.length - 1 - cursor];
+    queueMicrotask(() => el.setSelectionRange(line.length, line.length));
+    return true;
+  }
+
+  // Tab and ↑ have buttons too, for touch screens that have neither key.
+  function tapComplete() {
+    edit(completer.tab(line, el.selectionStart ?? line.length, store.vocab));
+    el.focus();
+  }
+  function tapOlder() {
+    older();
+    el.focus();
+  }
+
   function onkeydown(e: KeyboardEvent) {
     const open = !!completer.menu;
     if (e.key === 'Enter') {
@@ -70,13 +90,7 @@
       e.preventDefault();
       edit(completer.move(e.key === 'ArrowDown' ? 1 : -1));
     } else if (e.key === 'ArrowUp') {
-      const h = store.history;
-      if (h.length === 0) return;
-      e.preventDefault();
-      if (cursor === -1) saved = line;
-      cursor = Math.min(h.length - 1, cursor + 1);
-      line = h[h.length - 1 - cursor];
-      queueMicrotask(() => el.setSelectionRange(line.length, line.length));
+      if (older()) e.preventDefault();
     } else if (e.key === 'ArrowDown') {
       if (cursor === -1) return;
       e.preventDefault();
@@ -117,7 +131,7 @@
       </button>
     </div>
   {/if}
-  <CompletionMenu {completer} placement="above" />
+  <CompletionMenu {completer} placement="above" onpick={(i) => edit(completer.pick(i))} />
   <label class="row">
     <span class="mono ps" aria-hidden="true">task&gt;</span>
     <span class="sr-only">Command</span>
@@ -135,17 +149,31 @@
       enterkeyhint="go"
       data-testid="prompt"
     />
-    <button class="primary btn" aria-label="Run"><CornerDownLeft size={15} /> Run</button>
+    <button type="button" class="ghost touch" aria-label="Previous command" title="Previous command" onclick={tapOlder}><ChevronUp size={18} /></button>
+    <button type="button" class="ghost touch" aria-label="Complete" title="Complete (Tab)" onclick={tapComplete}><ArrowRightToLine size={18} /></button>
+    <button class="primary btn" aria-label="Run"><CornerDownLeft size={15} /> <span class="run">Run</span></button>
   </label>
 </form>
 
 <style>
-  .prompt { position: relative; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; }
-  .prompt :global(.menu) { left: 12px; }
-  .last { font-size: 12px; margin-bottom: 4px; padding: 2px 8px; background: var(--panel-2); border-radius: 6px; }
+  .prompt { position: relative; border-top: 1px solid var(--line); background: var(--panel); padding: 12px 24px 14px; }
+  .prompt :global(.menu) { left: 24px; }
+  .last { font-size: 13px; margin-bottom: 8px; padding: 4px 12px; background: var(--panel-2); border-radius: 6px; }
   .last code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .last button { padding: 2px 6px; line-height: 0; color: var(--dim); }
   .btn { display: inline-flex; align-items: center; gap: 5px; }
+  .touch { display: none; color: var(--dim); }
   .ps { color: var(--accent); font-weight: 700; }
-  input { border-color: transparent; background: transparent; font-size: 15px; }
+  input { border-color: transparent; background: transparent; font-size: 16px; }
+  @media (max-width: 760px) {
+    .prompt {
+      padding: 6px max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    }
+    .prompt :global(.menu) { left: 8px; right: 8px; max-width: none; }
+    .run { display: none; }
+    .touch { display: inline-flex; align-items: center; justify-content: center; }
+    .last { margin-bottom: 2px; }
+    input { font-size: 16px; }
+    .ps { display: none; }
+  }
 </style>

@@ -6,8 +6,9 @@
 
 use crate::dates::Clock;
 use crate::filter::{conjoin, split_words, EvalCtx, Filter, FilterError, Limit};
-use crate::model::Facts;
+use crate::model::{self, Facts};
 use crate::modify::{self, Change, Mode, ModError};
+use crate::recur::{self, Action as Plan};
 use crate::report;
 use crate::run::{self, Output, Row};
 use crate::taskrc::Config;
@@ -216,7 +217,9 @@ pub enum CliResult {
     /// A write happened.
     Changed { message: String, tasks: Vec<ChangedTask> },
     /// A multi-task write needs confirmation; re-run with `confirmed`.
-    Confirm { message: String, count: usize },
+    /// `recurrence`: the question is whether to change the rest of a recurring series too. Answer
+    /// with `Options::recurrence` (yes = all pending recurrences, no = only the task itself).
+    Confirm { message: String, count: usize, #[serde(default)] recurrence: bool },
     Error { message: String },
 }
 
@@ -224,6 +227,9 @@ pub enum CliResult {
 pub struct Options {
     /// The caller has already confirmed a multi-task change.
     pub confirmed: bool,
+    /// The answer to a `recurrence` confirmation: change the whole pending series (`true`) or
+    /// only the task itself (`false`). `None` = not asked yet.
+    pub recurrence: Option<bool>,
     pub seed: u64,
 }
 
@@ -418,6 +424,10 @@ fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Operations) -> R
             }
             Change::AddDep(u) => task.add_dependency(*u, ops).map_err(e)?,
             Change::RemoveDep(u) => task.remove_dependency(*u, ops).map_err(e)?,
+            Change::Recurring => {
+                task.set_status(Status::Recurring, ops).map_err(e)?;
+                task.set_value("rtype", Some("periodic".into()), ops).map_err(e)?;
+            }
             Change::ClearDeps => {
                 let deps: Vec<Uuid> = task.get_dependencies().collect();
                 for d in deps {
@@ -437,10 +447,106 @@ pub async fn execute<S: Storage>(
     opts: Options,
     undo: &mut UndoStack,
 ) -> Done {
-    let command = parse_command(args, cfg).ok().map(|p| CommandInfo::of(&p));
+    let parsed = parse_command(args, cfg).ok();
+    let command = parsed.as_ref().map(CommandInfo::of);
+    // Housekeeping Taskwarrior does before every command: create due recurring instances and
+    // expire tasks past `until`. Opt-in here (`recurrence=on`); see `recur::enabled`.
+    let skip = matches!(parsed.as_ref().map(|p| &p.cmd), Some(Cmd::Builtin(Undo | Sync | Help | Version)));
+    let maintained = if skip || !recur::enabled(cfg) {
+        false
+    } else {
+        match maintain(replica, cfg, clock).await {
+            Ok(w) => w,
+            Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command },
+        }
+    };
     let mut done = execute_inner(replica, cfg, clock, args, opts, undo).await;
     done.command = command;
+    done.wrote |= maintained;
     done
+}
+
+/// Properties an instance does not inherit from its parent: identity and bookkeeping, and the
+/// dates, which are computed per instance.
+const NOT_INHERITED: &[&str] =
+    &["uuid", "mask", "imask", "parent", "status", "entry", "due", "wait", "scheduled", "start", "end", "modified"];
+
+/// Create the recurring instances that are due, retire finished series and expire tasks past
+/// `until`. Returns whether anything was written.
+async fn maintain<S: Storage>(replica: &mut Replica<S>, cfg: &Config, clock: Clock) -> Result<bool, String> {
+    let e = |e: taskchampion::Error| e.to_string();
+    let all = load_facts(replica).await.map_err(e)?;
+    let plan = recur::plan(&all, cfg, &clock);
+    if plan.is_empty() {
+        return Ok(false);
+    }
+    let now = Utc.timestamp_opt(clock.now, 0).single().unwrap_or_else(Utc::now);
+    let ts = |t: i64| Utc.timestamp_opt(t, 0).single();
+    let mut ops = Operations::new();
+    // Masks as they will be after this pass; written once per parent at the end.
+    let mut masks: BTreeMap<Uuid, String> = BTreeMap::new();
+    let mut dirty: Vec<Uuid> = Vec::new();
+
+    for action in plan {
+        match action {
+            Plan::CreateInstance { parent, index, due, wait, scheduled } => {
+                let data = replica
+                    .get_task_data(parent)
+                    .await
+                    .map_err(e)?
+                    .ok_or_else(|| format!("recurring task {parent} disappeared"))?;
+                let uuid = crate::crypto::new_uuid().map_err(|x| x.to_string())?;
+                let mut t = replica.create_task(uuid, &mut ops).await.map_err(e)?;
+                for (k, v) in data.iter().filter(|(k, _)| !NOT_INHERITED.contains(&k.as_str())) {
+                    t.set_value(k.clone(), Some(v.clone()), &mut ops).map_err(e)?;
+                }
+                t.set_status(Status::Pending, &mut ops).map_err(e)?;
+                t.set_value("parent", Some(parent.to_string()), &mut ops).map_err(e)?;
+                t.set_value("imask", Some(index.to_string()), &mut ops).map_err(e)?;
+                t.set_entry(Some(now), &mut ops).map_err(e)?;
+                t.set_timestamp("due", ts(due), &mut ops).map_err(e)?;
+                if let Some(w) = wait {
+                    t.set_timestamp("wait", ts(w), &mut ops).map_err(e)?;
+                }
+                if let Some(s) = scheduled {
+                    t.set_timestamp("scheduled", ts(s), &mut ops).map_err(e)?;
+                }
+            }
+            Plan::SetMask { parent, mask } => {
+                masks.insert(parent, mask);
+                dirty.push(parent);
+            }
+            Plan::ExpireParent { parent } | Plan::ExpireTask { task: parent } => {
+                let mut t = replica
+                    .get_task(parent)
+                    .await
+                    .map_err(e)?
+                    .ok_or_else(|| format!("task {parent} disappeared"))?;
+                t.set_status(Status::Deleted, &mut ops).map_err(e)?;
+                // An expired instance frees its slot in the parent's mask.
+                if let Some(f) = all.iter().find(|f| f.uuid == parent) {
+                    if let (Some(pu), Some(i)) = (f.parent, f.imask) {
+                        let cur = masks
+                            .entry(pu)
+                            .or_insert_with(|| all.iter().find(|x| x.uuid == pu).and_then(|x| x.mask.clone()).unwrap_or_default());
+                        *cur = recur::set_mask(cur, i, 'X');
+                        dirty.push(pu);
+                    }
+                }
+            }
+        }
+    }
+    dirty.sort();
+    dirty.dedup();
+    for pu in dirty {
+        if let Some(mask) = masks.get(&pu) {
+            if let Some(mut p) = replica.get_task(pu).await.map_err(e)? {
+                p.set_value("mask", Some(mask.clone()), &mut ops).map_err(e)?;
+            }
+        }
+    }
+    replica.commit_operations(ops).await.map_err(e)?;
+    Ok(true)
 }
 
 async fn execute_inner<S: Storage>(
@@ -775,6 +881,21 @@ async fn write_selected<S: Storage>(
     if sel.is_empty() {
         return ok(CliResult::Text { lines: vec!["No matches.".into()] });
     }
+    // Deleting a recurring template also deletes its pending instances, as in Taskwarrior
+    // (otherwise they would be orphaned). Instances themselves are deleted one at a time.
+    let mut targets: Vec<&Facts> = sel.clone();
+    if kind == Delete {
+        for f in &sel {
+            if f.status == "recurring" {
+                for c in all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending") {
+                    if !targets.iter().any(|t| t.uuid == c.uuid) {
+                        targets.push(c);
+                    }
+                }
+            }
+        }
+    }
+    let cascaded = targets.len() > sel.len();
     let verb = match kind {
         Done => "complete",
         Delete => "delete",
@@ -784,10 +905,12 @@ async fn write_selected<S: Storage>(
         Denotate => "remove an annotation from",
         _ => "modify",
     };
-    if sel.len() > 1 && !opts.confirmed {
+    if targets.len() > 1 && !opts.confirmed {
+        let extra = if cascaded { " (a recurring task and its pending instances)" } else { "" };
         return ok(CliResult::Confirm {
-            message: format!("This will {verb} {}. Continue?", plural(sel.len(), "task")),
-            count: sel.len(),
+            message: format!("This will {verb} {}{extra}. Continue?", plural(targets.len(), "task")),
+            count: targets.len(),
+            recurrence: false,
         });
     }
 
@@ -804,10 +927,39 @@ async fn write_selected<S: Storage>(
         return error("this command needs some text");
     }
 
+    // Editing one task of a recurring series can carry over to the rest (`recurrence.confirmation`).
+    let mut propagate = false;
+    if matches!(kind, Modify) {
+        propagate = match recur::confirmation(cfg) {
+            recur::Confirmation::Yes => true,
+            recur::Confirmation::No => false,
+            recur::Confirmation::Prompt => {
+                if targets.iter().any(|f| !series_of(f, all).is_empty()) {
+                    match opts.recurrence {
+                        Some(answer) => answer,
+                        None => {
+                            return ok(CliResult::Confirm {
+                                message: "This is a recurring task. Do you want to modify all pending recurrences of this same task?".into(),
+                                count: targets.len(),
+                                recurrence: true,
+                            });
+                        }
+                    }
+                } else {
+                    false
+                }
+            }
+        };
+    }
+
     let mut ops = Operations::new();
     let mut touched = Vec::new();
     let journal = cfg.journal();
-    for f in &sel {
+    // Parents' masks as they will be after this command; each is written once at the end.
+    let mut masks: BTreeMap<Uuid, String> = BTreeMap::new();
+    let mut mask_dirty: Vec<Uuid> = Vec::new();
+    let mut instances_touched: Vec<Uuid> = Vec::new();
+    for f in &targets {
         let outcome: Result<bool, String> = async {
             let mut changed = true;
             let mut task = replica
@@ -817,6 +969,10 @@ async fn write_selected<S: Storage>(
                 .ok_or_else(|| format!("task {} disappeared", f.uuid))?;
             let e = |e: taskchampion::Error| e.to_string();
             match kind {
+                // Only pending tasks can be completed (not templates, not finished ones).
+                Done if f.status != "pending" => changed = false,
+                Delete if f.status == "deleted" => changed = false,
+                Start | Stop if f.status == "recurring" => changed = false,
                 Done => {
                     task.set_status(Status::Completed, &mut ops).map_err(e)?;
                     // Completing an active task stops it, like `task done` does.
@@ -873,8 +1029,39 @@ async fn write_selected<S: Storage>(
                     let changes =
                         modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
                     apply_changes(&mut task, &changes, &mut ops)?;
+                    // The descriptive changes (not dates or the recurrence itself, which are per
+                    // instance) also reach the rest of the series, when that was asked for.
+                    if propagate {
+                        let shared: Vec<Change> = changes.iter().filter(|c| shared_with_instances(c)).cloned().collect();
+                        if !shared.is_empty() {
+                            for c in series_of(f, all) {
+                                // A task that is itself being modified got the change already.
+                                if targets.iter().any(|t| t.uuid == c.uuid) || instances_touched.contains(&c.uuid) {
+                                    continue;
+                                }
+                                if let Some(mut other) = replica.get_task(c.uuid).await.map_err(|x| x.to_string())? {
+                                    apply_changes(&mut other, &shared, &mut ops)?;
+                                    instances_touched.push(c.uuid);
+                                }
+                            }
+                        }
+                    }
                 }
                 _ => unreachable!(),
+            }
+            // An instance's state is mirrored in its parent's mask (`+` done, `X` deleted, ...).
+            if changed {
+                if let (Some(parent), Some(index)) = (f.parent, f.imask) {
+                    let ch = recur::mask_char(&model::status_str(&task.get_status()), task.is_waiting());
+                    let cur = masks
+                        .entry(parent)
+                        .or_insert_with(|| all.iter().find(|x| x.uuid == parent).and_then(|x| x.mask.clone()).unwrap_or_default());
+                    let next = recur::set_mask(cur, index, ch);
+                    if next != *cur {
+                        *cur = next;
+                        mask_dirty.push(parent);
+                    }
+                }
             }
             Ok(changed)
         }
@@ -886,10 +1073,23 @@ async fn write_selected<S: Storage>(
         }
     }
 
+    mask_dirty.sort();
+    mask_dirty.dedup();
+    for pu in mask_dirty {
+        if let (Some(mask), Ok(Some(mut parent))) = (masks.get(&pu), replica.get_task(pu).await) {
+            if let Err(e) = parent.set_value("mask", Some(mask.clone()), &mut ops) {
+                return error(e.to_string());
+            }
+        }
+    }
+    touched.extend(instances_touched);
+
     if touched.is_empty() {
         let why = match kind {
             Start => "already active",
             Stop => "not active",
+            Done => "not pending",
+            Delete => "already deleted",
             _ => "nothing to change",
         };
         return ok(CliResult::Text { lines: vec![format!("No changes: the task{} {why}.", if sel.len() == 1 { " is" } else { "s are" })] });
@@ -916,6 +1116,29 @@ async fn write_selected<S: Storage>(
     }
 }
 
+/// The rest of `f`'s recurring series: for a template its pending instances; for an instance its
+/// pending siblings and the template. Empty for an ordinary task.
+fn series_of<'a>(f: &Facts, all: &'a [Facts]) -> Vec<&'a Facts> {
+    if f.status == "recurring" {
+        all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending").collect()
+    } else if let Some(parent) = f.parent {
+        all.iter()
+            .filter(|c| c.uuid != f.uuid && (c.uuid == parent || (c.parent == Some(parent) && c.status == "pending")))
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Changes to a task in a recurring series that the rest of the series should follow too.
+fn shared_with_instances(c: &Change) -> bool {
+    match c {
+        Change::Description(_) | Change::Priority(_) | Change::AddTag(_) | Change::RemoveTag(_) => true,
+        Change::Prop { name, .. } => !matches!(name.as_str(), "recur" | "rtype"),
+        Change::Timestamp { .. } | Change::AddDep(_) | Change::RemoveDep(_) | Change::ClearDeps | Change::Recurring => false,
+    }
+}
+
 fn help(cfg: &Config) -> Vec<String> {
     vec![
         "Usage: [filter] command [modifications]   (the leading `task` is optional)".to_owned(),
@@ -927,6 +1150,7 @@ fn help(cfg: &Config) -> Vec<String> {
         "Filters:  project:Home  +tag  -tag  +OVERDUE  due.before:eow  priority:H  /text/  3  1-4,7".into(),
         "          and / or / not and parentheses; attribute modifiers .is .not .has .startswith .before .after .none .any".into(),
         "Mods:     project:X  priority:H  due:tomorrow  due:2026-12-25T08:30  wait:  depends:3  +tag  -tag  /old/new/".into(),
+        "Repeat:   recur:weekly due:friday   (daily weekdays weekly biweekly monthly quarterly yearly 3d 2w P1M)".into(),
         "Numeric ids are specific to the web UI (use uuid prefixes to be exact).".into(),
     ]
 }

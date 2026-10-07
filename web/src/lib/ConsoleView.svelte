@@ -31,7 +31,7 @@
 <div bind:this={end}></div>
 
 <style>
-  .entry { padding: 6px 0 10px; border-bottom: 1px dashed var(--line); }
+  .entry { padding: 12px 0 16px; border-bottom: 1px dashed var(--line); }
   .cmd { font-weight: 600; margin-bottom: 2px; overflow-wrap: anywhere; }
   .toolbar { text-align: right; }
   .btn { display: inline-flex; align-items: center; gap: 5px; }

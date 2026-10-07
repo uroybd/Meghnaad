@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
-  import { Bell, BellOff, FileText, ListChecks, Terminal, TriangleAlert } from './lib/icons';
+  import { Bell, BellOff, FileText, ListChecks, Menu, Plus, Terminal, TriangleAlert, X } from './lib/icons';
   import ConsoleView from './lib/ConsoleView.svelte';
   import DetailDrawer from './lib/DetailDrawer.svelte';
   import NotifyDialog from './lib/NotifyDialog.svelte';
+  import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
+  import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAdd from './lib/QuickAdd.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
@@ -13,9 +15,22 @@
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
 
-  onMount(() => {
+  // A fresh deployment has no sign-in settings yet; say what is left instead of showing errors.
+  let setup = $state<SetupStatus | null>(null);
+  let started = false;
+
+  function start() {
+    setup = null;
+    if (started) return;
+    started = true;
     store.loadConfig();
     notifier.start();
+  }
+
+  onMount(async () => {
+    const s = await getSetup();
+    if (s && !s.configured) setup = s;
+    else start();
   });
 
   // Re-check reminders and the running task after any change.
@@ -27,21 +42,37 @@
     }
   });
 
+  // On a phone the report list is a slide-over panel behind the menu button.
+  let navOpen = $state(false);
+
   function pick(name: string) {
     store.report = name;
     store.view = 'tasks';
+    navOpen = false;
+  }
+
+  function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && navOpen) navOpen = false;
   }
 </script>
 
+<svelte:window {onkeydown} />
+
+{#if setup}
+  <SetupGuide status={setup} onready={start} />
+{:else}
 <div class="app">
   <header class="top">
+    <button class="ghost burger" aria-label="Reports and quick add" aria-expanded={navOpen} aria-controls="side" onclick={() => (navOpen = !navOpen)}>
+      <Menu size={20} />
+    </button>
     <span class="brand">
       <img class="logo" src="/logo-64.png" width="28" height="28" alt="" />
-      <strong>Meghnaad</strong>
+      <strong class="name">Meghnaad</strong>
     </span>
     <nav class="tabs" aria-label="View">
-      <button class:on={store.view === 'tasks'} onclick={() => (store.view = 'tasks')}><ListChecks size={15} /> Tasks</button>
-      <button class:on={store.view === 'console'} onclick={() => (store.view = 'console')}><Terminal size={15} /> Console</button>
+      <button class:on={store.view === 'tasks'} aria-label="Tasks" onclick={() => (store.view = 'tasks')}><ListChecks size={15} /> <span class="lbl">Tasks</span></button>
+      <button class:on={store.view === 'console'} aria-label="Console" onclick={() => (store.view = 'console')}><Terminal size={15} /> <span class="lbl">Console</span></button>
     </nav>
     <span class="grow"></span>
     <TimerChip />
@@ -54,7 +85,7 @@
       aria-label="Reminders ({notifier.settings.enabled ? 'on' : 'off'})"
       title={notifier.settings.enabled ? 'Reminders are on (while this tab is open)' : 'Reminders are off'}
     >{#if notifier.settings.enabled}<Bell size={17} />{:else}<BellOff size={17} />{/if}</button>
-    <button class="ghost btn" onclick={() => (store.settingsOpen = true)} title="Import UDAs, reports and contexts from your taskrc"><FileText size={15} /> taskrc</button>
+    <button class="ghost btn" aria-label="taskrc settings" onclick={() => (store.settingsOpen = true)} title="Import UDAs, reports and contexts from your taskrc"><FileText size={15} /> <span class="lbl">taskrc</span></button>
   </header>
 
   {#if store.config?.config_error}
@@ -65,7 +96,12 @@
     </div>
   {/if}
 
-  <aside class="side">
+  {#if navOpen}<button class="scrim" aria-label="Close menu" tabindex="-1" onclick={() => (navOpen = false)}></button>{/if}
+  <aside class="side" class:open={navOpen} id="side" aria-label="Reports">
+    <div class="side-head row">
+      <strong class="grow">Meghnaad</strong>
+      <button class="ghost" aria-label="Close menu" onclick={() => (navOpen = false)}><X size={18} /></button>
+    </div>
     <QuickAdd />
     <h2>Reports</h2>
     <ul>
@@ -86,6 +122,10 @@
   <main class="main">
     {#if store.view === 'tasks'}<TasksView />{:else}<ConsoleView />{/if}
   </main>
+
+  <button class="fab primary" aria-label="New task" title="New task" onclick={() => (store.adding = { description: '', n: (store.adding?.n ?? 0) + 1 })}>
+    <Plus size={22} />
+  </button>
 
   <div class="dock"><ConsoleInput /></div>
 
@@ -115,38 +155,78 @@
 {/if}
 {#if store.settingsOpen}<SettingsDialog />{/if}
 {#if store.notifyOpen}<NotifyDialog />{/if}
+{/if}
 
 <style>
   .app {
     height: 100%;
     display: grid;
-    grid-template-columns: 210px 1fr;
+    grid-template-columns: 270px 1fr;
     grid-template-rows: auto auto 1fr auto;
     grid-template-areas: 'top top' 'banner banner' 'side main' 'dock dock';
   }
-  .top { grid-area: top; display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
-  .brand { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 15px; }
+  .top { grid-area: top; display: flex; align-items: center; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .brand { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; font-size: 17px; }
   .logo { border-radius: 6px; display: block; }
   .tabs { display: flex; gap: 2px; }
-  .tabs button { border-color: transparent; background: transparent; display: inline-flex; align-items: center; gap: 5px; }
+  .tabs button { border-color: transparent; background: transparent; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; }
   .btn { display: inline-flex; align-items: center; gap: 5px; }
   .top button.ghost { line-height: 0; }
   .top button.btn { line-height: inherit; }
   .tabs button.on { background: var(--panel-2); border-color: var(--line); font-weight: 600; }
-  .side { grid-area: side; padding: 12px; border-right: 1px solid var(--line); overflow: auto; background: var(--panel); }
-  .side h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin: 16px 0 4px; }
+  .side { grid-area: side; padding: 20px 18px; border-right: 1px solid var(--line); overflow: auto; background: var(--panel); }
+  .side h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin: 26px 0 8px; }
   .side ul { list-style: none; margin: 0; padding: 0; }
-  .report { width: 100%; text-align: left; padding: 3px 8px; }
+  .report { width: 100%; text-align: left; padding: 7px 12px; }
+  .side li + li { margin-top: 2px; }
   .report.on { background: var(--panel-2); font-weight: 600; }
-  .main { grid-area: main; overflow: auto; padding: 12px 18px; min-width: 0; }
+  .main { grid-area: main; overflow: auto; padding: 24px 36px 32px; min-width: 0; }
   .dock { grid-area: dock; }
-  .banner { grid-area: banner; display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: color-mix(in srgb, var(--err) 14%, var(--panel)); border-bottom: 1px solid var(--err); font-size: 13px; }
+  .banner { grid-area: banner; display: flex; align-items: center; gap: 10px; padding: 10px 24px; background: color-mix(in srgb, var(--err) 14%, var(--panel)); border-bottom: 1px solid var(--err); font-size: 14px; }
   .toast { position: fixed; right: 16px; bottom: 76px; background: var(--panel); border: 1px solid var(--ok); color: var(--text); padding: 8px 14px; border-radius: var(--radius); box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); max-width: 28em; z-index: 20; }
   .toast.bad { border-color: var(--err); }
 
+  /* Phone-only chrome stays out of the desktop layout. */
+  .burger, .fab, .scrim, .side-head { display: none; }
+
   @media (max-width: 760px) {
-    .app { grid-template-columns: 1fr; grid-template-areas: 'top' 'banner' 'main' 'dock'; }
-    .side { display: none; }
-    .main { padding: 10px; }
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'top' 'banner' 'main' 'dock'; }
+    .top {
+      flex-wrap: wrap; gap: 4px 6px;
+      padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left));
+    }
+    .burger { display: inline-flex; align-items: center; justify-content: center; }
+    .name { display: none; }
+    .top :global(.timer) { order: 10; flex-basis: 100%; max-width: none; justify-content: space-between; }
+    .banner { padding-left: max(14px, env(safe-area-inset-left)); }
+
+    /* The report list slides in from the left. */
+    .scrim { display: block; position: fixed; inset: 0; z-index: 24; background: rgb(0 0 0 / 0.45); border: 0; border-radius: 0; padding: 0; }
+    .side {
+      position: fixed; z-index: 25; top: 0; bottom: 0; left: 0; width: min(310px, 86vw);
+      padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      border-right: 1px solid var(--line); box-shadow: 8px 0 24px rgb(0 0 0 / 0.2);
+      transform: translateX(-102%); visibility: hidden;
+      transition: transform 0.2s ease, visibility 0s linear 0.2s;
+    }
+    .side.open { transform: none; visibility: visible; transition: transform 0.2s ease; }
+    .side-head { display: flex; margin-bottom: 10px; }
+    .report { padding: 10px 8px; }
+    /* Room under the last card so the floating + never covers its buttons. */
+    .main { padding: 8px max(10px, env(safe-area-inset-right)) 72px max(10px, env(safe-area-inset-left)); }
+
+    .fab {
+      display: inline-flex; align-items: center; justify-content: center;
+      position: fixed; z-index: 12; width: 52px; height: 52px; padding: 0; border-radius: 50%;
+      right: max(16px, env(safe-area-inset-right)); bottom: calc(96px + env(safe-area-inset-bottom));
+      box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+    }
+    .toast { left: 12px; right: 12px; bottom: calc(100px + env(safe-area-inset-bottom)); max-width: none; }
+  }
+  @media (max-width: 430px) {
+    .tabs .lbl, .top .btn .lbl { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .side, .side.open { transition: none; }
   }
 </style>

@@ -46,9 +46,9 @@ pub struct Mods {
 /// Attributes a user may set directly.
 const SETTABLE: &[&str] = &[
     "description", "project", "priority", "due", "wait", "scheduled", "until", "start", "end",
-    "entry", "depends",
+    "entry", "depends", "recur",
 ];
-const READ_ONLY: &[&str] = &["id", "uuid", "status", "tags", "annotation", "urgency", "modified", "parent", "recur"];
+const READ_ONLY: &[&str] = &["id", "uuid", "status", "tags", "annotation", "urgency", "modified", "parent"];
 
 fn tag_ok(name: &str) -> bool {
     !name.is_empty()
@@ -101,10 +101,7 @@ pub fn parse_mods(args: &[String], cfg: &Config) -> Result<Mods, ModError> {
             if looks_like_name {
                 if let Some((canon, is_uda)) = canonical_attr_name(name, cfg) {
                     if !is_uda && READ_ONLY.contains(&canon.as_str()) {
-                        return err(format!(
-                            "'{canon}' can't be set directly{}",
-                            if canon == "recur" { " (recurrence isn't supported yet)" } else { "" }
-                        ));
+                        return err(format!("'{canon}' can't be set directly"));
                     }
                     if is_uda || SETTABLE.contains(&canon.as_str()) {
                         m.attrs.push((canon, value.to_owned()));
@@ -137,6 +134,8 @@ pub enum Change {
     AddDep(Uuid),
     RemoveDep(Uuid),
     ClearDeps,
+    /// Make this task a recurring parent: status `recurring` and `rtype=periodic`.
+    Recurring,
 }
 
 const TS_PROPS: &[&str] = &["due", "wait", "scheduled", "until", "start", "end", "entry"];
@@ -282,6 +281,17 @@ pub fn plan(
                     out.push(if remove { Change::RemoveDep(target) } else { Change::AddDep(target) });
                 }
             }
+            "recur" => {
+                if v.is_empty() {
+                    // Clearing is only possible when there is nothing to clear.
+                    if current.is_some_and(|c| c.recur.is_some()) {
+                        return err("You cannot remove the recurrence from a recurring task.");
+                    }
+                } else {
+                    crate::recur::validate_period(v).map_err(ModError)?;
+                    out.push(Change::Prop { name: "recur".into(), value: Some(v.to_owned()) });
+                }
+            }
             n if ts_prop(n).is_some() => {
                 let value = if v.is_empty() {
                     None
@@ -315,6 +325,11 @@ pub fn plan(
         }
     }
 
+    recurrence_rules(m, mode, current, &out, ctx)?;
+    if becomes_recurring(m, mode, current, &out) {
+        out.push(Change::Recurring);
+    }
+
     for t in &m.add_tags {
         out.push(Change::AddTag(t.clone()));
     }
@@ -322,6 +337,63 @@ pub fn plan(
         out.push(Change::RemoveTag(t.clone()));
     }
     Ok(out)
+}
+
+/// The `due` a task will have after these changes: `Some(None)` means it is being cleared.
+fn final_due(out: &[Change], current: Option<&Facts>) -> Option<i64> {
+    let mut due = current.and_then(|c| c.due);
+    for c in out {
+        if let Change::Timestamp { name: "due", value } = c {
+            due = *value;
+        }
+    }
+    due
+}
+
+fn final_recur(out: &[Change], current: Option<&Facts>) -> Option<String> {
+    let mut recur = current.and_then(|c| c.recur.clone());
+    for c in out {
+        if let Change::Prop { name, value } = c {
+            if name == "recur" {
+                recur = value.clone();
+            }
+        }
+    }
+    recur
+}
+
+/// Taskwarrior's consistency rules for recurring tasks (`Task::validate_add`,
+/// `CmdModify::checkConsistency`).
+fn recurrence_rules(_m: &Mods, mode: Mode, current: Option<&Facts>, out: &[Change], _ctx: &EvalCtx) -> Result<(), ModError> {
+    let due = final_due(out, current);
+    let recur = final_recur(out, current);
+
+    if recur.is_some() && due.is_none() {
+        let had_due_and_recur = current.is_some_and(|c| c.due.is_some() && c.recur.is_some());
+        return err(match (mode, had_due_and_recur) {
+            (Mode::Add, _) => "A recurring task must also have a 'due' date.",
+            // It was recurring with a due date and this change clears the date.
+            (Mode::Modify, true) => "You cannot remove the due date from a recurring task.",
+            // It is being made recurring but has no due date to repeat from.
+            (Mode::Modify, false) => "You cannot specify a recurring task without a due date.",
+        });
+    }
+    Ok(())
+}
+
+/// A pending task with a `due` and a `recur` that isn't itself an instance becomes the parent
+/// (template) of a recurring series.
+fn becomes_recurring(m: &Mods, mode: Mode, current: Option<&Facts>, out: &[Change]) -> bool {
+    let sets_recur = m.attrs.iter().any(|(n, v)| n == "recur" && !v.is_empty());
+    if !sets_recur || final_due(out, current).is_none() {
+        return false;
+    }
+    match (mode, current) {
+        (Mode::Add, _) => true,
+        // Only a plain pending task, never an instance (it has a parent) or an existing parent.
+        (Mode::Modify, Some(c)) => c.status == "pending" && c.parent.is_none(),
+        (Mode::Modify, None) => false,
+    }
 }
 
 #[cfg(test)]
@@ -378,7 +450,8 @@ mod tests {
         for bad in ["status:completed", "uuid:abc", "urgency:5", "id:3", "modified:today"] {
             assert!(parse_mods(&words(bad), &cfg).unwrap_err().0.contains("can't be set"), "{bad}");
         }
-        assert!(parse_mods(&words("recur:weekly"), &cfg).unwrap_err().0.contains("recurrence"));
+        // Recurrence is supported now: `recur:` parses like any other attribute.
+        assert_eq!(parse_mods(&words("recur:weekly"), &cfg).unwrap().attrs[0].0, "recur");
     }
 
     #[test]

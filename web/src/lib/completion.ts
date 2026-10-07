@@ -2,6 +2,7 @@
 // tags, task ids, and values (projects, priorities, UDA values, date words). Everything is
 // built from what the server has told us, and each option can carry a short hint.
 
+import { RECUR_WORDS } from './recurrence';
 import { SORTABLE } from './sortSpec';
 import type { UdaDef } from './types';
 
@@ -69,6 +70,7 @@ const ATTRS: Record<string, string> = {
   wait: 'hide until',
   scheduled: 'scheduled date',
   until: 'expires',
+  recur: 'repeat period: daily, weekly, 3d…',
   start: 'when started',
   end: 'when finished',
   entry: 'when created',
@@ -187,6 +189,7 @@ export function complete(line: string, caret: number, v: Vocab): Completion {
     if (name === 'project') pool = opt(v.projects);
     else if (name === 'priority') pool = opt(['H', 'M', 'L']);
     else if (name === 'status') pool = opt(['pending', 'completed', 'deleted', 'recurring', 'waiting']);
+    else if (name === 'recur') pool = RECUR_WORDS;
     else if (name === 'limit') pool = [{ value: 'page' }, { value: 'none' }, { value: '10' }, { value: '25' }];
     else if (name === 'depends') {
       // A comma list: complete the last item, keep the rest.

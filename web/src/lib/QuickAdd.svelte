@@ -31,7 +31,7 @@
 </form>
 
 <style>
-  form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .row input { min-width: 0; width: 100%; }
   .more { justify-self: start; color: var(--dim); padding: 2px 0; display: inline-flex; align-items: center; gap: 5px; }
   .add { line-height: 0; padding: 5px 8px; }

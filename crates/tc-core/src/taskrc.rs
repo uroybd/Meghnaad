@@ -144,6 +144,10 @@ pub fn is_sensitive(name: &str) -> bool {
 const SCALAR_SETTINGS: &[&str] = &[
     "default.command",
     "due",
+    "recurrence",
+    "recurrence.limit",
+    "recurrence.indicator",
+    "recurrence.confirmation",
     "journal.time",
     "journal.time.start.annotation",
     "journal.time.stop.annotation",

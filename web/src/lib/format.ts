@@ -2,6 +2,7 @@
 // following Taskwarrior's column formats where they make sense on the web.
 
 import { compactDuration, formatMoment } from './dates';
+import type { DateFmt } from './dateformat';
 import { visibleNotes, type Markers } from './journal';
 import type { Column, Row, UdaDef } from './types';
 
@@ -18,6 +19,10 @@ export interface Ctx {
   /** Viewer's UTC offset in seconds; omit to use the browser's. */
   tz?: number;
   udas?: Record<string, UdaDef>;
+  /** Taskwarrior `dateformat*` patterns for table cells and for the notes under a description. */
+  dates?: { report?: DateFmt; annotation?: DateFmt };
+  /** `recurrence.indicator` (default R): what the `recur.indicator` column shows. */
+  recurIndicator?: string;
   /** `journal.time` marker texts: those annotations are bookkeeping and are left out of lists. */
   journal?: Markers | null;
 }
@@ -48,7 +53,7 @@ function dateCell(ts: number | null, name: string, format: string | null, ctx: C
     case 'julian':
       return { text: (ts / 86400 + 2440587.5).toFixed(5) };
     default:
-      return { text: formatMoment(ts, ctx.tz) };
+      return { text: formatMoment(ts, ctx.tz, ctx.dates?.report) };
   }
 }
 
@@ -58,7 +63,7 @@ function truncate(s: string, n: number): string {
 
 function descriptionCell(row: Row, format: string | null, ctx: Ctx): Cell {
   const shown = visibleNotes(row.annotations, ctx.journal);
-  const notes = shown.map((a) => `${formatMoment(a.entry, ctx.tz)} ${a.text}`);
+  const notes = shown.map((a) => `${formatMoment(a.entry, ctx.tz, ctx.dates?.annotation)} ${a.text}`);
   switch (format) {
     case 'desc':
       return { text: row.description };
@@ -136,7 +141,7 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
     case 'urgency':
       return { text: f === 'integer' ? String(Math.round(row.urgency)) : row.urgency.toFixed(2) };
     case 'recur':
-      return { text: f === 'indicator' ? (row.recur ? 'R' : '') : (row.recur ?? '') };
+      return { text: f === 'indicator' ? (row.recur ? (ctx.recurIndicator ?? 'R') : '') : (row.recur ?? '') };
     case 'parent':
       return { text: row.parent ? shortUuid(row.parent) : '' };
     case 'annotations':

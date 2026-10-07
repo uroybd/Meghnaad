@@ -1,21 +1,26 @@
 // The icons the app uses, in one place (Lucide, https://lucide.dev). Deep imports keep the
 // bundle to just these.
 export { default as ArrowDown } from '@lucide/svelte/icons/arrow-down';
+export { default as ArrowRightToLine } from '@lucide/svelte/icons/arrow-right-to-line';
 export { default as ArrowUp } from '@lucide/svelte/icons/arrow-up';
 export { default as Bell } from '@lucide/svelte/icons/bell';
 export { default as BellOff } from '@lucide/svelte/icons/bell-off';
 export { default as Calendar } from '@lucide/svelte/icons/calendar';
 export { default as Check } from '@lucide/svelte/icons/check';
+export { default as ChevronUp } from '@lucide/svelte/icons/chevron-up';
 export { default as ChevronRight } from '@lucide/svelte/icons/chevron-right';
+export { default as CornerUpLeft } from '@lucide/svelte/icons/corner-up-left';
 export { default as CornerDownLeft } from '@lucide/svelte/icons/corner-down-left';
 export { default as Copy } from '@lucide/svelte/icons/copy';
 export { default as Eraser } from '@lucide/svelte/icons/eraser';
 export { default as FileText } from '@lucide/svelte/icons/file-text';
 export { default as ListChecks } from '@lucide/svelte/icons/list-checks';
 export { default as Lock } from '@lucide/svelte/icons/lock';
+export { default as Menu } from '@lucide/svelte/icons/menu';
 export { default as Pencil } from '@lucide/svelte/icons/pencil';
 export { default as Play } from '@lucide/svelte/icons/play';
 export { default as Plus } from '@lucide/svelte/icons/plus';
+export { default as Repeat } from '@lucide/svelte/icons/repeat';
 export { default as RotateCcw } from '@lucide/svelte/icons/rotate-ccw';
 export { default as SlidersHorizontal } from '@lucide/svelte/icons/sliders-horizontal';
 export { default as Square } from '@lucide/svelte/icons/square';

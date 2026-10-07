@@ -75,7 +75,9 @@ pub struct Output {
 /// Number pending tasks 1..N in a stable order (entry, then uuid). These ids are specific to
 /// the web replica and generally differ from a desktop's, which are local to that replica.
 pub fn working_set_ids(all: &[Facts]) -> BTreeMap<Uuid, u32> {
-    let mut pending: Vec<&Facts> = all.iter().filter(|f| f.status == "pending").collect();
+    // TaskChampion's working set holds pending *and recurring* tasks, so templates are numbered too.
+    let mut pending: Vec<&Facts> =
+        all.iter().filter(|f| f.status == "pending" || f.status == "recurring").collect();
     pending.sort_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
     pending.iter().zip(1u32..).map(|(f, n)| (f.uuid, n)).collect()
 }

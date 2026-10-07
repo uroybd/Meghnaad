@@ -8,6 +8,7 @@ pub mod guard;
 pub mod model;
 pub mod modify;
 pub mod names;
+pub mod recur;
 pub mod report;
 pub mod run;
 pub mod store;

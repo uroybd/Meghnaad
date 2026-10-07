@@ -1,4 +1,6 @@
 # Copy to `.dev.vars` for local development (that file is git-ignored; wrangler never deploys it).
+# For a deployed Worker, set the sync secret with `wrangler secret put TC_ENCRYPTION_SECRET`
+# (`npm run setup` does it for you).
 #
 # Any string works locally. To try a real Taskwarrior against your local bucket, use the same
 # value as `sync.encryption_secret` in your taskrc.

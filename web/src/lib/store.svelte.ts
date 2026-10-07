@@ -152,11 +152,11 @@ class Store {
     this.tasks = [...tasks.values()];
   }
 
-  async #exec(e: Entry, confirmed = false): Promise<CliResponse | null> {
+  async #exec(e: Entry, confirmed = false, recurrence?: boolean): Promise<CliResponse | null> {
     e.loading = true;
     e.failure = null;
     try {
-      const res = await runCli({ ...e.input, confirmed });
+      const res = await runCli({ ...e.input, confirmed, recurrence });
       e.result = res.result;
       if (res.result.kind === 'report') this.#learn(res.result.rows);
       if (res.result.kind === 'info') this.#learn(res.result.tasks);
@@ -230,16 +230,39 @@ class Store {
     if (res?.wrote && this.live) void this.refresh(this.live);
   }
 
+  /** Answer "change the whole recurring series?" on an entry: true = all pending, false = only this task. */
+  async answerRecurrence(e: Entry, all: boolean) {
+    const res = await this.#exec(e, true, all);
+    if (res?.wrote && this.live) void this.refresh(this.live);
+  }
+
   /** A GUI action (done, start, add, ...): run it, report the outcome, refresh what's on screen. */
-  async act(from: Entry | null, args: string[]) {
-    this.remember(previewLine(args));
+  async act(
+    from: Entry | null,
+    args: string[],
+    confirmed = false,
+    recurrence?: boolean,
+  ): Promise<CliResponse | null> {
+    if (!confirmed) this.remember(previewLine(args));
     try {
-      const res = await runCli({ args });
+      const res = await runCli({ args, confirmed, recurrence });
       const r = res.result;
       if (r.kind === 'error') this.notify(r.message, 'err');
       else if (r.kind === 'changed') this.notify(r.message);
       else if (r.kind === 'text') this.notify(r.lines.join(' '));
-      else if (r.kind === 'confirm') this.notify('That would change several tasks; use the console to confirm.', 'err');
+      else if (r.kind === 'confirm') {
+        // Ask, then repeat the command with the answer. A recurring-series question has three
+        // outcomes (all pending / only this task / cancel), which two browser prompts can express.
+        if (typeof window !== 'undefined') {
+          if (r.recurrence) {
+            if (window.confirm(`${r.message}\n\nOK: change all pending recurrences.`)) return this.act(from, args, true, true);
+            if (window.confirm('Change only this task, and leave the other recurrences as they are?')) return this.act(from, args, true, false);
+          } else if (!confirmed && window.confirm(r.message)) {
+            return this.act(from, args, true);
+          }
+        }
+        this.notify('Nothing was changed.');
+      }
       if (res.wrote) {
         this.rev++;
         const targets = new Set([from, this.live].filter((x): x is Entry => !!x));

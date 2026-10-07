@@ -133,12 +133,24 @@
 
 <style>
   .drawer {
-    position: fixed; z-index: 15; top: 0; right: 0; bottom: 0; width: min(440px, 100vw);
-    background: var(--panel); border-left: 1px solid var(--line); padding: 14px 16px;
+    position: fixed; z-index: 15; top: 0; right: 0; bottom: 0; width: min(560px, 100vw);
+    background: var(--panel); border-left: 1px solid var(--line); padding: 22px 26px;
     overflow: auto; box-shadow: -8px 0 24px rgb(0 0 0 / 0.12); outline: none;
+    overscroll-behavior: contain;
   }
-  .title { font-size: 16px; overflow-wrap: anywhere; }
-  .actions { flex-wrap: wrap; margin: 10px 0; }
+  header { position: sticky; top: -14px; z-index: 1; background: var(--panel); padding: 2px 0; }
+  @media (max-width: 760px) {
+    .drawer {
+      width: 100vw; border-left: 0;
+      padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
+    header { top: calc(-1 * max(14px, env(safe-area-inset-top))); }
+    .actions { gap: 6px; }
+    .actions button { flex: 1 1 auto; justify-content: center; min-height: 44px; }
+    .title { font-size: 17px; }
+  }
+  .title { font-size: 18px; overflow-wrap: anywhere; }
+  .actions { flex-wrap: wrap; margin: 16px 0; }
   .running { display: flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 600; margin: 4px 0; }
   .btn { display: inline-flex; align-items: center; gap: 5px; }
   .note { margin-top: 12px; }

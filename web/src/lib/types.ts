@@ -27,6 +27,10 @@ export interface Facts {
   blocking: boolean;
   recur: string | null;
   parent: string | null;
+  /** On a recurring template: one letter per instance (`+` done, `-` pending, `X` deleted, `W` waiting). */
+  mask: string | null;
+  /** On an instance: its position in the parent's mask. */
+  imask: number | null;
   /** Non-core properties: UDA values, and orphans (see `Row.orphans`). */
   extra: Record<string, string>;
 }
@@ -83,7 +87,13 @@ export interface ChangedResult {
   message: string;
   tasks: { uuid: string; id: number | null; description: string }[];
 }
-export interface ConfirmResult { kind: 'confirm'; message: string; count: number }
+export interface ConfirmResult {
+  kind: 'confirm';
+  message: string;
+  count: number;
+  /** The question is about the rest of a recurring series (answer with all / only this one). */
+  recurrence?: boolean;
+}
 export interface ErrorResult { kind: 'error'; message: string }
 
 export type CliResult =

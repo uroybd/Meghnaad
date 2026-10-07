@@ -150,7 +150,7 @@
 </dialog>
 
 <style>
-  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 16px 20px; width: min(680px, 96vw); max-height: 94vh; overflow: auto; }
+  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 24px 28px; width: min(760px, 96vw); max-height: 94vh; overflow: auto; }
   dialog::backdrop { background: rgb(0 0 0 / 0.4); }
   h3 { margin: 0 0 4px; }
   textarea { width: 100%; margin: 8px 0; }
@@ -159,5 +159,8 @@
   .bad { color: var(--err); }
   .result p { margin: 4px 0; }
   .btn { display: inline-flex; align-items: center; gap: 5px; }
-  code { font-family: var(--mono); background: var(--panel-2); border-radius: 4px; padding: 0 4px; }
+  code { font-family: var(--mono); background: var(--panel-2); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+  @media (max-width: 760px) {
+    textarea { min-height: 40vh; font-size: 14px; }
+  }
 </style>

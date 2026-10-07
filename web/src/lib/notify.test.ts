@@ -12,7 +12,7 @@ function row(over: Partial<Row> = {}): Row {
   return {
     uuid: 'u1', status: 'pending', description: 'Pay rent', project: null, priority: null, tags: [],
     annotations: [], entry: null, modified: null, start: null, end: null, due: null, wait: null,
-    scheduled: null, until: null, depends: [], blocked: false, blocking: false, recur: null, parent: null,
+    scheduled: null, until: null, depends: [], blocked: false, blocking: false, recur: null, parent: null, mask: null, imask: null,
     extra: {}, urgency: 0, id: 1, virtual_tags: [], orphans: [], active_seconds: null, sessions: [], ...over,
   };
 }

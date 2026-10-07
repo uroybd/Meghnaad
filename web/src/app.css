@@ -54,19 +54,27 @@
 
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
+/* Phones: the address bar makes 100% taller than what is visible; dvh tracks what is. */
+@supports (height: 100dvh) {
+  html, body, #app { height: 100dvh; }
+}
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 4px 10px;
+  padding: 6px 12px;
   cursor: pointer;
 }
+button, summary, [role='button'] { touch-action: manipulation; }
 button:hover:not(:disabled) { border-color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -76,7 +84,7 @@ input, select, textarea {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   min-width: 0;
 }
 input:focus, select:focus, textarea:focus, button:focus-visible {
@@ -95,9 +103,38 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel-2);
-  font-size: 12px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 22px;
 }
 .lucide-icon { flex: none; vertical-align: -0.18em; }
 button:has(> .lucide-icon:only-child) { line-height: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---- Touch screens ------------------------------------------------------------------------
+   Fingers need ~44px targets, and iOS zooms into any field under 16px. */
+@media (pointer: coarse) {
+  button { min-height: 40px; min-width: 40px; }
+  input:not([type='checkbox']):not([type='radio']), select, textarea { min-height: 40px; }
+  input[type='checkbox'], input[type='radio'] { width: 22px; height: 22px; }
+  summary { padding: 6px 0; }
+}
+@media (max-width: 760px) {
+  input, select, textarea { font-size: 16px; }
+  .chip { line-height: 24px; }
+
+  /* Dialogs become full screens: more room, and no tiny scrolling box inside a scrolling page. */
+  /* !important: each dialog sizes itself in its own scoped stylesheet, which would win otherwise. */
+  dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding-top: max(14px, env(safe-area-inset-top)) !important;
+    padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+    padding-left: max(16px, env(safe-area-inset-left)) !important;
+    padding-right: max(16px, env(safe-area-inset-right)) !important;
+  }
+}

@@ -69,7 +69,7 @@
 </dialog>
 
 <style>
-  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 16px 20px; width: min(520px, 96vw); }
+  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 24px 28px; width: min(580px, 96vw); }
   dialog::backdrop { background: rgb(0 0 0 / 0.4); }
   h3 { margin: 0 0 4px; }
   .grid { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; margin: 10px 0; }
@@ -78,4 +78,9 @@
   .small { font-size: 12px; margin: 2px 0; }
   code { font-family: var(--mono); background: var(--panel-2); border-radius: 4px; padding: 0 4px; }
   footer { margin-top: 10px; }
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    footer { display: flex; gap: 8px; flex-wrap: wrap; }
+    footer button { flex: 1; }
+  }
 </style>

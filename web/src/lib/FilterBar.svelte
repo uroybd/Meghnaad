@@ -96,7 +96,14 @@
         spellcheck="false"
         class="mono"
       />
-      <CompletionMenu {completer} placement="below" />
+      <CompletionMenu
+        {completer}
+        placement="below"
+        onpick={(i) => {
+          const r = completer.pick(i);
+          if (r) store.filter = r.line;
+        }}
+      />
     </div>
   </div>
 
@@ -159,24 +166,34 @@
       {#if meta?.filter}report filter <code>{meta.filter}</code>{/if}
       {#if meta?.sort} · default sort <code>{meta.sort}</code>{/if}
       {#if context} · context <code>{context.name}{context.read ? ` (${context.read})` : ''}</code>{/if}
-      <span>— applied automatically; your filters are added to these. Click a column header to sort.</span>
+      <span class="tail">— applied automatically; your filters are added to these. Click a column header to sort.</span>
     </p>
   {/if}
 </section>
 
 <style>
-  .bar { display: grid; gap: 6px; margin-bottom: 8px; }
+  .bar { display: grid; gap: 10px; margin-bottom: 18px; }
   .top select { max-width: 17em; }
+  @media (max-width: 760px) {
+    .top { flex-wrap: wrap; }
+    .top select { max-width: 100%; width: 100%; }
+    .top .filter { flex-basis: 100%; }
+    .helpers .row { gap: 10px 14px; }
+    .helpers label { font-size: 13px; }
+    .chip { line-height: 26px; }
+    .x { padding: 0 6px; min-width: 28px; }
+    .implicit .tail { display: none; }
+  }
   .filter { position: relative; }
   .filter input { width: 100%; }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .chip.sort { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   .x { padding: 0 3px; font-size: 10px; margin-left: 3px; color: inherit; }
-  .helpers summary { cursor: pointer; color: var(--dim); font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+  .helpers summary { cursor: pointer; color: var(--dim); font-size: 13px; display: inline-flex; align-items: center; gap: 5px; }
   .chip { display: inline-flex; align-items: center; }
-  .helpers .row { margin-top: 6px; }
+  .helpers .row { margin-top: 10px; gap: 12px 18px; }
   .wrap { flex-wrap: wrap; }
-  .helpers label { display: inline-flex; gap: 4px; align-items: center; color: var(--dim); font-size: 12px; }
-  .implicit { margin: 0; font-size: 12px; }
+  .helpers label { display: inline-flex; gap: 6px; align-items: center; color: var(--dim); font-size: 13px; }
+  .implicit { margin: 0; font-size: 13px; }
   .implicit code { background: var(--panel-2); border-radius: 4px; padding: 1px 5px; }
 </style>

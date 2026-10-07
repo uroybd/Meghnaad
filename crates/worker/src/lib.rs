@@ -60,6 +60,17 @@ fn json<T: serde::Serialize>(v: &T) -> RouteResult {
 async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response> {
     console_error_panic_hook::set_once();
 
+    // The one route that needs no sign-in: whether setup is finished, so the page can say what is
+    // left to do. It reveals names of missing settings, never values.
+    if req.method() == worker::Method::Get && req.path() == "/api/setup" {
+        let missing = auth::missing_settings(&req, &env);
+        let host = req.url()?.host_str().unwrap_or_default().to_owned();
+        let body = serde_json::json!({ "configured": missing.is_empty(), "missing": missing, "host": host });
+        let mut res = Response::from_json(&body)?;
+        res.headers_mut().set("cache-control", "no-store")?;
+        return Ok(res);
+    }
+
     let identity = match auth::verify(&req, &env).await {
         Ok(id) => id,
         Err(auth::AuthError::Config(m)) => {
@@ -144,6 +155,8 @@ struct CliRequest {
     /// The user confirmed a multi-task change.
     #[serde(default)]
     confirmed: bool,
+    /// The answer to a recurring-task question: change the whole pending series, or only this task.
+    recurrence: Option<bool>,
 }
 
 const MAX_LINE: usize = 8 * 1024;
@@ -189,7 +202,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
         &cfg,
         clock,
         &args,
-        Options { confirmed: body.confirmed, seed: now as u64 },
+        Options { confirmed: body.confirmed, recurrence: body.recurrence, seed: now as u64 },
         &mut st.undo,
     )
     .await;

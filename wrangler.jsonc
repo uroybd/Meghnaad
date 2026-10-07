@@ -3,24 +3,37 @@
   "name": "taskwarrior-web",
   "main": "crates/worker/build/worker/shim.mjs",
   "compatibility_date": "2026-10-01",
+  // Builds the web app and the Worker, installing the Rust pieces if they are missing.
   "build": {
-    "command": "cd crates/worker && worker-build --release",
-    "watch_dir": ["crates/worker/src", "crates/tc-core/src"]
+    "command": "node scripts/build.mjs",
+    "watch_dir": [
+      "crates/worker/src",
+      "crates/tc-core/src"
+    ]
   },
   // The Svelte app (built into web/dist). Only /api/* runs the Worker first; everything else is a
   // static asset with SPA fallback.
   "assets": {
     "directory": "web/dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": [
+      "/api/*"
+    ]
   },
-  // The same bucket the `task` CLI syncs to (via R2's S3 endpoint).
-  "r2_buckets": [{ "binding": "TASKS", "bucket_name": "taskwarrior-sync" }],
-  "vars": {
-    // Zero Trust > Settings > Custom Pages shows the team name.
-    "TEAM_DOMAIN": "https://YOUR-TEAM.cloudflareaccess.com",
-    // Zero Trust > Access > Applications > (this app) > Application Audience (AUD) Tag.
-    "POLICY_AUD": "REPLACE_WITH_AUD_TAG"
-  }
+  // The bucket your `task` CLI syncs to (via R2's S3 endpoint). To use a different or existing one,
+  // change `bucket_name` here, or put R2_BUCKET=<name> in `.deploy.vars` and use `npm run deploy`.
+  "r2_buckets": [
+    {
+      "binding": "TASKS",
+      "bucket_name": "taskwarrior-sync"
+    }
+  ],
+  // Custom domain (optional): add `"routes": [{ "pattern": "tasks.example.com", "custom_domain": true }]`
+  // here, or CUSTOM_DOMAIN=tasks.example.com in `.deploy.vars`. `npm run setup` asks about both.
+  // TEAM_DOMAIN and POLICY_AUD (from Cloudflare Access) are deliberately NOT set here. Until they
+  // exist the app refuses every request and shows a setup page. Add them as Text variables in the
+  // dashboard (Worker > Settings > Variables and Secrets), or let `npm run setup` save them.
+  // `keep_vars` stops a deploy from removing variables that were added in the dashboard.
+  "keep_vars": true
   // Secret (not here): `wrangler secret put TC_ENCRYPTION_SECRET`
 }

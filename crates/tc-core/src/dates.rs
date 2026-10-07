@@ -107,29 +107,118 @@ pub struct ParsedDate {
     pub day: bool,
 }
 
-/// Duration in seconds from strings like `3d`, `2weeks`, `1.5h`, `-4d`.
-pub fn parse_duration(s: &str) -> Option<i64> {
-    let s = s.trim().to_ascii_lowercase();
+/// Taskwarrior's duration units (`Duration.cpp`): `(name, seconds, may stand alone)`. A "standalone"
+/// unit needs no number (`daily`, `weekly`, `fortnight`), meaning one of it. Order matters: longer
+/// names come first so that `months` is not read as `m` + `onths`.
+const UNITS: &[(&str, i64, bool)] = &[
+    ("annual", 365 * DAY, true), ("biannual", 730 * DAY, true), ("bimonthly", 61 * DAY, true),
+    ("biweekly", 14 * DAY, true), ("biyearly", 730 * DAY, true), ("daily", DAY, true),
+    ("days", DAY, false), ("day", DAY, true), ("d", DAY, false), ("fortnight", 14 * DAY, true),
+    ("hours", 3600, false), ("hour", 3600, true), ("hrs", 3600, false), ("hr", 3600, true), ("h", 3600, false),
+    ("minutes", 60, false), ("minute", 60, true), ("mins", 60, false), ("min", 60, true),
+    ("monthly", 30 * DAY, true), ("months", 30 * DAY, false), ("month", 30 * DAY, true),
+    ("mnths", 30 * DAY, false), ("mths", 30 * DAY, false), ("mth", 30 * DAY, true),
+    ("mos", 30 * DAY, false), ("mo", 30 * DAY, true), ("m", 30 * DAY, false),
+    ("quarterly", 91 * DAY, true), ("quarters", 91 * DAY, false), ("quarter", 91 * DAY, true),
+    ("qrtrs", 91 * DAY, false), ("qrtr", 91 * DAY, true), ("qtrs", 91 * DAY, false),
+    ("qtr", 91 * DAY, true), ("q", 91 * DAY, false),
+    ("semiannual", 183 * DAY, true), ("sennight", 14 * DAY, false),
+    ("seconds", 1, false), ("second", 1, true), ("secs", 1, false), ("sec", 1, true), ("s", 1, false),
+    ("weekdays", DAY, true), ("weekly", 7 * DAY, true), ("weeks", 7 * DAY, false), ("week", 7 * DAY, true),
+    ("wks", 7 * DAY, false), ("wk", 7 * DAY, true), ("w", 7 * DAY, false),
+    ("yearly", 365 * DAY, true), ("years", 365 * DAY, false), ("year", 365 * DAY, true),
+    ("yrs", 365 * DAY, false), ("yr", 365 * DAY, true), ("y", 365 * DAY, false),
+];
+
+/// ISO 8601 designated duration: `P1Y2M3W4DT5H6M7S` (a year is 365 days, a month 30).
+fn parse_iso_duration(s: &str) -> Option<i64> {
+    let rest = s.strip_prefix('P')?;
+    if rest.is_empty() {
+        return None;
+    }
+    let mut total = 0f64;
+    let mut in_time = false;
+    let mut num = String::new();
+    let mut any = false;
+    for c in rest.chars() {
+        match c {
+            '0'..='9' | '.' => num.push(c),
+            'T' if num.is_empty() => in_time = true,
+            'Y' | 'M' | 'W' | 'D' | 'H' | 'S' => {
+                let n: f64 = num.parse().ok()?;
+                num.clear();
+                any = true;
+                total += n * match (c, in_time) {
+                    ('Y', false) => (365 * DAY) as f64,
+                    ('M', false) => (30 * DAY) as f64,
+                    ('W', false) => (7 * DAY) as f64,
+                    ('D', false) => DAY as f64,
+                    ('H', true) => 3600.0,
+                    ('M', true) => 60.0,
+                    ('S', true) => 1.0,
+                    _ => return None,
+                };
+            }
+            _ => return None,
+        }
+    }
+    (num.is_empty() && any).then(|| total.round() as i64)
+}
+
+/// Duration in seconds, as Taskwarrior reads it: `3d`, `2weeks`, `1.5h`, `-4d`, `daily`,
+/// `fortnight`, `P1M`, `PT4H`, and a bare number of seconds.
+pub fn parse_duration(input: &str) -> Option<i64> {
+    let s = input.trim();
+    if s.is_empty() {
+        return None;
+    }
     let (neg, body) = match s.strip_prefix('-') {
         Some(b) => (true, b),
-        None => (false, s.as_str()),
+        None => (false, s),
     };
-    let split = body.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(body.len());
-    let (num, unit) = body.split_at(split);
-    let n: f64 = if num.is_empty() { 1.0 } else { num.parse().ok()? };
-    let mult = match unit {
-        "s" | "sec" | "secs" | "second" | "seconds" => 1,
-        "min" | "mins" | "minute" | "minutes" => 60,
-        "h" | "hr" | "hrs" | "hour" | "hours" => 3600,
-        "d" | "day" | "days" => DAY,
-        "w" | "wk" | "wks" | "week" | "weeks" => 7 * DAY,
-        "mo" | "mth" | "mths" | "month" | "months" => 30 * DAY,
-        "q" | "quarter" | "quarters" => 91 * DAY,
-        "y" | "yr" | "yrs" | "year" | "years" => 365 * DAY,
-        _ => return None,
+    let secs = if let Some(iso) = parse_iso_duration(&body.to_ascii_uppercase()).filter(|_| body.starts_with(['P', 'p'])) {
+        iso
+    } else {
+        let body = body.to_ascii_lowercase();
+        let split = body.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(body.len());
+        let (num, unit) = body.split_at(split);
+        if unit.is_empty() {
+            // A bare number is seconds.
+            num.parse::<f64>().ok()?.round() as i64
+        } else {
+            let (_, mult, standalone) = UNITS.iter().find(|(name, ..)| *name == unit)?;
+            let n: f64 = if num.is_empty() {
+                if !standalone {
+                    return None;
+                }
+                1.0
+            } else {
+                num.parse().ok()?
+            };
+            (n * *mult as f64).round() as i64
+        }
     };
-    let secs = (n * mult as f64).round() as i64;
     Some(if neg { -secs } else { secs })
+}
+
+impl Clock {
+    /// Local calendar fields of `ts`: (year, month 1-12, day, hour, minute, second).
+    pub fn ymd_hms(&self, ts: i64) -> (i32, u32, u32, u32, u32, u32) {
+        use taskchampion::chrono::Timelike;
+        let t = self.local(ts);
+        (t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second())
+    }
+
+    /// The instant for a local calendar time, or `None` if the date doesn't exist (Feb 30).
+    pub fn from_ymd_hms(&self, y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> Option<i64> {
+        let dt = NaiveDate::from_ymd_opt(y, m, d)?.and_hms_opt(h, mi, s)?;
+        self.from_naive(dt)
+    }
+
+    /// 0 = Sunday .. 6 = Saturday, in local time.
+    pub fn day_of_week(&self, ts: i64) -> u32 {
+        self.local(ts).weekday().num_days_from_sunday()
+    }
 }
 
 fn weekday_from(s: &str) -> Option<Weekday> {
@@ -286,6 +375,45 @@ mod tests {
         assert_eq!(parse_date("1700000000", &c).unwrap().ts, 1_700_000_000);
         assert!(parse_date("2026-13-45", &c).is_none());
         assert!(parse_date("banana", &c).is_none());
+    }
+
+    #[test]
+    fn taskwarrior_named_and_iso_durations() {
+        assert_eq!(parse_duration("daily"), Some(DAY));
+        assert_eq!(parse_duration("weekly"), Some(7 * DAY));
+        assert_eq!(parse_duration("biweekly"), Some(14 * DAY));
+        assert_eq!(parse_duration("fortnight"), Some(14 * DAY));
+        assert_eq!(parse_duration("quarterly"), Some(91 * DAY));
+        assert_eq!(parse_duration("annual"), Some(365 * DAY));
+        assert_eq!(parse_duration("2q"), Some(182 * DAY));
+        assert_eq!(parse_duration("3m"), Some(90 * DAY)); // `m` is a month here, not a minute
+        assert_eq!(parse_duration("90min"), Some(5400));
+        assert_eq!(parse_duration("P1D"), Some(DAY));
+        assert_eq!(parse_duration("P1W"), Some(7 * DAY));
+        assert_eq!(parse_duration("P1M"), Some(30 * DAY));
+        assert_eq!(parse_duration("PT4H30M"), Some(4 * 3600 + 30 * 60));
+        assert_eq!(parse_duration("P1Y2M"), Some(365 * DAY + 60 * DAY));
+        assert_eq!(parse_duration("3600"), Some(3600));
+    }
+
+    #[test]
+    fn units_that_need_a_number_do_not_stand_alone() {
+        // `d`, `w`, `h` mean nothing without a count; `day`, `week`, `hour` do.
+        for bad in ["d", "w", "h", "m", "q", "y", "", "P", "PT", "P1X", "3parsecs", "weekdaysx", "1.2.3d"] {
+            assert_eq!(parse_duration(bad), None, "{bad:?}");
+        }
+        assert_eq!(parse_duration("day"), Some(DAY));
+        assert_eq!(parse_duration("week"), Some(7 * DAY));
+        assert_eq!(parse_duration("-2weeks"), Some(-14 * DAY));
+    }
+
+    #[test]
+    fn local_calendar_helpers() {
+        let c = Clock { now: NOW, tz_offset: 19_800, week_starts_monday: true };
+        assert_eq!(c.ymd_hms(NOW), (2026, 10, 7, 18, 0, 0)); // 12:30Z is 18:00 in IST
+        assert_eq!(c.from_ymd_hms(2026, 10, 7, 18, 0, 0), Some(NOW));
+        assert_eq!(c.from_ymd_hms(2026, 2, 30, 0, 0, 0), None);
+        assert_eq!(c.day_of_week(NOW), 3); // Wednesday
     }
 
     #[test]

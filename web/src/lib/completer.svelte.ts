@@ -51,6 +51,15 @@ export class Completer {
     return this.#select(reverse ? c.options.length - 1 : 0);
   }
 
+  /** A tapped option (no keyboard on a phone): select it and accept it. */
+  pick(index: number): Edit | null {
+    const m = this.menu;
+    if (!m || index < 0 || index >= m.options.length) return null;
+    const e = this.#select(index);
+    this.menu = null;
+    return e;
+  }
+
   /** Arrow keys while the menu is open. */
   move(delta: 1 | -1): Edit | null {
     const m = this.menu;

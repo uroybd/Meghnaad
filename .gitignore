@@ -6,3 +6,5 @@ crates/worker/build
 web/dist
 web/.svelte-kit
 *.log
+.deploy.vars
+wrangler.deploy.jsonc
