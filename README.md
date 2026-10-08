@@ -310,10 +310,18 @@ commands · `Esc` closes a menu · `Ctrl+L` clears.
   show as removable chips.
 - **Click a column header to sort** (again to reverse, a third time to reset, Shift-click to add a tie-breaker). The
   sort is applied as `rc.report.<name>.sort:…`, so it matches what you would type in the console.
+- **Tables are meant to be scanned.** IDs are bold, and hovering one shows the task's uuid with a Copy button. Project
+  names are split at the dots, with each part in its own colour (the same name is always the same colour) and the dots
+  muted. Tags are pills. Urgency is coloured by level: grey under 5, normal to 10, amber to 15, red from 15.
 - **Click a row** for the detail view: all fields, annotations, dependencies you can follow, and (with
   `journal.time`) a table of work sessions. Row buttons: done, start/stop, edit, delete.
 - **Add tasks** from the sidebar. *More fields…* opens the full form: project, priority, due/wait/scheduled/until,
   tags, dependencies, UDAs, "start now", and a first note.
+- **Annotations and string UDAs can span several lines.** In an annotation box Enter saves and Shift+Enter starts a new
+  line; in a UDA field Enter starts a new line and Ctrl/Cmd+Enter saves. Line breaks are kept in the detail view and in
+  tables. How a table shows annotations is up to the report's `description` column, as in Taskwarrior 3:
+  `description` (beneath the task), `description.oneline`, `description.count` or `description.desc` (none). The
+  detail view always shows all of them.
 - Every **date field takes a date and an optional time**. Leave the time empty for a whole day.
 - **Dates are shown the way your taskrc says**: `dateformat`, `dateformat.report` (tables), `dateformat.info` (detail
   view), `dateformat.annotation` (notes) and a report's own `report.<name>.dateformat`, with Taskwarrior's fallbacks and

@@ -105,7 +105,7 @@
       </dd>
     {/if}
     {#each udaKeys as k}
-      <dt>{udaLabel(defs[k])}</dt><dd>{task.extra[k]}</dd>
+      <dt>{udaLabel(defs[k])}</dt><dd class="pre">{task.extra[k]}</dd>
     {/each}
     <dt>Urgency</dt><dd>{task.urgency.toFixed(2)}</dd>
     {#if task.virtual_tags.length}
@@ -161,7 +161,7 @@
   {#if notes.length}
     <h4>Annotations</h4>
     <ul>
-      {#each notes as a}<li><span class="dim">{formatMoment(a.entry, undefined, noteFmt)}</span> {a.text}</li>{/each}
+      {#each notes as a}<li><span class="dim">{formatMoment(a.entry, undefined, noteFmt)}</span> <span class="pre">{a.text}</span></li>{/each}
     </ul>
   {/if}
 
@@ -171,7 +171,7 @@
     </h4>
     <dl class="orphans">
       {#each task.orphans as k}
-        <dt class="mono">{k}</dt><dd class="mono">{task.extra[k]}</dd>
+        <dt class="mono">{k}</dt><dd class="mono pre">{task.extra[k]}</dd>
       {/each}
     </dl>
   {/if}
@@ -201,4 +201,5 @@
   .more { margin: 2px 0; font-size: 12px; }
   .dep.inline { display: inline-flex; align-items: center; gap: 4px; }
   .dep { display: block; padding: 0 4px; margin-left: -4px; text-align: left; }
+  .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

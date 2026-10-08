@@ -324,7 +324,9 @@ async fn new_tasks_get_the_default_project_due_and_scheduled() {
     let cfg = parse("default.project=Inbox\ndefault.due=3d\ndefault.scheduled=2030-01-01\n").config;
     let before = taskchampion::chrono::Utc::now().timestamp();
     run(&mut r, &cfg, "add plain").await;
-    let after = taskchampion::chrono::Utc::now().timestamp() + 60; // the test clock runs ahead a second per command
+    // The test clock is real time plus a counter shared by every test running at once, so allow an
+    // hour of drift: still nowhere near a wrong reading of "3d".
+    let after = taskchampion::chrono::Utc::now().timestamp() + 3600;
 
     let t = only_task(&mut r, "plain").await;
     assert_eq!(t.project.as_deref(), Some("Inbox"));
@@ -366,6 +368,59 @@ async fn an_unusable_default_is_ignored_and_adding_still_works() {
     let t = only_task(&mut r, "via rc").await;
     assert_eq!(t.project.as_deref(), Some("Inbox"));
     assert!(t.due.is_none());
+}
+
+async fn names_in(r: &mut R, cfg: &Config, line: &str) -> Vec<String> {
+    let (CliResult::Report(o), _) = run(r, cfg, line).await else { panic!("{line}: not a report") };
+    o.rows.into_iter().map(|x| x.facts.description).collect()
+}
+
+#[tokio::test]
+async fn blocked_and_blocking_reports_split_a_dependency_chain() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add the blocker").await;
+    run(&mut r, &cfg, "add the blocked depends:1").await;
+    run(&mut r, &cfg, "add unrelated").await;
+    // Which id the blocker has depends on entry-time ties; find it by name.
+    let blocker_id = {
+        let (CliResult::Report(o), _) = run(&mut r, &cfg, "all").await else { panic!() };
+        o.rows.iter().find(|x| x.facts.description == "the blocker").unwrap().id.unwrap()
+    };
+    let _ = blocker_id;
+
+    assert_eq!(names_in(&mut r, &cfg, "blocked").await, ["the blocked"]);
+    assert_eq!(names_in(&mut r, &cfg, "blocking").await, ["the blocker"]);
+    let unblocked = names_in(&mut r, &cfg, "unblocked").await;
+    assert!(unblocked.contains(&"the blocker".to_string()) && !unblocked.contains(&"the blocked".to_string()));
+}
+
+#[tokio::test]
+async fn long_and_ls_are_taskwarriors_reports() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add first").await;
+    run(&mut r, &cfg, "add second +a project:P").await;
+    run(&mut r, &cfg, "add waiting one wait:3d").await;
+
+    for name in ["long", "ls"] {
+        // Pending and not waiting, like `list`.
+        let rows = names_in(&mut r, &cfg, name).await;
+        assert_eq!(rows.len(), 2, "{name}: {rows:?}");
+        assert!(!rows.contains(&"waiting one".to_string()), "{name}");
+    }
+    let (CliResult::Report(long), _) = run(&mut r, &cfg, "long").await else { panic!() };
+    let labels: Vec<&str> = long.columns.iter().map(|c| c.label.as_str()).collect();
+    assert_eq!(labels, ["ID", "A", "Created", "Mod", "Deps", "P", "Project", "Tags", "Recur", "Wait", "Sched", "Due", "Until", "Description"]);
+    assert_eq!(long.sort.as_deref(), Some("modified-"));
+    let (CliResult::Report(ls), _) = run(&mut r, &cfg, "ls").await else { panic!() };
+    let labels: Vec<&str> = ls.columns.iter().map(|c| c.label.as_str()).collect();
+    assert_eq!(labels, ["ID", "A", "D", "Project", "Tags", "R", "Wait", "S", "Due", "Until", "Description"]);
+    assert_eq!(ls.sort.as_deref(), Some("start-,description+"));
+
+    // A taskrc still overrides one attribute of them, like any built-in.
+    let cfg = parse("report.ls.filter=+a\n").config;
+    assert_eq!(names_in(&mut r, &cfg, "ls").await, ["second"]);
 }
 
 #[tokio::test]

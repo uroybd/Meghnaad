@@ -7,6 +7,9 @@ reading this repository's code. The README explains [how the taskrc is imported]
 you paste or choose your `~/.taskrc`, only an allowlist of settings is kept, and the result is saved in your bucket
 (`web/config.json`), not in your desktop file.
 
+**Scope.** Only Taskwarrior **3.5.0 and newer** is supported. A setting that was removed or deprecated before then
+(the old `annotations` display setting, for example) is deliberately not supported, even if an old taskrc still has it.
+
 ## Status key
 
 | Status | Meaning |
@@ -25,18 +28,18 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
-| Miscellaneous | 5 | 5 | 8 | 5 | 0 |
+| Miscellaneous | 5 | 6 | 8 | 5 | 0 |
 | Dates and calendar | 7 | 0 | 1 | 2 | 0 |
 | Journal | 3 | 1 | 0 | 0 | 0 |
 | Dependencies | 0 | 0 | 0 | 1 | 0 |
 | Colour | 0 | 0 | 0 | 1 | 0 |
 | Urgency | 17 | 0 | 0 | 0 | 0 |
 | Defaults | 5 | 0 | 0 | 0 | 0 |
-| Reports | 8 | 0 | 4 | 0 | 0 |
+| Reports | 8 | 0 | 0 | 2 | 0 |
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 3 | 0 | 1 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **57** | **6** | **16** | **16** | **1** |
+| **Total** | **57** | **7** | **12** | **18** | **1** |
 
 ## Files, hooks and environment
 
@@ -84,7 +87,8 @@ Each row below counts once, even where a row covers several related options.
 | `date.iso` | Not done | Not read |
 | `verbose` | N/A | Accepted and ignored |
 | `nag` | N/A | The reminder printed after a command in a terminal |
-| `annotation.info`, `indent.annotation`, `indent.report`, `row.padding`, `column.padding`, `print.empty.columns` | N/A | Terminal layout |
+| `annotation.info` | Partial | In Taskwarrior it decides whether `task info` shows annotations. The detail view here always shows them, like opening a file, so the setting is not read |
+| `indent.annotation`, `indent.report`, `row.padding`, `column.padding`, `print.empty.columns` | N/A | Terminal layout |
 | `xterm.title`, `_forcecolor`, `json.array` | N/A | Terminal behaviour. `export` prints a JSON array |
 | `debug`, `debug.parser`, `obfuscate` | N/A | Debugging aids for the CLI |
 
@@ -170,11 +174,9 @@ inheritance rules, which follow Taskwarrior's source.
 | `report.<name>.filter` | Done | |
 | `report.<name>.context` | Done | |
 | `report.<name>.dateformat` | Done | |
-| Built-in reports | Done | `next`, `list`, `all`, `completed`, `waiting`, `newest`, `oldest`, `overdue`, `active`, `ready`, `recurring`, `unblocked`, `minimal` |
-| `report.<name>.annotations` | Not done | Ignored. Annotations are shown in the detail view |
-| Built-in `long` | Not done | Define `report.long.*` in your taskrc and it works as a custom report |
-| Built-in `ls` | Not done | As above |
-| Built-in `blocked` | Not done | As above. `unblocked` exists |
+| Built-in reports | Done | `next`, `list`, `long`, `ls`, `all`, `completed`, `waiting`, `newest`, `oldest`, `overdue`, `active`, `ready`, `recurring`, `blocked`, `unblocked`, `blocking`, `minimal`, with Taskwarrior's own columns, labels, filters and sorts. Any of them can be overridden one attribute at a time from the taskrc |
+| `report.<name>.annotations` | N/A | Deprecated by Taskwarrior 2.5 and read by nothing in 3.5.0. A report controls its annotations through the format of its `description` column in `report.<name>.columns`, and every format is supported: `description` (annotations beneath it, the default), `description.desc` (none), `description.oneline` (all of them on the same line, each with its date), `description.count` (a count in brackets), `description.truncated` and `description.truncated_count`. There is no "newest only" format in 3.5.0. The detail view always shows every annotation |
+| `annotations` | N/A | Not a Taskwarrior 3 setting (the 3.5.0 source only lists it as deprecated, and `task config annotations` finds no entry). Use the `description` column formats above |
 
 ## User defined attributes
 
@@ -213,7 +215,5 @@ and picks the newest snapshot when it starts cold. Deleting old versions is left
 Roughly in order of how much they'd matter to someone coming from the CLI:
 
 1. `context.<name>.rc.<key>` overrides.
-2. The built-in `long`, `ls` and `blocked` reports.
-3. `report.<name>.annotations`.
-4. A real `regex` mode for `/pattern/` filters.
-5. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.
+2. A real `regex` mode for `/pattern/` filters.
+3. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.

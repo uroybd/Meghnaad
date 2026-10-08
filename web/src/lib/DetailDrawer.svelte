@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { submitOnEnter } from './multiline';
   import { runCli } from './api';
   import { formatSeconds } from './dates';
   import { Check, Pencil, Play, RotateCcw, Square, Timer, Trash2, X } from './icons';
@@ -123,7 +124,7 @@
     <TaskInfo task={live} embedded onopen={(u) => store.openDetail(u, store.detail?.from ?? null)} />
 
     <form class="note row" onsubmit={annotate}>
-      <input class="grow" bind:value={note} placeholder="Add an annotation…" aria-label="New annotation" />
+      <textarea class="grow" rows="1" bind:value={note} onkeydown={submitOnEnter} placeholder="Add an annotation…" aria-label="New annotation" title="Shift+Enter adds a line"></textarea>
       <button disabled={!note.trim()}>Add</button>
     </form>
   {:else if !message}
@@ -153,5 +154,6 @@
   .actions { flex-wrap: wrap; margin: 16px 0; }
   .running { display: flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 600; margin: 4px 0; }
   .btn { display: inline-flex; align-items: center; gap: 5px; }
-  .note { margin-top: 12px; }
+  .note { margin-top: 12px; align-items: flex-start; }
+  textarea { resize: vertical; field-sizing: content; min-height: 2.2em; max-height: 12em; }
 </style>

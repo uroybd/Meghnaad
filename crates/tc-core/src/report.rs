@@ -5,8 +5,8 @@ use crate::taskrc::{Config, ReportDef};
 use serde::Serialize;
 
 pub const BUILTIN_NAMES: &[&str] = &[
-    "next", "list", "all", "completed", "waiting", "newest", "oldest", "overdue", "active",
-    "ready", "recurring", "unblocked", "minimal",
+    "next", "list", "long", "ls", "all", "completed", "waiting", "newest", "oldest", "overdue",
+    "active", "ready", "recurring", "blocked", "unblocked", "blocking", "minimal",
 ];
 
 struct Builtin {
@@ -38,6 +38,22 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,start.age,entry.age,depends.indicator,priority,project,tags,recur.indicator,scheduled.countdown,due,until.remaining,description.count,urgency",
         labels: "ID,Active,Age,D,P,Project,Tags,R,Sch,Due,Until,Description,Urg",
         sort: "start-,due+,project+,urgency-",
+        filter: "status:pending -WAITING",
+    },
+    Builtin {
+        name: "long",
+        description: "All details of tasks",
+        columns: "id,start.active,entry,modified.age,depends,priority,project,tags,recur,wait.remaining,scheduled,due,until,description",
+        labels: "ID,A,Created,Mod,Deps,P,Project,Tags,Recur,Wait,Sched,Due,Until,Description",
+        sort: "modified-",
+        filter: "status:pending -WAITING",
+    },
+    Builtin {
+        name: "ls",
+        description: "Few details of tasks",
+        columns: "id,start.active,depends.indicator,project,tags,recur.indicator,wait.remaining,scheduled.countdown,due.countdown,until.countdown,description.count",
+        labels: "ID,A,D,Project,Tags,R,Wait,S,Due,Until,Description",
+        sort: "start-,description+",
         filter: "status:pending -WAITING",
     },
     Builtin {
@@ -113,12 +129,28 @@ const BUILTINS: &[Builtin] = &[
         filter: "status:pending and (+PARENT or +CHILD)",
     },
     Builtin {
+        name: "blocked",
+        description: "Blocked tasks",
+        columns: "id,depends,project,priority,due,start.active,entry.age,description",
+        labels: "ID,Deps,Proj,Pri,Due,Active,Age,Description",
+        sort: "due+,priority-,start-,project+",
+        filter: "status:pending -WAITING +BLOCKED",
+    },
+    Builtin {
         name: "unblocked",
         description: "Unblocked tasks",
         columns: "id,start.age,entry.age,depends,priority,project,tags,recur,scheduled.countdown,due.relative,until.remaining,description,urgency",
         labels: "ID,Active,Age,Deps,P,Project,Tags,Recur,S,Due,Until,Description,Urg",
         sort: "urgency-",
         filter: "status:pending -WAITING -BLOCKED",
+    },
+    Builtin {
+        name: "blocking",
+        description: "Blocking tasks",
+        columns: "id,uuid.short,start.active,depends,project,tags,recur,wait,scheduled.remaining,due.relative,until.remaining,description.count,urgency",
+        labels: "ID,UUID,A,Deps,Project,Tags,R,W,Sch,Due,Until,Description,Urg",
+        sort: "urgency-,due+,entry+",
+        filter: "status:pending -WAITING +BLOCKING",
     },
     Builtin {
         name: "minimal",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cell, rowClass } from './format';
-import type { Column, Row } from './types';
+import { cell, rowClass, segmentHue, urgencyLevel } from './format';
+import type { Column, Row, UdaDef } from './types';
 
 const NOW = 1_791_376_200; // 2026-10-07T12:30:00Z
 const DAY = 86400;
@@ -25,7 +25,7 @@ const ctx = { now: NOW, tz: 0 };
 describe('cell', () => {
   it('shows the id, or a dimmed short uuid when there is none', () => {
     expect(cell(col('id'), row(), ctx).text).toBe('3');
-    expect(cell(col('id'), row({ id: null }), ctx)).toEqual({ text: 'aaaaaaaa', cls: 'dim' });
+    expect(cell(col('id'), row({ id: null }), ctx)).toEqual({ text: 'aaaaaaaa', cls: 'dim', uuid: row().uuid });
   });
 
   it('formats dates: absolute (time only if present), relative, age, remaining', () => {
@@ -49,13 +49,61 @@ describe('cell', () => {
     expect(cell(col('start.active'), row(), ctx).text).toBe('');
   });
 
+  it('an id carries its uuid, for the copy tooltip', () => {
+    const c = cell(col('id'), row(), ctx);
+    expect(c.text).toBe('3');
+    expect(c.uuid).toBe('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  });
+
+  it('a project is split into parts so each can have its own colour', () => {
+    const c = cell(col('project'), row({ project: 'Home.Kitchen.Sink' }), ctx);
+    expect(c.text).toBe('Home.Kitchen.Sink');
+    expect(c.segments?.map((s) => s.text)).toEqual(['Home', 'Kitchen', 'Sink']);
+    // The same name is the same colour wherever it appears, in any project.
+    const other = cell(col('project'), row({ project: 'Work.Home' }), ctx).segments!;
+    expect(other[1].hue).toBe(c.segments![0].hue);
+    expect(segmentHue('Home')).toBe(segmentHue('Home'));
+    // Different names usually differ; at least some of these must.
+    const hues = new Set(['Home', 'Work', 'Side', 'Health', 'Garden', 'Errands'].map(segmentHue));
+    expect(hues.size).toBeGreaterThan(2);
+    // The parent format shows the path above the project, still in parts; no project, no parts.
+    expect(cell(col('project.parent'), row({ project: 'Home.Kitchen' }), ctx).segments?.map((s) => s.text)).toEqual(['Home']);
+    expect(cell(col('project'), row({ project: null }), ctx).segments).toBeUndefined();
+  });
+
+  it('tags are pills, except in the compact formats', () => {
+    const r = row({ tags: ['errand', 'next'] });
+    expect(cell(col('tags'), r, ctx).chips).toEqual(['errand', 'next']);
+    expect(cell(col('tags'), r, ctx).text).toBe('errand next');
+    expect(cell(col('tags'), row(), ctx).chips).toBeUndefined();
+    expect(cell(col('tags.count'), r, ctx)).toEqual({ text: '[2]' });
+    expect(cell(col('tags.indicator'), r, ctx)).toEqual({ text: '+' });
+    expect(cell(col('tags.list'), r, ctx)).toEqual({ text: 'errand,next' });
+  });
+
+  it('urgency is coloured by how pressing it is', () => {
+    expect([0, 4.99, 5, 9.99, 10, 14.99, 15, 40].map(urgencyLevel)).toEqual(
+      ['low', 'low', 'mid', 'mid', 'high', 'high', 'crit', 'crit'],
+    );
+    expect(urgencyLevel(-5)).toBe('low'); // blocked tasks go negative
+    expect(cell(col('urgency', 'number'), row({ urgency: 16.2 }), ctx)).toEqual({ text: '16.20', cls: 'urg-crit' });
+    expect(cell(col('urgency.integer', 'number'), row({ urgency: 6.4 }), ctx)).toEqual({ text: '6', cls: 'urg-mid' });
+  });
+
+  it('a multi-line string UDA keeps its lines in the table', () => {
+    const udas: Record<string, UdaDef> = { notes: { name: 'notes', type: 'string', label: null, values: [], default: null, indicator: null } };
+    const c = (value: string) => cell(col('notes'), row({ extra: { notes: value } }), { ...ctx, udas });
+    expect(c('one\ntwo')).toEqual({ text: 'one\ntwo', cls: 'multiline' });
+    expect(c('just one line')).toEqual({ text: 'just one line' });
+  });
+
   it('description formats', () => {
     const r = row({ description: 'x'.repeat(60), annotations: [{ entry: NOW, text: 'note' }] });
     expect(cell(col('description'), r, ctx).lines).toEqual(['2026-10-07 12:30 note']);
     expect(cell(col('description.desc'), r, ctx).lines).toBeUndefined();
     expect(cell(col('description.truncated'), r, ctx).text).toHaveLength(40);
     expect(cell(col('description.count'), r, ctx).text.endsWith(' [1]')).toBe(true);
-    expect(cell(col('description.oneline'), r, ctx).text.endsWith(' note')).toBe(true);
+    expect(cell(col('description.oneline'), r, ctx).text).toBe(`${r.description} 2026-10-07 12:30 note`);
   });
 
   it('project, tags, depends, status, priority, urgency', () => {
@@ -108,7 +156,7 @@ describe('journal markers in lists', () => {
 
   it('do not inflate the count or the one-line form', () => {
     expect(cell(col('description.count'), withNotes, { ...ctx, journal: J }).text).toBe('Buy milk [1]');
-    expect(cell(col('description.oneline'), withNotes, { ...ctx, journal: J }).text).toBe('Buy milk call Sam first');
+    expect(cell(col('description.oneline'), withNotes, { ...ctx, journal: J }).text).toBe('Buy milk 2026-10-07 12:30 call Sam first');
   });
 
   it('a task with only markers shows no notes at all', () => {

@@ -3,6 +3,7 @@
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
   import { udaLabel } from './format';
+  import { newlineOnEnter, submitOnEnter } from './multiline';
   import { CornerUpLeft, Lock, Repeat, RotateCcw, X } from './icons';
   import { visibleNotes } from './journal';
   import { describeRecur, presetFor, PRESETS } from './recurrence';
@@ -242,6 +243,8 @@
         </select>
       {:else if u.type === 'numeric'}
         <input id="te-uda-{u.name}" type="number" step="any" bind:value={udaValues[u.name]} />
+      {:else if u.type === 'string'}
+        <textarea id="te-uda-{u.name}" rows="1" bind:value={udaValues[u.name]} onkeydown={newlineOnEnter} title="Enter adds a line; Ctrl+Enter saves"></textarea>
       {:else}
         <input id="te-uda-{u.name}" bind:value={udaValues[u.name]} />
       {/if}
@@ -284,12 +287,12 @@
     <div>
       {#each visibleNotes(row?.annotations ?? [], store.config?.journal) as a}
         <div class="ann">
-          <span class="dim">{formatMoment(a.entry, undefined, formatFor('infoNote', store.config?.config.settings))}</span> {a.text}
+          <span class="dim">{formatMoment(a.entry, undefined, formatFor('infoNote', store.config?.config.settings))}</span> <span class="text">{a.text}</span>
           <button type="button" class="ghost x" aria-label="Remove annotation" onclick={() => denotate(a.text)}><X size={12} /></button>
         </div>
       {/each}
       <div class="row">
-        <input class="grow" bind:value={note} placeholder={adding ? 'Optional first note' : 'Add an annotation'} aria-label="Annotation" />
+        <textarea class="grow" rows="1" bind:value={note} onkeydown={submitOnEnter} placeholder={adding ? 'Optional first note' : 'Add an annotation'} aria-label="Annotation" title="Shift+Enter adds a line"></textarea>
         {#if !adding}<button type="button" onclick={annotate} disabled={!note.trim()}>Add</button>{/if}
       </div>
     </div>
@@ -318,6 +321,8 @@
   .chip { display: inline-flex; align-items: center; gap: 2px; }
   .gone { opacity: 0.5; text-decoration: line-through; }
   .ann { margin-bottom: 4px; }
+  .ann .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  textarea { resize: vertical; field-sizing: content; min-height: 2.2em; max-height: 14em; }
   .orphans { opacity: 0.8; }
   .hint { font-size: 12px; }
   .link { display: inline-flex; align-items: center; gap: 4px; padding: 0 4px; }

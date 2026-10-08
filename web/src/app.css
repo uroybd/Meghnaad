@@ -13,6 +13,9 @@
   --pri-h: #cf222e;
   --pri-m: #9a6700;
   --pri-l: #1a7f37;
+  /* project segment colours: saturation and lightness, the hue is per name */
+  --seg-s: 55%;
+  --seg-l: 36%;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius: 8px;
   color-scheme: light dark;
@@ -33,6 +36,8 @@
     --pri-h: #ff7b72;
     --pri-m: #e3b341;
     --pri-l: #56d364;
+    --seg-s: 60%;
+    --seg-l: 70%;
   }
 }
 :root[data-theme='dark'] {
@@ -50,6 +55,8 @@
   --pri-h: #ff7b72;
   --pri-m: #e3b341;
   --pri-l: #56d364;
+  --seg-s: 60%;
+  --seg-l: 70%;
 }
 
 * { box-sizing: border-box; }

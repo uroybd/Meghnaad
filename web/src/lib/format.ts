@@ -11,6 +11,32 @@ export interface Cell {
   /** Extra lines under the text (annotations). */
   lines?: string[];
   cls?: string;
+  /** A project path as coloured parts, so the dots between them can be muted. */
+  segments?: { text: string; hue: number }[];
+  /** Tags, each shown as a pill. */
+  chips?: string[];
+  /** The task's uuid, for the copy tooltip on an ID cell. */
+  uuid?: string;
+}
+
+/** The hues a project segment can take: blue, violet, pink, orange, green, teal, amber, purple. */
+const SEGMENT_HUES = [215, 265, 330, 12, 150, 180, 38, 290];
+
+/** A stable colour for a name, so `Home` looks the same in every row and every report. */
+export function segmentHue(name: string): number {
+  let h = 0x811c9dc5; // FNV-1a
+  for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 0x01000193);
+  return SEGMENT_HUES[(h >>> 0) % SEGMENT_HUES.length];
+}
+
+export type UrgencyLevel = 'low' | 'mid' | 'high' | 'crit';
+
+/**
+ * How pressing a score is. Taskwarrior's `next` tag alone is worth 15 and a high priority 6, so
+ * 15 and over means something is really on fire, and under 5 is background.
+ */
+export function urgencyLevel(u: number): UrgencyLevel {
+  return u >= 15 ? 'crit' : u >= 10 ? 'high' : u >= 5 ? 'mid' : 'low';
 }
 
 export interface Ctx {
@@ -68,7 +94,8 @@ function descriptionCell(row: Row, format: string | null, ctx: Ctx): Cell {
     case 'desc':
       return { text: row.description };
     case 'oneline':
-      return { text: [row.description, ...shown.map((a) => a.text)].join(' ') };
+      // Like Taskwarrior: each annotation follows the description with its date.
+      return { text: [row.description, ...notes].join(' ') };
     case 'truncated':
       return { text: truncate(row.description, 40) };
     case 'truncated_count':
@@ -84,9 +111,9 @@ function descriptionCell(row: Row, format: string | null, ctx: Ctx): Cell {
 function projectCell(p: string | null, format: string | null): Cell {
   if (!p) return { text: '' };
   const parts = p.split('.');
-  if (format === 'parent') return { text: parts.length > 1 ? parts.slice(0, -1).join('.') : p };
   if (format === 'indented') return { text: '  '.repeat(parts.length - 1) + parts[parts.length - 1] };
-  return { text: p };
+  const text = format === 'parent' && parts.length > 1 ? parts.slice(0, -1).join('.') : p;
+  return { text, segments: text.split('.').map((s) => ({ text: s, hue: segmentHue(s) })) };
 }
 
 /** UDA values for date-typed UDAs are stored as epoch seconds. */
@@ -99,7 +126,8 @@ function udaCell(row: Row, col: Column, ctx: Ctx): Cell {
     return Number.isFinite(ts) ? dateCell(ts, col.name, col.format, ctx) : { text: raw };
   }
   if (def?.indicator && col.format === 'indicator') return { text: def.indicator };
-  return { text: raw };
+  // A multi-line value keeps its lines in the table instead of running them together.
+  return raw.includes('\n') ? { text: raw, cls: 'multiline' } : { text: raw };
 }
 
 export function cell(col: Column, row: Row, ctx: Ctx): Cell {
@@ -114,7 +142,10 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
 
   switch (name) {
     case 'id':
-      return row.id != null ? { text: String(row.id) } : { text: shortUuid(row.uuid), cls: 'dim' };
+      // Hovering it offers the full uuid to copy; ids are only meaningful on this replica.
+      return row.id != null
+        ? { text: String(row.id), uuid: row.uuid }
+        : { text: shortUuid(row.uuid), cls: 'dim', uuid: row.uuid };
     case 'uuid':
       return { text: f === 'short' ? shortUuid(row.uuid) : row.uuid };
     case 'status': {
@@ -131,7 +162,8 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
     case 'tags': {
       if (f === 'count') return { text: row.tags.length ? `[${row.tags.length}]` : '' };
       if (f === 'indicator') return { text: row.tags.length ? '+' : '' };
-      return { text: row.tags.join(f === 'list' ? ',' : ' ') };
+      if (f === 'list') return { text: row.tags.join(',') };
+      return { text: row.tags.join(' '), chips: row.tags.length ? row.tags : undefined };
     }
     case 'depends': {
       if (f === 'indicator') return { text: row.depends.length ? 'D' : '' };
@@ -139,7 +171,10 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
       return { text: row.depends.map(shortUuid).join(' ') };
     }
     case 'urgency':
-      return { text: f === 'integer' ? String(Math.round(row.urgency)) : row.urgency.toFixed(2) };
+      return {
+        text: f === 'integer' ? String(Math.round(row.urgency)) : row.urgency.toFixed(2),
+        cls: `urg-${urgencyLevel(row.urgency)}`,
+      };
     case 'recur':
       return { text: f === 'indicator' ? (row.recur ? (ctx.recurIndicator ?? 'R') : '') : (row.recur ?? '') };
     case 'parent':
