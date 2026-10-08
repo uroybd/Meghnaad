@@ -328,6 +328,8 @@ UDAs, custom reports and contexts live in `~/.taskrc`, not in your synced data, 
   previous** undoes the last save.
 - `include` lines can't be followed; paste the included files' contents too.
 - A UDA that exists on a task but isn't defined in your taskrc is shown but **read-only**.
+- **[taskrc support](docs/taskrc-support.md)** lists every Taskwarrior `taskrc` option with what is done, what is
+  partial, what is not done, and why.
 
 ### Urgency
 
@@ -475,6 +477,8 @@ changing filters, sorting, urgency or journalling, read the C++ first.
 - **Phone layout** was verified in an emulated phone browser (touch, 390px); try it on your own device before relying on it, in particular the on-screen keyboard and safe-area insets.
 - **Snapshots and cleanup** of old versions are left to the CLI.
 - **Dates you type** aren't parsed with your `dateformat`: use `2026-12-25`, `2026-12-25T08:30` or words like `friday`, `3d`. (Dates *shown* follow it; see Tasks view.)
+- **Not every `taskrc` option is supported.** Terminal, colour and local-file options don't apply to a web app, and some
+  (`default.project`, `alias.*`, `context.<name>.rc.*`, …) aren't implemented yet. See [taskrc support](docs/taskrc-support.md).
 - Single user: one set of settings and one shared replica per Worker instance.
 
 ## About the name
