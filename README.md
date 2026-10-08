@@ -88,7 +88,7 @@ a local database that syncs when you ask. Meghnaad is a thin client: the browser
 replica syncs on every request.
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph desktop["Desktop: Taskwarrior 3"]
     direction TB
     cli["task CLI (C++)"]
