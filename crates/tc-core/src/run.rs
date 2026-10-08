@@ -343,7 +343,7 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
     let def = resolve(cfg, req.report)
         .ok_or_else(|| FilterError(format!("'{}' is not a report", req.report)))?;
     let ids = working_set_ids(req.all);
-    let ctx = EvalCtx::new(cfg, req.clock, &ids);
+    let ctx = EvalCtx::new(cfg, req.clock, &ids).with_inheritance(req.all);
 
     let report_filter = def.filter.as_deref().map(split_words).unwrap_or_default();
     let context_filter = if def.context {

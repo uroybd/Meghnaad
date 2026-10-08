@@ -74,6 +74,7 @@ class Store {
   /** The task detail drawer. */
   detail = $state<{ uuid: string; from: Entry | null } | null>(null);
   settingsOpen = $state(false);
+  urgencyOpen = $state(false);
   notifyOpen = $state(false);
 
   #toastTimer: ReturnType<typeof setTimeout> | undefined;

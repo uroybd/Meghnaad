@@ -202,6 +202,52 @@ async fn dependencies_block_and_unblock() {
     assert!(!load_facts(&mut r).await.unwrap().iter().find(|x| x.description == "blocked").unwrap().blocked);
 }
 
+/// Urgency of the task called `name` in the `next` report run with the given settings.
+async fn urgency_of(r: &mut R, cfg: &Config, line: &str, name: &str) -> f64 {
+    let (CliResult::Report(o), _) = run(r, cfg, line).await else { panic!("not a report") };
+    o.rows.iter().find(|x| x.facts.description == name).unwrap_or_else(|| panic!("no {name}")).urgency
+}
+
+#[tokio::test]
+async fn urgency_inherit_is_off_by_default_and_follows_the_setting() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add blocker").await;
+    run(&mut r, &cfg, "add blocked depends:1 priority:H due:-8d").await;
+
+    // Taskwarrior's default: no inheritance. The blocker only has its own +8 for blocking.
+    let own = urgency_of(&mut r, &cfg, "next", "blocker").await;
+    assert!((own - 8.0).abs() < 1e-9, "{own}");
+    let blocked = urgency_of(&mut r, &cfg, "next", "blocked").await;
+    assert!(own < blocked);
+
+    // Switched on in the taskrc: the blocker takes the blocked task's urgency, plus 0.01.
+    let on = parse("urgency.inherit=1\n").config;
+    let inherited = urgency_of(&mut r, &on, "next", "blocker").await;
+    assert!((inherited - (blocked + 0.01)).abs() < 1e-9, "{inherited} vs {blocked}");
+    assert!((urgency_of(&mut r, &on, "next", "blocked").await - blocked).abs() < 1e-9);
+
+    // ...or for one command, as `task rc.urgency.inherit:1 next` does.
+    let once = urgency_of(&mut r, &cfg, "rc.urgency.inherit:1 next", "blocker").await;
+    assert!((once - inherited).abs() < 1e-9);
+    // The `urgency` filter sees the inherited score too.
+    let (CliResult::Report(o), _) = run(&mut r, &on, "next urgency.over:12.5").await else { panic!() };
+    assert_eq!(o.rows.iter().filter(|x| x.facts.description == "blocker").count(), 1);
+}
+
+#[tokio::test]
+async fn project_urgency_reaches_sub_projects_but_not_lookalikes() {
+    let mut r = replica();
+    let cfg = parse("urgency.user.project.Work.coefficient=5\n").config;
+    run(&mut r, &cfg, "add a project:Work").await;
+    run(&mut r, &cfg, "add b project:Work.Reports").await;
+    run(&mut r, &cfg, "add c project:Workshop").await;
+    // project term 1.0, plus 5 where the coefficient applies
+    assert!((urgency_of(&mut r, &cfg, "next", "a").await - 6.0).abs() < 1e-9);
+    assert!((urgency_of(&mut r, &cfg, "next", "b").await - 6.0).abs() < 1e-9);
+    assert!((urgency_of(&mut r, &cfg, "next", "c").await - 1.0).abs() < 1e-9);
+}
+
 #[tokio::test]
 async fn udas_and_custom_reports_from_taskrc() {
     let cfg = parse(

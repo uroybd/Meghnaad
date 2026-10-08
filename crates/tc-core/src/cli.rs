@@ -590,7 +590,7 @@ async fn execute_inner<S: Storage>(
         Err(e) => return error(e.to_string()),
     };
     let ids = run::working_set_ids(&all);
-    let ctx = EvalCtx::new(cfg, clock, &ids);
+    let ctx = EvalCtx::new(cfg, clock, &ids).with_inheritance(&all);
 
     match parsed.cmd.clone() {
         Cmd::Report(name) => {

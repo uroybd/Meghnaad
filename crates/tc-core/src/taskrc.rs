@@ -91,6 +91,12 @@ pub struct Config {
 }
 
 impl Config {
+    /// `urgency.inherit`: a blocking task takes the highest urgency of what it blocks. Off unless
+    /// the taskrc turns it on, as in Taskwarrior (`urgency.inherit=0` is its default).
+    pub fn urgency_inherit(&self) -> bool {
+        self.settings.get("urgency.inherit").is_some_and(|v| truthy(v))
+    }
+
     /// `(start annotation, stop annotation)` when `journal.time` is on.
     pub fn journal(&self) -> Option<(String, String)> {
         let on = self.settings.get("journal.time").is_some_and(|v| truthy(v));
@@ -256,6 +262,70 @@ pub fn apply_override(cfg: &mut Config, key: &str, value: &str) -> Result<(), St
     Ok(())
 }
 
+/// The built-in urgency terms: `urgency.<term>.coefficient`.
+const URGENCY_TERMS: &[&str] = &[
+    "project", "active", "scheduled", "waiting", "blocked", "annotations", "tags", "due", "blocking", "age",
+];
+
+/// Most urgency settings one save may carry.
+pub const MAX_URGENCY_SETTINGS: usize = 500;
+
+/// Whether `key` is an urgency setting Taskwarrior reads, spelled so a taskrc round-trips it.
+pub fn valid_urgency_key(key: &str) -> bool {
+    // Taskwarrior cuts the name at the first ".coefficient", so a name can't contain one.
+    let name_ok = |n: &str| {
+        !n.is_empty()
+            && !n.contains(".coefficient")
+            && n.chars().all(|c| !c.is_whitespace() && !c.is_control() && c != '=' && c != '#')
+    };
+    let Some(rest) = key.strip_prefix("urgency.") else { return false };
+    if rest == "age.max" {
+        return true;
+    }
+    let Some(body) = rest.strip_suffix(".coefficient") else { return false };
+    if URGENCY_TERMS.contains(&body) {
+        return true;
+    }
+    if let Some(n) = body
+        .strip_prefix("user.project.")
+        .or_else(|| body.strip_prefix("user.tag."))
+        .or_else(|| body.strip_prefix("user.keyword."))
+    {
+        return name_ok(n);
+    }
+    match body.strip_prefix("uda.").map(|u| u.split_once('.')) {
+        Some(None) => valid_ident(&body["uda.".len()..]),
+        Some(Some((uda, value))) => valid_ident(uda) && name_ok(value),
+        None => false,
+    }
+}
+
+/// Replace the saved urgency settings (the changes made in the app) and `urgency.inherit`.
+///
+/// `urgency` is the complete set of overrides: anything not listed falls back to Taskwarrior's
+/// built-in value. Nothing is applied unless every entry is acceptable.
+pub fn set_urgency(cfg: &mut Config, urgency: BTreeMap<String, f64>, inherit: bool) -> Result<(), String> {
+    if urgency.len() > MAX_URGENCY_SETTINGS {
+        return Err(format!("too many urgency settings (at most {MAX_URGENCY_SETTINGS})"));
+    }
+    for (key, value) in &urgency {
+        if !valid_urgency_key(key) || is_sensitive(key) {
+            return Err(format!("'{key}' is not an urgency setting that can be saved"));
+        }
+        if !value.is_finite() || value.abs() > 1e6 {
+            return Err(format!("{key}: the value must be a number between -1000000 and 1000000"));
+        }
+    }
+    cfg.urgency = urgency;
+    // Off is Taskwarrior's default, so it is stored as "not set".
+    if inherit {
+        cfg.settings.insert("urgency.inherit".to_owned(), "1".to_owned());
+    } else {
+        cfg.settings.remove("urgency.inherit");
+    }
+    Ok(())
+}
+
 /// The settings as a taskrc: what the web UI actually holds, in a form you can read, edit and
 /// import again. Parsing the result gives back the same config (see the round-trip test).
 /// Never contains anything that was blocked, since that was never stored.
@@ -396,6 +466,9 @@ pub fn parse(text: &str) -> Parsed {
             }
             ["context"] => {
                 p.config.active_context = (!value.is_empty()).then(|| value.to_owned());
+            }
+            ["urgency", "inherit"] => {
+                p.config.settings.insert(name.to_owned(), unescape(value));
             }
             ["urgency", ..] => match value.parse::<f64>() {
                 Ok(f) if f.is_finite() => {
@@ -542,6 +615,82 @@ verbose=nothing
         assert_eq!(p.config.urgency["urgency.user.tag.next.coefficient"], 15.0);
         assert!(!p.config.urgency.contains_key("urgency.age.max"));
         assert_eq!(p.config.settings["default.command"], "mine");
+    }
+
+    #[test]
+    fn urgency_inherit_is_off_unless_set() {
+        assert!(!Config::default().urgency_inherit());
+        for (v, want) in [("1", true), ("yes", true), ("on", true), ("0", false), ("no", false), ("maybe", false)] {
+            let p = parse(&format!("urgency.inherit={v}\n"));
+            assert_eq!(p.config.urgency_inherit(), want, "{v}");
+            assert!(p.warnings.is_empty(), "{v}: {:?}", p.warnings);
+            assert!(p.config.urgency.is_empty());
+        }
+        let mut cfg = Config::default();
+        apply_override(&mut cfg, "urgency.inherit", "on").unwrap();
+        assert!(cfg.urgency_inherit());
+    }
+
+    #[test]
+    fn urgency_keys_follow_taskwarrior_spelling() {
+        for ok in [
+            "urgency.due.coefficient",
+            "urgency.age.max",
+            "urgency.user.project.Home.Kitchen.coefficient",
+            "urgency.user.tag.next.coefficient",
+            "urgency.user.keyword.call_mum.coefficient",
+            "urgency.uda.estimate.coefficient",
+            "urgency.uda.estimate.huge.coefficient",
+            "urgency.uda.priority.H.coefficient",
+        ] {
+            assert!(valid_urgency_key(ok), "{ok}");
+        }
+        for bad in [
+            "urgency.coefficient",
+            "urgency.bogus.coefficient",
+            "urgency.due",
+            "urgency.user.tag..coefficient",
+            "urgency.user.tag.a b.coefficient",
+            "urgency.user.tag.a=b.coefficient",
+            "urgency.user.project.x.coefficient.coefficient",
+            "urgency.uda.bad-name.coefficient",
+            "due.coefficient",
+        ] {
+            assert!(!valid_urgency_key(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn set_urgency_replaces_overrides_and_round_trips() {
+        let mut cfg = parse("urgency.due.coefficient=3\nurgency.inherit=1\n").config;
+        let mut next = BTreeMap::new();
+        next.insert("urgency.user.project.Home.coefficient".to_owned(), 2.5);
+        set_urgency(&mut cfg, next, false).unwrap();
+        assert_eq!(cfg.urgency.len(), 1);
+        assert!(!cfg.urgency_inherit() && !cfg.settings.contains_key("urgency.inherit"));
+        assert_eq!(parse(&render(&cfg)).config, cfg);
+
+        set_urgency(&mut cfg, BTreeMap::new(), true).unwrap();
+        assert!(cfg.urgency.is_empty() && cfg.urgency_inherit());
+        assert_eq!(parse(&render(&cfg)).config, cfg);
+    }
+
+    #[test]
+    fn set_urgency_refuses_bad_input_and_changes_nothing() {
+        let mut cfg = parse("urgency.due.coefficient=3\n").config;
+        let before = cfg.clone();
+        for (k, v) in [
+            ("urgency.bogus.coefficient", 1.0),
+            ("urgency.due.coefficient", f64::NAN),
+            ("urgency.due.coefficient", f64::INFINITY),
+            ("urgency.due.coefficient", 1e9),
+            ("urgency.user.keyword.password.coefficient", 1.0),
+        ] {
+            let mut m = BTreeMap::new();
+            m.insert(k.to_owned(), v);
+            assert!(set_urgency(&mut cfg, m, true).is_err(), "{k}={v}");
+            assert_eq!(cfg, before);
+        }
     }
 
     #[test]

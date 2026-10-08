@@ -82,6 +82,15 @@ export function putTaskrc(text: string): Promise<TaskrcResponse> {
   });
 }
 
+/** Save the urgency settings: every one that differs from the built-in value, and `urgency.inherit`. */
+export function putUrgency(urgency: Record<string, number>, inherit: boolean): Promise<{ ok: true }> {
+  return request<{ ok: true }>('/api/config/urgency', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ urgency, inherit }),
+  });
+}
+
 export interface SetupStatus {
   configured: boolean;
   /** Names of the Worker settings still to fill in (TEAM_DOMAIN, POLICY_AUD). */

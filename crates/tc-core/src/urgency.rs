@@ -3,12 +3,13 @@
 use crate::dates::{Clock, DAY};
 use crate::model::Facts;
 use crate::taskrc::Config;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use uuid::Uuid;
 
 const EPSILON: f64 = 0.000_001;
 
 /// Taskwarrior's built-in coefficients; `urgency.*` in the taskrc overrides any of them.
-fn defaults() -> BTreeMap<String, f64> {
+pub fn defaults() -> BTreeMap<String, f64> {
     [
         ("urgency.project.coefficient", 1.0),
         ("urgency.active.coefficient", 4.0),
@@ -136,6 +137,67 @@ pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<Stri
         }
     }
     v
+}
+
+/// Taskwarrior's `urgency.inherit`: a blocking task is at least as urgent as every task it
+/// blocks, and then a hair more (0.01) so it sorts above them. Recursive, so a chain of
+/// dependencies carries the top urgency all the way down.
+///
+/// Returns the urgency of every *blocking* task; the caller uses its own score for the rest.
+/// Mirrors `Task::urgency_c`/`urgency_inherit`: the 0.01 is added to every blocking task, even
+/// when nothing it blocks is more urgent. Tasks that are completed or deleted block nothing.
+pub fn inherited(
+    all: &[Facts],
+    cfg: &Config,
+    clock: &Clock,
+    coef: &BTreeMap<String, f64>,
+) -> BTreeMap<Uuid, f64> {
+    let base: BTreeMap<Uuid, f64> = all.iter().map(|f| (f.uuid, urgency_with(f, cfg, clock, coef))).collect();
+    // blocker -> the live tasks that depend on it
+    let mut blocked_by: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
+    for f in all.iter().filter(|f| f.status != "completed" && f.status != "deleted") {
+        for d in &f.depends {
+            blocked_by.entry(*d).or_default().push(f.uuid);
+        }
+    }
+    let blocking: BTreeSet<Uuid> = all.iter().filter(|f| f.blocking).map(|f| f.uuid).collect();
+
+    struct Walk<'a> {
+        base: &'a BTreeMap<Uuid, f64>,
+        blocked_by: &'a BTreeMap<Uuid, Vec<Uuid>>,
+        blocking: &'a BTreeSet<Uuid>,
+        done: BTreeMap<Uuid, f64>,
+        active: BTreeSet<Uuid>,
+    }
+    impl Walk<'_> {
+        fn of(&mut self, id: Uuid) -> f64 {
+            if let Some(v) = self.done.get(&id) {
+                return *v;
+            }
+            let own = self.base.get(&id).copied().unwrap_or(0.0);
+            if !self.blocking.contains(&id) {
+                return own;
+            }
+            // Taskwarrior refuses circular dependencies; a cycle from another replica must not loop.
+            if !self.active.insert(id) {
+                return own;
+            }
+            let mut v = own;
+            for blocked in self.blocked_by.get(&id).cloned().unwrap_or_default() {
+                v = v.max(self.of(blocked));
+            }
+            self.active.remove(&id);
+            let v = v + 0.01;
+            self.done.insert(id, v);
+            v
+        }
+    }
+
+    let mut walk = Walk { base: &base, blocked_by: &blocked_by, blocking: &blocking, done: BTreeMap::new(), active: BTreeSet::new() };
+    for id in &blocking {
+        walk.of(*id);
+    }
+    walk.done
 }
 
 /// Value of an attribute that urgency can key on: `priority` is a core attribute here, other
@@ -272,5 +334,72 @@ mod tests {
         close(urgency(&t, &cfg, &c), 1.0 + 0.9 + 3.0 - 1.5 + 2.0 - 4.0 + 0.5 + 1.0);
         t.project = Some("Workshop".into()); // not a sub-project of Work
         close(urgency(&t, &cfg, &c), 1.0 + 0.9 - 1.5 + 2.0 - 4.0 + 0.5 + 1.0);
+    }
+
+    fn dep(id: u128, desc: &str, on: &[u128]) -> Facts {
+        let mut t = task(desc);
+        t.uuid = Uuid::from_u128(id);
+        t.depends = on.iter().map(|d| Uuid::from_u128(*d)).collect();
+        t.blocked = !on.is_empty();
+        t
+    }
+
+    fn inherit(all: &mut [Facts]) -> BTreeMap<Uuid, f64> {
+        for i in 0..all.len() {
+            let id = all[i].uuid;
+            let blocks = all.iter().any(|o| o.status == "pending" && o.depends.contains(&id));
+            all[i].blocking = blocks;
+        }
+        let cfg = Config::default();
+        inherited(all, &cfg, &clock(), &coefficients(&cfg))
+    }
+
+    #[test]
+    fn inherit_takes_the_most_urgent_blocked_task() {
+        // 1 blocks 2 and 3; 3 is high priority.
+        let mut all = vec![dep(1, "base", &[]), dep(2, "low", &[1]), dep(3, "high", &[1])];
+        all[2].priority = Some("H".into());
+        all[2].due = Some(NOW - 8 * DAY); // overdue, so it outweighs the blocker's own +8
+        let got = inherit(&mut all);
+        let cfg = Config::default();
+        let own = urgency(&all[0], &cfg, &clock());
+        let high = urgency(&all[2], &cfg, &clock());
+        assert!(high > own);
+        close(got[&Uuid::from_u128(1)], high + 0.01);
+        assert!(!got.contains_key(&Uuid::from_u128(2)), "tasks that block nothing keep their own score");
+    }
+
+    #[test]
+    fn inherit_walks_a_chain() {
+        // 1 <- 2 <- 3, with 3 due and urgent: the urgency reaches 1 through 2.
+        let mut all = vec![dep(1, "a", &[]), dep(2, "b", &[1]), dep(3, "c", &[2])];
+        all[2].priority = Some("H".into());
+        all[2].due = Some(NOW - 8 * DAY);
+        let got = inherit(&mut all);
+        let top = urgency(&all[2], &Config::default(), &clock());
+        close(got[&Uuid::from_u128(2)], top + 0.01);
+        close(got[&Uuid::from_u128(1)], top + 0.02);
+    }
+
+    #[test]
+    fn inherit_keeps_a_higher_own_score_and_ignores_finished_tasks() {
+        let mut all = vec![dep(1, "a", &[]), dep(2, "b", &[1])];
+        all[0].priority = Some("H".into()); // blocker already outranks what it blocks
+        let got = inherit(&mut all);
+        let own = urgency(&all[0], &Config::default(), &clock());
+        close(got[&Uuid::from_u128(1)], own + 0.01);
+
+        let mut all = vec![dep(1, "a", &[]), dep(2, "b", &[1])];
+        all[1].priority = Some("H".into());
+        all[1].status = "completed".into(); // a finished task no longer lends urgency
+        assert!(inherit(&mut all).is_empty());
+    }
+
+    #[test]
+    fn inherit_survives_a_dependency_cycle() {
+        let mut all = vec![dep(1, "a", &[2]), dep(2, "b", &[1])];
+        let got = inherit(&mut all);
+        assert_eq!(got.len(), 2);
+        assert!(got.values().all(|v| v.is_finite()));
     }
 }

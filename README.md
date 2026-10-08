@@ -329,6 +329,27 @@ UDAs, custom reports and contexts live in `~/.taskrc`, not in your synced data, 
 - `include` lines can't be followed; paste the included files' contents too.
 - A UDA that exists on a task but isn't defined in your taskrc is shown but **read-only**.
 
+### Urgency
+
+A task's urgency is the sum of Taskwarrior's `urgency.*` terms, with its built-in coefficients unless your taskrc
+changes them. Open **urgency** to see every coefficient next to its default, edit it, add your own, or send one
+back to its default. Edits are saved with the rest of your imported settings (as `urgency.*` lines in the
+**taskrc** dialog), so they survive restarts and **Restore previous** covers them. Your desktop `~/.taskrc` is not
+touched, so copy any change you want there.
+
+It follows Taskwarrior's rules, so nothing is inherited that Taskwarrior doesn't inherit:
+
+- **Coefficients add up.** A task gets every matching coefficient, not just the most specific one.
+- **Projects reach their sub-projects.** `urgency.user.project.Home.coefficient` applies to `Home` and `Home.Kitchen`,
+  but not to `Homework`.
+- **Tags** match user tags and virtual tags (`urgency.user.tag.OVERDUE.coefficient`). **Keywords** match the
+  description (case-sensitive). `urgency.uda.<name>.coefficient` matches any value of a UDA and
+  `urgency.uda.<name>.<value>.coefficient` one value.
+- **`urgency.inherit` is off**, as in Taskwarrior. When you turn it on, a task that blocks others takes the highest
+  urgency of the tasks it blocks, through the whole chain, plus 0.01 so it sorts above them.
+
+`task rc.urgency.due.coefficient:0 next` and `rc.urgency.inherit:1` also work for a single command in the console.
+
 ### Recurring tasks
 
 Add one with `recur:` and a `due` date, in the console or with the **Repeat** field of the form:

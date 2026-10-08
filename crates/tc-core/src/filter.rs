@@ -41,15 +41,29 @@ pub struct EvalCtx<'a> {
     /// Working-set ids (task number -> uuid) that `task 3 ...` refers to.
     pub ids: &'a BTreeMap<Uuid, u32>,
     coef: BTreeMap<String, f64>,
+    /// Urgency of blocking tasks under `urgency.inherit`; empty when that is off.
+    inherited: BTreeMap<Uuid, f64>,
 }
 
 impl<'a> EvalCtx<'a> {
     pub fn new(cfg: &'a Config, clock: Clock, ids: &'a BTreeMap<Uuid, u32>) -> Self {
-        EvalCtx { cfg, clock, ids, coef: coefficients(cfg) }
+        EvalCtx { cfg, clock, ids, coef: coefficients(cfg), inherited: BTreeMap::new() }
+    }
+
+    /// Apply `urgency.inherit` (when the taskrc turns it on) using every task, since a task's
+    /// urgency then depends on the tasks it blocks.
+    pub fn with_inheritance(mut self, all: &[Facts]) -> Self {
+        if self.cfg.urgency_inherit() {
+            self.inherited = crate::urgency::inherited(all, self.cfg, &self.clock, &self.coef);
+        }
+        self
     }
 
     pub fn urgency(&self, f: &Facts) -> f64 {
-        urgency_with(f, self.cfg, &self.clock, &self.coef)
+        match self.inherited.get(&f.uuid) {
+            Some(v) => *v,
+            None => urgency_with(f, self.cfg, &self.clock, &self.coef),
+        }
     }
 
     fn case_sensitive(&self) -> bool {

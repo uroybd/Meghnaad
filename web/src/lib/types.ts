@@ -149,6 +149,10 @@ export interface ConfigResponse {
   journal: { start: string; stop: string } | null;
   /** There are earlier saved settings to restore. */
   has_previous: boolean;
+  /** Taskwarrior's built-in urgency coefficients: what a setting falls back to. */
+  urgency_defaults: Record<string, number>;
+  /** `urgency.inherit`: blocking tasks take the highest urgency of what they block. */
+  urgency_inherit: boolean;
   /** Saved settings exist but couldn't be read (they are left untouched). */
   config_error: string | null;
 }

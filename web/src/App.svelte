@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
-  import { Bell, BellOff, FileText, Folder, ListChecks, Menu, Plus, Terminal, TriangleAlert, X } from './lib/icons';
+  import { Bell, BellOff, FileText, Folder, ListChecks, Menu, Plus, SlidersHorizontal, Terminal, TriangleAlert, X } from './lib/icons';
   import ConsoleView from './lib/ConsoleView.svelte';
   import ProjectsView from './lib/ProjectsView.svelte';
   import DetailDrawer from './lib/DetailDrawer.svelte';
@@ -15,6 +15,7 @@
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
+  import UrgencyDialog from './lib/UrgencyDialog.svelte';
 
   // A fresh deployment has no sign-in settings yet; say what is left instead of showing errors.
   let setup = $state<SetupStatus | null>(null);
@@ -87,6 +88,7 @@
       aria-label="Reminders ({notifier.settings.enabled ? 'on' : 'off'})"
       title={notifier.settings.enabled ? 'Reminders are on (while this tab is open)' : 'Reminders are off'}
     >{#if notifier.settings.enabled}<Bell size={17} />{:else}<BellOff size={17} />{/if}</button>
+    <button class="ghost btn" aria-label="urgency settings" onclick={() => (store.urgencyOpen = true)} title="Urgency coefficients and inheritance"><SlidersHorizontal size={15} /> <span class="lbl">urgency</span></button>
     <button class="ghost btn" aria-label="taskrc settings" onclick={() => (store.settingsOpen = true)} title="Import UDAs, reports and contexts from your taskrc"><FileText size={15} /> <span class="lbl">taskrc</span></button>
   </header>
 
@@ -156,6 +158,7 @@
   {#key store.detail.uuid}<DetailDrawer uuid={store.detail.uuid} />{/key}
 {/if}
 {#if store.settingsOpen}<SettingsDialog />{/if}
+{#if store.urgencyOpen}<UrgencyDialog />{/if}
 {#if store.notifyOpen}<NotifyDialog />{/if}
 {/if}
 

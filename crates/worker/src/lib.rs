@@ -109,6 +109,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .get_async("/api/config/taskrc", |_, ctx| wrap(get_taskrc(ctx)))
         .put_async("/api/config/taskrc", |req, ctx| wrap(put_taskrc(req, ctx)))
         .post_async("/api/config/taskrc/restore", |_, ctx| wrap(restore_taskrc(ctx)))
+        .put_async("/api/config/urgency", |req, ctx| wrap(put_urgency(req, ctx)))
         .post_async("/api/cli", |req, ctx| wrap(cli(req, ctx)))
         .run(req, env)
         .await?;
@@ -244,6 +245,9 @@ async fn get_config(ctx: RouteContext<()>) -> RouteResult {
         "reports": reports,
         "journal": journal,
         "has_previous": has_previous,
+        // Taskwarrior's built-in coefficients, so the UI can show what a setting falls back to.
+        "urgency_defaults": tc_core::urgency::defaults(),
+        "urgency_inherit": cfg.urgency_inherit(),
         // Set when the saved settings exist but couldn't be read (they are left untouched).
         "config_error": session::config_error(),
     }))
@@ -281,6 +285,36 @@ async fn put_taskrc(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     drop(text);
     session::save_config(&ctx.env, parsed.config.clone()).await?;
     json(&summary(&parsed))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UrgencyRequest {
+    /// Every urgency setting that differs from Taskwarrior's built-in value. Anything left out
+    /// goes back to its default.
+    urgency: std::collections::BTreeMap<String, f64>,
+    /// `urgency.inherit`: blocking tasks take the highest urgency of what they block.
+    inherit: bool,
+}
+
+/// Save the urgency settings edited in the app, into the same stored settings the taskrc import uses
+/// (so they show in the taskrc editor and can be restored with the same one-step backup).
+async fn put_urgency(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let body: UrgencyRequest = req
+        .json()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("invalid request body: {e}")))?;
+    let current = session::config(&ctx.env).await?;
+    if session::config_error().is_some() {
+        // The stored settings are unreadable, so `current` is only the defaults: saving would bury them.
+        return Err(ApiError::BadRequest(
+            "the saved settings can't be read; fix them in the taskrc dialog first".into(),
+        ));
+    }
+    let mut cfg = (*current).clone();
+    taskrc::set_urgency(&mut cfg, body.urgency, body.inherit).map_err(ApiError::BadRequest)?;
+    session::save_config(&ctx.env, cfg).await?;
+    json(&serde_json::json!({ "ok": true }))
 }
 
 /// Go back to the settings from before the last import (and again, to undo that).
