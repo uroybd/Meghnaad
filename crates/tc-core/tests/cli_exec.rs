@@ -464,6 +464,42 @@ async fn a_contexts_default_command_is_what_a_bare_command_runs() {
 }
 
 #[tokio::test]
+async fn text_in_filters_and_substitutions_is_a_regular_expression() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add Buy milk and eggs").await;
+    run(&mut r, &cfg, "add Call Sam").await;
+    run(&mut r, &cfg, "add Water the plants").await;
+    let (res, _) = run(&mut r, &cfg, "/Call/ annotate renew the passport").await;
+    assert!(message(&res).contains("Annotated"), "{}", message(&res));
+    let count = |res: CliResult| message(&res);
+
+    assert_eq!(count(run(&mut r, &cfg, "count m.lk").await.0), "1", "a wildcard");
+    assert_eq!(count(run(&mut r, &cfg, "count /^(Buy|Water)/").await.0), "2");
+    assert_eq!(count(run(&mut r, &cfg, "count passport").await.0), "1", "found in an annotation");
+    assert_eq!(count(run(&mut r, &cfg, "count desc.has:pass.ort").await.0), "1");
+    assert_eq!(count(run(&mut r, &cfg, "count desc.hasnt:pass.ort").await.0), "2");
+    // "the" is a whole word in one description and in another task's annotation.
+    assert_eq!(count(run(&mut r, &cfg, "count desc.word:the").await.0), "2");
+    assert_eq!(count(run(&mut r, &cfg, "count desc.word:th").await.0), "0");
+    // Command-line `rc.regex:off` goes back to plain text for that command.
+    assert_eq!(count(run(&mut r, &cfg, "rc.regex:off count m.lk").await.0), "0");
+    assert_eq!(count(run(&mut r, &cfg, "rc.regex:off count milk").await.0), "1");
+
+    // Mistakes are errors that say what is wrong, not silent empty results.
+    let (res, wrote) = run(&mut r, &cfg, "count /(/").await;
+    assert!(!wrote && message(&res).contains("not a valid regular expression"), "{}", message(&res));
+    let (res, _) = run(&mut r, &cfg, "count /a(?=b)/").await;
+    assert!(message(&res).contains("lookahead"), "{}", message(&res));
+
+    // Substitution: a pattern to find, literal text to put.
+    let (res, _) = run(&mut r, &cfg, "/Buy/ modify '/m.lk and/oat milk,/'").await;
+    assert!(message(&res).contains("Modified"), "{}", message(&res));
+    let descs = descs(&mut r).await;
+    assert!(descs.contains(&"Buy oat milk, eggs".to_owned()), "{descs:?}");
+}
+
+#[tokio::test]
 async fn udas_and_custom_reports_from_taskrc() {
     let cfg = parse(
         "uda.estimate.type=string\nuda.estimate.label=Size\nuda.estimate.values=big,small\n\

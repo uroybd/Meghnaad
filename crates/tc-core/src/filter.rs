@@ -15,6 +15,7 @@
 use crate::dates::{parse_date_expr, Clock};
 use crate::model::Facts;
 use crate::taskrc::{Config, UdaType};
+use crate::rx::{Rx, TextMatch};
 use crate::urgency::{coefficients, urgency_with};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -66,7 +67,13 @@ impl<'a> EvalCtx<'a> {
         }
     }
 
-    fn case_sensitive(&self) -> bool {
+    /// `regex` (on by default): whether text matching uses regular expressions.
+    pub fn regex_enabled(&self) -> bool {
+        self.cfg.regex_enabled()
+    }
+
+    /// `search.case.sensitive` (on by default).
+    pub fn case_sensitive(&self) -> bool {
         self.cfg
             .settings
             .get("search.case.sensitive")
@@ -248,8 +255,19 @@ fn parse_modifier(m: &str) -> Result<Op, FilterError> {
 #[derive(Debug, Clone, PartialEq)]
 enum Term {
     Tag { name: String, present: bool },
-    Attr { attr: Attr, op: Op, value: String, date: Option<i64>, day: bool, num: Option<f64> },
-    Text(String),
+    Attr {
+        attr: Attr,
+        op: Op,
+        value: String,
+        date: Option<i64>,
+        day: bool,
+        num: Option<f64>,
+        /// The pattern behind `.has`, `.startswith`, `.endswith`, `.word` and their negations, when
+        /// `regex` is on. Taskwarrior turns each into a `~` match: `^value`, `value$`, `\bvalue\b`.
+        rx: Option<Rx>,
+    },
+    /// A plain word or `/pattern/`; found in the description or in any annotation.
+    Text(TextMatch),
     Uuid(String),
     Ids(Vec<(u32, u32)>),
 }
@@ -502,7 +520,7 @@ impl Parser<'_, '_> {
         }
 
         if tok.len() > 2 && tok.starts_with('/') && tok.ends_with('/') {
-            return Ok(Some(Term::Text(tok[1..tok.len() - 1].to_owned())));
+            return self.text(&tok[1..tok.len() - 1]).map(|m| Some(Term::Text(m)));
         }
         if is_uuidish(tok) {
             return Ok(Some(Term::Uuid(tok.to_ascii_lowercase())));
@@ -510,7 +528,13 @@ impl Parser<'_, '_> {
         if let Some(ids) = parse_ids(tok) {
             return Ok(Some(Term::Ids(ids)));
         }
-        Ok(Some(Term::Text(tok.to_owned())))
+        self.text(tok).map(|m| Some(Term::Text(m)))
+    }
+
+    /// Plain text from the filter, as a pattern or not according to the `regex` setting.
+    fn text(&self, text: &str) -> Result<TextMatch, FilterError> {
+        TextMatch::new(text, self.ctx.regex_enabled(), self.ctx.case_sensitive())
+            .map_err(|why| FilterError(format!("'{text}' is not a valid regular expression: {why}")))
     }
 
     fn attr_term(&self, attr: Attr, op: Op, value: &str) -> Result<Term, FilterError> {
@@ -529,7 +553,22 @@ impl Parser<'_, '_> {
                 _ => {}
             }
         }
-        Ok(Term::Attr { attr, op, value: value.to_owned(), date, day, num })
+        // With `regex` on, Taskwarrior rewrites these as a `~` match with the value used as a pattern.
+        let pattern = match op {
+            Op::Has | Op::Hasnt => Some(value.to_owned()),
+            Op::StartsWith => Some(format!("^{value}")),
+            Op::EndsWith => Some(format!("{value}$")),
+            Op::Word | Op::NoWord => Some(format!("\\b{value}\\b")),
+            _ => None,
+        };
+        let rx = match pattern {
+            Some(p) if self.ctx.regex_enabled() && !matches!(attr.ty(), Ty::Date | Ty::Num) => Some(
+                Rx::new(&p, self.ctx.case_sensitive())
+                    .map_err(|why| FilterError(format!("'{value}' is not a valid regular expression: {why}")))?,
+            ),
+            _ => None,
+        };
+        Ok(Term::Attr { attr, op, value: value.to_owned(), date, day, num, rx })
     }
 }
 
@@ -601,7 +640,7 @@ fn contains(hay: &str, needle: &str, case_sensitive: bool) -> bool {
 fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
     match t {
         Term::Tag { name, present } => f.has_tag(name, ctx.cfg, &ctx.clock) == *present,
-        Term::Text(s) => contains(&f.description, s, ctx.case_sensitive()),
+        Term::Text(m) => m.is_match(&f.description) || f.annotations.iter().any(|a| m.is_match(&a.text)),
         Term::Uuid(prefix) => {
             let simple = f.uuid.as_simple().to_string();
             let hyphen = f.uuid.to_string();
@@ -611,8 +650,8 @@ fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
             .ids
             .get(&f.uuid)
             .is_some_and(|id| ranges.iter().any(|(lo, hi)| id >= lo && id <= hi)),
-        Term::Attr { attr, op, value, date, day, num } => {
-            eval_attr(attr, *op, value, *date, *day, *num, f, ctx)
+        Term::Attr { attr, op, value, date, day, num, rx } => {
+            eval_attr(attr, *op, value, *date, *day, *num, rx.as_ref(), f, ctx)
         }
     }
 }
@@ -726,6 +765,7 @@ fn eval_attr(
     date: Option<i64>,
     day: bool,
     num: Option<f64>,
+    rx: Option<&Rx>,
     f: &Facts,
     ctx: &EvalCtx,
 ) -> bool {
@@ -749,6 +789,21 @@ fn eval_attr(
     }
     if value.is_empty() && matches!(op, Op::Not | Op::Isnt) {
         return !unset;
+    }
+
+    // Text operations as patterns. On the description, annotations count too, as in Taskwarrior.
+    if let Some(rx) = rx {
+        let negated = matches!(op, Op::Hasnt | Op::NoWord);
+        let hit = match &have {
+            Val::Str(h) => {
+                rx.is_match(h)
+                    || (matches!(attr, Attr::Core(Core::Description))
+                        && f.annotations.iter().any(|a| rx.is_match(&a.text)))
+            }
+            Val::Many(items) => items.iter().any(|i| rx.is_match(i)),
+            _ => false,
+        };
+        return hit != negated;
     }
 
     // `status:waiting` is Taskwarrior 3's computed state, not a stored one.
@@ -1038,6 +1093,91 @@ mod tests {
         // A task with no working-set id is never selected by number.
         let other = task("y");
         assert!(!h.m("1-100", &other));
+    }
+
+    fn desc(d: &str) -> Facts {
+        Facts { description: d.into(), ..task("x") }
+    }
+
+    #[test]
+    fn plain_words_and_slash_patterns_are_regular_expressions() {
+        let h = H::new();
+        let milk = desc("Buy milk today");
+        assert!(h.m("m.lk", &milk), "a plain word is a pattern, as in Taskwarrior");
+        assert!(h.m("/m[aeiou]lk/", &milk));
+        assert!(h.m("/^Buy/", &milk) && !h.m("/^milk/", &milk));
+        assert!(h.m("/today$/", &milk) && !h.m("/milk$/", &milk));
+        assert!(h.m("/milk|eggs/", &milk) && h.m("/colou?r|milk/", &milk));
+        assert!(!h.m("/MILK/", &milk), "case sensitive by default");
+        // Searched anywhere, not just from the start.
+        assert!(h.m("'/ilk to/'", &milk), "quoted, as on a command line, so the space is part of the pattern");
+    }
+
+    #[test]
+    fn text_matching_also_looks_in_annotations() {
+        let h = H::new();
+        let mut t = desc("Buy milk");
+        t.annotations.push(crate::model::Note { entry: NOW, text: "ask Sam about oat".into() });
+        assert!(h.m("Sam", &t) && h.m("/oat$/", &t));
+        assert!(h.m("desc.has:Sam", &t), "description attribute includes annotations");
+        assert!(!h.m("desc.hasnt:Sam", &t));
+        assert!(h.m("desc.hasnt:eggs", &t));
+        assert!(!h.m("project.has:Sam", &t), "other attributes do not");
+    }
+
+    #[test]
+    fn modifiers_are_patterns_the_way_taskwarrior_rewrites_them() {
+        let h = H::new();
+        let t = desc("buy milk");
+        assert!(h.m("desc.has:m.lk", &t) && h.m("desc.contains:^buy", &t));
+        assert!(h.m("desc.startswith:buy", &t) && !h.m("desc.startswith:milk", &t));
+        assert!(h.m("desc.left:b.y", &t), "the value is a pattern, so . is any byte");
+        assert!(h.m("desc.endswith:milk", &t) && !h.m("desc.endswith:buy", &t));
+        assert!(h.m("desc.right:m.lk", &t));
+        assert!(h.m("desc.word:milk", &t) && !h.m("desc.word:mil", &t));
+        assert!(h.m("desc.noword:mil", &t) && !h.m("desc.noword:milk", &t));
+        assert!(!h.m("desc.word:milk", &desc("milkshake")));
+        // Over a list of values (tags): any one of them.
+        let mut tagged = task("x");
+        tagged.tags.insert("urgent".into());
+        tagged.tags.insert("home".into());
+        assert!(h.m("tags.has:ur.ent", &tagged) && h.m("tags.startswith:hom", &tagged));
+        assert!(!h.m("tags.has:work", &tagged) && h.m("tags.hasnt:work", &tagged));
+    }
+
+    #[test]
+    fn matching_reads_bytes_and_folds_only_ascii_case_like_std_regex() {
+        let h = H::new();
+        let cafe = desc("café");
+        assert!(h.m("/caf./", &cafe) && !h.m("/caf.$/", &cafe), "é is two bytes");
+        assert!(h.m("/café/", &cafe));
+        assert!(!h.m("/\\w$/", &cafe), "\\w is ASCII only");
+        let ci = H::with_rc("search.case.sensitive=no\n");
+        assert!(ci.m("/MILK/", &desc("buy milk")) && ci.m("desc.has:MILK", &desc("buy milk")));
+        assert!(!ci.m("/CAFÉ/", &cafe), "ASCII case folding only");
+    }
+
+    #[test]
+    fn a_bad_pattern_is_an_error_that_says_why() {
+        let h = H::new();
+        let e = h.parse_err("/(/");
+        assert!(e.contains("not a valid regular expression"), "{e}");
+        assert!(h.parse_err("desc.has:[a-").contains("not a valid regular expression"));
+        let e = h.parse_err("/foo(?=bar)/");
+        assert!(e.contains("lookahead") && e.contains("not supported here"), "{e}");
+        assert!(h.parse_err("/(?i)milk/").contains("inline flags"));
+        assert!(h.parse_err("/(a)\\1/").contains("backreferences"));
+    }
+
+    #[test]
+    fn regex_off_matches_plain_text() {
+        let h = H::with_rc("regex=off\n");
+        let milk = desc("Buy milk. Today");
+        assert!(h.m("milk.", &milk) && !h.m("m.lk", &milk), "a dot is a dot");
+        assert!(h.m("/Buy/", &milk) && h.m("/^Buy/", &milk) && h.m("/Today$/", &milk));
+        assert!(h.m("[a", &desc("x [a y")), "no pattern, so nothing to get wrong");
+        assert!(h.m("desc.has:milk", &milk) && h.m("desc.startswith:Buy", &milk) && h.m("desc.endswith:Today", &milk));
+        assert!(h.m("desc.word:milk", &milk) && !h.m("desc.word:mil", &milk));
     }
 
     #[test]

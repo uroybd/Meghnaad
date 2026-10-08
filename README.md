@@ -292,8 +292,18 @@ help
 | --- | --- |
 | **Write** | `add` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
 | **Read** | `info` `count` `projects` `tags` `udas` `columns` `reports` `contexts` `show` `export` `ids` `uuids` |
-| **Filters** | `attr:value`, with modifiers `.is .not .has .startswith .before .after .by .none .any …`; `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); `/text/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
+| **Filters** | `attr:value`, with modifiers `.is .not .has .startswith .before .after .by .none .any …`; `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/` (regular expressions, see below); ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h` |
+
+**Text matching is regular expressions**, as in Taskwarrior (`regex=1`). That covers plain words (`milk`), `/pattern/`,
+`.has`, `.hasnt`, `.startswith`, `.endswith`, `.word` and `.noword`, and the `/from/to/` substitution in `modify`. A
+pattern is searched for anywhere in the text, and for the description the annotations are searched too. Quote a pattern
+that has spaces in it (`'/buy.*milk/'`), and note that a plain `milk.` has a wildcard in it, as it does in `task`.
+Taskwarrior reads these with C++ `std::regex` in its ECMAScript syntax, byte by byte; this app uses the same syntax and
+the same reading of the text, so `\w`, `\d` and case-insensitive matching (`search.case.sensitive=no`) are ASCII only and
+`.` is one byte. Lookahead (`(?=…)`) and backreferences (`\1`), which ECMAScript has, are refused with a message, and
+so is syntax it doesn't have, such as `(?i)`. A pattern can never run long enough to tie the server up. `regex=off`
+goes back to plain text. A substitution's replacement is always literal text.
 
 Notes that differ from Taskwarrior on a desktop:
 

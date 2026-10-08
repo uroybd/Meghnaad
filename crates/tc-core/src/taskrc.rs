@@ -95,6 +95,12 @@ pub struct Config {
 }
 
 impl Config {
+    /// `regex`: whether filter text and `/from/to/` substitutions are regular expressions. On unless
+    /// the taskrc turns it off, as in Taskwarrior (`regex=1` is its default).
+    pub fn regex_enabled(&self) -> bool {
+        self.settings.get("regex").map_or(true, |v| truthy(v))
+    }
+
     /// `urgency.inherit`: a blocking task takes the highest urgency of what it blocks. Off unless
     /// the taskrc turns it on, as in Taskwarrior (`urgency.inherit=0` is its default).
     pub fn urgency_inherit(&self) -> bool {
@@ -179,6 +185,7 @@ pub fn is_sensitive(name: &str) -> bool {
 }
 
 const SCALAR_SETTINGS: &[&str] = &[
+    "regex",
     "default.command",
     "default.project",
     "default.due",

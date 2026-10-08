@@ -28,7 +28,7 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
-| Miscellaneous | 6 | 5 | 8 | 5 | 0 |
+| Miscellaneous | 6 | 6 | 7 | 5 | 0 |
 | Dates and calendar | 7 | 0 | 1 | 2 | 0 |
 | Journal | 3 | 1 | 0 | 0 | 0 |
 | Dependencies | 0 | 0 | 0 | 1 | 0 |
@@ -39,7 +39,7 @@ Each row below counts once, even where a row covers several related options.
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **59** | **6** | **11** | **16** | **1** |
+| **Total** | **59** | **7** | **10** | **16** | **1** |
 
 ## Files, hooks and environment
 
@@ -77,7 +77,7 @@ Each row below counts once, even where a row covers several related options.
 | `confirmation` | Partial | Changes to more than one task always ask first. The setting itself is not read |
 | `bulk` | Partial | The confirmation threshold is fixed at "more than one task" instead of configurable |
 | `allow.empty.filter` | Partial | Writes (`done`, `delete`, `modify`) with no filter are always refused ("no tasks specified"). Taskwarrior's default is to allow them after confirming |
-| `regex` | Not done | `/text/` in a filter is a plain text search, not a regular expression |
+| `regex` | Partial | On by default, as in Taskwarrior. With it on, plain words, `/pattern/`, `.has`, `.hasnt`, `.startswith`, `.endswith`, `.word`, `.noword` and the `/from/to/` substitution in `modify` are regular expressions, and for the description the annotations are searched too. The syntax is ECMAScript, read byte by byte, as Taskwarrior's C++ `std::regex` does: `.` is one byte, and `\w`, `\d`, `\s`, `\b` and case folding are ASCII only. **Not supported: lookahead (`(?=…)`, `(?!…)`) and backreferences (`\1`)**, which ECMAScript has; a pattern that uses them is refused with a message that says so. So is syntax ECMAScript doesn't have (`(?i)`, lookbehind, named groups). Also different: `.` matches `\r` here and not there; a substitution edits the description only, not annotations; and a replacement that would cut a character in half is skipped. `regex=off` matches plain text, with a leading `^` or trailing `$` as an anchor |
 | `expressions` | Not done | Infix filters only |
 | `alias.<name>` | Not done | Aliases are not expanded |
 | `list.all.projects`, `summary.all.projects` | Not done | `projects` counts pending tasks only |
@@ -212,5 +212,4 @@ and picks the newest snapshot when it starts cold. Deleting old versions is left
 
 Roughly in order of how much they'd matter to someone coming from the CLI:
 
-1. A real `regex` mode for `/pattern/` filters.
-2. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.
+1. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.

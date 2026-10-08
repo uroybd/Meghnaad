@@ -10,6 +10,7 @@ pub mod modify;
 pub mod names;
 pub mod recur;
 pub mod report;
+pub mod rx;
 pub mod run;
 pub mod store;
 pub mod taskrc;

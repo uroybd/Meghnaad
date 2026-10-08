@@ -3,6 +3,7 @@
 //! Parsing and planning are pure (no taskchampion types) so they're easy to test; `apply` in
 //! the worker/cli layer turns the resulting [`Change`]s into taskchampion operations.
 
+use crate::rx::Rx;
 use crate::dates::{parse_date_expr, Clock};
 use crate::filter::{canonical_attr_name, EvalCtx};
 use crate::model::Facts;
@@ -193,6 +194,32 @@ fn validate_uda(name: &str, value: &str, cfg: &Config, clock: &Clock) -> Result<
     }
 }
 
+/// `/from/to/` (`/from/to/g` for every match): `from` is a pattern unless `regex` is off, and `to` is
+/// always literal text, as in Taskwarrior (there are no `$1` groups).
+fn substitute(text: &str, from: &str, to: &str, global: bool, ctx: &EvalCtx) -> Result<String, ModError> {
+    if !ctx.regex_enabled() {
+        return Ok(if global { text.replace(from, to) } else { text.replacen(from, to, 1) });
+    }
+    let rx = Rx::new(from, ctx.case_sensitive()).map_err(|why| ModError(format!("'{from}' is not a valid regular expression: {why}")))?;
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    for (start, end) in rx.spans(text) {
+        // A match can start or end inside a multi-byte character (the engine reads bytes). Skipping
+        // such a match keeps the text valid; Taskwarrior would split the character.
+        if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+            continue;
+        }
+        out.push_str(&text[at..start]);
+        out.push_str(to);
+        at = end;
+        if !global {
+            break;
+        }
+    }
+    out.push_str(&text[at..]);
+    Ok(out)
+}
+
 /// Turn parsed modifications into concrete changes for one task.
 pub fn plan(
     m: &Mods,
@@ -230,8 +257,7 @@ pub fn plan(
     }
     if let (Some(s), Some(cur)) = (&m.subst, current) {
         let base = description.clone().unwrap_or_else(|| cur.description.clone());
-        let replaced = if s.global { base.replace(&s.from, &s.to) } else { base.replacen(&s.from, &s.to, 1) };
-        description = Some(replaced);
+        description = Some(substitute(&base, &s.from, &s.to, s.global, ctx)?);
     }
     if mode == Mode::Add && description.as_deref().map_or(true, |d| d.trim().is_empty()) {
         return err("a task must have a description");
@@ -544,6 +570,34 @@ mod tests {
         assert_eq!(first, [Change::Description("buy oat and milk".into())]);
         let all = h.plan(Mode::Modify, "/milk/oat/g", Some(&cur)).unwrap();
         assert_eq!(all, [Change::Description("buy oat and oat".into())]);
+    }
+
+    #[test]
+    fn substitution_is_a_regular_expression_with_a_literal_replacement() {
+        let h = H::new("");
+        let cur = Facts { description: "buy milk and eggs".into(), ..task("x") };
+        let d = |filter: &str, cur: &Facts| match h.plan(Mode::Modify, filter, Some(cur)).unwrap().as_slice() {
+            [Change::Description(d)] => d.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(d("/m.lk/oat/", &cur), "buy oat and eggs");
+        assert_eq!(d("/milk|eggs/X/", &cur), "buy X and eggs", "the first match only");
+        assert_eq!(d("/milk|eggs/X/g", &cur), "buy X and X", "every match with g");
+        assert_eq!(d("/(milk)/[$1]/", &cur), "buy [$1] and eggs", "the replacement is plain text");
+        assert_eq!(d("/^buy/get/", &cur), "get milk and eggs");
+        assert_eq!(d("/nothing/x/", &cur), "buy milk and eggs");
+        // The engine reads bytes like Taskwarrior's, so `.` is one byte and "é" is two. A match that
+        // would cut a character in half is skipped, which keeps the description valid text.
+        let cafe = Facts { description: "café au lait".into(), ..task("x") };
+        assert_eq!(d("/caf./X/", &cafe), "café au lait");
+        assert_eq!(d("/caf../X/", &cafe), "X au lait");
+        assert_eq!(d("/café/X/", &cafe), "X au lait");
+        let e = h.plan(Mode::Modify, "/(/x/", Some(&cur)).unwrap_err();
+        assert!(e.0.contains("not a valid regular expression"), "{}", e.0);
+        // With regex off it is the literal text, as before.
+        let off = H::new("regex=off\n");
+        let p = off.plan(Mode::Modify, "/m.lk/oat/", Some(&cur)).unwrap();
+        assert_eq!(p, [Change::Description("buy milk and eggs".into())]);
     }
 
     #[test]
