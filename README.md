@@ -345,6 +345,9 @@ UDAs, custom reports and contexts live in `~/.taskrc`, not in your synced data, 
 - What is saved is shown back to you, so each import edits it rather than replacing it with a blank page. **Restore
   previous** undoes the last save.
 - `include` lines can't be followed; paste the included files' contents too.
+- **A context can carry its own settings**, `context.<name>.rc.<key>=<value>`, in force while it is the active one
+  (a different `default.command`, `limit` or report filter, for example). As in Taskwarrior they win over everything,
+  a command-line `rc.` override included. Credential-like keys are refused like anywhere else.
 - A UDA that exists on a task but isn't defined in your taskrc is shown but **read-only**.
 - **[taskrc support](docs/taskrc-support.md)** lists every Taskwarrior `taskrc` option with what is done, what is
   partial, what is not done, and why.

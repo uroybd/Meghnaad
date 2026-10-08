@@ -2,7 +2,7 @@
   import { runCli } from './api';
   import { formatFor } from './dateformat';
   import { formatMoment, formatSeconds, formatStamp } from './dates';
-  import { projectSegments, udaLabel, urgencyLevel } from './format';
+  import { projectSegments, shortUuid, udaLabel, urgencyLevel } from './format';
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
   import { visibleNotes } from './journal';
   import ProjectPath from './ProjectPath.svelte';
@@ -69,7 +69,7 @@
   {/if}
   <dl>
     <dt>ID</dt>
-    <dd><span class:idnum={task.id != null}><UuidTip text={task.id != null ? String(task.id) : '–'} uuid={task.uuid} /></span> <span class="dim mono">{task.uuid}</span></dd>
+    <dd><span class:idnum={task.id != null}><UuidTip text={task.id != null ? String(task.id) : '–'} uuid={task.uuid} /></span><code class="uuid" title={task.uuid}>{shortUuid(task.uuid)}</code></dd>
     <dt>Status</dt>
     <dd class="pills">
       {#if waiting}<StatusPill kind="waiting" />{:else}<StatusPill kind={task.status as Kind} label={task.status} />{/if}
@@ -213,4 +213,11 @@
   .dep { display: block; padding: 0 4px; margin-left: -4px; text-align: left; }
   .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
   .pills { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  /* The uuid reads like inline code in markdown: its own tinted box, apart from the id. */
+  .uuid {
+    margin-left: 12px; padding: 1px 7px; border-radius: 5px;
+    font-family: var(--mono); font-size: 0.9em; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line);
+    user-select: all; overflow-wrap: anywhere;
+  }
 </style>

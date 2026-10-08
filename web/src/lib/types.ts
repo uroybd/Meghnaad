@@ -139,7 +139,7 @@ export interface ConfigResponse {
   config: {
     udas: Record<string, UdaDef>;
     reports: Record<string, unknown>;
-    contexts: Record<string, { name: string; read: string | null; write: string | null }>;
+    contexts: Record<string, { name: string; read: string | null; write: string | null; rc: Record<string, string> }>;
     active_context: string | null;
     urgency: Record<string, number>;
     settings: Record<string, string>;

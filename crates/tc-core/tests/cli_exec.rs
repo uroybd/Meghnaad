@@ -424,6 +424,46 @@ async fn long_and_ls_are_taskwarriors_reports() {
 }
 
 #[tokio::test]
+async fn a_contexts_own_settings_apply_only_while_it_is_active() {
+    let mut r = replica();
+    let plain = Config::default();
+    for i in 0..6 {
+        run(&mut r, &plain, &format!("add task {i} +{}", if i < 2 { "a" } else { "b" })).await;
+    }
+    let rc = "context.work.rc.limit=2\ncontext.home.rc.limit=4\n\
+              context.home.rc.report.list.filter=+b\n";
+
+    // No context active: the settings of a context do nothing.
+    assert_eq!(shown(&mut r, &parse(rc).config, "list").await, (6, 6));
+
+    let cfg = parse(&format!("context=work\n{rc}")).config;
+    assert_eq!(shown(&mut r, &cfg, "list").await, (2, 6));
+    // Switching context for one command switches its settings too.
+    assert_eq!(shown(&mut r, &cfg, "rc.context:home list").await, (4, 4), "limit 4, and list is filtered to +b");
+    // They win over a command-line `rc.` override, which is how Taskwarrior looks settings up.
+    assert_eq!(shown(&mut r, &cfg, "rc.limit:5 list").await, (2, 6));
+    // `limit:` on the command line is a filter word, not a setting, so it still wins.
+    assert_eq!(shown(&mut r, &cfg, "list limit:5").await, (5, 6));
+    // The other context's settings are not in force.
+    assert_eq!(shown(&mut r, &cfg, "all").await, (2, 6));
+}
+
+#[tokio::test]
+async fn a_contexts_default_command_is_what_a_bare_command_runs() {
+    let mut r = replica();
+    run(&mut r, &Config::default(), "add something").await;
+    let report_of = |res: CliResult| match res {
+        CliResult::Report(o) => o.report,
+        other => panic!("not a report: {other:?}"),
+    };
+    let cfg = parse("context=work\ncontext.work.rc.default.command=minimal\n").config;
+    assert_eq!(report_of(run(&mut r, &cfg, "").await.0), "minimal");
+    // Without the context, or with another one, it is the usual default.
+    assert_eq!(report_of(run(&mut r, &Config::default(), "").await.0), "next");
+    assert_eq!(report_of(run(&mut r, &cfg, "rc.context:other").await.0), "next");
+}
+
+#[tokio::test]
 async fn udas_and_custom_reports_from_taskrc() {
     let cfg = parse(
         "uda.estimate.type=string\nuda.estimate.label=Size\nuda.estimate.values=big,small\n\

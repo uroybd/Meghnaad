@@ -187,11 +187,12 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
 
     let mut s = open(&ctx.env).await?;
     let now = (js_sys::Date::now() / 1000.0) as i64;
+    // The active context's own settings count here too: it may choose its own week start.
+    let in_context = s.config.effective();
     let clock = Clock {
         now,
         tz_offset: tz,
-        week_starts_monday: !s
-            .config
+        week_starts_monday: !in_context
             .settings
             .get("weekstart")
             .is_some_and(|w| w.eq_ignore_ascii_case("sunday")),
@@ -224,21 +225,24 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
 
 async fn get_config(ctx: RouteContext<()>) -> RouteResult {
     let cfg = session::config(&ctx.env).await?;
-    let reports: Vec<_> = tc_core::report::names(&cfg)
+    // What the app shows follows the active context's own settings; `config` below stays as saved,
+    // since that is what the settings dialogs edit.
+    let live = cfg.effective();
+    let reports: Vec<_> = tc_core::report::names(&live)
         .into_iter()
-        .filter_map(|n| tc_core::report::resolve(&cfg, &n))
+        .filter_map(|n| tc_core::report::resolve(&live, &n))
         .map(|r| {
             serde_json::json!({
                 "name": r.name,
                 "description": r.description,
-                "columns": tc_core::run::describe_columns(&r.columns, &r.labels, &cfg),
+                "columns": tc_core::run::describe_columns(&r.columns, &r.labels, &live),
                 "filter": r.filter,
                 "sort": r.sort,
             })
         })
         .collect();
     // The journal.time marker texts, so the UI can hide those annotations and show sessions instead.
-    let journal = cfg.journal().map(|(start, stop)| serde_json::json!({ "start": start, "stop": stop }));
+    let journal = live.journal().map(|(start, stop)| serde_json::json!({ "start": start, "stop": stop }));
     let has_previous = session::has_previous(&ctx.env).await?;
     json(&serde_json::json!({
         "config": &*cfg,

@@ -37,9 +37,9 @@ Each row below counts once, even where a row covers several related options.
 | Defaults | 5 | 0 | 0 | 0 | 0 |
 | Reports | 8 | 0 | 0 | 0 | 0 |
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
-| Context | 3 | 0 | 1 | 0 | 0 |
+| Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **58** | **6** | **12** | **16** | **1** |
+| **Total** | **59** | **6** | **11** | **16** | **1** |
 
 ## Files, hooks and environment
 
@@ -196,7 +196,7 @@ A UDA that exists on a task but isn't defined in the taskrc is shown but read-on
 | `context` | Done | The active context |
 | `context.<name>.read` | Done | |
 | `context.<name>.write` | Done | Applied to new tasks |
-| `context.<name>.rc.<key>` | Not done | Per-context overrides (such as a different `default.command`) are ignored |
+| `context.<name>.rc.<key>` | Done | Settings that are in force while that context is the active one: `default.command`, `limit`, a report's filter or sort (`context.work.rc.report.next.filter`), urgency coefficients, and any other setting this app reads. As in Taskwarrior they win over everything else, a `rc.` override typed on the command line included, and `rc.context:home` for one command brings in `home`'s settings. They are checked like any taskrc line: credential-like keys are refused by name, a setting this app has no use for is only named, and a value that can't be used is dropped with a warning. A context cannot set `context` itself |
 
 ## Sync
 
@@ -212,6 +212,5 @@ and picks the newest snapshot when it starts cold. Deleting old versions is left
 
 Roughly in order of how much they'd matter to someone coming from the CLI:
 
-1. `context.<name>.rc.<key>` overrides.
-2. A real `regex` mode for `/pattern/` filters.
-3. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.
+1. A real `regex` mode for `/pattern/` filters.
+2. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.

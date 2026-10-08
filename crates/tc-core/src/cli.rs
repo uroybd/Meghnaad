@@ -447,6 +447,23 @@ pub async fn execute<S: Storage>(
     opts: Options,
     undo: &mut UndoStack,
 ) -> Done {
+    // `rc.<key>:<value>` overrides apply to this command only, like the real `task`; this is also
+    // how a table-header sort travels (`rc.report.next.sort:due-`). They come first, so they can
+    // change what the rest of the line means (`rc.context:work`, `rc.default.command:list`).
+    let overridden;
+    let cfg = match with_overrides(cfg, args) {
+        Ok(None) => cfg,
+        Ok(Some(c)) => {
+            overridden = c;
+            &overridden
+        }
+        Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command: None },
+    };
+    // While a context is active its own settings (`context.<name>.rc.<key>`) are in force. They come
+    // last: they beat a command-line override too, as in Taskwarrior, which looks a setting up in
+    // the context first and globally second.
+    let in_context = cfg.effective();
+    let cfg: &Config = &in_context;
     let parsed = parse_command(args, cfg).ok();
     let command = parsed.as_ref().map(CommandInfo::of);
     // Housekeeping Taskwarrior does before every command: create due recurring instances and
@@ -554,6 +571,23 @@ async fn maintain<S: Storage>(
     Ok((true, None))
 }
 
+/// `cfg` with the `rc.<key>:<value>` words of `args` applied, or `None` if there are none.
+fn with_overrides(cfg: &Config, args: &[String]) -> Result<Option<Config>, String> {
+    let overrides: Vec<(&str, &str)> = args
+        .iter()
+        .filter_map(|t| t.strip_prefix("rc."))
+        .filter_map(|t| t.find([':', '=']).map(|i| (&t[..i], &t[i + 1..])))
+        .collect();
+    if overrides.is_empty() {
+        return Ok(None);
+    }
+    let mut c = cfg.clone();
+    for (k, v) in &overrides {
+        crate::taskrc::apply_override(&mut c, k, v)?;
+    }
+    Ok(Some(c))
+}
+
 /// `tasks` are the tasks as they are now, if the caller has just read them.
 async fn execute_inner<S: Storage>(
     replica: &mut Replica<S>,
@@ -564,32 +598,10 @@ async fn execute_inner<S: Storage>(
     undo: &mut UndoStack,
     tasks: Option<Vec<Facts>>,
 ) -> Done {
+    // `cfg` already has this command's `rc.` overrides and the active context's settings in it.
     let parsed = match parse_command(args, cfg) {
         Ok(p) => p,
         Err(m) => return error(m),
-    };
-
-    // `rc.<key>:<value>` overrides apply to this command only, like the real `task`; this is also
-    // how a table-header sort travels (`rc.report.next.sort:due-`).
-    let overrides: Vec<(&str, &str)> = parsed
-        .filter
-        .iter()
-        .chain(parsed.mods.iter())
-        .filter_map(|t| t.strip_prefix("rc."))
-        .filter_map(|t| t.find([':', '=']).map(|i| (&t[..i], &t[i + 1..])))
-        .collect();
-    let overridden;
-    let cfg = if overrides.is_empty() {
-        cfg
-    } else {
-        let mut c = cfg.clone();
-        for (k, v) in &overrides {
-            if let Err(m) = crate::taskrc::apply_override(&mut c, k, v) {
-                return error(m);
-            }
-        }
-        overridden = c;
-        &overridden
     };
 
     let all = match tasks {

@@ -72,6 +72,10 @@ pub struct ContextDef {
     pub name: String,
     pub read: Option<String>,
     pub write: Option<String>,
+    /// `context.<name>.rc.<key>=<value>`: settings that replace the usual ones while this context
+    /// is the active one (`default.command`, `limit`, a report's filter, ...), keyed by `<key>`.
+    #[serde(default)]
+    pub rc: BTreeMap<String, String>,
 }
 
 /// Every field is optional on read, so settings saved by an older (or newer) version always load:
@@ -95,6 +99,24 @@ impl Config {
     /// the taskrc turns it on, as in Taskwarrior (`urgency.inherit=0` is its default).
     pub fn urgency_inherit(&self) -> bool {
         self.settings.get("urgency.inherit").is_some_and(|v| truthy(v))
+    }
+
+    /// This config as it is while the active context's own settings (`context.<name>.rc.<key>`)
+    /// are in force. As in Taskwarrior, they win over everything else, a `rc.` override typed on the
+    /// command line included, and a context with none changes nothing.
+    pub fn effective(&self) -> std::borrow::Cow<'_, Config> {
+        let Some(ctx) = self.active_context.as_ref().and_then(|c| self.contexts.get(c)) else {
+            return std::borrow::Cow::Borrowed(self);
+        };
+        if ctx.rc.is_empty() {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut c = self.clone();
+        for (k, v) in &ctx.rc {
+            // Checked when the taskrc was imported; a value that can't be applied is skipped.
+            let _ = apply_override(&mut c, k, v);
+        }
+        std::borrow::Cow::Owned(c)
     }
 
     /// The `limit` setting: how many tasks a report shows when it, and the command, don't say.
@@ -266,6 +288,7 @@ pub fn apply_override(cfg: &mut Config, key: &str, value: &str) -> Result<(), St
         if ctx.write.is_some() {
             e.write = ctx.write;
         }
+        e.rc.extend(ctx.rc);
     }
     if c.active_context.is_some() || parts == ["context"] {
         cfg.active_context = c.active_context;
@@ -273,6 +296,37 @@ pub fn apply_override(cfg: &mut Config, key: &str, value: &str) -> Result<(), St
     cfg.urgency.extend(c.urgency);
     cfg.settings.extend(c.settings);
     Ok(())
+}
+
+/// Why a `context.<name>.rc.<key>` line isn't kept.
+enum RcProblem {
+    /// A setting this app has no use for (harmless; reported by name).
+    Unused,
+    /// A value the setting can't take.
+    Bad(String),
+}
+
+/// The attributes a report definition has, as `report.<name>.<attr>`.
+const REPORT_ATTRS: &[&str] = &["description", "columns", "labels", "sort", "filter", "context", "dateformat"];
+
+/// Whether a context may set `key` to `value`, judged the way a taskrc line would be.
+fn check_context_rc(key: &str, value: &str) -> Result<(), RcProblem> {
+    // A context choosing a context would only chase its own tail.
+    if key == "context" || key.starts_with("context.") {
+        return Err(RcProblem::Unused);
+    }
+    // A report's attribute: its name may be defined elsewhere in the file, so only the shape is checked.
+    if let ["report", n, attr] = key.split('.').collect::<Vec<_>>().as_slice() {
+        return if valid_ident(n) && REPORT_ATTRS.contains(attr) { Ok(()) } else { Err(RcProblem::Unused) };
+    }
+    let probe = parse(&format!("{key}={value}"));
+    if !probe.ignored.is_empty() {
+        return Err(RcProblem::Unused);
+    }
+    match probe.warnings.into_iter().next() {
+        Some(w) => Err(RcProblem::Bad(w)),
+        None => Ok(()),
+    }
 }
 
 /// The built-in urgency terms: `urgency.<term>.coefficient`.
@@ -399,6 +453,9 @@ pub fn render(cfg: &Config) -> String {
         if let Some(v) = &c.write {
             line(format!("context.{}.write", c.name), v);
         }
+        for (k, v) in &c.rc {
+            line(format!("context.{}.rc.{k}", c.name), v);
+        }
     }
     if let Some(c) = &cfg.active_context {
         line("context".to_owned(), c);
@@ -464,6 +521,26 @@ pub fn parse(text: &str) -> Parsed {
                     .entry((*n).to_owned())
                     .or_default()
                     .insert((*attr).to_owned(), unescape(value));
+            }
+            // A context's own settings. The key goes through the same checks as one typed on a command
+            // line, and anything credential-like is refused by name, never stored.
+            ["context", n, "rc", key @ ..] if valid_ident(n) && !key.is_empty() => {
+                let key = key.join(".");
+                if is_sensitive(&key) {
+                    p.blocked.push(name.to_owned());
+                    continue;
+                }
+                match check_context_rc(&key, value) {
+                    Ok(()) => {
+                        let c = p.config.contexts.entry((*n).to_owned()).or_insert_with(|| ContextDef {
+                            name: (*n).to_owned(),
+                            ..Default::default()
+                        });
+                        c.rc.insert(key, unescape(value));
+                    }
+                    Err(RcProblem::Unused) => p.ignored.push(name.to_owned()),
+                    Err(RcProblem::Bad(why)) => p.warnings.push(format!("{name}: {why}")),
+                }
             }
             ["context", n, attr] if valid_ident(n) && matches!(*attr, "read" | "write") => {
                 let c = p.config.contexts.entry((*n).to_owned()).or_insert_with(|| ContextDef {
@@ -767,6 +844,74 @@ verbose=nothing
         assert!(p.config.settings.is_empty());
         assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
         assert!(p.warnings[0].contains("default.scheduled") && p.warnings[0].contains("someday"));
+    }
+
+    #[test]
+    fn a_contexts_own_settings_are_kept_checked_and_rendered() {
+        let p = parse(
+            "context.work.read=+work\n\
+             context.work.rc.default.command=overdue\n\
+             context.work.rc.limit=2\n\
+             context.work.rc.report.next.filter=status:pending +work\n\
+             context.work.rc.sync.encryption_secret=TOPSECRET\n\
+             context.work.rc.data.location=~/.worktasks\n\
+             context.work.rc.context=other\n\
+             context.work.rc.limit2=\n",
+        );
+        let rc = &p.config.contexts["work"].rc;
+        assert_eq!(rc["default.command"], "overdue");
+        assert_eq!(rc["limit"], "2");
+        assert_eq!(rc["report.next.filter"], "status:pending +work");
+        assert_eq!(rc.len(), 3, "{rc:?}");
+        // Credentials are refused by name and never stored; settings with no use here are only named.
+        assert_eq!(p.blocked, ["context.work.rc.sync.encryption_secret"]);
+        for unused in ["context.work.rc.data.location", "context.work.rc.context", "context.work.rc.limit2"] {
+            assert!(p.ignored.contains(&unused.to_owned()), "{unused}: {:?}", p.ignored);
+        }
+        let text = render(&p.config);
+        assert!(!text.contains("TOPSECRET"));
+        assert_eq!(parse(&text).config, p.config, "round-trips");
+        // The parts of a context that existed before are untouched by having settings.
+        assert_eq!(p.config.contexts["work"].read.as_deref(), Some("+work"));
+    }
+
+    #[test]
+    fn a_context_setting_with_a_bad_value_is_reported_and_not_kept() {
+        let p = parse("context.work.rc.limit=lots\ncontext.work.rc.default.due=whenever\n");
+        assert!(p.config.contexts.is_empty(), "nothing usable, so no context is created");
+        assert_eq!(p.warnings.len(), 2, "{:?}", p.warnings);
+        assert!(p.warnings.iter().all(|w| w.starts_with("context.work.rc.")), "{:?}", p.warnings);
+    }
+
+    #[test]
+    fn effective_applies_only_the_active_contexts_settings() {
+        use std::borrow::Cow;
+        let cfg = parse(
+            "context.work.rc.limit=2\ncontext.home.rc.limit=4\ncontext.home.rc.default.command=list\ncontext.bare.read=+x\n",
+        )
+        .config;
+        // No context active: nothing changes, and nothing is copied.
+        assert!(matches!(cfg.effective(), Cow::Borrowed(_)));
+        let mut work = cfg.clone();
+        apply_override(&mut work, "context", "work").unwrap();
+        assert_eq!(work.effective().default_limit(), crate::filter::Limit::N(2));
+        assert!(!work.effective().settings.contains_key("default.command"));
+        let mut home = cfg.clone();
+        apply_override(&mut home, "context", "home").unwrap();
+        assert_eq!(home.effective().default_limit(), crate::filter::Limit::N(4));
+        assert_eq!(home.effective().settings["default.command"], "list");
+        // The stored config itself is never changed by looking at it through a context.
+        assert!(!home.settings.contains_key("limit"));
+        // A context with no settings of its own, or one that is not defined, is a no-op.
+        let mut bare = cfg.clone();
+        apply_override(&mut bare, "context", "bare").unwrap();
+        assert!(matches!(bare.effective(), Cow::Borrowed(_)));
+        let mut ghost = cfg.clone();
+        apply_override(&mut ghost, "context", "nowhere").unwrap();
+        assert!(matches!(ghost.effective(), Cow::Borrowed(_)));
+        // A setting can also be given to a context on a command line.
+        apply_override(&mut work, "context.work.rc.limit", "9").unwrap();
+        assert_eq!(work.effective().default_limit(), crate::filter::Limit::N(9));
     }
 
     #[test]
