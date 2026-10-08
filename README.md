@@ -81,6 +81,52 @@ it (tables, forms, a detail view), and both go through the same command engine.
 - Your imported `taskrc` settings are stored in the same bucket (`web/config.json`, plus one backup), so they
   survive restarts, redeploys and moving between devices.
 
+### Compared with Taskwarrior on the desktop
+
+Both are replicas of the same TaskChampion data, and the bucket is all they share. The desktop is a fat client with
+a local database that syncs when you ask. Meghnaad is a thin client: the browser holds nothing, and the Worker's
+replica syncs on every request.
+
+```mermaid
+flowchart LR
+  subgraph desktop["Desktop: Taskwarrior 3"]
+    direction TB
+    cli["task CLI (C++)"]
+    tcd["TaskChampion (Rust)"]
+    db[("SQLite replica<br/>~/.task")]
+    rc["~/.taskrc"]
+    cli --> tcd --> db
+    rc -.-> cli
+  end
+
+  subgraph web["Cloudflare: Meghnaad"]
+    direction TB
+    spa["Svelte SPA<br/>(renders only)"]
+    access{{"Cloudflare Access<br/>JWT check"}}
+    wk["Worker (Rust → WASM)<br/>command engine in tc-core"]
+    tcw["TaskChampion (Rust)"]
+    mem[("In-memory replica<br/>per isolate")]
+    spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
+  end
+
+  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json")]
+
+  tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
+  tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
+  wk -. "imported taskrc subset" .-> bucket
+```
+
+| | Desktop | Meghnaad |
+| --- | --- | --- |
+| Local state | Persistent SQLite | In memory, rebuilt from the bucket when the instance is recycled |
+| Sync | On `task sync` | Before and after every command |
+| Offline | Works | Needs a connection |
+| Encryption key | Only on your machine | In a Worker secret; the Worker decrypts |
+| Snapshots and cleanup | Done by the CLI | Left to the CLI |
+| Undo | TaskChampion undo, unsynced changes only | Rebuilt as inverse operations, kept in memory |
+| Task ids | Local to that replica | Computed separately, so they differ from the desktop's |
+| Hooks | `on-add`, `on-modify` | None |
+
 ## Quick start (local)
 
 You can run everything on your machine without a Cloudflare account; wrangler simulates R2 locally.
