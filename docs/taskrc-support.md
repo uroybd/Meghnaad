@@ -24,19 +24,19 @@ Each row below counts once, even where a row covers several related options.
 | Area | Done | Partial | Not done | N/A | Blocked |
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
-| Terminal | 0 | 0 | 1 | 2 | 0 |
+| Terminal | 1 | 0 | 0 | 2 | 0 |
 | Miscellaneous | 5 | 5 | 8 | 5 | 0 |
 | Dates and calendar | 7 | 0 | 1 | 2 | 0 |
 | Journal | 3 | 1 | 0 | 0 | 0 |
 | Dependencies | 0 | 0 | 0 | 1 | 0 |
 | Colour | 0 | 0 | 0 | 1 | 0 |
 | Urgency | 17 | 0 | 0 | 0 | 0 |
-| Defaults | 2 | 0 | 3 | 0 | 0 |
+| Defaults | 5 | 0 | 0 | 0 | 0 |
 | Reports | 8 | 0 | 4 | 0 | 0 |
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 3 | 0 | 1 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **53** | **6** | **20** | **16** | **1** |
+| **Total** | **57** | **6** | **16** | **16** | **1** |
 
 ## Files, hooks and environment
 
@@ -56,7 +56,7 @@ Each row below counts once, even where a row covers several related options.
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `limit` | Not done | The `limit:N`, `limit:page` and `limit:none` filter terms work. The `limit` default from the taskrc is not read |
+| `limit` | Done | The default number of tasks a report shows (`limit=25`, `none` or `0` for all). It applies to reports whose own filter and command line have no `limit:` word, as `rc.limit` does in Taskwarrior; `rc.limit:5` works for one command. `page` means "as many as fit on the screen", which a browser doesn't have, so it shows everything. The built-in `next` carries `limit:page`, so it is never cut. `export`, `count` and `info` are never cut by the setting. A report shows "showing N of M" when it is cut. Unset shows everything, as Taskwarrior does |
 | `detection`, `defaultwidth`, `defaultheight`, `avoidlastcolumn`, `hyphenate`, `reserved.lines` | N/A | Terminal size and wrapping. The browser lays tables out itself |
 | `editor` | N/A | Tasks are edited in the app's editor form |
 
@@ -155,9 +155,9 @@ inheritance rules, which follow Taskwarrior's source.
 | --- | --- | --- |
 | `default.command` | Done | Used when a command line has no command. Falls back to `next` |
 | `uda.<name>.default` | Done | Applied by `add` when the UDA isn't given |
-| `default.project` | Not done | Not applied by `add` |
-| `default.due` | Not done | Not applied by `add` |
-| `default.scheduled` | Not done | Not applied by `add` |
+| `default.project` | Done | Applied by `add` when the task has no project of its own, after the active context's `write` rule. Not applied by `modify` |
+| `default.due` | Done | Applied by `add` when no `due` is given. A duration (`3d`) is counted from now and a date word (`eow`, `2030-01-01`) is read like the same word typed as `due:`. A recurring task still needs its own `due`: the default does not stand in for it, as in Taskwarrior. A value that can't be read is dropped with a warning when the taskrc is imported |
+| `default.scheduled` | Done | Same as `default.due`, for the scheduled date |
 
 ## Reports
 
@@ -212,9 +212,8 @@ and picks the newest snapshot when it starts cold. Deleting old versions is left
 
 Roughly in order of how much they'd matter to someone coming from the CLI:
 
-1. `default.project`, `default.due` and `default.scheduled` (small, and `add` already applies UDA defaults).
-2. `context.<name>.rc.<key>` overrides.
-3. The built-in `long`, `ls` and `blocked` reports.
-4. `report.<name>.annotations`.
-5. A real `regex` mode for `/pattern/` filters.
-6. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.
+1. `context.<name>.rc.<key>` overrides.
+2. The built-in `long`, `ls` and `blocked` reports.
+3. `report.<name>.annotations`.
+4. A real `regex` mode for `/pattern/` filters.
+5. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.

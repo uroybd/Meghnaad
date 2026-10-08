@@ -644,7 +644,8 @@ async fn add<S: Storage>(
     p: &Parsed,
     undo: &mut UndoStack,
 ) -> Done {
-    if !p.filter.is_empty() {
+    // `task rc.x:y add ...` is fine: overrides were applied before this point and aren't filters.
+    if p.filter.iter().any(|w| !w.starts_with("rc.") && !w.starts_with("rc:")) {
         return error("add takes a description and modifications, not a filter");
     }
     let mut mod_args = p.mods.clone();

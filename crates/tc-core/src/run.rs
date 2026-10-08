@@ -379,7 +379,11 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
     sort_rows(&mut rows, &sort, cfg, &ids, req.seed);
 
     let matched = rows.len();
-    if let Limit::N(n) = filter.limit {
+    // A `limit:` in the report's filter or on the command line wins; otherwise the `limit` setting
+    // applies, as `rc.limit` does in Taskwarrior. Only reports are cut short: `export`, `count` and
+    // the like always see every task.
+    let limit = if filter.limit_set { filter.limit } else { cfg.default_limit() };
+    if let Limit::N(n) = limit {
         rows.truncate(n);
     }
 

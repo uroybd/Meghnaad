@@ -27,7 +27,10 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,start.age,entry.age,depends,priority,project,tags,recur,scheduled.countdown,due.relative,until.remaining,description,urgency",
         labels: "ID,Active,Age,Deps,P,Project,Tag,Recur,S,Due,Until,Description,Urg",
         sort: "urgency-",
-        filter: "status:pending -WAITING",
+        // `limit:page` is part of Taskwarrior's own definition. It means "as many as fit on the
+        // screen", which a browser doesn't have, so it shows everything, but it keeps `next` out of
+        // reach of the `limit` setting just as in Taskwarrior.
+        filter: "status:pending -WAITING limit:page",
     },
     Builtin {
         name: "list",

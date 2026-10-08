@@ -325,7 +325,8 @@ commands · `Esc` closes a menu · `Ctrl+L` clears.
 
 UDAs, custom reports and contexts live in `~/.taskrc`, not in your synced data, so the app keeps its own copy. Open
 **taskrc**, paste or choose your file, and save. Only these are kept: `uda.*`, `report.*`, `context*`, `urgency.*`,
-`journal.*`, `recurrence*`, `default.command`, `due`, `weekstart`, `dateformat*`.
+`journal.*`, `recurrence*`, `default.*` (`command`, `project`, `due`, `scheduled`), `limit`, `due`, `weekstart`,
+`dateformat*`.
 
 - **Sync settings and anything credential-like are blocked** (`sync.*`, `taskd.*`, names containing `secret`,
   `password`, `token`, …). Only the *names* of what was dropped are shown. The raw text is never stored.

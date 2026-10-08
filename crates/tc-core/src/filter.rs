@@ -83,6 +83,16 @@ pub enum Limit {
     N(usize),
 }
 
+/// The value of a `limit:` word or of the `limit` setting: `none` or `0` (unlimited), `page`, or a
+/// number of tasks. `None` if it is none of these.
+pub fn parse_limit(v: &str) -> Option<Limit> {
+    match v {
+        "none" | "0" => Some(Limit::None),
+        "page" => Some(Limit::Page),
+        n => n.parse().ok().map(Limit::N),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Core {
     Id,
@@ -258,6 +268,8 @@ enum Expr {
 pub struct Filter {
     expr: Expr,
     pub limit: Limit,
+    /// A `limit:` word was given. Without one, a report falls back to the `limit` setting.
+    pub limit_set: bool,
 }
 
 /// Split a command-line-ish string into words, honouring `'` and `"` quotes.
@@ -377,6 +389,7 @@ struct Parser<'a, 'c> {
     pos: usize,
     ctx: &'a EvalCtx<'c>,
     limit: Limit,
+    limit_set: bool,
 }
 
 impl Parser<'_, '_> {
@@ -458,11 +471,8 @@ impl Parser<'_, '_> {
     fn term(&mut self, tok: &str) -> Result<Option<Term>, FilterError> {
         let ctx = self.ctx;
         if let Some(v) = tok.strip_prefix("limit:") {
-            self.limit = match v {
-                "none" | "0" => Limit::None,
-                "page" => Limit::Page,
-                n => Limit::N(n.parse().map_err(|_| FilterError(format!("invalid limit '{n}'")))?),
-            };
+            self.limit = parse_limit(v).ok_or_else(|| FilterError(format!("invalid limit '{v}'")))?;
+            self.limit_set = true;
             return Ok(None);
         }
         // rc overrides don't belong to the filter.
@@ -525,7 +535,7 @@ impl Parser<'_, '_> {
 
 impl Filter {
     pub fn match_all() -> Filter {
-        Filter { expr: Expr::All, limit: Limit::None }
+        Filter { expr: Expr::All, limit: Limit::None, limit_set: false }
     }
 
     /// Parse already-split arguments (e.g. from the command-line parser).
@@ -534,7 +544,7 @@ impl Filter {
         if toks.is_empty() {
             return Ok(Filter::match_all());
         }
-        let mut p = Parser { toks, pos: 0, ctx, limit: Limit::None };
+        let mut p = Parser { toks, pos: 0, ctx, limit: Limit::None, limit_set: false };
         let expr = p.expr()?;
         if p.pos < p.toks.len() {
             return if p.toks[p.pos] == ")" {
@@ -543,7 +553,7 @@ impl Filter {
                 err(format!("unexpected '{}' in filter", p.toks[p.pos]))
             };
         }
-        Ok(Filter { expr, limit: p.limit })
+        Ok(Filter { expr, limit: p.limit, limit_set: p.limit_set })
     }
 
     pub fn parse_str(s: &str, ctx: &EvalCtx) -> Result<Filter, FilterError> {
@@ -1037,6 +1047,16 @@ mod tests {
         assert_eq!(Filter::parse_str("limit:5", &ctx).unwrap().limit, Limit::N(5));
         assert_eq!(Filter::parse_str("limit:page +a", &ctx).unwrap().limit, Limit::Page);
         assert_eq!(Filter::parse_str("limit:none", &ctx).unwrap().limit, Limit::None);
+        // Whether one was given matters: without one a report uses the `limit` setting.
+        assert!(Filter::parse_str("limit:none", &ctx).unwrap().limit_set);
+        assert!(Filter::parse_str("limit:5 +a", &ctx).unwrap().limit_set);
+        assert!(!Filter::parse_str("+a", &ctx).unwrap().limit_set);
+        assert!(!Filter::parse_str("", &ctx).unwrap().limit_set);
+        assert_eq!(parse_limit("12"), Some(Limit::N(12)));
+        assert_eq!(parse_limit("page"), Some(Limit::Page));
+        assert_eq!(parse_limit("0"), Some(Limit::None));
+        assert_eq!(parse_limit("-3"), None);
+        assert_eq!(parse_limit("lots"), None);
         // A directive alone still matches everything.
         assert!(Filter::parse_str("limit:3", &ctx).unwrap().matches(&task("x"), &ctx));
     }

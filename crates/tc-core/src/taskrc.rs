@@ -97,6 +97,15 @@ impl Config {
         self.settings.get("urgency.inherit").is_some_and(|v| truthy(v))
     }
 
+    /// The `limit` setting: how many tasks a report shows when it, and the command, don't say.
+    /// Unset means every task, as in Taskwarrior.
+    pub fn default_limit(&self) -> crate::filter::Limit {
+        self.settings
+            .get("limit")
+            .and_then(|v| crate::filter::parse_limit(v.trim()))
+            .unwrap_or(crate::filter::Limit::None)
+    }
+
     /// `(start annotation, stop annotation)` when `journal.time` is on.
     pub fn journal(&self) -> Option<(String, String)> {
         let on = self.settings.get("journal.time").is_some_and(|v| truthy(v));
@@ -149,6 +158,10 @@ pub fn is_sensitive(name: &str) -> bool {
 
 const SCALAR_SETTINGS: &[&str] = &[
     "default.command",
+    "default.project",
+    "default.due",
+    "default.scheduled",
+    "limit",
     "due",
     "recurrence",
     "recurrence.limit",
@@ -467,6 +480,31 @@ pub fn parse(text: &str) -> Parsed {
             ["context"] => {
                 p.config.active_context = (!value.is_empty()).then(|| value.to_owned());
             }
+            // Defaults for new tasks. An empty value means "none", and a date that can't be read is
+            // dropped with a warning (Taskwarrior skips it silently when a task is added).
+            ["default", "project"] => {
+                if !value.is_empty() {
+                    p.config.settings.insert(name.to_owned(), unescape(value));
+                }
+            }
+            ["default", "due" | "scheduled"] => {
+                if value.is_empty() {
+                    // unset
+                } else if crate::dates::parse_date_expr(value, &crate::dates::Clock::utc(0)).is_some() {
+                    p.config.settings.insert(name.to_owned(), value.to_owned());
+                } else {
+                    p.warnings.push(format!("{name}: '{value}' is not a date or duration, ignored"));
+                }
+            }
+            ["limit"] => {
+                // Taskwarrior reads anything that isn't a number as 0, which is "no limit". Say so
+                // here instead, since a typo there silently shows everything.
+                if crate::filter::parse_limit(value).is_some() {
+                    p.config.settings.insert(name.to_owned(), value.to_owned());
+                } else {
+                    p.warnings.push(format!("limit: '{value}' is not a number, 'page' or 'none', ignored"));
+                }
+            }
             ["urgency", "inherit"] => {
                 p.config.settings.insert(name.to_owned(), unescape(value));
             }
@@ -691,6 +729,44 @@ verbose=nothing
             assert!(set_urgency(&mut cfg, m, true).is_err(), "{k}={v}");
             assert_eq!(cfg, before);
         }
+    }
+
+    #[test]
+    fn limit_setting_is_kept_when_valid_and_reported_when_not() {
+        use crate::filter::Limit;
+        assert_eq!(Config::default().default_limit(), Limit::None);
+        for (v, want) in [("25", Limit::N(25)), ("page", Limit::Page), ("none", Limit::None), ("0", Limit::None)] {
+            let p = parse(&format!("limit={v}\n"));
+            assert_eq!(p.config.default_limit(), want, "{v}");
+            assert!(p.warnings.is_empty() && p.ignored.is_empty(), "{v}: {:?}", p.warnings);
+            assert_eq!(parse(&render(&p.config)).config, p.config, "{v} round-trips");
+        }
+        for bad in ["lots", "-3", "2.5", ""] {
+            let p = parse(&format!("limit={bad}\n"));
+            assert_eq!(p.config.default_limit(), Limit::None, "{bad:?} is not used");
+            assert!(!p.config.settings.contains_key("limit"));
+            assert!(p.warnings.iter().any(|w| w.starts_with("limit:")), "{bad:?}: {:?}", p.warnings);
+        }
+        // `recurrence.limit` is a different setting and must stay out of the way.
+        assert_eq!(parse("recurrence.limit=3\n").config.default_limit(), Limit::None);
+        let mut cfg = Config::default();
+        apply_override(&mut cfg, "limit", "4").unwrap();
+        assert_eq!(cfg.default_limit(), Limit::N(4));
+    }
+
+    #[test]
+    fn defaults_for_new_tasks_are_kept_when_usable() {
+        let p = parse("default.project=Inbox\ndefault.due=eow\ndefault.scheduled=2d\n");
+        assert!(p.warnings.is_empty() && p.ignored.is_empty(), "{:?}", p.warnings);
+        assert_eq!(p.config.settings["default.project"], "Inbox");
+        assert_eq!(p.config.settings["default.due"], "eow");
+        assert_eq!(p.config.settings["default.scheduled"], "2d");
+        assert_eq!(parse(&render(&p.config)).config, p.config, "round-trips");
+        // Empty means none; an unreadable date is reported and not kept.
+        let p = parse("default.project=\ndefault.due=\ndefault.scheduled=someday\n");
+        assert!(p.config.settings.is_empty());
+        assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
+        assert!(p.warnings[0].contains("default.scheduled") && p.warnings[0].contains("someday"));
     }
 
     #[test]

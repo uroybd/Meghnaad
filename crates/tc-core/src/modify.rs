@@ -329,6 +329,11 @@ pub fn plan(
     if becomes_recurring(m, mode, current, &out) {
         out.push(Change::Recurring);
     }
+    // After the recurrence check, as in Taskwarrior: a recurring task still has to be given its
+    // own `due`, a default doesn't stand in for it.
+    if mode == Mode::Add {
+        add_defaults(&mut out, ctx);
+    }
 
     for t in &m.add_tags {
         out.push(Change::AddTag(t.clone()));
@@ -337,6 +342,43 @@ pub fn plan(
         out.push(Change::RemoveTag(t.clone()));
     }
     Ok(out)
+}
+
+/// `default.project`, `default.due` and `default.scheduled`: filled in for a new task that has no
+/// value of its own. A due or scheduled default is read like the same word typed on the command
+/// line (`3d` is three days from now, `eow` is the end of the week). One that can't be read is
+/// skipped, as Taskwarrior does; the taskrc import warns about it.
+fn add_defaults(out: &mut Vec<Change>, ctx: &EvalCtx) {
+    let setting = |key: &str| ctx.cfg.settings.get(key).map(|v| v.trim()).filter(|v| !v.is_empty());
+    let given_prop = |out: &[Change], prop: &str| {
+        out.iter().rev().find_map(|c| match c {
+            Change::Prop { name, value } if name == prop => Some(value.is_some()),
+            _ => None,
+        })
+        .unwrap_or(false)
+    };
+    let given_date = |out: &[Change], prop: &str| {
+        out.iter().rev().find_map(|c| match c {
+            Change::Timestamp { name, value } if *name == prop => Some(value.is_some()),
+            _ => None,
+        })
+        .unwrap_or(false)
+    };
+
+    if let Some(p) = setting("default.project") {
+        if !given_prop(out, "project") {
+            out.push(Change::Prop { name: "project".into(), value: Some(p.to_owned()) });
+        }
+    }
+    for (key, prop) in [("default.due", "due"), ("default.scheduled", "scheduled")] {
+        let Some(v) = setting(key) else { continue };
+        if given_date(out, prop) {
+            continue;
+        }
+        if let Some(d) = parse_date_expr(v, &ctx.clock) {
+            out.push(Change::Timestamp { name: ts_prop(prop).unwrap(), value: Some(d.ts) });
+        }
+    }
 }
 
 /// The `due` a task will have after these changes: `Some(None)` means it is being cleared.

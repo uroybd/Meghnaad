@@ -264,6 +264,110 @@ async fn count_skips_recurring_templates_like_taskwarrior() {
     assert_eq!(message(&res), "3");
 }
 
+/// (rows shown, tasks matched) for a report command.
+async fn shown(r: &mut R, cfg: &Config, line: &str) -> (usize, usize) {
+    let (CliResult::Report(o), _) = run(r, cfg, line).await else { panic!("{line}: not a report") };
+    (o.rows.len(), o.matched)
+}
+
+#[tokio::test]
+async fn the_limit_setting_cuts_reports_short_unless_the_command_says_otherwise() {
+    let mut r = replica();
+    let plain = Config::default();
+    for i in 0..6 {
+        run(&mut r, &plain, &format!("add task {i}")).await;
+    }
+    // Unset: every task, as in Taskwarrior.
+    assert_eq!(shown(&mut r, &plain, "list").await, (6, 6));
+
+    let cfg = parse("limit=2\n").config;
+    assert_eq!(shown(&mut r, &cfg, "list").await, (2, 6), "the report stops at 2 and still says how many matched");
+    assert_eq!(shown(&mut r, &cfg, "all").await, (2, 6));
+    // The same through `rc.limit:` on the command line, with nothing in the taskrc.
+    assert_eq!(shown(&mut r, &plain, "rc.limit:3 list").await, (3, 6));
+    // `limit:` in the command beats the setting, both ways.
+    assert_eq!(shown(&mut r, &cfg, "list limit:4").await, (4, 6));
+    assert_eq!(shown(&mut r, &cfg, "list limit:none").await, (6, 6));
+    assert_eq!(shown(&mut r, &cfg, "list limit:0").await, (6, 6));
+    assert_eq!(shown(&mut r, &cfg, "rc.limit:5 list").await, (5, 6), "rc beats the taskrc");
+    // `page` has no meaning in a browser, so it shows everything.
+    assert_eq!(shown(&mut r, &parse("limit=page\n").config, "list").await, (6, 6));
+    // The built-in `next` carries its own `limit:page`, which wins, as in Taskwarrior.
+    assert_eq!(shown(&mut r, &cfg, "next").await, (6, 6));
+    // A report definition with its own limit wins over the setting, too.
+    let own = parse("limit=2\nreport.top.columns=id,description\nreport.top.filter=status:pending limit:5\n").config;
+    assert_eq!(shown(&mut r, &own, "top").await, (5, 6));
+}
+
+#[tokio::test]
+async fn the_limit_setting_never_hides_tasks_from_export_count_or_info() {
+    let mut r = replica();
+    let cfg = parse("limit=2\n").config;
+    for i in 0..5 {
+        run(&mut r, &cfg, &format!("add task {i}")).await;
+    }
+    let (res, _) = run(&mut r, &cfg, "count").await;
+    assert_eq!(message(&res), "5");
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "export").await else { panic!("not json") };
+    assert_eq!(value.as_array().unwrap().len(), 5);
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "status:pending export").await else { panic!("not json") };
+    assert_eq!(value.as_array().unwrap().len(), 5, "what the Projects view and reminders read");
+}
+
+async fn only_task(r: &mut R, description: &str) -> tc_core::model::Facts {
+    load_facts(r).await.unwrap().into_iter().find(|f| f.description == description).unwrap_or_else(|| panic!("no {description}"))
+}
+
+#[tokio::test]
+async fn new_tasks_get_the_default_project_due_and_scheduled() {
+    let mut r = replica();
+    let cfg = parse("default.project=Inbox\ndefault.due=3d\ndefault.scheduled=2030-01-01\n").config;
+    let before = taskchampion::chrono::Utc::now().timestamp();
+    run(&mut r, &cfg, "add plain").await;
+    let after = taskchampion::chrono::Utc::now().timestamp() + 60; // the test clock runs ahead a second per command
+
+    let t = only_task(&mut r, "plain").await;
+    assert_eq!(t.project.as_deref(), Some("Inbox"));
+    // A duration is "from now", like typing `due:3d`.
+    let due = t.due.expect("a default due date");
+    assert!((before + 3 * 86_400..=after + 3 * 86_400).contains(&due), "{due}");
+    assert!(t.scheduled.is_some_and(|s| s > before + 86_400 * 365), "{:?}", t.scheduled);
+
+    // What the user gives wins, field by field.
+    run(&mut r, &cfg, "add explicit project:Work due:2031-05-05").await;
+    let t = only_task(&mut r, "explicit").await;
+    assert_eq!(t.project.as_deref(), Some("Work"));
+    assert!(t.due.is_some_and(|d| d > before + 86_400 * 365 * 4), "the typed due date was kept");
+    assert!(t.scheduled.is_some(), "but the scheduled default still applies");
+
+    // Taskwarrior fills them in when a task is added, not when one is changed.
+    run(&mut r, &Config::default(), "add later").await;
+    let (res, _) = run(&mut r, &cfg, "later modify +x").await;
+    let t = only_task(&mut r, "later").await;
+    assert!(t.project.is_none() && t.due.is_none() && t.scheduled.is_none(), "{}", message(&res));
+}
+
+#[tokio::test]
+async fn a_default_due_date_does_not_stand_in_for_a_recurring_tasks_own() {
+    let mut r = replica();
+    let cfg = parse("default.due=3d\n").config;
+    let (res, wrote) = run(&mut r, &cfg, "add Water plants recur:weekly").await;
+    assert!(!wrote && message(&res).contains("must also have a 'due' date"), "{}", message(&res));
+}
+
+#[tokio::test]
+async fn an_unusable_default_is_ignored_and_adding_still_works() {
+    let p = parse("default.due=whenever\ndefault.project=\n");
+    assert!(p.warnings.iter().any(|w| w.starts_with("default.due:")), "{:?}", p.warnings);
+    assert!(!p.config.settings.contains_key("default.due") && !p.config.settings.contains_key("default.project"));
+    // Set on a command line instead of a taskrc, the same rules apply.
+    let mut r = replica();
+    run(&mut r, &Config::default(), "rc.default.project:Inbox rc.default.due:nonsense add via rc").await;
+    let t = only_task(&mut r, "via rc").await;
+    assert_eq!(t.project.as_deref(), Some("Inbox"));
+    assert!(t.due.is_none());
+}
+
 #[tokio::test]
 async fn udas_and_custom_reports_from_taskrc() {
     let cfg = parse(
