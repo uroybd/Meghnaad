@@ -204,6 +204,10 @@ A UDA that exists on a task but isn't defined in the taskrc is shown but read-on
 | --- | --- | --- |
 | `sync.*`, `taskd.*`, and any name containing `secret`, `password`, `token`, `credential` and similar | Blocked | Never stored, logged or shown; only the *names* of what was dropped are reported. The Worker syncs through its own R2 binding and secret instead |
 
+The bucket side of sync is not configured from a taskrc, but it behaves like the CLI's. The Worker syncs before and
+after every command, writes a snapshot on about one push in ten (as `task sync` does, which never avoids snapshots),
+and picks the newest snapshot when it starts cold. Deleting old versions is left to the CLI.
+
 ## Worth doing next
 
 Roughly in order of how much they'd matter to someone coming from the CLI:

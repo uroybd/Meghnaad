@@ -75,7 +75,10 @@ it (tables, forms, a detail view), and both go through the same command engine.
 - The bucket holds Taskwarrior's standard **TaskChampion cloud layout** (`salt`, `latest`, `v-…`, `s-…`), encrypted
   client-side. The Worker implements the same protocol, so it and the CLI are interchangeable replicas.
 - The Worker keeps an in-memory replica per instance and **syncs before and after every command**, so it only
-  downloads versions it hasn't seen.
+  downloads versions it hasn't seen. A sync with nothing new is a single read of `latest`.
+- A Worker that has been idle rebuilds its replica from the bucket's newest **snapshot**, then fetches the versions
+  after it together rather than one at a time. Like the CLI, it writes a snapshot on about one push in ten, so that
+  start stays short however much you use the web side.
 - One endpoint, `POST /api/cli`, takes `{ "line": "…" }` (the console) or `{ "args": […] }` (the UI), so there is a
   single place where Taskwarrior semantics live.
 - Your imported `taskrc` settings are stored in the same bucket (`web/config.json`, plus one backup), so they
@@ -122,7 +125,9 @@ flowchart TB
 | Sync | On `task sync` | Before and after every command |
 | Offline | Works | Needs a connection |
 | Encryption key | Only on your machine | In a Worker secret; the Worker decrypts |
-| Snapshots and cleanup | Done by the CLI | Left to the CLI |
+| First request after idle | Instant (local database) | Rebuilds from the newest snapshot, then replays what follows it. Deriving the key alone takes about half a second |
+| Snapshots | Written by the CLI on about one push in ten | Written the same way by the Worker, replacing the previous one |
+| Cleaning up old versions | Done by the CLI | Left to the CLI |
 | Undo | TaskChampion undo, unsynced changes only | Rebuilt as inverse operations, kept in memory |
 | Task ids | Local to that replica | Computed separately, so they differ from the desktop's |
 | Hooks | `on-add`, `on-modify` | None |
