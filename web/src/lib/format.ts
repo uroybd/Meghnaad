@@ -108,12 +108,17 @@ function descriptionCell(row: Row, format: string | null, ctx: Ctx): Cell {
   }
 }
 
+/** A project path as coloured parts. */
+export function projectSegments(path: string): { text: string; hue: number }[] {
+  return path.split('.').map((s) => ({ text: s, hue: segmentHue(s) }));
+}
+
 function projectCell(p: string | null, format: string | null): Cell {
   if (!p) return { text: '' };
   const parts = p.split('.');
   if (format === 'indented') return { text: '  '.repeat(parts.length - 1) + parts[parts.length - 1] };
   const text = format === 'parent' && parts.length > 1 ? parts.slice(0, -1).join('.') : p;
-  return { text, segments: text.split('.').map((s) => ({ text: s, hue: segmentHue(s) })) };
+  return { text, segments: projectSegments(text) };
 }
 
 /** UDA values for date-typed UDAs are stored as epoch seconds. */

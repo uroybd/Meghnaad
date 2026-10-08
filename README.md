@@ -20,6 +20,8 @@ it (tables, forms, a detail view), and both go through the same command engine.
   the same encryption secret. No migration, no new server, nothing changes for the CLI.
 - **Taskwarrior behaviour, not an imitation of it.** Filters, virtual tags (`+OVERDUE`), urgency, report sorting,
   UDAs and custom reports follow Taskwarrior's own rules, ported from its source.
+- **Taskwarrior 3.5.0 and newer.** Behaviour and settings follow 3.5.0. Anything removed or deprecated before it
+  (the old `annotations` display setting, for example) is not supported. See [taskrc support](docs/taskrc-support.md).
 - **Your `taskrc`, safely.** Import your UDAs, custom reports and contexts. Sync settings and anything that looks
   like a credential are deliberately blocked.
 - **Time tracking** (`journal.time`), a sessions table per task, and reminders while the tab is open.
@@ -313,6 +315,8 @@ commands · `Esc` closes a menu · `Ctrl+L` clears.
 - **Tables are meant to be scanned.** IDs are bold, and hovering one shows the task's uuid with a Copy button. Project
   names are split at the dots, with each part in its own colour (the same name is always the same colour) and the dots
   muted. Tags are pills. Urgency is coloured by level: grey under 5, normal to 10, amber to 15, red from 15.
+  The detail view uses the same styling, plus a coloured pill for the task's state (pending, waiting, blocked,
+  blocking, recurring, completed, deleted).
 - **Click a row** for the detail view: all fields, annotations, dependencies you can follow, and (with
   `journal.time`) a table of work sessions. Row buttons: done, start/stop, edit, delete.
 - **Add tasks** from the sidebar. *More fields…* opens the full form: project, priority, due/wait/scheduled/until,
@@ -380,12 +384,14 @@ Periods are Taskwarrior's: `daily` `weekdays` `weekly` `biweekly` `monthly` `qua
 `3d` `2w` `6mo`, and ISO durations like `P1M`. The first instance has the `due` you gave; later ones follow the period.
 A repeating task shows a **repeat icon**; its detail view lists its instances, and an instance links back to it.
 
-- **The web app only creates instances when your taskrc says `recurrence=on`** (add it under **taskrc**; optional
-  `recurrence.limit=N` keeps N upcoming instances, default 1). Taskwarrior itself defaults to *on*, and two replicas that
-  both create instances while out of sync make duplicates, so if your desktop `task` already does this, leave it off
-  here. Either way the web app shows and edits recurring tasks, and reads instances made elsewhere. With it on, instances
-  are created, finished series retired and `until` honoured before each command, as in Taskwarrior. (Both can safely
-  run side by side: instances are numbered the same way, so a second replica finds nothing missing.)
+- **Recurrence is on by default**, as in Taskwarrior (`recurrence=1`). Before each command the app creates the instances
+  that are due (`recurrence.limit=N` keeps N upcoming ones, default 1), retires finished series and honours `until`, the
+  way `task` does. Taskwarrior itself advises that when several clients sync, one is primary and the others set
+  `recurrence=0`, as a workaround for a duplication bug. Instances are numbered by their index in the template's mask, so
+  the CLI and the web app run side by side without duplicating each other in normal use (this is checked against real
+  `task` 3.5.0), but if you ever see duplicates, put `recurrence=off` in the **taskrc** dialog here (or in your CLI's
+  taskrc) so that only one side generates them. With it off the web app still shows and edits recurring tasks and reads
+  instances made elsewhere.
 - The recurring task itself is a template: you can edit it but not complete or start it.
 - **Editing one task of a series** (the template, or one of its instances) follows `recurrence.confirmation`, as in
   Taskwarrior: `prompt` (the default) asks whether to change **all pending recurrences** or **only this task**; `yes`
@@ -487,7 +493,7 @@ changing filters, sorting, urgency or journalling, read the C++ first.
 
 - **Not yet tested against real R2.** The CLI's own use of R2's conditional writes is a good sign, but run a
   `task sync` and a web edit against a scratch bucket before trusting it with data you can't lose.
-- **Recurring tasks** follow Taskwarrior's rules and were checked against real `task` 3.5.0 in both directions, but the web app only creates instances when the taskrc has `recurrence=on` (see above).
+- **Recurring tasks** follow Taskwarrior's rules and were checked against real `task` 3.5.0 in both directions, and both sides create instances by default (see above).
 - **Phone layout** was verified in an emulated phone browser (touch, 390px); try it on your own device before relying on it, in particular the on-screen keyboard and safe-area insets.
 - **Snapshots** are written the way the CLI writes them: on about one push in ten, never on a pull, replacing the one before. A Worker that has been idle starts from the newest snapshot and replays only the versions after it, so use of either side keeps the first request quick. **Deleting old versions** (those older than about 180 days that a snapshot covers) is still left to the CLI.
 - **Dates you type** aren't parsed with your `dateformat`: use `2026-12-25`, `2026-12-25T08:30` or words like `friday`, `3d`. (Dates *shown* follow it; see Tasks view.)

@@ -26,11 +26,13 @@ fn truthy(v: &str) -> bool {
 
 /// Whether *this app* should create instances (and expire `until` tasks).
 ///
-/// Taskwarrior defaults this to on, but two replicas that both create instances while out of
-/// sync make duplicates, so the web app only does it when the taskrc says `recurrence=on`.
-/// Otherwise the desktop `task` keeps doing it, exactly as before.
+/// On unless the taskrc turns it off, as in Taskwarrior (`recurrence=1` is its default). Taskwarrior
+/// itself warns that two replicas that both create instances while out of sync can duplicate them,
+/// and advises one primary client with `recurrence=0` everywhere else; that is `recurrence=off`
+/// here. Instances are numbered by their index in the template's mask, which is what keeps a second
+/// replica from finding anything missing in the ordinary case.
 pub fn enabled(cfg: &Config) -> bool {
-    cfg.settings.get("recurrence").is_some_and(|v| truthy(v))
+    cfg.settings.get("recurrence").map_or(true, |v| truthy(v))
 }
 
 /// `recurrence.confirmation`: what editing a recurring task does to the rest of its series.
@@ -468,10 +470,12 @@ mod tests {
 
     #[test]
     fn the_app_only_generates_when_asked() {
-        assert!(!enabled(&cfg("")));
-        assert!(!enabled(&cfg("recurrence=off")));
+        assert!(enabled(&cfg("")), "on by default, as in Taskwarrior");
         assert!(enabled(&cfg("recurrence=on")));
         assert!(enabled(&cfg("recurrence=1")));
+        for off in ["off", "0", "no", "false", "n", ""] {
+            assert!(!enabled(&cfg(&format!("recurrence={off}\n"))), "recurrence={off:?}");
+        }
         assert_eq!(limit(&cfg("")), 1);
         assert_eq!(limit(&cfg("recurrence.limit=3")), 3);
     }

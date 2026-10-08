@@ -206,8 +206,8 @@ assert t["sized thing"]["estimate"] == "big", t["sized thing"]
 ok "the CLI received the UDA written from the web"
 
 echo "== recurring tasks: web-made series seen by the CLI, CLI-made series seen by the web"
-# The web only creates instances when its taskrc says recurrence=on (the CLI does by default), so a
-# desktop CLI and the web never both generate them unless the user asks for it.
+# Both the CLI and the web create instances by default (recurrence=1 is Taskwarrior's default), and
+# both number them by their index in the template's mask, so neither duplicates the other's.
 s3_to_r2
 start_dev
 curl -sf -X PUT "$WEB/api/config/taskrc" --data-binary $'recurrence=on\nrecurrence.limit=2\n' >/dev/null || fail "taskrc upload failed"

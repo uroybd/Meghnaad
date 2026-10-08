@@ -2,10 +2,13 @@
   import { runCli } from './api';
   import { formatFor } from './dateformat';
   import { formatMoment, formatSeconds, formatStamp } from './dates';
-  import { udaLabel } from './format';
+  import { projectSegments, udaLabel, urgencyLevel } from './format';
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
   import { visibleNotes } from './journal';
+  import ProjectPath from './ProjectPath.svelte';
   import { describeRecur } from './recurrence';
+  import StatusPill, { type Kind } from './StatusPill.svelte';
+  import UuidTip from './UuidTip.svelte';
   import { store } from './store.svelte';
   import type { Row } from './types';
 
@@ -26,6 +29,7 @@
   const defs = $derived(store.config?.config.udas ?? {});
   const infoFmt = $derived(formatFor('info', store.config?.config.settings));
   const noteFmt = $derived(formatFor('infoNote', store.config?.config.settings));
+  const waiting = $derived(task.status === 'pending' && task.virtual_tags.includes('WAITING'));
   const udaKeys = $derived(Object.keys(task.extra).filter((k) => k in defs).sort());
   const dates: [string, number | null][] = $derived([
     ['Entered', task.entry], ['Due', task.due], ['Scheduled', task.scheduled], ['Wait', task.wait],
@@ -64,8 +68,14 @@
     </header>
   {/if}
   <dl>
-    <dt>ID</dt><dd>{task.id ?? '–'} <span class="dim mono">{task.uuid}</span></dd>
-    <dt>Status</dt><dd>{task.status}{#if task.virtual_tags.includes('WAITING')} <span class="chip">waiting</span>{/if}{#if task.blocked} <span class="chip">blocked</span>{/if}{#if task.blocking} <span class="chip">blocking</span>{/if}</dd>
+    <dt>ID</dt>
+    <dd><span class:idnum={task.id != null}><UuidTip text={task.id != null ? String(task.id) : '–'} uuid={task.uuid} /></span> <span class="dim mono">{task.uuid}</span></dd>
+    <dt>Status</dt>
+    <dd class="pills">
+      {#if waiting}<StatusPill kind="waiting" />{:else}<StatusPill kind={task.status as Kind} label={task.status} />{/if}
+      {#if task.blocked}<StatusPill kind="blocked" />{/if}
+      {#if task.blocking}<StatusPill kind="blocking" />{/if}
+    </dd>
     {#if task.recur}
       <dt>Repeats</dt>
       <dd data-testid="repeats">
@@ -82,11 +92,11 @@
         {/if}
       </dd>
     {/if}
-    {#if task.project}<dt>Project</dt><dd>{task.project}</dd>{/if}
-    {#if task.priority}<dt>Priority</dt><dd>{task.priority}</dd>{/if}
-    {#if task.tags.length}<dt>Tags</dt><dd>{#each task.tags as t}<span class="chip">{t}</span> {/each}</dd>{/if}
+    {#if task.project}<dt>Project</dt><dd><ProjectPath segments={projectSegments(task.project)} /></dd>{/if}
+    {#if task.priority}<dt>Priority</dt><dd class="pri-{task.priority.toLowerCase()}">{task.priority}</dd>{/if}
+    {#if task.tags.length}<dt>Tags</dt><dd>{#each task.tags as t}<span class="tagpill">{t}</span>{/each}</dd>{/if}
     {#each dates as [label, ts]}
-      {#if ts != null}<dt>{label}</dt><dd>{formatMoment(ts, undefined, infoFmt)}</dd>{/if}
+      {#if ts != null}<dt>{label}</dt><dd class:overdue={label === 'Due' && task.virtual_tags.includes('OVERDUE')}>{formatMoment(ts, undefined, infoFmt)}</dd>{/if}
     {/each}
     {#if task.active_seconds != null}
       <dt>Time tracked</dt>
@@ -107,7 +117,7 @@
     {#each udaKeys as k}
       <dt>{udaLabel(defs[k])}</dt><dd class="pre">{task.extra[k]}</dd>
     {/each}
-    <dt>Urgency</dt><dd>{task.urgency.toFixed(2)}</dd>
+    <dt>Urgency</dt><dd class="urg-{urgencyLevel(task.urgency)}">{task.urgency.toFixed(2)}</dd>
     {#if task.virtual_tags.length}
       <dt>Virtual tags</dt><dd class="dim">{task.virtual_tags.join(' ')}</dd>
     {/if}
@@ -202,4 +212,5 @@
   .dep.inline { display: inline-flex; align-items: center; gap: 4px; }
   .dep { display: block; padding: 0 4px; margin-left: -4px; text-align: left; }
   .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .pills { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 </style>

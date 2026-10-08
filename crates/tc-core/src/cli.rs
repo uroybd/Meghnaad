@@ -450,17 +450,17 @@ pub async fn execute<S: Storage>(
     let parsed = parse_command(args, cfg).ok();
     let command = parsed.as_ref().map(CommandInfo::of);
     // Housekeeping Taskwarrior does before every command: create due recurring instances and
-    // expire tasks past `until`. Opt-in here (`recurrence=on`); see `recur::enabled`.
+    // expire tasks past `until`. On unless `recurrence` is turned off; see `recur::enabled`.
     let skip = matches!(parsed.as_ref().map(|p| &p.cmd), Some(Cmd::Builtin(Undo | Sync | Help | Version)));
-    let maintained = if skip || !recur::enabled(cfg) {
-        false
+    let (maintained, tasks) = if skip || !recur::enabled(cfg) {
+        (false, None)
     } else {
         match maintain(replica, cfg, clock).await {
-            Ok(w) => w,
+            Ok(m) => m,
             Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command },
         }
     };
-    let mut done = execute_inner(replica, cfg, clock, args, opts, undo).await;
+    let mut done = execute_inner(replica, cfg, clock, args, opts, undo, tasks).await;
     done.command = command;
     done.wrote |= maintained;
     done
@@ -472,13 +472,18 @@ const NOT_INHERITED: &[&str] =
     &["uuid", "mask", "imask", "parent", "status", "entry", "due", "wait", "scheduled", "start", "end", "modified"];
 
 /// Create the recurring instances that are due, retire finished series and expire tasks past
-/// `until`. Returns whether anything was written.
-async fn maintain<S: Storage>(replica: &mut Replica<S>, cfg: &Config, clock: Clock) -> Result<bool, String> {
+/// `until`. Returns whether anything was written and, when nothing was, the tasks it read, so the
+/// command that follows doesn't read them all again (this runs before every command).
+async fn maintain<S: Storage>(
+    replica: &mut Replica<S>,
+    cfg: &Config,
+    clock: Clock,
+) -> Result<(bool, Option<Vec<Facts>>), String> {
     let e = |e: taskchampion::Error| e.to_string();
     let all = load_facts(replica).await.map_err(e)?;
     let plan = recur::plan(&all, cfg, &clock);
     if plan.is_empty() {
-        return Ok(false);
+        return Ok((false, Some(all)));
     }
     let now = Utc.timestamp_opt(clock.now, 0).single().unwrap_or_else(Utc::now);
     let ts = |t: i64| Utc.timestamp_opt(t, 0).single();
@@ -546,9 +551,10 @@ async fn maintain<S: Storage>(replica: &mut Replica<S>, cfg: &Config, clock: Clo
         }
     }
     replica.commit_operations(ops).await.map_err(e)?;
-    Ok(true)
+    Ok((true, None))
 }
 
+/// `tasks` are the tasks as they are now, if the caller has just read them.
 async fn execute_inner<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
@@ -556,6 +562,7 @@ async fn execute_inner<S: Storage>(
     args: &[String],
     opts: Options,
     undo: &mut UndoStack,
+    tasks: Option<Vec<Facts>>,
 ) -> Done {
     let parsed = match parse_command(args, cfg) {
         Ok(p) => p,
@@ -585,9 +592,12 @@ async fn execute_inner<S: Storage>(
         &overridden
     };
 
-    let all = match load_facts(replica).await {
-        Ok(a) => a,
-        Err(e) => return error(e.to_string()),
+    let all = match tasks {
+        Some(a) => a,
+        None => match load_facts(replica).await {
+            Ok(a) => a,
+            Err(e) => return error(e.to_string()),
+        },
     };
     let ids = run::working_set_ids(&all);
     let ctx = EvalCtx::new(cfg, clock, &ids).with_inheritance(&all);

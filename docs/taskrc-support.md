@@ -7,8 +7,8 @@ reading this repository's code. The README explains [how the taskrc is imported]
 you paste or choose your `~/.taskrc`, only an allowlist of settings is kept, and the result is saved in your bucket
 (`web/config.json`), not in your desktop file.
 
-**Scope.** Only Taskwarrior **3.5.0 and newer** is supported. A setting that was removed or deprecated before then
-(the old `annotations` display setting, for example) is deliberately not supported, even if an old taskrc still has it.
+**Scope.** This tracks Taskwarrior **3.5.0 and newer**, and only that. Settings that were removed or deprecated before
+3.5.0 are left out of this list and are not supported, even if an older taskrc still contains them.
 
 ## Status key
 
@@ -28,18 +28,18 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
-| Miscellaneous | 5 | 6 | 8 | 5 | 0 |
+| Miscellaneous | 6 | 5 | 8 | 5 | 0 |
 | Dates and calendar | 7 | 0 | 1 | 2 | 0 |
 | Journal | 3 | 1 | 0 | 0 | 0 |
 | Dependencies | 0 | 0 | 0 | 1 | 0 |
 | Colour | 0 | 0 | 0 | 1 | 0 |
 | Urgency | 17 | 0 | 0 | 0 | 0 |
 | Defaults | 5 | 0 | 0 | 0 | 0 |
-| Reports | 8 | 0 | 0 | 2 | 0 |
+| Reports | 8 | 0 | 0 | 0 | 0 |
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 3 | 0 | 1 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **57** | **7** | **12** | **18** | **1** |
+| **Total** | **58** | **6** | **12** | **16** | **1** |
 
 ## Files, hooks and environment
 
@@ -69,7 +69,7 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- |
 | `search.case.sensitive` | Done | |
 | `uda.<name>.indicator` | Done | Shown by the `indicator` column format |
-| `recurrence` | Partial | Taskwarrior defaults this to on. Here it is **off** unless the taskrc says `recurrence=on`, because two replicas that both create instances while out of sync make duplicates. See [Recurring tasks](../README.md#recurring-tasks) |
+| `recurrence` | Done | On by default, as in Taskwarrior; `recurrence=off` (or `0`, `no`) turns it off. Before each command the app creates the instances that are due, retires finished series and expires tasks past `until`, the way `task` does. Taskwarrior itself advises one primary client with `recurrence=1` and `recurrence=0` on all the others when syncing several, because of a duplication bug. Instances are numbered by their index in the template's mask, which is what keeps a second replica from finding anything missing, but if you see duplicates, turn it off on one side. See [Recurring tasks](../README.md#recurring-tasks) |
 | `recurrence.confirmation` | Done | Unset or `prompt` asks (the question appears in the app), a true-ish value is yes, anything else no |
 | `recurrence.indicator` | Done | |
 | `recurrence.limit` | Done | |
@@ -175,8 +175,6 @@ inheritance rules, which follow Taskwarrior's source.
 | `report.<name>.context` | Done | |
 | `report.<name>.dateformat` | Done | |
 | Built-in reports | Done | `next`, `list`, `long`, `ls`, `all`, `completed`, `waiting`, `newest`, `oldest`, `overdue`, `active`, `ready`, `recurring`, `blocked`, `unblocked`, `blocking`, `minimal`, with Taskwarrior's own columns, labels, filters and sorts. Any of them can be overridden one attribute at a time from the taskrc |
-| `report.<name>.annotations` | N/A | Deprecated by Taskwarrior 2.5 and read by nothing in 3.5.0. A report controls its annotations through the format of its `description` column in `report.<name>.columns`, and every format is supported: `description` (annotations beneath it, the default), `description.desc` (none), `description.oneline` (all of them on the same line, each with its date), `description.count` (a count in brackets), `description.truncated` and `description.truncated_count`. There is no "newest only" format in 3.5.0. The detail view always shows every annotation |
-| `annotations` | N/A | Not a Taskwarrior 3 setting (the 3.5.0 source only lists it as deprecated, and `task config annotations` finds no entry). Use the `description` column formats above |
 
 ## User defined attributes
 

@@ -145,3 +145,20 @@ button:has(> .lucide-icon:only-child) { line-height: 0; }
     padding-right: max(16px, env(safe-area-inset-right)) !important;
   }
 }
+
+/* Shared by the table and the details view. */
+.tagpill {
+  display: inline-block; margin: 0 4px 2px 0; padding: 0 8px; border-radius: 999px;
+  font-size: 12px; line-height: 20px; white-space: nowrap;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.urg-low { color: var(--dim); }
+.urg-mid { font-weight: 500; }
+.urg-high { color: var(--warn); font-weight: 600; }
+.urg-crit { color: var(--err); font-weight: 700; }
+.pri-h { color: var(--pri-h); font-weight: 600; }
+.pri-m { color: var(--pri-m); font-weight: 600; }
+.pri-l { color: var(--pri-l); font-weight: 600; }
+.idnum { font-weight: 700; }
+.overdue { color: var(--err); font-weight: 600; }

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
   import { cell, rowClass } from './format';
-  import { ArrowDown, ArrowUp, Check, Copy, Pencil, Play, Repeat, Square, Trash2 } from './icons';
+  import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Square, Trash2 } from './icons';
+  import ProjectPath from './ProjectPath.svelte';
+  import UuidTip from './UuidTip.svelte';
   import { describeRecur } from './recurrence';
   import { baseColumn, parseSort, SORTABLE, sortState } from './sortSpec';
   import { store, type Entry } from './store.svelte';
@@ -52,28 +54,6 @@
   }
 
   // A click anywhere on the row opens the detail view, except on controls and selected text.
-  // The uuid tooltip on an ID cell: fixed-positioned under the id so the table's own scrolling
-  // can't clip it, and still part of the cell so the pointer can travel onto it to click Copy.
-  let copied = $state<string | null>(null);
-  function placeTip(e: Event) {
-    const host = e.currentTarget as HTMLElement;
-    const tip = host.querySelector<HTMLElement>('.tip');
-    if (!tip) return;
-    const r = host.getBoundingClientRect();
-    tip.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - tip.offsetWidth - 8))}px`;
-    tip.style.top = `${r.bottom - 2}px`;
-  }
-  async function copy(e: MouseEvent, uuid: string) {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(uuid);
-      copied = uuid;
-      setTimeout(() => (copied = copied === uuid ? null : copied), 1500);
-    } catch {
-      store.notify('Could not copy: select the id and copy it by hand.', 'err');
-    }
-  }
-
   function open(e: MouseEvent | KeyboardEvent, row: Row) {
     const t = e.target as HTMLElement;
     if (t.closest('button, a, input, select, textarea')) return;
@@ -166,17 +146,9 @@
               {@const c = cell(col, row, ctx)}
               <td class="{col.kind} {c.cls ?? ''}" class:blank={!c.text && !c.lines?.length} data-label={col.label}>
                 {#if c.uuid}
-                  <span class="uuidtip" role="group" aria-label="Task id {c.text}" tabindex="-1" onmouseenter={placeTip} onfocusin={placeTip}>
-                    <span class="idtext">{c.text}</span>
-                    <span class="tip">
-                      <code>{c.uuid}</code>
-                      <button type="button" class="copy" onclick={(e) => copy(e, c.uuid!)}>
-                        {#if copied === c.uuid}<Check size={13} /> Copied{:else}<Copy size={13} /> Copy{/if}
-                      </button>
-                    </span>
-                  </span>
+                  <UuidTip text={c.text} uuid={c.uuid} />
                 {:else if c.segments}
-                  <span class="path">{#each c.segments as seg, i}{#if i > 0}<span class="dot">.</span>{/if}<span class="seg" style="--h: {seg.hue}">{seg.text}</span>{/each}</span>
+                  <ProjectPath segments={c.segments} />
                 {:else if c.chips}
                   {#each c.chips as t}<span class="tagpill">{t}</span>{/each}
                 {:else}
@@ -250,28 +222,6 @@
   td.pri-l, .pri-l { color: var(--pri-l); }
   td.overdue { color: var(--err); font-weight: 600; }
   td.id:not(.dim) { font-weight: 700; }
-  td.urg-low { color: var(--dim); }
-  td.urg-mid { font-weight: 500; }
-  td.urg-high { color: var(--warn); font-weight: 600; }
-  td.urg-crit { color: var(--err); font-weight: 700; }
-  .seg { color: hsl(var(--h) var(--seg-s) var(--seg-l)); font-weight: 500; }
-  .dot { color: var(--dim); opacity: 0.55; padding: 0 1px; }
-  .tagpill {
-    display: inline-block; margin: 0 4px 2px 0; padding: 0 8px; border-radius: 999px;
-    font-size: 12px; line-height: 20px; white-space: nowrap;
-    color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
-  }
-  .uuidtip { display: inline-block; cursor: default; outline: none; }
-  .uuidtip .tip {
-    display: none; position: fixed; z-index: 30; align-items: center; gap: 10px;
-    padding: 6px 8px; font-weight: 400; white-space: nowrap; color: var(--text);
-    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
-    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
-  }
-  .uuidtip:hover .tip, .uuidtip:focus-within .tip { display: flex; }
-  .uuidtip code { font-family: var(--mono); font-size: 12px; user-select: all; }
-  .copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 12px; }
   td.dim { color: var(--dim); }
   tbody tr { cursor: pointer; }
   tr.gap td { border-top: 14px solid transparent; }

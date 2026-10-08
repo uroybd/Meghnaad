@@ -905,14 +905,32 @@ mod recurrence {
     }
 
     #[tokio::test]
+    async fn recurrence_is_on_unless_the_taskrc_turns_it_off() {
+        // Nothing configured, as for a user who never imported a taskrc: Taskwarrior's default.
+        // Due in the future, so exactly one instance is kept ready (`recurrence.limit` is 1).
+        let mut r = replica();
+        run(&mut r, &Config::default(), "add Water plants recur:daily due:tomorrow").await;
+        run(&mut r, &Config::default(), "list").await;
+        let v = all(&mut r).await;
+        assert_eq!(v.len(), 2, "a template and its first instance: {v:?}");
+        assert_eq!(instances(&v).len(), 1);
+        // Turned off, none are created.
+        let off = parse("recurrence=off\n").config;
+        let mut r = replica();
+        run(&mut r, &off, "add Water plants recur:daily due:tomorrow").await;
+        run(&mut r, &off, "list").await;
+        assert_eq!(all(&mut r).await.len(), 1);
+    }
+
+    #[tokio::test]
     async fn adding_with_recur_makes_a_template_that_generates_nothing_while_recurrence_is_off() {
-        let cfg = Config::default();
+        let cfg = parse("recurrence=off\n").config;
         let mut r = replica();
         let (res, _) = run(&mut r, &cfg, "add Water plants recur:daily due:yesterday").await;
         assert_eq!(message(&res), "Created task 1.");
         run(&mut r, &cfg, "list").await;
         let v = all(&mut r).await;
-        assert_eq!(v.len(), 1, "no instances without recurrence=on");
+        assert_eq!(v.len(), 1, "no instances with recurrence=off");
         assert_eq!(template(&v).recur.as_deref(), Some("daily"));
     }
 
@@ -962,13 +980,17 @@ mod recurrence {
 
     #[tokio::test]
     async fn the_template_cannot_be_completed_or_started_but_can_be_edited() {
-        let cfg = Config::default();
+        // `confirmation=no`: edit only the task named, so no question is asked about its instances.
+        let cfg = parse("recurrence.confirmation=no\n").config;
         let mut r = replica();
         run(&mut r, &cfg, "add Pay rent recur:monthly due:1d").await;
-        let (res, _) = run(&mut r, &cfg, "1 done").await;
+        // Numeric ids tie between the template and its first instance, so use the uuid.
+        let tpl = template(&all(&mut r).await).uuid.to_string();
+        let tpl = &tpl[..8];
+        let (res, _) = run(&mut r, &cfg, &format!("{tpl} done")).await;
         assert!(message(&res).contains("not pending"), "{}", message(&res));
         assert_eq!(template(&all(&mut r).await).status, "recurring");
-        let (res, _) = run(&mut r, &cfg, "1 modify priority:H").await;
+        let (res, _) = run(&mut r, &cfg, &format!("{tpl} modify priority:H")).await;
         assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
         assert_eq!(template(&all(&mut r).await).priority.as_deref(), Some("H"));
     }
