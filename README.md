@@ -475,7 +475,7 @@ changing filters, sorting, urgency or journalling, read the C++ first.
   `task sync` and a web edit against a scratch bucket before trusting it with data you can't lose.
 - **Recurring tasks** follow Taskwarrior's rules and were checked against real `task` 3.5.0 in both directions, but the web app only creates instances when the taskrc has `recurrence=on` (see above).
 - **Phone layout** was verified in an emulated phone browser (touch, 390px); try it on your own device before relying on it, in particular the on-screen keyboard and safe-area insets.
-- **Snapshots and cleanup** of old versions are left to the CLI.
+- **Snapshots** are written the way the CLI writes them: on about one push in ten, never on a pull, replacing the one before. A Worker that has been idle starts from the newest snapshot and replays only the versions after it, so use of either side keeps the first request quick. **Deleting old versions** (those older than about 180 days that a snapshot covers) is still left to the CLI.
 - **Dates you type** aren't parsed with your `dateformat`: use `2026-12-25`, `2026-12-25T08:30` or words like `friday`, `3d`. (Dates *shown* follow it; see Tasks view.)
 - **Not every `taskrc` option is supported.** Terminal, colour and local-file options don't apply to a web app, and some
   (`default.project`, `alias.*`, `context.<name>.rc.*`, …) aren't implemented yet. See [taskrc support](docs/taskrc-support.md).

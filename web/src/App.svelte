@@ -26,8 +26,15 @@
     if (started) return;
     started = true;
     store.loadConfig();
-    notifier.start();
+    // Reminders can wait for the table. The Worker handles one request at a time, so a poll sent
+    // first would make the first screen wait behind it. If the table never loads (another view,
+    // or an error), start anyway.
+    setTimeout(() => notifier.start(), 4000);
   }
+
+  $effect(() => {
+    if (!setup && store.live && !store.live.loading) notifier.start();
+  });
 
   onMount(async () => {
     const s = await getSetup();
@@ -40,7 +47,8 @@
   $effect(() => {
     if (store.rev !== lastRev) {
       lastRev = store.rev;
-      void notifier.poll();
+      // After the table has been asked for its refresh, not alongside it.
+      setTimeout(() => void notifier.poll(), 300);
     }
   });
 

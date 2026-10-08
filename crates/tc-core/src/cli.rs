@@ -817,7 +817,10 @@ async fn builtin<S: Storage>(
             };
             let row = |f: &Facts| Row::build(f, ctx);
             match kind {
-                Count => ok(CliResult::Text { lines: vec![sel.len().to_string()] }),
+                // Taskwarrior's `count` skips recurring parents (the templates), not the instances.
+                Count => ok(CliResult::Text {
+                    lines: vec![sel.iter().filter(|f| f.status != "recurring").count().to_string()],
+                }),
                 Info => {
                     if sel.is_empty() {
                         return ok(CliResult::Text { lines: vec!["No matches.".into()] });

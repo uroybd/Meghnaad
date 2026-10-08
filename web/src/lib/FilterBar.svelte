@@ -18,12 +18,22 @@
     cfg?.active_context ? { name: cfg.active_context, read: cfg.contexts[cfg.active_context]?.read ?? null } : null,
   );
 
-  // Run the report whenever the report or filter changes (debounced while typing). The console
+  // Run the report whenever the report or filter changes. Only typing is debounced: opening the
+  // page or picking another report should not wait for a keystroke that isn't coming. The console
   // may already have loaded exactly this (it hands its result over), so skip duplicates.
+  let ranFilter: string | null = null;
   $effect(() => {
     const a = args;
-    if (JSON.stringify(a) === store.liveKey) return;
-    const t = setTimeout(() => store.runLive({ args: a }), 250);
+    const filter = store.filter;
+    if (JSON.stringify(a) === store.liveKey) {
+      ranFilter = filter;
+      return;
+    }
+    const typing = ranFilter !== null && filter !== ranFilter;
+    const t = setTimeout(() => {
+      ranFilter = filter;
+      void store.runLive({ args: a });
+    }, typing ? 250 : 0);
     return () => clearTimeout(t);
   });
 

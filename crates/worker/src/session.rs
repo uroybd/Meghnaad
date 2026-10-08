@@ -85,9 +85,11 @@ pub struct Session {
 }
 
 impl Session {
-    /// Pull remote changes and push any local ones. Snapshots are left to the CLI.
+    /// Pull remote changes and push any local ones. Snapshots follow the CLI's own rule
+    /// (`avoid_snapshots` is false, as in `task sync`), so a bucket this app writes to does not
+    /// grow a long tail of versions that every idle Worker must replay.
     pub async fn sync(&mut self) -> Result<(), taskchampion::Error> {
-        self.state.replica.sync(&mut self.server, true).await
+        self.state.replica.sync(&mut self.server, false).await
     }
 }
 

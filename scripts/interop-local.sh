@@ -276,4 +276,44 @@ assert len(kids) == 2 and sorted(int(k["imask"]) for k in kids) == [0, 1], [(k["
 ' || fail "the CLI saw duplicate or missing instances after the web topped up its series"
 ok "CLI accepted the web's top-up of its series"
 
+echo "== snapshots written by the web are read by a fresh CLI replica"
+# Like the CLI, the web writes a snapshot on roughly one push in ten (never on a pull), so 100 pushes
+# make one all but certain. A new replica then starts from it instead of replaying every version.
+before=$(tw "$B" export | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')
+s3_to_r2
+start_dev
+for i in $(seq 1 100); do
+  webcli "{\"line\":\"add snapshot probe $i\"}" | grep -q 'Created' || fail "web add $i failed"
+done
+stop_dev
+snaps=$(r2_keys | grep -c '^s-' || true)
+[ "$snaps" = 1 ] || fail "expected exactly one snapshot after 100 web pushes, found $snaps (the odds of none are about 0.003%: rerun)"
+r2_to_s3
+C=$(mkrc cli-c)
+tw "$C" sync
+n=$(tw "$C" export | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')
+[ "$n" = "$((before + 100))" ] || fail "fresh CLI replica sees $n tasks, expected $((before + 100))"
+ok "a fresh CLI replica read the web's snapshot and every task after it ($n tasks)"
+
+echo "== a snapshot written by the CLI is read by a cold web Worker"
+# The bucket now holds the web's snapshot. 100 CLI pushes (one `task sync` each) make the CLI write
+# a newer one, so the Worker must start from the newest of two and replay only what follows it.
+for i in $(seq 1 100); do
+  tw "$C" add "cli probe $i" >/dev/null
+  tw "$C" sync
+done
+tw "$C" sync
+cli_snaps=$(s3_keys | grep -c '^s-' || true)
+[ "$cli_snaps" -ge 1 ] || fail "the CLI wrote no snapshot in 100 pushes (odds about 0.003%: rerun)"
+total=$(tw "$C" export | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')
+s3_to_r2          # a new start_dev below is a cold Worker: it rebuilds from the snapshot
+start_dev
+got=$(webcli '{"line":"count"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["lines"][0])')
+want=$(tw "$C" count)
+[ "$got" = "$want" ] || fail "the web counts $got tasks; the CLI counts $want"
+webrows "all cli probe" | python3 -c 'import sys,json; r=json.load(sys.stdin); assert len(r)==100, len(r)' \
+  || fail "the web missed some of the CLI's tasks after its snapshot"
+stop_dev
+ok "a cold web Worker read the CLI's snapshot and everything after it ($total tasks)"
+
 echo "ALL INTEROP CHECKS PASSED  (work dir: $WORK)"

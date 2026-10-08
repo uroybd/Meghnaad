@@ -85,4 +85,26 @@ impl ObjectStore for R2Store {
             .map_err(err)?;
         Ok(stored.is_some())
     }
+
+    async fn get_tagged(&self, name: &str) -> Result<Option<(Vec<u8>, String)>> {
+        let Some(obj) = self.0.get(name).execute().await.map_err(err)? else {
+            return Ok(None);
+        };
+        let etag = obj.etag();
+        let Some(body) = obj.body() else {
+            return Ok(None);
+        };
+        Ok(Some((body.bytes().await.map_err(err)?, etag)))
+    }
+
+    /// One conditional put: `etagMatches` to replace the version we read, `etagDoesNotMatch: "*"`
+    /// to create. No read first, unlike [`compare_and_swap`](Self::compare_and_swap).
+    async fn swap_tagged(&self, name: &str, expected: Option<&str>, new: &[u8]) -> Result<bool> {
+        let condition = match expected {
+            None => Conditional { etag_does_not_match: Some("*".into()), ..Default::default() },
+            Some(tag) => Conditional { etag_matches: Some(tag.to_owned()), ..Default::default() },
+        };
+        let stored = self.0.put(name, new.to_vec()).only_if(condition).execute().await.map_err(err)?;
+        Ok(stored.is_some())
+    }
 }

@@ -28,6 +28,15 @@ pub trait ObjectStore {
         expected: Option<&[u8]>,
         new: &[u8],
     ) -> Result<bool>;
+
+    /// The object's value together with an opaque tag naming exactly this version of it (an ETag).
+    /// Hand the tag to [`swap_tagged`](Self::swap_tagged) to replace it only if nobody else has.
+    async fn get_tagged(&self, name: &str) -> Result<Option<(Vec<u8>, String)>>;
+
+    /// Like [`compare_and_swap`](Self::compare_and_swap), but the expected state is a tag from
+    /// [`get_tagged`](Self::get_tagged) (`None` = must not exist). One round trip instead of the
+    /// read-then-write that `compare_and_swap` needs.
+    async fn swap_tagged(&self, name: &str, expected: Option<&str>, new: &[u8]) -> Result<bool>;
 }
 
 /// In-memory store for tests. Clones share the same underlying map, like handles to one bucket.
@@ -82,6 +91,24 @@ impl ObjectStore for MemStore {
         map.insert(name.to_owned(), new.to_vec());
         Ok(true)
     }
+
+    async fn get_tagged(&self, name: &str) -> Result<Option<(Vec<u8>, String)>> {
+        Ok(self.0.borrow().get(name).map(|v| (v.clone(), tag_of(v))))
+    }
+
+    async fn swap_tagged(&self, name: &str, expected: Option<&str>, new: &[u8]) -> Result<bool> {
+        let mut map = self.0.borrow_mut();
+        if map.get(name).map(|v| tag_of(v)).as_deref() != expected {
+            return Ok(false);
+        }
+        map.insert(name.to_owned(), new.to_vec());
+        Ok(true)
+    }
+}
+
+/// The tag [`MemStore`] hands out: the value itself, in hex.
+fn tag_of(value: &[u8]) -> String {
+    value.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 impl From<Error> for taskchampion::Error {

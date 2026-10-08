@@ -249,6 +249,22 @@ async fn project_urgency_reaches_sub_projects_but_not_lookalikes() {
 }
 
 #[tokio::test]
+async fn count_skips_recurring_templates_like_taskwarrior() {
+    let mut r = replica();
+    let cfg = parse("recurrence=on\nrecurrence.limit=2\n").config;
+    run(&mut r, &cfg, "add plain").await;
+    run(&mut r, &cfg, "add Water plants recur:weekly due:tomorrow").await;
+    // The first command that runs after the add also generates the two instances.
+    let (res, _) = run(&mut r, &cfg, "count").await;
+    let all = load_facts(&mut r).await.unwrap();
+    let templates = all.iter().filter(|f| f.status == "recurring").count();
+    assert_eq!(templates, 1);
+    assert_eq!(all.len(), 4, "plain + template + two instances");
+    // Everything but the template.
+    assert_eq!(message(&res), "3");
+}
+
+#[tokio::test]
 async fn udas_and_custom_reports_from_taskrc() {
     let cfg = parse(
         "uda.estimate.type=string\nuda.estimate.label=Size\nuda.estimate.values=big,small\n\
