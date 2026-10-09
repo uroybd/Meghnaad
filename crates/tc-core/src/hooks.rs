@@ -5,9 +5,11 @@
 //! They all do nothing until you do.
 //!
 //! * [`Hooks::on_launch`]: before a command runs. `Err` stops it.
-//! * [`Hooks::on_add`]: for each new task, before it is saved. Return the task (changed or not) or `Err`.
+//! * [`Hooks::on_add`]: for each new task, before it is saved, a recurring instance generated before a command
+//!   included. Return the task (changed or not) or `Err`.
 //! * [`Hooks::on_modify`]: for each task a command changes (`modify`, `done`, `delete`, `start`, `stop`,
-//!   `annotate`, …), before the change is saved. Return the new task (changed or not) or `Err`.
+//!   `annotate`, …), before the change is saved, and for a parent whose recurrence mask changed or a task that expired.
+//!   Return the new task (changed or not) or `Err`.
 //! * [`Hooks::on_exit`]: after the command, with the tasks it changed. It can only talk.
 //!
 //! A task is a [`Facts`]: the same plain view of a task that filters and reports use (`description`,

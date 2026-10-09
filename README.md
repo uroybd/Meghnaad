@@ -259,8 +259,8 @@ CPU limit. It is not common, and the app retries read-only requests once on its 
 - **`undo`** is kept in the Worker instance's memory and forgotten when it is recycled.
 - **Dates you type** are read in your `dateformat` first, then as ISO or words (`friday`, `3d`). ISO week and ordinal
   dates (`2026-W52`) aren't understood.
-- **Hooks are compiled in**, not scripts: they run inside the Worker with no network or files, and `undo` and the
-  recurring instances made in the background don't run them. See [Hooks](docs/using.md#hooks).
+- **Hooks are compiled in**, not scripts: they run inside the Worker with no network or files. `undo` doesn't
+  run them; the recurring instances generated before a command do, as in Taskwarrior. See [Hooks](docs/using.md#hooks).
 - **Not every `taskrc` option applies.** Terminal, colour and local-file options don't make sense in a web app, and
   `include` and `purge.on-sync` aren't supported. See [taskrc support](docs/taskrc-support.md).
 - **Phone layout** was verified in an emulated phone browser; try it on your own device.

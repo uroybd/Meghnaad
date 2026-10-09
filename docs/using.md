@@ -259,7 +259,11 @@ fn on_modify(&self, _h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, R
 Locally, `npm run dev` rebuilds the Worker when you save `my_hooks.rs`; for the deployed one, run `npm run deploy`.
 
 Notes: hooks run inside the Worker with no network or files, and `hooks=off` (or `rc.hooks:off`) turns them all off.
-`undo` and the recurring instances created in the background don't run hooks, as in Taskwarrior. A command that asks a
+`undo` doesn't run hooks, as in Taskwarrior. The housekeeping before a command does, as there: `on_add` for each
+recurring instance it generates, and `on_modify` for the parent whose mask changed and for a task it expires (a series that
+has ended, a task past its `until`). A hook that refuses one of these stops the command with its message, as in
+Taskwarrior; here nothing is written, where Taskwarrior can leave the instances made before the refusal. If a hook
+keeps refusing, `rc.hooks:off` runs a command without hooks, and `config hooks off` turns them off. A command that asks a
 question first runs `on_launch` once per round. Each hook you add makes the Worker a little bigger; a few hundred lines
 cost a few KB compressed, while a new dependency can cost far more.
 

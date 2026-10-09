@@ -836,7 +836,7 @@ pub async fn execute<S: Storage>(
     let (maintained, tasks) = if skip || !recur::enabled(cfg) {
         (false, None)
     } else {
-        match maintain(replica, cfg, clock).await {
+        match maintain(replica, cfg, clock, &hk).await {
             Ok(m) => m,
             Err(m) => {
                 return Done {
@@ -880,6 +880,7 @@ async fn maintain<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
     clock: Clock,
+    hk: &crate::hooks::Runner,
 ) -> Result<(bool, Option<Vec<Facts>>), String> {
     let e = |e: taskchampion::Error| e.to_string();
     let all = load_facts(replica).await.map_err(e)?;
@@ -924,6 +925,11 @@ async fn maintain<S: Storage>(
                 if let Some(s) = scheduled {
                     t.set_timestamp("scheduled", ts(s), &mut ops).map_err(e)?;
                 }
+                // `on-add`: Taskwarrior fires it for a generated instance as for any new task (it is in
+                // `TDB2::add`), and the hook may change it. A refusal ends the command with the hook's message,
+                // as there (`throw 0`); nothing has been written yet, so nothing is left half done.
+                let hooked = hk.add(Facts::from_task(&t))?;
+                apply_changes(&mut t, &hooked, &mut ops)?;
             }
             Plan::SetMask { parent, mask } => {
                 masks.insert(parent, mask);
@@ -936,6 +942,11 @@ async fn maintain<S: Storage>(
                     .map_err(e)?
                     .ok_or_else(|| format!("task {parent} disappeared"))?;
                 t.set_status(Status::Deleted, &mut ops).map_err(e)?;
+                // `on-modify` for the expired task (a finished series' parent, or a task past its `until`).
+                if let Some(was) = all.iter().find(|f| f.uuid == parent) {
+                    let hooked = hk.modify(was, Facts::from_task(&t))?;
+                    apply_changes(&mut t, &hooked, &mut ops)?;
+                }
                 // An expired instance frees its slot in the parent's mask.
                 if let Some(f) = all.iter().find(|f| f.uuid == parent) {
                     if let (Some(pu), Some(i)) = (f.parent, f.imask) {
@@ -958,6 +969,11 @@ async fn maintain<S: Storage>(
         if let Some(mask) = masks.get(&pu) {
             if let Some(mut p) = replica.get_task(pu).await.map_err(e)? {
                 p.set_value("mask", Some(mask.clone()), &mut ops).map_err(e)?;
+                // `on-modify` for the parent, whose mask changed (Taskwarrior's `tdb2.modify(t)` fires it).
+                if let Some(was) = all.iter().find(|f| f.uuid == pu) {
+                    let hooked = hk.modify(was, Facts::from_task(&p))?;
+                    apply_changes(&mut p, &hooked, &mut ops)?;
+                }
             }
         }
     }

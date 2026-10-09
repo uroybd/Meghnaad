@@ -3152,7 +3152,12 @@ mod hooks {
         refuse_done: bool,
         refuse_launch: bool,
         rename_on_modify: bool,
+        /// Tag a task that is an instance of a recurring one, and refuse it when `refuse_instances` is set.
+        tag_instances: bool,
+        refuse_instances: bool,
         seen: Mutex<Vec<String>>,
+        /// Masks a parent was given (a parent whose mask changed reaches `on_modify`).
+        masks: Mutex<Vec<String>>,
     }
 
     impl Hooks for Probe {
@@ -3168,6 +3173,14 @@ mod hooks {
                 .lock()
                 .unwrap()
                 .push(format!("add {} [{}]", task.description, task.status));
+            if task.parent.is_some() {
+                if self.refuse_instances {
+                    return Err("no instances".into());
+                }
+                if self.tag_instances {
+                    task.tags.insert("instance".into());
+                }
+            }
             if self.refuse_new {
                 h.warn("no new tasks");
                 return Err("add refused".into());
@@ -3184,6 +3197,9 @@ mod hooks {
                 .lock()
                 .unwrap()
                 .push(format!("modify {} {}->{}", old.description, old.status, new.status));
+            if old.mask != new.mask {
+                self.masks.lock().unwrap().push(new.mask.clone().unwrap_or_default());
+            }
             if self.refuse_done && new.status == "completed" {
                 h.warn("finish it later");
                 return Err("done refused".into());
@@ -3325,5 +3341,59 @@ mod hooks {
         )
         .await;
         assert!(d.wrote && d.feedback.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_generated_recurring_instance_runs_on_add_and_the_parents_new_mask_runs_on_modify() {
+        // Taskwarrior fires both from its database layer, so a generated instance is a new task like any other.
+        let (mut r, cfg) = (replica(), Config::default());
+        let p = Arc::new(Probe {
+            tag_instances: true,
+            ..Probe::default()
+        });
+        go(&mut r, &cfg, "add Water plants recur:daily due:tomorrow", &p).await;
+        let d = go(&mut r, &cfg, "next", &p).await; // the housekeeping before this command makes the instance
+        let all = load_facts(&mut r).await.unwrap();
+        let instances: Vec<_> = all.iter().filter(|f| f.parent.is_some()).collect();
+        assert_eq!(instances.len(), 1, "{all:?}");
+        assert!(
+            instances[0].tags.contains("instance"),
+            "the hook's edit is saved: {:?}",
+            instances[0]
+        );
+        assert_eq!(
+            p.masks.lock().unwrap().as_slice(),
+            ["-"],
+            "the parent's mask change reached on_modify"
+        );
+        assert!(d.wrote);
+        // on_exit is told about everything written: the new instance and the parent whose mask changed.
+        assert!(texts(&d).iter().any(|t| t == "exit: 2 changed"), "{:?}", texts(&d));
+    }
+
+    #[tokio::test]
+    async fn a_hook_refusing_a_generated_instance_ends_the_command_and_writes_nothing() {
+        let (mut r, cfg) = (replica(), Config::default());
+        let quiet = Arc::new(Probe::default());
+        go(&mut r, &cfg, "add Water plants recur:daily due:tomorrow", &quiet).await;
+        let p = Arc::new(Probe {
+            refuse_instances: true,
+            ..Probe::default()
+        });
+        // As in Taskwarrior the whole command stops, with the hook's message.
+        let d = go(&mut r, &cfg, "add Other", &p).await;
+        assert_eq!(message(&d.result), "ERROR: no instances");
+        assert!(!d.wrote);
+        let all = load_facts(&mut r).await.unwrap();
+        assert!(
+            all.iter().all(|f| f.parent.is_none() && f.description != "Other"),
+            "{all:?}"
+        );
+        assert_eq!(all[0].mask, None, "the parent's mask was not touched either");
+        // `hooks=off` is the way out, and then the instance is made.
+        let d = go(&mut r, &cfg, "rc.hooks:off add Free", &p).await;
+        assert!(d.wrote && d.feedback.is_empty());
+        let all = load_facts(&mut r).await.unwrap();
+        assert!(all.iter().any(|f| f.parent.is_some()) && all.iter().any(|f| f.description == "Free"));
     }
 }
