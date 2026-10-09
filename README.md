@@ -67,7 +67,7 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 | | |
 | --- | --- |
 | **[Using Meghnaad](docs/using.md)** | The pages, the console (`show`, `config`), Taskwarrior's questions, hooks, recurring tasks, urgency, time tracking, the phone layout |
-| **[Deploying](docs/deploy.md)** | Plans you need, the guided setup, Cloudflare Access, connecting your `task` CLI, configuration, fixing problems |
+| **[Deploying](docs/deploy.md)** | Plans you need, the guided setup, a manual GitHub Actions deploy, Cloudflare Access, connecting your `task` CLI, configuration, fixing problems |
 | **[Architecture](docs/architecture.md)** | How it works, the engine, sync, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every Taskwarrior `taskrc` option: done, partial, not done, not applicable |
 
@@ -156,6 +156,9 @@ Setup asks for your existing sync bucket and encryption secret, deploys, and tel
 Cloudflare Access. Until then the app shows a setup page and nothing is reachable. The dashboard and by-hand routes,
 and how to point your `task` CLI at R2 (`AWS_ENDPOINT_URL` and a few `task config` lines), are in
 **[Deploying](docs/deploy.md)**.
+
+To deploy from GitHub instead, the repository has a manual **Deploy** workflow (Actions → Deploy → Run workflow); the
+setup is in [Deploying](docs/deploy.md#d-from-github-actions-manual).
 
 ## Using it
 

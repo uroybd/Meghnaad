@@ -1,0 +1,92 @@
+# Build and deploy the Worker to Cloudflare. Run by hand: Actions > "Deploy" > Run workflow.
+# What it needs, and how to set it up, is in docs/deploy.md ("D. From GitHub Actions").
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Run the tests before deploying
+        type: boolean
+        default: true
+      dry_run:
+        description: Only print the config that would be deployed (nothing is built or deployed)
+        type: boolean
+        default: false
+
+# One deploy at a time; a second run waits instead of racing the first.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Secrets are kept on the `production` environment (Settings > Environments), which is also where
+    # you can require an approval before a deploy runs. GitHub creates it on first use.
+    environment: production
+    env:
+      # Your deployment choices, as repository or environment *variables* (not secrets). All optional
+      # except what `npm run setup` would have asked for; see docs/deploy.md for each one.
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+      TEAM_DOMAIN: ${{ vars.TEAM_DOMAIN }}
+      POLICY_AUD: ${{ vars.POLICY_AUD }}
+      WORKER_NAME: ${{ vars.WORKER_NAME }}
+      # Whether the optional secret below exists (a step's own `if` can't look at a secret).
+      HAS_ENCRYPTION_SECRET: ${{ secrets.TC_ENCRYPTION_SECRET != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Show the config that would be deployed
+        if: ${{ inputs.dry_run }}
+        run: npm run deploy -- --check
+
+      # Everything below is skipped on a dry run.
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ !inputs.dry_run }}
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ !inputs.dry_run }}
+
+      - name: Install worker-build
+        if: ${{ !inputs.dry_run }}
+        run: command -v worker-build >/dev/null || cargo install worker-build --locked
+
+      - name: Test
+        if: ${{ !inputs.dry_run && inputs.tests }}
+        run: |
+          npm test
+          npm run check
+
+      # Builds the web app and the Worker (wrangler's build command), then deploys.
+      - name: Deploy
+        if: ${{ !inputs.dry_run }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy
+
+      # Optional: only when the secret is set here. Otherwise the Worker keeps the one it already has
+      # (`wrangler secret put`, or the dashboard). It is set after the deploy so the Worker exists.
+      - name: Set the encryption secret
+        if: ${{ !inputs.dry_run && env.HAS_ENCRYPTION_SECRET == 'true' }}
+        env:
+          TC_ENCRYPTION_SECRET: ${{ secrets.TC_ENCRYPTION_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: printf %s "$TC_ENCRYPTION_SECRET" | npx wrangler secret put TC_ENCRYPTION_SECRET --config wrangler.deploy.jsonc

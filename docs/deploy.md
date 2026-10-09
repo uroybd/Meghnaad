@@ -9,9 +9,10 @@
 | **Access** | Free is fine | Sign-in (one-time PIN works with no setup) |
 
 On your machine: Node.js 20+ and [Rust](https://rustup.rs) for routes A and C (the build compiles the Worker to WASM; the
-`wasm32-unknown-unknown` target and `worker-build` are installed for you if missing). Route B builds on Cloudflare.
+`wasm32-unknown-unknown` target and `worker-build` are installed for you if missing). Route B builds on Cloudflare, and
+route D on GitHub.
 
-Pick one route.
+Pick one route to start with. Route D is for updating after A or C has done the first deploy.
 
 ## A. Guided: `npm run setup` (recommended)
 
@@ -85,6 +86,36 @@ values into a git-ignored `wrangler.deploy.jsonc`.
 > binding (named after the bucket, with `"remote": true`). Answer **no**, or delete it afterwards: the app uses exactly
 > one binding, `TASKS`, and `wrangler dev` refuses to start with an extra remote binding unless you've registered a
 > workers.dev subdomain. (`npm run dev` runs in local mode, so it ignores remote bindings either way.)
+
+## D. From GitHub Actions (manual)
+
+The repository has a workflow, [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml), that tests, builds and
+deploys the Worker when you start it: **Actions → Deploy → Run workflow**. It never runs on a push. Do route A or C
+**once** first (the bucket and Access have to exist, and the first deploy is where you find out they work); after that,
+updating is one click. In your fork:
+
+1. **Create an API token** at Cloudflare → My Profile → API Tokens → *Edit Cloudflare Workers* template (it needs
+   Workers Scripts: Edit and, for a custom domain, Workers Routes / Zone access). Note your **Account ID** (Workers &
+   Pages overview, right-hand side).
+2. **Settings → Environments → New environment → `production`.** Add *required reviewers* here if you want an approval
+   click before each deploy. Put the secrets and variables below on this environment (or on the repository).
+3. Add these.
+
+| Where | Name | Value |
+| --- | --- | --- |
+| Secret | `CLOUDFLARE_API_TOKEN` | the token from step 1 |
+| Secret | `CLOUDFLARE_ACCOUNT_ID` | your account id |
+| Secret, *optional* | `TC_ENCRYPTION_SECRET` | the same value as `sync.encryption_secret`. If it is not set here, the Worker keeps the secret it already has from route A or C. Set it only if you want the workflow to be the one source of truth |
+| Variable | `R2_BUCKET`, `CUSTOM_DOMAIN`, `TEAM_DOMAIN`, `POLICY_AUD`, `WORKER_NAME` | the same choices as in `.deploy.vars` (see below), each optional. **Use the same values you deployed with**: leaving `TEAM_DOMAIN` and `POLICY_AUD` out of a later deploy removes nothing (`keep_vars`), but a different `R2_BUCKET` or `WORKER_NAME` points at a different bucket or Worker |
+
+Choices are variables, not secrets, because none of them is one (a team domain and an AUD tag are in every request's
+token). The encryption secret and the API token are, and are only handed to the steps that need them.
+
+The workflow has two options when you run it. **Run the tests** (on by default) runs `npm test` and `npm run check`
+first, and a failure stops the deploy. **Dry run** only prints the Worker config the settings would produce, which is the
+quickest way to check your variables, and builds and deploys nothing. Run it from the branch you want to deploy: for
+your own hooks that is your `my-hooks` branch ([keeping hooks across updates](using.md#keeping-your-hooks-across-updates)).
+Runs are serialised, so two clicks never deploy at once.
 
 **Last step, whichever way:** open the URL, sign in, and import your `taskrc` (the **taskrc** button) to get your UDAs
 and custom reports.
