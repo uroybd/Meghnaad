@@ -316,10 +316,11 @@ pub struct Options {
     pub approved: Option<Vec<String>>,
     /// The answer to an `extras` confirmation: the questions answered yes. `None` = not asked.
     pub extras: Option<Vec<String>>,
-    /// The command was typed (a console line), so aliases (`alias.<name>`) stand for their words.
-    /// Pre-split arguments from the GUI are taken as they are: a note that happens to be `rm`
-    /// stays `rm`.
-    pub expand_aliases: bool,
+    /// The command was typed (a console line), so aliases (`alias.<name>`) stand for their words
+    /// and what follows `annotate`, `append` and `prepend` is read as Taskwarrior reads it, with
+    /// attributes and tags picked out. Pre-split arguments from the GUI are taken literally: a note
+    /// that happens to be `rm`, or to start with `due:`, stays a note.
+    pub typed: bool,
     pub seed: u64,
 }
 
@@ -682,7 +683,7 @@ pub async fn execute<S: Storage>(
         ..clock
     };
     let expanded;
-    let args: &[String] = if opts.expand_aliases {
+    let args: &[String] = if opts.typed {
         expanded = expand_aliases(args, cfg);
         &expanded
     } else {
@@ -1362,8 +1363,13 @@ async fn write_selected<S: Storage>(
         });
     }
 
-    let text = p.mods.join(" ");
-    let mods = if matches!(kind, Modify) {
+    // What follows the command word. `modify` reads it all as changes (words replace the
+    // description). `done`, `delete`, `start`, `stop`, `annotate`, `append` and `prepend` read it as
+    // Taskwarrior does: attributes, tags and substitutions are applied to each task (`done
+    // end:-2h`, `start due:eow`, `annotate hello due:eow`), and the plain words that are left
+    // are the annotation or the text. `denotate` takes the whole of it as the text to match.
+    let reads_changes = matches!(kind, Modify | Done | Delete | Start | Stop | Annotate | Append | Prepend);
+    let mods = if reads_changes {
         match modify::parse_mods(&p.mods, cfg) {
             Ok(m) => Some(m),
             Err(e) => return e.into(),
@@ -1371,23 +1377,46 @@ async fn write_selected<S: Storage>(
     } else {
         None
     };
-    if matches!(kind, Annotate | Denotate | Append | Prepend) && text.trim().is_empty() {
+    let (text, extra): (String, Option<modify::Mods>) = match (&mods, kind) {
+        // A GUI note or addition is text, whatever it looks like.
+        (_, Annotate | Append | Prepend) if !opts.typed => (p.mods.join(" "), None),
+        (Some(m), Done | Delete | Start | Stop | Annotate | Append | Prepend) => {
+            let others = !m.attrs.is_empty() || !m.add_tags.is_empty() || !m.remove_tags.is_empty() || m.subst.is_some();
+            (m.words.join(" "), others.then(|| modify::Mods { words: Vec::new(), ..m.clone() }))
+        }
+        _ => (p.mods.join(" "), None),
+    };
+    if matches!(kind, Annotate | Append | Prepend) && text.trim().is_empty() && extra.is_none() {
         return error("this command needs some text");
     }
+    if kind == Denotate && text.trim().is_empty() {
+        return error("this command needs some text");
+    }
+
+    // Whether the command does anything to this task.
+    let acts = |f: &Facts| match kind {
+        Done => f.status == "pending",
+        Delete => f.status != "deleted",
+        Start => f.status != "recurring" && f.start.is_none(),
+        Stop => f.status != "recurring" && f.start.is_some(),
+        _ => true,
+    };
 
     // The tasks this command would change: those are the ones Taskwarrior asks about.
     let mut would_change: Vec<&Facts> = Vec::new();
     for f in &sel {
+        // A change that can't be made (`done due:nonsense`) is refused before anything is asked.
+        if let Some(x) = &extra {
+            if let Err(e) = modify::plan(x, Mode::Modify, Some(f), ctx, all) {
+                return error(e.0);
+            }
+        }
         let changes = match kind {
-            Done => f.status == "pending",
-            Delete => f.status != "deleted",
-            Start => f.status != "recurring" && f.start.is_none(),
-            Stop => f.status != "recurring" && f.start.is_some(),
             Modify => match modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(f), ctx, all) {
                 Ok(c) => !c.is_empty(),
                 Err(e) => return error(e.0),
             },
-            _ => true,
+            _ => acts(f),
         };
         if changes {
             would_change.push(f);
@@ -1515,6 +1544,17 @@ async fn write_selected<S: Storage>(
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("task {} disappeared", f.uuid))?;
             let e = |e: taskchampion::Error| e.to_string();
+            // The modifications come first, as in Taskwarrior: `done end:-2h` sets the end time
+            // before completing (which only fills it in when it is missing).
+            if acts(f) && matches!(kind, Done | Delete | Start | Stop | Annotate | Append | Prepend) {
+                if let Some(x) = &extra {
+                    let changes = modify::plan(x, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
+                    apply_changes(&mut task, &changes, &mut ops)?;
+                }
+                if matches!(kind, Done | Delete | Start | Stop) && !text.trim().is_empty() {
+                    add_note(&mut task, &text, ctx.clock.now, &mut ops)?;
+                }
+            }
             match kind {
                 // Only pending tasks can be completed (not templates, not finished ones).
                 Done if f.status != "pending" => changed = false,
@@ -1555,7 +1595,8 @@ async fn write_selected<S: Storage>(
                         }
                     }
                 }
-                Annotate => add_note(&mut task, &text, ctx.clock.now, &mut ops)?,
+                Annotate if !text.trim().is_empty() => add_note(&mut task, &text, ctx.clock.now, &mut ops)?,
+                Annotate => {}
                 Denotate => {
                     let anns: Vec<Annotation> = task.get_annotations().collect();
                     let hit = anns
@@ -1567,6 +1608,7 @@ async fn write_selected<S: Storage>(
                         None => return Err(format!("no annotation matches '{text}'")),
                     }
                 }
+                Append | Prepend if text.trim().is_empty() => {}
                 Append | Prepend => {
                     let d = task.get_description().to_owned();
                     let new = if kind == Append { format!("{d} {text}") } else { format!("{text} {d}") };

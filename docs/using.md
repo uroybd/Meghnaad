@@ -53,6 +53,12 @@ help
 | **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
 
+**Changes beside a command.** What follows `done`, `delete`, `start`, `stop`, `annotate`, `append` and `prepend` can carry
+changes, as in Taskwarrior: `3 done end:-2h` (finished two hours ago), `3 start due:eow +urgent`,
+`3 annotate called her due:friday`. Attributes, tags and substitutions are applied to the task; the plain words left over
+are the annotation (or, for `annotate`, `append` and `prepend`, the text). The buttons send their text literally, so a
+note that starts with `due:` stays a note.
+
 **Where a report prints.** Typed in the Console, a report (`list`, `next`, …) prints there. Typed in the bar under any
 other page, it opens in the Tasks view, where it can be sorted and filtered.
 

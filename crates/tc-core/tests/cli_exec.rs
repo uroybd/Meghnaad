@@ -1775,7 +1775,7 @@ mod aliases_and_abbreviations {
 
     /// A typed line: aliases stand for their words.
     async fn typed(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
-        run_opts(r, cfg, line, Options { expand_aliases: true, ..Options::default() }).await
+        run_opts(r, cfg, line, Options { typed: true, ..Options::default() }).await
     }
 
     fn is_version(res: &CliResult) -> bool {
@@ -2212,5 +2212,111 @@ mod the_calculators_references {
         assert_eq!(calc(&mut r, &tuned, "rc.bulk + 1").await, "71");
         // The line as typed.
         assert_eq!(calc(&mut r, &cfg, "tw.args").await, "task calc tw.args");
+    }
+}
+
+mod changes_after_a_command_word {
+    use super::*;
+
+    async fn one(r: &mut R) -> tc_core::model::Facts {
+        load_facts(r).await.unwrap().remove(0)
+    }
+    fn near(got: Option<i64>, ago_secs: i64) -> bool {
+        let want = taskchampion::chrono::Utc::now().timestamp() - ago_secs;
+        // The test clock runs a second ahead per command issued by any test, so allow for that;
+        // the offsets checked here (two hours, a day) are far larger.
+        got.is_some_and(|g| (g - want).abs() < 3000)
+    }
+
+    // Each case is what the real `task` 3.5.0 did with the same line.
+    #[tokio::test]
+    async fn done_takes_attributes_tags_and_words_and_an_end_time_given_wins() {
+        let (mut r, cfg) = (replica(), Config::default());
+        run(&mut r, &cfg, "add task a").await;
+        let (res, wrote) = run(&mut r, &cfg, "1 done end:-2h priority:H +x some words").await;
+        assert!(wrote, "{}", message(&res));
+        let f = one(&mut r).await;
+        assert_eq!(f.status, "completed");
+        assert!(near(f.end, 2 * 3600), "end {:?}", f.end);
+        assert_eq!(f.priority.as_deref(), Some("H"));
+        assert!(f.tags.contains("x"));
+        assert_eq!(f.annotations.iter().map(|a| a.text.as_str()).collect::<Vec<_>>(), ["some words"]);
+    }
+
+    #[tokio::test]
+    async fn done_alone_still_ends_now_and_a_bad_value_changes_nothing() {
+        let (mut r, cfg) = (replica(), Config::default());
+        run(&mut r, &cfg, "add task a").await;
+        let (res, wrote) = run(&mut r, &cfg, "1 done due:notadate").await;
+        assert!(!wrote && message(&res).starts_with("ERROR"), "{}", message(&res));
+        assert_eq!(one(&mut r).await.status, "pending");
+        run(&mut r, &cfg, "1 done").await;
+        assert!(near(one(&mut r).await.end, 0));
+    }
+
+    #[tokio::test]
+    async fn start_and_stop_take_changes_too() {
+        let (mut r, cfg) = (replica(), Config::default());
+        run(&mut r, &cfg, "add task a").await;
+        run(&mut r, &cfg, "1 start due:eow +y").await;
+        let f = one(&mut r).await;
+        assert!(f.start.is_some() && f.due.is_some() && f.tags.contains("y"));
+        run(&mut r, &cfg, "1 stop project:P note words").await;
+        let f = one(&mut r).await;
+        assert!(f.start.is_none());
+        assert_eq!(f.project.as_deref(), Some("P"));
+        assert_eq!(f.annotations.iter().map(|a| a.text.as_str()).collect::<Vec<_>>(), ["note words"]);
+    }
+
+    #[tokio::test]
+    async fn delete_takes_an_end_time_and_a_reason() {
+        let (mut r, cfg) = (replica(), Config::default());
+        run(&mut r, &cfg, "add task a").await;
+        let (res, wrote) = run_yes(&mut r, &cfg, "1 delete end:-1d reason words").await;
+        assert!(wrote, "{}", message(&res));
+        let f = one(&mut r).await;
+        assert_eq!(f.status, "deleted");
+        assert!(near(f.end, 86_400), "end {:?}", f.end);
+        assert_eq!(f.annotations[0].text, "reason words");
+    }
+
+    /// A typed line, like the console's.
+    async fn typed(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
+        run_opts(r, cfg, line, Options { typed: true, ..Options::default() }).await
+    }
+
+    #[tokio::test]
+    async fn annotate_append_and_prepend_take_attributes_beside_their_text_when_typed() {
+        let (mut r, cfg) = (replica(), Config::default());
+        run(&mut r, &cfg, "add task a").await;
+        typed(&mut r, &cfg, "1 annotate hello due:eow").await;
+        let f = one(&mut r).await;
+        assert!(f.due.is_some());
+        assert_eq!(f.annotations[0].text, "hello");
+        // Attributes alone are enough: no annotation is made out of nothing.
+        typed(&mut r, &cfg, "1 annotate +z").await;
+        let f = one(&mut r).await;
+        assert!(f.tags.contains("z") && f.annotations.len() == 1);
+        typed(&mut r, &cfg, "1 append more +w").await;
+        typed(&mut r, &cfg, "1 prepend first").await;
+        let f = one(&mut r).await;
+        assert_eq!(f.description, "first task a more");
+        assert!(f.tags.contains("w"));
+        // With nothing at all there is nothing to do.
+        for cmd in ["1 annotate", "1 append", "1 prepend"] {
+            let (res, wrote) = typed(&mut r, &cfg, cmd).await;
+            assert!(!wrote && message(&res).contains("needs some text"), "{cmd}: {}", message(&res));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_note_from_a_button_is_text_whatever_it_looks_like() {
+        let (mut r, cfg) = (replica(), Config::default());
+        run(&mut r, &cfg, "add task a").await;
+        // The GUI sends the note as one argument; `due:tomorrow check` is a note, not a due date.
+        run(&mut r, &cfg, "1 annotate due:tomorrow check").await;
+        let f = one(&mut r).await;
+        assert_eq!(f.due, None);
+        assert_eq!(f.annotations[0].text, "due:tomorrow check");
     }
 }

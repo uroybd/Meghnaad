@@ -209,7 +209,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
             confirmed: body.confirmed,
             approved: body.approved,
             extras: body.extras,
-            expand_aliases: typed,
+            typed,
             seed: now as u64,
         },
         &mut st.undo,
