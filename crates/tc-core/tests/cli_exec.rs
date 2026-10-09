@@ -3692,4 +3692,49 @@ mod report_defaults {
             assert!(matches!(res, CliResult::Report(_)), "{name}: {res:?}");
         }
     }
+
+    #[tokio::test]
+    async fn a_sort_key_ending_in_a_slash_breaks_the_table_when_that_columns_value_changes() {
+        // The two reports and their output are what the real `task` printed for the same tasks.
+        let cfg = parse(
+            "uda.outcome.type=string\nuda.outcome.label=Outcome\nuda.outcome.values=pass,fail,skip\n\
+             uda.size.type=numeric\n\
+             report.g.columns=id,outcome,size,project,description\nreport.g.labels=ID,Outcome,Size,Proj,Desc\n\
+             report.g.sort=outcome+/,project-/\nreport.g.filter=status:pending\n\
+             report.n.columns=id,outcome,size,description\nreport.n.labels=ID,Outcome,Size,Desc\n\
+             report.n.sort=size-/,description+\nreport.n.filter=status:pending\n",
+        )
+        .config;
+        let mut r = replica();
+        for t in [
+            "a outcome:pass project:X size:1",
+            "b outcome:fail project:Y size:2",
+            "c project:Y size:2",
+            "d outcome:pass project:Y size:1",
+            "e outcome:fail project:X",
+            "f",
+            "g outcome:pass project:X size:3",
+        ] {
+            run(&mut r, &cfg, &format!("add {t}")).await;
+        }
+        let shown = |res: CliResult| {
+            let CliResult::Report(o) = res else { panic!("{res:?}") };
+            (
+                o.rows
+                    .iter()
+                    .map(|r| r.facts.description.clone())
+                    .collect::<Vec<_>>()
+                    .join(""),
+                o.breaks,
+            )
+        };
+        // Both columns break: a gap whenever the outcome or the project changes.
+        let (order, breaks) = shown(run(&mut r, &cfg, "g").await.0);
+        assert_eq!(order, "bedagcf");
+        assert_eq!(breaks, [false, true, true, true, false, true, true]);
+        // A numeric column breaks too, and a task without a value comes last.
+        let (order, breaks) = shown(run(&mut r, &cfg, "n").await.0);
+        assert_eq!(order, "gbcadef");
+        assert_eq!(breaks, [false, true, false, true, false, true, false]);
+    }
 }
