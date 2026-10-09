@@ -17,15 +17,32 @@ bucket, and the clients agree on its layout. Meghnaad is one more client of that
   one Rust library, `tc-core`. The browser does layout, not logic.
 
 ```mermaid
-flowchart LR
-  cli["task CLI"]
-  browser["Browser<br/>Svelte app"]
-  access{{"Cloudflare Access<br/>token check"}}
-  worker["Worker (Rust → WASM)<br/>auth · session · tc-core engine"]
+flowchart TB
+  subgraph desktop["Desktop: Taskwarrior 3"]
+    direction TB
+    cli["task CLI (C++)"]
+    tcd["TaskChampion (Rust)"]
+    db[("SQLite replica<br/>~/.task")]
+    rc["~/.taskrc"]
+    cli --> tcd --> db
+    rc -.-> cli
+  end
+
+  subgraph web["Cloudflare: Meghnaad"]
+    direction TB
+    spa["Svelte app<br/>(draws results)"]
+    access{{"Cloudflare Access<br/>token check"}}
+    wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
+    tcw["TaskChampion (Rust)"]
+    mem[("In-memory replica<br/>per Worker instance")]
+    spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
+  end
+
   bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json")]
-  cli -- "S3 API + your R2 token" --> bucket
-  browser -- "POST /api/cli" --> access --> worker
-  worker -- "R2 binding: sync before and after" --> bucket
+
+  tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
+  tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
+  wk -. "imported taskrc settings" .-> bucket
 ```
 
 ## The request path

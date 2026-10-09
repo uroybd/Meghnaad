@@ -89,7 +89,7 @@ flowchart TB
     direction TB
     spa["Svelte app<br/>(draws results)"]
     access{{"Cloudflare Access<br/>token check"}}
-    wk["Worker (Rust → WASM)<br/>command engine in tc-core"]
+    wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
     tcw["TaskChampion (Rust)"]
     mem[("In-memory replica<br/>per Worker instance")]
     spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
