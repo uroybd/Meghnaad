@@ -143,7 +143,7 @@ run `./scripts/seed-dev.sh`. Local R2 data lives in `.wrangler/state`; delete it
 
 ## Deploy to Cloudflare
 
-You need **Workers**, plus R2 and Access, which are fine on free plans.
+You need Cloudflare **Workers**, **R2** and **Access**; each has a free plan.
 
 ```bash
 npm install
@@ -249,7 +249,8 @@ the method and the test layers.
 
 The common ones are in [Deploying](docs/deploy.md#troubleshooting-a-deployment). The one worth knowing here:
 **Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a quiet spell, is the
-CPU limit; use Workers Paid. But, you are likely not to face this often. The app retries read-only requests once on its own.
+CPU limit. It is not common, and the app retries read-only requests once on its own. If it keeps happening, see
+[Deploying](docs/deploy.md#troubleshooting-a-deployment).
 
 ## Known limitations
 
