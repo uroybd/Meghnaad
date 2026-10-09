@@ -10,6 +10,9 @@ your desktop file.
 **Scope.** This tracks Taskwarrior **3.5.0 and newer**, and only that. Settings that were removed or deprecated before
 3.5.0 are left out of this list and are not supported, even if an older taskrc still contains them.
 
+`show` and `config` (Console only) read and edit the same saved settings, under the same rules; see
+[Using Meghnaad](using.md#the-console).
+
 ## Status key
 
 | Status | Meaning |

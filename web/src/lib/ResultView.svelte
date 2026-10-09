@@ -37,7 +37,7 @@
   {:else}
     <div class="scroll"><table>
       <thead><tr>{#each r.headers as h}<th>{h}</th>{/each}</tr></thead>
-      <tbody>{#each r.rows as cells}<tr>{#each cells as c}<td>{c}</td>{/each}</tr>{/each}</tbody>
+      <tbody>{#each r.rows as cells, i}<tr class:mod={r.highlight?.includes(i)}>{#each cells as c}<td>{c}</td>{/each}</tr>{/each}</tbody>
     </table></div>
   {/if}
   {#if r.footer?.length}<p class="dim footer">{#each r.footer as line}<span>{line}</span> {/each}</p>{/if}
@@ -64,6 +64,8 @@
   /* `pre`: the indentation of sub-projects in `projects` is made of spaces. */
   th, td { text-align: left; padding: 2px 16px 2px 0; white-space: pre; }
   th { color: var(--dim); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); }
+  /* A setting changed from its default (`show`). */
+  tr.mod td { color: var(--accent); font-weight: 600; }
   .changed { margin: 0; padding-left: 18px; color: var(--dim); }
   p { margin: 4px 0; }
 </style>

@@ -217,6 +217,14 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     .await;
 
     let mut result = done.result;
+    // `config` changed the settings: keep them, with the previous version as a restore point, just
+    // as saving the taskrc dialog does.
+    if let Some(new) = done.config {
+        if let Err(e) = session::save_config(&ctx.env, new).await {
+            worker::console_error!("saving settings failed: {e}");
+            result = CliResult::Error { message: "The settings could not be saved. Nothing was changed.".into() };
+        }
+    }
     if done.wrote {
         // Push immediately: the replica lives in this isolate's memory, which can be recycled.
         if let Err(e) = s.sync().await {

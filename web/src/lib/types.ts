@@ -173,7 +173,7 @@ export interface BurndownResult {
   current_count: number;
 }
 
-export interface TableResult { kind: 'table'; title: string | null; footer?: string[]; headers: string[]; rows: string[][] }
+export interface TableResult { kind: 'table'; title: string | null; footer?: string[]; /** Indexes of rows to emphasise (settings changed from their default). */ highlight?: number[]; headers: string[]; rows: string[][] }
 export interface TextResult { kind: 'text'; lines: string[] }
 export interface JsonResult { kind: 'json'; value: unknown }
 export interface ChangedResult {

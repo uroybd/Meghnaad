@@ -71,14 +71,33 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 
 ## How it works
 
-```
- task CLI ──(S3 API + your R2 token)──┐
-                                       ▼
- Browser ── Cloudflare Access ──▶  Worker (Rust → WASM) ──(R2 binding)──▶  R2 bucket
-   Svelte app ── POST /api/cli ──▶   • checks the Access token              salt · latest
-                                     • decrypts with your secret            v-<parent>-<child>
-                                     • runs the command engine              s-<version>
-                                     • syncs, then writes                   web/config.json
+```mermaid
+flowchart TB
+  subgraph desktop["Desktop: Taskwarrior 3"]
+    direction TB
+    cli["task CLI (C++)"]
+    tcd["TaskChampion (Rust)"]
+    db[("SQLite replica<br/>~/.task")]
+    rc["~/.taskrc"]
+    cli --> tcd --> db
+    rc -.-> cli
+  end
+
+  subgraph web["Cloudflare: Meghnaad"]
+    direction TB
+    spa["Svelte app<br/>(draws results)"]
+    access{{"Cloudflare Access<br/>token check"}}
+    wk["Worker (Rust → WASM)<br/>command engine in tc-core"]
+    tcw["TaskChampion (Rust)"]
+    mem[("In-memory replica<br/>per Worker instance")]
+    spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
+  end
+
+  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json")]
+
+  tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
+  tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
+  wk -. "imported taskrc settings" .-> bucket
 ```
 
 - **The bucket** holds Taskwarrior's standard TaskChampion cloud layout, encrypted client-side. The Worker implements
@@ -147,6 +166,7 @@ add Pay rent project:Home due:eom +bills
 3 modify due:2026-12-25T08:30 priority:H
 3 done            3 delete            undo
 calc 2 days + 3 hours
+show weekstart     config weekstart monday   (Console only)
 ```
 
 A report typed in the Console prints there; typed elsewhere it opens in Tasks. Taskwarrior's confirmations (deleting,

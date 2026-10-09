@@ -174,6 +174,27 @@ class Store {
     }
   }
 
+  /**
+   * A refused `config` line may have carried a secret. Keep the command and the name, drop the value from
+   * everywhere the browser remembers it: the scrollback, the "last command" line and the saved history.
+   */
+  #redact(e: Entry) {
+    const typed = e.input.line ?? previewLine(e.input.args ?? []);
+    const text = typed.replace(/^task\s+/, '').trim();
+    const words = text.split(/\s+/);
+    const at = words.indexOf('config');
+    const safe = at < 0 || words.length <= at + 2 ? text : [...words.slice(0, at + 2), '…'].join(' ');
+    e.title = `task ${safe}`;
+    e.input = { line: safe };
+    this.lastCommand = e.title;
+    this.history = this.history.map((x) => (x === text ? safe : x));
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(this.history));
+    } catch {
+      /* private mode */
+    }
+  }
+
   notify(text: string, kind: Toast['kind'] = 'ok') {
     this.toast = { text, kind };
     clearTimeout(this.#toastTimer);
@@ -245,6 +266,11 @@ class Store {
     this.entries.push(e);
     this.remember(input.line ?? previewLine(input.args ?? []));
     const res = await this.#exec(e);
+    // `config` rewrites the saved settings: pick them up so the pages follow.
+    if (res?.command?.name === 'config') {
+      if (res.result.kind !== 'error') void this.loadConfig();
+      else this.#redact(e);
+    }
     if (res?.command?.report && res.result.kind === 'report' && !inConsole) {
       this.entries = this.entries.filter((x) => x.id !== e.id);
       this.focusReport(res.command.name, res.command.filter, e);

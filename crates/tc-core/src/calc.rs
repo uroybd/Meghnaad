@@ -911,23 +911,6 @@ pub fn calc(expression: &str, postfix: bool, clock: &Clock, dom: DomFn) -> Resul
 // ---------------------------------------------------------------------------------------------
 // The DOM (`DOM.cpp`)
 
-/// Taskwarrior's defaults for the settings `rc.<name>` can ask about when the taskrc is silent.
-const SETTING_DEFAULTS: &[(&str, &str)] = &[
-    ("regex", "1"), ("calendar.details", "sparse"), ("calendar.details.report", "list"),
-    ("calendar.holidays", "none"), ("calendar.legend", "1"), ("calendar.offset", "0"),
-    ("calendar.offset.value", "-1"), ("displayweeknumber", "1"), ("dateformat", "Y-M-D"),
-    ("dateformat.holiday", "YMD"), ("dateformat.report", ""), ("dateformat.info", "Y-M-D H:N:S"),
-    ("dateformat.annotation", ""), ("summary.all.projects", "0"), ("default.command", "next"),
-    ("due", "7"), ("recurrence", "1"), ("recurrence.limit", "1"), ("recurrence.indicator", "R"),
-    ("recurrence.confirmation", "prompt"), ("journal.time", "0"),
-    ("journal.time.start.annotation", "Started task"), ("journal.time.stop.annotation", "Stopped task"),
-    ("journal.info", "1"), ("abbreviation.minimum", "2"), ("expressions", "infix"), ("date.iso", "1"),
-    ("list.all.projects", "0"), ("list.all.tags", "0"), ("complete.all.tags", "0"),
-    ("active.indicator", "*"), ("tag.indicator", "+"), ("dependency.indicator", "D"),
-    ("confirmation", "1"), ("bulk", "3"), ("allow.empty.filter", "1"), ("dependency.confirmation", "1"),
-    ("weekstart", "sunday"), ("search.case.sensitive", "1"),
-];
-
 /// What `calc` can look up: the settings, the program, and the tasks.
 ///
 /// * `rc.<name>`: a setting, as text.
@@ -984,7 +967,7 @@ impl DomSource<'_> {
             let held = crate::taskrc::render(self.cfg);
             let found = held.lines().find_map(|l| l.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| v));
             return found
-                .or_else(|| SETTING_DEFAULTS.iter().find(|(k, _)| *k == key).map(|(_, v)| *v))
+                .or_else(|| crate::taskrc::SETTING_DEFAULTS.iter().find(|(k, _)| *k == key).map(|(_, v)| *v))
                 .and_then(text);
         }
         match name {

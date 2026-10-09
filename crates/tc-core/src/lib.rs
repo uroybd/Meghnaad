@@ -16,6 +16,7 @@ pub mod recur;
 pub mod report;
 pub mod rx;
 pub mod run;
+pub mod settings;
 pub mod store;
 pub mod summary;
 pub mod taskrc;

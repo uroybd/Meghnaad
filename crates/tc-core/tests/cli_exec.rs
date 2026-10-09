@@ -2320,3 +2320,106 @@ mod changes_after_a_command_word {
         assert_eq!(f.annotations[0].text, "due:tomorrow check");
     }
 }
+
+mod show_and_config {
+    use super::*;
+    use tc_core::cli::{Ask, Done};
+
+    async fn done(r: &mut R, cfg: &Config, line: &str, confirmed: bool) -> Done {
+        let mut undo = UndoStack::default();
+        execute(r, cfg, clock(), &split_words(line), Options { confirmed, ..Options::default() }, &mut undo).await
+    }
+
+    #[tokio::test]
+    async fn show_lists_every_setting_and_highlights_what_was_changed() {
+        let mut r = replica();
+        let cfg = parse("bulk=7\ndefault.project=Home\n").config;
+        let d = done(&mut r, &cfg, "show", false).await;
+        assert!(!d.wrote && d.config.is_none());
+        let CliResult::Table(t) = d.result else { panic!("{:?}", d.result) };
+        let at = |n: &str| t.rows.iter().position(|row| row[0] == n).unwrap();
+        assert_eq!(t.rows[at("bulk")][1], "7");
+        assert!(t.highlight.contains(&at("bulk")) && !t.highlight.contains(&at("confirmation")));
+        assert_eq!(t.rows[at("bulk") + 1], ["  Default value", "3"]);
+        // Narrowed by a word.
+        let CliResult::Table(t) = done(&mut r, &cfg, "show default", false).await.result else { panic!() };
+        assert!(t.rows.iter().all(|row| row[0].trim_start().starts_with("default") || row[0] == "  Default value"));
+        // An `rc.` override is a setting for this command, not a word of it, and shows as changed.
+        let CliResult::Table(t) = done(&mut r, &Config::default(), "rc.bulk:5 show bulk", false).await.result else { panic!() };
+        assert_eq!(t.rows[0], ["bulk", "5"]);
+        assert_eq!(t.highlight, [0, 1]);
+    }
+
+    #[tokio::test]
+    async fn config_asks_then_returns_the_new_settings_for_the_caller_to_save() {
+        let mut r = replica();
+        let cfg = parse("bulk=7\n").config;
+        // `confirmation` is on by default: the first run only asks.
+        let d = done(&mut r, &cfg, "config bulk 9", false).await;
+        assert!(d.config.is_none());
+        match &d.result {
+            CliResult::Confirm { ask: Ask::Plain, message, .. } => {
+                assert_eq!(message, "Are you sure you want to change the value of 'bulk' from '7' to '9'?");
+            }
+            other => panic!("{other:?}"),
+        }
+        let d = done(&mut r, &cfg, "config bulk 9", true).await;
+        assert_eq!(message(&d.result), "Config modified.");
+        assert_eq!(d.config.expect("new settings").bulk(), 9);
+        // Without the question when `confirmation` is off, and several words are one value.
+        let quiet = parse("confirmation=off\nbulk=7\n").config;
+        let d = done(&mut r, &quiet, "config default.command next +PENDING", false).await;
+        let saved = d.config.expect("new settings");
+        assert_eq!(saved.settings.get("default.command").map(String::as_str), Some("next +PENDING"));
+        assert_eq!(saved.bulk(), 7, "the rest is kept");
+        // Removing puts back the default; removing what isn't there is an error.
+        let d = done(&mut r, &quiet, "config bulk", false).await;
+        assert_eq!(d.config.expect("new settings").bulk(), 3);
+        assert_eq!(message(&done(&mut r, &quiet, "config nothing.here", false).await.result), "ERROR: No entry named 'nothing.here' found.");
+        assert_eq!(message(&done(&mut r, &quiet, "config", false).await.result), "ERROR: Specify the name of a config variable to modify.");
+    }
+
+    #[tokio::test]
+    async fn config_edits_what_is_saved_not_what_one_command_overrides() {
+        let mut r = replica();
+        let quiet = parse("confirmation=off\nbulk=7\n").config;
+        // `rc.limit:5` is for this command only; it must not be written into the saved settings.
+        let d = done(&mut r, &quiet, "rc.limit:5 config weekstart monday", false).await;
+        let saved = d.config.expect("new settings");
+        assert_eq!(saved.settings.get("weekstart").map(String::as_str), Some("monday"));
+        assert!(!saved.settings.contains_key("limit"));
+    }
+
+    #[tokio::test]
+    async fn nothing_sensitive_can_be_set_shown_or_removed() {
+        let mut r = replica();
+        let quiet = parse("confirmation=off\n").config;
+        for line in [
+            "config sync.encryption_secret hunter2",
+            "config sync.aws.access_key_id AKIAHUNTER2",
+            "config taskd.password hunter2",
+            "config my.api_token hunter2",
+            "config sync.encryption_secret",
+        ] {
+            let d = done(&mut r, &quiet, line, false).await;
+            let m = message(&d.result);
+            assert!(m.starts_with("ERROR:") && !m.contains("hunter2") && !m.contains("AKIA"), "{line}: {m}");
+            assert!(d.config.is_none(), "{line} produced a new config");
+        }
+        // And `show` has nothing of the kind to show.
+        for word in ["sync", "secret", "token", "password"] {
+            let d = done(&mut r, &quiet, &format!("show {word}"), false).await;
+            assert!(matches!(d.result, CliResult::Text { .. }), "show {word}: {:?}", d.result);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_setting_the_app_does_not_read_or_a_bad_value_is_not_stored() {
+        let mut r = replica();
+        let quiet = parse("confirmation=off\n").config;
+        let d = done(&mut r, &quiet, "config verbose nothing", false).await;
+        assert!(message(&d.result).contains("not a setting this app reads") && d.config.is_none());
+        let d = done(&mut r, &quiet, "config weekstart someday", false).await;
+        assert!(message(&d.result).starts_with("ERROR:") && d.config.is_none());
+    }
+}

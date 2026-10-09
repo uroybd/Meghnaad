@@ -49,7 +49,7 @@ help
 | | |
 | --- | --- |
 | **Write** | `add` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
-| **Read** | `info` `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `udas` `columns` `reports` `contexts` `show` `export` `ids` `uuids` `calc` `_projects` `_tags` |
+| **Read** | `info` `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `udas` `columns` `reports` `contexts` `show` `config` `export` `ids` `uuids` `calc` `_projects` `_tags` |
 | **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
 
@@ -82,6 +82,15 @@ such as `1.due - now`, `1.tags.x`, `rc.bulk` or `system.version`. `expressions=p
 
 **`projects` and `tags`** list what is pending, with a project's count including its sub-projects.
 `list.all.projects` and `list.all.tags` add finished tasks; `complete.all.tags` does the same for tag completion.
+
+**`show` and `config`** read and change the settings the app keeps, and work **only in the Console** (typed in the
+bar under another page, they switch you to it). `show` lists every setting, defaults included, with the ones you
+changed highlighted and their default beneath; `show weekstart` narrows it to names containing that text. `config
+weekstart monday` sets one (several words become one value, `config name ""` blanks it), and `config weekstart` with no
+value removes it, putting the default back. With `confirmation` on it asks first, as Taskwarrior does. The change is saved
+in your bucket just like an imported taskrc, and is the same list the **taskrc** page shows. Both follow the
+[same rules as an import](#your-taskrc): sync and credential-like names are refused, never echoed or shown, and a name the
+app doesn't read, or a value it can't accept (`weekstart someday`), is refused with the reason instead of being kept.
 
 ## Questions Taskwarrior asks
 

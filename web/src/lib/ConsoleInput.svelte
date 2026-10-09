@@ -53,8 +53,14 @@
     }
     // Reports focus the Tasks view; everything else lands in the console scrollback.
     // Show the console first so a write or an error is visible; `run` switches back for reports.
-    if (store.view !== 'console' && !looksLikeReport(l)) store.view = 'console';
+    if (store.view !== 'console' && (consoleOnly(l) || !looksLikeReport(l))) store.view = 'console';
     store.run({ line: l });
+  }
+
+  /** `show` and `config` have no page of their own; they only ever answer in the Console. */
+  function consoleOnly(l: string): boolean {
+    const words = l.replace(/^task\s+/, '').split(/\s+/).filter((w) => !w.startsWith('rc.'));
+    return words.some((w) => w === 'show' || w === 'config');
   }
 
   /** Cheap client-side guess, only to avoid flashing the Console tab for a report. */

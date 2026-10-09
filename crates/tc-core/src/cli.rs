@@ -58,6 +58,7 @@ pub enum Kind {
     Version,
     Help,
     Calc,
+    Config,
 }
 
 use Kind::*;
@@ -99,6 +100,7 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("version", Version, false),
     ("help", Help, false),
     ("calc", Calc, false),
+    ("config", Config, false),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +247,9 @@ pub struct TableOut {
     /// Lines under the table (`5 projects (5 tasks)`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub footer: Vec<String>,
+    /// Rows to highlight (`show` marks the settings you changed).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub highlight: Vec<usize>,
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
 }
@@ -423,6 +428,8 @@ pub struct Done {
     pub wrote: bool,
     /// `None` when the line couldn't be parsed at all.
     pub command: Option<CommandInfo>,
+    /// New settings for the caller to save (`config` changed them).
+    pub config: Option<Config>,
 }
 
 impl CommandInfo {
@@ -439,11 +446,11 @@ impl CommandInfo {
 }
 
 fn error(m: impl Into<String>) -> Done {
-    Done { result: CliResult::Error { message: m.into() }, wrote: false, command: None }
+    Done { result: CliResult::Error { message: m.into() }, wrote: false, command: None, config: None }
 }
 
 fn ok(result: CliResult) -> Done {
-    Done { result, wrote: false, command: None }
+    Done { result, wrote: false, command: None, config: None }
 }
 
 impl From<FilterError> for Done {
@@ -657,6 +664,9 @@ pub async fn execute<S: Storage>(
     opts: Options,
     undo: &mut UndoStack,
 ) -> Done {
+    // The settings as saved, before any `rc.` override or context changes them for this command:
+    // what `config` edits.
+    let stored = cfg;
     // `rc.<key>:<value>` overrides apply to this command only, like the real `task`; this is also
     // how a table-header sort travels (`rc.report.next.sort:due-`). They come first, so they can
     // change what the rest of the line means (`rc.context:work`, `rc.default.command:list`).
@@ -667,7 +677,7 @@ pub async fn execute<S: Storage>(
             overridden = c;
             &overridden
         }
-        Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command: None },
+        Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command: None, config: None },
     };
     // While a context is active its own settings (`context.<name>.rc.<key>`) are in force. They come
     // last: they beat a command-line override too, as in Taskwarrior, which looks a setting up in
@@ -691,6 +701,10 @@ pub async fn execute<S: Storage>(
     };
     let parsed = parse_command(args, cfg).ok();
     let command = parsed.as_ref().map(CommandInfo::of);
+    // `show` and `config` are about the settings, not the tasks: no replica, no housekeeping.
+    if let Some(p @ Parsed { cmd: Cmd::Builtin(Show | Config), .. }) = &parsed {
+        return settings_command(stored, cfg, p, &opts, command);
+    }
     // Housekeeping Taskwarrior does before every command: create due recurring instances and
     // expire tasks past `until`. On unless `recurrence` is turned off; see `recur::enabled`.
     let skip = matches!(parsed.as_ref().map(|p| &p.cmd), Some(Cmd::Builtin(Undo | Sync | Help | Version)));
@@ -699,7 +713,7 @@ pub async fn execute<S: Storage>(
     } else {
         match maintain(replica, cfg, clock).await {
             Ok(m) => m,
-            Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command },
+            Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command, config: None },
         }
     };
     let mut done = execute_inner(replica, cfg, clock, args, opts, undo, tasks).await;
@@ -811,6 +825,31 @@ fn with_overrides(cfg: &Config, args: &[String]) -> Result<Option<Config>, Strin
         crate::taskrc::apply_override(&mut c, k, v)?;
     }
     Ok(Some(c))
+}
+
+/// `show` and `config`. Neither can reach anything sensitive: such names are refused, and nothing of
+/// that kind is stored to be shown.
+fn settings_command(stored: &Config, cfg: &Config, p: &Parsed, opts: &Options, command: Option<CommandInfo>) -> Done {
+    use crate::settings::{self, Outcome};
+    // `rc.bulk:5` is a setting for this command; it isn't one of its words.
+    let words: Vec<String> =
+        p.filter.iter().filter(|w| !(w.starts_with("rc.") && w.contains([':', '=']))).cloned().collect();
+    let mut done = if p.cmd == Cmd::Builtin(Show) {
+        ok(settings::show(cfg, &words))
+    } else {
+        match settings::config(stored, &words, cfg.confirmation(), opts.confirmed) {
+            Outcome::Error(m) => error(m),
+            Outcome::Nothing(m) => ok(CliResult::Text { lines: vec![m] }),
+            Outcome::Ask(m) => ok(CliResult::Confirm { message: m, ask: Ask::Plain, items: vec![] }),
+            Outcome::Saved { config, message } => {
+                let mut d = ok(CliResult::Text { lines: vec![message] });
+                d.config = Some(*config);
+                d
+            }
+        }
+    };
+    done.command = command;
+    done
 }
 
 /// `tasks` are the tasks as they are now, if the caller has just read them.
@@ -964,7 +1003,7 @@ async fn add<S: Storage>(
         Some(n) => format!("Created task {n}."),
         None => format!("Created task {}.", &uuid.to_string()[..8]),
     };
-    Done { result: changed(&after, &[uuid], msg), wrote: true, command: None }
+    Done { result: changed(&after, &[uuid], msg), wrote: true, command: None, config: None }
 }
 
 async fn builtin<S: Storage>(
@@ -988,6 +1027,7 @@ async fn builtin<S: Storage>(
         Help => ok(CliResult::Text { lines: help(cfg) }),
         Reports => ok(CliResult::Table(TableOut {
             footer: vec![],
+            highlight: vec![],
             title: None,
             headers: vec!["Report".into(), "Description".into()],
             rows: report::names(cfg)
@@ -1000,6 +1040,7 @@ async fn builtin<S: Storage>(
         })),
         Udas => ok(CliResult::Table(TableOut {
             footer: vec![],
+            highlight: vec![],
             title: None,
             headers: ["Name", "Type", "Label", "Values", "Default"].map(String::from).to_vec(),
             rows: cfg
@@ -1018,6 +1059,7 @@ async fn builtin<S: Storage>(
         })),
         Contexts => ok(CliResult::Table(TableOut {
             footer: vec![],
+            highlight: vec![],
             title: None,
             headers: ["Context", "Read filter", "Write", "Active"].map(String::from).to_vec(),
             rows: cfg
@@ -1033,21 +1075,8 @@ async fn builtin<S: Storage>(
                 })
                 .collect(),
         })),
-        Show => {
-            let mut rows: Vec<Vec<String>> = cfg.settings.iter().map(|(k, v)| vec![k.clone(), v.clone()]).collect();
-            if let Some(c) = &cfg.active_context {
-                rows.push(vec!["context".into(), c.clone()]);
-            }
-            for (k, v) in &cfg.urgency {
-                rows.push(vec![k.clone(), v.to_string()]);
-            }
-            ok(CliResult::Table(TableOut {
-                footer: vec![],
-                title: Some("Settings imported from your taskrc (sync and credential settings are never stored)".into()),
-                headers: vec!["Setting".into(), "Value".into()],
-                rows,
-            }))
-        }
+        // `show` and `config` are answered before any task is loaded (see `settings_command`).
+        Show | Config => error("this command is handled before the tasks are read"),
         Columns => {
             let names = [
                 "id", "uuid", "status", "description", "project", "priority", "tags", "depends",
@@ -1056,7 +1085,7 @@ async fn builtin<S: Storage>(
             ];
             let mut rows: Vec<Vec<String>> = names.iter().map(|n| vec![(*n).into(), "built-in".into()]).collect();
             rows.extend(cfg.udas.keys().map(|n| vec![n.clone(), "uda".into()]));
-            ok(CliResult::Table(TableOut { title: None, footer: vec![], headers: vec!["Column".into(), "Kind".into()], rows }))
+            ok(CliResult::Table(TableOut { title: None, footer: vec![], highlight: vec![], headers: vec!["Column".into(), "Kind".into()], rows }))
         }
         Summary => {
             // Every task the filter picks, finished ones included: that is what the progress bars count.
@@ -1184,6 +1213,7 @@ async fn builtin<S: Storage>(
                         plural(projects, "project"),
                         format!("({})", plural(quantity, "task"))
                     )],
+                    highlight: vec![],
                     headers: vec!["Project".into(), "Tasks".into()],
                     rows,
                 }));
@@ -1200,6 +1230,7 @@ async fn builtin<S: Storage>(
             ok(CliResult::Table(TableOut {
                 title: None,
                 footer: vec![plural(counts.len(), "tag"), format!("({})", plural(before, "task"))],
+                highlight: vec![],
                 headers: vec!["Tag".into(), "Count".into()],
                 rows: counts.into_iter().map(|(k, n)| vec![k, n.to_string()]).collect(),
             }))
@@ -1313,7 +1344,7 @@ async fn builtin<S: Storage>(
                 return error(e.to_string());
             }
             undo.0.pop();
-            Done { result: CliResult::Text { lines: vec!["Undone.".into()] }, wrote: true, command: None }
+            Done { result: CliResult::Text { lines: vec!["Undone.".into()] }, wrote: true, command: None, config: None }
         }
         // Everything that writes to selected tasks.
         Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend => {
@@ -1719,7 +1750,7 @@ async fn write_selected<S: Storage>(
         message.push_str(&format!(" Repaired the dependencies of {}.", plural(repaired.len(), "task")));
         touched.extend(repaired);
     }
-    Done { result: changed(&after, &touched, message), wrote: true, command: None }
+    Done { result: changed(&after, &touched, message), wrote: true, command: None, config: None }
 }
 
 /// The rest of `f`'s recurring series: for a template its pending instances; for an instance its
@@ -1750,7 +1781,7 @@ fn help(cfg: &Config) -> Vec<String> {
         "Usage: [filter] command [modifications]   (the leading `task` is optional)".to_owned(),
         String::new(),
         "Write:  add  modify  done  delete  start  stop  annotate  denotate  append  prepend  undo".into(),
-        "Read:   info  count  projects  tags  udas  columns  reports  contexts  show  export  ids  uuids  calc".into(),
+        "Read:   info  count  projects  tags  udas  columns  reports  contexts  show  config  export  ids  uuids  calc".into(),
         format!("Reports: {}", report::names(cfg).join(" ")),
         String::new(),
         "Filters:  project:Home  +tag  -tag  +OVERDUE  due.before:eow  priority:H  /text/  3  1-4,7".into(),

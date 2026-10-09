@@ -296,6 +296,24 @@ pub fn is_sensitive(name: &str) -> bool {
         || SENSITIVE_WORDS.iter().any(|w| n.contains(w))
 }
 
+/// Taskwarrior's defaults for the settings this app reads, for the ones that have one: what `rc.<name>`
+/// in `calc` and `show` fall back to when the taskrc is silent.
+pub const SETTING_DEFAULTS: &[(&str, &str)] = &[
+    ("regex", "1"), ("calendar.details", "sparse"), ("calendar.details.report", "list"),
+    ("calendar.holidays", "none"), ("calendar.legend", "1"), ("calendar.offset", "0"),
+    ("calendar.offset.value", "-1"), ("displayweeknumber", "1"), ("dateformat", "Y-M-D"),
+    ("dateformat.holiday", "YMD"), ("dateformat.report", ""), ("dateformat.info", "Y-M-D H:N:S"),
+    ("dateformat.annotation", ""), ("summary.all.projects", "0"), ("default.command", "next"),
+    ("due", "7"), ("recurrence", "1"), ("recurrence.limit", "1"), ("recurrence.indicator", "R"),
+    ("recurrence.confirmation", "prompt"), ("journal.time", "0"),
+    ("journal.time.start.annotation", "Started task"), ("journal.time.stop.annotation", "Stopped task"),
+    ("journal.info", "1"), ("abbreviation.minimum", "2"), ("expressions", "infix"), ("date.iso", "1"),
+    ("list.all.projects", "0"), ("list.all.tags", "0"), ("complete.all.tags", "0"),
+    ("active.indicator", "*"), ("tag.indicator", "+"), ("dependency.indicator", "D"),
+    ("confirmation", "1"), ("bulk", "3"), ("allow.empty.filter", "1"), ("dependency.confirmation", "1"),
+    ("weekstart", "sunday"), ("search.case.sensitive", "1"),
+];
+
 const SCALAR_SETTINGS: &[&str] = &[
     "regex",
     "calendar.details",

@@ -16,14 +16,16 @@ bucket, and the clients agree on its layout. Meghnaad is one more client of that
 - Everything that is *Taskwarrior behaviour* (filters, reports, urgency, recurrence, confirmations, dates) lives in
   one Rust library, `tc-core`. The browser does layout, not logic.
 
-```
- task CLI ──(S3 API, your R2 token)──────┐
-                                          ▼
- Browser ── Cloudflare Access ──▶ Worker (Rust → WASM) ──(R2 binding)──▶ R2 bucket
-   Svelte SPA ── POST /api/cli ──▶   auth → session → tc-core engine        salt · latest
-                                                                            v-<parent>-<child>
-                                                                            s-<version>
-                                                                            web/config.json
+```mermaid
+flowchart LR
+  cli["task CLI"]
+  browser["Browser<br/>Svelte app"]
+  access{{"Cloudflare Access<br/>token check"}}
+  worker["Worker (Rust → WASM)<br/>auth · session · tc-core engine"]
+  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json")]
+  cli -- "S3 API + your R2 token" --> bucket
+  browser -- "POST /api/cli" --> access --> worker
+  worker -- "R2 binding: sync before and after" --> bucket
 ```
 
 ## The request path
@@ -52,7 +54,7 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Views** | `summary`, `calendar`, `burndown`, `calc` | The `summary`, `calendar`, `burndown.*` and `calc` commands, each a port of its Taskwarrior counterpart |
-| **Settings** | `taskrc` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads |
+| **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` commands that list and edit it under the same rules |
 
 ### How a command runs
 
