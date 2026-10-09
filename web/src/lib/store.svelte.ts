@@ -50,7 +50,18 @@ class Store {
   entries = $state<Entry[]>([]);
   /** The live table in the Tasks view: the report currently in focus. */
   live = $state<Entry | null>(null);
-  view = $state<'tasks' | 'projects' | 'console'>('tasks');
+  view = $state<'tasks' | 'projects' | 'summary' | 'calendar' | 'burndown' | 'console'>('tasks');
+  /** The filter on each of the Summary, Calendar and Burndown pages (Taskwarrior filter syntax). */
+  summaryFilter = $state('');
+  calendarFilter = $state('');
+  burndownFilter = $state('');
+  burndownPeriod = $state<'daily' | 'weekly' | 'monthly' | 'annual'>('daily');
+  /** What each of those pages last asked for. They show it with the same component the console uses. */
+  panels = $state<{ summary: Entry | null; calendar: Entry | null; burndown: Entry | null }>({
+    summary: null,
+    calendar: null,
+    burndown: null,
+  });
   /** The report and extra filter in focus. Running a report in the console sets these too. */
   report = $state('next');
   filter = $state('');
@@ -214,6 +225,17 @@ class Store {
     this.live.title = titleOf(input);
     this.remember(input.args ? previewLine(input.args) : (input.line ?? ''), true);
     await this.#exec(this.live);
+  }
+
+  /** Run (or re-run) what one of the Summary, Calendar or Burndown pages shows. */
+  async runPanel(which: 'summary' | 'calendar' | 'burndown', input: CliInput) {
+    if (!this.panels[which]) {
+      this.panels[which] = { id: nextId++, input, title: titleOf(input), result: null, loading: true, failure: null, at: Date.now() };
+    }
+    const e = this.panels[which]!;
+    e.input = input;
+    e.title = titleOf(input);
+    await this.#exec(e);
   }
 
   /** Re-run an entry (after a change), keeping its place. */

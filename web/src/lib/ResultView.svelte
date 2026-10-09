@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BurndownView from './BurndownView.svelte';
   import CalendarView from './CalendarView.svelte';
   import ReportTable from './ReportTable.svelte';
   import SummaryView from './SummaryView.svelte';
@@ -24,6 +25,8 @@
   {#each r.tasks as t (t.uuid)}<TaskInfo task={t} onedit={onedit && ((row) => onedit(row, entry))} />{/each}
 {:else if r.kind === 'summary'}
   <SummaryView result={r} />
+{:else if r.kind === 'burndown'}
+  <BurndownView result={r} />
 {:else if r.kind === 'calendar'}
   <CalendarView result={r} {entry} />
 {:else if r.kind === 'table'}

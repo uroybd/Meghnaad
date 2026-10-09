@@ -1,10 +1,14 @@
 <script lang="ts">
+  import { store } from './store.svelte';
   import type { SummaryResult } from './types';
 
   /** `summary`: how far along each project is, with its sub-projects indented beneath it. */
   let { result }: { result: SummaryResult } = $props();
 
   const CELLS = 30; // the bar's width in Taskwarrior, in cells
+
+  // A project's name shows that project's tasks in the Tasks view (and its sub-projects').
+  const show = (project: string) => store.focusReport(store.report, [project ? `project:${project}` : 'project:']);
 </script>
 
 <div class="scroll">
@@ -21,7 +25,9 @@
     <tbody>
       {#each result.rows as row (row.project)}
         <tr>
-          <td class="project" style="padding-left: {row.depth * 1.4}em">{row.label}</td>
+          <td class="project" style="padding-left: {row.depth * 1.4}em">
+            <button type="button" class="link" title="Show these tasks" onclick={() => show(row.project)}>{row.label}</button>
+          </td>
           <td class="num">{row.remaining}</td>
           <td class="num">{row.avg_age}</td>
           <td class="num">{row.complete}</td>
@@ -50,10 +56,17 @@
   tbody td { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .project { font-weight: 500; }
+  .link { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+  .link:hover { color: var(--accent); text-decoration: underline; }
   .barcol { width: 100%; min-width: 150px; padding-right: 0; }
   th.barcol { display: table-cell; font-weight: 400; }
   th.barcol span:last-child { float: right; }
   .bar { height: 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
   .bar span { display: block; height: 100%; background: var(--ok); border-radius: 6px 0 0 6px; }
   .count { margin: 8px 0; }
+  @media (max-width: 600px) {
+    th, td { padding-right: 8px; font-size: 13px; }
+    th { font-size: 12px; }
+    .barcol { min-width: 72px; }
+  }
 </style>

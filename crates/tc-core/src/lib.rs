@@ -1,3 +1,4 @@
+pub mod burndown;
 pub mod calendar;
 pub mod cli;
 pub mod cloud;

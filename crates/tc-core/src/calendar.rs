@@ -249,6 +249,17 @@ fn complete(word: &str, candidates: &[String], min: usize) -> Vec<usize> {
     (0..candidates.len()).filter(|i| candidates[*i].starts_with(&word)).collect()
 }
 
+/// Whether `word` is one of the words `calendar` itself understands (`due`, `y`, a number or a
+/// month name), as opposed to a task filter. A malformed one still counts: `calendar 13` is
+/// reported as a bad month, not mistaken for a filter.
+pub fn is_argument(word: &str) -> bool {
+    let months: Vec<String> = MONTHS.iter().map(|m| m.to_ascii_lowercase()).collect();
+    !complete(word, &["due".to_owned()], ABBREVIATION_MINIMUM).is_empty()
+        || word.eq_ignore_ascii_case("y")
+        || (!word.is_empty() && word.bytes().all(|c| c.is_ascii_digit()))
+        || !complete(word, &months, ABBREVIATION_MINIMUM).is_empty()
+}
+
 struct Args {
     pending_date: bool,
     whole_year: bool,

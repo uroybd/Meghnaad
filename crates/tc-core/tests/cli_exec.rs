@@ -576,6 +576,66 @@ async fn weeks_start_on_sunday_unless_told_otherwise_like_taskwarrior() {
 }
 
 #[tokio::test]
+async fn burndown_charts_take_a_filter_and_the_cumulative_setting() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add old work project:Work entry:-5d").await;
+    run(&mut r, &cfg, "add home thing project:Home entry:-3d").await;
+    let (res, _) = run(&mut r, &cfg, "project:Work done").await;
+    assert!(message(&res).contains("Completed"), "{}", message(&res));
+    let chart = |res: CliResult| match res {
+        CliResult::Burndown(b) => *b,
+        other => panic!("not a burndown: {other:?}"),
+    };
+    let last = |b: &tc_core::burndown::BurndownOut| b.bars.last().map(|x| (x.pending, x.started, x.done)).unwrap();
+
+    let all = chart(run(&mut r, &cfg, "burndown.daily").await.0);
+    assert_eq!(all.title, "Daily Burndown");
+    assert_eq!(all.bars.len(), 30);
+    assert_eq!(last(&all), (1, 0, 1), "one open, one finished");
+    // A filter narrows the chart, and so does the rest of the command-line grammar.
+    assert_eq!(last(&chart(run(&mut r, &cfg, "project:Home burndown.daily").await.0)), (1, 0, 0));
+    assert_eq!(last(&chart(run(&mut r, &cfg, "burndown.daily project:Work").await.0)), (0, 0, 1));
+    // The other periods have their own commands.
+    assert_eq!(chart(run(&mut r, &cfg, "burndown.weekly").await.0).bars.len(), 26);
+    assert_eq!(chart(run(&mut r, &cfg, "burndown.monthly").await.0).bars.len(), 24);
+    assert_eq!(chart(run(&mut r, &cfg, "burndown.annual").await.0).bars.len(), 10);
+    // `burndown.cumulative` is on by default; off, done shows only on the day it happened.
+    let flat = parse("burndown.cumulative=off\n").config;
+    assert_eq!(last(&chart(run(&mut r, &flat, "burndown.daily").await.0)), (1, 0, 1), "it was finished today");
+    let from_yesterday = chart(run(&mut r, &flat, "burndown.daily").await.0);
+    assert_eq!(from_yesterday.bars[28].done, 0);
+}
+
+#[tokio::test]
+async fn a_calendar_filter_narrows_which_tasks_colour_the_days() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add work thing project:Work due:eom").await;
+    run(&mut r, &cfg, "add home thing project:Home due:eom").await;
+    let cal = |res: CliResult| match res {
+        CliResult::Calendar(c) => *c,
+        other => panic!("not a calendar: {other:?}"),
+    };
+    let due_days = |c: &tc_core::calendar::CalendarOut| {
+        c.months.iter().flat_map(|m| m.weeks.iter().flat_map(|w| w.days.iter().flatten())).filter(|d| d.due.is_some()).count()
+    };
+    assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar").await.0)), 1);
+    assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar project:Nowhere").await.0)), 0);
+    assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar project:Work").await.0)), 1);
+    assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar +NOSUCHTAG").await.0)), 0);
+    // Filters and months go together, in any order.
+    assert_eq!(cal(run(&mut r, &cfg, "calendar project:Work y").await.0).months.len(), 12);
+    // The details report is narrowed the same way.
+    let full = parse("calendar.details=full\n").config;
+    let rows = |res: CliResult| cal(res).details.unwrap().rows.iter().map(|x| x.facts.description.clone()).collect::<Vec<_>>();
+    assert_eq!(rows(run(&mut r, &full, "calendar project:Work").await.0), ["work thing"]);
+    // A word that is neither a month argument nor filter-shaped is still a mistake.
+    let (res, _) = run(&mut r, &cfg, "calendar Work").await;
+    assert!(message(&res).contains("Could not recognize argument 'Work'"), "{}", message(&res));
+}
+
+#[tokio::test]
 async fn calendar_colours_what_is_due_and_lists_it_in_full_mode() {
     let mut r = replica();
     let cfg = Config::default();
@@ -1152,9 +1212,10 @@ mod recurrence {
         assert_eq!(parent.mask.as_deref(), Some("--"));
 
         // Completing an instance is recorded in the parent's mask; the other stays pending.
-        // By uuid: both instances share an entry time, so their numeric ids aren't ordered by index.
+        // By full uuid: both instances share an entry time, so their numeric ids aren't ordered by index,
+        // and a short prefix with no letter in it (1 time in 40) would be read as a task number.
         let first = kids[0].uuid.to_string();
-        let (res, _) = run(&mut r, &cfg, &format!("{} done", &first[..8])).await;
+        let (res, _) = run(&mut r, &cfg, &format!("{first} done")).await;
         assert!(message(&res).contains("Completed"), "{}", message(&res));
         let v = all(&mut r).await;
         assert_eq!(template(&v).mask.as_deref(), Some("+-"));
@@ -1172,7 +1233,7 @@ mod recurrence {
         run(&mut r, &cfg, "add Pay rent recur:monthly due:1d").await;
         // Numeric ids tie between the template and its first instance, so use the uuid.
         let tpl = template(&all(&mut r).await).uuid.to_string();
-        let tpl = &tpl[..8];
+        let tpl = tpl.as_str();
         let (res, _) = run(&mut r, &cfg, &format!("{tpl} done")).await;
         assert!(message(&res).contains("not pending"), "{}", message(&res));
         assert_eq!(template(&all(&mut r).await).status, "recurring");
@@ -1302,7 +1363,7 @@ mod recurrence {
         let (mut r, cfg) = series("yes").await;
         let v = all(&mut r).await;
         let first = instances(&v)[0].uuid.to_string();
-        let (_, wrote) = run(&mut r, &cfg, &format!("{} modify priority:H project:Garden", &first[..8])).await;
+        let (_, wrote) = run(&mut r, &cfg, &format!("{first} modify priority:H project:Garden")).await;
         assert!(wrote);
         let v = all(&mut r).await;
         assert!(v.iter().all(|f| f.priority.as_deref() == Some("H") && f.project.as_deref() == Some("Garden")), "{v:?}");
@@ -1310,7 +1371,7 @@ mod recurrence {
         // Dates stay per instance: moving one instance does not move the others.
         let due_before: Vec<_> = instances(&v).iter().map(|f| f.due).collect();
         let first = instances(&v)[0].uuid.to_string();
-        let (res, _) = run(&mut r, &cfg, &format!("{} modify due:10d", &first[..8])).await;
+        let (res, _) = run(&mut r, &cfg, &format!("{first} modify due:10d")).await;
         assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
         let v = all(&mut r).await;
         let due_after: Vec<_> = instances(&v).iter().map(|f| f.due).collect();

@@ -119,6 +119,33 @@ export interface CalendarResult {
   details: ReportResult | null;
 }
 
+export interface BurndownBar {
+  /** Start of the period, in epoch seconds. */
+  epoch: number;
+  major: string;
+  minor: string;
+  pending: number;
+  started: number;
+  done: number;
+}
+export interface BurndownResult {
+  kind: 'burndown';
+  period: 'daily' | 'weekly' | 'monthly' | 'annual';
+  title: string;
+  /** Oldest first. */
+  bars: BurndownBar[];
+  /** Tasks finished before the first bar; they are on every bar. */
+  carryover_done: number;
+  /** The y axis: 0, half, top. */
+  y_labels: [number, number, number];
+  net_fix_rate: number | null;
+  completion: { epoch: number; in_secs: number; vague: string } | null;
+  no_convergence: boolean;
+  peak_count: number;
+  peak_day: number;
+  current_count: number;
+}
+
 export interface TableResult { kind: 'table'; title: string | null; headers: string[]; rows: string[][] }
 export interface TextResult { kind: 'text'; lines: string[] }
 export interface JsonResult { kind: 'json'; value: unknown }
@@ -137,7 +164,7 @@ export interface ConfirmResult {
 export interface ErrorResult { kind: 'error'; message: string }
 
 export type CliResult =
-  | ReportResult | InfoResult | TableResult | SummaryResult | CalendarResult | TextResult | JsonResult
+  | ReportResult | InfoResult | TableResult | SummaryResult | CalendarResult | BurndownResult | TextResult | JsonResult
   | ChangedResult | ConfirmResult | ErrorResult;
 
 /** How the server understood the command line. */

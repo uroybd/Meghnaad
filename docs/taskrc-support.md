@@ -28,7 +28,7 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
-| Miscellaneous | 7 | 6 | 7 | 5 | 0 |
+| Miscellaneous | 8 | 6 | 6 | 5 | 0 |
 | Dates and calendar | 15 | 0 | 0 | 1 | 0 |
 | Journal | 3 | 1 | 0 | 0 | 0 |
 | Dependencies | 0 | 0 | 0 | 1 | 0 |
@@ -39,7 +39,7 @@ Each row below counts once, even where a row covers several related options.
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **68** | **7** | **9** | **15** | **1** |
+| **Total** | **69** | **7** | **8** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -84,7 +84,7 @@ Each row below counts once, even where a row covers several related options.
 | `summary.all.projects` | Done | With it on, `summary` lists projects whose tasks are all finished too (their bar is full). Off by default |
 | `complete.all.tags`, `list.all.tags` | Not done | `tags` counts pending tasks only |
 | `active.indicator`, `tag.indicator`, `dependency.indicator` | Not done | The `indicator` column formats use Taskwarrior's defaults (`+`, `D`) and don't read these |
-| `burndown.cumulative` | Not done | There are no burndown reports |
+| `burndown.cumulative` | Done | On by default, as in Taskwarrior: a finished task stays counted as done on every later bar. Off counts it only on the bar of the day it was finished. Used by `burndown.daily`, `.weekly`, `.monthly` and `.annual` |
 | `date.iso` | Not done | Not read |
 | `verbose` | N/A | Accepted and ignored |
 | `nag` | N/A | The reminder printed after a command in a terminal |

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
-  import { Bell, BellOff, FileText, Folder, ListChecks, Menu, Plus, SlidersHorizontal, Terminal, TriangleAlert, X } from './lib/icons';
+  import { Bell, BellOff, CalendarDays, ChartColumn, FileText, Folder, ListChecks, Menu, Plus, SlidersHorizontal, Terminal, TrendingDown, TriangleAlert, X } from './lib/icons';
+  import BurndownPage from './lib/BurndownPage.svelte';
+  import CalendarPage from './lib/CalendarPage.svelte';
   import ConsoleView from './lib/ConsoleView.svelte';
   import ProjectsView from './lib/ProjectsView.svelte';
   import DetailDrawer from './lib/DetailDrawer.svelte';
@@ -12,6 +14,7 @@
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAdd from './lib/QuickAdd.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
+  import SummaryPage from './lib/SummaryPage.svelte';
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
@@ -83,6 +86,9 @@
     <nav class="tabs" aria-label="View">
       <button class:on={store.view === 'tasks'} aria-label="Tasks" onclick={() => (store.view = 'tasks')}><ListChecks size={15} /> <span class="lbl">Tasks</span></button>
       <button class:on={store.view === 'projects'} aria-label="Projects" onclick={() => (store.view = 'projects')}><Folder size={15} /> <span class="lbl">Projects</span></button>
+      <button class:on={store.view === 'summary'} aria-label="Summary" onclick={() => (store.view = 'summary')}><ChartColumn size={15} /> <span class="lbl">Summary</span></button>
+      <button class:on={store.view === 'calendar'} aria-label="Calendar" onclick={() => (store.view = 'calendar')}><CalendarDays size={15} /> <span class="lbl">Calendar</span></button>
+      <button class:on={store.view === 'burndown'} aria-label="Burndown" onclick={() => (store.view = 'burndown')}><TrendingDown size={15} /> <span class="lbl">Burndown</span></button>
       <button class:on={store.view === 'console'} aria-label="Console" onclick={() => (store.view = 'console')}><Terminal size={15} /> <span class="lbl">Console</span></button>
     </nav>
     <span class="grow"></span>
@@ -132,7 +138,7 @@
   </aside>
 
   <main class="main">
-    {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView />{:else}<ConsoleView />{/if}
+    {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView />{:else if store.view === 'summary'}<SummaryPage />{:else if store.view === 'calendar'}<CalendarPage />{:else if store.view === 'burndown'}<BurndownPage />{:else}<ConsoleView />{/if}
   </main>
 
   <button class="fab primary" aria-label="New task" title="New task" onclick={() => (store.adding = { description: '', n: (store.adding?.n ?? 0) + 1 })}>

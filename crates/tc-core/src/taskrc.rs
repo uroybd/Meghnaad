@@ -202,6 +202,7 @@ const SCALAR_SETTINGS: &[&str] = &[
     "displayweeknumber",
     "dateformat.holiday",
     "summary.all.projects",
+    "burndown.cumulative",
     "default.command",
     "default.project",
     "default.due",

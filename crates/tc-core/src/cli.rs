@@ -38,6 +38,10 @@ pub enum Kind {
     Tags,
     Summary,
     Calendar,
+    BurndownDaily,
+    BurndownWeekly,
+    BurndownMonthly,
+    BurndownAnnual,
     Udas,
     Columns,
     Reports,
@@ -71,6 +75,10 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("projects", Projects, false),
     ("summary", Summary, false),
     ("calendar", Calendar, false),
+    ("burndown.daily", BurndownDaily, false),
+    ("burndown.weekly", BurndownWeekly, false),
+    ("burndown.monthly", BurndownMonthly, false),
+    ("burndown.annual", BurndownAnnual, false),
     ("tags", Tags, false),
     ("udas", Udas, false),
     ("columns", Columns, false),
@@ -220,6 +228,8 @@ pub enum CliResult {
     Summary(crate::summary::SummaryOut),
     /// `calendar`: months with what is due on which day.
     Calendar(Box<crate::calendar::CalendarOut>),
+    /// `burndown.daily|weekly|monthly|annual`: pending, started and done over time.
+    Burndown(Box<crate::burndown::BurndownOut>),
     Text { lines: Vec<String> },
     Json { value: serde_json::Value },
     /// A write happened.
@@ -830,11 +840,43 @@ async fn builtin<S: Storage>(
             }
             ok(CliResult::Summary(out))
         }
+        BurndownDaily | BurndownWeekly | BurndownMonthly | BurndownAnnual => {
+            use crate::burndown::Period;
+            let period = match kind {
+                BurndownDaily => Period::Daily,
+                BurndownWeekly => Period::Weekly,
+                BurndownMonthly => Period::Monthly,
+                _ => Period::Annual,
+            };
+            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
+                Ok(s) => s,
+                Err(e) => return e.into(),
+            };
+            // On unless `burndown.cumulative` turns it off, as in Taskwarrior.
+            let cumulative = cfg.settings.get("burndown.cumulative").map_or(true, |v| {
+                matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "on" | "yes" | "y" | "true")
+            });
+            ok(CliResult::Burndown(Box::new(crate::burndown::burndown(&sel, period, cumulative, &ctx.clock))))
+        }
         Calendar => {
-            // Overrides were applied already; what is left are the months asked for.
-            let words: Vec<String> =
-                p.filter.iter().filter(|w| !w.starts_with("rc.") && !w.starts_with("rc:")).cloned().collect();
-            let plan = match crate::calendar::plan(&words, cfg, &ctx.clock, all) {
+            // Overrides were applied already; what is left are the months asked for. Taskwarrior's
+            // calendar takes no filter, but a filter-shaped word (`project:Work`, `+next`,
+            // `/pattern/`) narrows which tasks it colours here, so a page can offer one.
+            let (words, filter): (Vec<String>, Vec<String>) = p
+                .filter
+                .iter()
+                .filter(|w| !w.starts_with("rc.") && !w.starts_with("rc:"))
+                .cloned()
+                .partition(|w| crate::calendar::is_argument(w) || !filter_shaped(w));
+            let tasks: Vec<Facts> = if filter.is_empty() {
+                all.to_vec()
+            } else {
+                match selected(all, ctx, cfg, &filter) {
+                    Ok((sel, _)) => sel.into_iter().cloned().collect(),
+                    Err(e) => return e.into(),
+                }
+            };
+            let plan = match crate::calendar::plan(&words, cfg, &ctx.clock, &tasks) {
                 Ok(p) => p,
                 Err(m) => return error(m),
             };
@@ -848,7 +890,7 @@ async fn builtin<S: Storage>(
                     clock: ctx.clock,
                     all,
                     report: &d.report,
-                    filter: &d.filter,
+                    filter: &[d.filter.clone(), filter].concat(),
                     seed: opts.seed,
                 }) {
                     Ok(o) => out.details = Some(o),

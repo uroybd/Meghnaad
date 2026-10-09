@@ -11,7 +11,24 @@ rust-version = "1.91"
 opt-level = "s"
 lto = true
 codegen-units = 1
+# `strip = true` breaks wasm-bindgen's catch wrappers; `panic = "abort"` and "z" were measured:
+# no size win / ~25% slower requests for 5% less gzip.
 strip = "debuginfo"
+
+# Optimise for size, except the crypto that runs on every cold isolate: PBKDF2 (600k rounds)
+# plus decrypt. At opt-level 3 a cold start drops from ~430 ms to ~255 ms for ~2 KB of wasm.
+[profile.release.package.sha2]
+opt-level = 3
+[profile.release.package.pbkdf2]
+opt-level = 3
+[profile.release.package.hmac]
+opt-level = 3
+[profile.release.package.chacha20poly1305]
+opt-level = 3
+[profile.release.package.chacha20]
+opt-level = 3
+[profile.release.package.poly1305]
+opt-level = 3
 
 # Key derivation is 600k PBKDF2 iterations; keep it fast in debug builds and tests.
 [profile.dev.package.sha2]

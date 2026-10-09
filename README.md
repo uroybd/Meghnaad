@@ -291,7 +291,7 @@ help
 | | |
 | --- | --- |
 | **Write** | `add` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
-| **Read** | `info` `count` `projects` `summary` `calendar` `tags` `udas` `columns` `reports` `contexts` `show` `export` `ids` `uuids` |
+| **Read** | `info` `count` `projects` `summary` `calendar` `burndown.daily` `burndown.weekly` `burndown.monthly` `burndown.annual` `tags` `udas` `columns` `reports` `contexts` `show` `export` `ids` `uuids` |
 | **Filters** | `attr:value`, with modifiers `.is .not .has .startswith .before .after .by .none .any …`; `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/` (regular expressions, see below); ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h` |
 
@@ -314,6 +314,19 @@ arguments: `calendar`, `calendar y` (a year from this month), `calendar due` (fr
 lists what is due in the months shown and `calendar.holidays=full` lists the holidays; define them as
 `holiday.<id>.name` and `.date` (or `.start` and `.end`) in the taskrc dialog (`include` files aren't followed, so paste
 them). Weeks start on Sunday, as in Taskwarrior, unless you set `weekstart=Monday`.
+
+**`burndown.daily`, `.weekly`, `.monthly` and `.annual`** chart how many tasks were pending, started and done over time, with the
+net fix rate and an estimated completion date, and take a filter (`project:Home burndown.weekly`). They follow
+Taskwarrior's counting exactly, quirks included (checked bar by bar against `task burndown`), and `burndown.cumulative`
+turns off carrying finished tasks forward.
+
+**Summary, Calendar and Burndown are pages too**, next to Tasks and Projects. Each has the same filter box as the Tasks page
+(with Tab completion, chips and the filter helpers), focused when you open the page (except on a phone, where that
+would raise the keyboard), and shows what the console command of the same name prints, drawn by the same component.
+Calendar has paging buttons (earlier, later, today, a year, from the first due date) and takes months in the same
+box (`march 2027`, `y`, `due`). Taskwarrior's `calendar` takes no filter; here a filter-shaped word such as `project:Work`
+narrows which tasks colour the days. Burndown has a period selector. Clicking a project in Summary, or a day with
+something due in Calendar, shows those tasks in the Tasks view.
 
 Notes that differ from Taskwarrior on a desktop:
 
