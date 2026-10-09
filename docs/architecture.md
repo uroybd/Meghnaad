@@ -54,6 +54,7 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Views** | `summary`, `calendar`, `burndown`, `calc` | The `summary`, `calendar`, `burndown.*` and `calc` commands, each a port of its Taskwarrior counterpart |
+| **Hooks** | `hooks` | Your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console |
 | **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` commands that list and edit it under the same rules |
 
 ### How a command runs
@@ -74,6 +75,7 @@ Writes go through one path (`write_selected`) so the safety rules are in one pla
   the command would change: Taskwarrior's yes/no/all/quit becomes ticks in a table) and `extras` (follow-ups that
   only arise once those are answered: repair a dependency chain, carry a change to a recurring series). The client
   re-sends the command with the answers (`Options { confirmed, approved, extras }`).
+- **Hooks** run inside this path, before the commit: `on_add` and `on_modify` see the task as the command leaves it, and what they hand back is diffed and applied into the same batch, or the command is refused and nothing is saved.
 - Everything the command changes is built as one batch of operations and committed once, so it is one undo step.
 - Undo can't use TaskChampion's own (it only covers unsynced changes, and the Worker syncs after every write), so
   the inverse operations are committed as new changes. The stack lives in the isolate's memory.

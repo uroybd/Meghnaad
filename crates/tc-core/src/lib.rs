@@ -9,6 +9,7 @@ pub mod error;
 pub mod filter;
 pub mod guard;
 pub mod history;
+pub mod hooks;
 pub mod model;
 pub mod modify;
 pub mod names;

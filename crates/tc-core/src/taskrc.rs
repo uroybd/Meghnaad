@@ -145,6 +145,11 @@ impl Config {
         self.settings.get("confirmation").map_or(true, |v| truthy(v))
     }
 
+    /// `hooks`: the master switch for hooks (Taskwarrior's default is on).
+    pub fn hooks(&self) -> bool {
+        self.settings.get("hooks").map_or(true, |v| truthy(v))
+    }
+
     /// An integer setting as Taskwarrior reads it (`strtol`): the leading digits, and 0 for text
     /// that isn't a number. `default` is what an unset setting means.
     fn integer(&self, key: &str, default: i64) -> i64 {
@@ -310,7 +315,7 @@ pub const SETTING_DEFAULTS: &[(&str, &str)] = &[
     ("journal.info", "1"), ("abbreviation.minimum", "2"), ("expressions", "infix"), ("date.iso", "1"),
     ("list.all.projects", "0"), ("list.all.tags", "0"), ("complete.all.tags", "0"),
     ("active.indicator", "*"), ("tag.indicator", "+"), ("dependency.indicator", "D"),
-    ("confirmation", "1"), ("bulk", "3"), ("allow.empty.filter", "1"), ("dependency.confirmation", "1"),
+    ("hooks", "1"), ("confirmation", "1"), ("bulk", "3"), ("allow.empty.filter", "1"), ("dependency.confirmation", "1"),
     ("weekstart", "sunday"), ("search.case.sensitive", "1"),
 ];
 
@@ -337,6 +342,7 @@ const SCALAR_SETTINGS: &[&str] = &[
     "recurrence.limit",
     "recurrence.indicator",
     "recurrence.confirmation",
+    "hooks",
     "confirmation",
     "bulk",
     "allow.empty.filter",

@@ -2423,3 +2423,147 @@ mod show_and_config {
         assert!(message(&d.result).starts_with("ERROR:") && d.config.is_none());
     }
 }
+
+mod hooks {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tc_core::cli::Done;
+    use tc_core::hooks::{Hooked, Hooks, Kind, Reject};
+    use tc_core::model::Facts;
+
+    /// A hook set that does what a test asks, and records what it was shown.
+    #[derive(Debug, Default)]
+    struct Probe {
+        tag_new: bool,
+        refuse_new: bool,
+        refuse_done: bool,
+        refuse_launch: bool,
+        rename_on_modify: bool,
+        seen: Mutex<Vec<String>>,
+    }
+
+    impl Hooks for Probe {
+        fn on_launch(&self, h: &mut Hooked, command: &str) -> Result<(), Reject> {
+            h.say(format!("launch: {command}"));
+            if self.refuse_launch {
+                return Err("not today".into());
+            }
+            Ok(())
+        }
+        fn on_add(&self, h: &mut Hooked, mut task: Facts) -> Result<Facts, Reject> {
+            self.seen.lock().unwrap().push(format!("add {} [{}]", task.description, task.status));
+            if self.refuse_new {
+                h.warn("no new tasks");
+                return Err("add refused".into());
+            }
+            if self.tag_new {
+                task.tags.insert("hooked".into());
+                task.project.get_or_insert_with(|| "Inbox".into());
+                h.say("tagged");
+            }
+            Ok(task)
+        }
+        fn on_modify(&self, h: &mut Hooked, old: &Facts, mut new: Facts) -> Result<Facts, Reject> {
+            self.seen.lock().unwrap().push(format!("modify {} {}->{}", old.description, old.status, new.status));
+            if self.refuse_done && new.status == "completed" {
+                h.warn("finish it later");
+                return Err("done refused".into());
+            }
+            if self.rename_on_modify {
+                new.description = format!("{}!", new.description);
+            }
+            Ok(new)
+        }
+        fn on_exit(&self, h: &mut Hooked, changed: &[Facts]) {
+            h.say(format!("exit: {} changed", changed.len()));
+        }
+    }
+
+    async fn go(r: &mut R, cfg: &Config, line: &str, hooks: &Arc<Probe>) -> Done {
+        let mut undo = UNDO.with(|u| u.borrow().clone());
+        let o = Options { hooks: Some(hooks.clone()), confirmed: true, ..Options::default() };
+        let d = execute(r, cfg, clock(), &split_words(line), o, &mut undo).await;
+        UNDO.with(|u| *u.borrow_mut() = undo);
+        d
+    }
+
+    fn texts(d: &Done) -> Vec<String> {
+        d.feedback.iter().map(|l| l.text.clone()).collect()
+    }
+
+    #[tokio::test]
+    async fn a_hook_can_change_a_new_task_and_say_something_and_one_undo_takes_it_all_back() {
+        let (mut r, cfg) = (replica(), Config::default());
+        let p = Arc::new(Probe { tag_new: true, ..Probe::default() });
+        let d = go(&mut r, &cfg, "add Buy milk", &p).await;
+        assert_eq!(texts(&d), ["launch: add Buy milk", "tagged", "exit: 1 changed"]);
+        let all = load_facts(&mut r).await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].tags.contains("hooked"));
+        assert_eq!(all[0].project.as_deref(), Some("Inbox"));
+        assert_eq!(p.seen.lock().unwrap()[0], "add Buy milk [pending]");
+        // The hook's edit and the add are one undo step.
+        assert!(matches!(run_yes(&mut r, &cfg, "undo").await.0, CliResult::Text { .. }));
+        let all = load_facts(&mut r).await.unwrap();
+        assert!(all.iter().all(|f| f.status == "deleted"), "{all:?}");
+    }
+
+    #[tokio::test]
+    async fn a_hook_can_refuse_an_add() {
+        let (mut r, cfg) = (replica(), Config::default());
+        let p = Arc::new(Probe { refuse_new: true, ..Probe::default() });
+        let d = go(&mut r, &cfg, "add Nope", &p).await;
+        assert_eq!(message(&d.result), "ERROR: add refused");
+        assert!(!d.wrote);
+        assert!(descs(&mut r).await.is_empty());
+        assert!(d.feedback.iter().any(|l| l.kind == Kind::Warn && l.text == "no new tasks"));
+        // A refused add changed nothing, so the exit hook has nothing to report.
+        assert_eq!(d.feedback.last().map(|l| l.text.as_str()), Some("exit: 0 changed"));
+    }
+
+    #[tokio::test]
+    async fn on_modify_sees_before_and_after_and_can_refuse_or_change() {
+        let (mut r, cfg) = (replica(), Config::default());
+        let quiet = Arc::new(Probe::default());
+        go(&mut r, &cfg, "add Write report", &quiet).await;
+
+        let refuse = Arc::new(Probe { refuse_done: true, ..Probe::default() });
+        let d = go(&mut r, &cfg, "1 done", &refuse).await;
+        assert_eq!(message(&d.result), "ERROR: done refused");
+        assert_eq!(refuse.seen.lock().unwrap()[0], "modify Write report pending->completed");
+        assert_eq!(load_facts(&mut r).await.unwrap()[0].status, "pending", "a refused change is not saved");
+
+        let rename = Arc::new(Probe { rename_on_modify: true, ..Probe::default() });
+        let d = go(&mut r, &cfg, "1 modify project:Work", &rename).await;
+        assert!(d.wrote);
+        let f = &load_facts(&mut r).await.unwrap()[0];
+        assert_eq!((f.description.as_str(), f.project.as_deref()), ("Write report!", Some("Work")));
+    }
+
+    #[tokio::test]
+    async fn on_launch_can_stop_a_command_before_it_does_anything() {
+        let (mut r, cfg) = (replica(), Config::default());
+        let p = Arc::new(Probe { refuse_launch: true, ..Probe::default() });
+        let d = go(&mut r, &cfg, "add Never", &p).await;
+        assert_eq!(message(&d.result), "ERROR: not today");
+        assert!(descs(&mut r).await.is_empty());
+        assert_eq!(texts(&d), ["launch: add Never"], "nothing else ran");
+    }
+
+    #[tokio::test]
+    async fn hooks_off_runs_none_and_a_plain_run_prints_nothing() {
+        let (mut r, cfg) = (replica(), Config::default());
+        let p = Arc::new(Probe { tag_new: true, refuse_launch: true, ..Probe::default() });
+        for line in ["rc.hooks:off add Free", "rc.hooks:0 add Also free"] {
+            let d = go(&mut r, &cfg, line, &p).await;
+            assert!(d.wrote && d.feedback.is_empty(), "{line}: {:?}", d.feedback);
+        }
+        let off = parse("hooks=off\n").config;
+        assert!(go(&mut r, &off, "add Third", &p).await.feedback.is_empty());
+        assert!(load_facts(&mut r).await.unwrap().iter().all(|f| f.tags.is_empty()));
+        // Without any hooks supplied, the shipped placeholders do nothing.
+        let mut undo = UndoStack::default();
+        let d = execute(&mut r, &cfg, clock(), &split_words("add Plain"), Options::default(), &mut undo).await;
+        assert!(d.wrote && d.feedback.is_empty());
+    }
+}

@@ -7,7 +7,7 @@ this guide says so. How the engine works is in [Architecture](architecture.md); 
 
 **Contents:** [The pages](#the-pages) · [The console](#the-console) · [Questions](#questions-taskwarrior-asks) ·
 [Tasks](#tasks) · [Your taskrc](#your-taskrc) · [Urgency](#urgency) · [Recurring tasks](#recurring-tasks) ·
-[Time tracking and reminders](#time-tracking-and-reminders) · [On a phone](#on-a-phone) · [Different from the
+[Hooks](#hooks) · [Time tracking and reminders](#time-tracking-and-reminders) · [On a phone](#on-a-phone) · [Different from the
 desktop](#different-from-the-desktop)
 
 ## The pages
@@ -204,6 +204,50 @@ an instance links back to it. The recurring task itself is a template: you can e
   Descriptive changes (description, project, priority, tags, UDAs) are shared; dates and the period stay per task.
 - Deleting a recurring task asks first, because it deletes its open instances too.
 - `recurrence.indicator` (default `R`) is what the `recur.indicator` column shows.
+
+## Hooks
+
+Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A Worker can't
+run scripts, so here a hook is a **Rust function you write in `crates/tc-core/src/hooks.rs`** and deploy with the
+Worker. The file ships with four commented-out placeholders in `MyHooks`, so nothing happens until you fill one in.
+
+| Hook | Runs | It can |
+| --- | --- | --- |
+| `on_launch(h, command)` | before a command does anything | refuse it (`Err("…")`) |
+| `on_add(h, task)` | for each new task, before it is saved | return the task changed, or refuse |
+| `on_modify(h, old, new)` | for each task `modify`, `done`, `delete`, `start`, `stop`, `annotate`… changes, before it is saved | return the new task changed, or refuse |
+| `on_exit(h, changed)` | after the command, with the tasks it changed | only talk |
+
+A task is a `Facts`, the plain view reports use: `description`, `project`, `priority`, `tags`, the dates (`due`,
+`wait`, …), `depends`, `annotations`, UDAs in `extra`, and the read-only `status`, `blocked`, `blocking`. A hook gets
+the task and hands one back; whatever differs is applied, in the same undo step as the command. A hook may change what
+`modify` can (description, project, priority, tags, dates, `depends`, UDAs); `uuid`, `status`, annotations and the
+recurrence fields are read-only, and changing them is an error. A refused command saves nothing.
+
+`h.say("…")` and `h.warn("…")` print. The lines appear under the command's result in the Console (a toast elsewhere);
+`println!` goes nowhere in WebAssembly.
+
+```rust
+fn on_add(&self, h: &mut Hooked, mut task: Facts) -> Result<Facts, Reject> {
+    if task.project.as_deref() == Some("Work") {
+        task.tags.insert("office".into());
+        h.say("Tagged +office.");
+    }
+    Ok(task)
+}
+
+fn on_modify(&self, _h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, Reject> {
+    if old.status == "pending" && new.status == "completed" && old.blocked {
+        return Err("Finish what it depends on first.".into());
+    }
+    Ok(new)
+}
+```
+
+Notes: hooks run inside the Worker with no network or files, and `hooks=off` (or `rc.hooks:off`) turns them all off.
+`undo` and the recurring instances created in the background don't run hooks, as in Taskwarrior. A command that asks a
+question first runs `on_launch` once per round. Each hook you add makes the Worker a little bigger; a few hundred lines
+cost a few KB compressed, while a new dependency can cost far more.
 
 ## Time tracking and reminders
 

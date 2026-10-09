@@ -173,6 +173,27 @@ A report typed in the Console prints there; typed elsewhere it opens in Tasks. T
 changes to many tasks, a command with no filter, breaking a dependency chain) arrive as a table of ticks. See
 **[Using Meghnaad](docs/using.md)** for the rest.
 
+## Hooks
+
+Taskwarrior's `on-launch`, `on-add`, `on-modify` and `on-exit` hooks are Rust functions you fill in
+([`crates/tc-core/src/hooks.rs`](crates/tc-core/src/hooks.rs)) and deploy with the Worker. A hook gets the task, hands
+one back (changed or not) or refuses the command, and whatever it prints appears under the result in the Console. All
+four ship empty. See [Hooks](docs/using.md#hooks).
+
+**How much fits.** The Worker is about **783 KB compressed** (gzip) today, so a **1 MB compressed** budget leaves about
+**265 KB** for hooks. Measured by adding generated hook code to a release build:
+
+| Hook code | Added to the compressed Worker |
+| --- | --- |
+| ~300 lines | +4 KB |
+| ~1,400 lines | +10 KB |
+| ~5,700 lines | +19 KB |
+
+Generated code compresses unusually well, so for planning use the whole Worker's own ratio instead: about 12 bytes
+compressed per line of ordinary code, or roughly **20,000 lines** before the 1 MB mark. That is far more hook than anyone
+writes; what spends the budget in practice is a **dependency** (a general-purpose crate such as a regex engine can cost
+tens to hundreds of KB on its own; measure before adding one), not your lines. Measure with `npm run build` and `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`.
+
 ## Security
 
 - **Login** is Cloudflare Access. The Worker independently validates the `Cf-Access-Jwt-Assertion` token on every

@@ -327,6 +327,8 @@ pub struct Options {
     /// that happens to be `rm`, or to start with `due:`, stays a note.
     pub typed: bool,
     pub seed: u64,
+    /// The hooks to run. `None` runs the ones in `hooks.rs`; tests supply their own.
+    pub hooks: Option<std::sync::Arc<dyn crate::hooks::Hooks>>,
 }
 
 /// Operations of the most recent write commands, newest last.
@@ -430,6 +432,8 @@ pub struct Done {
     pub command: Option<CommandInfo>,
     /// New settings for the caller to save (`config` changed them).
     pub config: Option<Config>,
+    /// What the hooks printed (see `hooks.rs`), to show under the result.
+    pub feedback: Vec<crate::hooks::Line>,
 }
 
 impl CommandInfo {
@@ -446,11 +450,11 @@ impl CommandInfo {
 }
 
 fn error(m: impl Into<String>) -> Done {
-    Done { result: CliResult::Error { message: m.into() }, wrote: false, command: None, config: None }
+    Done { result: CliResult::Error { message: m.into() }, wrote: false, command: None, config: None, feedback: Vec::new() }
 }
 
 fn ok(result: CliResult) -> Done {
-    Done { result, wrote: false, command: None, config: None }
+    Done { result, wrote: false, command: None, config: None, feedback: Vec::new() }
 }
 
 impl From<FilterError> for Done {
@@ -677,7 +681,7 @@ pub async fn execute<S: Storage>(
             overridden = c;
             &overridden
         }
-        Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command: None, config: None },
+        Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command: None, config: None, feedback: Vec::new() },
     };
     // While a context is active its own settings (`context.<name>.rc.<key>`) are in force. They come
     // last: they beat a command-line override too, as in Taskwarrior, which looks a setting up in
@@ -705,6 +709,14 @@ pub async fn execute<S: Storage>(
     if let Some(p @ Parsed { cmd: Cmd::Builtin(Show | Config), .. }) = &parsed {
         return settings_command(stored, cfg, p, &opts, command);
     }
+    // Hooks: `on-launch` comes first, before anything is read or written.
+    let hk = crate::hooks::Runner::new(opts.hooks.clone(), cfg.hooks());
+    if let Err(m) = hk.launch(&args.join(" ")) {
+        let mut d = error(m);
+        d.command = command;
+        d.feedback = hk.abort();
+        return d;
+    }
     // Housekeeping Taskwarrior does before every command: create due recurring instances and
     // expire tasks past `until`. On unless `recurrence` is turned off; see `recur::enabled`.
     let skip = matches!(parsed.as_ref().map(|p| &p.cmd), Some(Cmd::Builtin(Undo | Sync | Help | Version)));
@@ -713,12 +725,15 @@ pub async fn execute<S: Storage>(
     } else {
         match maintain(replica, cfg, clock).await {
             Ok(m) => m,
-            Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command, config: None },
+            Err(m) => {
+                return Done { result: CliResult::Error { message: m }, wrote: false, command, config: None, feedback: hk.finish(true) }
+            }
         }
     };
-    let mut done = execute_inner(replica, cfg, clock, args, opts, undo, tasks).await;
+    let mut done = execute_inner(replica, cfg, clock, args, opts, undo, tasks, &hk).await;
     done.command = command;
     done.wrote |= maintained;
+    done.feedback = hk.finish(matches!(done.result, CliResult::Error { .. }));
     done
 }
 
@@ -861,6 +876,7 @@ async fn execute_inner<S: Storage>(
     opts: Options,
     undo: &mut UndoStack,
     tasks: Option<Vec<Facts>>,
+    hk: &crate::hooks::Runner,
 ) -> Done {
     // `cfg` already has this command's `rc.` overrides and the active context's settings in it.
     let parsed = match parse_command(args, cfg) {
@@ -892,8 +908,8 @@ async fn execute_inner<S: Storage>(
                 Err(e) => e.into(),
             }
         }
-        Cmd::Builtin(Add) => add(replica, cfg, &ctx, &all, &parsed, undo).await,
-        Cmd::Builtin(k) => builtin(replica, cfg, &ctx, &all, k, &parsed, args, opts, undo).await,
+        Cmd::Builtin(Add) => add(replica, cfg, &ctx, &all, &parsed, undo, hk).await,
+        Cmd::Builtin(k) => builtin(replica, cfg, &ctx, &all, k, &parsed, args, opts, undo, hk).await,
     }
 }
 
@@ -953,6 +969,7 @@ async fn add<S: Storage>(
     all: &[Facts],
     p: &Parsed,
     undo: &mut UndoStack,
+    hk: &crate::hooks::Runner,
 ) -> Done {
     // `task rc.x:y add ...` is fine: overrides were applied before this point and aren't filters.
     if p.filter.iter().any(|w| !w.starts_with("rc.") && !w.starts_with("rc:")) {
@@ -987,7 +1004,10 @@ async fn add<S: Storage>(
         task.set_status(Status::Pending, &mut ops).map_err(|e| e.to_string())?;
         task.set_entry(Utc.timestamp_opt(ctx.clock.now, 0).single(), &mut ops)
             .map_err(|e| e.to_string())?;
-        apply_changes(&mut task, &changes, &mut ops)
+        apply_changes(&mut task, &changes, &mut ops)?;
+        // `on-add`: the hook sees the task as the command built it and may change it or refuse.
+        let hooked = hk.add(Facts::from_task(&task))?;
+        apply_changes(&mut task, &hooked, &mut ops)
     }
     .await;
     if let Err(m) = result {
@@ -1003,7 +1023,7 @@ async fn add<S: Storage>(
         Some(n) => format!("Created task {n}."),
         None => format!("Created task {}.", &uuid.to_string()[..8]),
     };
-    Done { result: changed(&after, &[uuid], msg), wrote: true, command: None, config: None }
+    Done { result: changed(&after, &[uuid], msg), wrote: true, command: None, config: None, feedback: Vec::new() }
 }
 
 async fn builtin<S: Storage>(
@@ -1016,6 +1036,7 @@ async fn builtin<S: Storage>(
     args: &[String],
     opts: Options,
     undo: &mut UndoStack,
+    hk: &crate::hooks::Runner,
 ) -> Done {
     match kind {
         Sync => ok(CliResult::Text {
@@ -1344,11 +1365,11 @@ async fn builtin<S: Storage>(
                 return error(e.to_string());
             }
             undo.0.pop();
-            Done { result: CliResult::Text { lines: vec!["Undone.".into()] }, wrote: true, command: None, config: None }
+            Done { result: CliResult::Text { lines: vec!["Undone.".into()] }, wrote: true, command: None, config: None, feedback: Vec::new() }
         }
         // Everything that writes to selected tasks.
         Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend => {
-            write_selected(replica, cfg, ctx, all, kind, p, opts, undo).await
+            write_selected(replica, cfg, ctx, all, kind, p, opts, undo, hk).await
         }
         Add => unreachable!("handled earlier"),
     }
@@ -1363,6 +1384,7 @@ async fn write_selected<S: Storage>(
     p: &Parsed,
     opts: Options,
     undo: &mut UndoStack,
+    hk: &crate::hooks::Runner,
 ) -> Done {
     // Taskwarrior's safety net: a command that changes tasks, given no filter, would change them
     // all (finished and deleted ones too). `allow.empty.filter` forbids that; otherwise it asks,
@@ -1669,6 +1691,12 @@ async fn write_selected<S: Storage>(
                 }
                 _ => unreachable!(),
             }
+            // `on-modify`: the hook sees the task as it was and as the command leaves it, and may
+            // change it or refuse.
+            if changed {
+                let hooked = hk.modify(f, Facts::from_task(&task))?;
+                apply_changes(&mut task, &hooked, &mut ops)?;
+            }
             // An instance's state is mirrored in its parent's mask (`+` done, `X` deleted, ...).
             if changed {
                 if let (Some(parent), Some(index)) = (f.parent, f.imask) {
@@ -1750,7 +1778,7 @@ async fn write_selected<S: Storage>(
         message.push_str(&format!(" Repaired the dependencies of {}.", plural(repaired.len(), "task")));
         touched.extend(repaired);
     }
-    Done { result: changed(&after, &touched, message), wrote: true, command: None, config: None }
+    Done { result: changed(&after, &touched, message), wrote: true, command: None, config: None, feedback: Vec::new() }
 }
 
 /// The rest of `f`'s recurring series: for a template its pending instances; for an instance its

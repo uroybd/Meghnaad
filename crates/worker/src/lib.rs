@@ -211,6 +211,8 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
             extras: body.extras,
             typed,
             seed: now as u64,
+            // The hooks in tc-core's `hooks.rs`.
+            hooks: None,
         },
         &mut st.undo,
     )
@@ -235,7 +237,12 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
             };
         }
     }
-    json(&serde_json::json!({ "wrote": done.wrote, "result": result, "command": done.command }))
+    json(&serde_json::json!({
+        "wrote": done.wrote,
+        "result": result,
+        "command": done.command,
+        "feedback": done.feedback,
+    }))
 }
 
 async fn get_config(ctx: RouteContext<()>) -> RouteResult {

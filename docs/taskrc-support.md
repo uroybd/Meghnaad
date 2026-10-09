@@ -29,7 +29,7 @@ Each row below counts once, even where a row covers several related options.
 
 | Area | Done | Partial | Not done | N/A | Blocked |
 | --- | --- | --- | --- | --- | --- |
-| Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
+| Files, hooks and environment | 2 | 1 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
 | Commands, aliases and matching | 4 | 1 | 0 | 0 | 0 |
 | Confirmations and safety | 3 | 0 | 0 | 0 | 0 |
@@ -46,7 +46,7 @@ Each row below counts once, even where a row covers several related options.
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **81** | **2** | **2** | **15** | **1** |
+| **Total** | **81** | **3** | **2** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -58,7 +58,8 @@ Each row below counts once, even where a row covers several related options.
 | `purge.on-sync` | Not done | The app never purges deleted tasks. Leave that to your CLI |
 | `data.location`, `TASKDATA` | N/A | Data lives in the R2 bucket |
 | `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; settings are saved in the bucket |
-| `hooks`, `hooks.location`, `debug.hooks` | N/A | A Worker can't run local programs, so `on-add`/`on-modify` hooks can't work |
+| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A Worker can't run scripts, so the hooks are Rust functions in `crates/tc-core/src/hooks.rs`, compiled into the Worker: `on_launch`, `on_add`, `on_modify` and `on_exit`. See [Hooks](using.md#hooks) |
+| `hooks.location`, `debug.hooks` | N/A | There is no hooks directory to look in, and no scripts to trace |
 | `gc` | N/A | Working-set ids are computed by the app, not stored |
 | `exit.on.missing.db` | N/A | There is no local database |
 

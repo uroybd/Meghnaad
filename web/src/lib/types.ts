@@ -217,8 +217,13 @@ export interface CommandInfo {
   filter: string[];
 }
 
+/** A line a hook printed (see `hooks.rs`). */
+export interface HookLine { kind: 'info' | 'warn'; text: string }
+
 export interface CliResponse {
   wrote: boolean;
+  /** What the hooks printed while running this command. */
+  feedback?: HookLine[];
   result: CliResult;
   command: CommandInfo | null;
 }

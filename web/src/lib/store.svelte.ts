@@ -1,7 +1,7 @@
 import { ApiError, getConfig, runCli, type Answers, type CliInput } from './api';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
-import type { CliResponse, CliResult, ConfigResponse, ReportMeta, Row } from './types';
+import type { CliResponse, CliResult, ConfigResponse, HookLine, ReportMeta, Row } from './types';
 
 export interface Entry {
   id: number;
@@ -13,6 +13,8 @@ export interface Entry {
   /** Transport-level failure (not a command error, which arrives as an `error` result). */
   failure: string | null;
   at: number;
+  /** What the hooks printed while this command ran. */
+  feedback?: HookLine[];
   /** What was already answered on this command, for the questions that follow the first. */
   answers?: Answers;
 }
@@ -43,6 +45,14 @@ export function shortenUuids(s: string): string {
 
 function titleOf(input: CliInput): string {
   return input.args ? previewLine(input.args) : `task ${input.line ?? ''}`.trim();
+}
+
+function hookText(lines: HookLine[]): string {
+  return lines.map((l) => l.text).join(' · ');
+}
+
+function hookKind(lines: HookLine[] | undefined): Toast['kind'] {
+  return lines?.some((l) => l.kind === 'warn') ? 'err' : 'ok';
 }
 
 class Store {
@@ -227,6 +237,7 @@ class Store {
     try {
       const res = await runCli({ ...e.input, ...answers });
       e.result = res.result;
+      e.feedback = res.feedback;
       if (res.result.kind === 'report') this.#learn(res.result.rows);
       if (res.result.kind === 'info') this.#learn(res.result.tasks);
       if (res.wrote) this.written();
@@ -274,6 +285,8 @@ class Store {
     if (res?.command?.report && res.result.kind === 'report' && !inConsole) {
       this.entries = this.entries.filter((x) => x.id !== e.id);
       this.focusReport(res.command.name, res.command.filter, e);
+      // The entry that would have shown them is gone.
+      if (res.feedback?.length) this.notify(hookText(res.feedback), hookKind(res.feedback));
     } else if (res?.wrote && this.live) {
       // A write from the console changed what the focused report shows.
       void this.refresh(this.live);
@@ -351,9 +364,11 @@ class Store {
     try {
       const res = await runCli({ args, ...answers });
       const r = res.result;
-      if (r.kind === 'error') this.notify(r.message, 'err');
-      else if (r.kind === 'changed') this.notify(r.message);
-      else if (r.kind === 'text') this.notify(r.lines.join(' '));
+      // What a hook said goes with the outcome, in the same toast.
+      const said = res.feedback?.length ? ` ${hookText(res.feedback)}` : '';
+      if (r.kind === 'error') this.notify(r.message + said, 'err');
+      else if (r.kind === 'changed') this.notify(r.message + said, hookKind(res.feedback));
+      else if (r.kind === 'text') this.notify(r.lines.join(' ') + said);
       else if (r.kind === 'confirm') {
         // Ask, then repeat the command with the answer. A GUI action touches one task, so this is
         // one question; a longer list (rare) is answered as a whole.

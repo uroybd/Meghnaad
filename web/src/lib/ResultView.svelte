@@ -55,6 +55,11 @@
 {:else if r.kind === 'error'}
   <p class="err" role="alert">{r.message}</p>
 {/if}
+{#if entry.feedback?.length}
+  <ul class="said" aria-label="Hooks">
+    {#each entry.feedback as l}<li class:warn={l.kind === 'warn'}>{l.text}</li>{/each}
+  </ul>
+{/if}
 
 <style>
   .footer { display: flex; flex-wrap: wrap; gap: 0 0.7em; margin: 6px 0; }
@@ -66,6 +71,8 @@
   th { color: var(--dim); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); }
   /* A setting changed from its default (`show`). */
   tr.mod td { color: var(--accent); font-weight: 600; }
+  .said { list-style: none; margin: 4px 0; padding: 0; color: var(--dim); font-size: 13px; }
+  .said .warn { color: var(--warn); }
   .changed { margin: 0; padding-left: 18px; color: var(--dim); }
   p { margin: 4px 0; }
 </style>
