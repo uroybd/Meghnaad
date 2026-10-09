@@ -1,0 +1,76 @@
+# Tests and lint on every push to main and every pull request. (Deploying is a separate, manual workflow.)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch or PR replaces the run still going for the old one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust (format, tests, clippy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      # rustfmt.toml in the repository root sets the style (120 columns). Run `cargo fmt` to fix.
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Test
+        run: cargo test --workspace
+
+      # `-D warnings`: the code is clippy-clean, keep it that way. The Worker is built for WebAssembly,
+      # so it is linted for that target.
+      - name: Clippy (engine)
+        run: cargo clippy -p tc-core --all-targets -- -D warnings
+
+      - name: Clippy (Worker, WebAssembly)
+        run: cargo clippy -p tw-worker --target wasm32-unknown-unknown -- -D warnings
+
+  web:
+    name: Web app and scripts (format, lint, tests, type check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Prettier and ESLint (config in .prettierrc.json and eslint.config.js). Run `npm run format` to fix.
+      - name: Format and lint
+        run: npm run lint:js
+
+      - name: Type and accessibility check
+        run: npm run check
+
+      - name: Web tests
+        run: npm --prefix web test
+
+      - name: Deploy-script tests
+        run: node --test scripts/*.test.mjs
+
+      # The app has to build, not just pass its tests.
+      - name: Build
+        run: npm run build:web

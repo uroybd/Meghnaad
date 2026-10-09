@@ -229,6 +229,8 @@ docs/             the guides above
 ```bash
 npm test                      # cargo test + the web unit tests + the deploy-script tests
 npm run check                 # svelte-check (types, accessibility)
+npm run lint                  # rustfmt + clippy (warnings are errors) + Prettier + ESLint; `lint:rust`, `lint:js` for one half
+npm run format                # cargo fmt and Prettier, fixing in place
 npm run test:auth             # Cloudflare Access: forged, expired, wrong-audience tokens... all refused
 ./scripts/interop-local.sh    # real `task` ⇄ the Worker against one local S3 bucket, both directions
 ```
@@ -236,6 +238,9 @@ npm run test:auth             # Cloudflare Access: forged, expired, wrong-audien
 `interop-local.sh` needs `task`, the `aws` CLI, `sqlite3`, a built Worker and a local S3-compatible server that enforces
 conditional writes, for example `docker run -d --name tw-s3 -p 18333:8333 chrislusf/seaweedfs server -s3 -dir=/data`.
 It is self-contained and does not touch a dev server you have running.
+
+Pushes to `main` and pull requests run the tests, formatting, linting (Rust and web) and the type check on GitHub (`.github/workflows/ci.yml`);
+deploying is the separate, manual workflow in [Deploying](docs/deploy.md#d-from-github-actions-manual).
 
 **Taskwarrior's behaviour is ported from its source and checked against the real `task`**, so when changing filters,
 sorting, urgency, dates or confirmations, read the C++ first and compare. [Architecture](docs/architecture.md) explains
