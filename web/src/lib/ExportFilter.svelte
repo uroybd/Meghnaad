@@ -30,7 +30,7 @@
   async function load(f: string) {
     const mine = ++seq;
     try {
-      const r = (await runCli({ args: [...splitWords(f), 'export'] })).result;
+      const r = (await runCli({ args: [...splitWords(f), '_rows'] })).result;
       if (mine !== seq) return; // a newer filter was asked for meanwhile
       if (r.kind === 'error') throw new Error(r.message);
       onresult({ rows: r.kind === 'json' ? (r.value as Row[]) : null, error: null });

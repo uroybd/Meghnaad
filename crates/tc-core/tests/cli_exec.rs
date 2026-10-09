@@ -778,11 +778,11 @@ async fn the_limit_setting_never_hides_tasks_from_export_count_or_info() {
     }
     let (res, _) = run(&mut r, &cfg, "count").await;
     assert_eq!(message(&res), "5");
-    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "export").await else {
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "_rows").await else {
         panic!("not json")
     };
     assert_eq!(value.as_array().unwrap().len(), 5);
-    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "status:pending export").await else {
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "status:pending _rows").await else {
         panic!("not json")
     };
     assert_eq!(
@@ -1429,7 +1429,7 @@ async fn read_commands() {
     };
     assert_eq!(tasks.len(), 1, "a bare id means info");
 
-    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "project:Home export").await else {
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "project:Home _rows").await else {
         panic!()
     };
     assert_eq!(value.as_array().unwrap().len(), 2);
@@ -1902,7 +1902,7 @@ mod overrides_and_journal {
         let cfg = Config::default();
         let mut r = replica();
         run(&mut r, &cfg, "add Alpha").await;
-        let (res, _) = run(&mut r, &cfg, "export").await;
+        let (res, _) = run(&mut r, &cfg, "_rows").await;
         let CliResult::Json { value } = res else {
             panic!("{res:?}")
         };
@@ -3395,5 +3395,301 @@ mod hooks {
         assert!(d.wrote && d.feedback.is_empty());
         let all = load_facts(&mut r).await.unwrap();
         assert!(all.iter().any(|f| f.parent.is_some()) && all.iter().any(|f| f.description == "Free"));
+    }
+}
+
+mod export_command {
+    use super::*;
+
+    fn file(res: &CliResult) -> (&str, &str, usize) {
+        let CliResult::File { name, text, count, .. } = res else {
+            panic!("not a file: {res:?}")
+        };
+        (name, text, *count)
+    }
+
+    #[tokio::test]
+    async fn export_is_taskwarriors_json_in_a_file_with_the_ids_and_urgency_added() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Pay rent/bills project:Home +b due:2026-12-25").await;
+        run(&mut r, &cfg, "add Second").await;
+        run(&mut r, &cfg, "2 done").await;
+        let (res, wrote) = run(&mut r, &cfg, "export").await;
+        assert!(!wrote);
+        let (name, text, count) = file(&res);
+        assert!(name.starts_with("tasks-") && name.ends_with(".json"), "{name}");
+        assert_eq!(count, 2);
+        let v: serde_json::Value = serde_json::from_str(text).expect("a JSON array");
+        let tasks = v.as_array().unwrap();
+        // Finished tasks (no id) come first, as in Taskwarrior.
+        assert_eq!(tasks[0]["description"], "Second");
+        assert_eq!(tasks[0]["id"], 0);
+        assert_eq!(tasks[1]["id"], 1);
+        assert_eq!(tasks[1]["project"], "Home");
+        assert_eq!(
+            tasks[1]["uuid"].as_str().map(str::len),
+            Some(36),
+            "the uuid is in it: {text}"
+        );
+        assert_eq!(tasks[1]["tags"][0], "b");
+        assert_eq!(tasks[1]["due"], "20261225T000000Z");
+        assert!(tasks[1]["urgency"].is_number());
+        // One task per line, `/` escaped, keys in Taskwarrior's order.
+        assert!(text.starts_with("[\n{\"id\":0,\"description\":\"Second\""), "{text}");
+        assert!(text.contains("Pay rent\\/bills"), "{text}");
+        assert!(text.ends_with("}\n]\n"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn json_array_off_prints_one_task_per_line_and_nothing_selected_prints_an_empty_array() {
+        let mut r = replica();
+        let off = parse("json.array=off\n").config;
+        run(&mut r, &off, "add A").await;
+        run(&mut r, &off, "add B").await;
+        let (res, _) = run(&mut r, &off, "export").await;
+        let (_, text, _) = file(&res);
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.lines().all(|l| l.starts_with('{') && l.ends_with('}')), "{text}");
+        let (res, _) = run(&mut r, &off, "description:nothing export").await;
+        assert_eq!(file(&res).1, "");
+        let (res, _) = run(&mut r, &Config::default(), "description:nothing export").await;
+        assert_eq!(file(&res).1, "[\n]\n");
+        // `rc.json.array:off` is the same for one command.
+        let (res, _) = run(&mut r, &Config::default(), "rc.json.array:off export").await;
+        assert_eq!(file(&res).1.lines().count(), 2);
+    }
+
+    #[tokio::test]
+    async fn export_takes_a_filter_and_a_report_name() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Keep project:Home").await;
+        run(&mut r, &cfg, "add Other project:Work").await;
+        run(&mut r, &cfg, "add Gone project:Home").await;
+        run(&mut r, &cfg, "3 done").await;
+        let (res, _) = run(&mut r, &cfg, "project:Home export").await;
+        assert_eq!(file(&res).2, 2);
+        // The report's own filter applies: `next` leaves out what is finished.
+        let (res, _) = run(&mut r, &cfg, "export next").await;
+        let (_, text, count) = file(&res);
+        assert_eq!(count, 2, "{text}");
+        assert!(!text.contains("Gone"));
+        let (res, _) = run(&mut r, &cfg, "project:Home export next").await;
+        assert_eq!(file(&res).2, 1);
+    }
+
+    #[tokio::test]
+    async fn information_is_info_and_so_is_any_abbreviation_of_either() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Look at me").await;
+        for line in ["1 info", "1 information", "1 infor", "info 1"] {
+            let (res, _) = run(&mut r, &cfg, line).await;
+            assert!(matches!(res, CliResult::Info { .. }), "{line}: {res:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn show_lists_json_array_among_the_settings() {
+        let mut r = replica();
+        let (res, _) = run(&mut r, &Config::default(), "show json").await;
+        let CliResult::Table(t) = res else { panic!("{res:?}") };
+        assert_eq!(t.rows[0], ["json.array", "1"]);
+    }
+}
+
+mod activity_reports {
+    use super::*;
+
+    fn table(res: CliResult) -> tc_core::cli::TableOut {
+        let CliResult::Table(t) = res else {
+            panic!("not a table: {res:?}")
+        };
+        t
+    }
+
+    #[tokio::test]
+    async fn history_counts_what_was_added_and_finished_this_month() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add One").await;
+        run(&mut r, &cfg, "add Two").await;
+        run(&mut r, &cfg, "add Three").await;
+        run(&mut r, &cfg, "description:One done").await;
+        run_yes(&mut r, &cfg, "description:Two delete").await;
+        for cmd in ["history.monthly", "history.annual", "history.daily", "history.weekly"] {
+            let t = table(run(&mut r, &cfg, cmd).await.0);
+            // The last three columns before Net are Added, Completed, Deleted; one period holds it all.
+            let n = t.headers.len();
+            assert_eq!(&t.headers[n - 4..], ["Added", "Completed", "Deleted", "Net"], "{cmd}");
+            assert_eq!(&t.rows[0][n - 4..], ["3", "1", "1", "1"], "{cmd}: {:?}", t.rows[0]);
+            assert_eq!(t.rows.last().unwrap()[n - 5], "Average", "{cmd}");
+            assert!(t.right.contains(&(n - 1)), "numbers on the right");
+        }
+        // A filter narrows it, and the graph says what the marks mean.
+        let (res, _) = run(&mut r, &cfg, "description:One ghistory.monthly").await;
+        let CliResult::Text { lines } = res else {
+            panic!("{res:?}")
+        };
+        assert!(lines[0].starts_with("Year Month") && lines[0].ends_with("Number Added/Completed/Deleted"));
+        assert!(lines[1].contains('+') && lines[1].contains('X'), "{lines:?}");
+        assert_eq!(lines.last().unwrap(), "Legend: + Added, X Completed, - Deleted");
+        // Nothing selected is said in words.
+        let (res, _) = run(&mut r, &cfg, "description:nothing history.monthly").await;
+        assert_eq!(message(&res), "No tasks.");
+    }
+
+    #[tokio::test]
+    async fn a_recurring_template_is_not_counted_as_added() {
+        let mut r = replica();
+        let cfg = parse("recurrence=off\n").config;
+        run(&mut r, &cfg, "add Water recur:weekly due:2026-12-25").await;
+        run(&mut r, &cfg, "add Plain").await;
+        let t = table(run(&mut r, &cfg, "history.annual").await.0);
+        assert_eq!(t.rows[0][1], "1", "{:?}", t.rows[0]);
+    }
+
+    #[tokio::test]
+    async fn the_timesheet_shows_the_last_four_weeks_unless_given_a_filter() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Finished project:Home").await;
+        run(&mut r, &cfg, "add Working").await;
+        run(&mut r, &cfg, "add Idle").await;
+        run(&mut r, &cfg, "description:Finished done").await;
+        run(&mut r, &cfg, "description:Working start").await;
+        let t = table(run(&mut r, &cfg, "timesheet").await.0);
+        assert_eq!(
+            t.headers,
+            ["Wk", "Date", "Day", "ID", "Action", "Project", "Due", "Task"]
+        );
+        let actions: Vec<&str> = t.rows.iter().map(|r| r[4].as_str()).collect();
+        assert_eq!(actions.iter().filter(|a| **a == "Completed").count(), 1, "{actions:?}");
+        assert_eq!(actions.iter().filter(|a| **a == "Started").count(), 1, "{actions:?}");
+        assert!(
+            t.rows.iter().all(|r| r[7] != "Idle"),
+            "a task neither started nor finished is left out: {:?}",
+            t.rows
+        );
+        assert_eq!(t.footer, ["1 completed, 1 started."]);
+        // Given a filter, only that filter applies, so the idle task comes in (listed under 1970, as there).
+        let t = table(run(&mut r, &cfg, "project:none timesheet").await.0);
+        assert!(t.rows.is_empty());
+        let t = table(run(&mut r, &cfg, "description:Idle timesheet").await.0);
+        assert_eq!(t.rows[0][1], "1970-01-01");
+    }
+
+    #[tokio::test]
+    async fn report_timesheet_filter_and_context_are_settings() {
+        let mut r = replica();
+        let cfg = parse("report.timesheet.filter=status:pending\n").config;
+        run(&mut r, &cfg, "add Idle").await;
+        let t = table(run(&mut r, &cfg, "timesheet").await.0);
+        assert_eq!(t.rows.len(), 1, "{:?}", t.rows);
+        // `rc.` does the same for one command, and the setting shows in `show`.
+        let t = table(
+            run(
+                &mut r,
+                &Config::default(),
+                "rc.report.timesheet.filter:status:pending timesheet",
+            )
+            .await
+            .0,
+        );
+        assert_eq!(t.rows.len(), 1);
+        let (res, _) = run(&mut r, &cfg, "show report.timesheet").await;
+        let shown = table(res);
+        let filter = shown
+            .rows
+            .iter()
+            .position(|r| r[0] == "report.timesheet.filter")
+            .expect("listed");
+        assert_eq!(shown.rows[filter], ["report.timesheet.filter", "status:pending"]);
+        assert!(
+            shown.highlight.contains(&filter),
+            "changed from the default, so highlighted"
+        );
+        let context = shown
+            .rows
+            .iter()
+            .find(|r| r[0] == "report.timesheet.context")
+            .expect("listed");
+        assert_eq!(context[1], "0");
+        // The active context applies only if `report.timesheet.context` says so.
+        let ctx =
+            parse("context.work.read=project:Work\ncontext=work\nreport.timesheet.filter=status:pending\n").config;
+        let t = table(run(&mut r, &ctx, "timesheet").await.0);
+        assert_eq!(t.rows.len(), 1, "the context is not applied");
+        let ctx = parse(
+            "context.work.read=project:Work\ncontext=work\nreport.timesheet.filter=status:pending\nreport.timesheet.context=1\n",
+        )
+        .config;
+        let t = table(run(&mut r, &ctx, "timesheet").await.0);
+        assert!(t.rows.is_empty(), "now it is");
+    }
+}
+
+mod report_defaults {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// `task show report.` on a fresh Taskwarrior 3.5.0, name to value.
+    fn real() -> BTreeMap<String, String> {
+        serde_json::from_str(include_str!("data/report_defaults_real.json")).unwrap()
+    }
+
+    #[tokio::test]
+    async fn every_built_in_report_has_taskwarriors_own_defaults() {
+        let mut r = replica();
+        let (res, _) = run(&mut r, &Config::default(), "show report.").await;
+        let CliResult::Table(t) = res else { panic!("{res:?}") };
+        let ours: BTreeMap<String, String> = t
+            .rows
+            .iter()
+            .filter(|row| !row[0].starts_with(' '))
+            .map(|row| (row[0].clone(), row[1].clone()))
+            .collect();
+        let real = real();
+        let mut diffs = Vec::new();
+        for (k, v) in &real {
+            match ours.get(k) {
+                None => diffs.push(format!("missing  {k} = {v}")),
+                Some(o) if o != v => diffs.push(format!("differs  {k}\n    real: {v}\n    ours: {o}")),
+                _ => {}
+            }
+        }
+        for k in ours.keys().filter(|k| !real.contains_key(*k)) {
+            diffs.push(format!("extra    {k} = {}", ours[k]));
+        }
+        assert!(
+            diffs.is_empty(),
+            "{} differences from the real defaults:\n{}",
+            diffs.len(),
+            diffs.join("\n")
+        );
+    }
+
+    #[tokio::test]
+    async fn every_built_in_report_runs_with_its_default_columns() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(
+            &mut r,
+            &cfg,
+            "add Plain project:Home +a priority:H due:2026-01-01 until:2030-01-01",
+        )
+        .await;
+        run(&mut r, &cfg, "add Waits wait:2030-01-01 scheduled:2029-01-01").await;
+        run(&mut r, &cfg, "add Blocked depends:1").await;
+        run(&mut r, &cfg, "add Water recur:weekly due:2026-12-25").await;
+        run(&mut r, &cfg, "add Done project:Home").await;
+        run(&mut r, &cfg, "description:Done done").await;
+        run(&mut r, &cfg, "description:Plain annotate a note").await;
+        run(&mut r, &cfg, "description:Plain start").await;
+        for name in tc_core::report::BUILTIN_NAMES {
+            let (res, _) = run(&mut r, &cfg, name).await;
+            assert!(matches!(res, CliResult::Report(_)), "{name}: {res:?}");
+        }
     }
 }

@@ -209,12 +209,23 @@ export interface TableResult {
   title: string | null;
   footer?: string[];
   /** Indexes of rows to emphasise (settings changed from their default). */ highlight?: number[];
+  /** Columns of numbers, drawn aligned to the right. */
+  right?: number[];
   headers: string[];
   rows: string[][];
 }
 export interface TextResult {
   kind: 'text';
   lines: string[];
+}
+/** A file to offer as a download (`export`). */
+export interface FileResult {
+  kind: 'file';
+  name: string;
+  mime: string;
+  text: string;
+  /** How many tasks are in it. */
+  count: number;
 }
 export interface JsonResult {
   kind: 'json';
@@ -259,6 +270,7 @@ export type CliResult =
   | BurndownResult
   | TextResult
   | JsonResult
+  | FileResult
   | ChangedResult
   | ConfirmResult
   | ErrorResult;

@@ -50,7 +50,18 @@ pub enum Kind {
     Reports,
     Contexts,
     Show,
+    Timesheet,
+    HistoryDaily,
+    HistoryWeekly,
+    HistoryMonthly,
+    HistoryAnnual,
+    GHistoryDaily,
+    GHistoryWeekly,
+    GHistoryMonthly,
+    GHistoryAnnual,
     Export,
+    /// `_rows`: the app's own view of the selected tasks (what the pages draw from); not Taskwarrior's.
+    Rows,
     Ids,
     Uuids,
     Undo,
@@ -92,7 +103,18 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("reports", Reports, false),
     ("contexts", Contexts, false),
     ("show", Show, false),
+    ("timesheet", Timesheet, false),
+    ("history.daily", HistoryDaily, false),
+    ("history.weekly", HistoryWeekly, false),
+    ("history.monthly", HistoryMonthly, false),
+    ("history.annual", HistoryAnnual, false),
+    ("ghistory.daily", GHistoryDaily, false),
+    ("ghistory.weekly", GHistoryWeekly, false),
+    ("ghistory.monthly", GHistoryMonthly, false),
+    ("ghistory.annual", GHistoryAnnual, false),
     ("export", Export, false),
+    ("_rows", Rows, false),
+    ("information", Info, false),
     ("ids", Ids, false),
     ("uuids", Uuids, false),
     ("undo", Undo, false),
@@ -158,6 +180,8 @@ fn match_command(word: &str, cfg: &Config) -> Result<Option<(Cmd, bool)>, String
     match hits.as_slice() {
         [] => Ok(None),
         [(_, c, m)] => Ok(Some((c.clone(), *m))),
+        // `inf` is `info` and `information` both: the same command, so not a clash.
+        [(_, c, m), rest @ ..] if rest.iter().all(|(_, other, _)| other == c) => Ok(Some((c.clone(), *m))),
         many => {
             // Only complain if the user's word could not be a plain description word elsewhere.
             let list: Vec<&str> = many.iter().map(|(n, ..)| n.as_str()).collect();
@@ -271,6 +295,9 @@ pub struct TableOut {
     /// Rows to highlight (`show` marks the settings you changed).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub highlight: Vec<usize>,
+    /// Columns of numbers, which read better aligned to the right.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub right: Vec<usize>,
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
 }
@@ -301,6 +328,14 @@ pub enum CliResult {
     Burndown(Box<crate::burndown::BurndownOut>),
     Text {
         lines: Vec<String>,
+    },
+    /// A file for the browser to offer as a download (`export`).
+    File {
+        name: String,
+        mime: String,
+        text: String,
+        /// How many tasks are in it.
+        count: usize,
     },
     Json {
         value: serde_json::Value,
@@ -1078,6 +1113,80 @@ async fn execute_inner<S: Storage>(
     }
 }
 
+/// `task [filter] export [report]`: the tasks as Taskwarrior's own JSON, ready for `task import`. With a
+/// report name the report's filter, sort and limit apply; otherwise they come in id order (those without
+/// one, finished ones, first by uuid), as in `CmdExport`.
+async fn export<S: Storage>(
+    replica: &mut Replica<S>,
+    cfg: &Config,
+    ctx: &EvalCtx<'_>,
+    all: &[Facts],
+    p: &Parsed,
+) -> Done {
+    // One word that is not part of the filter and names a report is `export <report>`.
+    let (shaped, plain): (Vec<String>, Vec<String>) = p.filter.iter().cloned().partition(|w| filter_shaped(w));
+    let report = match plain.as_slice() {
+        [w] => match match_command(w, cfg) {
+            Ok(Some((Cmd::Report(name), _))) => Some(name),
+            _ => None,
+        },
+        _ => None,
+    };
+
+    let order: Vec<Uuid> = match report {
+        Some(name) => {
+            match run::run_report(&run::Request {
+                cfg,
+                clock: ctx.clock,
+                all,
+                report: &name,
+                filter: &shaped,
+                seed: 0,
+            }) {
+                Ok(o) => o.rows.iter().map(|r| r.facts.uuid).collect(),
+                Err(e) => return e.into(),
+            }
+        }
+        None => {
+            let (sel, limit) = match selected(all, ctx, cfg, &p.filter) {
+                Ok(s) => s,
+                Err(e) => return e.into(),
+            };
+            let mut sel = sel;
+            sel.sort_by_key(|f| (ctx.ids.get(&f.uuid).copied().unwrap_or(0), f.uuid));
+            if let Limit::N(n) = limit {
+                sel.truncate(n);
+            }
+            sel.iter().map(|f| f.uuid).collect()
+        }
+    };
+
+    let uda = |name: &str| cfg.udas.get(name).map(|d| d.ty);
+    let mut tasks = Vec::with_capacity(order.len());
+    for uuid in &order {
+        let data = match replica.get_task_data(*uuid).await {
+            Ok(Some(d)) => d,
+            Ok(None) => continue,
+            Err(e) => return error(e.to_string()),
+        };
+        let mut raw: BTreeMap<String, String> = data.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        // TaskChampion keeps the uuid beside the properties; Taskwarrior writes it as one of them.
+        raw.insert("uuid".into(), uuid.to_string());
+        let Some(f) = all.iter().find(|f| f.uuid == *uuid) else {
+            continue;
+        };
+        let id = ctx.ids.get(uuid).copied().unwrap_or(0);
+        tasks.push(crate::export::compose(&raw, id, ctx.urgency(f), &uda));
+    }
+    let (y, m, d, ..) = ctx.clock.ymd_hms(ctx.clock.now);
+    ok(CliResult::File {
+        name: format!("tasks-{y:04}-{m:02}-{d:02}.json"),
+        mime: "application/json".into(),
+        count: tasks.len(),
+        text: crate::export::render(&tasks, cfg.json_array()),
+    })
+}
+
 fn selected<'a>(
     all: &'a [Facts],
     ctx: &EvalCtx,
@@ -1259,6 +1368,7 @@ async fn builtin<S: Storage>(
         Reports => ok(CliResult::Table(TableOut {
             footer: vec![],
             highlight: vec![],
+            right: vec![],
             title: None,
             headers: vec!["Report".into(), "Description".into()],
             rows: report::names(cfg)
@@ -1272,6 +1382,7 @@ async fn builtin<S: Storage>(
         Udas => ok(CliResult::Table(TableOut {
             footer: vec![],
             highlight: vec![],
+            right: vec![],
             title: None,
             headers: ["Name", "Type", "Label", "Values", "Default"]
                 .map(String::from)
@@ -1298,6 +1409,7 @@ async fn builtin<S: Storage>(
         Contexts => ok(CliResult::Table(TableOut {
             footer: vec![],
             highlight: vec![],
+            right: vec![],
             title: None,
             headers: ["Context", "Read filter", "Write", "Active"].map(String::from).to_vec(),
             rows: cfg
@@ -1348,6 +1460,7 @@ async fn builtin<S: Storage>(
                 title: None,
                 footer: vec![],
                 highlight: vec![],
+                right: vec![],
                 headers: vec!["Column".into(), "Kind".into()],
                 rows,
             }))
@@ -1497,6 +1610,7 @@ async fn builtin<S: Storage>(
                         format!("({})", plural(quantity, "task"))
                     )],
                     highlight: vec![],
+                    right: vec![],
                     headers: vec!["Project".into(), "Tasks".into()],
                     rows,
                 }));
@@ -1516,6 +1630,7 @@ async fn builtin<S: Storage>(
                 title: None,
                 footer: vec![plural(counts.len(), "tag"), format!("({})", plural(before, "task"))],
                 highlight: vec![],
+                right: vec![],
                 headers: vec!["Tag".into(), "Count".into()],
                 rows: counts.into_iter().map(|(k, n)| vec![k, n.to_string()]).collect(),
             }))
@@ -1577,7 +1692,46 @@ async fn builtin<S: Storage>(
                 Err(m) => error(m),
             }
         }
-        Info | Count | Export | Ids | Uuids => {
+        Export => export(replica, cfg, ctx, all, p).await,
+        Timesheet => {
+            // With no filter of its own, the last four weeks (or `report.timesheet.filter`); and the active
+            // context only if `report.timesheet.context` says so.
+            let hasfilter = p.filter.iter().any(|w| !w.starts_with("rc."));
+            let filter = if hasfilter {
+                p.filter.clone()
+            } else {
+                split_words(&cfg.timesheet_filter())
+            };
+            let pool: Vec<&Facts> = all.iter().collect();
+            let (sel, _) = match select_from(&pool, ctx, cfg, &filter, cfg.timesheet_context()) {
+                Ok(s) => s,
+                Err(e) => return e.into(),
+            };
+            ok(CliResult::Table(crate::activity::timesheet(&sel, ctx.ids, &ctx.clock)))
+        }
+        HistoryDaily | HistoryWeekly | HistoryMonthly | HistoryAnnual | GHistoryDaily | GHistoryWeekly
+        | GHistoryMonthly | GHistoryAnnual => {
+            use crate::activity::Period;
+            let period = match kind {
+                HistoryDaily | GHistoryDaily => Period::Daily,
+                HistoryWeekly | GHistoryWeekly => Period::Weekly,
+                HistoryMonthly | GHistoryMonthly => Period::Monthly,
+                _ => Period::Annual,
+            };
+            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
+                Ok(s) => s,
+                Err(e) => return e.into(),
+            };
+            let result = if matches!(kind, GHistoryDaily | GHistoryWeekly | GHistoryMonthly | GHistoryAnnual) {
+                crate::activity::history_graph(&sel, period, &ctx.clock, 80).map(|lines| CliResult::Text { lines })
+            } else {
+                crate::activity::history_table(&sel, period, &ctx.clock).map(CliResult::Table)
+            };
+            ok(result.unwrap_or_else(|| CliResult::Text {
+                lines: vec!["No tasks.".into()],
+            }))
+        }
+        Info | Count | Rows | Ids | Uuids => {
             let (sel, limit) = match selected(all, ctx, cfg, &p.filter) {
                 Ok(s) => s,
                 Err(e) => return e.into(),
@@ -1610,7 +1764,7 @@ async fn builtin<S: Storage>(
                     }
                     ok(CliResult::Info { tasks })
                 }
-                Export => ok(CliResult::Json {
+                Rows => ok(CliResult::Json {
                     value: serde_json::to_value(sel.iter().map(|f| row(f)).collect::<Vec<_>>()).unwrap_or_default(),
                 }),
                 Ids => ok(CliResult::Text {
@@ -2180,6 +2334,7 @@ fn help(cfg: &Config) -> Vec<String> {
         String::new(),
         "Write:  add  modify  done  delete  start  stop  annotate  denotate  append  prepend  undo".into(),
         "Read:   info  count  projects  tags  udas  columns  reports  contexts  show  config  export  ids  uuids  calc".into(),
+        "Charts:  summary  calendar  burndown.daily|weekly|monthly|annual  history.daily|weekly|monthly|annual  ghistory.*  timesheet".into(),
         format!("Reports: {}", report::names(cfg).join(" ")),
         String::new(),
         "Filters:  project:Home  +tag  -tag  +OVERDUE  due.before:eow  priority:H  /text/  3  1-4,7".into(),

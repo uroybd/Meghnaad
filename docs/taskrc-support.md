@@ -42,11 +42,11 @@ Each row below counts once, even where a row covers several related options.
 | Colour | 0 | 0 | 0 | 1 | 0 |
 | Urgency | 17 | 0 | 0 | 0 | 0 |
 | Defaults | 5 | 0 | 0 | 0 | 0 |
-| Reports | 8 | 0 | 0 | 0 | 0 |
+| Reports | 10 | 0 | 0 | 0 | 0 |
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **81** | **3** | **2** | **15** | **1** |
+| **Total** | **83** | **3** | **2** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -125,7 +125,7 @@ Terminal output, and tools for debugging the command line client.
 | `nag` | N/A | The reminder printed after a command in a terminal |
 | `annotation.info` | Partial | In Taskwarrior it decides whether `task info` shows annotations. The detail view here always shows them, like opening a file, so the setting is not read |
 | `indent.annotation`, `indent.report`, `row.padding`, `column.padding`, `print.empty.columns` | N/A | Terminal layout |
-| `xterm.title`, `_forcecolor`, `json.array` | N/A | Terminal behaviour. `export` prints a JSON array |
+| `xterm.title`, `_forcecolor` | N/A | Terminal behaviour |
 | `debug`, `debug.parser`, `obfuscate` | N/A | Debugging aids for the CLI |
 
 ## Dates and calendar
@@ -220,7 +220,10 @@ inheritance rules, which follow Taskwarrior's source.
 | `report.<name>.filter` | Done | |
 | `report.<name>.context` | Done | |
 | `report.<name>.dateformat` | Done | |
-| Built-in reports | Done | `next`, `list`, `long`, `ls`, `all`, `completed`, `waiting`, `newest`, `oldest`, `overdue`, `active`, `ready`, `recurring`, `blocked`, `unblocked`, `blocking`, `minimal`, with Taskwarrior's own columns, labels, filters and sorts. Any of them can be overridden one attribute at a time from the taskrc |
+| `json.array` | Done | Whether `export` wraps its tasks in a JSON array (the default, `[` then one task per line then `]`) or prints one task per line. `rc.json.array:off` works for one command |
+| `report.timesheet.filter` | Done | What `timesheet` shows when you give it no filter. Taskwarrior's own default is the pending tasks started, and the completed tasks ended, in the last four weeks |
+| `report.timesheet.context` | Done | Whether the active context applies to `timesheet`. As in Taskwarrior it does not, unless this is on |
+| Built-in reports | Done | `next`, `list`, `long`, `ls`, `all`, `completed`, `waiting`, `newest`, `oldest`, `overdue`, `active`, `ready`, `recurring`, `blocked`, `unblocked`, `blocking`, `minimal`, with Taskwarrior 3.5.0's own columns, labels, filters, sorts and descriptions. A test compares every one with what `task show report.` prints on a fresh install, and the interop script checks that each picks and orders the same tasks as the real CLI. Any of them can be overridden one attribute at a time from the taskrc |
 
 ## User defined attributes
 
@@ -261,4 +264,4 @@ Two "Not done" rows remain, and neither can change in a browser:
 1. `include <file>`: a browser can't read a file, so this stays a paste-in step.
 2. `purge.on-sync`: the app never purges deleted tasks; that is left to the CLI.
 
-Beyond the taskrc, the commands `history.*`, `ghistory.*`, `edit` and `purge` are not in the app.
+Beyond the taskrc, the commands `edit`, `purge` and `colors` are not in the app.

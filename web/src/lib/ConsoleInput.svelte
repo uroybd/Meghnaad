@@ -57,13 +57,15 @@
     store.run({ line: l });
   }
 
-  /** `show` and `config` have no page of their own; they only ever answer in the Console. */
+  /** Commands with no page of their own: they only ever answer in the Console. */
+  const CONSOLE_ONLY = new Set(['show', 'config', 'export', 'timesheet', 'information']);
+
   function consoleOnly(l: string): boolean {
     const words = l
       .replace(/^task\s+/, '')
       .split(/\s+/)
       .filter((w) => !w.startsWith('rc.'));
-    return words.some((w) => w === 'show' || w === 'config');
+    return words.some((w) => CONSOLE_ONLY.has(w) || /^g?history\./.test(w));
   }
 
   /** Cheap client-side guess, only to avoid flashing the Console tab for a report. */

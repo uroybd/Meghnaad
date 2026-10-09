@@ -70,7 +70,7 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | **Tasks** | `model`, `filter`, `modify`, `dates`, `rx`, `recur` | A plain view of a task; filter expressions; planning `modify`/`add`; Taskwarrior's date and duration parsing; Taskwarrior's regular expressions; recurring tasks |
 | **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
-| **Views** | `summary`, `calendar`, `burndown`, `calc` | The `summary`, `calendar`, `burndown.*` and `calc` commands, each a port of its Taskwarrior counterpart |
+| **Views** | `summary`, `calendar`, `burndown`, `activity`, `calc`, `export` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `calc` and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; the app's pages use a separate, hidden `_rows` |
 | **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
 | **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` commands that list and edit it under the same rules |
 

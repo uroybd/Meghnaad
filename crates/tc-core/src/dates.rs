@@ -51,6 +51,71 @@ impl DateFormat {
         &self.buf[..self.len as usize]
     }
 
+    /// `Datetime::toString`: `ts` written in this pattern (the default `Y-M-D` when there is none), in the
+    /// clock's zone. The letters are the ones `parse` reads, plus `V`/`v` (week), `J`/`j` (day of the year) and
+    /// `w` (weekday, Sunday 0); anything else is copied as it is.
+    pub fn format(&self, ts: i64, clock: &Clock) -> String {
+        use taskchampion::chrono::Datelike;
+        const DAYS: [&str; 7] = [
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+        ];
+        const MONTHS: [&str; 12] = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ];
+        let (y, m, d, h, mi, s) = clock.ymd_hms(ts);
+        let wday = clock.day_of_week(ts) as usize;
+        let date = NaiveDate::from_ymd_opt(y, m, d);
+        let yday = date.map_or(1, |n| n.ordinal());
+        let week = date.map_or(0, |n| crate::calendar::week_number(n, clock.week_starts_monday));
+        let default = Self::default_pattern();
+        let pattern = if self.len == 0 { default.bytes() } else { self.bytes() };
+        let mut out = String::new();
+        for &c in pattern {
+            match c {
+                b'm' => out.push_str(&m.to_string()),
+                b'M' => out.push_str(&format!("{m:02}")),
+                b'd' => out.push_str(&d.to_string()),
+                b'D' => out.push_str(&format!("{d:02}")),
+                b'y' => out.push_str(&format!("{:02}", y.rem_euclid(100))),
+                b'Y' => out.push_str(&y.to_string()),
+                b'a' => out.push_str(&DAYS[wday][..3]),
+                b'A' => out.push_str(DAYS[wday]),
+                b'b' => out.push_str(&MONTHS[m as usize - 1][..3]),
+                b'B' => out.push_str(MONTHS[m as usize - 1]),
+                b'v' => out.push_str(&week.to_string()),
+                b'V' => out.push_str(&format!("{week:02}")),
+                b'h' => out.push_str(&h.to_string()),
+                b'H' => out.push_str(&format!("{h:02}")),
+                b'n' => out.push_str(&mi.to_string()),
+                b'N' => out.push_str(&format!("{mi:02}")),
+                b's' => out.push_str(&s.to_string()),
+                b'S' => out.push_str(&format!("{s:02}")),
+                b'j' => out.push_str(&yday.to_string()),
+                b'J' => out.push_str(&format!("{yday:03}")),
+                b'w' => out.push_str(&wday.to_string()),
+                other => out.push(other as char),
+            }
+        }
+        out
+    }
+
     /// `Datetime::parse_formatted`: read `input` in this pattern. `m`, `d`, `h`, `n`, `s`, `v`
     /// take one or two digits, `M`, `D`, `H`, `N`, `S`, `V` exactly two, `y` two (20xx), `Y` four;
     /// `a`/`A` and `b`/`B` are day and month names (short, long); anything else must match

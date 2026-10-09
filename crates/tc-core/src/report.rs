@@ -33,8 +33,9 @@ struct Builtin {
     filter: &'static str,
 }
 
-// Mirrors Taskwarrior 3's defaults (see `task show report`). `id` columns render as the short
-// uuid in the web UI since numeric ids are replica-local.
+// Taskwarrior 3.5.0's own defaults, exactly as `task show report.` prints them on a fresh install (a test
+// compares them with a capture of that output). `id` columns render as the short uuid in the web UI since
+// numeric ids are replica-local.
 const BUILTINS: &[Builtin] = &[
     Builtin {
         name: "next",
@@ -45,7 +46,7 @@ const BUILTINS: &[Builtin] = &[
         // `limit:page` is part of Taskwarrior's own definition. It means "as many as fit on the
         // screen", which a browser doesn't have, so it shows everything, but it keeps `next` out of
         // reach of the `limit` setting just as in Taskwarrior.
-        filter: "status:pending -WAITING limit:page",
+        filter: "+PENDING -WAITING limit:page",
     },
     Builtin {
         name: "list",
@@ -53,7 +54,7 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,start.age,entry.age,depends.indicator,priority,project,tags,recur.indicator,scheduled.countdown,due,until.remaining,description.count,urgency",
         labels: "ID,Active,Age,D,P,Project,Tags,R,Sch,Due,Until,Description,Urg",
         sort: "start-,due+,project+,urgency-",
-        filter: "status:pending -WAITING",
+        filter: "+PENDING -WAITING",
     },
     Builtin {
         name: "long",
@@ -61,7 +62,7 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,start.active,entry,modified.age,depends,priority,project,tags,recur,wait.remaining,scheduled,due,until,description",
         labels: "ID,A,Created,Mod,Deps,P,Project,Tags,Recur,Wait,Sched,Due,Until,Description",
         sort: "modified-",
-        filter: "status:pending -WAITING",
+        filter: "+PENDING -WAITING",
     },
     Builtin {
         name: "ls",
@@ -69,7 +70,7 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,start.active,depends.indicator,project,tags,recur.indicator,wait.remaining,scheduled.countdown,due.countdown,until.countdown,description.count",
         labels: "ID,A,D,Project,Tags,R,Wait,S,Due,Until,Description",
         sort: "start-,description+",
-        filter: "status:pending -WAITING",
+        filter: "+PENDING -WAITING",
     },
     Builtin {
         name: "all",
@@ -82,66 +83,66 @@ const BUILTINS: &[Builtin] = &[
     Builtin {
         name: "completed",
         description: "Completed tasks",
-        columns: "id,uuid.short,entry,end,priority,project,tags,description",
-        labels: "ID,UUID,Created,Completed,P,Project,Tags,Description",
-        sort: "end-",
-        filter: "status:completed",
+        columns: "id,uuid.short,entry,end,entry.age,depends,priority,project,tags,recur.indicator,due,description",
+        labels: "ID,UUID,Created,Completed,Age,Deps,P,Project,Tags,R,Due,Description",
+        sort: "end+",
+        filter: "status:completed -WAITING",
     },
     Builtin {
         name: "waiting",
         description: "Waiting (hidden) tasks",
-        columns: "id,start.active,entry.age,depends,priority,project,tags,recur.indicator,wait,wait.remaining,scheduled,due,until,description",
-        labels: "ID,A,Age,D,P,Project,Tag,R,Wait,Remaining,Sched,Due,Until,Description",
-        sort: "due+,wait+,project+",
+        columns: "id,start.active,entry.age,depends.indicator,priority,project,tags,recur.indicator,wait,wait.remaining,scheduled,due,until,description",
+        labels: "ID,A,Age,D,P,Project,Tags,R,Wait,Remaining,Sched,Due,Until,Description",
+        sort: "due+,wait+,entry+",
         filter: "+WAITING",
     },
     Builtin {
         name: "newest",
         description: "Newest tasks",
-        columns: "id,start.age,entry,entry.age,depends.indicator,priority,project,tags,recur.indicator,scheduled.countdown,due.relative,until.remaining,description,urgency",
-        labels: "ID,Active,Created,Age,D,P,Project,Tag,R,Sch,Due,Until,Description,Urg",
+        columns: "id,start.age,entry,entry.age,modified.age,depends.indicator,priority,project,tags,recur.indicator,wait.remaining,scheduled.countdown,due,until.age,description",
+        labels: "ID,Active,Created,Age,Mod,D,P,Project,Tags,R,Wait,Sch,Due,Until,Description",
         sort: "entry-",
-        filter: "status:pending",
+        filter: "+PENDING -WAITING",
     },
     Builtin {
         name: "oldest",
         description: "Oldest tasks",
-        columns: "id,start.age,entry,entry.age,depends.indicator,priority,project,tags,recur.indicator,scheduled.countdown,due.relative,until.remaining,description,urgency",
-        labels: "ID,Active,Created,Age,D,P,Project,Tag,R,Sch,Due,Until,Description,Urg",
+        columns: "id,start.age,entry,entry.age,modified.age,depends.indicator,priority,project,tags,recur.indicator,wait.remaining,scheduled.countdown,due,until.age,description",
+        labels: "ID,Active,Created,Age,Mod,D,P,Project,Tags,R,Wait,Sch,Due,Until,Description",
         sort: "entry+",
-        filter: "status:pending",
+        filter: "+PENDING -WAITING",
     },
     Builtin {
         name: "overdue",
         description: "Overdue tasks",
-        columns: "id,start.age,entry.age,depends,priority,project,tags,recur,scheduled.countdown,due,until,description,urgency",
+        columns: "id,start.age,entry.age,depends,priority,project,tags,recur.indicator,scheduled.countdown,due,until,description,urgency",
         labels: "ID,Active,Age,Deps,P,Project,Tag,R,S,Due,Until,Description,Urg",
-        sort: "due+,priority-,project+",
-        filter: "+OVERDUE",
+        sort: "urgency-,due+",
+        filter: "+PENDING -WAITING +OVERDUE",
     },
     Builtin {
         name: "active",
         description: "Active tasks",
-        columns: "id,start,entry.age,priority,project,tags,recur,wait,description",
-        labels: "ID,Started,Age,P,Project,Tags,Recur,Wait,Description",
+        columns: "id,start,start.age,entry.age,depends.indicator,priority,project,tags,recur,wait,scheduled.remaining,due,until,description",
+        labels: "ID,Started,Active,Age,D,P,Project,Tags,Recur,W,Sch,Due,Until,Description",
         sort: "project+,start+",
-        filter: "+ACTIVE",
+        filter: "+PENDING -WAITING +ACTIVE",
     },
     Builtin {
         name: "ready",
         description: "Most urgent actionable tasks",
         columns: "id,start.age,entry.age,depends.indicator,priority,project,tags,recur.indicator,scheduled.countdown,due.countdown,until.remaining,description,urgency",
-        labels: "ID,Active,Age,D,P,Project,Tags,R,Sch,Due,Until,Description,Urg",
-        sort: "urgency-",
+        labels: "ID,Active,Age,D,P,Project,Tags,R,S,Due,Until,Description,Urg",
+        sort: "start-,urgency-",
         filter: "+READY",
     },
     Builtin {
         name: "recurring",
-        description: "Recurring tasks",
-        columns: "id,start.active,entry.age,priority,project,tags,recur,scheduled.countdown,due,until.remaining,description,urgency",
-        labels: "ID,A,Age,P,Project,Tags,Recur,Sch,Due,Until,Description,Urg",
-        sort: "due+,priority-,project+",
-        filter: "status:pending and (+PARENT or +CHILD)",
+        description: "Recurring Tasks",
+        columns: "id,start.age,entry.age,depends.indicator,priority,parent.short,project,tags,recur,scheduled.countdown,due,until.remaining,description,urgency",
+        labels: "ID,Active,Age,D,P,Parent,Project,Tags,Recur,Sch,Due,Until,Description,Urg",
+        sort: "due+,urgency-,entry+",
+        filter: "(+PENDING -WAITING +CHILD) or (status:recurring -WAITING +PARENT)",
     },
     Builtin {
         name: "blocked",
@@ -149,15 +150,15 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,depends,project,priority,due,start.active,entry.age,description",
         labels: "ID,Deps,Proj,Pri,Due,Active,Age,Description",
         sort: "due+,priority-,start-,project+",
-        filter: "status:pending -WAITING +BLOCKED",
+        filter: "+PENDING -WAITING +BLOCKED",
     },
     Builtin {
         name: "unblocked",
         description: "Unblocked tasks",
-        columns: "id,start.age,entry.age,depends,priority,project,tags,recur,scheduled.countdown,due.relative,until.remaining,description,urgency",
-        labels: "ID,Active,Age,Deps,P,Project,Tags,Recur,S,Due,Until,Description,Urg",
-        sort: "urgency-",
-        filter: "status:pending -WAITING -BLOCKED",
+        columns: "id,depends,project,priority,due,start.active,entry.age,description",
+        labels: "ID,Deps,Proj,Pri,Due,Active,Age,Description",
+        sort: "due+,priority-,start-,project+",
+        filter: "+PENDING -WAITING -BLOCKED",
     },
     Builtin {
         name: "blocking",
@@ -165,7 +166,7 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,uuid.short,start.active,depends,project,tags,recur,wait,scheduled.remaining,due.relative,until.remaining,description.count,urgency",
         labels: "ID,UUID,A,Deps,Project,Tags,R,W,Sch,Due,Until,Description,Urg",
         sort: "urgency-,due+,entry+",
-        filter: "status:pending -WAITING +BLOCKING",
+        filter: "+PENDING -WAITING +BLOCKING",
     },
     Builtin {
         name: "minimal",
@@ -173,7 +174,7 @@ const BUILTINS: &[Builtin] = &[
         columns: "id,project,tags.count,description.count",
         labels: "ID,Project,Tags,Description",
         sort: "project+/,description+",
-        filter: "status:pending -WAITING",
+        filter: "+PENDING -WAITING",
     },
 ];
 

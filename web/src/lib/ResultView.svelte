@@ -2,6 +2,7 @@
   import BurndownView from './BurndownView.svelte';
   import CalendarView from './CalendarView.svelte';
   import ConfirmView from './ConfirmView.svelte';
+  import FileView from './FileView.svelte';
   import ReportTable from './ReportTable.svelte';
   import SummaryView from './SummaryView.svelte';
   import TaskInfo from './TaskInfo.svelte';
@@ -47,12 +48,12 @@
       <table>
         <thead
           ><tr
-            >{#each r.headers as h, _i (_i)}<th>{h}</th>{/each}</tr
+            >{#each r.headers as h, i (i)}<th class:r={r.right?.includes(i)}>{h}</th>{/each}</tr
           ></thead
         >
         <tbody
           >{#each r.rows as cells, i (i)}<tr class:mod={r.highlight?.includes(i)}
-              >{#each cells as c, _i (_i)}<td>{c}</td>{/each}</tr
+              >{#each cells as c, j (j)}<td class:r={r.right?.includes(j)}>{c}</td>{/each}</tr
             >{/each}</tbody
         >
       </table>
@@ -64,6 +65,8 @@
     </p>{/if}
 {:else if r.kind === 'text'}
   <pre class="mono">{r.lines.join('\n')}</pre>
+{:else if r.kind === 'file'}
+  <FileView result={r} />
 {:else if r.kind === 'json'}
   <pre class="mono">{JSON.stringify(r.value, null, 2)}</pre>
 {:else if r.kind === 'changed'}
@@ -106,6 +109,9 @@
     text-align: left;
     padding: 2px 16px 2px 0;
     white-space: pre;
+  }
+  .r {
+    text-align: right;
   }
   th {
     color: var(--dim);

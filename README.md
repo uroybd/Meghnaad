@@ -19,7 +19,7 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 - **Works with the bucket you already have.** Point it at the R2 bucket your `task` already syncs to and give it the same
   encryption secret. No migration, no new server, nothing changes for the CLI.
 - **Taskwarrior's behaviour, not an imitation of it.** Filters, virtual tags, urgency, report sorting, recurrence,
-  regular expressions, the calendar, `summary`, `burndown`, `calc` and the confirmations are ported from Taskwarrior's
+  regular expressions, the calendar, `summary`, `burndown`, `history`, `timesheet`, `export`, `calc` and the confirmations are ported from Taskwarrior's
   source and checked against the real `task` 3.5.0.
 - **Taskwarrior 3.5.0 and newer.** Settings removed or deprecated before it are not supported.
 - **Your `taskrc`, safely.** Import your UDAs, custom reports, contexts and settings. Sync settings and anything that
@@ -170,6 +170,7 @@ add Pay rent project:Home due:eom +bills
 3 modify due:2026-12-25T08:30 priority:H
 3 done            3 delete            undo
 calc 2 days + 3 hours
+history.monthly   ghistory.monthly   timesheet   export   (Console only; export downloads a file)
 show weekstart     config weekstart monday   (Console only)
 ```
 

@@ -67,7 +67,7 @@ class Notifier {
     try {
       // Tasks with a due or wait date, plus anything running; `export` returns full rows.
       const res = await runCli({
-        args: ['(', 'due.any:', 'or', 'wait.any:', 'or', '+ACTIVE', ')', 'status:pending', 'export'],
+        args: ['(', 'due.any:', 'or', 'wait.any:', 'or', '+ACTIVE', ')', 'status:pending', '_rows'],
       });
       if (res.result.kind === 'json' && Array.isArray(res.result.value)) {
         this.#rows = res.result.value as Row[];

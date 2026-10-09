@@ -147,6 +147,25 @@ impl Config {
         self.settings.get("confirmation").is_none_or(|v| truthy(v))
     }
 
+    /// `report.timesheet.filter`: what `timesheet` shows when no filter is given; Taskwarrior's own default
+    /// is the pending tasks started, and the completed tasks ended, in the last four weeks.
+    pub fn timesheet_filter(&self) -> String {
+        match self.settings.get("report.timesheet.filter").map(|f| f.trim()) {
+            Some(f) if !f.is_empty() => f.to_owned(),
+            _ => TIMESHEET_FILTER.to_owned(),
+        }
+    }
+
+    /// `report.timesheet.context`: whether the active context applies to `timesheet` (it does not, unless set).
+    pub fn timesheet_context(&self) -> bool {
+        self.settings.get("report.timesheet.context").is_some_and(|v| truthy(v))
+    }
+
+    /// `json.array`: whether `export` wraps its tasks in a JSON array (default), or prints one per line.
+    pub fn json_array(&self) -> bool {
+        self.settings.get("json.array").is_none_or(|v| truthy(v))
+    }
+
     /// `hooks`: the master switch for hooks (Taskwarrior's default is on).
     pub fn hooks(&self) -> bool {
         self.settings.get("hooks").is_none_or(|v| truthy(v))
@@ -342,6 +361,7 @@ pub const SETTING_DEFAULTS: &[(&str, &str)] = &[
     ("tag.indicator", "+"),
     ("dependency.indicator", "D"),
     ("hooks", "1"),
+    ("json.array", "1"),
     ("confirmation", "1"),
     ("bulk", "3"),
     ("allow.empty.filter", "1"),
@@ -374,6 +394,7 @@ const SCALAR_SETTINGS: &[&str] = &[
     "recurrence.indicator",
     "recurrence.confirmation",
     "hooks",
+    "json.array",
     "confirmation",
     "bulk",
     "allow.empty.filter",
@@ -471,6 +492,10 @@ pub fn apply_override(cfg: &mut Config, key: &str, value: &str) -> Result<(), St
         return Err(format!("'rc.{key}' can't be set from a command line"));
     }
     let parts: Vec<&str> = key.split('.').collect();
+    if let ["report", "timesheet", "filter" | "context"] = parts.as_slice() {
+        cfg.settings.insert(key.to_owned(), unescape(value));
+        return Ok(());
+    }
     if let ["report", name, attr] = parts.as_slice() {
         let mut def =
             crate::report::resolve(cfg, name).ok_or_else(|| format!("'{name}' is not a report (rc.{key})"))?;
@@ -534,6 +559,10 @@ const REPORT_ATTRS: &[&str] = &[
     "context",
     "dateformat",
 ];
+
+/// Taskwarrior's default `report.timesheet.filter`.
+pub const TIMESHEET_FILTER: &str =
+    "(+PENDING -WAITING start.after:now-4wks) or (+COMPLETED -WAITING end.after:now-4wks)";
 
 /// Whether a context may set `key` to `value`, judged the way a taskrc line would be.
 fn check_context_rc(key: &str, value: &str) -> Result<(), RcProblem> {
@@ -753,6 +782,10 @@ pub fn parse(text: &str) -> Parsed {
                     .entry((*n).to_owned())
                     .or_default()
                     .insert((*attr).to_owned(), unescape(value));
+            }
+            // `timesheet` is a command, not a report with columns: only its filter and context are settings.
+            ["report", "timesheet", "filter" | "context"] => {
+                p.config.settings.insert(name.to_owned(), unescape(value));
             }
             ["report", n, attr]
                 if valid_ident(n)

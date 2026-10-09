@@ -60,9 +60,20 @@ help
 | | |
 | --- | --- |
 | **Write** | `add` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
-| **Read** | `info` `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `udas` `columns` `reports` `contexts` `show` `config` `export` `ids` `uuids` `calc` `_projects` `_tags` |
+| **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `udas` `columns` `reports` `contexts` `show` `config` `export` `ids` `uuids` `calc` `_projects` `_tags` |
 | **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
+
+**History and the timesheet** answer in the Console, and typed in the bar under another page they switch to it.
+`history.monthly` (also `.daily`, `.weekly`, `.annual`) counts the tasks added, completed and deleted in each period, with
+the net change and the averages; `ghistory.*` draws the same as a bar of `+` (added), `X` (completed) and `-` (deleted),
+80 columns wide. A recurring template is not counted as added, and a filter narrows them (`project:Home history.monthly`).
+`timesheet` lists what was completed and started, by week and day; with no filter it covers the last four weeks, and
+`report.timesheet.filter` changes that. `information` is `info` under its full name.
+
+**`export` gives you a file.** It prints a summary and a **Download** button; the file is Taskwarrior's own JSON, the
+same as `task export` (ids and urgency included), so `task import` reads it. It takes a filter (`project:Home export`) and
+a report's name (`export next` uses that report's filter and sort), and `json.array=off` makes it one task per line.
 
 **Changes beside a command.** What follows `done`, `delete`, `start`, `stop`, `annotate`, `append` and `prepend` can carry
 changes, as in Taskwarrior: `3 done end:-2h` (finished two hours ago), `3 start due:eow +urgent`,
@@ -336,5 +347,5 @@ can be tapped. You can install it to your home screen from the browser menu.
 - **`undo`** works on the last few commands made while this Worker instance lives; it is forgotten when it is recycled.
 - **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a Worker can't run local programs, so they are functions in
   `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
-- **`edit`, `purge`, `history.*`** are not in the app.
+- **`edit` and `purge`** are not in the app, nor is `colors` (a terminal colour chart).
 - **The first request after a quiet spell** is slower: the Worker rebuilds its state from the bucket's newest snapshot.

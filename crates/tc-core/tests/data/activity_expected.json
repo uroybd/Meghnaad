@@ -1,0 +1,1728 @@
+{
+ "history.daily": {
+  "headers": [
+   "Year",
+   "Month",
+   "Day",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "December",
+    "31",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2025",
+    "January",
+    "1",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "October",
+    "5",
+    "2",
+    "0",
+    "0",
+    "2"
+   ],
+   [
+    "",
+    "",
+    "20",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "28",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "29",
+    "0",
+    "0",
+    "1",
+    "-1"
+   ],
+   [
+    "",
+    "November",
+    "2",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "17",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "18",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "December",
+    "24",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "29",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "30",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "31",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2026",
+    "January",
+    "2",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "5",
+    "1",
+    "1",
+    "1",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "6",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "February",
+    "10",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "March",
+    "3",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "",
+    "4",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "April",
+    "14",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "May",
+    "31",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "June",
+    "1",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "15",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "July",
+    "15",
+    "0",
+    "0",
+    "1",
+    "-1"
+   ],
+   [
+    "",
+    "September",
+    "28",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "October",
+    "1",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "5",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "7",
+    "2",
+    "0",
+    "0",
+    "2"
+   ],
+   [
+    "",
+    "",
+    "8",
+    "1",
+    "2",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "",
+    "Average",
+    "0",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.daily": [
+  "Year Month     Day Number Added/Completed/Deleted",
+  "2024 December   31                +++++++++++++++",
+  "2025 January     1                               XXXXXXXXXXXXXXX",
+  "     October     5 ++++++++++++++++++++++++++++++",
+  "                20                               XXXXXXXXXXXXXXX",
+  "                28                +++++++++++++++",
+  "                29                               ---------------",
+  "     November    2                               XXXXXXXXXXXXXXX",
+  "                17                +++++++++++++++",
+  "                18                               XXXXXXXXXXXXXXX",
+  "     December   24                +++++++++++++++",
+  "                29                               XXXXXXXXXXXXXXX",
+  "                30                +++++++++++++++",
+  "                31                +++++++++++++++",
+  "2026 January     2                               XXXXXXXXXXXXXXX",
+  "                 5                +++++++++++++++XXXXXXXXXXXXXXX---------------",
+  "                 6                +++++++++++++++",
+  "     February   10                +++++++++++++++",
+  "     March       3                +++++++++++++++XXXXXXXXXXXXXXX",
+  "                 4                               XXXXXXXXXXXXXXX",
+  "     April      14                +++++++++++++++",
+  "     May        31                +++++++++++++++",
+  "     June        1                               XXXXXXXXXXXXXXX",
+  "                15                +++++++++++++++",
+  "     July       15                               ---------------",
+  "     September  28                +++++++++++++++",
+  "     October     1                               XXXXXXXXXXXXXXX",
+  "                 5                +++++++++++++++",
+  "                 7 ++++++++++++++++++++++++++++++",
+  "                 8                +++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.daily Work": {
+  "headers": [
+   "Year",
+   "Month",
+   "Day",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2025",
+    "October",
+    "5",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "November",
+    "2",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "17",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "18",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "December",
+    "30",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2026",
+    "January",
+    "2",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "5",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "April",
+    "14",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "May",
+    "31",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "June",
+    "1",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "September",
+    "28",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "October",
+    "1",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "5",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "",
+    "Average",
+    "0",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.daily Work": [
+  "Year Month     Day Number Added/Completed/Deleted",
+  "2025 October     5 ++++++++++++++++++++++++++++++",
+  "     November    2                               XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "                17 ++++++++++++++++++++++++++++++",
+  "                18                               XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     December   30 ++++++++++++++++++++++++++++++",
+  "2026 January     2                               XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "                 5 ++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     April      14 ++++++++++++++++++++++++++++++",
+  "     May        31 ++++++++++++++++++++++++++++++",
+  "     June        1                               XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     September  28 ++++++++++++++++++++++++++++++",
+  "     October     1                               XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "                 5 ++++++++++++++++++++++++++++++",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.daily Home": {
+  "headers": [
+   "Year",
+   "Month",
+   "Day",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "December",
+    "31",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2025",
+    "January",
+    "1",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "October",
+    "5",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "20",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "December",
+    "24",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "29",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "31",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2026",
+    "January",
+    "5",
+    "0",
+    "0",
+    "1",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "6",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "March",
+    "3",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "4",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "October",
+    "1",
+    "0",
+    "0",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "",
+    "7",
+    "2",
+    "0",
+    "0",
+    "2"
+   ],
+   [
+    "",
+    "",
+    "8",
+    "0",
+    "2",
+    "0",
+    "-2"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "",
+    "Average",
+    "0",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.daily Home": [
+  "Year Month    Day Number Added/Completed/Deleted",
+  "2024 December  31                +++++++++++++++",
+  "2025 January    1                               XXXXXXXXXXXXXXX",
+  "     October    5                +++++++++++++++",
+  "               20                               XXXXXXXXXXXXXXX",
+  "     December  24                +++++++++++++++",
+  "               29                               XXXXXXXXXXXXXXX",
+  "               31                +++++++++++++++",
+  "2026 January    5                               ---------------",
+  "                6                +++++++++++++++",
+  "     March      3                +++++++++++++++",
+  "                4                               XXXXXXXXXXXXXXX",
+  "     October    1",
+  "                7 ++++++++++++++++++++++++++++++",
+  "                8                               XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.weekly": {
+  "headers": [
+   "Year",
+   "Month",
+   "Day",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "December",
+    "29",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "2025",
+    "October",
+    "5",
+    "2",
+    "0",
+    "0",
+    "2"
+   ],
+   [
+    "",
+    "",
+    "19",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "26",
+    "1",
+    "0",
+    "1",
+    "0"
+   ],
+   [
+    "",
+    "November",
+    "2",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "16",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "December",
+    "21",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "28",
+    "2",
+    "2",
+    "0",
+    "0"
+   ],
+   [
+    "2026",
+    "January",
+    "4",
+    "2",
+    "1",
+    "1",
+    "0"
+   ],
+   [
+    "",
+    "February",
+    "8",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "March",
+    "1",
+    "1",
+    "2",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "April",
+    "12",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "May",
+    "31",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "June",
+    "14",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "July",
+    "12",
+    "0",
+    "0",
+    "1",
+    "-1"
+   ],
+   [
+    "",
+    "September",
+    "27",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "October",
+    "4",
+    "4",
+    "2",
+    "0",
+    "2"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "",
+    "Average",
+    "1",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.weekly": [
+  "Year Month     Day Number Added/Completed/Deleted",
+  "2024 December   29                               ++++++++++XXXXXXXXXX",
+  "2025 October     5                     ++++++++++++++++++++",
+  "                19                                         XXXXXXXXXX",
+  "                26                               ++++++++++----------",
+  "     November    2                                         XXXXXXXXXX",
+  "                16                               ++++++++++XXXXXXXXXX",
+  "     December   21                               ++++++++++",
+  "                28                     ++++++++++++++++++++XXXXXXXXXXXXXXXXXXXX",
+  "2026 January     4                     ++++++++++++++++++++XXXXXXXXXX----------",
+  "     February    8                               ++++++++++",
+  "     March       1                               ++++++++++XXXXXXXXXXXXXXXXXXXX",
+  "     April      12                               ++++++++++",
+  "     May        31                               ++++++++++XXXXXXXXXX",
+  "     June       14                               ++++++++++",
+  "     July       12                                         ----------",
+  "     September  27                               ++++++++++XXXXXXXXXX",
+  "     October     4 ++++++++++++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.weekly Work": {
+  "headers": [
+   "Year",
+   "Month",
+   "Day",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2025",
+    "October",
+    "5",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "November",
+    "2",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "",
+    "16",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "December",
+    "28",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "2026",
+    "January",
+    "4",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "April",
+    "12",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "May",
+    "31",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "September",
+    "27",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "October",
+    "4",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "",
+    "Average",
+    "0",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.weekly Work": [
+  "Year Month     Day Number Added/Completed/Deleted",
+  "2025 October     5 ++++++++++++++++++++++++++++++",
+  "     November    2                               XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "                16 ++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     December   28 ++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "2026 January     4 ++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     April      12 ++++++++++++++++++++++++++++++",
+  "     May        31 ++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     September  27 ++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     October     4 ++++++++++++++++++++++++++++++",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.weekly Home": {
+  "headers": [
+   "Year",
+   "Month",
+   "Day",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "December",
+    "29",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "2025",
+    "October",
+    "5",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "19",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "December",
+    "21",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "28",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "2026",
+    "January",
+    "4",
+    "1",
+    "0",
+    "1",
+    "0"
+   ],
+   [
+    "",
+    "March",
+    "1",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "September",
+    "27",
+    "0",
+    "0",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "October",
+    "4",
+    "2",
+    "2",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "",
+    "Average",
+    "0",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.weekly Home": [
+  "Year Month     Day Number Added/Completed/Deleted",
+  "2024 December   29                +++++++++++++++XXXXXXXXXXXXXXX",
+  "2025 October     5                +++++++++++++++",
+  "                19                               XXXXXXXXXXXXXXX",
+  "     December   21                +++++++++++++++",
+  "                28                +++++++++++++++XXXXXXXXXXXXXXX",
+  "2026 January     4                +++++++++++++++---------------",
+  "     March       1                +++++++++++++++XXXXXXXXXXXXXXX",
+  "     September  27",
+  "     October     4 ++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.monthly": {
+  "headers": [
+   "Year",
+   "Month",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "December",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2025",
+    "January",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "October",
+    "3",
+    "1",
+    "1",
+    "1"
+   ],
+   [
+    "",
+    "November",
+    "1",
+    "2",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "December",
+    "3",
+    "1",
+    "0",
+    "2"
+   ],
+   [
+    "2026",
+    "January",
+    "2",
+    "2",
+    "1",
+    "-1"
+   ],
+   [
+    "",
+    "February",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "March",
+    "1",
+    "2",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "April",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "May",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "June",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "July",
+    "0",
+    "0",
+    "1",
+    "-1"
+   ],
+   [
+    "",
+    "September",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "October",
+    "4",
+    "3",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "Average",
+    "1",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.monthly": [
+  "Year Month     Number Added/Completed/Deleted",
+  "2024 December                              +++++++++",
+  "2025 January                                        XXXXXXXXX",
+  "     October             +++++++++++++++++++++++++++XXXXXXXXX---------",
+  "     November                              +++++++++XXXXXXXXXXXXXXXXXX",
+  "     December            +++++++++++++++++++++++++++XXXXXXXXX",
+  "2026 January                      ++++++++++++++++++XXXXXXXXXXXXXXXXXX---------",
+  "     February                              +++++++++",
+  "     March                                 +++++++++XXXXXXXXXXXXXXXXXX",
+  "     April                                 +++++++++",
+  "     May                                   +++++++++",
+  "     June                                  +++++++++XXXXXXXXX",
+  "     July                                           ---------",
+  "     September                             +++++++++",
+  "     October   +++++++++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.monthly Work": {
+  "headers": [
+   "Year",
+   "Month",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2025",
+    "October",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "November",
+    "1",
+    "2",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "December",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2026",
+    "January",
+    "1",
+    "2",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "April",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "May",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "June",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "September",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "October",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "Average",
+    "0",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.monthly Work": [
+  "Year Month     Number Added/Completed/Deleted",
+  "2025 October   +++++++++++++++++++++",
+  "     November  +++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     December  +++++++++++++++++++++",
+  "2026 January   +++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "     April     +++++++++++++++++++++",
+  "     May       +++++++++++++++++++++",
+  "     June                           XXXXXXXXXXXXXXXXXXXXX",
+  "     September +++++++++++++++++++++",
+  "     October   +++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.monthly Home": {
+  "headers": [
+   "Year",
+   "Month",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "December",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2025",
+    "January",
+    "0",
+    "1",
+    "0",
+    "-1"
+   ],
+   [
+    "",
+    "October",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "December",
+    "2",
+    "1",
+    "0",
+    "1"
+   ],
+   [
+    "2026",
+    "January",
+    "1",
+    "0",
+    "1",
+    "0"
+   ],
+   [
+    "",
+    "March",
+    "1",
+    "1",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "October",
+    "2",
+    "2",
+    "0",
+    "0"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "",
+    "Average",
+    "1",
+    "0",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.monthly Home": [
+  "Year Month    Number Added/Completed/Deleted",
+  "2024 December                 ++++++++++++++++",
+  "2025 January                                  XXXXXXXXXXXXXXXX",
+  "     October                  ++++++++++++++++XXXXXXXXXXXXXXXX",
+  "     December ++++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXX",
+  "2026 January                  ++++++++++++++++----------------",
+  "     March                    ++++++++++++++++XXXXXXXXXXXXXXXX",
+  "     October  ++++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.annual": {
+  "headers": [
+   "Year",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2025",
+    "7",
+    "5",
+    "1",
+    "1"
+   ],
+   [
+    "2026",
+    "12",
+    "8",
+    "2",
+    "2"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "Average",
+    "6",
+    "4",
+    "1",
+    "1"
+   ]
+  ]
+ },
+ "ghistory.annual": [
+  "Year Number Added/Completed/Deleted",
+  "2024                                      +++",
+  "2025                  +++++++++++++++++++++++XXXXXXXXXXXXXXXXX---",
+  "2026 ++++++++++++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXX------",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.annual Work": {
+  "headers": [
+   "Year",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2025",
+    "3",
+    "2",
+    "0",
+    "1"
+   ],
+   [
+    "2026",
+    "5",
+    "4",
+    "0",
+    "1"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "Average",
+    "4",
+    "3",
+    "0",
+    "1"
+   ]
+  ]
+ },
+ "ghistory.annual Work": [
+  "Year Number Added/Completed/Deleted",
+  "2025                 +++++++++++++++++++++++++XXXXXXXXXXXXXXXX",
+  "2026 +++++++++++++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "history.annual Home": {
+  "headers": [
+   "Year",
+   "Added",
+   "Completed",
+   "Deleted",
+   "Net"
+  ],
+  "rows": [
+   [
+    "2024",
+    "1",
+    "0",
+    "0",
+    "1"
+   ],
+   [
+    "2025",
+    "3",
+    "3",
+    "0",
+    "0"
+   ],
+   [
+    "2026",
+    "4",
+    "3",
+    "1",
+    "0"
+   ],
+   [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "Average",
+    "2",
+    "2",
+    "0",
+    "0"
+   ]
+  ]
+ },
+ "ghistory.annual Home": [
+  "Year Number Added/Completed/Deleted",
+  "2024                             +++++++++",
+  "2025          ++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "2026 +++++++++++++++++++++++++++++++++++++XXXXXXXXXXXXXXXXXXXXXXXXXXXX---------",
+  "",
+  "Legend: + Added, X Completed, - Deleted"
+ ],
+ "timesheet status:completed": [
+  "Wk  Date       Day ID       Action    Project Due        Task",
+  "W0  2025-01-01 Wed 00000015 Completed Home               task21",
+  "",
+  "W42 2025-10-20 Mon 00000001 Completed Home               task1",
+  "",
+  "W44 2025-11-02 Sun 00000002 Completed Work    2025-10-30 task2",
+  "",
+  "W46 2025-11-18 Tue 00000004 Completed Work               task4",
+  "",
+  "W52 2025-12-29 Mon 00000005 Completed Home    2025-12-28 task5",
+  "",
+  "W0  2026-01-02 Fri 00000006 Completed Work               task6",
+  "",
+  "W1  2026-01-05 Mon 00000008 Completed Work               task8",
+  "",
+  "W9  2026-03-03 Tue 0000000a Completed                    task10",
+  "    2026-03-04 Wed 0000000b Completed Home               task11",
+  "",
+  "W22 2026-06-01 Mon 0000000d Completed Work               task13",
+  "",
+  "W39 2026-10-01 Thu 0000000f Completed Work    2026-10-02 task15",
+  "",
+  "W40 2026-10-08     00000011 Completed Home               task17",
+  "                   00000012 Completed Home               task18"
+ ],
+ "timesheet project:Home": [
+  "Wk  Date       Day ID       Action    Project Due        Task",
+  "W0  1970-01-01 Thu 1                  Home    2026-02-01 task9",
+  "                   5                  Home    2026-10-08 task20",
+  "                   00000007 Completed Home               task7",
+  "    2025-01-01 Wed 00000015 Completed Home               task21",
+  "",
+  "W42 2025-10-20 Mon 00000001 Completed Home               task1",
+  "",
+  "W52 2025-12-29     00000005 Completed Home    2025-12-28 task5",
+  "",
+  "W9  2026-03-04 Wed 0000000b Completed Home               task11",
+  "",
+  "W40 2026-10-08 Thu 00000011 Completed Home               task17",
+  "                   00000012 Completed Home               task18"
+ ],
+ "timesheet all": [
+  "Wk  Date       Day ID       Action    Project Due        Task",
+  "W0  1970-01-01 Thu 1                  Home    2026-02-01 task9",
+  "                   4                                     task19",
+  "                   5                  Home    2026-10-08 task20",
+  "                   00000007 Completed Home               task7",
+  "                   00000003 Completed                    task3",
+  "                   0000000e Completed                    task14",
+  "    2025-01-01 Wed 00000015 Completed Home               task21",
+  "",
+  "W42 2025-10-20 Mon 00000001 Completed Home               task1",
+  "",
+  "W44 2025-11-02 Sun 00000002 Completed Work    2025-10-30 task2",
+  "",
+  "W46 2025-11-18 Tue 00000004 Completed Work               task4",
+  "",
+  "W52 2025-12-29 Mon 00000005 Completed Home    2025-12-28 task5",
+  "",
+  "W0  2026-01-02 Fri 00000006 Completed Work               task6",
+  "",
+  "W1  2026-01-05 Mon 00000008 Completed Work               task8",
+  "",
+  "W9  2026-03-03 Tue 0000000a Completed                    task10",
+  "    2026-03-04 Wed 0000000b Completed Home               task11",
+  "",
+  "W15 2026-04-15     2        Started   Work               task12",
+  "",
+  "W22 2026-06-01 Mon 0000000d Completed Work               task13",
+  "",
+  "W39 2026-10-01 Thu 0000000f Completed Work    2026-10-02 task15",
+  "",
+  "W40 2026-10-06 Tue 3        Started   Work    2026-10-12 task16",
+  "    2026-10-08 Thu 00000011 Completed Home               task17",
+  "                   00000012 Completed Home               task18"
+ ]
+}

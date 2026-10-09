@@ -49,7 +49,11 @@ pub fn defaults() -> BTreeMap<String, String> {
         put("labels", r.labels.join(","));
         put("sort", r.sort.clone().unwrap_or_default());
         put("filter", r.filter.clone().unwrap_or_default());
+        put("context", "1".into());
     }
+    // `timesheet` is a command with report settings of its own.
+    d.insert("report.timesheet.context".into(), "0".into());
+    d.insert("report.timesheet.filter".into(), crate::taskrc::TIMESHEET_FILTER.into());
     d.insert("uda.priority.type".into(), "string".into());
     d.insert("uda.priority.label".into(), "Priority".into());
     d.insert("uda.priority.values".into(), "H,M,L".into());
@@ -121,6 +125,7 @@ pub fn show(cfg: &Config, words: &[String]) -> crate::cli::CliResult {
         title: None,
         footer,
         highlight,
+        right: vec![],
         headers: vec!["Config Variable".into(), "Value".into()],
         rows,
     })

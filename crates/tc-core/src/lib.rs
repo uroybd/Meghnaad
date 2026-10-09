@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod burndown;
 pub mod calc;
 pub mod calendar;
@@ -6,6 +7,7 @@ pub mod cloud;
 pub mod crypto;
 pub mod dates;
 pub mod error;
+pub mod export;
 pub mod filter;
 pub mod guard;
 pub mod history;
