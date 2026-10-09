@@ -1,14 +1,11 @@
 # Build and deploy the Worker to Cloudflare. Run by hand: Actions > "Deploy" > Run workflow.
+# It does not run the tests: CI does that on every push and pull request, so run this from a commit CI has passed.
 # What it needs, and how to set it up, is in docs/deploy.md ("D. From GitHub Actions").
 name: Deploy
 
 on:
   workflow_dispatch:
     inputs:
-      tests:
-        description: Run the tests before deploying
-        type: boolean
-        default: true
       dry_run:
         description: Only print the config that would be deployed (nothing is built or deployed)
         type: boolean
@@ -68,12 +65,6 @@ jobs:
       - name: Install worker-build
         if: ${{ !inputs.dry_run }}
         run: command -v worker-build >/dev/null || cargo install worker-build --locked
-
-      - name: Test
-        if: ${{ !inputs.dry_run && inputs.tests }}
-        run: |
-          npm test
-          npm run check
 
       # Builds the web app and the Worker (wrangler's build command), then deploys.
       - name: Deploy

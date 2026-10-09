@@ -89,7 +89,7 @@ values into a git-ignored `wrangler.deploy.jsonc`.
 
 ## D. From GitHub Actions (manual)
 
-The repository has a workflow, [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml), that tests, builds and
+The repository has a workflow, [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml), that builds and
 deploys the Worker when you start it: **Actions → Deploy → Run workflow**. It never runs on a push. Do route A or C
 **once** first (the bucket and Access have to exist, and the first deploy is where you find out they work); after that,
 updating is one click. In your fork:
@@ -128,10 +128,10 @@ All five are optional, `#` comments and blank lines are fine, and each value is 
 It is a variable, not a secret, because none of it is one (a team domain and an AUD tag are in every request's token).
 The encryption secret and the API token are, and are only handed to the steps that need them.
 
-The workflow has two options when you run it. **Run the tests** (on by default) runs `npm test` and `npm run check`
-first, and a failure stops the deploy. **Dry run** only prints the Worker config the settings would produce, which is the
-quickest way to check your variables, and builds and deploys nothing. Run it from the branch you want to deploy: for
-your own hooks that is your `my-hooks` branch ([keeping hooks across updates](using.md#keeping-your-hooks-across-updates)).
+The workflow has one option when you run it: **Dry run** only prints the Worker config the settings would produce, which
+is the quickest way to check your variables, and builds and deploys nothing. It does not run the tests, because the
+[CI workflow](../.github/workflows/ci.yml) already runs them on every push and pull request: deploy a commit whose CI is
+green. Run it from the branch you want to deploy: for your own hooks that is your `my-hooks` branch ([keeping hooks across updates](using.md#keeping-your-hooks-across-updates)).
 Runs are serialised, so two clicks never deploy at once.
 
 **Last step, whichever way:** open the URL, sign in, and import your `taskrc` (the **taskrc** button) to get your UDAs
