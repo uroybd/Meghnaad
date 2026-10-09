@@ -43,7 +43,7 @@
 {:else}
   <div class="scroll">
     <svg viewBox="0 0 {width} {height}" role="img" aria-label={summary} style="min-width: {Math.min(width, 640)}px">
-      {#each result.y_labels as v}
+      {#each result.y_labels as v, _i (_i)}
         {@const y = base - h(v)}
         <line class="grid" x1={LEFT} x2={width - 4} y1={y} y2={y} />
         <text class="axis" x={LEFT - 8} y={y + 4} text-anchor="end">{v}</text>
@@ -76,7 +76,9 @@
     <dd>{result.net_fix_rate != null ? `${result.net_fix_rate.toFixed(1)}/d` : '-'}</dd>
     {#if result.completion}
       <dt>Estimated completion</dt>
-      <dd>{formatMoment(result.completion.epoch, undefined, dateFmt)} <span class="dim">({result.completion.vague})</span></dd>
+      <dd>
+        {formatMoment(result.completion.epoch, undefined, dateFmt)} <span class="dim">({result.completion.vague})</span>
+      </dd>
     {:else if result.no_convergence}
       <dt>Estimated completion</dt>
       <dd>No convergence</dd>
@@ -85,25 +87,92 @@
 {/if}
 
 <style>
-  .title { margin: 4px 0 8px; font-size: 15px; }
-  .scroll { overflow-x: auto; }
-  svg { display: block; width: 100%; height: auto; max-width: 1100px; }
-  .grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
-  .baseline { stroke: var(--dim); stroke-width: 1; }
-  .axis, .minor, .major { fill: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
-  .major { font-weight: 600; fill: var(--text); }
-  .pending { fill: color-mix(in srgb, var(--err) 80%, transparent); }
-  .started { fill: color-mix(in srgb, var(--warn) 85%, transparent); }
-  .done { fill: color-mix(in srgb, var(--ok) 75%, transparent); }
-  rect { shape-rendering: crispEdges; }
-  g:hover rect { filter: brightness(1.12); }
-  .legend { display: flex; gap: 16px; font-size: 12.5px; margin: 6px 0; }
-  .key { display: inline-flex; align-items: center; gap: 6px; }
-  .key::before { content: ''; width: 14px; height: 14px; border-radius: 3px; }
-  .key.done::before { background: color-mix(in srgb, var(--ok) 75%, transparent); }
-  .key.started::before { background: color-mix(in srgb, var(--warn) 85%, transparent); }
-  .key.pending::before { background: color-mix(in srgb, var(--err) 80%, transparent); }
-  .rates { display: grid; grid-template-columns: max-content 1fr; gap: 3px 18px; margin: 8px 0; font-size: 13.5px; }
-  .rates dt { color: var(--dim); }
-  .rates dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .title {
+    margin: 4px 0 8px;
+    font-size: 15px;
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 1100px;
+  }
+  .grid {
+    stroke: var(--line);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+  }
+  .baseline {
+    stroke: var(--dim);
+    stroke-width: 1;
+  }
+  .axis,
+  .minor,
+  .major {
+    fill: var(--dim);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .major {
+    font-weight: 600;
+    fill: var(--text);
+  }
+  .pending {
+    fill: color-mix(in srgb, var(--err) 80%, transparent);
+  }
+  .started {
+    fill: color-mix(in srgb, var(--warn) 85%, transparent);
+  }
+  .done {
+    fill: color-mix(in srgb, var(--ok) 75%, transparent);
+  }
+  rect {
+    shape-rendering: crispEdges;
+  }
+  g:hover rect {
+    filter: brightness(1.12);
+  }
+  .legend {
+    display: flex;
+    gap: 16px;
+    font-size: 12.5px;
+    margin: 6px 0;
+  }
+  .key {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .key::before {
+    content: '';
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+  .key.done::before {
+    background: color-mix(in srgb, var(--ok) 75%, transparent);
+  }
+  .key.started::before {
+    background: color-mix(in srgb, var(--warn) 85%, transparent);
+  }
+  .key.pending::before {
+    background: color-mix(in srgb, var(--err) 80%, transparent);
+  }
+  .rates {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 3px 18px;
+    margin: 8px 0;
+    font-size: 13.5px;
+  }
+  .rates dt {
+    color: var(--dim);
+  }
+  .rates dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
 </style>

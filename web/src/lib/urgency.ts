@@ -34,7 +34,13 @@ const SUFFIX = '.coefficient';
 export function describe(key: string): Described {
   const rest = key.replace(/^urgency\./, '');
   if (key === AGE_MAX) {
-    return { key, kind: 'term', name: 'age.max', label: 'Age cap (days)', hint: 'A task this old or older gets the full age value.' };
+    return {
+      key,
+      kind: 'term',
+      name: 'age.max',
+      label: 'Age cap (days)',
+      hint: 'A task this old or older gets the full age value.',
+    };
   }
   const body = rest.endsWith(SUFFIX) ? rest.slice(0, -SUFFIX.length) : rest;
   const term = TERMS.find((t) => t.term === body);
@@ -44,24 +50,51 @@ export function describe(key: string): Described {
   const project = user('user.project.');
   if (project !== null) {
     return {
-      key, kind: 'project', name: project, label: `Project ${project}`,
+      key,
+      kind: 'project',
+      name: project,
+      label: `Project ${project}`,
       hint: `Applies to ${project} and every sub-project (${project}.*).`,
     };
   }
   const tag = user('user.tag.');
   if (tag !== null) {
-    return { key, kind: 'tag', name: tag, label: `Tag +${tag}`, hint: `Tasks tagged ${tag}. Virtual tags such as OVERDUE work too.` };
+    return {
+      key,
+      kind: 'tag',
+      name: tag,
+      label: `Tag +${tag}`,
+      hint: `Tasks tagged ${tag}. Virtual tags such as OVERDUE work too.`,
+    };
   }
   const keyword = user('user.keyword.');
   if (keyword !== null) {
-    return { key, kind: 'keyword', name: keyword, label: `Keyword “${keyword}”`, hint: 'The description contains this text (case-sensitive).' };
+    return {
+      key,
+      kind: 'keyword',
+      name: keyword,
+      label: `Keyword “${keyword}”`,
+      hint: 'The description contains this text (case-sensitive).',
+    };
   }
   const uda = user('uda.') ?? (body.startsWith('uda.') ? body.slice(4) : null);
   if (uda !== null) {
     const [name, ...value] = uda.split('.');
     return value.length
-      ? { key, kind: 'uda', name: uda, label: `${name} = ${value.join('.')}`, hint: `The ${name} attribute is exactly ${value.join('.')}.` }
-      : { key, kind: 'uda', name: uda, label: `${name} has a value`, hint: `The ${name} attribute is set, to anything.` };
+      ? {
+          key,
+          kind: 'uda',
+          name: uda,
+          label: `${name} = ${value.join('.')}`,
+          hint: `The ${name} attribute is exactly ${value.join('.')}.`,
+        }
+      : {
+          key,
+          kind: 'uda',
+          name: uda,
+          label: `${name} has a value`,
+          hint: `The ${name} attribute is set, to anything.`,
+        };
   }
   return { key, kind: 'term', name: rest, label: key, hint: '' };
 }
@@ -77,11 +110,17 @@ export const ADDABLE: { kind: Exclude<Kind, 'term'>; label: string; placeholder:
 
 /** The same rule the Worker applies to names: no spaces, `=`, `#`, and not containing ".coefficient". */
 export function validName(name: string): boolean {
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what a name may not contain
   return name.length > 0 && !name.includes(SUFFIX) && !/[\s=#\u0000-\u001f]/.test(name);
 }
 
 export function buildKey(kind: Exclude<Kind, 'term'>, name: string): string {
-  const prefix = { project: 'urgency.user.project.', tag: 'urgency.user.tag.', keyword: 'urgency.user.keyword.', uda: 'urgency.uda.' }[kind];
+  const prefix = {
+    project: 'urgency.user.project.',
+    tag: 'urgency.user.tag.',
+    keyword: 'urgency.user.keyword.',
+    uda: 'urgency.uda.',
+  }[kind];
   return `${prefix}${name}${SUFFIX}`;
 }
 
@@ -103,7 +142,11 @@ export function sortKeys(keys: Iterable<string>): string[] {
 }
 
 /** The value in force: the saved override, else Taskwarrior's built-in one. */
-export function effective(key: string, overrides: Record<string, number>, defaults: Record<string, number>): number | undefined {
+export function effective(
+  key: string,
+  overrides: Record<string, number>,
+  defaults: Record<string, number>,
+): number | undefined {
   return overrides[key] ?? defaults[key];
 }
 
@@ -111,7 +154,12 @@ export function effective(key: string, overrides: Record<string, number>, defaul
  * Record `value` for `key`. A value equal to the built-in one is not an override, so it is dropped
  * and the setting follows the default again.
  */
-export function withValue(overrides: Record<string, number>, defaults: Record<string, number>, key: string, value: number): Record<string, number> {
+export function withValue(
+  overrides: Record<string, number>,
+  defaults: Record<string, number>,
+  key: string,
+  value: number,
+): Record<string, number> {
   const next = { ...overrides };
   if (key in defaults && defaults[key] === value) delete next[key];
   else next[key] = value;

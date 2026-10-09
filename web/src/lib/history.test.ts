@@ -4,7 +4,13 @@ import type { HistoryChange, HistoryKind } from './types';
 
 const show = (n: number) => `<${n}>`;
 const c = (kind: HistoryKind, prop: string, over: Partial<HistoryChange> = {}): HistoryChange => ({
-  kind, prop, old: null, value: null, date: false, duration: null, ...over,
+  kind,
+  prop,
+  old: null,
+  value: null,
+  date: false,
+  duration: null,
+  ...over,
 });
 const say = (x: HistoryChange) => describeChange(x, show);
 
@@ -18,8 +24,12 @@ describe('describeChange', () => {
 
   it('says what a property changed from and to', () => {
     expect(say(c('changed', 'project', { old: 'home', value: 'work' }))).toBe("Project changed from 'home' to 'work'.");
-    expect(say(c('changed', 'due', { old: '100', value: '200', date: true }))).toBe("Due changed from '<100>' to '<200>'.");
-    expect(say(c('changed', 'status', { old: 'pending', value: 'completed' }))).toBe("Status changed from 'pending' to 'completed'.");
+    expect(say(c('changed', 'due', { old: '100', value: '200', date: true }))).toBe(
+      "Due changed from '<100>' to '<200>'.",
+    );
+    expect(say(c('changed', 'status', { old: 'pending', value: 'completed' }))).toBe(
+      "Status changed from 'pending' to 'completed'.",
+    );
   });
 
   it('shows a date value that is not a number as it is, like Taskwarrior', () => {
@@ -29,8 +39,12 @@ describe('describeChange', () => {
 
   it('says when a property was deleted, with how long a start had run', () => {
     expect(say(c('deleted', 'wait', { old: '5', date: true }))).toBe('Wait deleted.');
-    expect(say(c('deleted', 'start', { old: '1', date: true, duration: '0:00:03' }))).toBe('Start deleted (duration: 0:00:03).');
-    expect(say(c('deleted', 'start', { old: '1', date: true, duration: '-3:10:28' }))).toBe('Start deleted (duration: -3:10:28).');
+    expect(say(c('deleted', 'start', { old: '1', date: true, duration: '0:00:03' }))).toBe(
+      'Start deleted (duration: 0:00:03).',
+    );
+    expect(say(c('deleted', 'start', { old: '1', date: true, duration: '-3:10:28' }))).toBe(
+      'Start deleted (duration: -3:10:28).',
+    );
     // No beginning in the history to measure from: say no more than is known.
     expect(say(c('deleted', 'start', { old: '1', date: true }))).toBe('Start deleted.');
   });

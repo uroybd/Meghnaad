@@ -1,7 +1,10 @@
 import type { CliResponse, ConfigResponse, TaskrcResponse } from './types';
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
     super(message);
   }
 }

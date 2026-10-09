@@ -15,15 +15,25 @@ function value(c: HistoryChange, v: string | null, show: (epoch: number) => stri
 export function describeChange(c: HistoryChange, show: (epoch: number) => string): string {
   const prop = ucFirst(c.prop);
   switch (c.kind) {
-    case 'set': return `${prop} set to '${value(c, c.value, show)}'.`;
-    case 'changed': return `${prop} changed from '${value(c, c.old, show)}' to '${value(c, c.value, show)}'.`;
-    case 'deleted': return c.duration != null ? `${prop} deleted (duration: ${c.duration}).` : `${prop} deleted.`;
-    case 'note_added': return `Annotation of '${c.value}' added.`;
-    case 'note_changed': return `Annotation changed to '${c.value}'.`;
-    case 'note_deleted': return `Annotation '${c.old}' deleted.`;
-    case 'tag_added': return `Tag '${c.prop}' added.`;
-    case 'tag_deleted': return `Tag '${c.prop}' deleted.`;
-    case 'dep_added': return `Dependency on '${c.prop}' added.`;
-    case 'dep_deleted': return `Dependency on '${c.prop}' deleted.`;
+    case 'set':
+      return `${prop} set to '${value(c, c.value, show)}'.`;
+    case 'changed':
+      return `${prop} changed from '${value(c, c.old, show)}' to '${value(c, c.value, show)}'.`;
+    case 'deleted':
+      return c.duration != null ? `${prop} deleted (duration: ${c.duration}).` : `${prop} deleted.`;
+    case 'note_added':
+      return `Annotation of '${c.value}' added.`;
+    case 'note_changed':
+      return `Annotation changed to '${c.value}'.`;
+    case 'note_deleted':
+      return `Annotation '${c.old}' deleted.`;
+    case 'tag_added':
+      return `Tag '${c.prop}' added.`;
+    case 'tag_deleted':
+      return `Tag '${c.prop}' deleted.`;
+    case 'dep_added':
+      return `Dependency on '${c.prop}' added.`;
+    case 'dep_deleted':
+      return `Dependency on '${c.prop}' deleted.`;
   }
 }

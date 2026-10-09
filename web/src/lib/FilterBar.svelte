@@ -24,10 +24,13 @@
       return;
     }
     const typing = ranFilter !== null && filter !== ranFilter;
-    const t = setTimeout(() => {
-      ranFilter = filter;
-      void store.runLive({ args: a });
-    }, typing ? 250 : 0);
+    const t = setTimeout(
+      () => {
+        ranFilter = filter;
+        void store.runLive({ args: a });
+      },
+      typing ? 250 : 0,
+    );
     return () => clearTimeout(t);
   });
 
@@ -44,7 +47,12 @@
 <section class="bar" aria-label="Report and filters">
   <div class="row top">
     <label class="sr-only" for="fb-report">Report</label>
-    <select id="fb-report" value={store.report} onchange={(e) => pickReport(e.currentTarget.value)} title={meta?.description ?? ''}>
+    <select
+      id="fb-report"
+      value={store.report}
+      onchange={(e) => pickReport(e.currentTarget.value)}
+      title={meta?.description ?? ''}
+    >
       {#each store.reports as r (r.name)}
         <option value={r.name}>{r.name}{r.description ? ` — ${r.description}` : ''}</option>
       {/each}
@@ -58,21 +66,43 @@
   {#if meta?.filter || meta?.sort || context}
     <p class="implicit dim">
       {#if meta?.filter}report filter <code>{meta.filter}</code>{/if}
-      {#if meta?.sort} · default sort <code>{meta.sort}</code>{/if}
-      {#if context} · context <code>{context.name}{context.read ? ` (${context.read})` : ''}</code>{/if}
+      {#if meta?.sort}
+        · default sort <code>{meta.sort}</code>{/if}
+      {#if context}
+        · context <code>{context.name}{context.read ? ` (${context.read})` : ''}</code>{/if}
       <span class="tail">— applied automatically; your filters are added to these. Click a column header to sort.</span>
     </p>
   {/if}
 </section>
 
 <style>
-  .bar { display: grid; gap: 10px; margin-bottom: 18px; }
-  .top select { max-width: 17em; }
-  @media (max-width: 760px) {
-    .top { flex-wrap: wrap; }
-    .top select { max-width: 100%; width: 100%; }
-    .implicit .tail { display: none; }
+  .bar {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 18px;
   }
-  .implicit { margin: 0; font-size: 13px; }
-  .implicit code { background: var(--panel-2); border-radius: 4px; padding: 1px 5px; }
+  .top select {
+    max-width: 17em;
+  }
+  @media (max-width: 760px) {
+    .top {
+      flex-wrap: wrap;
+    }
+    .top select {
+      max-width: 100%;
+      width: 100%;
+    }
+    .implicit .tail {
+      display: none;
+    }
+  }
+  .implicit {
+    margin: 0;
+    font-size: 13px;
+  }
+  .implicit code {
+    background: var(--panel-2);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
 </style>

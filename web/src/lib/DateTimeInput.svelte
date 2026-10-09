@@ -41,22 +41,54 @@
       <button type="button" class="ghost" title="Make it a whole day" onclick={() => (value = date)}>no time</button>
     {/if}
     {#if value}
-      <button type="button" class="ghost" aria-label="Clear {label}" onclick={() => (value = '')}><X size={13} /></button>
+      <button type="button" class="ghost" aria-label="Clear {label}" onclick={() => (value = '')}
+        ><X size={13} /></button
+      >
     {/if}
   </span>
 </span>
 
 <style>
-  .dt { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-  input[type='date'] { width: 9.5em; }
-  input[type='time'] { width: 6.5em; }
-  .presets { display: inline-flex; flex-wrap: wrap; gap: 0; }
-  @media (max-width: 760px) {
-    .dt { width: 100%; }
-    input[type='date'] { flex: 1 1 9.5em; }
-    input[type='time'] { flex: 1 1 6.5em; }
-    .presets { flex-basis: 100%; }
-    .presets button { padding: 6px 10px; font-size: 13px; }
+  .dt {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
   }
-  .presets button { padding: 2px 6px; font-size: 12px; color: var(--dim); display: inline-flex; align-items: center; }
+  input[type='date'] {
+    width: 9.5em;
+  }
+  input[type='time'] {
+    width: 6.5em;
+  }
+  .presets {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  @media (max-width: 760px) {
+    .dt {
+      width: 100%;
+    }
+    input[type='date'] {
+      flex: 1 1 9.5em;
+    }
+    input[type='time'] {
+      flex: 1 1 6.5em;
+    }
+    .presets {
+      flex-basis: 100%;
+    }
+    .presets button {
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+  }
+  .presets button {
+    padding: 2px 6px;
+    font-size: 12px;
+    color: var(--dim);
+    display: inline-flex;
+    align-items: center;
+  }
 </style>

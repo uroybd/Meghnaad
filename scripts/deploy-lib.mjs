@@ -17,7 +17,10 @@ export const KEYS = ['R2_BUCKET', 'CUSTOM_DOMAIN', 'TEAM_DOMAIN', 'POLICY_AUD', 
 
 const PATTERNS = {
   R2_BUCKET: [/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/, 'a bucket name: 3-63 lowercase letters, digits or hyphens'],
-  CUSTOM_DOMAIN: [/^(?=.{4,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/, 'a hostname such as tasks.example.com (no https://)'],
+  CUSTOM_DOMAIN: [
+    /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/,
+    'a hostname such as tasks.example.com (no https://)',
+  ],
   TEAM_DOMAIN: [/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/, 'https://<your-team>.cloudflareaccess.com'],
   POLICY_AUD: [/^[0-9a-f]{64}$/, 'the 64-character Application Audience tag'],
   WORKER_NAME: [/^[a-z0-9][a-z0-9-]{0,62}$/, 'a Worker name: lowercase letters, digits or hyphens'],
@@ -73,7 +76,8 @@ export function writeSettings(s) {
       '# CUSTOM_DOMAIN optional, e.g. tasks.example.com (the zone must be on your Cloudflare account)\n' +
       '# TEAM_DOMAIN / POLICY_AUD   from Cloudflare Access\n' +
       '# WORKER_NAME   optional, to run several copies\n' +
-      lines.join('\n') + '\n',
+      lines.join('\n') +
+      '\n',
   );
 }
 
@@ -81,7 +85,8 @@ export function writeSettings(s) {
 export const problems = (s) => KEYS.flatMap((k) => problem(k, s[k]) ?? []);
 
 /** Both Access settings present and valid: the deployed Worker can check sign-ins. */
-export const accessReady = (s) => !!s.TEAM_DOMAIN && !!s.POLICY_AUD && !problem('TEAM_DOMAIN', s.TEAM_DOMAIN) && !problem('POLICY_AUD', s.POLICY_AUD);
+export const accessReady = (s) =>
+  !!s.TEAM_DOMAIN && !!s.POLICY_AUD && !problem('TEAM_DOMAIN', s.TEAM_DOMAIN) && !problem('POLICY_AUD', s.POLICY_AUD);
 
 /** `wrangler.jsonc` (already parsed) + settings -> the config to deploy. Pure. */
 export function buildConfig(base, s) {
@@ -130,7 +135,8 @@ export const has = (cmd, args = ['--version']) => capture(cmd, args).ok;
 
 /** What is missing before the Worker can be built. Entries with `fix` can be installed for the user. */
 export function missingTools() {
-  if (!has('cargo')) return [{ what: 'Rust (cargo)', fix: null, hint: 'install it from https://rustup.rs, then run this again' }];
+  if (!has('cargo'))
+    return [{ what: 'Rust (cargo)', fix: null, hint: 'install it from https://rustup.rs, then run this again' }];
   const missing = [];
   if (!capture('rustup', ['target', 'list', '--installed']).out.includes('wasm32-unknown-unknown'))
     missing.push({ what: 'the wasm32 Rust target', fix: ['rustup', ['target', 'add', 'wasm32-unknown-unknown']] });
@@ -142,7 +148,9 @@ export function missingTools() {
 export function deploy(s) {
   writeDeployConfig(s);
   const r = spawnSync('npx', ['wrangler', 'deploy', '--config', DEPLOY_CONFIG], {
-    cwd: ROOT, encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'],
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['inherit', 'pipe', 'inherit'],
   });
   process.stdout.write(r.stdout ?? '');
   return { ok: r.status === 0, out: r.stdout ?? '' };

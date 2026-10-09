@@ -38,10 +38,13 @@
     const cmd = command;
     void store.rev;
     const typing = lastFilter !== null && f !== lastFilter;
-    const t = setTimeout(() => {
-      lastFilter = f;
-      void store.runPanel(which, { args: [...splitWords(f), cmd] });
-    }, typing ? 250 : 0);
+    const t = setTimeout(
+      () => {
+        lastFilter = f;
+        void store.runPanel(which, { args: [...splitWords(f), cmd] });
+      },
+      typing ? 250 : 0,
+    );
     return () => clearTimeout(t);
   });
 </script>
@@ -60,7 +63,16 @@
 {/if}
 
 <style>
-  .bar { display: grid; gap: 10px; margin-bottom: 18px; }
-  .top { flex-wrap: wrap; }
-  .stale { opacity: 0.6; transition: opacity 0.15s; }
+  .bar {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .top {
+    flex-wrap: wrap;
+  }
+  .stale {
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
 </style>

@@ -13,8 +13,25 @@ export interface SortKey {
 
 /** Columns a header click can sort by (UDAs are added by the caller). */
 export const SORTABLE = new Set([
-  'id', 'uuid', 'status', 'description', 'project', 'priority', 'tags', 'depends', 'entry', 'start',
-  'end', 'due', 'wait', 'scheduled', 'until', 'modified', 'urgency', 'recur', 'parent',
+  'id',
+  'uuid',
+  'status',
+  'description',
+  'project',
+  'priority',
+  'tags',
+  'depends',
+  'entry',
+  'start',
+  'end',
+  'due',
+  'wait',
+  'scheduled',
+  'until',
+  'modified',
+  'urgency',
+  'recur',
+  'parent',
 ]);
 
 const MAX_KEYS = 4;
@@ -70,7 +87,8 @@ export function clickSort(current: SortKey[], column: string, shift = false): Cl
   return { keys: [{ column, desc: false, brk: false }, ...rest].slice(0, MAX_KEYS), reset: false };
 }
 
-const tokenFor = (report: string) => new RegExp(`^rc\\.report\\.${report.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.sort[:=]`);
+const tokenFor = (report: string) =>
+  new RegExp(`^rc\\.report\\.${report.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.sort[:=]`);
 
 /** The sort override for `report` in a filter string, if any. */
 export function sortOverride(filter: string, report: string): string | null {
@@ -83,7 +101,12 @@ export function sortOverride(filter: string, report: string): string | null {
  * Set (or with `null`, remove) the sort override in a filter string. A spec equal to the report's
  * default needs no override, so it is dropped to keep the command short.
  */
-export function withSortOverride(filter: string, report: string, spec: string | null, defaultSpec: string | null): string {
+export function withSortOverride(
+  filter: string,
+  report: string,
+  spec: string | null,
+  defaultSpec: string | null,
+): string {
   const re = tokenFor(report);
   const words = splitWords(filter).filter((w) => !re.test(w));
   if (spec && spec !== (defaultSpec ?? '')) words.push(`rc.report.${report}.sort:${spec}`);

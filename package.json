@@ -11,9 +11,21 @@
     "test": "cargo test && npm --prefix web test && node --test scripts/*.test.mjs",
     "test:auth": "node scripts/auth-check.mjs",
     "check": "npm --prefix web run check",
+    "lint": "npm run lint:rust && npm run lint:js",
+    "lint:rust": "cargo fmt --all -- --check && cargo clippy -p tc-core --all-targets -- -D warnings && cargo clippy -p tw-worker --target wasm32-unknown-unknown -- -D warnings",
+    "lint:js": "prettier --check . && eslint .",
+    "format": "cargo fmt --all && prettier --write .",
     "build": "node scripts/build.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "eslint-plugin-svelte": "^3.23.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte-eslint-parser": "^1.9.0",
+    "typescript-eslint": "^8.71.1",
     "wrangler": "^4"
   },
   "workspaces": [

@@ -15,7 +15,7 @@
   {#snippet controls()}
     <label class="sr-only" for="bd-period">Period</label>
     <select id="bd-period" bind:value={store.burndownPeriod}>
-      {#each periods as p}<option value={p}>{p[0].toUpperCase() + p.slice(1)}</option>{/each}
+      {#each periods as p (p)}<option value={p}>{p[0].toUpperCase() + p.slice(1)}</option>{/each}
     </select>
   {/snippet}
 </PanelPage>

@@ -23,7 +23,7 @@ describe('date + optional time', () => {
     expect(toParts(1798156800, 0)).toEqual({ date: '2026-12-25', time: '' });
   });
 
-  it('renders in the viewer\'s zone, which can change the date', () => {
+  it("renders in the viewer's zone, which can change the date", () => {
     // 08:30Z is 14:00 in IST; 20:00Z is already the next day there.
     expect(toParts(XMAS_0830Z, IST)).toEqual({ date: '2026-12-25', time: '14:00' });
     expect(toParts(XMAS_0830Z + 12 * 3600, IST)).toEqual({ date: '2026-12-26', time: '02:00' });
@@ -52,15 +52,27 @@ describe('date + optional time', () => {
 
 describe('compactDuration', () => {
   it.each([
-    [30, '30s'], [90, '1min'], [7200, '2h'], [3 * 86400, '3d'], [20 * 86400, '2w'],
-    [90 * 86400, '3mo'], [800 * 86400, '2y'], [-3 * 86400, '-3d'],
+    [30, '30s'],
+    [90, '1min'],
+    [7200, '2h'],
+    [3 * 86400, '3d'],
+    [20 * 86400, '2w'],
+    [90 * 86400, '3mo'],
+    [800 * 86400, '2y'],
+    [-3 * 86400, '-3d'],
   ])('%i seconds -> %s', (sec, want) => expect(compactDuration(sec)).toBe(want));
 });
 
 import { formatSeconds } from './dates';
 describe('formatSeconds', () => {
   it.each([
-    [0, '0s'], [45, '45s'], [75, '1m 15s'], [3600, '1h 0m'], [4325, '1h 12m'], [90061, '1d 1h'], [-5, '0s'],
+    [0, '0s'],
+    [45, '45s'],
+    [75, '1m 15s'],
+    [3600, '1h 0m'],
+    [4325, '1h 12m'],
+    [90061, '1d 1h'],
+    [-5, '0s'],
   ])('%i -> %s', (sec, want) => expect(formatSeconds(sec)).toBe(want));
 });
 

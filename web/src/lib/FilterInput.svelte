@@ -70,6 +70,12 @@
 </div>
 
 <style>
-  .filter { position: relative; flex: 1 1 auto; min-width: 0; }
-  .filter input { width: 100%; }
+  .filter {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .filter input {
+    width: 100%;
+  }
 </style>

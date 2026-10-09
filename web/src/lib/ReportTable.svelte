@@ -90,14 +90,20 @@
   {#if onsort && sortColumns.length}
     <div class="sortbar row">
       <label class="dim" for="rt-sort">Sort</label>
-      <select id="rt-sort" value={primary?.column ?? ''} onchange={(e) => e.currentTarget.value && onsort(e.currentTarget.value, false)}>
+      <select
+        id="rt-sort"
+        value={primary?.column ?? ''}
+        onchange={(e) => e.currentTarget.value && onsort(e.currentTarget.value, false)}
+      >
         {#if !primary}<option value="">report default</option>{/if}
         {#each sortColumns as c (c.spec)}<option value={baseColumn(c.name)}>{c.label}</option>{/each}
       </select>
       <button
         class="dir"
         disabled={!primary}
-        aria-label={primary ? `Sorted ${primary.desc ? 'descending' : 'ascending'}; change direction` : 'Sort direction'}
+        aria-label={primary
+          ? `Sorted ${primary.desc ? 'descending' : 'ascending'}; change direction`
+          : 'Sort direction'}
         onclick={() => primary && onsort(primary.column, false)}
       >
         {#if primary?.desc}<ArrowDown size={16} />{:else}<ArrowUp size={16} />{/if}
@@ -147,7 +153,7 @@
             tabindex="0"
             aria-label="Open details: {row.description}"
             onclick={(e) => open(e, row)}
-            onkeydown={(e) => (e.key === 'Enter' && e.target === e.currentTarget) && open(e, row)}
+            onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(e, row)}
           >
             {#each result.columns as col (col.spec)}
               {@const c = cell(col, row, ctx)}
@@ -157,36 +163,54 @@
                 {:else if c.segments}
                   <ProjectPath segments={c.segments} />
                 {:else if c.chips}
-                  {#each c.chips as t}<span class="tagpill">{t}</span>{/each}
+                  {#each c.chips as t (t)}<span class="tagpill">{t}</span>{/each}
                 {:else}
                   {c.text}
                 {/if}
                 {#if col.name === 'description' && row.recur}
-                  <span class="repeat" title={row.status === 'recurring' ? `Recurring task: repeats ${describeRecur(row.recur)}` : `Repeats ${describeRecur(row.recur)}`}>
-                    <Repeat size={12} /><span class="sr-only">{row.status === 'recurring' ? 'recurring' : 'repeats'} {describeRecur(row.recur)}</span>
+                  <span
+                    class="repeat"
+                    title={row.status === 'recurring'
+                      ? `Recurring task: repeats ${describeRecur(row.recur)}`
+                      : `Repeats ${describeRecur(row.recur)}`}
+                  >
+                    <Repeat size={12} /><span class="sr-only"
+                      >{row.status === 'recurring' ? 'recurring' : 'repeats'} {describeRecur(row.recur)}</span
+                    >
                   </span>
                 {/if}
                 {#if col.name === 'description' && row.orphans.length}
-                  <span class="chip orphan" title="Has properties your taskrc doesn't define: {row.orphans.join(', ')} (read-only)">
+                  <span
+                    class="chip orphan"
+                    title="Has properties your taskrc doesn't define: {row.orphans.join(', ')} (read-only)"
+                  >
                     +{row.orphans.length}
                   </span>
                 {/if}
-                {#each c.lines ?? [] as line}
+                {#each c.lines ?? [] as line, _i (_i)}
                   <div class="note dim">{line}</div>
                 {/each}
               </td>
             {/each}
             <td class="actions">
               {#if isOpen(row)}
-                <button class="ghost" title="Done" aria-label="Done" onclick={() => act(row, 'done')}><Check size={16} /></button>
+                <button class="ghost" title="Done" aria-label="Done" onclick={() => act(row, 'done')}
+                  ><Check size={16} /></button
+                >
                 {#if row.start != null}
-                  <button class="ghost" title="Stop" aria-label="Stop" onclick={() => act(row, 'stop')}><Square size={14} fill="currentColor" /></button>
+                  <button class="ghost" title="Stop" aria-label="Stop" onclick={() => act(row, 'stop')}
+                    ><Square size={14} fill="currentColor" /></button
+                  >
                 {:else}
-                  <button class="ghost" title="Start" aria-label="Start" onclick={() => act(row, 'start')}><Play size={14} /></button>
+                  <button class="ghost" title="Start" aria-label="Start" onclick={() => act(row, 'start')}
+                    ><Play size={14} /></button
+                  >
                 {/if}
               {/if}
               {#if onedit}
-                <button class="ghost" title="Edit" aria-label="Edit" onclick={() => onedit(row)}><Pencil size={14} /></button>
+                <button class="ghost" title="Edit" aria-label="Edit" onclick={() => onedit(row)}
+                  ><Pencil size={14} /></button
+                >
               {/if}
               {#if row.status !== 'deleted'}
                 <button
@@ -213,75 +237,278 @@
 
 <style>
   /* Positioned, so the visually hidden header label stays inside it instead of widening the page. */
-  .wrap { overflow-x: auto; position: relative; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: 9px 18px 9px 0; vertical-align: top; white-space: nowrap; }
-  tbody td { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
-  th { color: var(--dim); font-weight: 500; font-size: 13px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-  th .sort { padding: 0 4px; margin-left: -4px; color: inherit; font-size: inherit; font-weight: inherit; border-radius: 4px; }
-  th .sort:hover { color: var(--text); background: var(--panel-2); }
-  th .sort.on { color: var(--accent); font-weight: 700; }
-  .arrow { display: inline-flex; align-items: center; font-size: 10px; margin-left: 2px; vertical-align: middle; }
-  td.description, th.description { white-space: normal; min-width: 16em; }
-  td.id, td.number { font-variant-numeric: tabular-nums; }
-  td.priority { font-weight: 600; }
-  td.pri-h, .pri-h { color: var(--pri-h); }
-  td.pri-m, .pri-m { color: var(--pri-m); }
-  td.pri-l, .pri-l { color: var(--pri-l); }
-  td.overdue { color: var(--err); font-weight: 600; }
-  td.id:not(.dim) { font-weight: 700; }
-  td.dim { color: var(--dim); }
-  tbody tr { cursor: pointer; }
-  tr.gap td { border-top: 14px solid transparent; }
-  tr.done td { color: var(--dim); text-decoration: line-through; }
-  tr.done td.actions { text-decoration: none; }
-  tr.waiting td, tr.blocked td { color: var(--dim); }
-  tr.active td.description { font-weight: 600; }
-  tbody tr:hover { background: var(--panel-2); }
-  tr.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+  .wrap {
+    overflow-x: auto;
+    position: relative;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  th,
+  td {
+    text-align: left;
+    padding: 9px 18px 9px 0;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  tbody td {
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  }
+  th {
+    color: var(--dim);
+    font-weight: 500;
+    font-size: 13px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  th .sort {
+    padding: 0 4px;
+    margin-left: -4px;
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    border-radius: 4px;
+  }
+  th .sort:hover {
+    color: var(--text);
+    background: var(--panel-2);
+  }
+  th .sort.on {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .arrow {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10px;
+    margin-left: 2px;
+    vertical-align: middle;
+  }
+  td.description,
+  th.description {
+    white-space: normal;
+    min-width: 16em;
+  }
+  td.id,
+  td.number {
+    font-variant-numeric: tabular-nums;
+  }
+  td.priority {
+    font-weight: 600;
+  }
+  td.pri-h,
+  .pri-h {
+    color: var(--pri-h);
+  }
+  td.pri-m,
+  .pri-m {
+    color: var(--pri-m);
+  }
+  td.pri-l,
+  .pri-l {
+    color: var(--pri-l);
+  }
+  td.overdue {
+    color: var(--err);
+    font-weight: 600;
+  }
+  td.id:not(.dim) {
+    font-weight: 700;
+  }
+  td.dim {
+    color: var(--dim);
+  }
+  tbody tr {
+    cursor: pointer;
+  }
+  tr.gap td {
+    border-top: 14px solid transparent;
+  }
+  tr.done td {
+    color: var(--dim);
+    text-decoration: line-through;
+  }
+  tr.done td.actions {
+    text-decoration: none;
+  }
+  tr.waiting td,
+  tr.blocked td {
+    color: var(--dim);
+  }
+  tr.active td.description {
+    font-weight: 600;
+  }
+  tbody tr:hover {
+    background: var(--panel-2);
+  }
+  tr.selected {
+    background: var(--panel-2);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
   /* Room for the selection bar (and the hover tint) so the first column never touches it. */
   @media (min-width: 761px) {
-    th:first-child, td:first-child { padding-left: 12px; }
+    th:first-child,
+    td:first-child {
+      padding-left: 12px;
+    }
   }
-  tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .note { font-size: 13px; margin-left: 1em; white-space: pre-wrap; }
-  td.multiline { white-space: pre-line; }
-  .actions { text-align: right; white-space: nowrap; }
-  .actions button { padding: 3px 6px; line-height: 0; }
-  .actions button:has(:not(svg)) { line-height: inherit; }
-  .orphan { margin-left: 6px; color: var(--dim); }
-  .repeat { display: inline-flex; margin-left: 6px; color: var(--dim); vertical-align: -1px; }
-  .desc, .empty, .count { margin: 8px 0; }
-  .sortbar { display: none; margin: 0 0 8px; }
-  .sortbar select { flex: 1; min-width: 0; }
+  tr:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .note {
+    font-size: 13px;
+    margin-left: 1em;
+    white-space: pre-wrap;
+  }
+  td.multiline {
+    white-space: pre-line;
+  }
+  .actions {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .actions button {
+    padding: 3px 6px;
+    line-height: 0;
+  }
+  .actions button:has(:not(svg)) {
+    line-height: inherit;
+  }
+  .orphan {
+    margin-left: 6px;
+    color: var(--dim);
+  }
+  .repeat {
+    display: inline-flex;
+    margin-left: 6px;
+    color: var(--dim);
+    vertical-align: -1px;
+  }
+  .desc,
+  .empty,
+  .count {
+    margin: 8px 0;
+  }
+  .sortbar {
+    display: none;
+    margin: 0 0 8px;
+  }
+  .sortbar select {
+    flex: 1;
+    min-width: 0;
+  }
 
   /* Phones: each task is a card. The first line is the description; the other columns follow as
      small "label value" pairs, and the buttons get their own row. */
   @media (max-width: 760px) {
-    .sortbar { display: flex; }
-    .desc { display: none; }
-    .wrap { overflow: visible; }
-    table, tbody { display: block; }
-    thead { display: none; }
-    tbody tr {
-      position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px;
-      padding: 10px 12px 6px; margin-bottom: 8px;
-      border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+    .sortbar {
+      display: flex;
     }
-    tr.gap { margin-top: 18px; }
-    tr.gap td { border-top: 0; }
-    td { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 0; font-size: 13px; white-space: normal; color: var(--dim); }
-    td::before { content: attr(data-label); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.8; align-self: center; }
-    td.blank { display: none; }
-    td.description { order: -1; flex-basis: 100%; font-size: 15px; color: var(--text); padding-right: 2.4em; min-width: 0; }
-    td.description::before, td.actions::before { display: none; }
-    td.id { position: absolute; top: 10px; right: 12px; font-size: 12px; }
-    td.id::before { content: '#'; opacity: 0.6; }
-    td.overdue { color: var(--err); }
-    td.priority.pri-h { color: var(--pri-h); }
-    tr.done td.description, tr.done td { color: var(--dim); }
-    td.actions { order: 99; flex-basis: 100%; display: flex; justify-content: flex-end; gap: 4px; margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--line); }
-    td.actions button { min-width: 44px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
-    .note { margin-left: 0; flex-basis: 100%; }
+    .desc {
+      display: none;
+    }
+    .wrap {
+      overflow: visible;
+    }
+    table,
+    tbody {
+      display: block;
+    }
+    thead {
+      display: none;
+    }
+    tbody tr {
+      position: relative;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 2px 14px;
+      padding: 10px 12px 6px;
+      margin-bottom: 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+    tr.gap {
+      margin-top: 18px;
+    }
+    tr.gap td {
+      border-top: 0;
+    }
+    td {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 0;
+      font-size: 13px;
+      white-space: normal;
+      color: var(--dim);
+    }
+    td::before {
+      content: attr(data-label);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.8;
+      align-self: center;
+    }
+    td.blank {
+      display: none;
+    }
+    td.description {
+      order: -1;
+      flex-basis: 100%;
+      font-size: 15px;
+      color: var(--text);
+      padding-right: 2.4em;
+      min-width: 0;
+    }
+    td.description::before,
+    td.actions::before {
+      display: none;
+    }
+    td.id {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      font-size: 12px;
+    }
+    td.id::before {
+      content: '#';
+      opacity: 0.6;
+    }
+    td.overdue {
+      color: var(--err);
+    }
+    td.priority.pri-h {
+      color: var(--pri-h);
+    }
+    tr.done td.description,
+    tr.done td {
+      color: var(--dim);
+    }
+    td.actions {
+      order: 99;
+      flex-basis: 100%;
+      display: flex;
+      justify-content: flex-end;
+      gap: 4px;
+      margin-top: 6px;
+      padding-top: 4px;
+      border-top: 1px solid var(--line);
+    }
+    td.actions button {
+      min-width: 44px;
+      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .note {
+      margin-left: 0;
+      flex-basis: 100%;
+    }
   }
 </style>

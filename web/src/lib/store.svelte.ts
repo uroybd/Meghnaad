@@ -272,7 +272,13 @@ class Store {
     // in the Tasks view instead, where it can be sorted and filtered.
     const inConsole = this.view === 'console';
     const e = $state<Entry>({
-      id: nextId++, input, title: titleOf(input), result: null, loading: true, failure: null, at: Date.now(),
+      id: nextId++,
+      input,
+      title: titleOf(input),
+      result: null,
+      loading: true,
+      failure: null,
+      at: Date.now(),
     });
     this.entries.push(e);
     this.remember(input.line ?? previewLine(input.args ?? []));
@@ -298,7 +304,15 @@ class Store {
   async runLive(input: CliInput) {
     this.liveKey = JSON.stringify(input.args ?? input.line);
     if (!this.live) {
-      this.live = { id: nextId++, input, title: titleOf(input), result: null, loading: true, failure: null, at: Date.now() };
+      this.live = {
+        id: nextId++,
+        input,
+        title: titleOf(input),
+        result: null,
+        loading: true,
+        failure: null,
+        at: Date.now(),
+      };
     }
     this.live.input = input;
     this.live.title = titleOf(input);
@@ -309,7 +323,15 @@ class Store {
   /** Run (or re-run) what one of the Summary, Calendar or Burndown pages shows. */
   async runPanel(which: 'summary' | 'calendar' | 'burndown', input: CliInput) {
     if (!this.panels[which]) {
-      this.panels[which] = { id: nextId++, input, title: titleOf(input), result: null, loading: true, failure: null, at: Date.now() };
+      this.panels[which] = {
+        id: nextId++,
+        input,
+        title: titleOf(input),
+        result: null,
+        loading: true,
+        failure: null,
+        at: Date.now(),
+      };
     }
     const e = this.panels[which]!;
     e.input = input;
@@ -354,12 +376,7 @@ class Store {
   }
 
   /** A GUI action (done, start, add, ...): run it, report the outcome, refresh what's on screen. */
-  async act(
-    from: Entry | null,
-    args: string[],
-    answers: Answers = {},
-    again = false,
-  ): Promise<CliResponse | null> {
+  async act(from: Entry | null, args: string[], answers: Answers = {}, again = false): Promise<CliResponse | null> {
     if (!again) this.remember(previewLine(args));
     try {
       const res = await runCli({ args, ...answers });
@@ -381,7 +398,8 @@ class Store {
             const question = r.items.length === 1 ? r.items[0].question : r.message;
             if (window.confirm(question)) return retry(r.ask === 'permission' ? { approved: keys } : { extras: keys });
             // A follow-up can be declined while the change itself still goes ahead.
-            if (r.ask === 'extras' && window.confirm('Go ahead with the change without that?')) return retry({ extras: [] });
+            if (r.ask === 'extras' && window.confirm('Go ahead with the change without that?'))
+              return retry({ extras: [] });
           }
         }
         this.notify('Nothing was changed.');

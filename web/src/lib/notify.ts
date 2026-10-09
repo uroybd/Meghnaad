@@ -49,7 +49,13 @@ function until(seconds: number): string {
  * @param seen keys already shown; the caller adds the keys of what it shows
  * @param tz viewer's UTC offset in seconds
  */
-export function dueNotices(rows: Row[], now: number, s: NotifySettings, seen: ReadonlySet<string>, tz: number): Notice[] {
+export function dueNotices(
+  rows: Row[],
+  now: number,
+  s: NotifySettings,
+  seen: ReadonlySet<string>,
+  tz: number,
+): Notice[] {
   const out: Notice[] = [];
   const add = (n: Notice) => {
     if (!seen.has(n.key)) out.push(n);
@@ -66,13 +72,25 @@ export function dueNotices(rows: Row[], now: number, s: NotifySettings, seen: Re
         // A date without a time: remind at the chosen hour on that day, not at midnight.
         const at = due + s.allDayHour * HOUR;
         if (now >= at && now < due + DAY) {
-          add({ key: `${r.uuid}:allday:${due}`, kind: 'allday', title: 'Due today', body: r.description, uuid: r.uuid });
+          add({
+            key: `${r.uuid}:allday:${due}`,
+            kind: 'allday',
+            title: 'Due today',
+            body: r.description,
+            uuid: r.uuid,
+          });
         }
         if (now >= due + DAY) overdue++;
       } else {
         const lead = s.leadMinutes * 60;
         if (lead > 0 && now >= due - lead && now < due) {
-          add({ key: `${r.uuid}:soon:${due}`, kind: 'soon', title: `Due ${until(due - now)}`, body: r.description, uuid: r.uuid });
+          add({
+            key: `${r.uuid}:soon:${due}`,
+            kind: 'soon',
+            title: `Due ${until(due - now)}`,
+            body: r.description,
+            uuid: r.uuid,
+          });
         }
         if (now >= due && now < due + FRESH) {
           add({ key: `${r.uuid}:due:${due}`, kind: 'due', title: 'Due now', body: r.description, uuid: r.uuid });
@@ -82,7 +100,13 @@ export function dueNotices(rows: Row[], now: number, s: NotifySettings, seen: Re
     }
 
     if (s.waitOver && r.wait != null && now >= r.wait && now < r.wait + FRESH) {
-      add({ key: `${r.uuid}:wait:${r.wait}`, kind: 'wait', title: 'Back on your list', body: r.description, uuid: r.uuid });
+      add({
+        key: `${r.uuid}:wait:${r.wait}`,
+        kind: 'wait',
+        title: 'Back on your list',
+        body: r.description,
+        uuid: r.uuid,
+      });
     }
   }
 

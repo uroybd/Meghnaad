@@ -24,9 +24,21 @@
   {#snippet controls(entry)}
     {@const at = shown(entry)}
     <div class="pager" role="group" aria-label="Months">
-      <button class="ghost" aria-label="Earlier months" title="Earlier months" disabled={!at} onclick={() => at && go(stepWords(at.first, at.count, -1))}><ChevronLeft size={16} /></button>
+      <button
+        class="ghost"
+        aria-label="Earlier months"
+        title="Earlier months"
+        disabled={!at}
+        onclick={() => at && go(stepWords(at.first, at.count, -1))}><ChevronLeft size={16} /></button
+      >
       <button onclick={() => go([])} title="From this month">Today</button>
-      <button class="ghost" aria-label="Later months" title="Later months" disabled={!at} onclick={() => at && go(stepWords(at.first, at.count, 1))}><ChevronRight size={16} /></button>
+      <button
+        class="ghost"
+        aria-label="Later months"
+        title="Later months"
+        disabled={!at}
+        onclick={() => at && go(stepWords(at.first, at.count, 1))}><ChevronRight size={16} /></button
+      >
       <button onclick={() => go(['y'])} title="A year of months, from this one">Year</button>
       <button onclick={() => go(['due'])} title="From the oldest due date">First due</button>
     </div>
@@ -34,6 +46,13 @@
 </PanelPage>
 
 <style>
-  .pager { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .pager button { white-space: nowrap; }
+  .pager {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .pager button {
+    white-space: nowrap;
+  }
 </style>

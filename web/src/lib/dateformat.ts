@@ -6,8 +6,18 @@
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 export interface DateFmt {
@@ -49,28 +59,71 @@ export function formatPattern(epoch: number, fmt: DateFmt, tzOffsetSec?: number)
   let out = '';
   for (const c of fmt.pattern) {
     switch (c) {
-      case 'm': out += m0 + 1; break;
-      case 'M': out += pad(m0 + 1); break;
-      case 'd': out += day; break;
-      case 'D': out += pad(day); break;
-      case 'y': out += pad(y % 100); break;
-      case 'Y': out += y; break;
-      case 'a': out += DAYS[wday].slice(0, 3); break;
-      case 'A': out += DAYS[wday]; break;
-      case 'b': out += MONTHS[m0].slice(0, 3); break;
-      case 'B': out += MONTHS[m0]; break;
-      case 'v': out += week; break;
-      case 'V': out += pad(week); break;
-      case 'h': out += h; break;
-      case 'H': out += pad(h); break;
-      case 'n': out += mi; break;
-      case 'N': out += pad(mi); break;
-      case 's': out += s; break;
-      case 'S': out += pad(s); break;
-      case 'j': out += yday0 + 1; break;
-      case 'J': out += pad(yday0 + 1, 3); break;
-      case 'w': out += wday; break;
-      default: out += c;
+      case 'm':
+        out += m0 + 1;
+        break;
+      case 'M':
+        out += pad(m0 + 1);
+        break;
+      case 'd':
+        out += day;
+        break;
+      case 'D':
+        out += pad(day);
+        break;
+      case 'y':
+        out += pad(y % 100);
+        break;
+      case 'Y':
+        out += y;
+        break;
+      case 'a':
+        out += DAYS[wday].slice(0, 3);
+        break;
+      case 'A':
+        out += DAYS[wday];
+        break;
+      case 'b':
+        out += MONTHS[m0].slice(0, 3);
+        break;
+      case 'B':
+        out += MONTHS[m0];
+        break;
+      case 'v':
+        out += week;
+        break;
+      case 'V':
+        out += pad(week);
+        break;
+      case 'h':
+        out += h;
+        break;
+      case 'H':
+        out += pad(h);
+        break;
+      case 'n':
+        out += mi;
+        break;
+      case 'N':
+        out += pad(mi);
+        break;
+      case 's':
+        out += s;
+        break;
+      case 'S':
+        out += pad(s);
+        break;
+      case 'j':
+        out += yday0 + 1;
+        break;
+      case 'J':
+        out += pad(yday0 + 1, 3);
+        break;
+      case 'w':
+        out += wday;
+        break;
+      default:
+        out += c;
     }
   }
   return out;
@@ -96,9 +149,12 @@ export function formatFor(
   const first = (...v: (string | null | undefined)[]) => v.find((x) => !!x) ?? '';
   const infoFmt = first(s['dateformat.info'], s.dateformat);
   const pattern =
-    kind === 'report' ? first(reportDateformat, s['dateformat.report'], s.dateformat)
-    : kind === 'info' ? infoFmt
-    : kind === 'annotation' ? first(s['dateformat.annotation'], s.dateformat)
-    : first(s['dateformat.annotation'], infoFmt);
+    kind === 'report'
+      ? first(reportDateformat, s['dateformat.report'], s.dateformat)
+      : kind === 'info'
+        ? infoFmt
+        : kind === 'annotation'
+          ? first(s['dateformat.annotation'], s.dateformat)
+          : first(s['dateformat.annotation'], infoFmt);
   return pattern ? { pattern, weekstart: weekStartOf(settings) } : undefined;
 }

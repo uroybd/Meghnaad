@@ -3,8 +3,10 @@ import { filterWords, isCalendarWord, shiftMonth, stepWords, withMonths } from '
 
 describe('which words are months and which are filters', () => {
   it('knows the words calendar reads', () => {
-    for (const w of ['due', 'du', 'y', 'Y', '3', '12', '2027', 'march', 'mar', 'DEC', 'sept']) expect(isCalendarWord(w), w).toBe(true);
-    for (const w of ['project:Work', '+next', '/milk/', '-waiting', 'Work', 'd', 'x', '(', 'and']) expect(isCalendarWord(w), w).toBe(false);
+    for (const w of ['due', 'du', 'y', 'Y', '3', '12', '2027', 'march', 'mar', 'DEC', 'sept'])
+      expect(isCalendarWord(w), w).toBe(true);
+    for (const w of ['project:Work', '+next', '/milk/', '-waiting', 'Work', 'd', 'x', '(', 'and'])
+      expect(isCalendarWord(w), w).toBe(false);
   });
 
   it('splits a query into its filter and its months', () => {

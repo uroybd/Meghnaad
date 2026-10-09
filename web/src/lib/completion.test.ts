@@ -102,7 +102,6 @@ describe('apply', () => {
   });
 });
 
-
 describe('hints, ids and modifiers', () => {
   it('commands and reports carry hints', () => {
     const o = complete('mi', 2, vocab).options;
@@ -154,7 +153,6 @@ describe('insert', () => {
   });
 });
 
-
 describe('rc. overrides', () => {
   it('rc. offers report and context', () => {
     expect(c('rc.').options).toEqual(['rc.context:', 'rc.report.']);
@@ -169,7 +167,10 @@ describe('rc. overrides', () => {
 
   it('rc.report.<name>. lists the settings', () => {
     expect(c('rc.report.next.').options).toEqual([
-      'rc.report.next.columns:', 'rc.report.next.filter:', 'rc.report.next.labels:', 'rc.report.next.sort:',
+      'rc.report.next.columns:',
+      'rc.report.next.filter:',
+      'rc.report.next.labels:',
+      'rc.report.next.sort:',
     ]);
     expect(c('rc.report.next.so').options).toEqual(['rc.report.next.sort:']);
   });
@@ -177,7 +178,8 @@ describe('rc. overrides', () => {
   it('sort values complete column names with a direction, including UDAs', () => {
     expect(c('rc.report.next.sort:du').options).toEqual(['rc.report.next.sort:due+', 'rc.report.next.sort:due-']);
     expect(c('rc.report.next.sort:due+,es').options).toEqual([
-      'rc.report.next.sort:due+,estimate+', 'rc.report.next.sort:due+,estimate-',
+      'rc.report.next.sort:due+,estimate+',
+      'rc.report.next.sort:due+,estimate-',
     ]);
     // A direction was already chosen: completing it leaves the list open for a `,`.
     const done = complete('rc.report.next.sort:due+', 24, vocab);

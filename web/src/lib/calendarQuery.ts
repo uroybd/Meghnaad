@@ -3,7 +3,20 @@
 
 import { splitWords, shellQuote } from './cmdline';
 
-const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
 
 /** Whether a word is one `calendar` itself reads (the same test the server applies). */
 export function isCalendarWord(word: string): boolean {
@@ -29,7 +42,7 @@ export function withMonths(query: string, months: string[]): string {
 /** `first` moved by `delta` months. */
 export function shiftMonth(first: { year: number; month: number }, delta: number): { year: number; month: number } {
   const index = first.year * 12 + (first.month - 1) + delta;
-  return { year: Math.floor(index / 12), month: (index % 12 + 12) % 12 + 1 };
+  return { year: Math.floor(index / 12), month: (((index % 12) + 12) % 12) + 1 };
 }
 
 /**

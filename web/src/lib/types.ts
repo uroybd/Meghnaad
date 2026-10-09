@@ -53,9 +53,16 @@ export interface Row extends Facts {
 }
 
 export type HistoryKind =
-  | 'set' | 'changed' | 'deleted'
-  | 'note_added' | 'note_changed' | 'note_deleted'
-  | 'tag_added' | 'tag_deleted' | 'dep_added' | 'dep_deleted';
+  | 'set'
+  | 'changed'
+  | 'deleted'
+  | 'note_added'
+  | 'note_changed'
+  | 'note_deleted'
+  | 'tag_added'
+  | 'tag_deleted'
+  | 'dep_added'
+  | 'dep_deleted';
 
 export interface HistoryChange {
   kind: HistoryKind;
@@ -82,8 +89,18 @@ export interface Session {
 }
 
 export type ColumnKind =
-  | 'id' | 'string' | 'description' | 'project' | 'priority' | 'status' | 'tags'
-  | 'date' | 'number' | 'duration' | 'uuids' | 'notes';
+  | 'id'
+  | 'string'
+  | 'description'
+  | 'project'
+  | 'priority'
+  | 'status'
+  | 'tags'
+  | 'date'
+  | 'number'
+  | 'duration'
+  | 'uuids'
+  | 'notes';
 
 export interface Column {
   spec: string;
@@ -105,7 +122,10 @@ export interface ReportResult {
   sort: string | null;
 }
 
-export interface InfoResult { kind: 'info'; tasks: Row[] }
+export interface InfoResult {
+  kind: 'info';
+  tasks: Row[];
+}
 export interface SummaryRow {
   /** The full project name; empty for tasks without a project. */
   project: string;
@@ -120,7 +140,10 @@ export interface SummaryRow {
   /** Filled cells of a 30-cell bar. */
   bar: number;
 }
-export interface SummaryResult { kind: 'summary'; rows: SummaryRow[] }
+export interface SummaryResult {
+  kind: 'summary';
+  rows: SummaryRow[];
+}
 
 export type DueState = 'overdue' | 'due-today' | 'due';
 export interface CalendarDay {
@@ -131,8 +154,16 @@ export interface CalendarDay {
   scheduled: boolean;
   due: DueState | null;
 }
-export interface CalendarWeek { number: number | null; days: (CalendarDay | null)[] }
-export interface CalendarMonth { year: number; month: number; name: string; weeks: CalendarWeek[] }
+export interface CalendarWeek {
+  number: number | null;
+  days: (CalendarDay | null)[];
+}
+export interface CalendarMonth {
+  year: number;
+  month: number;
+  name: string;
+  weeks: CalendarWeek[];
+}
 export interface CalendarResult {
   kind: 'calendar';
   months: CalendarMonth[];
@@ -173,9 +204,22 @@ export interface BurndownResult {
   current_count: number;
 }
 
-export interface TableResult { kind: 'table'; title: string | null; footer?: string[]; /** Indexes of rows to emphasise (settings changed from their default). */ highlight?: number[]; headers: string[]; rows: string[][] }
-export interface TextResult { kind: 'text'; lines: string[] }
-export interface JsonResult { kind: 'json'; value: unknown }
+export interface TableResult {
+  kind: 'table';
+  title: string | null;
+  footer?: string[];
+  /** Indexes of rows to emphasise (settings changed from their default). */ highlight?: number[];
+  headers: string[];
+  rows: string[][];
+}
+export interface TextResult {
+  kind: 'text';
+  lines: string[];
+}
+export interface JsonResult {
+  kind: 'json';
+  value: unknown;
+}
 export interface ChangedResult {
   kind: 'changed';
   message: string;
@@ -201,11 +245,23 @@ export interface ConfirmResult {
   ask: 'plain' | 'permission' | 'extras';
   items: ConfirmItem[];
 }
-export interface ErrorResult { kind: 'error'; message: string }
+export interface ErrorResult {
+  kind: 'error';
+  message: string;
+}
 
 export type CliResult =
-  | ReportResult | InfoResult | TableResult | SummaryResult | CalendarResult | BurndownResult | TextResult | JsonResult
-  | ChangedResult | ConfirmResult | ErrorResult;
+  | ReportResult
+  | InfoResult
+  | TableResult
+  | SummaryResult
+  | CalendarResult
+  | BurndownResult
+  | TextResult
+  | JsonResult
+  | ChangedResult
+  | ConfirmResult
+  | ErrorResult;
 
 /** How the server understood the command line. */
 export interface CommandInfo {
@@ -218,7 +274,10 @@ export interface CommandInfo {
 }
 
 /** A line a hook printed (see `hooks.rs`). */
-export interface HookLine { kind: 'info' | 'warn'; text: string }
+export interface HookLine {
+  kind: 'info' | 'warn';
+  text: string;
+}
 
 export interface CliResponse {
   wrote: boolean;

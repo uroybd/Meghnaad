@@ -39,16 +39,52 @@
 
 <style>
   .menu {
-    position: absolute; left: 0; z-index: 30; margin: 0; padding: 4px; list-style: none;
-    min-width: 16em; max-width: min(36em, 94vw); max-height: 15em; overflow: auto;
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    box-shadow: 0 6px 22px rgb(0 0 0 / 0.18); font-size: 13px;
+    position: absolute;
+    left: 0;
+    z-index: 30;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    min-width: 16em;
+    max-width: min(36em, 94vw);
+    max-height: 15em;
+    overflow: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 22px rgb(0 0 0 / 0.18);
+    font-size: 13px;
   }
-  .menu.above { bottom: calc(100% + 4px); }
-  .menu.below { top: calc(100% + 4px); }
-  li { cursor: pointer; display: flex; gap: 14px; justify-content: space-between; padding: 1px 8px; border-radius: 4px; white-space: nowrap; }
-  li.sel { background: var(--accent); color: var(--accent-text); }
-  li.sel .h { color: inherit; opacity: 0.85; }
-  .h { overflow: hidden; text-overflow: ellipsis; }
-  @media (pointer: coarse) { li { padding: 9px 8px; } }
+  .menu.above {
+    bottom: calc(100% + 4px);
+  }
+  .menu.below {
+    top: calc(100% + 4px);
+  }
+  li {
+    cursor: pointer;
+    display: flex;
+    gap: 14px;
+    justify-content: space-between;
+    padding: 1px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  li.sel {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  li.sel .h {
+    color: inherit;
+    opacity: 0.85;
+  }
+  .h {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  @media (pointer: coarse) {
+    li {
+      padding: 9px 8px;
+    }
+  }
 </style>

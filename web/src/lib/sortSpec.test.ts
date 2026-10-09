@@ -66,7 +66,7 @@ describe('the sort token in a filter string', () => {
   it('drops the override when it equals the report default', () => {
     expect(withSortOverride('', 'next', 'urgency-', 'urgency-')).toBe('');
   });
-  it('leaves other reports\' overrides alone', () => {
+  it("leaves other reports' overrides alone", () => {
     const f = withSortOverride('rc.report.list.sort:due+', 'next', 'urgency+', 'urgency-');
     expect(f).toBe('rc.report.list.sort:due+ rc.report.next.sort:urgency+');
   });

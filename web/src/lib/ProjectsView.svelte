@@ -86,26 +86,34 @@
         <span class="label">{n.label}</span>
       </button>
       <span class="count" title="Pending tasks, including sub-projects">{n.total}</span>
-      {#if n.children.length}<span class="count">· {n.children.length} sub-project{n.children.length === 1 ? '' : 's'}</span>{/if}
+      {#if n.children.length}<span class="count"
+          >· {n.children.length} sub-project{n.children.length === 1 ? '' : 's'}</span
+        >{/if}
       {#if n.overdue}<span class="late" title="Overdue">{n.overdue} overdue</span>{/if}
       <span class="grow"></span>
-      <button class="ghost link" onclick={() => inTasks(n)} title="Open {n.name || 'these tasks'} in the Tasks view">Open in Tasks</button>
+      <button class="ghost link" onclick={() => inTasks(n)} title="Open {n.name || 'these tasks'} in the Tasks view"
+        >Open in Tasks</button
+      >
     </div>
     {#if isOpen}
       <ul class="tree">
         {#each n.children as c (c.name)}{@render branch(c, depth + 1)}{/each}
         {#each n.own as r (r.uuid)}
           <li class="task" style="--depth: {depth + 1}">
-            <button class="ghost tick" aria-label="Mark done: {r.description}" title="Mark done" onclick={() => done(r)}><Check size={15} /></button>
+            <button class="ghost tick" aria-label="Mark done: {r.description}" title="Mark done" onclick={() => done(r)}
+              ><Check size={15} /></button
+            >
             <button class="ghost desc" onclick={() => store.openDetail(r.uuid)}>
               {#if r.priority}<span class="pri pri-{r.priority}">{r.priority}</span>{/if}
               <span class="text">{r.description}</span>
             </button>
-            {#each r.tags as t}<span class="tag">+{t}</span>{/each}
+            {#each r.tags as t, _i (_i)}<span class="tag">+{t}</span>{/each}
             {#if r.due != null}<span class="due" class:late={late(r)}>{due(r)}</span>{/if}
           </li>
         {/each}
-        {#if n.children.length === 0 && n.own.length === 0}<li class="dim empty" style="--depth: {depth + 1}">Nothing here.</li>{/if}
+        {#if n.children.length === 0 && n.own.length === 0}<li class="dim empty" style="--depth: {depth + 1}">
+            Nothing here.
+          </li>{/if}
       </ul>
     {/if}
   </li>
@@ -125,34 +133,115 @@
   {:else if tree.length === 0}
     <p class="dim">No pending tasks.</p>
   {:else}
-    <ul class="tree root">{#each tree as n (n.name)}{@render branch(n, 0)}{/each}</ul>
+    <ul class="tree root">
+      {#each tree as n (n.name)}{@render branch(n, 0)}{/each}
+    </ul>
   {/if}
 </section>
 
 <style>
-  .bar { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
-  h2 { font-size: 15px; margin: 0; }
-  .tree { list-style: none; margin: 0; padding: 0; }
-  .head, .task { display: flex; align-items: center; gap: 8px; padding: 3px 0 3px calc(var(--depth) * 20px); min-width: 0; }
-  .head { border-bottom: 1px solid var(--line); }
-  .toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; text-align: left; min-width: 0; }
-  .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .count { color: var(--dim); font-size: 13px; }
-  .late, .due.late { color: var(--err); font-size: 13px; }
-  .link { font-size: 13px; color: var(--accent); white-space: nowrap; }
-  .task { padding-left: calc(var(--depth) * 20px + 4px); }
-  .tick { line-height: 0; color: var(--dim); }
-  .tick:hover { color: var(--ok); }
-  .desc { display: flex; align-items: baseline; gap: 6px; text-align: left; min-width: 0; flex: 0 1 auto; }
-  .text { overflow-wrap: anywhere; }
-  .pri { font-size: 11px; font-weight: 700; }
-  .pri-H { color: var(--pri-h); }
-  .pri-M { color: var(--pri-m); }
-  .pri-L { color: var(--pri-l); }
-  .tag, .due { color: var(--dim); font-size: 13px; white-space: nowrap; }
-  .empty { padding-left: calc(var(--depth) * 20px + 4px); }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  h2 {
+    font-size: 15px;
+    margin: 0;
+  }
+  .tree {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .head,
+  .task {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0 3px calc(var(--depth) * 20px);
+    min-width: 0;
+  }
+  .head {
+    border-bottom: 1px solid var(--line);
+  }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    text-align: left;
+    min-width: 0;
+  }
+  .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .count {
+    color: var(--dim);
+    font-size: 13px;
+  }
+  .late,
+  .due.late {
+    color: var(--err);
+    font-size: 13px;
+  }
+  .link {
+    font-size: 13px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .task {
+    padding-left: calc(var(--depth) * 20px + 4px);
+  }
+  .tick {
+    line-height: 0;
+    color: var(--dim);
+  }
+  .tick:hover {
+    color: var(--ok);
+  }
+  .desc {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    text-align: left;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .text {
+    overflow-wrap: anywhere;
+  }
+  .pri {
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .pri-H {
+    color: var(--pri-h);
+  }
+  .pri-M {
+    color: var(--pri-m);
+  }
+  .pri-L {
+    color: var(--pri-l);
+  }
+  .tag,
+  .due {
+    color: var(--dim);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .empty {
+    padding-left: calc(var(--depth) * 20px + 4px);
+  }
   @media (max-width: 760px) {
-    .task { flex-wrap: wrap; }
-    .link { display: none; }
+    .task {
+      flex-wrap: wrap;
+    }
+    .link {
+      display: none;
+    }
   }
 </style>

@@ -94,28 +94,82 @@ const DATE_ATTRS = new Set(['due', 'wait', 'scheduled', 'until', 'start', 'end',
 const NUMERIC_ATTRS = new Set(['urgency', 'id']);
 
 const DATE_WORDS: Option[] = [
-  { value: 'now' }, { value: 'today' }, { value: 'tomorrow' }, { value: 'yesterday' },
-  { value: 'sod', hint: 'start of day' }, { value: 'eod', hint: 'end of day' },
-  { value: 'sow', hint: 'start of week' }, { value: 'eow', hint: 'end of week' },
-  { value: 'som', hint: 'start of month' }, { value: 'eom', hint: 'end of month' },
-  { value: 'soy', hint: 'start of year' }, { value: 'eoy', hint: 'end of year' },
-  { value: 'monday' }, { value: 'tuesday' }, { value: 'wednesday' }, { value: 'thursday' },
-  { value: 'friday' }, { value: 'saturday' }, { value: 'sunday' },
-  { value: '1d', hint: 'in a day' }, { value: '3d', hint: 'in 3 days' },
-  { value: '1w', hint: 'in a week' }, { value: '2w', hint: 'in 2 weeks' }, { value: '1mo', hint: 'in a month' },
+  { value: 'now' },
+  { value: 'today' },
+  { value: 'tomorrow' },
+  { value: 'yesterday' },
+  { value: 'sod', hint: 'start of day' },
+  { value: 'eod', hint: 'end of day' },
+  { value: 'sow', hint: 'start of week' },
+  { value: 'eow', hint: 'end of week' },
+  { value: 'som', hint: 'start of month' },
+  { value: 'eom', hint: 'end of month' },
+  { value: 'soy', hint: 'start of year' },
+  { value: 'eoy', hint: 'end of year' },
+  { value: 'monday' },
+  { value: 'tuesday' },
+  { value: 'wednesday' },
+  { value: 'thursday' },
+  { value: 'friday' },
+  { value: 'saturday' },
+  { value: 'sunday' },
+  { value: '1d', hint: 'in a day' },
+  { value: '3d', hint: 'in 3 days' },
+  { value: '1w', hint: 'in a week' },
+  { value: '2w', hint: 'in 2 weeks' },
+  { value: '1mo', hint: 'in a month' },
 ];
 
 export const VIRTUAL_TAGS = [
-  'ACTIVE', 'ANNOTATED', 'BLOCKED', 'BLOCKING', 'CHILD', 'COMPLETED', 'DELETED', 'DUE', 'DUETODAY',
-  'INSTANCE', 'LATEST', 'MONTH', 'ORPHAN', 'OVERDUE', 'PARENT', 'PENDING', 'PRIORITY', 'PROJECT', 'QUARTER',
-  'READY', 'SCHEDULED', 'TAGGED', 'TEMPLATE', 'TODAY', 'TOMORROW', 'UDA', 'UNBLOCKED', 'UNTIL',
-  'WAITING', 'WEEK', 'YEAR', 'YESTERDAY',
+  'ACTIVE',
+  'ANNOTATED',
+  'BLOCKED',
+  'BLOCKING',
+  'CHILD',
+  'COMPLETED',
+  'DELETED',
+  'DUE',
+  'DUETODAY',
+  'INSTANCE',
+  'LATEST',
+  'MONTH',
+  'ORPHAN',
+  'OVERDUE',
+  'PARENT',
+  'PENDING',
+  'PRIORITY',
+  'PROJECT',
+  'QUARTER',
+  'READY',
+  'SCHEDULED',
+  'TAGGED',
+  'TEMPLATE',
+  'TODAY',
+  'TOMORROW',
+  'UDA',
+  'UNBLOCKED',
+  'UNTIL',
+  'WAITING',
+  'WEEK',
+  'YEAR',
+  'YESTERDAY',
 ];
 
 const MOD_HINTS: Record<string, string> = {
-  is: 'exactly', isnt: 'not exactly', not: 'not (prefix)', has: 'contains', hasnt: 'does not contain',
-  startswith: 'starts with', endswith: 'ends with', word: 'as a whole word', noword: 'not as a word',
-  before: 'earlier than', after: 'later than', by: 'at or before', none: 'is unset', any: 'is set',
+  is: 'exactly',
+  isnt: 'not exactly',
+  not: 'not (prefix)',
+  has: 'contains',
+  hasnt: 'does not contain',
+  startswith: 'starts with',
+  endswith: 'ends with',
+  word: 'as a whole word',
+  noword: 'not as a word',
+  before: 'earlier than',
+  after: 'later than',
+  by: 'at or before',
+  none: 'is unset',
+  any: 'is set',
 };
 const MODS_STRING = ['is', 'isnt', 'not', 'has', 'hasnt', 'startswith', 'endswith', 'word', 'noword', 'none', 'any'];
 const MODS_DATE = ['before', 'after', 'by', 'is', 'isnt', 'not', 'none', 'any'];
@@ -259,7 +313,10 @@ function completeOverride(word: string, start: number, caret: number, v: Vocab):
     const stem = sort[2].slice(lastComma + 1);
     const prefix = word.slice(0, word.length - stem.length);
     const cols = [...SORTABLE, ...v.udas.map((u) => u.name)];
-    const pool = cols.flatMap((c) => [{ value: `${c}+`, hint: 'ascending' }, { value: `${c}-`, hint: 'descending' }]);
+    const pool = cols.flatMap((c) => [
+      { value: `${c}+`, hint: 'ascending' },
+      { value: `${c}-`, hint: 'descending' },
+    ]);
     return make(prefix, matching(stem, pool));
   }
 

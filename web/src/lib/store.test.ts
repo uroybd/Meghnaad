@@ -77,7 +77,15 @@ describe('focusReport', () => {
   });
 
   it('marks the handed-over result as the one on screen', () => {
-    const from = { id: 1, input: { line: 'x' }, title: 'x', result: null, loading: false, failure: null, at: 0 } as Entry;
+    const from = {
+      id: 1,
+      input: { line: 'x' },
+      title: 'x',
+      result: null,
+      loading: false,
+      failure: null,
+      at: 0,
+    } as Entry;
     store.focusReport('next', ['project:Home'], from);
     expect(store.liveKey).toBe(key('project:Home', 'next'));
     expect(store.live?.input).toEqual({ args: reportArgs('project:Home', 'next') });

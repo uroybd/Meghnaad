@@ -16,7 +16,11 @@ test('stripJsonc keeps URLs inside strings and drops comments and trailing comma
     "list": [1, 2,],
     "esc": "quote \\" // not a comment",
   }`;
-  assert.deepEqual(JSON.parse(stripJsonc(text)), { url: 'https://x.example/a//b', list: [1, 2], esc: 'quote " // not a comment' });
+  assert.deepEqual(JSON.parse(stripJsonc(text)), {
+    url: 'https://x.example/a//b',
+    list: [1, 2],
+    esc: 'quote " // not a comment',
+  });
 });
 
 test('the repo wrangler.jsonc parses', async () => {

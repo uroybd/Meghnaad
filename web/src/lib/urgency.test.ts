@@ -1,5 +1,15 @@
 import { describe as suite, expect, it } from 'vitest';
-import { AGE_MAX, buildKey, describe, effective, sameOverrides, sortKeys, validName, validUda, withValue } from './urgency';
+import {
+  AGE_MAX,
+  buildKey,
+  describe,
+  effective,
+  sameOverrides,
+  sortKeys,
+  validName,
+  validUda,
+  withValue,
+} from './urgency';
 
 const defaults = { 'urgency.due.coefficient': 12, 'urgency.user.tag.next.coefficient': 15 };
 
@@ -68,7 +78,9 @@ suite('overrides', () => {
     const start = { 'urgency.due.coefficient': 3 };
     expect(withValue(start, defaults, 'urgency.due.coefficient', 12)).toEqual({});
     expect(withValue(start, defaults, 'urgency.due.coefficient', 0)).toEqual({ 'urgency.due.coefficient': 0 });
-    expect(withValue({}, defaults, 'urgency.user.tag.x.coefficient', 2)).toEqual({ 'urgency.user.tag.x.coefficient': 2 });
+    expect(withValue({}, defaults, 'urgency.user.tag.x.coefficient', 2)).toEqual({
+      'urgency.user.tag.x.coefficient': 2,
+    });
     expect(start).toEqual({ 'urgency.due.coefficient': 3 });
   });
 

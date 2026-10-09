@@ -42,19 +42,59 @@
       <span class="mono t" data-testid="timer">{formatSeconds(elapsed)}</span>
       {#if notifier.active.length > 1}<span class="chip">+{notifier.active.length - 1}</span>{/if}
     </button>
-    <button class="ghost" aria-label="Stop {first.description}" title="Stop" onclick={stop}><Square size={13} fill="currentColor" /></button>
+    <button class="ghost" aria-label="Stop {first.description}" title="Stop" onclick={stop}
+      ><Square size={13} fill="currentColor" /></button
+    >
   </span>
 {/if}
 
 <style>
-  .timer button { line-height: 0; }
-  .timer .body { line-height: 1.3; }
+  .timer button {
+    line-height: 0;
+  }
+  .timer .body {
+    line-height: 1.3;
+  }
   /* It gives way first when the header is tight; the task name inside is cut with an ellipsis. */
-  .timer { display: inline-flex; align-items: center; border: 1px solid var(--ok); border-radius: 999px; padding: 0 4px; max-width: 26em; min-width: 0; flex: 0 1 auto; }
-  .body { display: inline-flex; gap: 6px; align-items: center; min-width: 0; padding: 0 4px; }
-  .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14em; }
-  .dot { display: inline-flex; color: var(--ok); animation: pulse 2s ease-in-out infinite; }
-  .t { font-variant-numeric: tabular-nums; }
-  @keyframes pulse { 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+  .timer {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--ok);
+    border-radius: 999px;
+    padding: 0 4px;
+    max-width: 26em;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .body {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    padding: 0 4px;
+  }
+  .what {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 14em;
+  }
+  .dot {
+    display: inline-flex;
+    color: var(--ok);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .t {
+    font-variant-numeric: tabular-nums;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dot {
+      animation: none;
+    }
+  }
 </style>

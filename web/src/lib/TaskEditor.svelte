@@ -110,7 +110,12 @@
     set('scheduled', scheduled, start.scheduled);
     set('until', until, start.until);
     if (!instance) set('recur', recur, start.recur);
-    const want = new Set(tags.split(/[\s,]+/).filter(Boolean).map((t) => t.replace(/^\+/, '')));
+    const want = new Set(
+      tags
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .map((t) => t.replace(/^\+/, '')),
+    );
     const had = new Set(start.tags.split(' ').filter(Boolean));
     for (const t of want) if (!had.has(t)) a.push(`+${t}`);
     for (const t of had) if (!want.has(t)) a.push(`-${t}`);
@@ -164,8 +169,14 @@
   });
 </script>
 
-<dialog bind:this={dialog} onclose={onclose} aria-label={adding ? 'New task' : 'Edit task'}>
-  <form method="dialog" onsubmit={(e) => { e.preventDefault(); save(false); }}>
+<dialog bind:this={dialog} {onclose} aria-label={adding ? 'New task' : 'Edit task'}>
+  <form
+    method="dialog"
+    onsubmit={(e) => {
+      e.preventDefault();
+      save(false);
+    }}
+  >
     <h3>
       {adding ? 'New task' : 'Edit task'}
       {#if row}<span class="dim mono">{row.uuid.slice(0, 8)}</span>{/if}
@@ -176,12 +187,14 @@
 
     <label for="te-proj">Project</label>
     <input id="te-proj" bind:value={project} list="te-projects" placeholder="none" />
-    <datalist id="te-projects">{#each store.projects as p}<option value={p}></option>{/each}</datalist>
+    <datalist id="te-projects"
+      >{#each store.projects as p (p)}<option value={p}></option>{/each}</datalist
+    >
 
     <label for="te-pri">Priority</label>
     <select id="te-pri" bind:value={priority}>
       <option value="">none</option>
-      {#each priorityValues as p}<option value={p}>{p}</option>{/each}
+      {#each priorityValues as p (p)}<option value={p}>{p}</option>{/each}
     </select>
 
     <label for="te-due">Due</label><DateTimeInput id="te-due" label="Due" bind:value={due} />
@@ -195,7 +208,15 @@
         <span class="chip"><Repeat size={12} /> {describeRecur(row?.recur)}</span>
         <span class="dim hint">This task is one instance of a series.</span>
         {#if row?.parent}
-          <button type="button" class="ghost link" onclick={() => { const p = row!.parent!; onclose(); store.openDetail(p, from); }}>
+          <button
+            type="button"
+            class="ghost link"
+            onclick={() => {
+              const p = row!.parent!;
+              onclose();
+              store.openDetail(p, from);
+            }}
+          >
             <CornerUpLeft size={13} /> open the recurring task
           </button>
         {/if}
@@ -205,7 +226,7 @@
         <div class="row wrapline">
           <select id="te-recur" bind:value={recurChoice} aria-label="Repeat">
             {#if !template}<option value="">Doesn't repeat</option>{/if}
-            {#each PRESETS as p}<option value={p.value}>{p.label}</option>{/each}
+            {#each PRESETS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
             <option value="custom">Custom…</option>
           </select>
           {#if recurChoice === 'custom'}
@@ -230,7 +251,9 @@
 
     <label for="te-tags">Tags</label>
     <input id="te-tags" bind:value={tags} list="te-tag-list" placeholder="space separated" />
-    <datalist id="te-tag-list">{#each store.tags as t}<option value={t}></option>{/each}</datalist>
+    <datalist id="te-tag-list"
+      >{#each store.tags as t (t)}<option value={t}></option>{/each}</datalist
+    >
 
     {#each defined as u (u.name)}
       <label for="te-uda-{u.name}">{udaLabel(u)}</label>
@@ -239,12 +262,17 @@
       {:else if u.type === 'string' && u.values.length}
         <select id="te-uda-{u.name}" bind:value={udaValues[u.name]}>
           <option value="">none</option>
-          {#each u.values.filter(Boolean) as v}<option value={v}>{v}</option>{/each}
+          {#each u.values.filter(Boolean) as v, _i (_i)}<option value={v}>{v}</option>{/each}
         </select>
       {:else if u.type === 'numeric'}
         <input id="te-uda-{u.name}" type="number" step="any" bind:value={udaValues[u.name]} />
       {:else if u.type === 'string'}
-        <textarea id="te-uda-{u.name}" rows="1" bind:value={udaValues[u.name]} onkeydown={newlineOnEnter} title="Enter adds a line; Ctrl+Enter saves"></textarea>
+        <textarea
+          id="te-uda-{u.name}"
+          rows="1"
+          bind:value={udaValues[u.name]}
+          onkeydown={newlineOnEnter}
+          title="Enter adds a line; Ctrl+Enter saves"></textarea>
       {:else}
         <input id="te-uda-{u.name}" bind:value={udaValues[u.name]} />
       {/if}
@@ -252,19 +280,24 @@
 
     <label for="te-dep">Depends on</label>
     <div>
-      {#each row?.depends ?? [] as d}
+      {#each row?.depends ?? [] as d, _i (_i)}
         <span class="chip" class:gone={removedDeps.includes(d)}>
           {d.slice(0, 8)}
           <button
-            type="button" class="ghost x"
+            type="button"
+            class="ghost x"
             aria-label={removedDeps.includes(d) ? 'Keep dependency' : 'Remove dependency'}
-            onclick={() => (removedDeps = removedDeps.includes(d) ? removedDeps.filter((x) => x !== d) : [...removedDeps, d])}
-          >{#if removedDeps.includes(d)}<RotateCcw size={12} />{:else}<X size={12} />{/if}</button>
+            onclick={() =>
+              (removedDeps = removedDeps.includes(d) ? removedDeps.filter((x) => x !== d) : [...removedDeps, d])}
+            >{#if removedDeps.includes(d)}<RotateCcw size={12} />{:else}<X size={12} />{/if}</button
+          >
         </span>
       {/each}
       <input id="te-dep" bind:value={newDep} list="te-task-list" placeholder="task ids or uuid prefixes" />
       <datalist id="te-task-list">
-        {#each store.tasks.filter((t) => t.id != null) as t}<option value={String(t.id)}>{t.description}</option>{/each}
+        {#each store.tasks.filter((t) => t.id != null) as t (t.uuid)}<option value={String(t.id)}
+            >{t.description}</option
+          >{/each}
       </datalist>
     </div>
 
@@ -275,8 +308,11 @@
 
     {#if row?.orphans.length}
       <span class="lbl"><Lock size={13} /> Not in taskrc</span>
-      <div class="orphans" title="These properties exist on the task but aren't defined as UDAs in your taskrc, so they can't be edited here.">
-        {#each row.orphans as k}
+      <div
+        class="orphans"
+        title="These properties exist on the task but aren't defined as UDAs in your taskrc, so they can't be edited here."
+      >
+        {#each row.orphans as k (k)}
           <div class="mono"><span class="dim">{k}</span> = {row.extra[k]}</div>
         {/each}
         <div class="dim hint">read-only: define uda.{row.orphans[0]}.type in your taskrc to edit</div>
@@ -285,20 +321,33 @@
 
     <span class="lbl">{adding ? 'Note' : 'Annotations'}</span>
     <div>
-      {#each visibleNotes(row?.annotations ?? [], store.config?.journal) as a}
+      {#each visibleNotes(row?.annotations ?? [], store.config?.journal) as a, _i (_i)}
         <div class="ann">
-          <span class="dim">{formatMoment(a.entry, undefined, formatFor('infoNote', store.config?.config.settings))}</span> <span class="text">{a.text}</span>
-          <button type="button" class="ghost x" aria-label="Remove annotation" onclick={() => denotate(a.text)}><X size={12} /></button>
+          <span class="dim"
+            >{formatMoment(a.entry, undefined, formatFor('infoNote', store.config?.config.settings))}</span
+          > <span class="text">{a.text}</span>
+          <button type="button" class="ghost x" aria-label="Remove annotation" onclick={() => denotate(a.text)}
+            ><X size={12} /></button
+          >
         </div>
       {/each}
       <div class="row">
-        <textarea class="grow" rows="1" bind:value={note} onkeydown={submitOnEnter} placeholder={adding ? 'Optional first note' : 'Add an annotation'} aria-label="Annotation" title="Shift+Enter adds a line"></textarea>
+        <textarea
+          class="grow"
+          rows="1"
+          bind:value={note}
+          onkeydown={submitOnEnter}
+          placeholder={adding ? 'Optional first note' : 'Add an annotation'}
+          aria-label="Annotation"
+          title="Shift+Enter adds a line"></textarea>
         {#if !adding}<button type="button" onclick={annotate} disabled={!note.trim()}>Add</button>{/if}
       </div>
     </div>
 
     <footer class="row">
-      <span class="grow dim mono preview" title="The command that will run">{#if dirty}task {command}{/if}</span>
+      <span class="grow dim mono preview" title="The command that will run"
+        >{#if dirty}task {command}{/if}</span
+      >
       <button type="button" onclick={onclose}>Cancel</button>
       {#if adding}
         <button type="button" disabled={busy || !dirty} onclick={() => save(true)}>Add &amp; another</button>
@@ -309,34 +358,143 @@
 </dialog>
 
 <style>
-  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 24px 28px; width: min(760px, 96vw); max-height: 94vh; overflow: auto; }
-  dialog::backdrop { background: rgb(0 0 0 / 0.4); }
-  form { display: grid; grid-template-columns: 8.5em 1fr; gap: 12px 16px; align-items: start; }
-  h3 { grid-column: 1 / -1; margin: 0 0 4px; }
-  label, .lbl { color: var(--dim); padding-top: 5px; }
-  label.check { padding-top: 5px; color: var(--text); }
-  footer { grid-column: 1 / -1; margin-top: 8px; position: sticky; bottom: -16px; background: var(--panel); padding: 8px 0; }
-  .preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  .x { padding: 0 4px; font-size: 12px; display: inline-flex; vertical-align: middle; }
-  .chip { display: inline-flex; align-items: center; gap: 2px; }
-  .gone { opacity: 0.5; text-decoration: line-through; }
-  .ann { margin-bottom: 4px; }
-  .ann .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  textarea { resize: vertical; field-sizing: content; min-height: 2.2em; max-height: 14em; }
-  .orphans { opacity: 0.8; }
-  .hint { font-size: 12px; }
-  .link { display: inline-flex; align-items: center; gap: 4px; padding: 0 4px; }
-  .wrapline { flex-wrap: wrap; }
-  select, input:not([type='checkbox']) { max-width: 100%; }
-  .repeat { display: grid; gap: 4px; }
+  dialog {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    padding: 24px 28px;
+    width: min(760px, 96vw);
+    max-height: 94vh;
+    overflow: auto;
+  }
+  dialog::backdrop {
+    background: rgb(0 0 0 / 0.4);
+  }
+  form {
+    display: grid;
+    grid-template-columns: 8.5em 1fr;
+    gap: 12px 16px;
+    align-items: start;
+  }
+  h3 {
+    grid-column: 1 / -1;
+    margin: 0 0 4px;
+  }
+  label,
+  .lbl {
+    color: var(--dim);
+    padding-top: 5px;
+  }
+  label.check {
+    padding-top: 5px;
+    color: var(--text);
+  }
+  footer {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    position: sticky;
+    bottom: -16px;
+    background: var(--panel);
+    padding: 8px 0;
+  }
+  .preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .x {
+    padding: 0 4px;
+    font-size: 12px;
+    display: inline-flex;
+    vertical-align: middle;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .gone {
+    opacity: 0.5;
+    text-decoration: line-through;
+  }
+  .ann {
+    margin-bottom: 4px;
+  }
+  .ann .text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  textarea {
+    resize: vertical;
+    field-sizing: content;
+    min-height: 2.2em;
+    max-height: 14em;
+  }
+  .orphans {
+    opacity: 0.8;
+  }
+  .hint {
+    font-size: 12px;
+  }
+  .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px;
+  }
+  .wrapline {
+    flex-wrap: wrap;
+  }
+  select,
+  input:not([type='checkbox']) {
+    max-width: 100%;
+  }
+  .repeat {
+    display: grid;
+    gap: 4px;
+  }
   /* Phones: labels sit above their fields, and the buttons stack under the command preview. */
   @media (max-width: 760px) {
-    form { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-    label, .lbl { padding-top: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
-    label.check { text-transform: none; font-size: inherit; display: flex; align-items: center; gap: 8px; padding-top: 4px; }
-    footer { flex-wrap: wrap; bottom: calc(-1 * max(14px, env(safe-area-inset-bottom))); padding-bottom: max(8px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
-    footer .preview { flex-basis: 100%; }
-    footer button { flex: 1 1 auto; white-space: nowrap; }
-    h3 { position: sticky; top: calc(-1 * max(14px, env(safe-area-inset-top))); background: var(--panel); padding: 6px 0; z-index: 1; }
+    form {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+    label,
+    .lbl {
+      padding-top: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    label.check {
+      text-transform: none;
+      font-size: inherit;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-top: 4px;
+    }
+    footer {
+      flex-wrap: wrap;
+      bottom: calc(-1 * max(14px, env(safe-area-inset-bottom)));
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+    }
+    footer .preview {
+      flex-basis: 100%;
+    }
+    footer button {
+      flex: 1 1 auto;
+      white-space: nowrap;
+    }
+    h3 {
+      position: sticky;
+      top: calc(-1 * max(14px, env(safe-area-inset-top)));
+      background: var(--panel);
+      padding: 6px 0;
+      z-index: 1;
+    }
   }
 </style>

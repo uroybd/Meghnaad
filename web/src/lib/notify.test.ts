@@ -10,10 +10,36 @@ const on: NotifySettings = { ...DEFAULT_SETTINGS, enabled: true };
 
 function row(over: Partial<Row> = {}): Row {
   return {
-    uuid: 'u1', status: 'pending', description: 'Pay rent', project: null, priority: null, tags: [],
-    annotations: [], entry: null, modified: null, start: null, end: null, due: null, wait: null,
-    scheduled: null, until: null, depends: [], blocked: false, blocking: false, recur: null, parent: null, mask: null, imask: null,
-    extra: {}, urgency: 0, id: 1, virtual_tags: [], orphans: [], active_seconds: null, sessions: [], ...over,
+    uuid: 'u1',
+    status: 'pending',
+    description: 'Pay rent',
+    project: null,
+    priority: null,
+    tags: [],
+    annotations: [],
+    entry: null,
+    modified: null,
+    start: null,
+    end: null,
+    due: null,
+    wait: null,
+    scheduled: null,
+    until: null,
+    depends: [],
+    blocked: false,
+    blocking: false,
+    recur: null,
+    parent: null,
+    mask: null,
+    imask: null,
+    extra: {},
+    urgency: 0,
+    id: 1,
+    virtual_tags: [],
+    orphans: [],
+    active_seconds: null,
+    sessions: [],
+    ...over,
   };
 }
 const kinds = (rows: Row[], now = NOW, seen = new Set<string>(), s = on, tz = 0) =>
@@ -46,7 +72,7 @@ describe('timed due dates', () => {
 });
 
 describe('all-day due dates (no time)', () => {
-  it('are detected in the viewer\'s zone', () => {
+  it("are detected in the viewer's zone", () => {
     expect(isAllDay(MIDNIGHT, 0)).toBe(true);
     expect(isAllDay(MIDNIGHT, 19800)).toBe(false); // midnight UTC is 05:30 in IST
     expect(isAllDay(MIDNIGHT - 19800, 19800)).toBe(true); // IST midnight

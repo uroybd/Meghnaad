@@ -7,11 +7,36 @@ const DAY = 86400;
 
 function row(over: Partial<Row> = {}): Row {
   return {
-    uuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', status: 'pending', description: 'Buy milk',
-    project: null, priority: null, tags: [], annotations: [], entry: NOW - 3 * DAY, modified: null,
-    start: null, end: null, due: null, wait: null, scheduled: null, until: null, depends: [],
-    blocked: false, blocking: false, recur: null, parent: null, mask: null, imask: null, extra: {},
-    urgency: 4.5, id: 3, virtual_tags: [], orphans: [], active_seconds: null, sessions: [], ...over,
+    uuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    status: 'pending',
+    description: 'Buy milk',
+    project: null,
+    priority: null,
+    tags: [],
+    annotations: [],
+    entry: NOW - 3 * DAY,
+    modified: null,
+    start: null,
+    end: null,
+    due: null,
+    wait: null,
+    scheduled: null,
+    until: null,
+    depends: [],
+    blocked: false,
+    blocking: false,
+    recur: null,
+    parent: null,
+    mask: null,
+    imask: null,
+    extra: {},
+    urgency: 4.5,
+    id: 3,
+    virtual_tags: [],
+    orphans: [],
+    active_seconds: null,
+    sessions: [],
+    ...over,
   };
 }
 
@@ -90,7 +115,9 @@ describe('cell', () => {
     const hues = new Set(['Home', 'Work', 'Side', 'Health', 'Garden', 'Errands'].map(segmentHue));
     expect(hues.size).toBeGreaterThan(2);
     // The parent format shows the path above the project, still in parts; no project, no parts.
-    expect(cell(col('project.parent'), row({ project: 'Home.Kitchen' }), ctx).segments?.map((s) => s.text)).toEqual(['Home']);
+    expect(cell(col('project.parent'), row({ project: 'Home.Kitchen' }), ctx).segments?.map((s) => s.text)).toEqual([
+      'Home',
+    ]);
     expect(cell(col('project'), row({ project: null }), ctx).segments).toBeUndefined();
   });
 
@@ -105,16 +132,25 @@ describe('cell', () => {
   });
 
   it('urgency is coloured by how pressing it is', () => {
-    expect([0, 4.99, 5, 9.99, 10, 14.99, 15, 40].map(urgencyLevel)).toEqual(
-      ['low', 'low', 'mid', 'mid', 'high', 'high', 'crit', 'crit'],
-    );
+    expect([0, 4.99, 5, 9.99, 10, 14.99, 15, 40].map(urgencyLevel)).toEqual([
+      'low',
+      'low',
+      'mid',
+      'mid',
+      'high',
+      'high',
+      'crit',
+      'crit',
+    ]);
     expect(urgencyLevel(-5)).toBe('low'); // blocked tasks go negative
     expect(cell(col('urgency', 'number'), row({ urgency: 16.2 }), ctx)).toEqual({ text: '16.20', cls: 'urg-crit' });
     expect(cell(col('urgency.integer', 'number'), row({ urgency: 6.4 }), ctx)).toEqual({ text: '6', cls: 'urg-mid' });
   });
 
   it('a multi-line string UDA keeps its lines in the table', () => {
-    const udas: Record<string, UdaDef> = { notes: { name: 'notes', type: 'string', label: null, values: [], default: null, indicator: null } };
+    const udas: Record<string, UdaDef> = {
+      notes: { name: 'notes', type: 'string', label: null, values: [], default: null, indicator: null },
+    };
     const c = (value: string) => cell(col('notes'), row({ extra: { notes: value } }), { ...ctx, udas });
     expect(c('one\ntwo')).toEqual({ text: 'one\ntwo', cls: 'multiline' });
     expect(c('just one line')).toEqual({ text: 'just one line' });
@@ -160,7 +196,6 @@ describe('rowClass', () => {
   });
 });
 
-
 describe('journal markers in lists', () => {
   const J = { start: 'Started task', stop: 'Stopped task' };
   const withNotes = row({
@@ -172,18 +207,27 @@ describe('journal markers in lists', () => {
   });
 
   it('are left out of the annotation lines under a description', () => {
-    expect(cell(col('description'), withNotes, { ...ctx, journal: J }).lines).toEqual(['2026-10-07 12:30 call Sam first']);
+    expect(cell(col('description'), withNotes, { ...ctx, journal: J }).lines).toEqual([
+      '2026-10-07 12:30 call Sam first',
+    ]);
     // Without journalling they are ordinary notes and show.
     expect(cell(col('description'), withNotes, ctx).lines).toHaveLength(3);
   });
 
   it('do not inflate the count or the one-line form', () => {
     expect(cell(col('description.count'), withNotes, { ...ctx, journal: J }).text).toBe('Buy milk [1]');
-    expect(cell(col('description.oneline'), withNotes, { ...ctx, journal: J }).text).toBe('Buy milk 2026-10-07 12:30 call Sam first');
+    expect(cell(col('description.oneline'), withNotes, { ...ctx, journal: J }).text).toBe(
+      'Buy milk 2026-10-07 12:30 call Sam first',
+    );
   });
 
   it('a task with only markers shows no notes at all', () => {
-    const only = row({ annotations: [{ entry: NOW, text: 'Started task' }, { entry: NOW + 5, text: 'Stopped task' }] });
+    const only = row({
+      annotations: [
+        { entry: NOW, text: 'Started task' },
+        { entry: NOW + 5, text: 'Stopped task' },
+      ],
+    });
     expect(cell(col('description'), only, { ...ctx, journal: J }).lines).toBeUndefined();
   });
 });

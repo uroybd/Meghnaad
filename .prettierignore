@@ -1,0 +1,13 @@
+# Generated, vendored or not JavaScript. Rust is formatted by rustfmt; the prose docs are hand-wrapped.
+node_modules
+target
+.wrangler
+crates
+docs
+*.md
+package-lock.json
+web/dist
+web/.svelte-kit
+web/public
+wrangler.jsonc
+wrangler.deploy.jsonc

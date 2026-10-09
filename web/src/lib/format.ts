@@ -141,7 +141,8 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
   const name = col.name;
 
   // `start.active`: the indicator while the task is started and not ended.
-  if (name === 'start' && f === 'active') return { text: row.start != null && row.end == null ? (ctx.indicators?.active ?? '*') : '' };
+  if (name === 'start' && f === 'active')
+    return { text: row.start != null && row.end == null ? (ctx.indicators?.active ?? '*') : '' };
 
   if ((DATE_PROPS as readonly string[]).includes(name)) {
     const c = dateCell(row[name as DateProp], name, f, ctx);
@@ -191,7 +192,9 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
     case 'parent':
       return { text: row.parent ? shortUuid(row.parent) : '' };
     case 'annotations':
-      return { text: f === 'count' ? String(row.annotations.length || '') : row.annotations.map((a) => a.text).join('; ') };
+      return {
+        text: f === 'count' ? String(row.annotations.length || '') : row.annotations.map((a) => a.text).join('; '),
+      };
     default:
       // A UDA, an orphan, or something Taskwarrior has that we don't render specially.
       return udaCell(row, col, ctx);

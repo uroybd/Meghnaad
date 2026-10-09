@@ -17,7 +17,10 @@
   }
 
   function removeWord(i: number) {
-    value = words.filter((_, j) => j !== i).map(shellQuote).join(' ');
+    value = words
+      .filter((_, j) => j !== i)
+      .map(shellQuote)
+      .join(' ');
   }
 
   // `rc.report.<name>.sort:due-` is how a table-header sort travels on the command line.
@@ -38,7 +41,9 @@
   <div class="chips" aria-label="Active filters">
     {#each words as w, i (i + w)}
       <span class="chip mono" class:sort={sortToken.test(w)} title={w}>
-        {chipLabel(w)}<button class="ghost x" aria-label="Remove {chipLabel(w)}" onclick={() => removeWord(i)}><X size={11} /></button>
+        {chipLabel(w)}<button class="ghost x" aria-label="Remove {chipLabel(w)}" onclick={() => removeWord(i)}
+          ><X size={11} /></button
+        >
       </span>
     {/each}
     <button class="ghost" onclick={() => (value = '')}>clear all</button>
@@ -48,19 +53,22 @@
 <details class="helpers" bind:open={hintsOpen}>
   <summary><SlidersHorizontal size={13} /> Filter helpers</summary>
   <div class="row wrap">
-    <label>Project
+    <label
+      >Project
       <select onchange={(e) => pick(e, (v) => `project:${v}`)}>
         <option value="">add…</option>
-        {#each store.projects as p}<option value={p}>{p}</option>{/each}
+        {#each store.projects as p (p)}<option value={p}>{p}</option>{/each}
       </select>
     </label>
-    <label>Tag
+    <label
+      >Tag
       <select onchange={(e) => pick(e)}>
         <option value="">add…</option>
-        {#each store.tags as t}<option value={`+${t}`}>+{t}</option><option value={`-${t}`}>-{t}</option>{/each}
+        {#each store.tags as t (t)}<option value={`+${t}`}>+{t}</option><option value={`-${t}`}>-{t}</option>{/each}
       </select>
     </label>
-    <label>State
+    <label
+      >State
       <select onchange={(e) => pick(e)}>
         <option value="">add…</option>
         <option value="status:pending">pending</option>
@@ -74,33 +82,85 @@
         <option value="+READY">ready</option>
       </select>
     </label>
-    <label>Priority
+    <label
+      >Priority
       <select onchange={(e) => pick(e)}>
         <option value="">add…</option>
         <option value="priority:H">H</option><option value="priority:M">M</option>
         <option value="priority:L">L</option><option value="priority.none:">none</option>
       </select>
     </label>
-    <label>Due before
+    <label
+      >Due before
       <DateTimeInput label="Due before" bind:value={dueBefore} />
-      <button disabled={!dueBefore} onclick={() => { addToken(`due.before:${dueBefore}`); dueBefore = ''; }}>add</button>
+      <button
+        disabled={!dueBefore}
+        onclick={() => {
+          addToken(`due.before:${dueBefore}`);
+          dueBefore = '';
+        }}>add</button
+      >
     </label>
   </div>
 </details>
 
 <style>
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .chip { display: inline-flex; align-items: center; }
-  .chip.sort { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  .x { padding: 0 3px; font-size: 10px; margin-left: 3px; color: inherit; }
-  .helpers summary { cursor: pointer; color: var(--dim); font-size: 13px; display: inline-flex; align-items: center; gap: 5px; }
-  .helpers .row { margin-top: 10px; gap: 12px 18px; }
-  .wrap { flex-wrap: wrap; }
-  .helpers label { display: inline-flex; gap: 6px; align-items: center; color: var(--dim); font-size: 13px; }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+  }
+  .chip.sort {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
+  .x {
+    padding: 0 3px;
+    font-size: 10px;
+    margin-left: 3px;
+    color: inherit;
+  }
+  .helpers summary {
+    cursor: pointer;
+    color: var(--dim);
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .helpers .row {
+    margin-top: 10px;
+    gap: 12px 18px;
+  }
+  .wrap {
+    flex-wrap: wrap;
+  }
+  .helpers label {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--dim);
+    font-size: 13px;
+  }
   @media (max-width: 760px) {
-    .helpers .row { gap: 10px 14px; }
-    .helpers label { font-size: 13px; }
-    .chip { line-height: 26px; }
-    .x { padding: 0 6px; min-width: 28px; }
+    .helpers .row {
+      gap: 10px 14px;
+    }
+    .helpers label {
+      font-size: 13px;
+    }
+    .chip {
+      line-height: 26px;
+    }
+    .x {
+      padding: 0 6px;
+      min-width: 28px;
+    }
   }
 </style>

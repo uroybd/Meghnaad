@@ -39,14 +39,40 @@
 </span>
 
 <style>
-  .uuidtip { display: inline-block; cursor: default; outline: none; }
+  .uuidtip {
+    display: inline-block;
+    cursor: default;
+    outline: none;
+  }
   .tip {
-    display: none; position: fixed; z-index: 30; align-items: center; gap: 10px;
-    padding: 6px 8px; font-weight: 400; white-space: nowrap; color: var(--text);
-    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    display: none;
+    position: fixed;
+    z-index: 30;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    font-weight: 400;
+    white-space: nowrap;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
     box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
   }
-  .uuidtip:hover .tip, .uuidtip:focus-within .tip { display: flex; }
-  code { font-family: var(--mono); font-size: 12px; user-select: all; }
-  .copy { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 12px; }
+  .uuidtip:hover .tip,
+  .uuidtip:focus-within .tip {
+    display: flex;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: 12px;
+    user-select: all;
+  }
+  .copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+  }
 </style>

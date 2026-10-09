@@ -87,10 +87,11 @@
 <dialog bind:this={dialog} onclose={close} aria-label="taskrc settings">
   <h3>taskrc settings</h3>
   <p class="dim">
-    UDAs, custom reports, contexts and journal settings live in your <code>~/.taskrc</code>, not in your synced
-    data, so this app keeps a copy. <strong>They are saved with your tasks and stay until you change them.</strong>
-    Edit below, or paste or choose your taskrc. Only those settings are kept: <strong>sync settings and anything
-    that looks like a credential are blocked</strong>; they're never stored, logged or shown.
+    UDAs, custom reports, contexts and journal settings live in your <code>~/.taskrc</code>, not in your synced data, so
+    this app keeps a copy. <strong>They are saved with your tasks and stay until you change them.</strong>
+    Edit below, or paste or choose your taskrc. Only those settings are kept:
+    <strong>sync settings and anything that looks like a credential are blocked</strong>; they're never stored, logged
+    or shown.
   </p>
 
   {#if store.config?.config_error}
@@ -109,8 +110,7 @@
     class="mono"
     disabled={loading}
     placeholder={loading ? 'Loading saved settings…' : 'Nothing saved yet. Paste your taskrc here.'}
-    spellcheck="false"
-  ></textarea>
+    spellcheck="false"></textarea>
 
   {#if error}<p class="err" role="alert">{error}</p>{/if}
 
@@ -126,18 +126,26 @@
           <span class="mono dim">{result.blocked.join(', ')}</span>
         </p>
       {/if}
-      {#each result.warnings as w}<p class="warn"><TriangleAlert size={14} /> {w}</p>{/each}
+      {#each result.warnings as w, _i (_i)}<p class="warn"><TriangleAlert size={14} /> {w}</p>{/each}
       {#if result.ignored.length}
-        <details><summary class="dim">{result.ignored.length} other settings not used</summary>
-          <p class="mono dim">{result.ignored.join(', ')}</p></details>
+        <details>
+          <summary class="dim">{result.ignored.length} other settings not used</summary>
+          <p class="mono dim">{result.ignored.join(', ')}</p>
+        </details>
       {/if}
     </div>
   {/if}
 
   <footer class="row">
     {#if store.config?.has_previous}
-      <button class="ghost btn" onclick={restore} disabled={busy} title="Go back to the settings from before the last save">
-        <RotateCcw size={14} /> {confirmRestore ? 'Click again to restore' : 'Restore previous'}
+      <button
+        class="ghost btn"
+        onclick={restore}
+        disabled={busy}
+        title="Go back to the settings from before the last save"
+      >
+        <RotateCcw size={14} />
+        {confirmRestore ? 'Click again to restore' : 'Restore previous'}
       </button>
     {/if}
     {#if dirty}
@@ -150,17 +158,59 @@
 </dialog>
 
 <style>
-  dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--text); padding: 24px 28px; width: min(760px, 96vw); max-height: 94vh; overflow: auto; }
-  dialog::backdrop { background: rgb(0 0 0 / 0.4); }
-  h3 { margin: 0 0 4px; }
-  textarea { width: 100%; margin: 8px 0; }
-  .file { display: block; margin-top: 8px; }
-  .warn, .bad { display: flex; align-items: center; gap: 6px; color: var(--warn); }
-  .bad { color: var(--err); }
-  .result p { margin: 4px 0; }
-  .btn { display: inline-flex; align-items: center; gap: 5px; }
-  code { font-family: var(--mono); background: var(--panel-2); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+  dialog {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    padding: 24px 28px;
+    width: min(760px, 96vw);
+    max-height: 94vh;
+    overflow: auto;
+  }
+  dialog::backdrop {
+    background: rgb(0 0 0 / 0.4);
+  }
+  h3 {
+    margin: 0 0 4px;
+  }
+  textarea {
+    width: 100%;
+    margin: 8px 0;
+  }
+  .file {
+    display: block;
+    margin-top: 8px;
+  }
+  .warn,
+  .bad {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--warn);
+  }
+  .bad {
+    color: var(--err);
+  }
+  .result p {
+    margin: 4px 0;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  code {
+    font-family: var(--mono);
+    background: var(--panel-2);
+    border-radius: 4px;
+    padding: 0 4px;
+    overflow-wrap: anywhere;
+  }
   @media (max-width: 760px) {
-    textarea { min-height: 40vh; font-size: 14px; }
+    textarea {
+      min-height: 40vh;
+      font-size: 14px;
+    }
   }
 </style>

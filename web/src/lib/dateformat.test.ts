@@ -40,7 +40,12 @@ describe('formatPattern', () => {
 });
 
 describe('formatFor (Taskwarrior fallbacks)', () => {
-  const s = { dateformat: 'D/M/Y', 'dateformat.report': 'Y-M-D', 'dateformat.info': 'Y-M-D H:N', 'dateformat.annotation': 'D.M.' };
+  const s = {
+    dateformat: 'D/M/Y',
+    'dateformat.report': 'Y-M-D',
+    'dateformat.info': 'Y-M-D H:N',
+    'dateformat.annotation': 'D.M.',
+  };
   it('report: the report own, then dateformat.report, then dateformat', () => {
     expect(formatFor('report', s, 'Y')?.pattern).toBe('Y');
     expect(formatFor('report', s)?.pattern).toBe('Y-M-D');
@@ -73,8 +78,20 @@ describe('where it is used', () => {
     expect(formatMoment(null, 0, f('D/M/Y'))).toBe('');
   });
 
-  const col = (name: string, format: string | null = null): Column => ({ spec: name, name, format, label: name, kind: 'date' });
-  const row = { due: WED, recur: 'weekly', annotations: [{ entry: WED, text: 'called' }], virtual_tags: [], extra: {} } as unknown as Row;
+  const col = (name: string, format: string | null = null): Column => ({
+    spec: name,
+    name,
+    format,
+    label: name,
+    kind: 'date',
+  });
+  const row = {
+    due: WED,
+    recur: 'weekly',
+    annotations: [{ entry: WED, text: 'called' }],
+    virtual_tags: [],
+    extra: {},
+  } as unknown as Row;
   const ctx: Ctx = { now: WED, tz: 0, dates: { report: f('D.M.Y'), annotation: f('M/D') } };
 
   it('table date cells, and the notes under a description', () => {

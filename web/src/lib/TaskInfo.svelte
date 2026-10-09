@@ -34,10 +34,20 @@
   // `dateformat.info` wins, as in Taskwarrior.
   const stamp = (epoch: number) => (infoFmt ? formatMoment(epoch, undefined, infoFmt) : formatStamp(epoch));
   const waiting = $derived(task.status === 'pending' && task.virtual_tags.includes('WAITING'));
-  const udaKeys = $derived(Object.keys(task.extra).filter((k) => k in defs).sort());
+  const udaKeys = $derived(
+    Object.keys(task.extra)
+      .filter((k) => k in defs)
+      .sort(),
+  );
   const dates: [string, number | null][] = $derived([
-    ['Entered', task.entry], ['Due', task.due], ['Scheduled', task.scheduled], ['Wait', task.wait],
-    ['Until', task.until], ['Started', task.start], ['Ended', task.end], ['Modified', task.modified],
+    ['Entered', task.entry],
+    ['Due', task.due],
+    ['Scheduled', task.scheduled],
+    ['Wait', task.wait],
+    ['Until', task.until],
+    ['Started', task.start],
+    ['Ended', task.end],
+    ['Modified', task.modified],
   ]);
   // The journal's "Started task"/"Stopped task" notes are bookkeeping; the sessions table shows them.
   const notes = $derived(visibleNotes(task.annotations, store.config?.journal));
@@ -46,7 +56,7 @@
   let instances = $state<Row[]>([]);
   $effect(() => {
     const uuid = task.uuid;
-    task.mask; // reload when an instance is added or finished
+    void task.mask; // reload when an instance is added or finished
     if (task.status !== 'recurring') {
       instances = [];
       return;
@@ -73,10 +83,17 @@
   {/if}
   <dl>
     <dt>ID</dt>
-    <dd><span class:idnum={task.id != null}><UuidTip text={task.id != null ? String(task.id) : '–'} uuid={task.uuid} /></span><code class="uuid" title={task.uuid}>{shortUuid(task.uuid)}</code></dd>
+    <dd>
+      <span class:idnum={task.id != null}
+        ><UuidTip text={task.id != null ? String(task.id) : '–'} uuid={task.uuid} /></span
+      ><code class="uuid" title={task.uuid}>{shortUuid(task.uuid)}</code>
+    </dd>
     <dt>Status</dt>
     <dd class="pills">
-      {#if waiting}<StatusPill kind="waiting" />{:else}<StatusPill kind={task.status as Kind} label={task.status} />{/if}
+      {#if waiting}<StatusPill kind="waiting" />{:else}<StatusPill
+          kind={task.status as Kind}
+          label={task.status}
+        />{/if}
       {#if task.blocked}<StatusPill kind="blocked" />{/if}
       {#if task.blocking}<StatusPill kind="blocking" />{/if}
     </dd>
@@ -88,7 +105,8 @@
         {#if task.parent}
           {#if onopen}
             <button class="ghost dep inline" title="Open the recurring task" onclick={() => onopen(task.parent!)}>
-              <CornerUpLeft size={12} /> {parentTitle ?? task.parent.slice(0, 8)}
+              <CornerUpLeft size={12} />
+              {parentTitle ?? task.parent.slice(0, 8)}
             </button>
           {:else}
             <span class="dim mono">of {task.parent.slice(0, 8)}</span>
@@ -96,34 +114,50 @@
         {/if}
       </dd>
     {/if}
-    {#if task.project}<dt>Project</dt><dd><ProjectPath segments={projectSegments(task.project)} /></dd>{/if}
-    {#if task.priority}<dt>Priority</dt><dd class="pri-{task.priority.toLowerCase()}">{task.priority}</dd>{/if}
-    {#if task.tags.length}<dt>Tags</dt><dd>{#each task.tags as t}<span class="tagpill">{t}</span>{/each}</dd>{/if}
-    {#each dates as [label, ts]}
-      {#if ts != null}<dt>{label}</dt><dd class:overdue={label === 'Due' && task.virtual_tags.includes('OVERDUE')}>{formatMoment(ts, undefined, infoFmt)}</dd>{/if}
+    {#if task.project}<dt>Project</dt>
+      <dd><ProjectPath segments={projectSegments(task.project)} /></dd>{/if}
+    {#if task.priority}<dt>Priority</dt>
+      <dd class="pri-{task.priority.toLowerCase()}">{task.priority}</dd>{/if}
+    {#if task.tags.length}<dt>Tags</dt>
+      <dd>
+        {#each task.tags as t (t)}<span class="tagpill">{t}</span>{/each}
+      </dd>{/if}
+    {#each dates as [label, ts], _i (_i)}
+      {#if ts != null}<dt>{label}</dt>
+        <dd class:overdue={label === 'Due' && task.virtual_tags.includes('OVERDUE')}>
+          {formatMoment(ts, undefined, infoFmt)}
+        </dd>{/if}
     {/each}
     {#if task.active_seconds != null}
       <dt>Time tracked</dt>
-      <dd data-testid="tracked">{formatSeconds(task.active_seconds)}{#if task.start != null} <span class="chip live"><Timer size={11} /> running</span>{/if}</dd>
+      <dd data-testid="tracked">
+        {formatSeconds(task.active_seconds)}{#if task.start != null}
+          <span class="chip live"><Timer size={11} /> running</span>{/if}
+      </dd>
     {/if}
     {#if task.depends.length}
       <dt>Depends on</dt>
       <dd>
-        {#each task.depends as d}
+        {#each task.depends as d (d)}
           {#if onopen}
-            <button class="ghost dep" title={depTitle(d)} onclick={() => onopen(d)}>{depTitle(d)} <span class="dim mono">{d.slice(0, 8)}</span></button>
+            <button class="ghost dep" title={depTitle(d)} onclick={() => onopen(d)}
+              >{depTitle(d)} <span class="dim mono">{d.slice(0, 8)}</span></button
+            >
           {:else}
             <span class="mono">{d.slice(0, 8)}</span>
           {/if}
         {/each}
       </dd>
     {/if}
-    {#each udaKeys as k}
-      <dt>{udaLabel(defs[k])}</dt><dd class="pre">{task.extra[k]}</dd>
+    {#each udaKeys as k (k)}
+      <dt>{udaLabel(defs[k])}</dt>
+      <dd class="pre">{task.extra[k]}</dd>
     {/each}
-    <dt>Urgency</dt><dd class="urg-{urgencyLevel(task.urgency)}">{task.urgency.toFixed(2)}</dd>
+    <dt>Urgency</dt>
+    <dd class="urg-{urgencyLevel(task.urgency)}">{task.urgency.toFixed(2)}</dd>
     {#if task.virtual_tags.length}
-      <dt>Virtual tags</dt><dd class="dim">{task.virtual_tags.join(' ')}</dd>
+      <dt>Virtual tags</dt>
+      <dd class="dim">{task.virtual_tags.join(' ')}</dd>
     {/if}
   </dl>
 
@@ -150,32 +184,41 @@
 
   {#if task.sessions.length}
     <h4 class="sess"><Timer size={13} /> Time sessions</h4>
-    <div class="scroll"><table class="sessions" data-testid="sessions">
-      <thead>
-        <tr><th>#</th><th>Started</th><th>Stopped</th><th class="num">Duration</th></tr>
-      </thead>
-      <tbody>
-        {#each task.sessions as s, i}
-          <tr class:running={s.end == null}>
-            <td class="dim">{i + 1}</td>
-            <td class="mono">{formatStamp(s.start)}</td>
-            <td class="mono">
-              {#if s.end != null}{formatStamp(s.end)}{:else}<span class="chip live"><Timer size={11} /> running</span>{/if}
-            </td>
-            <td class="num mono">{formatSeconds(s.seconds)}</td>
-          </tr>
-        {/each}
-      </tbody>
-      <tfoot>
-        <tr><td colspan="3">Total</td><td class="num mono" data-testid="sessions-total">{formatSeconds(totalTracked)}</td></tr>
-      </tfoot>
-    </table></div>
+    <div class="scroll">
+      <table class="sessions" data-testid="sessions">
+        <thead>
+          <tr><th>#</th><th>Started</th><th>Stopped</th><th class="num">Duration</th></tr>
+        </thead>
+        <tbody>
+          {#each task.sessions as s, i (i)}
+            <tr class:running={s.end == null}>
+              <td class="dim">{i + 1}</td>
+              <td class="mono">{formatStamp(s.start)}</td>
+              <td class="mono">
+                {#if s.end != null}{formatStamp(s.end)}{:else}<span class="chip live"><Timer size={11} /> running</span
+                  >{/if}
+              </td>
+              <td class="num mono">{formatSeconds(s.seconds)}</td>
+            </tr>
+          {/each}
+        </tbody>
+        <tfoot>
+          <tr
+            ><td colspan="3">Total</td><td class="num mono" data-testid="sessions-total"
+              >{formatSeconds(totalTracked)}</td
+            ></tr
+          >
+        </tfoot>
+      </table>
+    </div>
   {/if}
 
   {#if notes.length}
     <h4>Annotations</h4>
     <ul>
-      {#each notes as a}<li><span class="dim">{formatMoment(a.entry, undefined, noteFmt)}</span> <span class="pre">{a.text}</span></li>{/each}
+      {#each notes as a, _i (_i)}<li>
+          <span class="dim">{formatMoment(a.entry, undefined, noteFmt)}</span> <span class="pre">{a.text}</span>
+        </li>{/each}
     </ul>
   {/if}
 
@@ -185,17 +228,21 @@
       <summary title="What changed and when, from the task's operation log (journal.info).">
         History <span class="dim">· {task.history.length} {task.history.length === 1 ? 'moment' : 'moments'}</span>
       </summary>
-      <div class="scroll"><table class="history" data-testid="history">
-        <thead><tr><th>Date</th><th>Modification</th></tr></thead>
-        <tbody>
-          {#each task.history as e}
-            <tr>
-              <td class="mono">{stamp(e.at)}</td>
-              <td>{#each e.changes as c}<div class="pre">{describeChange(c, stamp)}</div>{/each}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table></div>
+      <div class="scroll">
+        <table class="history" data-testid="history">
+          <thead><tr><th>Date</th><th>Modification</th></tr></thead>
+          <tbody>
+            {#each task.history as e, _i (_i)}
+              <tr>
+                <td class="mono">{stamp(e.at)}</td>
+                <td
+                  >{#each e.changes as c, _i (_i)}<div class="pre">{describeChange(c, stamp)}</div>{/each}</td
+                >
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </details>
   {/if}
 
@@ -204,53 +251,189 @@
       <Lock size={13} /> Not defined in your taskrc <span class="chip">read-only</span>
     </h4>
     <dl class="orphans">
-      {#each task.orphans as k}
-        <dt class="mono">{k}</dt><dd class="mono pre">{task.extra[k]}</dd>
+      {#each task.orphans as k (k)}
+        <dt class="mono">{k}</dt>
+        <dd class="mono pre">{task.extra[k]}</dd>
       {/each}
     </dl>
   {/if}
 </article>
 
 <style>
-  .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 16px 20px; margin: 12px 0; }
-  dl { display: grid; grid-template-columns: max-content 1fr; gap: 5px 20px; margin: 12px 0; }
-  dt { color: var(--dim); }
-  dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  h4 { margin: 16px 0 6px; font-size: 14px; }
-  ul { margin: 0; padding-left: 18px; }
-  .orphans { opacity: 0.85; }
-  .live { display: inline-flex; align-items: center; gap: 3px; color: var(--ok); border-color: var(--ok); }
-  h4 { display: flex; align-items: center; gap: 5px; }
-  .btn { display: inline-flex; align-items: center; gap: 5px; }
-  .sess { display: flex; align-items: center; gap: 5px; }
-  .scroll { overflow-x: auto; }
-  .sessions { width: 100%; border-collapse: collapse; font-size: 13px; margin: 2px 0 6px; }
-  .sessions th, .sessions td { text-align: left; padding: 2px 10px 2px 0; white-space: nowrap; }
-  .sessions th { color: var(--dim); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); }
-  .sessions .num { text-align: right; padding-right: 0; font-variant-numeric: tabular-nums; }
-  .sessions tfoot td { border-top: 1px solid var(--line); font-weight: 600; padding-top: 3px; }
-  .sessions tr.running td { color: var(--ok); }
-  .hist { margin: 16px 0 6px; }
-  .hist summary { cursor: pointer; font-size: 14px; font-weight: 600; }
-  .hist summary .dim { font-weight: 400; font-size: 13px; }
-  .hist[open] summary { margin-bottom: 6px; }
-  .history { width: 100%; border-collapse: collapse; font-size: 13px; margin: 2px 0 6px; }
-  .history th, .history td { text-align: left; padding: 3px 12px 3px 0; vertical-align: top; }
-  .history td:first-child { white-space: nowrap; color: var(--dim); }
-  .history th { color: var(--dim); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); }
-  .history tbody td { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
-  .instances { list-style: none; padding: 0; margin: 2px 0; }
-  .instances li { display: flex; align-items: center; gap: 6px; }
-  .more { margin: 2px 0; font-size: 12px; }
-  .dep.inline { display: inline-flex; align-items: center; gap: 4px; }
-  .dep { display: block; padding: 0 4px; margin-left: -4px; text-align: left; }
-  .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .pills { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 5px 20px;
+    margin: 12px 0;
+  }
+  dt {
+    color: var(--dim);
+  }
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  h4 {
+    margin: 16px 0 6px;
+    font-size: 14px;
+  }
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+  .orphans {
+    opacity: 0.85;
+  }
+  .live {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--ok);
+    border-color: var(--ok);
+  }
+  h4 {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .sess {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+  .sessions {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 2px 0 6px;
+  }
+  .sessions th,
+  .sessions td {
+    text-align: left;
+    padding: 2px 10px 2px 0;
+    white-space: nowrap;
+  }
+  .sessions th {
+    color: var(--dim);
+    font-weight: 500;
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sessions .num {
+    text-align: right;
+    padding-right: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .sessions tfoot td {
+    border-top: 1px solid var(--line);
+    font-weight: 600;
+    padding-top: 3px;
+  }
+  .sessions tr.running td {
+    color: var(--ok);
+  }
+  .hist {
+    margin: 16px 0 6px;
+  }
+  .hist summary {
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .hist summary .dim {
+    font-weight: 400;
+    font-size: 13px;
+  }
+  .hist[open] summary {
+    margin-bottom: 6px;
+  }
+  .history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 2px 0 6px;
+  }
+  .history th,
+  .history td {
+    text-align: left;
+    padding: 3px 12px 3px 0;
+    vertical-align: top;
+  }
+  .history td:first-child {
+    white-space: nowrap;
+    color: var(--dim);
+  }
+  .history th {
+    color: var(--dim);
+    font-weight: 500;
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .history tbody td {
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  }
+  .instances {
+    list-style: none;
+    padding: 0;
+    margin: 2px 0;
+  }
+  .instances li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .more {
+    margin: 2px 0;
+    font-size: 12px;
+  }
+  .dep.inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .dep {
+    display: block;
+    padding: 0 4px;
+    margin-left: -4px;
+    text-align: left;
+  }
+  .pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
   /* The uuid reads like inline code in markdown: its own tinted box, apart from the id. */
   .uuid {
-    margin-left: 12px; padding: 1px 7px; border-radius: 5px;
-    font-family: var(--mono); font-size: 0.9em; color: var(--text);
-    background: var(--panel-2); border: 1px solid var(--line);
-    user-select: all; overflow-wrap: anywhere;
+    margin-left: 12px;
+    padding: 1px 7px;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 0.9em;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    user-select: all;
+    overflow-wrap: anywhere;
   }
 </style>

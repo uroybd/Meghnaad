@@ -24,5 +24,8 @@
 {/if}
 
 <style>
-  .stale { opacity: 0.6; transition: opacity 0.15s; }
+  .stale {
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
 </style>

@@ -5,15 +5,29 @@
 // Every step checks first and skips what is already done, so running it again is safe.
 import { createInterface } from 'node:readline/promises';
 import {
-  accessReady, capture, DEPLOY_CONFIG, deploy, missingTools, problem, readBaseConfig, readSettings, run, workerUrl, writeSettings,
+  accessReady,
+  capture,
+  DEPLOY_CONFIG,
+  deploy,
+  missingTools,
+  problem,
+  readBaseConfig,
+  readSettings,
+  run,
+  workerUrl,
+  writeSettings,
 } from './deploy-lib.mjs';
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
-const ask = async (q, def = '') => ((await rl.question(def ? `${q} [${def}] ` : `${q} `)).trim() || def);
+const ask = async (q, def = '') => (await rl.question(def ? `${q} [${def}] ` : `${q} `)).trim() || def;
 const yes = async (q, def = true) => /^y/i.test(await ask(`${q} (${def ? 'Y/n' : 'y/N'})`, def ? 'y' : 'n'));
 const step = (n, t) => console.log(`\n\x1b[1m${n}. ${t}\x1b[0m`);
 const done = (t) => console.log(`   ✓ ${t}`);
-const die = (t) => { console.error(`\n✗ ${t}`); rl.close(); process.exit(1); };
+const die = (t) => {
+  console.error(`\n✗ ${t}`);
+  rl.close();
+  process.exit(1);
+};
 const wrangler = (...a) => capture('npx', ['wrangler', ...a]);
 
 /** Ask until the answer is valid (or empty, when allowed). */
@@ -33,7 +47,8 @@ const base = readBaseConfig();
 step(1, 'Build tools');
 for (const m of missingTools()) {
   if (!m.fix) die(`${m.what} is missing: ${m.hint}`);
-  if (!(await yes(`${m.what} is missing. Install it now (${m.fix[0]} ${m.fix[1].join(' ')})?`))) die('Cannot continue without it.');
+  if (!(await yes(`${m.what} is missing. Install it now (${m.fix[0]} ${m.fix[1].join(' ')})?`)))
+    die('Cannot continue without it.');
   if (run(...m.fix).status !== 0) die(`Installing ${m.what} failed.`);
 }
 done('Rust, the wasm32 target and worker-build are ready');
@@ -49,9 +64,13 @@ done('logged in');
 // ---- 3
 step(3, 'Your choices');
 const defaultBucket = base.r2_buckets?.find((b) => b.binding === 'TASKS')?.bucket_name ?? 'taskwarrior-sync';
-console.log('   R2 bucket: the one your `task` CLI already syncs to (an existing bucket is used as is; a new name is created).');
+console.log(
+  '   R2 bucket: the one your `task` CLI already syncs to (an existing bucket is used as is; a new name is created).',
+);
 s.R2_BUCKET = await askValid('R2_BUCKET', '   Bucket name:', s.R2_BUCKET || defaultBucket, true);
-console.log('   Custom domain: optional, e.g. tasks.example.com. The domain must already be on your Cloudflare account.');
+console.log(
+  '   Custom domain: optional, e.g. tasks.example.com. The domain must already be on your Cloudflare account.',
+);
 console.log('   Leave empty to use the free *.workers.dev address.');
 s.CUSTOM_DOMAIN = await askValid('CUSTOM_DOMAIN', '   Custom domain:', s.CUSTOM_DOMAIN);
 console.log(`   Worker name: optional, only to run a second copy (default "${base.name}").`);
@@ -75,21 +94,28 @@ const first = deploy(s);
 if (!first.ok) die('Deploy failed (see the output above).');
 const url = s.CUSTOM_DOMAIN ? `https://${s.CUSTOM_DOMAIN}` : workerUrl(first.out);
 done(url ? `live at ${url}` : 'deployed');
-if (!accessReady(s)) console.log('   Until Access is connected (step 6) every request is refused and a setup page is shown. That is intentional.');
+if (!accessReady(s))
+  console.log(
+    '   Until Access is connected (step 6) every request is refused and a setup page is shown. That is intentional.',
+  );
 
 // ---- 5
 step(5, 'Encryption secret');
-const have = wrangler('secret', 'list', '--format', 'json', '--config', DEPLOY_CONFIG).out.includes('TC_ENCRYPTION_SECRET');
+const have = wrangler('secret', 'list', '--format', 'json', '--config', DEPLOY_CONFIG).out.includes(
+  'TC_ENCRYPTION_SECRET',
+);
 if (have && !(await yes('A secret is already set. Replace it?', false))) done('keeping the existing secret');
 else {
   console.log('   Enter the SAME value as `sync.encryption_secret` in your taskrc (it is not echoed).');
-  if (run('npx', ['wrangler', 'secret', 'put', 'TC_ENCRYPTION_SECRET', '--config', DEPLOY_CONFIG]).status !== 0) die('Setting the secret failed.');
+  if (run('npx', ['wrangler', 'secret', 'put', 'TC_ENCRYPTION_SECRET', '--config', DEPLOY_CONFIG]).status !== 0)
+    die('Setting the secret failed.');
   done('secret stored in Cloudflare');
 }
 
 // ---- 6
 step(6, 'Cloudflare Access (who may open the app)');
-if (accessReady(s) && !(await yes('Access settings are already saved. Change them?', false))) done('keeping the saved settings');
+if (accessReady(s) && !(await yes('Access settings are already saved. Change them?', false)))
+  done('keeping the saved settings');
 else {
   const host = url ? new URL(url).host : '<your-worker>.workers.dev';
   console.log(`

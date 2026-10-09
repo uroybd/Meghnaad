@@ -119,7 +119,13 @@ class Notifier {
   }
 
   test() {
-    this.show({ key: `test:${Date.now()}`, kind: 'due', title: 'Test reminder', body: 'Reminders work while this tab is open.', uuid: null });
+    this.show({
+      key: `test:${Date.now()}`,
+      kind: 'due',
+      title: 'Test reminder',
+      body: 'Reminders work while this tab is open.',
+      uuid: null,
+    });
   }
 
   /** Begin polling and checking. Safe to call once at startup. */
