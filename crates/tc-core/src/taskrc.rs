@@ -95,6 +95,12 @@ pub struct Config {
 }
 
 impl Config {
+    /// `weekstart`: weeks start on Monday if the taskrc says so; otherwise on Sunday, which is
+    /// Taskwarrior's default (`weekstart=sunday`).
+    pub fn week_starts_monday(&self) -> bool {
+        self.settings.get("weekstart").is_some_and(|v| v.trim().eq_ignore_ascii_case("monday"))
+    }
+
     /// `regex`: whether filter text and `/from/to/` substitutions are regular expressions. On unless
     /// the taskrc turns it off, as in Taskwarrior (`regex=1` is its default).
     pub fn regex_enabled(&self) -> bool {
@@ -186,6 +192,16 @@ pub fn is_sensitive(name: &str) -> bool {
 
 const SCALAR_SETTINGS: &[&str] = &[
     "regex",
+    "calendar.details",
+    "calendar.details.report",
+    "calendar.holidays",
+    "calendar.legend",
+    "calendar.monthsperline",
+    "calendar.offset",
+    "calendar.offset.value",
+    "displayweeknumber",
+    "dateformat.holiday",
+    "summary.all.projects",
     "default.command",
     "default.project",
     "default.due",
@@ -578,6 +594,18 @@ pub fn parse(text: &str) -> Parsed {
                     p.config.settings.insert(name.to_owned(), value.to_owned());
                 } else {
                     p.warnings.push(format!("{name}: '{value}' is not a date or duration, ignored"));
+                }
+            }
+            // `holiday.<id>.name`, and `.date` or `.start` and `.end`, for the calendar.
+            ["holiday", id, attr] if valid_ident(id) && matches!(*attr, "name" | "date" | "start" | "end") => {
+                p.config.settings.insert(name.to_owned(), unescape(value));
+            }
+            // Taskwarrior refuses to start with anything but Sunday or Monday here.
+            ["weekstart"] => {
+                if matches!(value.trim().to_ascii_lowercase().as_str(), "sunday" | "monday") {
+                    p.config.settings.insert(name.to_owned(), value.trim().to_owned());
+                } else {
+                    p.warnings.push(format!("weekstart: '{value}' is not Sunday or Monday, ignored"));
                 }
             }
             ["limit"] => {

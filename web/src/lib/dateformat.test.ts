@@ -61,7 +61,7 @@ describe('formatFor (Taskwarrior fallbacks)', () => {
   it('weekstart', () => {
     expect(weekStartOf({ weekstart: 'Sunday' })).toBe(0);
     expect(weekStartOf({ weekstart: 'monday' })).toBe(1);
-    expect(weekStartOf({})).toBe(1);
+    expect(weekStartOf({})).toBe(0); // Sunday, as in Taskwarrior, unless the taskrc says otherwise
     expect(formatFor('report', { dateformat: 'V', weekstart: 'sunday' })?.weekstart).toBe(0);
   });
 });

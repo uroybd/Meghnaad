@@ -28,8 +28,8 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
-| Miscellaneous | 6 | 6 | 7 | 5 | 0 |
-| Dates and calendar | 7 | 0 | 1 | 2 | 0 |
+| Miscellaneous | 7 | 6 | 7 | 5 | 0 |
+| Dates and calendar | 15 | 0 | 0 | 1 | 0 |
 | Journal | 3 | 1 | 0 | 0 | 0 |
 | Dependencies | 0 | 0 | 0 | 1 | 0 |
 | Colour | 0 | 0 | 0 | 1 | 0 |
@@ -39,7 +39,7 @@ Each row below counts once, even where a row covers several related options.
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **59** | **7** | **10** | **16** | **1** |
+| **Total** | **68** | **7** | **9** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -80,7 +80,8 @@ Each row below counts once, even where a row covers several related options.
 | `regex` | Partial | On by default, as in Taskwarrior. With it on, plain words, `/pattern/`, `.has`, `.hasnt`, `.startswith`, `.endswith`, `.word`, `.noword` and the `/from/to/` substitution in `modify` are regular expressions, and for the description the annotations are searched too. The syntax is ECMAScript, read byte by byte, as Taskwarrior's C++ `std::regex` does: `.` is one byte, and `\w`, `\d`, `\s`, `\b` and case folding are ASCII only. **Not supported: lookahead (`(?=…)`, `(?!…)`) and backreferences (`\1`)**, which ECMAScript has; a pattern that uses them is refused with a message that says so. So is syntax ECMAScript doesn't have (`(?i)`, lookbehind, named groups). Also different: `.` matches `\r` here and not there; a substitution edits the description only, not annotations; and a replacement that would cut a character in half is skipped. `regex=off` matches plain text, with a leading `^` or trailing `$` as an anchor |
 | `expressions` | Not done | Infix filters only |
 | `alias.<name>` | Not done | Aliases are not expanded |
-| `list.all.projects`, `summary.all.projects` | Not done | `projects` counts pending tasks only |
+| `list.all.projects` | Not done | `projects` counts pending tasks only |
+| `summary.all.projects` | Done | With it on, `summary` lists projects whose tasks are all finished too (their bar is full). Off by default |
 | `complete.all.tags`, `list.all.tags` | Not done | `tags` counts pending tasks only |
 | `active.indicator`, `tag.indicator`, `dependency.indicator` | Not done | The `indicator` column formats use Taskwarrior's defaults (`+`, `D`) and don't read these |
 | `burndown.cumulative` | Not done | There are no burndown reports |
@@ -94,6 +95,8 @@ Each row below counts once, even where a row covers several related options.
 
 ## Dates and calendar
 
+The `calendar` command is supported, with Taskwarrior's arguments (`calendar`, `calendar y`, `calendar due`, `calendar 2027`, `calendar 3 2027`, `calendar march 2027`). The layout, week numbers, and which days are coloured how were checked against the real `task calendar`. The colours are the app's own theme, not `color.calendar.*`.
+
 | Option | Status | Remark |
 | --- | --- | --- |
 | `dateformat` | Done | Taskwarrior's format letters (`Y M D H N S` and the rest) are ported, in tables, info and the detail view |
@@ -101,11 +104,17 @@ Each row below counts once, even where a row covers several related options.
 | `dateformat.info` | Done | |
 | `dateformat.annotation` | Done | |
 | `report.<name>.dateformat` | Done | |
-| `weekstart` | Done | Sunday or Monday (the default). Decides what `sow`/`eow` and the other week-based dates mean |
+| `weekstart` | Done | Sunday (the default, as in Taskwarrior) or Monday. Decides what `sow`/`eow` and the other week-based dates mean, how the calendar's weeks start, and which week numbers it shows. `rc.weekstart:monday` works for one command |
 | `due` | Done | How many days ahead counts as due (`+DUE`). Default 7 |
 | `dateformat.edit` | N/A | There is no `task edit` text file; the editor form has date pickers |
-| `dateformat.holiday`, `holiday.<name>.*` | N/A | There is no calendar, so holidays are not used |
-| `displayweeknumber`, `calendar.*` | Not done | There is no `calendar` command |
+| `dateformat.holiday`, `holiday.<name>.name`, `.date`, `.start`, `.end` | Done | A holiday is one `date`, or a stretch from `start` to `end`. Dates are read in `dateformat.holiday` (default `YMD`; the numeric parts `Y y M m D d` and separators are understood). `easter`, `goodfriday`, `eastermonday`, `ascension` and `pentecost` work too, and, as in Taskwarrior, mean the *next* one from today. `include holidays.en-US.rc` is not followed (see Files): paste the holidays into the taskrc dialog |
+| `calendar.details` | Done | `sparse` (the default) colours the days that have something due or scheduled; `full` also lists what is due in the months shown, using `calendar.details.report`; `none` turns the colouring off |
+| `calendar.details.report` | Done | The report that list uses (default `list`) |
+| `calendar.holidays` | Done | `none` (the default), `sparse` (colour the holiday days) or `full` (also list them) |
+| `calendar.legend` | Done | On by default |
+| `calendar.monthsperline` | Done | How many months a bare `calendar` shows. A browser has no width in characters, so the default is 3 and the months wrap to fit |
+| `calendar.offset`, `calendar.offset.value` | Done | Moves the first month shown, by `value` months (default -1) when `offset` is on |
+| `displayweeknumber` | Done | Week numbers beside each week, on by default. They follow `weekstart`: ISO weeks for Monday, and weeks counted from the first Sunday for Sunday |
 
 ## Journal
 

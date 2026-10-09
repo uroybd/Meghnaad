@@ -1,3 +1,4 @@
+pub mod calendar;
 pub mod cli;
 pub mod cloud;
 pub mod crypto;
@@ -13,6 +14,7 @@ pub mod report;
 pub mod rx;
 pub mod run;
 pub mod store;
+pub mod summary;
 pub mod taskrc;
 pub mod urgency;
 

@@ -79,6 +79,46 @@ export interface ReportResult {
 }
 
 export interface InfoResult { kind: 'info'; tasks: Row[] }
+export interface SummaryRow {
+  /** The full project name; empty for tasks without a project. */
+  project: string;
+  /** `(none)`, or the last part of the name. */
+  label: string;
+  /** How many levels down (`Home.Kitchen` is 1). */
+  depth: number;
+  remaining: number;
+  completed: number;
+  avg_age: string;
+  complete: string;
+  /** Filled cells of a 30-cell bar. */
+  bar: number;
+}
+export interface SummaryResult { kind: 'summary'; rows: SummaryRow[] }
+
+export type DueState = 'overdue' | 'due-today' | 'due';
+export interface CalendarDay {
+  day: number;
+  today: boolean;
+  weekend: boolean;
+  holiday: boolean;
+  scheduled: boolean;
+  due: DueState | null;
+}
+export interface CalendarWeek { number: number | null; days: (CalendarDay | null)[] }
+export interface CalendarMonth { year: number; month: number; name: string; weeks: CalendarWeek[] }
+export interface CalendarResult {
+  kind: 'calendar';
+  months: CalendarMonth[];
+  /** Two-letter column headings, from the first day of the week. */
+  weekdays: string[];
+  week_numbers: boolean;
+  legend: boolean;
+  due_colours: boolean;
+  holiday_colours: boolean;
+  holidays: { date: number; name: string }[] | null;
+  details: ReportResult | null;
+}
+
 export interface TableResult { kind: 'table'; title: string | null; headers: string[]; rows: string[][] }
 export interface TextResult { kind: 'text'; lines: string[] }
 export interface JsonResult { kind: 'json'; value: unknown }
@@ -97,7 +137,7 @@ export interface ConfirmResult {
 export interface ErrorResult { kind: 'error'; message: string }
 
 export type CliResult =
-  | ReportResult | InfoResult | TableResult | TextResult | JsonResult
+  | ReportResult | InfoResult | TableResult | SummaryResult | CalendarResult | TextResult | JsonResult
   | ChangedResult | ConfirmResult | ErrorResult;
 
 /** How the server understood the command line. */

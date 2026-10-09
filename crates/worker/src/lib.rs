@@ -192,10 +192,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let clock = Clock {
         now,
         tz_offset: tz,
-        week_starts_monday: !in_context
-            .settings
-            .get("weekstart")
-            .is_some_and(|w| w.eq_ignore_ascii_case("sunday")),
+        week_starts_monday: in_context.week_starts_monday(),
     };
     let cfg = s.config.clone();
     let st = &mut *s.state;

@@ -36,6 +36,8 @@ pub enum Kind {
     Count,
     Projects,
     Tags,
+    Summary,
+    Calendar,
     Udas,
     Columns,
     Reports,
@@ -67,6 +69,8 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("info", Info, false),
     ("count", Count, false),
     ("projects", Projects, false),
+    ("summary", Summary, false),
+    ("calendar", Calendar, false),
     ("tags", Tags, false),
     ("udas", Udas, false),
     ("columns", Columns, false),
@@ -212,6 +216,10 @@ pub enum CliResult {
     Info { tasks: Vec<Row> },
     /// Generic table (projects, tags, udas, ...).
     Table(TableOut),
+    /// `summary`: progress per project.
+    Summary(crate::summary::SummaryOut),
+    /// `calendar`: months with what is due on which day.
+    Calendar(Box<crate::calendar::CalendarOut>),
     Text { lines: Vec<String> },
     Json { value: serde_json::Value },
     /// A write happened.
@@ -464,6 +472,9 @@ pub async fn execute<S: Storage>(
     // the context first and globally second.
     let in_context = cfg.effective();
     let cfg: &Config = &in_context;
+    // The first day of the week is a setting too (Sunday unless the taskrc, a context or a command
+    // line says Monday), and it changes what `eow`, `sow` and the calendar mean.
+    let clock = Clock { week_starts_monday: cfg.week_starts_monday(), ..clock };
     let parsed = parse_command(args, cfg).ok();
     let command = parsed.as_ref().map(CommandInfo::of);
     // Housekeeping Taskwarrior does before every command: create due recurring instances and
@@ -803,6 +814,48 @@ async fn builtin<S: Storage>(
             let mut rows: Vec<Vec<String>> = names.iter().map(|n| vec![(*n).into(), "built-in".into()]).collect();
             rows.extend(cfg.udas.keys().map(|n| vec![n.clone(), "uda".into()]));
             ok(CliResult::Table(TableOut { title: None, headers: vec!["Column".into(), "Kind".into()], rows }))
+        }
+        Summary => {
+            // Every task the filter picks, finished ones included: that is what the progress bars count.
+            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
+                Ok(s) => s,
+                Err(e) => return e.into(),
+            };
+            let all_projects = cfg.settings.get("summary.all.projects").is_some_and(|v| {
+                matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "on" | "yes" | "y" | "true")
+            });
+            let out = crate::summary::summarize(&sel, all_projects, &ctx.clock);
+            if out.rows.is_empty() {
+                return ok(CliResult::Text { lines: vec!["No projects.".into()] });
+            }
+            ok(CliResult::Summary(out))
+        }
+        Calendar => {
+            // Overrides were applied already; what is left are the months asked for.
+            let words: Vec<String> =
+                p.filter.iter().filter(|w| !w.starts_with("rc.") && !w.starts_with("rc:")).cloned().collect();
+            let plan = match crate::calendar::plan(&words, cfg, &ctx.clock, all) {
+                Ok(p) => p,
+                Err(m) => return error(m),
+            };
+            let mut out = plan.out;
+            if let Some(d) = plan.details {
+                if crate::report::resolve(cfg, &d.report).is_none() {
+                    return error("The setting 'calendar.details.report' must contain a single report name.");
+                }
+                match run::run_report(&run::Request {
+                    cfg,
+                    clock: ctx.clock,
+                    all,
+                    report: &d.report,
+                    filter: &d.filter,
+                    seed: opts.seed,
+                }) {
+                    Ok(o) => out.details = Some(o),
+                    Err(e) => return e.into(),
+                }
+            }
+            ok(CliResult::Calendar(Box::new(out)))
         }
         Projects | Tags => {
             let (sel, _) = match selected(all, ctx, cfg, &p.filter) {

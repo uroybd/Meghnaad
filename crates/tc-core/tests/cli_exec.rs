@@ -500,6 +500,116 @@ async fn text_in_filters_and_substitutions_is_a_regular_expression() {
 }
 
 #[tokio::test]
+async fn summary_shows_progress_per_project() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add dishes project:Home.Kitchen").await;
+    run(&mut r, &cfg, "add bins project:Home").await;
+    run(&mut r, &cfg, "add report project:Work").await;
+    run(&mut r, &cfg, "add loose end").await;
+    let tpl = |res: CliResult| match res {
+        CliResult::Summary(s) => s,
+        other => panic!("not a summary: {other:?}"),
+    };
+    let s = tpl(run(&mut r, &cfg, "summary").await.0);
+    let labels: Vec<(&str, usize, usize)> = s.rows.iter().map(|x| (x.label.as_str(), x.depth, x.remaining)).collect();
+    assert_eq!(labels, [("(none)", 0, 1), ("Home", 0, 2), ("Kitchen", 1, 1), ("Work", 0, 1)]);
+
+    // Finish one: it shows as progress, and finished projects only appear with the setting.
+    let (res, _) = run(&mut r, &cfg, "project:Work done").await;
+    assert!(message(&res).contains("Completed"), "{}", message(&res));
+    let s = tpl(run(&mut r, &cfg, "summary").await.0);
+    assert!(!s.rows.iter().any(|x| x.project == "Work"), "nothing left to do there");
+    let all = parse("summary.all.projects=1\n").config;
+    let w = tpl(run(&mut r, &all, "summary").await.0).rows.into_iter().find(|x| x.project == "Work").unwrap();
+    assert_eq!((w.complete.as_str(), w.bar, w.completed, w.remaining), ("100%", 30, 1, 0));
+
+    // A filter narrows it, an abbreviation works, and an empty result says so.
+    let h = tpl(run(&mut r, &cfg, "project:Home summary").await.0);
+    assert_eq!(h.rows.iter().map(|x| x.project.as_str()).collect::<Vec<_>>(), ["Home", "Home.Kitchen"]);
+    assert!(matches!(run(&mut r, &cfg, "summ").await.0, CliResult::Summary(_)));
+    let (res, _) = run(&mut r, &cfg, "project:Nowhere summary").await;
+    assert_eq!(message(&res), "No projects.");
+}
+
+#[tokio::test]
+async fn calendar_lays_out_months_and_takes_the_arguments_taskwarrior_does() {
+    let mut r = replica();
+    let cfg = Config::default();
+    let cal = |res: CliResult| match res {
+        CliResult::Calendar(c) => *c,
+        other => panic!("not a calendar: {other:?}"),
+    };
+    let months = |c: &tc_core::calendar::CalendarOut| c.months.iter().map(|m| (m.year, m.month)).collect::<Vec<_>>();
+
+    let c = cal(run(&mut r, &cfg, "calendar").await.0);
+    assert_eq!(c.months.len(), 3);
+    assert_eq!(cal(run(&mut r, &cfg, "calendar y").await.0).months.len(), 12);
+    assert_eq!(months(&cal(run(&mut r, &cfg, "calendar 3 2031").await.0))[0], (2031, 3));
+    assert_eq!(months(&cal(run(&mut r, &cfg, "cal march 2031").await.0))[0], (2031, 3), "abbreviated command, named month");
+    let (res, wrote) = run(&mut r, &cfg, "calendar 13 2031").await;
+    assert!(!wrote && message(&res).contains("not a valid month"), "{}", message(&res));
+    let (res, _) = run(&mut r, &cfg, "calendar whenever").await;
+    assert!(message(&res).contains("Could not recognize argument 'whenever'"), "{}", message(&res));
+    // `rc.` overrides are settings, not arguments.
+    assert_eq!(cal(run(&mut r, &cfg, "rc.calendar.monthsperline:2 calendar").await.0).months.len(), 2);
+}
+
+#[tokio::test]
+async fn weeks_start_on_sunday_unless_told_otherwise_like_taskwarrior() {
+    let mut r = replica();
+    let cal = |res: CliResult| match res {
+        CliResult::Calendar(c) => *c,
+        other => panic!("not a calendar: {other:?}"),
+    };
+    // Nothing set: Sunday, which is what a real `task calendar` shows without a `weekstart`.
+    let c = cal(run(&mut r, &Config::default(), "calendar").await.0);
+    assert_eq!(c.weekdays, ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]);
+    // In the taskrc, on a command line, and refused when it isn't one of the two.
+    let monday = parse("weekstart=Monday\n").config;
+    assert_eq!(cal(run(&mut r, &monday, "calendar").await.0).weekdays[0], "Mo");
+    assert_eq!(cal(run(&mut r, &Config::default(), "rc.weekstart:monday calendar").await.0).weekdays[0], "Mo");
+    assert_eq!(cal(run(&mut r, &monday, "rc.weekstart:sunday calendar").await.0).weekdays[0], "Su");
+    let p = parse("weekstart=friday\n");
+    assert!(p.config.settings.get("weekstart").is_none());
+    assert!(p.warnings.iter().any(|w| w.starts_with("weekstart:")), "{:?}", p.warnings);
+}
+
+#[tokio::test]
+async fn calendar_colours_what_is_due_and_lists_it_in_full_mode() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add this month due:eom").await;
+    run(&mut r, &cfg, "add far away due:2031-06-15").await;
+    run(&mut r, &cfg, "add hidden due:eom +nocal").await;
+    let cal = |res: CliResult| match res {
+        CliResult::Calendar(c) => *c,
+        other => panic!("not a calendar: {other:?}"),
+    };
+    let c = cal(run(&mut r, &cfg, "calendar").await.0);
+    let due_days = |c: &tc_core::calendar::CalendarOut| {
+        c.months.iter().flat_map(|m| m.weeks.iter().flat_map(|w| w.days.iter().flatten())).filter(|d| d.due.is_some()).count()
+    };
+    assert_eq!(due_days(&c), 1, "this month's, once: `nocal` is left off and 2031 is out of range");
+    assert!(c.details.is_none(), "sparse is the default");
+
+    let full = parse("calendar.details=full\n").config;
+    let c = cal(run(&mut r, &full, "calendar").await.0);
+    let d = c.details.expect("a report of what is due");
+    assert_eq!(d.report, "list");
+    assert_eq!(d.rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(), ["this month"]);
+    let far = cal(run(&mut r, &full, "calendar 6 2031").await.0);
+    assert_eq!(far.details.unwrap().rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(), ["far away"]);
+
+    // Its report can be another one, and it has to exist.
+    let long = parse("calendar.details=full\ncalendar.details.report=long\n").config;
+    assert_eq!(cal(run(&mut r, &long, "calendar").await.0).details.unwrap().report, "long");
+    let bad = parse("calendar.details=full\ncalendar.details.report=nosuch\n").config;
+    let (res, _) = run(&mut r, &bad, "calendar").await;
+    assert!(message(&res).contains("calendar.details.report"), "{}", message(&res));
+}
+
+#[tokio::test]
 async fn udas_and_custom_reports_from_taskrc() {
     let cfg = parse(
         "uda.estimate.type=string\nuda.estimate.label=Size\nuda.estimate.values=big,small\n\

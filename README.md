@@ -291,7 +291,7 @@ help
 | | |
 | --- | --- |
 | **Write** | `add` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
-| **Read** | `info` `count` `projects` `tags` `udas` `columns` `reports` `contexts` `show` `export` `ids` `uuids` |
+| **Read** | `info` `count` `projects` `summary` `calendar` `tags` `udas` `columns` `reports` `contexts` `show` `export` `ids` `uuids` |
 | **Filters** | `attr:value`, with modifiers `.is .not .has .startswith .before .after .by .none .any …`; `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/` (regular expressions, see below); ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h` |
 
@@ -304,6 +304,16 @@ the same reading of the text, so `\w`, `\d` and case-insensitive matching (`sear
 `.` is one byte. Lookahead (`(?=…)`) and backreferences (`\1`), which ECMAScript has, are refused with a message, and
 so is syntax it doesn't have, such as `(?i)`. A pattern can never run long enough to tie the server up. `regex=off`
 goes back to plain text. A substitution's replacement is always literal text.
+
+**`summary`** shows each project's progress (tasks remaining, their average age, how much is complete and a bar), with
+sub-projects indented under their parent. A filter narrows it (`project:Home summary`) and `summary.all.projects=1`
+includes projects that are all finished. **`calendar`** draws the months with week numbers, today, weekends, the days that
+have something due (green; due today in purple; overdue in red) or scheduled, and holidays. It takes Taskwarrior's
+arguments: `calendar`, `calendar y` (a year from this month), `calendar due` (from the oldest due date), `calendar 2027`,
+`calendar 3 2027`, `calendar march 2027`. Click a day that has something due to see those tasks. `calendar.details=full`
+lists what is due in the months shown and `calendar.holidays=full` lists the holidays; define them as
+`holiday.<id>.name` and `.date` (or `.start` and `.end`) in the taskrc dialog (`include` files aren't followed, so paste
+them). Weeks start on Sunday, as in Taskwarrior, unless you set `weekstart=Monday`.
 
 Notes that differ from Taskwarrior on a desktop:
 

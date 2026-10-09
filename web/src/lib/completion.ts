@@ -52,6 +52,8 @@ export const COMMANDS: Record<string, string> = {
   count: 'count matching tasks',
   projects: 'list projects',
   tags: 'list tags',
+  summary: 'progress of each project',
+  calendar: 'months, with what is due when',
   udas: 'list user defined attributes',
   columns: 'list report columns',
   reports: 'list reports',

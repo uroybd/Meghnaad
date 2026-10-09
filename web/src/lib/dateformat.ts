@@ -84,7 +84,7 @@ export type FormatKind =
   | 'infoNote'; // notes in the detail view: dateformat.annotation, else the detail view's format
 
 export const weekStartOf = (settings: Record<string, string> | undefined): 0 | 1 =>
-  /^sun/i.test(settings?.weekstart ?? '') ? 0 : 1;
+  /^mon/i.test(settings?.weekstart ?? '') ? 1 : 0;
 
 /** The pattern for a place, following Taskwarrior's fallbacks; undefined = none configured. */
 export function formatFor(

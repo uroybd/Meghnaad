@@ -1,5 +1,7 @@
 <script lang="ts">
+  import CalendarView from './CalendarView.svelte';
   import ReportTable from './ReportTable.svelte';
+  import SummaryView from './SummaryView.svelte';
   import TaskInfo from './TaskInfo.svelte';
   import { store, type Entry } from './store.svelte';
   import type { Row } from './types';
@@ -20,6 +22,10 @@
   <ReportTable result={r} {entry} onedit={onedit && ((row) => onedit(row, entry))} {onsort} />
 {:else if r.kind === 'info'}
   {#each r.tasks as t (t.uuid)}<TaskInfo task={t} onedit={onedit && ((row) => onedit(row, entry))} />{/each}
+{:else if r.kind === 'summary'}
+  <SummaryView result={r} />
+{:else if r.kind === 'calendar'}
+  <CalendarView result={r} {entry} />
 {:else if r.kind === 'table'}
   {#if r.title}<p class="dim">{r.title}</p>{/if}
   {#if r.rows.length === 0}

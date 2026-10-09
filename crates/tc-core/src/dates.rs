@@ -438,3 +438,51 @@ mod tests {
         assert!(late.same_day(ts(2026, 10, 7, 19, 0, 0), ts(2026, 10, 8, 10, 0, 0)));
     }
 }
+
+/// A duration the way Taskwarrior's `Duration::formatVague` writes it: one unit, the largest that
+/// fits. `1.5y`, `4mo`, `3w`, `5d`, `7h`, `12min`, `30s`; empty for less than a second.
+pub fn format_vague(secs: i64) -> String {
+    let neg = secs < 0;
+    let t = secs.abs();
+    let days = t as f64 / 86_400.0;
+    let body = if t >= 86_400 * 365 {
+        format!("{:.1}y", days / 365.0)
+    } else if t >= 86_400 * 90 {
+        format!("{}mo", (days / 30.0) as i64)
+    } else if t >= 86_400 * 14 {
+        format!("{}w", (days / 7.0) as i64)
+    } else if t >= 86_400 {
+        format!("{}d", days as i64)
+    } else if t >= 3_600 {
+        format!("{}h", t / 3_600)
+    } else if t >= 60 {
+        format!("{}min", t / 60)
+    } else if t >= 1 {
+        format!("{t}s")
+    } else {
+        String::new()
+    };
+    if neg && !body.is_empty() { format!("-{body}") } else { body }
+}
+
+#[cfg(test)]
+mod vague_tests {
+    use super::{format_vague, DAY};
+
+    #[test]
+    fn one_unit_the_largest_that_fits() {
+        assert_eq!(format_vague(0), "");
+        assert_eq!(format_vague(30), "30s");
+        assert_eq!(format_vague(59 * 60 + 59), "59min");
+        assert_eq!(format_vague(3 * 3600 + 1000), "3h");
+        assert_eq!(format_vague(5 * DAY + 3600), "5d");
+        assert_eq!(format_vague(13 * DAY), "13d");
+        assert_eq!(format_vague(14 * DAY), "2w");
+        assert_eq!(format_vague(89 * DAY), "12w");
+        assert_eq!(format_vague(90 * DAY), "3mo");
+        assert_eq!(format_vague(364 * DAY), "12mo");
+        assert_eq!(format_vague(365 * DAY), "1.0y");
+        assert_eq!(format_vague(548 * DAY), "1.5y");
+        assert_eq!(format_vague(-2 * DAY), "-2d");
+    }
+}
