@@ -15,17 +15,21 @@ desktop](#different-from-the-desktop)
 | Page | What it shows |
 | --- | --- |
 | **Tasks** | Any report as a table, with filters. Click a row for the task's detail |
-| **Projects** | Projects and sub-projects, with their tasks underneath |
-| **Tags** | Every tag with its pending tasks and how many are overdue, expandable |
+| **Projects** | Projects and sub-projects, with their tasks underneath, and a filter box |
+| **Tags** | Every tag with its tasks and how many are overdue, expandable, and a filter box |
 | **Summary** | How far along each project is |
 | **Calendar** | Months, with what is due or scheduled on which day |
 | **Burndown** | Pending, started and done over time |
 | **Console** | Type commands; reports and answers print here |
 
-Summary, Calendar and Burndown have the same filter box as Tasks (Tab completes, filters become chips, the filter
+Summary, Calendar, Burndown, Projects and Tags have the same filter box as Tasks (Tab completes, filters become chips, the filter
 helpers are below it) and it is focused when you open the page (not on a phone, where that would raise the keyboard).
 The header also has the running **timer**, the **bell** (reminders), **urgency** (coefficients) and **taskrc**
 (settings). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
+
+**Projects and Tags start as your pending tasks** (a `status:pending` chip in their filter box). That is a filter like any
+other: take the chip away and finished tasks come in too, shown struck through, so a project or tag stays listed after
+its last task is done. Any other filter works as well (`project:Home`, `due.before:eow`, `+work`).
 
 **Tag chips are buttons.** In the table on the Tasks page, clicking a tag chip toggles `+tag` in that report's filter (a
 pressed chip means it is in the filter; click it again to take it out), exactly as typing `+tag` would. Anywhere else (a

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { onMount, tick, untrack } from 'svelte';
-  import { runCli } from './api';
+  import { tick, untrack } from 'svelte';
+  import ExportFilter from './ExportFilter.svelte';
   import { shellQuote } from './cmdline';
   import { ChevronDown, ChevronRight, Tag } from './icons';
   import { store } from './store.svelte';
@@ -8,9 +8,11 @@
   import { buildTags, type TagEntry } from './tags';
   import type { Row } from './types';
 
-  let rows = $state<Row[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  // What the filter selected so far: nothing yet (loading), or tasks, or an error with the last good tasks kept.
+  let res = $state<{ rows: Row[]; error: string | null } | null>(null);
+  const rows = $derived(res?.rows ?? []);
+  const loading = $derived(res === null);
+  const error = $derived(res?.error ?? null);
   let open = $state<Set<string>>(new Set());
   /** The tag whose entry was just asked for, highlighted for a moment. */
   let flash = $state<string | null>(null);
@@ -19,31 +21,6 @@
 
   // A tag asked for from a chip can have no pending task (a chip from a report of finished tasks): it still gets its entry.
   const tags = $derived(buildTags(rows, store.now, store.tagFocus?.tag));
-
-  async function load() {
-    try {
-      const res = await runCli({ args: ['status:pending', 'export'] });
-      const r = res.result;
-      if (r.kind === 'json') rows = r.value as Row[];
-      else if (r.kind === 'error') throw new Error(r.message);
-      error = null;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(load);
-
-  // Reload after any change made elsewhere (done, edit, add, console...).
-  let lastRev = store.rev;
-  $effect(() => {
-    if (store.rev !== lastRev) {
-      lastRev = store.rev;
-      void load();
-    }
-  });
 
   // A tag chip clicked somewhere else: open that tag's entry, bring it into view and flash it.
   $effect(() => {
@@ -78,6 +55,13 @@
   }
 </script>
 
+<ExportFilter
+  bind:filter={store.tagsFilter}
+  onresult={(r) => (res = { rows: r.rows ?? res?.rows ?? [], error: r.error })}
+  id="tags-filter"
+  label="Tags filters"
+  placeholder="Add filters: project:Home +work due.before:eow  (Tab completes)"
+/>
 <section aria-label="Tags" bind:this={root}>
   <div class="bar">
     <h2>Tags</h2>
@@ -90,7 +74,7 @@
   {:else if loading}
     <p class="dim">Loading…</p>
   {:else if tags.length === 0}
-    <p class="dim">No pending task has a tag.</p>
+    <p class="dim">No task with a tag matches this filter.</p>
   {:else}
     <ul class="tree">
       {#each tags as t (t.name)}
@@ -107,7 +91,7 @@
               <Tag size={15} />
               <span class="label">+{t.name}</span>
             </button>
-            <span class="count" title="Pending tasks with this tag">{t.tasks.length}</span>
+            <span class="count" title="Tasks with this tag that match the filter">{t.tasks.length}</span>
             {#if t.overdue}<span class="late" title="Overdue">{t.overdue} overdue</span>{/if}
             <span class="grow"></span>
             <button class="ghost link" onclick={() => inTasks(t)} title="Open +{t.name} in the Tasks view"
@@ -117,7 +101,7 @@
           {#if isOpen}
             <ul class="tree">
               {#each t.tasks as r (r.uuid)}<TaskLine row={r} depth={1} />{/each}
-              {#if t.tasks.length === 0}<li class="dim empty">No pending task has this tag.</li>{/if}
+              {#if t.tasks.length === 0}<li class="dim empty">No task matches the filter for this tag.</li>{/if}
             </ul>
           {/if}
         </li>

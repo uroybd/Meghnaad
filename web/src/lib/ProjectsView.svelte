@@ -1,48 +1,27 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { runCli } from './api';
+  import { untrack } from 'svelte';
+  import ExportFilter from './ExportFilter.svelte';
   import { ChevronDown, ChevronRight, Folder } from './icons';
   import { buildTree, expandable, type ProjectNode } from './projects';
   import { store } from './store.svelte';
   import TaskLine from './TaskLine.svelte';
   import type { Row } from './types';
 
-  let rows = $state<Row[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  // What the filter selected so far: nothing yet (loading), or tasks, or an error with the last good tasks kept.
+  let res = $state<{ rows: Row[]; error: string | null } | null>(null);
+  const rows = $derived(res?.rows ?? []);
+  const loading = $derived(res === null);
+  const error = $derived(res?.error ?? null);
   let open = $state<Set<string>>(new Set());
   let seeded = false;
 
   const tree = $derived(buildTree(rows, store.now));
 
-  async function load() {
-    try {
-      const res = await runCli({ args: ['status:pending', 'export'] });
-      const r = res.result;
-      if (r.kind === 'json') rows = r.value as Row[];
-      else if (r.kind === 'error') throw new Error(r.message);
-      error = null;
-      // First load: open the main projects so their sub-projects show grouped underneath.
-      if (!seeded) {
-        seeded = true;
-        open = new Set(tree.filter((n) => n.children.length).map((n) => n.name));
-      }
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(load);
-
-  // Reload after any change made elsewhere (done, edit, add, console...).
-  let lastRev = store.rev;
+  // First load: open the main projects so their sub-projects show grouped underneath.
   $effect(() => {
-    if (store.rev !== lastRev) {
-      lastRev = store.rev;
-      void load();
-    }
+    if (loading || seeded) return;
+    seeded = true;
+    untrack(() => (open = new Set(tree.filter((n) => n.children.length).map((n) => n.name))));
   });
 
   function toggle(name: string) {
@@ -75,7 +54,7 @@
         <Folder size={15} />
         <span class="label">{n.label}</span>
       </button>
-      <span class="count" title="Pending tasks, including sub-projects">{n.total}</span>
+      <span class="count" title="Tasks matching the filter, including sub-projects">{n.total}</span>
       {#if n.children.length}<span class="count"
           >· {n.children.length} sub-project{n.children.length === 1 ? '' : 's'}</span
         >{/if}
@@ -97,6 +76,13 @@
   </li>
 {/snippet}
 
+<ExportFilter
+  bind:filter={store.projectsFilter}
+  onresult={(r) => (res = { rows: r.rows ?? res?.rows ?? [], error: r.error })}
+  id="projects-filter"
+  label="Projects filters"
+  placeholder="Add filters: project:Home +work due.before:eow  (Tab completes)"
+/>
 <section aria-label="Projects">
   <div class="bar">
     <h2>Projects</h2>
@@ -109,7 +95,7 @@
   {:else if loading}
     <p class="dim">Loading…</p>
   {:else if tree.length === 0}
-    <p class="dim">No pending tasks.</p>
+    <p class="dim">No tasks match this filter.</p>
   {:else}
     <ul class="tree root">
       {#each tree as n (n.name)}{@render branch(n, 0)}{/each}

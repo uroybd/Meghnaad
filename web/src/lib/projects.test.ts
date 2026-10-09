@@ -24,10 +24,15 @@ describe('buildTree', () => {
     expect(work.children[0].children[0].name).toBe('Work.Deep.Nest');
   });
 
-  it('counts pending tasks including sub-projects, and ignores finished ones', () => {
-    expect(tree[0].total).toBe(3);
-    expect(tree[0].own.map((r) => r.description)).toEqual(['a']);
+  it('counts the tasks given, sub-projects included, finished ones too', () => {
+    expect(tree[0].total).toBe(4);
+    expect(tree[0].own.map((r) => r.description)).toEqual(['a', 'done']);
     expect(tree[1].total).toBe(1);
+  });
+
+  it('keeps a project listed when only finished tasks are left in it', () => {
+    const t = buildTree([row('x', 'Old', { status: 'completed', due: 1 })], 100);
+    expect(t.map((n) => [n.name, n.total, n.overdue])).toEqual([['Old', 1, 0]]);
   });
 
   it('counts overdue tasks up the tree', () => {

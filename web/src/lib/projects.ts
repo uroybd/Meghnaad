@@ -9,7 +9,7 @@ export interface ProjectNode {
   /** Tasks filed exactly here, most urgent first. */
   own: Row[];
   children: ProjectNode[];
-  /** Pending tasks here and in every sub-project. */
+  /** Tasks here and in every sub-project. */
   total: number;
   /** Of those, how many are past due. */
   overdue: number;
@@ -19,7 +19,11 @@ export const NO_PROJECT = '';
 
 const byUrgency = (a: Row, b: Row) => b.urgency - a.urgency;
 
-/** Build the tree from pending tasks. Sub-projects with no tasks of their own still get a node. */
+/**
+ * Build the tree from the tasks given (the page asks for those its filter matches, finished ones included when the
+ * filter allows them, so a project stays listed after its last task is done). Sub-projects with no tasks of their own
+ * still get a node. Only pending tasks count as overdue.
+ */
 export function buildTree(rows: Row[], now: number): ProjectNode[] {
   const nodes = new Map<string, ProjectNode>();
   const node = (name: string): ProjectNode => {
@@ -34,10 +38,9 @@ export function buildTree(rows: Row[], now: number): ProjectNode[] {
   };
 
   for (const r of rows) {
-    if (r.status !== 'pending') continue;
     const n = node(r.project ?? NO_PROJECT);
     n.own.push(r);
-    const late = r.due != null && r.due < now;
+    const late = r.status === 'pending' && r.due != null && r.due < now;
     // Count on the node and on each ancestor.
     for (let name = n.name; ; name = name.slice(0, name.lastIndexOf('.'))) {
       const m = nodes.get(name)!;

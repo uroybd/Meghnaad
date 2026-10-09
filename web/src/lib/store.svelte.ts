@@ -66,6 +66,9 @@ class Store {
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
   tagFocus = $state<{ tag: string; n: number } | null>(null);
   /** The filter on each of the Summary, Calendar and Burndown pages (Taskwarrior filter syntax). */
+  /** The filter on the Projects and Tags pages. They start as the pending tasks; taking that away brings in finished ones. */
+  projectsFilter = $state('status:pending');
+  tagsFilter = $state('status:pending');
   summaryFilter = $state('');
   calendarFilter = $state('');
   burndownFilter = $state('');

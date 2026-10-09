@@ -26,7 +26,7 @@ describe('activeTags', () => {
 });
 
 describe('buildTags', () => {
-  it('groups pending tasks under each of their tags, by name, most urgent first', () => {
+  it('groups tasks under each of their tags, by name, most urgent first, finished ones included', () => {
     const rows = [
       row({ uuid: '1', tags: ['b', 'a'], urgency: 1 }),
       row({ uuid: '2', tags: ['a'], urgency: 5, due: 10 }),
@@ -34,7 +34,7 @@ describe('buildTags', () => {
     ];
     const t = buildTags(rows, 100);
     expect(t.map((e) => e.name)).toEqual(['a', 'b']);
-    expect(t[0].tasks.map((r) => r.uuid)).toEqual(['2', '1']);
+    expect(t[0].tasks.map((r) => r.uuid)).toEqual(['2', '1', '3']);
     expect(t[0].overdue).toBe(1);
     expect(t[1].tasks).toHaveLength(1);
   });

@@ -10,16 +10,21 @@
   let { row, depth }: { row: Row; depth: number } = $props();
 
   const fmt = $derived(formatFor('report', store.config?.config.settings));
-  const late = $derived(row.due != null && row.due < store.now);
+  const pending = $derived(row.status === 'pending');
+  const late = $derived(pending && row.due != null && row.due < store.now);
 </script>
 
-<li class="task" style="--depth: {depth}">
-  <button
-    class="ghost tick"
-    aria-label="Mark done: {row.description}"
-    title="Mark done"
-    onclick={() => void store.act(null, [row.uuid, 'done'])}><Check size={15} /></button
-  >
+<li class="task" class:finished={!pending} style="--depth: {depth}">
+  {#if pending}
+    <button
+      class="ghost tick"
+      aria-label="Mark done: {row.description}"
+      title="Mark done"
+      onclick={() => void store.act(null, [row.uuid, 'done'])}><Check size={15} /></button
+    >
+  {:else}
+    <span class="tick-gap" title={row.status}></span>
+  {/if}
   <button class="ghost desc" onclick={() => store.openDetail(row.uuid)}>
     {#if row.priority}<span class="pri pri-{row.priority}">{row.priority}</span>{/if}
     <span class="text">{row.description}</span>
@@ -35,6 +40,15 @@
     gap: 8px;
     padding: 3px 0 3px calc(var(--depth) * 20px + 4px);
     min-width: 0;
+  }
+  /* A finished or deleted task (the filter let it in): same alignment, nothing to tick, dimmed. */
+  .tick-gap {
+    width: 28px;
+    flex: none;
+  }
+  .finished .text {
+    color: var(--dim);
+    text-decoration: line-through;
   }
   .tick {
     line-height: 0;
