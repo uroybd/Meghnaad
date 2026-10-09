@@ -62,7 +62,10 @@ impl Cryptor {
             .cipher
             .encrypt(
                 Nonce::from_slice(&nonce_bytes),
-                Payload { msg: plaintext, aad: &aad(version_id) },
+                Payload {
+                    msg: plaintext,
+                    aad: &aad(version_id),
+                },
             )
             .map_err(|_| Error::Decrypt)?;
         let mut out = Vec::with_capacity(1 + NONCE_LEN + ct.len());
@@ -86,7 +89,10 @@ impl Cryptor {
         self.cipher
             .decrypt(
                 Nonce::from_slice(nonce),
-                Payload { msg: ct, aad: &aad(version_id) },
+                Payload {
+                    msg: ct,
+                    aad: &aad(version_id),
+                },
             )
             .map_err(|_| Error::Decrypt)
     }

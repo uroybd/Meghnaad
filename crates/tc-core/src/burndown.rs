@@ -8,7 +8,9 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use taskchampion::chrono::{Datelike, Duration, NaiveDate};
 
-const MONTH_ABBR: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_ABBR: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -63,7 +65,9 @@ impl Period {
             }
             Period::Annual => NaiveDate::from_ymd_opt(y - 1, 1, 1).expect("a real year"),
         };
-        clock.from_ymd_hms(back.year(), back.month(), back.day(), 0, 0, 0).unwrap_or(ts)
+        clock
+            .from_ymd_hms(back.year(), back.month(), back.day(), 0, 0, 0)
+            .unwrap_or(ts)
     }
 
     /// (major, minor) axis labels for the bar that starts at `ts`.
@@ -73,7 +77,10 @@ impl Period {
             Period::Daily => (MONTH_ABBR[m as usize - 1].to_owned(), format!("{d:02}")),
             Period::Weekly => {
                 let date = NaiveDate::from_ymd_opt(y, m, d).expect("a real day");
-                (y.to_string(), format!("{:02}", week_number(date, clock.week_starts_monday)))
+                (
+                    y.to_string(),
+                    format!("{:02}", week_number(date, clock.week_starts_monday)),
+                )
             }
             Period::Monthly => (y.to_string(), format!("{m:02}")),
             Period::Annual => (String::new(), format!("{:02}", y.rem_euclid(100))),
@@ -161,7 +168,15 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
     let mut cursor = now_epoch;
     for _ in 0..period.bars() {
         let (major, minor) = period.labels(clock, cursor);
-        bars.insert(cursor, Bar { epoch: cursor, major, minor, ..Default::default() });
+        bars.insert(
+            cursor,
+            Bar {
+                epoch: cursor,
+                major,
+                minor,
+                ..Default::default()
+            },
+        );
         cursor = period.before(clock, cursor);
     }
     let earliest = bars.keys().next().copied().unwrap_or(now_epoch);
@@ -263,7 +278,11 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
         }
     }
 
-    let max_value = bars.values().map(|b| b.pending + b.started + b.done + carryover).max().unwrap_or(0);
+    let max_value = bars
+        .values()
+        .map(|b| b.pending + b.started + b.done + carryover)
+        .max()
+        .unwrap_or(0);
     let top = axis_top(max_value);
 
     // How fast the pile is shrinking, and when it would be gone.
@@ -274,7 +293,11 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
             let per_second = (peak_count - current) as f64 / since_peak as f64;
             net_fix_rate = Some((per_second * 86_400.0) as f32 as f64);
             let in_secs = (current as f64 / per_second) as i64;
-            completion = Some(Completion { epoch: clock.now + in_secs, in_secs, vague: format_vague(in_secs) });
+            completion = Some(Completion {
+                epoch: clock.now + in_secs,
+                in_secs,
+                vague: format_vague(in_secs),
+            });
         } else {
             no_convergence = true;
         }
@@ -324,13 +347,31 @@ mod tests {
     }
     /// (pending, started, done) of the bar `days_ago` days back, on a daily chart.
     fn at(o: &BurndownOut, days_ago: i64) -> (i64, i64, i64) {
-        let b = o.bars.iter().find(|b| b.epoch == midnight(days_ago)).expect("a bar for that day");
+        let b = o
+            .bars
+            .iter()
+            .find(|b| b.epoch == midnight(days_ago))
+            .expect("a bar for that day");
         (b.pending, b.started, b.done)
     }
 
     #[test]
     fn the_axis_is_rounded_up_the_way_taskwarrior_does() {
-        let table = [(0, 2), (7, 8), (8, 10), (19, 20), (20, 30), (49, 50), (50, 60), (99, 100), (100, 150), (499, 500), (500, 600), (999, 1000), (1000, 1500)];
+        let table = [
+            (0, 2),
+            (7, 8),
+            (8, 10),
+            (19, 20),
+            (20, 30),
+            (49, 50),
+            (50, 60),
+            (99, 100),
+            (100, 150),
+            (499, 500),
+            (500, 600),
+            (999, 1000),
+            (1000, 1500),
+        ];
         for (n, want) in table {
             assert_eq!(axis_top(n), want, "{n}");
         }
@@ -351,19 +392,35 @@ mod tests {
         assert_eq!(w.bars.len(), 26);
         // Weeks start on Monday on this clock; 5 October 2026 is a Monday, in ISO week 41.
         assert_eq!(w.bars.last().unwrap().epoch, midnight(2));
-        assert_eq!((w.bars.last().unwrap().major.as_str(), w.bars.last().unwrap().minor.as_str()), ("2026", "41"));
+        assert_eq!(
+            (
+                w.bars.last().unwrap().major.as_str(),
+                w.bars.last().unwrap().minor.as_str()
+            ),
+            ("2026", "41")
+        );
         assert_eq!(w.bars[24].epoch, midnight(9), "a week earlier");
 
         let m = run(&[], Period::Monthly, true);
         assert_eq!((m.bars.len(), m.bars.last().unwrap().minor.as_str()), (24, "10"));
         assert_eq!(m.bars[22].minor, "09");
         let y = run(&[], Period::Annual, true);
-        assert_eq!((y.bars.len(), y.bars.last().unwrap().minor.as_str(), y.bars[8].minor.as_str()), (10, "26", "25"));
+        assert_eq!(
+            (
+                y.bars.len(),
+                y.bars.last().unwrap().minor.as_str(),
+                y.bars[8].minor.as_str()
+            ),
+            (10, "26", "25")
+        );
     }
 
     #[test]
     fn pending_and_started_tasks_stack_from_when_they_were_added() {
-        let started = Facts { start: Some(NOW - 2 * DAY), ..task(2, "pending", 5, None) };
+        let started = Facts {
+            start: Some(NOW - 2 * DAY),
+            ..task(2, "pending", 5, None)
+        };
         let o = run(&[task(1, "pending", 10, None), started], Period::Daily, true);
         assert_eq!(at(&o, 11), (0, 0, 0), "before either existed");
         assert_eq!(at(&o, 10), (1, 0, 0));
@@ -400,7 +457,13 @@ mod tests {
 
     #[test]
     fn deleted_and_recurring_tasks_only_count_towards_the_peak() {
-        let tasks = [task(1, "deleted", 20, Some(10)), Facts { status: "recurring".into(), ..task(2, "recurring", 20, None) }];
+        let tasks = [
+            task(1, "deleted", 20, Some(10)),
+            Facts {
+                status: "recurring".into(),
+                ..task(2, "recurring", 20, None)
+            },
+        ];
         let o = run(&tasks, Period::Daily, true);
         assert!(o.bars.iter().all(|b| b.pending + b.started + b.done == 0));
         assert_eq!(o.peak_count, 2);
@@ -409,7 +472,10 @@ mod tests {
 
     #[test]
     fn waiting_tasks_are_pending_ones() {
-        let waiting = Facts { wait: Some(NOW + 3 * DAY), ..task(1, "pending", 6, None) };
+        let waiting = Facts {
+            wait: Some(NOW + 3 * DAY),
+            ..task(1, "pending", 6, None)
+        };
         assert_eq!(at(&run(&[waiting], Period::Daily, true), 0), (1, 0, 0));
     }
 
@@ -433,10 +499,18 @@ mod tests {
         let done = run(&[task(1, "completed", 5, Some(1))], Period::Daily, true);
         assert!(done.net_fix_rate.is_none() && done.completion.is_none() && !done.no_convergence);
         // Tasks left but the pile never shrank: no convergence.
-        let flat = run(&[task(1, "pending", 20, None), task(2, "pending", 10, None)], Period::Daily, true);
+        let flat = run(
+            &[task(1, "pending", 20, None), task(2, "pending", 10, None)],
+            Period::Daily,
+            true,
+        );
         assert!(flat.no_convergence && flat.completion.is_none());
         // A peak that is too recent to tell anything from.
-        let recent = run(&[task(1, "completed", 2, Some(1)), task(2, "pending", 2, None)], Period::Daily, true);
+        let recent = run(
+            &[task(1, "completed", 2, Some(1)), task(2, "pending", 2, None)],
+            Period::Daily,
+            true,
+        );
         assert!(recent.no_convergence);
     }
 

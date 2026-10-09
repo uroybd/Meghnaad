@@ -28,13 +28,17 @@ pub enum Outcome {
 /// Taskwarrior's default value of every setting this app reads that has one: the plain settings,
 /// the urgency coefficients, the built-in reports, and the priority attribute.
 pub fn defaults() -> BTreeMap<String, String> {
-    let mut d: BTreeMap<String, String> =
-        SETTING_DEFAULTS.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect();
+    let mut d: BTreeMap<String, String> = SETTING_DEFAULTS
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
     for (k, v) in crate::urgency::defaults() {
         d.insert(k, format!("{v:?}"));
     }
     for name in crate::report::BUILTIN_NAMES {
-        let Some(r) = crate::report::resolve(&Config::default(), name) else { continue };
+        let Some(r) = crate::report::resolve(&Config::default(), name) else {
+            continue;
+        };
         let mut put = |attr: &str, value: String| {
             if !value.is_empty() {
                 d.insert(format!("report.{name}.{attr}"), value);
@@ -54,7 +58,11 @@ pub fn defaults() -> BTreeMap<String, String> {
 
 /// `key=value` lines, as the settings are written.
 fn lines_of(cfg: &Config) -> BTreeMap<String, String> {
-    render(cfg).lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.to_owned(), v.to_owned())).collect()
+    render(cfg)
+        .lines()
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect()
 }
 
 /// Whether two values are the same setting: textually, or as numbers (`15` is `15.0`).
@@ -83,7 +91,7 @@ pub fn show(cfg: &Config, words: &[String]) -> crate::cli::CliResult {
         }
         let default = defaults.get(name);
         let value = held.get(name).or(default).cloned().unwrap_or_default();
-        let modified = held.get(name).is_some_and(|v| default.map_or(true, |d| !same(v, d)));
+        let modified = held.get(name).is_some_and(|v| default.is_none_or(|d| !same(v, d)));
         if modified {
             changed = true;
             highlight.push(rows.len());
@@ -97,7 +105,9 @@ pub fn show(cfg: &Config, words: &[String]) -> crate::cli::CliResult {
         }
     }
     if rows.is_empty() {
-        return CliResult::Text { lines: vec!["No matching configuration variables.".into()] };
+        return CliResult::Text {
+            lines: vec!["No matching configuration variables.".into()],
+        };
     }
     let footer = if changed {
         vec![
@@ -122,7 +132,9 @@ pub fn show(cfg: &Config, words: &[String]) -> crate::cli::CliResult {
 /// context). `ask` is `confirmation`; `confirmed` says the question was already answered yes.
 pub fn config(stored: &Config, words: &[String], ask: bool, confirmed: bool) -> Outcome {
     let missing = || Outcome::Error("Specify the name of a config variable to modify.".into());
-    let Some(name) = words.first().filter(|n| !n.is_empty()) else { return missing() };
+    let Some(name) = words.first().filter(|n| !n.is_empty()) else {
+        return missing();
+    };
     if is_sensitive(name) {
         return Outcome::Error(format!(
             "'{name}' can't be set here: sync settings and anything that looks like a credential are blocked. \
@@ -138,7 +150,12 @@ pub fn config(stored: &Config, words: &[String], ask: bool, confirmed: bool) -> 
     let text = render(stored);
     let prefix = format!("{name}=");
     let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
-    let at: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.starts_with(&prefix)).map(|(i, _)| i).collect();
+    let at: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.starts_with(&prefix))
+        .map(|(i, _)| i)
+        .collect();
     let old = at.first().map(|i| lines[*i][prefix.len()..].to_owned());
 
     if setting {
@@ -192,7 +209,10 @@ pub fn config(stored: &Config, words: &[String], ask: bool, confirmed: bool) -> 
     if render(&parsed.config) == text {
         return Outcome::Nothing("No changes made.".into());
     }
-    Outcome::Saved { config: Box::new(parsed.config), message: "Config modified.".into() }
+    Outcome::Saved {
+        config: Box::new(parsed.config),
+        message: "Config modified.".into(),
+    }
 }
 
 #[cfg(test)]
@@ -229,9 +249,17 @@ mod tests {
         let i = row("default.project");
         assert!(t.highlight.contains(&i));
         assert_ne!(t.rows[i + 1][0], "  Default value");
-        assert_eq!(t.footer[0], "Some of your taskrc variables differ from the default values.");
+        assert_eq!(
+            t.footer[0],
+            "Some of your taskrc variables differ from the default values."
+        );
         // Sorted by name, as Taskwarrior's map is.
-        let names: Vec<&String> = t.rows.iter().filter(|r| !r[0].starts_with(' ')).map(|r| &r[0]).collect();
+        let names: Vec<&String> = t
+            .rows
+            .iter()
+            .filter(|r| !r[0].starts_with(' '))
+            .map(|r| &r[0])
+            .collect();
         assert!(names.windows(2).all(|p| p[0] <= p[1]));
     }
 
@@ -239,7 +267,10 @@ mod tests {
     fn show_takes_a_word_to_narrow_by_and_all_means_everything() {
         let c = cfg("bulk=7\n");
         let t = table(show(&c, &w("bulk")));
-        assert_eq!(t.rows.iter().map(|r| r[0].as_str()).collect::<Vec<_>>(), ["bulk", "  Default value"]);
+        assert_eq!(
+            t.rows.iter().map(|r| r[0].as_str()).collect::<Vec<_>>(),
+            ["bulk", "  Default value"]
+        );
         assert!(table(show(&c, &w("all"))).rows.len() > 50);
         let none = show(&c, &w("zzzz-nothing"));
         assert!(matches!(none, CliResult::Text { lines } if lines == ["No matching configuration variables."]));
@@ -250,7 +281,10 @@ mod tests {
 
     #[test]
     fn an_urgency_value_equal_to_its_default_is_not_a_change() {
-        let t = table(show(&cfg("urgency.due.coefficient=12\nurgency.active.coefficient=9\n"), &w("urgency")));
+        let t = table(show(
+            &cfg("urgency.due.coefficient=12\nurgency.active.coefficient=9\n"),
+            &w("urgency"),
+        ));
         let marked: Vec<&str> = t.highlight.iter().map(|i| t.rows[*i][0].as_str()).collect();
         assert!(marked.contains(&"urgency.active.coefficient"), "{marked:?}");
         assert!(!marked.contains(&"urgency.due.coefficient"), "{marked:?}");
@@ -277,7 +311,10 @@ mod tests {
         assert_eq!(c.aliases().get("dn").map(String::as_str), Some("done"));
         // Several words are one value, as in Taskwarrior.
         let c = saved(config(&base, &w("default.command next +PENDING"), false, false));
-        assert_eq!(c.settings.get("default.command").map(String::as_str), Some("next +PENDING"));
+        assert_eq!(
+            c.settings.get("default.command").map(String::as_str),
+            Some("next +PENDING")
+        );
         // Removing a setting puts back its default.
         let c = saved(config(&base, &w("bulk"), false, false));
         assert_eq!(c.bulk(), 3);
@@ -294,8 +331,14 @@ mod tests {
             Outcome::Saved { .. } => "saved".into(),
             Outcome::Error(e) | Outcome::Nothing(e) => e,
         };
-        assert_eq!(q("bulk 9", false), "Are you sure you want to change the value of 'bulk' from '7' to '9'?");
-        assert_eq!(q("limit 5", false), "Are you sure you want to add 'limit' with a value of '5'?");
+        assert_eq!(
+            q("bulk 9", false),
+            "Are you sure you want to change the value of 'bulk' from '7' to '9'?"
+        );
+        assert_eq!(
+            q("limit 5", false),
+            "Are you sure you want to add 'limit' with a value of '5'?"
+        );
         assert_eq!(q("bulk", false), "Are you sure you want to remove 'bulk'?");
         assert_eq!(q("bulk 9", true), "saved");
         // The same value is not a change, and so not a question.
@@ -311,7 +354,11 @@ mod tests {
         };
         assert_eq!(err(""), "Specify the name of a config variable to modify.");
         assert_eq!(err("nothing.here"), "No entry named 'nothing.here' found.");
-        assert!(err("weekstart someday").contains("weekstart"), "{}", err("weekstart someday"));
+        assert!(
+            err("weekstart someday").contains("weekstart"),
+            "{}",
+            err("weekstart someday")
+        );
         assert!(err("unheard.of.setting 1").contains("not a setting this app reads"));
     }
 
@@ -331,6 +378,9 @@ mod tests {
             }
         }
         // Removing one is refused the same way, so it can't be used to probe for names either.
-        assert!(matches!(config(&base, &w("sync.encryption_secret"), false, false), Outcome::Error(_)));
+        assert!(matches!(
+            config(&base, &w("sync.encryption_secret"), false, false),
+            Outcome::Error(_)
+        ));
     }
 }

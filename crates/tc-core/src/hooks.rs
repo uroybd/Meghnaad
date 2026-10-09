@@ -52,12 +52,18 @@ pub struct Hooked {
 impl Hooked {
     /// A line of feedback.
     pub fn say(&mut self, text: impl Into<String>) {
-        self.lines.push(Line { kind: Kind::Info, text: text.into() });
+        self.lines.push(Line {
+            kind: Kind::Info,
+            text: text.into(),
+        });
     }
 
     /// A line of feedback shown as a warning.
     pub fn warn(&mut self, text: impl Into<String>) {
-        self.lines.push(Line { kind: Kind::Warn, text: text.into() });
+        self.lines.push(Line {
+            kind: Kind::Warn,
+            text: text.into(),
+        });
     }
 }
 
@@ -102,7 +108,11 @@ struct State {
 impl Runner {
     /// `hooks` is what the caller supplied (tests do; the Worker doesn't), else [`MyHooks`](crate::my_hooks::MyHooks).
     pub fn new(hooks: Option<Arc<dyn Hooks>>, enabled: bool) -> Runner {
-        Runner { hooks: hooks.unwrap_or_else(|| Arc::new(crate::my_hooks::MyHooks)), enabled, state: Mutex::default() }
+        Runner {
+            hooks: hooks.unwrap_or_else(|| Arc::new(crate::my_hooks::MyHooks)),
+            enabled,
+            state: Mutex::default(),
+        }
     }
 
     fn with<T>(&self, f: impl FnOnce(&dyn Hooks, &mut Hooked, &mut Vec<Facts>) -> T) -> T {
@@ -208,7 +218,10 @@ pub fn diff(before: &Facts, after: &Facts) -> Result<Vec<Change>, String> {
         out.push(Change::Description(after.description.clone()));
     }
     if before.project != after.project {
-        out.push(Change::Prop { name: "project".into(), value: after.project.clone().filter(|p| !p.is_empty()) });
+        out.push(Change::Prop {
+            name: "project".into(),
+            value: after.project.clone().filter(|p| !p.is_empty()),
+        });
     }
     if before.priority != after.priority {
         out.push(Change::Priority(after.priority.clone().filter(|p| !p.is_empty())));
@@ -221,7 +234,10 @@ pub fn diff(before: &Facts, after: &Facts) -> Result<Vec<Change>, String> {
     }
     for name in DATES {
         if date(before, name) != date(after, name) {
-            out.push(Change::Timestamp { name, value: date(after, name) });
+            out.push(Change::Timestamp {
+                name,
+                value: date(after, name),
+            });
         }
     }
     let was: BTreeSet<_> = before.depends.iter().collect();
@@ -234,11 +250,17 @@ pub fn diff(before: &Facts, after: &Facts) -> Result<Vec<Change>, String> {
     }
     for (k, v) in &after.extra {
         if before.extra.get(k) != Some(v) {
-            out.push(Change::Prop { name: k.clone(), value: Some(v.clone()) });
+            out.push(Change::Prop {
+                name: k.clone(),
+                value: Some(v.clone()),
+            });
         }
     }
     for k in before.extra.keys().filter(|k| !after.extra.contains_key(*k)) {
-        out.push(Change::Prop { name: k.clone(), value: None });
+        out.push(Change::Prop {
+            name: k.clone(),
+            value: None,
+        });
     }
     Ok(out)
 }
@@ -249,7 +271,12 @@ mod tests {
     use uuid::Uuid;
 
     fn task() -> Facts {
-        Facts { uuid: Uuid::from_u128(1), status: "pending".into(), description: "x".into(), ..Facts::default() }
+        Facts {
+            uuid: Uuid::from_u128(1),
+            status: "pending".into(),
+            description: "x".into(),
+            ..Facts::default()
+        }
     }
 
     #[test]
@@ -277,15 +304,30 @@ mod tests {
         let c = diff(&t, &n).unwrap();
         for want in [
             Change::Description("y".into()),
-            Change::Prop { name: "project".into(), value: Some("Work".into()) },
+            Change::Prop {
+                name: "project".into(),
+                value: Some("Work".into()),
+            },
             Change::Priority(Some("H".into())),
             Change::RemoveTag("old".into()),
             Change::AddTag("new".into()),
-            Change::Timestamp { name: "due", value: Some(100) },
-            Change::Timestamp { name: "start", value: Some(5) },
+            Change::Timestamp {
+                name: "due",
+                value: Some(100),
+            },
+            Change::Timestamp {
+                name: "start",
+                value: Some(5),
+            },
             Change::AddDep(Uuid::from_u128(2)),
-            Change::Prop { name: "est".into(), value: Some("2".into()) },
-            Change::Prop { name: "gone".into(), value: None },
+            Change::Prop {
+                name: "est".into(),
+                value: Some("2".into()),
+            },
+            Change::Prop {
+                name: "gone".into(),
+                value: None,
+            },
         ] {
             assert!(c.contains(&want), "missing {want:?} in {c:?}");
         }
@@ -301,8 +343,14 @@ mod tests {
         n.project = None;
         n.due = None;
         let c = diff(&t, &n).unwrap();
-        assert!(c.contains(&Change::Prop { name: "project".into(), value: None }));
-        assert!(c.contains(&Change::Timestamp { name: "due", value: None }));
+        assert!(c.contains(&Change::Prop {
+            name: "project".into(),
+            value: None
+        }));
+        assert!(c.contains(&Change::Timestamp {
+            name: "due",
+            value: None
+        }));
     }
 
     #[test]
@@ -311,7 +359,12 @@ mod tests {
         for edit in [
             (|n: &mut Facts| n.uuid = Uuid::from_u128(9)) as fn(&mut Facts),
             |n| n.status = "completed".into(),
-            |n| n.annotations.push(crate::model::Note { entry: 1, text: "a".into() }),
+            |n| {
+                n.annotations.push(crate::model::Note {
+                    entry: 1,
+                    text: "a".into(),
+                })
+            },
             |n| n.recur = Some("weekly".into()),
             |n| n.mask = Some("-".into()),
             |n| n.description = "  ".into(),
@@ -354,7 +407,14 @@ mod tests {
         assert_eq!(r.add(task()).unwrap(), vec![Change::AddTag("hooked".into())]);
         let lines = r.finish(false);
         let texts: Vec<_> = lines.iter().map(|l| (l.kind, l.text.as_str())).collect();
-        assert_eq!(texts, [(Kind::Info, "launch add x"), (Kind::Warn, "adding"), (Kind::Info, "1 changed")]);
+        assert_eq!(
+            texts,
+            [
+                (Kind::Info, "launch add x"),
+                (Kind::Warn, "adding"),
+                (Kind::Info, "1 changed")
+            ]
+        );
     }
 
     #[test]

@@ -52,8 +52,12 @@ impl Row {
             id: ctx.ids.get(&f.uuid).copied(),
             virtual_tags: f.active_virtual_tags(cfg, &ctx.clock),
             orphans: f.orphan_keys(cfg),
-            active_seconds: journal.as_ref().and_then(|(s, e)| f.active_seconds(s, e, ctx.clock.now)),
-            sessions: journal.map(|(s, e)| f.sessions(&s, &e, ctx.clock.now)).unwrap_or_default(),
+            active_seconds: journal
+                .as_ref()
+                .and_then(|(s, e)| f.active_seconds(s, e, ctx.clock.now)),
+            sessions: journal
+                .map(|(s, e)| f.sessions(&s, &e, ctx.clock.now))
+                .unwrap_or_default(),
             pending_deps: f.depends.iter().filter(|d| ctx.ids.contains_key(d)).count() as u32,
             history: vec![],
         }
@@ -89,8 +93,10 @@ pub struct Output {
 /// the web replica and generally differ from a desktop's, which are local to that replica.
 pub fn working_set_ids(all: &[Facts]) -> BTreeMap<Uuid, u32> {
     // TaskChampion's working set holds pending *and recurring* tasks, so templates are numbered too.
-    let mut pending: Vec<&Facts> =
-        all.iter().filter(|f| f.status == "pending" || f.status == "recurring").collect();
+    let mut pending: Vec<&Facts> = all
+        .iter()
+        .filter(|f| f.status == "pending" || f.status == "recurring")
+        .collect();
     pending.sort_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
     pending.iter().zip(1u32..).map(|(f, n)| (f.uuid, n)).collect()
 }
@@ -149,7 +155,9 @@ fn default_label(name: &str, format: Option<&str>, cfg: &Config) -> String {
         "priority" => "Priority",
         other => {
             let mut c = other.chars();
-            return c.next().map_or_else(String::new, |f| f.to_uppercase().collect::<String>() + c.as_str());
+            return c
+                .next()
+                .map_or_else(String::new, |f| f.to_uppercase().collect::<String>() + c.as_str());
         }
     };
     // Cut to the indicator's length (bytes, as `std::string::substr` does).
@@ -183,7 +191,13 @@ pub fn describe_columns(specs: &[String], labels: &[String], cfg: &Config) -> Ve
                 .cloned()
                 .unwrap_or_else(|| default_label(&name, format.as_deref(), cfg));
             let kind = kind_of(&name, cfg);
-            Column { spec: spec.clone(), name, format, label, kind }
+            Column {
+                spec: spec.clone(),
+                name,
+                format,
+                label,
+                kind,
+            }
         })
         .collect()
 }
@@ -192,9 +206,28 @@ pub fn describe_columns(specs: &[String], labels: &[String], cfg: &Config) -> Ve
 const DEFAULT_PRIORITY_VALUES: &[&str] = &["H", "M", "L", ""];
 
 const SORT_FIELDS: &[&str] = &[
-    "id", "uuid", "status", "description", "project", "priority", "tags", "depends", "entry", "start",
-    "end", "due", "wait", "scheduled", "until", "modified", "urgency", "recur", "parent", "random",
-    "mask", "imask",
+    "id",
+    "uuid",
+    "status",
+    "description",
+    "project",
+    "priority",
+    "tags",
+    "depends",
+    "entry",
+    "start",
+    "end",
+    "due",
+    "wait",
+    "scheduled",
+    "until",
+    "modified",
+    "urgency",
+    "recur",
+    "parent",
+    "random",
+    "mask",
+    "imask",
 ];
 
 fn valid_sort_field(name: &str, cfg: &Config) -> bool {
@@ -219,7 +252,11 @@ fn fnv(uuid: &Uuid, seed: u64) -> u64 {
 }
 
 fn dir(o: Ordering, descending: bool) -> Ordering {
-    if descending { o.reverse() } else { o }
+    if descending {
+        o.reverse()
+    } else {
+        o
+    }
 }
 
 fn date_cmp(a: Option<i64>, b: Option<i64>, desc: bool) -> Ordering {
@@ -268,11 +305,17 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
         "urgency" => dir(a.urgency.partial_cmp(&b.urgency).unwrap_or(Ordering::Equal), desc),
         "id" => dir(a.id.unwrap_or(0).cmp(&b.id.unwrap_or(0)), desc),
         "recur" => {
-            let (x, y) = (a.facts.recur.clone().unwrap_or_default(), b.facts.recur.clone().unwrap_or_default());
+            let (x, y) = (
+                a.facts.recur.clone().unwrap_or_default(),
+                b.facts.recur.clone().unwrap_or_default(),
+            );
             if x == y {
                 return Ordering::Equal;
             }
-            dir(parse_duration(&x).unwrap_or(0).cmp(&parse_duration(&y).unwrap_or(0)), desc)
+            dir(
+                parse_duration(&x).unwrap_or(0).cmp(&parse_duration(&y).unwrap_or(0)),
+                desc,
+            )
         }
         "depends" => {
             let (mut x, mut y) = (a.facts.depends.clone(), b.facts.depends.clone());
@@ -283,8 +326,20 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
             }
             match (x.is_empty(), y.is_empty()) {
                 // `return ascending` / `return !ascending` in the original.
-                (true, false) => if desc { Ordering::Greater } else { Ordering::Less },
-                (false, true) => if desc { Ordering::Less } else { Ordering::Greater },
+                (true, false) => {
+                    if desc {
+                        Ordering::Greater
+                    } else {
+                        Ordering::Less
+                    }
+                }
+                (false, true) => {
+                    if desc {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    }
+                }
                 _ => dir(ids.get(&x[0]).unwrap_or(&0).cmp(ids.get(&y[0]).unwrap_or(&0)), desc),
             }
         }
@@ -315,14 +370,19 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
                     }
                     dir(n(&x).partial_cmp(&n(&y)).unwrap_or(Ordering::Equal), desc)
                 }
-                UdaType::Date => {
-                    date_cmp(x.parse().ok().filter(|_| !x.is_empty()), y.parse().ok().filter(|_| !y.is_empty()), desc)
-                }
+                UdaType::Date => date_cmp(
+                    x.parse().ok().filter(|_| !x.is_empty()),
+                    y.parse().ok().filter(|_| !y.is_empty()),
+                    desc,
+                ),
                 UdaType::Duration => {
                     if x == y {
                         return Ordering::Equal;
                     }
-                    dir(parse_duration(&x).unwrap_or(0).cmp(&parse_duration(&y).unwrap_or(0)), desc)
+                    dir(
+                        parse_duration(&x).unwrap_or(0).cmp(&parse_duration(&y).unwrap_or(0)),
+                        desc,
+                    )
                 }
                 UdaType::String | UdaType::Uuid => {
                     if x == y {
@@ -330,9 +390,7 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
                     }
                     let values: Vec<String> = match def {
                         Some(d) if !d.values.is_empty() => d.values.clone(),
-                        None if f == "priority" => {
-                            DEFAULT_PRIORITY_VALUES.iter().map(|s| (*s).to_owned()).collect()
-                        }
+                        None if f == "priority" => DEFAULT_PRIORITY_VALUES.iter().map(|s| (*s).to_owned()).collect(),
                         _ => Vec::new(),
                     };
                     if !values.is_empty() {
@@ -396,8 +454,7 @@ pub struct Request<'a> {
 
 pub fn run_report(req: &Request) -> Result<Output, FilterError> {
     let cfg = req.cfg;
-    let def = resolve(cfg, req.report)
-        .ok_or_else(|| FilterError(format!("'{}' is not a report", req.report)))?;
+    let def = resolve(cfg, req.report).ok_or_else(|| FilterError(format!("'{}' is not a report", req.report)))?;
     let ids = working_set_ids(req.all);
     let ctx = EvalCtx::new(cfg, req.clock, &ids).with_inheritance(req.all);
 
@@ -431,14 +488,24 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
         .filter(|f| filter.matches(f, &ctx))
         .map(|f| Row::build(f, &ctx))
         .collect();
-    rows.sort_by_key(|r| (r.id.map_or((1, 0), |i| (0, i)), r.facts.entry.unwrap_or(0), r.facts.uuid));
+    rows.sort_by_key(|r| {
+        (
+            r.id.map_or((1, 0), |i| (0, i)),
+            r.facts.entry.unwrap_or(0),
+            r.facts.uuid,
+        )
+    });
     sort_rows(&mut rows, &sort, cfg, &ids, req.seed);
 
     let matched = rows.len();
     // A `limit:` in the report's filter or on the command line wins; otherwise the `limit` setting
     // applies, as `rc.limit` does in Taskwarrior. Only reports are cut short: `export`, `count` and
     // the like always see every task.
-    let limit = if filter.limit_set { filter.limit } else { cfg.default_limit() };
+    let limit = if filter.limit_set {
+        filter.limit
+    } else {
+        cfg.default_limit()
+    };
     if let Limit::N(n) = limit {
         rows.truncate(n);
     }
@@ -499,7 +566,17 @@ mod tests {
         let ctx = EvalCtx::new(cfg, clock(), &ids);
         let mut rows: Vec<Row> = all
             .iter()
-            .map(|f| Row { facts: f.clone(), urgency: ctx.urgency(f), id: ids.get(&f.uuid).copied(), virtual_tags: vec![], orphans: vec![], active_seconds: None, sessions: vec![], pending_deps: 0, history: vec![] })
+            .map(|f| Row {
+                facts: f.clone(),
+                urgency: ctx.urgency(f),
+                id: ids.get(&f.uuid).copied(),
+                virtual_tags: vec![],
+                orphans: vec![],
+                active_seconds: None,
+                sessions: vec![],
+                pending_deps: 0,
+                history: vec![],
+            })
             .collect();
         sort_rows(&mut rows, &parse_sort(spec).unwrap(), cfg, &ids, 1);
         rows.into_iter().map(|r| r.facts.description).collect()
@@ -536,10 +613,16 @@ mod tests {
         // "huge > large > medium > small > trivial > ''" (manual); `-` lists highest first.
         let cfg = parse("uda.estimate.type=string\nuda.estimate.values=huge,large,small,\n").config;
         let all = [
-            t("small", |f| { f.extra.insert("estimate".into(), "small".into()); }),
+            t("small", |f| {
+                f.extra.insert("estimate".into(), "small".into());
+            }),
             t("none", |_| {}),
-            t("huge", |f| { f.extra.insert("estimate".into(), "huge".into()); }),
-            t("large", |f| { f.extra.insert("estimate".into(), "large".into()); }),
+            t("huge", |f| {
+                f.extra.insert("estimate".into(), "huge".into());
+            }),
+            t("large", |f| {
+                f.extra.insert("estimate".into(), "large".into());
+            }),
         ];
         assert_eq!(sorted(&cfg, "estimate-", &all), ["huge", "large", "small", "none"]);
         assert_eq!(sorted(&cfg, "estimate+", &all), ["none", "small", "large", "huge"]);
@@ -550,8 +633,12 @@ mod tests {
         let cfg = parse("uda.owner.type=string\n").config;
         let all = [
             t("none", |_| {}),
-            t("b", |f| { f.extra.insert("owner".into(), "bob".into()); }),
-            t("a", |f| { f.extra.insert("owner".into(), "alice".into()); }),
+            t("b", |f| {
+                f.extra.insert("owner".into(), "bob".into());
+            }),
+            t("a", |f| {
+                f.extra.insert("owner".into(), "alice".into());
+            }),
         ];
         assert_eq!(sorted(&cfg, "owner+", &all), ["a", "b", "none"]);
         assert_eq!(sorted(&cfg, "owner-", &all), ["b", "a", "none"]);
@@ -561,9 +648,13 @@ mod tests {
     fn numeric_uda_treats_unset_as_zero() {
         let cfg = parse("uda.points.type=numeric\n").config;
         let all = [
-            t("five", |f| { f.extra.insert("points".into(), "5".into()); }),
+            t("five", |f| {
+                f.extra.insert("points".into(), "5".into());
+            }),
             t("none", |_| {}),
-            t("two", |f| { f.extra.insert("points".into(), "2".into()); }),
+            t("two", |f| {
+                f.extra.insert("points".into(), "2".into());
+            }),
         ];
         assert_eq!(sorted(&cfg, "points+", &all), ["none", "two", "five"]);
         assert_eq!(sorted(&cfg, "points-", &all), ["five", "two", "none"]);
@@ -573,9 +664,18 @@ mod tests {
     fn multi_key_sort_and_urgency() {
         let cfg = Config::default();
         let all = [
-            t("a-low", |f| { f.project = Some("a".into()); f.priority = Some("L".into()); }),
-            t("b-high", |f| { f.project = Some("b".into()); f.priority = Some("H".into()); }),
-            t("a-high", |f| { f.project = Some("a".into()); f.priority = Some("H".into()); }),
+            t("a-low", |f| {
+                f.project = Some("a".into());
+                f.priority = Some("L".into());
+            }),
+            t("b-high", |f| {
+                f.project = Some("b".into());
+                f.priority = Some("H".into());
+            }),
+            t("a-high", |f| {
+                f.project = Some("a".into());
+                f.priority = Some("H".into());
+            }),
         ];
         assert_eq!(sorted(&cfg, "project+,priority-", &all), ["a-high", "a-low", "b-high"]);
         // urgency-: high priority first (6.0 + project 1.0 vs 1.8 + 1.0).
@@ -587,10 +687,21 @@ mod tests {
     fn report_run_filters_sorts_limits_and_breaks() {
         let cfg = Config::default();
         let all = [
-            t("home1", |f| { f.project = Some("Home".into()); f.entry = Some(NOW - 3 * DAY); }),
-            t("work1", |f| { f.project = Some("Work".into()); f.entry = Some(NOW - 2 * DAY); }),
-            t("home2", |f| { f.project = Some("Home".into()); f.entry = Some(NOW - DAY); }),
-            t("done", |f| { f.status = "completed".into(); }),
+            t("home1", |f| {
+                f.project = Some("Home".into());
+                f.entry = Some(NOW - 3 * DAY);
+            }),
+            t("work1", |f| {
+                f.project = Some("Work".into());
+                f.entry = Some(NOW - 2 * DAY);
+            }),
+            t("home2", |f| {
+                f.project = Some("Home".into());
+                f.entry = Some(NOW - DAY);
+            }),
+            t("done", |f| {
+                f.status = "completed".into();
+            }),
         ];
         // `minimal` = project+/ , description+ : grouped by project with a break between.
         let o = run(&cfg, "minimal", "", &all);
@@ -643,8 +754,12 @@ mod tests {
         let mk = |d: &str, est: &str, work: bool, proj: &str| {
             t(d, |f| {
                 f.project = Some(proj.into());
-                if work { f.tags.insert("work".into()); }
-                if !est.is_empty() { f.extra.insert("estimate".into(), est.into()); }
+                if work {
+                    f.tags.insert("work".into());
+                }
+                if !est.is_empty() {
+                    f.extra.insert("estimate".into(), est.into());
+                }
             })
         };
         let all = [
@@ -677,7 +792,12 @@ mod tests {
         let cfg = Config::default();
         let r = |name: &str, f: &str| {
             run_report(&Request {
-                cfg: &cfg, clock: clock(), all: &[], report: name, filter: &split_words(f), seed: 0,
+                cfg: &cfg,
+                clock: clock(),
+                all: &[],
+                report: name,
+                filter: &split_words(f),
+                seed: 0,
             })
         };
         assert!(r("nope", "").unwrap_err().0.contains("not a report"));

@@ -35,7 +35,11 @@ pub struct SummaryOut {
 pub fn extract_parents(project: &str) -> Vec<String> {
     let b = project.as_bytes();
     let (mut out, mut pos) = (Vec::new(), 0);
-    while let Some(i) = b.get(pos + 1..).and_then(|s| s.iter().position(|c| *c == b'.')).map(|i| i + pos + 1) {
+    while let Some(i) = b
+        .get(pos + 1..)
+        .and_then(|s| s.iter().position(|c| *c == b'.'))
+        .map(|i| i + pos + 1)
+    {
         if i != b.len() - 1 {
             out.push(project[..i].to_owned());
         }
@@ -86,7 +90,14 @@ pub(crate) fn sort_projects(names: &BTreeSet<String>) -> Vec<String> {
 /// `tasks` are every task the filter selected, in any status. With `all_projects` (the
 /// `summary.all.projects` setting) projects whose tasks are all finished are listed too.
 pub fn summarize(tasks: &[&Facts], all_projects: bool, clock: &Clock) -> SummaryOut {
-    let status = |f: &Facts| if f.status == "pending" && f.is_waiting(clock) { "waiting" } else { f.status.as_str() }.to_owned();
+    let status = |f: &Facts| {
+        if f.status == "pending" && f.is_waiting(clock) {
+            "waiting"
+        } else {
+            f.status.as_str()
+        }
+        .to_owned()
+    };
 
     let mut listed: BTreeSet<String> = BTreeSet::new();
     for f in tasks {
@@ -131,16 +142,24 @@ pub fn summarize(tasks: &[&Facts], all_projects: bool, clock: &Clock) -> Summary
             let p = pending.get(&project).copied().unwrap_or(0);
             let c = completed.get(&project).copied().unwrap_or(0);
             let n = counter.get(&project).copied().unwrap_or(0);
-            let avg = if n > 0 { sum.get(&project).copied().unwrap_or(0.0) / n as f64 } else { 0.0 };
-            let (label, depth) = if project.is_empty() { ("(none)".to_owned(), 0) } else { indent(&project) };
+            let avg = if n > 0 {
+                sum.get(&project).copied().unwrap_or(0.0) / n as f64
+            } else {
+                0.0
+            };
+            let (label, depth) = if project.is_empty() {
+                ("(none)".to_owned(), 0)
+            } else {
+                indent(&project)
+            };
             SummaryRow {
                 label,
                 depth,
                 remaining: p,
                 completed: c,
                 avg_age: if n > 0 { format_vague(avg as i64) } else { String::new() },
-                complete: format!("{}%", if c + p > 0 { 100 * c / (c + p) } else { 0 }),
-                bar: if c + p > 0 { c * BAR_WIDTH / (c + p) } else { 0 },
+                complete: format!("{}%", (100 * c).checked_div(c + p).unwrap_or(0)),
+                bar: (c * BAR_WIDTH).checked_div(c + p).unwrap_or(0),
                 project,
             }
         })
@@ -198,7 +217,10 @@ mod tests {
         // (10 + 20 days pending + 6 days to finish) over 3 tasks.
         assert_eq!(home.avg_age, "12d");
         let work = &s.rows[1];
-        assert_eq!((work.remaining, work.complete.as_str(), work.bar, work.avg_age.as_str()), (1, "0%", 0, "3d"));
+        assert_eq!(
+            (work.remaining, work.complete.as_str(), work.bar, work.avg_age.as_str()),
+            (1, "0%", 0, "3d")
+        );
     }
 
     #[test]
@@ -214,32 +236,62 @@ mod tests {
         let order: Vec<(&str, usize)> = s.rows.iter().map(|r| (r.label.as_str(), r.depth)).collect();
         assert_eq!(
             order,
-            [("(none)", 0), ("Home", 0), ("Kitchen", 1), ("Work", 0), ("Deep", 1), ("Nest", 2)],
+            [
+                ("(none)", 0),
+                ("Home", 0),
+                ("Kitchen", 1),
+                ("Work", 0),
+                ("Deep", 1),
+                ("Nest", 2)
+            ],
             "parents with no tasks of their own are listed too, just before their first child"
         );
         let home = s.rows.iter().find(|r| r.project == "Home").unwrap();
-        assert_eq!((home.remaining, home.completed), (2, 1), "a parent counts its sub-projects");
+        assert_eq!(
+            (home.remaining, home.completed),
+            (2, 1),
+            "a parent counts its sub-projects"
+        );
         let work = s.rows.iter().find(|r| r.project == "Work").unwrap();
         assert_eq!(work.remaining, 1);
     }
 
     #[test]
     fn finished_projects_only_with_the_all_projects_setting() {
-        let tasks = [t(1, Some("Old"), "completed", 9, Some(2)), t(2, Some("Live"), "pending", 1, None)];
-        assert_eq!(run(&tasks, false).rows.iter().map(|r| r.project.as_str()).collect::<Vec<_>>(), ["Live"]);
+        let tasks = [
+            t(1, Some("Old"), "completed", 9, Some(2)),
+            t(2, Some("Live"), "pending", 1, None),
+        ];
+        assert_eq!(
+            run(&tasks, false)
+                .rows
+                .iter()
+                .map(|r| r.project.as_str())
+                .collect::<Vec<_>>(),
+            ["Live"]
+        );
         let all = run(&tasks, true);
-        assert_eq!(all.rows.iter().map(|r| r.project.as_str()).collect::<Vec<_>>(), ["Live", "Old"]);
+        assert_eq!(
+            all.rows.iter().map(|r| r.project.as_str()).collect::<Vec<_>>(),
+            ["Live", "Old"]
+        );
         assert_eq!(all.rows[1].complete, "100%");
         assert_eq!(all.rows[1].bar, BAR_WIDTH);
     }
 
     #[test]
     fn deleted_tasks_do_not_list_a_project_but_water_down_its_age() {
-        let tasks = [t(1, Some("P"), "deleted", 50, Some(40)), t(2, Some("P"), "pending", 10, None)];
+        let tasks = [
+            t(1, Some("P"), "deleted", 50, Some(40)),
+            t(2, Some("P"), "pending", 10, None),
+        ];
         let s = run(&tasks, false);
         assert_eq!(s.rows.len(), 1);
         assert_eq!(s.rows[0].remaining, 1);
-        assert_eq!(s.rows[0].avg_age, "5d", "10 days over two tasks, as Taskwarrior divides it");
+        assert_eq!(
+            s.rows[0].avg_age, "5d",
+            "10 days over two tasks, as Taskwarrior divides it"
+        );
         assert!(run(&[t(1, Some("P"), "deleted", 5, None)], false).rows.is_empty());
     }
 }

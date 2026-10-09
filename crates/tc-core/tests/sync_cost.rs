@@ -110,7 +110,11 @@ async fn a_cold_replica_catches_up_in_few_calls() {
     // The snapshot lookup, one listing, the head (twice: at the start and to confirm the end),
     // and one read per version. It used to be about four calls per version.
     assert!(total(&cold) <= n + 6, "{cold:?}");
-    assert_eq!(cold.get("list").copied().unwrap_or(0), 2, "one for snapshots, one for versions: {cold:?}");
+    assert_eq!(
+        cold.get("list").copied().unwrap_or(0),
+        2,
+        "one for snapshots, one for versions: {cold:?}"
+    );
 }
 
 #[tokio::test]
@@ -151,7 +155,7 @@ async fn pulling_and_pushing_one_version_is_cheap() {
     println!("push one local version: {} calls {push:?}", total(&push));
     // Read the head (with its tag), upload, conditional swap: no read-then-write.
     assert_eq!(push.get("swap"), Some(&1), "{push:?}");
-    assert!(push.get("cas").is_none(), "{push:?}");
+    assert!(!push.contains_key("cas"), "{push:?}");
     assert!(total(&push) <= 5, "{push:?}");
     assert_eq!(cli_sees(&store, &c).await, 12);
 }
@@ -184,7 +188,10 @@ async fn an_orphan_beside_the_real_chain_is_ignored() {
     bucket_with(&store, &c, 4).await;
     // A lost race can leave an object that shares a parent with the real first version.
     let orphan = uuid::Uuid::from_u128(0xbad);
-    store.put(&names::version_name(uuid::Uuid::nil(), orphan), b"not even encrypted").await.unwrap();
+    store
+        .put(&names::version_name(uuid::Uuid::nil(), orphan), b"not even encrypted")
+        .await
+        .unwrap();
     store.take();
 
     let mut web = replica();
@@ -214,7 +221,14 @@ fn server_urgent(store: &Counting, c: &Cryptor, u: SnapshotUrgency) -> Box<dyn S
 }
 
 async fn snapshots(store: &Counting) -> Vec<uuid::Uuid> {
-    store.inner.list("s-").await.unwrap().iter().filter_map(|n| names::parse_snapshot_name(n)).collect()
+    store
+        .inner
+        .list("s-")
+        .await
+        .unwrap()
+        .iter()
+        .filter_map(|n| names::parse_snapshot_name(n))
+        .collect()
 }
 
 /// `n` pushes of one task each, syncing with `avoid_snapshots` as given and the server reporting `u`.
@@ -233,7 +247,9 @@ async fn snapshot_odds_match_taskchampions_cloud_server() {
     let n = 20_000u32;
     for _ in 0..n {
         let (res, urgency) = s.add_version(parent, b"[]".to_vec()).await.unwrap();
-        let AddVersionResult::Ok(v) = res else { panic!("push refused") };
+        let AddVersionResult::Ok(v) = res else {
+            panic!("push refused")
+        };
         parent = v;
         match urgency {
             SnapshotUrgency::High => high += 1,
@@ -250,7 +266,10 @@ async fn snapshot_odds_match_taskchampions_cloud_server() {
 #[tokio::test]
 async fn a_rejected_push_never_asks_for_a_snapshot() {
     let store = MemStore::new();
-    let mut s = CloudServer::new(store, b"hunter2").await.unwrap().with_snapshot_urgency(SnapshotUrgency::High);
+    let mut s = CloudServer::new(store, b"hunter2")
+        .await
+        .unwrap()
+        .with_snapshot_urgency(SnapshotUrgency::High);
     let (res, _) = s.add_version(uuid::Uuid::nil(), b"[]".to_vec()).await.unwrap();
     assert!(matches!(res, AddVersionResult::Ok(_)));
     let (res, urgency) = s.add_version(uuid::Uuid::nil(), b"[]".to_vec()).await.unwrap();
@@ -265,14 +284,21 @@ async fn syncing_like_the_cli_writes_snapshots_when_the_server_asks() {
     let mut web = replica();
     // `avoid_snapshots = false` is how `task sync` runs: a "low" request is enough.
     push_n(&store, &c, &mut web, 30, SnapshotUrgency::Low, false).await;
-    assert_eq!(snapshots(&store).await.len(), 1, "older snapshots are removed as newer ones are written");
+    assert_eq!(
+        snapshots(&store).await.len(),
+        1,
+        "older snapshots are removed as newer ones are written"
+    );
 
     // A cold replica now starts from the snapshot instead of replaying 30 versions.
     store.take();
     let mut fresh = replica();
     fresh.sync(&mut server(&store, &c), true).await.unwrap();
     let cold = store.take();
-    println!("cold start from a snapshot of 30 versions: {} calls {cold:?}", total(&cold));
+    println!(
+        "cold start from a snapshot of 30 versions: {} calls {cold:?}",
+        total(&cold)
+    );
     assert_eq!(fresh.all_tasks().await.unwrap().len(), 30);
     assert!(total(&cold) <= 6, "{cold:?}");
 }
@@ -328,5 +354,8 @@ async fn the_newest_snapshot_is_used_and_a_newer_one_is_never_deleted() {
     // Writing an older snapshot (as a slow CLI might) must not remove the newer one.
     let mut s = CloudServer::with_cryptor(store.clone(), c.clone());
     s.add_snapshot(at5[0], old_bytes.clone()).await.unwrap();
-    assert!(snapshots(&store).await.contains(&at10[0]), "the newer snapshot survived");
+    assert!(
+        snapshots(&store).await.contains(&at10[0]),
+        "the newer snapshot survived"
+    );
 }

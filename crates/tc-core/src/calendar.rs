@@ -10,12 +10,29 @@ use std::collections::{BTreeMap, BTreeSet};
 use taskchampion::chrono::{Datelike, Duration, NaiveDate};
 
 const MONTHS: [&str; 12] = [
-    "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-    "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 /// Index 0 is Sunday, as in Taskwarrior's `dayName`.
-const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
+const DAYS: [&str; 7] = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+];
 
 /// How many months a bare `calendar` shows when `calendar.monthsperline` doesn't say.
 pub const DEFAULT_MONTHS: usize = 3;
@@ -85,7 +102,10 @@ pub struct Plan {
 
 fn flag(cfg: &Config, key: &str, default: bool) -> bool {
     cfg.settings.get(key).map_or(default, |v| {
-        matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "on" | "yes" | "y" | "true")
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "on" | "yes" | "y" | "true"
+        )
     })
 }
 
@@ -219,7 +239,12 @@ fn holidays(cfg: &Config, clock: &Clock) -> Vec<Holiday> {
         .collect();
     let mut out = Vec::new();
     for id in ids {
-        let get = |attr: &str| cfg.settings.get(&format!("holiday.{id}.{attr}")).map(|v| v.trim()).filter(|v| !v.is_empty());
+        let get = |attr: &str| {
+            cfg.settings
+                .get(&format!("holiday.{id}.{attr}"))
+                .map(|v| v.trim())
+                .filter(|v| !v.is_empty())
+        };
         let name = get("name").unwrap_or_default().to_owned();
         if let Some(d) = get("date").and_then(|v| holiday_date(v, format, clock)) {
             out.push(Holiday::On(d, name.clone()));
@@ -244,7 +269,9 @@ fn complete(word: &str, candidates: &[String], min: usize) -> Vec<usize> {
     if word.len() < min {
         return Vec::new();
     }
-    (0..candidates.len()).filter(|i| candidates[*i].starts_with(&word)).collect()
+    (0..candidates.len())
+        .filter(|i| candidates[*i].starts_with(&word))
+        .collect()
 }
 
 /// Whether `word` is one of the words `calendar` itself understands (`due`, `y`, a number or a
@@ -267,7 +294,12 @@ struct Args {
 
 fn parse_args(words: &[String], min: usize) -> Result<Args, String> {
     let months: Vec<String> = MONTHS.iter().map(|m| m.to_ascii_lowercase()).collect();
-    let mut a = Args { pending_date: false, whole_year: false, year: None, month: None };
+    let mut a = Args {
+        pending_date: false,
+        whole_year: false,
+        year: None,
+        month: None,
+    };
     for arg in words {
         let all_digits = !arg.is_empty() && arg.bytes().all(|c| c.is_ascii_digit());
         if complete(arg, &["due".to_owned()], min).len() == 1 {
@@ -295,7 +327,10 @@ fn parse_args(words: &[String], min: usize) -> Result<Args, String> {
 pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> Result<Plan, String> {
     let args = parse_args(words, cfg.abbreviation_minimum())?;
 
-    let months_per_line = usize::try_from(int(cfg, "calendar.monthsperline")).ok().filter(|m| *m > 0).unwrap_or(DEFAULT_MONTHS);
+    let months_per_line = usize::try_from(int(cfg, "calendar.monthsperline"))
+        .ok()
+        .filter(|m| *m > 0)
+        .unwrap_or(DEFAULT_MONTHS);
     let (ty, tm, td, ..) = clock.ymd_hms(clock.now);
     let today = NaiveDate::from_ymd_opt(ty, tm, td).expect("today exists");
 
@@ -342,7 +377,11 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
     }
 
     let monday = clock.week_starts_monday;
-    let holiday_list = if holiday_mode != "none" { holidays(cfg, clock) } else { Vec::new() };
+    let holiday_list = if holiday_mode != "none" {
+        holidays(cfg, clock)
+    } else {
+        Vec::new()
+    };
     let colour_tasks = details_mode != "none";
 
     // What is due and scheduled, by calendar day.
@@ -387,7 +426,10 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
     let (mut y, mut m) = (y_from, m_from as u32);
     for _ in 0..months_to_show {
         let mut weeks: Vec<WeekOut> = Vec::new();
-        let mut week = WeekOut { number: None, days: vec![None; 7] };
+        let mut week = WeekOut {
+            number: None,
+            days: vec![None; 7],
+        };
         for d in 1..=days_in_month(y, m) {
             let date = NaiveDate::from_ymd_opt(y, m, d).expect("a real day");
             let dow = date.weekday().num_days_from_sunday();
@@ -405,11 +447,22 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
             // The last day of the week closes the row, unless the month is over.
             let end_of_week = if monday { dow == 0 } else { dow == 6 };
             if end_of_week && d < days_in_month(y, m) {
-                weeks.push(std::mem::replace(&mut week, WeekOut { number: None, days: vec![None; 7] }));
+                weeks.push(std::mem::replace(
+                    &mut week,
+                    WeekOut {
+                        number: None,
+                        days: vec![None; 7],
+                    },
+                ));
             }
         }
         weeks.push(week);
-        shown.push(MonthOut { year: y, month: m, name: MONTHS[m as usize - 1].to_owned(), weeks });
+        shown.push(MonthOut {
+            year: y,
+            month: m,
+            name: MONTHS[m as usize - 1].to_owned(),
+            weeks,
+        });
         if m == 12 {
             (y, m) = (y + 1, 1);
         } else {
@@ -420,7 +473,11 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
     // The range the details and holiday lists cover: after the last day of the month before the
     // first one shown, and before the first day of the month after the last one.
     let first = (y_from, m_from as u32);
-    let (py, pm) = if first.1 == 1 { (first.0 - 1, 12) } else { (first.0, first.1 - 1) };
+    let (py, pm) = if first.1 == 1 {
+        (first.0 - 1, 12)
+    } else {
+        (first.0, first.1 - 1)
+    };
     let after = NaiveDate::from_ymd_opt(py, pm, days_in_month(py, pm)).expect("a real day");
     let before = NaiveDate::from_ymd_opt(y, m, 1).expect("a real day"); // (y, m) is already the month after the last shown
     let iso = |d: NaiveDate| format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day());
@@ -428,7 +485,11 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
 
     let details = (details_mode == "full").then(|| Details {
         report: mode(cfg, "calendar.details.report", "list").to_owned(),
-        filter: vec![format!("due.after:{}", iso(after)), format!("due.before:{}", iso(before)), "-nocal".to_owned()],
+        filter: vec![
+            format!("due.after:{}", iso(after)),
+            format!("due.before:{}", iso(before)),
+            "-nocal".to_owned(),
+        ],
     });
 
     let holiday_rows = (holiday_mode == "full").then(|| {
@@ -436,13 +497,22 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
         let mut rows: Vec<HolidayRow> = Vec::new();
         for h in &holiday_list {
             match h {
-                Holiday::On(d, n) if lo < *d && *d < hi => rows.push(HolidayRow { date: *d, name: n.clone() }),
+                Holiday::On(d, n) if lo < *d && *d < hi => rows.push(HolidayRow {
+                    date: *d,
+                    name: n.clone(),
+                }),
                 Holiday::Span(s, e, n) => {
                     if lo < *s && *s < hi {
-                        rows.push(HolidayRow { date: *s, name: format!("Start of {n}") });
+                        rows.push(HolidayRow {
+                            date: *s,
+                            name: format!("Start of {n}"),
+                        });
                     }
                     if lo < *e && *e < hi {
-                        rows.push(HolidayRow { date: *e, name: format!("End of {n}") });
+                        rows.push(HolidayRow {
+                            date: *e,
+                            name: format!("End of {n}"),
+                        });
                     }
                 }
                 _ => {}
@@ -452,10 +522,14 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
         rows
     });
 
-    let names: Vec<String> = if monday { vec![1, 2, 3, 4, 5, 6, 0] } else { vec![0, 1, 2, 3, 4, 5, 6] }
-        .into_iter()
-        .map(|i: usize| DAYS[i][..2].to_owned())
-        .collect();
+    let names: Vec<String> = if monday {
+        vec![1, 2, 3, 4, 5, 6, 0]
+    } else {
+        vec![0, 1, 2, 3, 4, 5, 6]
+    }
+    .into_iter()
+    .map(|i: usize| DAYS[i][..2].to_owned())
+    .collect();
 
     Ok(Plan {
         out: CalendarOut {
@@ -500,10 +574,21 @@ mod tests {
         }
     }
     fn task(n: u128, due: Option<i64>) -> Facts {
-        Facts { uuid: Uuid::from_u128(n), status: "pending".into(), due, ..Default::default() }
+        Facts {
+            uuid: Uuid::from_u128(n),
+            status: "pending".into(),
+            due,
+            ..Default::default()
+        }
     }
     fn day(p: &Plan, m: usize, d: u32) -> DayOut {
-        p.out.months[m].weeks.iter().flat_map(|w| w.days.iter().flatten()).find(|x| x.day == d).unwrap().clone()
+        p.out.months[m]
+            .weeks
+            .iter()
+            .flat_map(|w| w.days.iter().flatten())
+            .find(|x| x.day == d)
+            .unwrap()
+            .clone()
     }
     fn starts(p: &Plan) -> Vec<(i32, u32)> {
         p.out.months.iter().map(|m| (m.year, m.month)).collect()
@@ -529,12 +614,24 @@ mod tests {
         assert_eq!(weeks.len(), 5);
         let first: Vec<Option<u32>> = weeks[0].days.iter().map(|d| d.as_ref().map(|d| d.day)).collect();
         assert_eq!(first, [None, None, None, Some(1), Some(2), Some(3), Some(4)]);
-        assert_eq!(weeks[4].days.iter().flatten().map(|d| d.day).collect::<Vec<_>>(), [26, 27, 28, 29, 30, 31]);
+        assert_eq!(
+            weeks[4].days.iter().flatten().map(|d| d.day).collect::<Vec<_>>(),
+            [26, 27, 28, 29, 30, 31]
+        );
         // ISO weeks: 1-4 October is week 40, as in `task calendar`.
         assert_eq!(weeks[0].number, Some(40));
         assert_eq!(weeks[1].number, Some(41));
 
-        let sun = plan(&[], &Config::default(), &Clock { week_starts_monday: false, ..utc() }, &[]).unwrap();
+        let sun = plan(
+            &[],
+            &Config::default(),
+            &Clock {
+                week_starts_monday: false,
+                ..utc()
+            },
+            &[],
+        )
+        .unwrap();
         assert_eq!(sun.out.weekdays, ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]);
         let w = &sun.out.months[0].weeks;
         let first: Vec<Option<u32>> = w[0].days.iter().map(|d| d.as_ref().map(|d| d.day)).collect();
@@ -562,7 +659,11 @@ mod tests {
         assert_eq!(starts(&cal("3 2027", "", &[])), [(2027, 3), (2027, 4), (2027, 5)]);
         assert_eq!(starts(&cal("march 2027 y", "", &[]))[0], (2027, 3));
         assert_eq!(cal("march 2027 y", "", &[]).out.months.len(), 12);
-        assert_eq!(starts(&cal("mar 2027", "", &[]))[0], (2027, 3), "a prefix that names one month");
+        assert_eq!(
+            starts(&cal("mar 2027", "", &[]))[0],
+            (2027, 3),
+            "a prefix that names one month"
+        );
         // As in Taskwarrior, a month on its own does nothing: it is only read together with a year.
         assert_eq!(starts(&cal("12", "", &[]))[0], (2026, 10));
         assert_eq!(starts(&cal("dec", "", &[]))[0], (2026, 10));
@@ -585,10 +686,20 @@ mod tests {
         let tasks = [
             task(1, Some(midnight(2027, 2, 14))),
             task(2, Some(midnight(2026, 12, 24))),
-            Facts { status: "completed".into(), ..task(3, Some(midnight(2025, 1, 1))) },
-            Facts { tags: ["nocal".to_owned()].into(), ..task(4, Some(midnight(2025, 6, 1))) },
+            Facts {
+                status: "completed".into(),
+                ..task(3, Some(midnight(2025, 1, 1)))
+            },
+            Facts {
+                tags: ["nocal".to_owned()].into(),
+                ..task(4, Some(midnight(2025, 6, 1)))
+            },
         ];
-        assert_eq!(starts(&cal("due", "", &tasks))[0], (2026, 12), "finished and nocal tasks don't count");
+        assert_eq!(
+            starts(&cal("due", "", &tasks))[0],
+            (2026, 12),
+            "finished and nocal tasks don't count"
+        );
         assert_eq!(starts(&cal("due", "", &[]))[0], (2026, 10), "nothing due: this month");
         assert_eq!(starts(&cal("du", "", &tasks))[0], (2026, 12), "abbreviated");
     }
@@ -598,30 +709,60 @@ mod tests {
         let rc = |on: &str, v: i32| format!("calendar.offset={on}\ncalendar.offset.value={v}\n");
         assert_eq!(starts(&cal("", &rc("1", -1), &[]))[0], (2026, 9));
         assert_eq!(starts(&cal("", &rc("0", -1), &[]))[0], (2026, 10), "off by default");
-        assert_eq!(starts(&cal("", &rc("1", -10), &[]))[0], (2025, 12), "back across a year");
-        assert_eq!(starts(&cal("", &rc("1", 3), &[]))[0], (2027, 1), "forward across a year");
+        assert_eq!(
+            starts(&cal("", &rc("1", -10), &[]))[0],
+            (2025, 12),
+            "back across a year"
+        );
+        assert_eq!(
+            starts(&cal("", &rc("1", 3), &[]))[0],
+            (2027, 1),
+            "forward across a year"
+        );
         assert_eq!(starts(&cal("", &rc("1", 14), &[]))[0], (2027, 12));
     }
 
     #[test]
     fn days_with_something_due_are_coloured_by_how_late_it_is() {
         let tasks = [
-            task(1, Some(midnight(2026, 10, 5))),                // before today: overdue
-            task(2, Some(NOW - 3600)),                           // earlier today: overdue
-            task(3, Some(NOW + 3600)),                           // later today
-            task(4, Some(midnight(2026, 10, 20))),               // later
-            Facts { scheduled: Some(midnight(2026, 10, 22)), ..task(5, None) },
-            Facts { scheduled: Some(midnight(2026, 10, 20)), ..task(6, None) },
-            Facts { tags: ["nocal".to_owned()].into(), ..task(7, Some(midnight(2026, 10, 25))) },
-            Facts { status: "completed".into(), ..task(8, Some(midnight(2026, 10, 26))) },
-            Facts { wait: Some(NOW + DAY), ..task(9, Some(midnight(2026, 10, 27))) }, // waiting still counts
+            task(1, Some(midnight(2026, 10, 5))),  // before today: overdue
+            task(2, Some(NOW - 3600)),             // earlier today: overdue
+            task(3, Some(NOW + 3600)),             // later today
+            task(4, Some(midnight(2026, 10, 20))), // later
+            Facts {
+                scheduled: Some(midnight(2026, 10, 22)),
+                ..task(5, None)
+            },
+            Facts {
+                scheduled: Some(midnight(2026, 10, 20)),
+                ..task(6, None)
+            },
+            Facts {
+                tags: ["nocal".to_owned()].into(),
+                ..task(7, Some(midnight(2026, 10, 25)))
+            },
+            Facts {
+                status: "completed".into(),
+                ..task(8, Some(midnight(2026, 10, 26)))
+            },
+            Facts {
+                wait: Some(NOW + DAY),
+                ..task(9, Some(midnight(2026, 10, 27)))
+            }, // waiting still counts
         ];
         let p = cal("", "", &tasks);
         assert_eq!(day(&p, 0, 5).due, Some("overdue"));
-        assert_eq!(day(&p, 0, 7).due, Some("due-today"), "of several due the same day, the last one counts");
+        assert_eq!(
+            day(&p, 0, 7).due,
+            Some("due-today"),
+            "of several due the same day, the last one counts"
+        );
         assert_eq!(day(&p, 0, 20).due, Some("due"));
         assert!(day(&p, 0, 22).scheduled && day(&p, 0, 22).due.is_none());
-        assert!(!day(&p, 0, 20).scheduled, "a due date shows over a scheduled one on the same day");
+        assert!(
+            !day(&p, 0, 20).scheduled,
+            "a due date shows over a scheduled one on the same day"
+        );
         assert_eq!((day(&p, 0, 25).due, day(&p, 0, 26).due), (None, None));
         assert_eq!(day(&p, 0, 27).due, Some("due"));
         // Later today alone:
@@ -640,7 +781,10 @@ mod tests {
         assert_eq!(d.filter, ["due.after:2026-09-30", "due.before:2027-01-01", "-nocal"]);
         let p = cal("2027", "calendar.details=full\ncalendar.details.report=long\n", &[]);
         let d = p.details.unwrap();
-        assert_eq!((d.report.as_str(), d.filter[0].as_str(), d.filter[1].as_str()), ("long", "due.after:2026-12-31", "due.before:2028-01-01"));
+        assert_eq!(
+            (d.report.as_str(), d.filter[0].as_str(), d.filter[1].as_str()),
+            ("long", "due.after:2026-12-31", "due.before:2028-01-01")
+        );
         assert!(cal("", "", &[]).details.is_none(), "sparse (the default) lists nothing");
     }
 
@@ -675,7 +819,11 @@ mod tests {
     fn holiday_dates_are_read_in_dateformat_holiday() {
         let c = utc();
         assert_eq!(holiday_date("20261111", "YMD", &c), Some(midnight(2026, 11, 11)));
-        assert_eq!(holiday_date("20261111", "", &c), Some(midnight(2026, 11, 11)), "YMD by default");
+        assert_eq!(
+            holiday_date("20261111", "", &c),
+            Some(midnight(2026, 11, 11)),
+            "YMD by default"
+        );
         assert_eq!(holiday_date("2026-11-11", "Y-M-D", &c), Some(midnight(2026, 11, 11)));
         assert_eq!(holiday_date("11/11/2026", "D/M/Y", &c), Some(midnight(2026, 11, 11)));
         assert_eq!(holiday_date("5/3/2027", "d/m/Y", &c), Some(midnight(2027, 3, 5)));
@@ -685,7 +833,11 @@ mod tests {
         }
         assert_eq!(holiday_date("20260230", "YMD", &c), None, "no February 30th");
         // The date format a taskrc sets applies to the calendar too.
-        let p = cal("", "calendar.holidays=sparse\ndateformat.holiday=D/M/Y\nholiday.x.name=X\nholiday.x.date=11/11/2026\n", &[]);
+        let p = cal(
+            "",
+            "calendar.holidays=sparse\ndateformat.holiday=D/M/Y\nholiday.x.name=X\nholiday.x.date=11/11/2026\n",
+            &[],
+        );
         assert!(day(&p, 1, 11).holiday);
     }
 
@@ -720,7 +872,11 @@ mod tests {
         assert_eq!(days_in_month(2026, 4), 30);
         let d = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
         assert_eq!(week_number(d(2026, 1, 1), true), 1);
-        assert_eq!(week_number(d(2025, 12, 29), true), 1, "ISO week 1 can start in December");
+        assert_eq!(
+            week_number(d(2025, 12, 29), true),
+            1,
+            "ISO week 1 can start in December"
+        );
         assert_eq!(week_number(d(2027, 1, 1), true), 53);
         assert_eq!(week_number(d(2026, 1, 1), false), 0, "before the first Sunday");
         assert_eq!(week_number(d(2026, 1, 4), false), 1);

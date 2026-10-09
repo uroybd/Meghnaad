@@ -41,7 +41,10 @@ async fn tasks_propagate_between_replicas() {
     let names = store.names();
     assert!(names.contains(&"salt".to_string()));
     assert!(names.contains(&"latest".to_string()));
-    assert_eq!(names.iter().filter(|n| names::parse_version_name(n).is_some()).count(), 1);
+    assert_eq!(
+        names.iter().filter(|n| names::parse_version_name(n).is_some()).count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -75,7 +78,9 @@ async fn stale_parent_is_rejected_and_leaves_no_orphan() {
     let mut s = CloudServer::new(store.clone(), b"hunter2").await.unwrap();
 
     let (res, _) = s.add_version(uuid::Uuid::nil(), b"[]".to_vec()).await.unwrap();
-    let AddVersionResult::Ok(v1) = res else { panic!("first add must succeed") };
+    let AddVersionResult::Ok(v1) = res else {
+        panic!("first add must succeed")
+    };
 
     // A second writer that still thinks the DB is empty must be told about v1.
     let (res, _) = s.add_version(uuid::Uuid::nil(), b"[]".to_vec()).await.unwrap();
@@ -91,7 +96,6 @@ async fn wrong_secret_cannot_read() {
     add_task(&mut a, "secret stuff").await;
     a.sync(&mut server(&store).await, true).await.unwrap();
 
-    let mut wrong: Box<dyn Server> =
-        Box::new(CloudServer::new(store.clone(), b"not-the-secret").await.unwrap());
+    let mut wrong: Box<dyn Server> = Box::new(CloudServer::new(store.clone(), b"not-the-secret").await.unwrap());
     assert!(replica().sync(&mut wrong, true).await.is_err());
 }

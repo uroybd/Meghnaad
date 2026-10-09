@@ -14,8 +14,8 @@
 
 use crate::dates::{parse_date_expr, Clock};
 use crate::model::Facts;
-use crate::taskrc::{Config, UdaType};
 use crate::rx::{Rx, TextMatch};
+use crate::taskrc::{Config, UdaType};
 use crate::urgency::{coefficients, urgency_with};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -48,7 +48,13 @@ pub struct EvalCtx<'a> {
 
 impl<'a> EvalCtx<'a> {
     pub fn new(cfg: &'a Config, clock: Clock, ids: &'a BTreeMap<Uuid, u32>) -> Self {
-        EvalCtx { cfg, clock, ids, coef: coefficients(cfg), inherited: BTreeMap::new() }
+        EvalCtx {
+            cfg,
+            clock,
+            ids,
+            coef: coefficients(cfg),
+            inherited: BTreeMap::new(),
+        }
     }
 
     /// Apply `urgency.inherit` (when the taskrc turns it on) using every task, since a task's
@@ -166,8 +172,14 @@ impl Attr {
         match self {
             Attr::Core(c) => match c {
                 Core::Id | Core::Urgency => Ty::Num,
-                Core::Entry | Core::Start | Core::End | Core::Due | Core::Wait | Core::Scheduled
-                | Core::Until | Core::Modified => Ty::Date,
+                Core::Entry
+                | Core::Start
+                | Core::End
+                | Core::Due
+                | Core::Wait
+                | Core::Scheduled
+                | Core::Until
+                | Core::Modified => Ty::Date,
                 Core::Depends | Core::Tags | Core::Annotation => Ty::Many,
                 _ => Ty::Str,
             },
@@ -185,9 +197,15 @@ impl Attr {
 /// Resolve an attribute name, allowing unique abbreviations of at least `abbreviation.minimum`
 /// characters (`desc`, `proj`), as Taskwarrior does.
 fn canonicalize(name: &str, cfg: &Config) -> Option<Attr> {
-    let mut all: Vec<(String, Attr)> =
-        CORE_NAMES.iter().map(|(n, c)| ((*n).to_owned(), Attr::Core(*c))).collect();
-    all.extend(cfg.udas.values().map(|u| (u.name.clone(), Attr::Uda(u.name.clone(), u.ty))));
+    let mut all: Vec<(String, Attr)> = CORE_NAMES
+        .iter()
+        .map(|(n, c)| ((*n).to_owned(), Attr::Core(*c)))
+        .collect();
+    all.extend(
+        cfg.udas
+            .values()
+            .map(|u| (u.name.clone(), Attr::Uda(u.name.clone(), u.ty))),
+    );
     if let Some((_, a)) = all.iter().find(|(n, _)| n == name) {
         return Some(a.clone());
     }
@@ -207,7 +225,11 @@ pub(crate) fn canonical_attr_name(name: &str, cfg: &Config) -> Option<(String, b
     canonicalize(name, cfg).map(|a| match a {
         Attr::Uda(n, _) => (n, true),
         Attr::Core(c) => (
-            CORE_NAMES.iter().find(|(_, k)| *k == c).map(|(n, _)| (*n).to_owned()).unwrap_or_default(),
+            CORE_NAMES
+                .iter()
+                .find(|(_, k)| *k == c)
+                .map(|(n, _)| (*n).to_owned())
+                .unwrap_or_default(),
             false,
         ),
     })
@@ -255,7 +277,10 @@ fn parse_modifier(m: &str) -> Result<Op, FilterError> {
 
 #[derive(Debug, Clone, PartialEq)]
 enum Term {
-    Tag { name: String, present: bool },
+    Tag {
+        name: String,
+        present: bool,
+    },
     Attr {
         attr: Attr,
         op: Op,
@@ -394,9 +419,7 @@ fn split_pair(tok: &str) -> Option<(&str, &str, &str)> {
     let sep = tok.find([':', '='])?;
     let (lhs, value) = (&tok[..sep], &tok[sep + 1..]);
     let (name, modifier) = lhs.split_once('.').unwrap_or((lhs, ""));
-    let ident = |s: &str| {
-        !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-    };
+    let ident = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if !ident(name) || (!modifier.is_empty() && !ident(modifier)) {
         return None;
     }
@@ -502,14 +525,18 @@ impl Parser<'_, '_> {
         let tag_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '@' | '/');
         if let Some(name) = tok.strip_prefix('+') {
             if !name.is_empty() && name.chars().all(tag_char) {
-                return Ok(Some(Term::Tag { name: name.to_owned(), present: true }));
+                return Ok(Some(Term::Tag {
+                    name: name.to_owned(),
+                    present: true,
+                }));
             }
         }
         if let Some(name) = tok.strip_prefix('-') {
-            if name.chars().next().is_some_and(|c| c.is_alphabetic())
-                && name.chars().all(tag_char)
-            {
-                return Ok(Some(Term::Tag { name: name.to_owned(), present: false }));
+            if name.chars().next().is_some_and(|c| c.is_alphabetic()) && name.chars().all(tag_char) {
+                return Ok(Some(Term::Tag {
+                    name: name.to_owned(),
+                    present: false,
+                }));
             }
         }
 
@@ -569,13 +596,25 @@ impl Parser<'_, '_> {
             ),
             _ => None,
         };
-        Ok(Term::Attr { attr, op, value: value.to_owned(), date, day, num, rx })
+        Ok(Term::Attr {
+            attr,
+            op,
+            value: value.to_owned(),
+            date,
+            day,
+            num,
+            rx,
+        })
     }
 }
 
 impl Filter {
     pub fn match_all() -> Filter {
-        Filter { expr: Expr::All, limit: Limit::None, limit_set: false }
+        Filter {
+            expr: Expr::All,
+            limit: Limit::None,
+            limit_set: false,
+        }
     }
 
     /// Parse already-split arguments (e.g. from the command-line parser).
@@ -584,7 +623,13 @@ impl Filter {
         if toks.is_empty() {
             return Ok(Filter::match_all());
         }
-        let mut p = Parser { toks, pos: 0, ctx, limit: Limit::None, limit_set: false };
+        let mut p = Parser {
+            toks,
+            pos: 0,
+            ctx,
+            limit: Limit::None,
+            limit_set: false,
+        };
         let expr = p.expr()?;
         if p.pos < p.toks.len() {
             return if p.toks[p.pos] == ")" {
@@ -593,7 +638,11 @@ impl Filter {
                 err(format!("unexpected '{}' in filter", p.toks[p.pos]))
             };
         }
-        Ok(Filter { expr, limit: p.limit, limit_set: p.limit_set })
+        Ok(Filter {
+            expr,
+            limit: p.limit,
+            limit_set: p.limit_set,
+        })
     }
 
     pub fn parse_str(s: &str, ctx: &EvalCtx) -> Result<Filter, FilterError> {
@@ -651,9 +700,15 @@ fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
             .ids
             .get(&f.uuid)
             .is_some_and(|id| ranges.iter().any(|(lo, hi)| id >= lo && id <= hi)),
-        Term::Attr { attr, op, value, date, day, num, rx } => {
-            eval_attr(attr, *op, value, *date, *day, *num, rx.as_ref(), f, ctx)
-        }
+        Term::Attr {
+            attr,
+            op,
+            value,
+            date,
+            day,
+            num,
+            rx,
+        } => eval_attr(attr, *op, value, *date, *day, *num, rx.as_ref(), f, ctx),
     }
 }
 
@@ -716,8 +771,8 @@ fn is_word_in(hay: &str, needle: &str, case_sensitive: bool) -> bool {
     while let Some(i) = h[from..].find(&n) {
         let start = from + i;
         let end = start + n.len();
-        let before_ok = h[..start].chars().next_back().map_or(true, |c| !is_w(c));
-        let after_ok = h[end..].chars().next().map_or(true, |c| !is_w(c));
+        let before_ok = h[..start].chars().next_back().is_none_or(|c| !is_w(c));
+        let after_ok = h[end..].chars().next().is_none_or(|c| !is_w(c));
         if before_ok && after_ok {
             return true;
         }
@@ -727,7 +782,13 @@ fn is_word_in(hay: &str, needle: &str, case_sensitive: bool) -> bool {
 }
 
 fn str_op(have: &str, op: Op, want: &str, status: bool, cs: bool) -> bool {
-    let eq = |a: &str, b: &str| if status || !cs { a.eq_ignore_ascii_case(b) } else { a == b };
+    let eq = |a: &str, b: &str| {
+        if status || !cs {
+            a.eq_ignore_ascii_case(b)
+        } else {
+            a == b
+        }
+    };
     let starts = |a: &str, b: &str| {
         if status {
             a.eq_ignore_ascii_case(b)
@@ -744,10 +805,18 @@ fn str_op(have: &str, op: Op, want: &str, status: bool, cs: bool) -> bool {
         Op::Has => contains(have, want, cs),
         Op::Hasnt => !contains(have, want, cs),
         Op::StartsWith => {
-            if cs { have.starts_with(want) } else { have.to_lowercase().starts_with(&want.to_lowercase()) }
+            if cs {
+                have.starts_with(want)
+            } else {
+                have.to_lowercase().starts_with(&want.to_lowercase())
+            }
         }
         Op::EndsWith => {
-            if cs { have.ends_with(want) } else { have.to_lowercase().ends_with(&want.to_lowercase()) }
+            if cs {
+                have.ends_with(want)
+            } else {
+                have.to_lowercase().ends_with(&want.to_lowercase())
+            }
         }
         Op::Word => is_word_in(have, want, cs),
         Op::NoWord => !is_word_in(have, want, cs),
@@ -831,8 +900,20 @@ fn eval_attr(
             match op {
                 Op::Partial => ctx.clock.same_day(h, w),
                 Op::Not => !ctx.clock.same_day(h, w),
-                Op::Is => if day { ctx.clock.same_day(h, w) } else { h == w },
-                Op::Isnt => if day { !ctx.clock.same_day(h, w) } else { h != w },
+                Op::Is => {
+                    if day {
+                        ctx.clock.same_day(h, w)
+                    } else {
+                        h == w
+                    }
+                }
+                Op::Isnt => {
+                    if day {
+                        !ctx.clock.same_day(h, w)
+                    } else {
+                        h != w
+                    }
+                }
                 Op::Before => h < w,
                 Op::After => h > w,
                 Op::By => h <= w,
@@ -872,11 +953,17 @@ mod tests {
 
     impl H {
         fn new() -> Self {
-            H { cfg: Config::default(), ids: BTreeMap::new() }
+            H {
+                cfg: Config::default(),
+                ids: BTreeMap::new(),
+            }
         }
 
         fn with_rc(rc: &str) -> Self {
-            H { cfg: parse(rc).config, ids: BTreeMap::new() }
+            H {
+                cfg: parse(rc).config,
+                ids: BTreeMap::new(),
+            }
         }
 
         fn ctx(&self) -> EvalCtx<'_> {
@@ -894,7 +981,10 @@ mod tests {
     }
 
     fn proj(p: &str) -> Facts {
-        Facts { project: Some(p.into()), ..task("t") }
+        Facts {
+            project: Some(p.into()),
+            ..task("t")
+        }
     }
 
     #[test]
@@ -1007,13 +1097,13 @@ mod tests {
         assert!(h.m("due.before:eow", &t));
         assert!(!h.m("due.before:today", &t));
         assert!(h.m("due.after:today", &t));
-        assert!(h.m("due.by:tomorrow", &t) == false); // by = <=; tomorrow 00:00 < 12:30
+        assert!(!h.m("due.by:tomorrow", &t)); // by = <=; tomorrow 00:00 < 12:30
         assert!(h.m("due.by:2d", &t));
         assert!(h.m("due.before:now+2d", &t));
         assert!(h.m("due.after:eod-1d", &t));
         assert!(h.m("due:2026-10-08", &t));
         assert!(h.m("due:2026-10-08T12:30", &t)); // partial = same day
-        // NOW is exactly 12:30:00, so tomorrow's due is exactly 2026-10-08T12:30:00.
+                                                  // NOW is exactly 12:30:00, so tomorrow's due is exactly 2026-10-08T12:30:00.
         assert!(h.m("due.is:2026-10-08T12:30", &t));
         assert!(!h.m("due.is:2026-10-08T12:31", &t));
     }
@@ -1032,7 +1122,9 @@ mod tests {
     fn bad_values_are_errors_not_silent_misses() {
         let h = H::new();
         assert!(h.parse_err("due:nonsense").contains("not a valid date"));
-        assert!(h.parse_err("due.bogus:today").contains("unrecognized attribute modifier"));
+        assert!(h
+            .parse_err("due.bogus:today")
+            .contains("unrecognized attribute modifier"));
         assert!(h.parse_err("(+a").contains("closing"));
         assert!(h.parse_err("+a)").contains("unexpected closing"));
         assert!(h.parse_err("+a and").contains("expected"));
@@ -1097,7 +1189,10 @@ mod tests {
     }
 
     fn desc(d: &str) -> Facts {
-        Facts { description: d.into(), ..task("x") }
+        Facts {
+            description: d.into(),
+            ..task("x")
+        }
     }
 
     #[test]
@@ -1111,14 +1206,20 @@ mod tests {
         assert!(h.m("/milk|eggs/", &milk) && h.m("/colou?r|milk/", &milk));
         assert!(!h.m("/MILK/", &milk), "case sensitive by default");
         // Searched anywhere, not just from the start.
-        assert!(h.m("'/ilk to/'", &milk), "quoted, as on a command line, so the space is part of the pattern");
+        assert!(
+            h.m("'/ilk to/'", &milk),
+            "quoted, as on a command line, so the space is part of the pattern"
+        );
     }
 
     #[test]
     fn text_matching_also_looks_in_annotations() {
         let h = H::new();
         let mut t = desc("Buy milk");
-        t.annotations.push(crate::model::Note { entry: NOW, text: "ask Sam about oat".into() });
+        t.annotations.push(crate::model::Note {
+            entry: NOW,
+            text: "ask Sam about oat".into(),
+        });
         assert!(h.m("Sam", &t) && h.m("/oat$/", &t));
         assert!(h.m("desc.has:Sam", &t), "description attribute includes annotations");
         assert!(!h.m("desc.hasnt:Sam", &t));
@@ -1204,14 +1305,13 @@ mod tests {
 
     #[test]
     fn quoting_and_conjoin() {
-        assert_eq!(split_words(r#"project:"Home Stuff" 'a b' c"#), ["project:Home Stuff", "a b", "c"]);
+        assert_eq!(
+            split_words(r#"project:"Home Stuff" 'a b' c"#),
+            ["project:Home Stuff", "a b", "c"]
+        );
         let h = H::new();
         let ctx = h.ctx();
-        let combined = conjoin(&[
-            split_words("status:pending"),
-            vec![],
-            split_words("+a or +b"),
-        ]);
+        let combined = conjoin(&[split_words("status:pending"), vec![], split_words("+a or +b")]);
         let f = Filter::parse(&combined, &ctx).unwrap();
         let mut t = task("x");
         t.tags.insert("b".into());
@@ -1219,7 +1319,13 @@ mod tests {
         // The `or` is fenced inside its own parentheses, so it can't leak into the status term.
         t.status = "completed".into();
         assert!(!f.matches(&t, &ctx));
-        assert!(h.m("project:\"Home Stuff\"", &Facts { project: Some("Home Stuff".into()), ..task("x") }));
+        assert!(h.m(
+            "project:\"Home Stuff\"",
+            &Facts {
+                project: Some("Home Stuff".into()),
+                ..task("x")
+            }
+        ));
     }
 
     #[test]

@@ -3,10 +3,10 @@
 //! Parsing and planning are pure (no taskchampion types) so they're easy to test; `apply` in
 //! the worker/cli layer turns the resulting [`Change`]s into taskchampion operations.
 
-use crate::rx::Rx;
 use crate::dates::{parse_date_expr, Clock};
 use crate::filter::{canonical_attr_name, EvalCtx};
 use crate::model::Facts;
+use crate::rx::Rx;
 use crate::taskrc::{Config, UdaType};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -46,23 +46,43 @@ pub struct Mods {
 
 /// Attributes a user may set directly.
 const SETTABLE: &[&str] = &[
-    "description", "project", "priority", "due", "wait", "scheduled", "until", "start", "end",
-    "entry", "depends", "recur",
+    "description",
+    "project",
+    "priority",
+    "due",
+    "wait",
+    "scheduled",
+    "until",
+    "start",
+    "end",
+    "entry",
+    "depends",
+    "recur",
 ];
-const READ_ONLY: &[&str] = &["id", "uuid", "status", "tags", "annotation", "urgency", "modified", "parent"];
+const READ_ONLY: &[&str] = &[
+    "id",
+    "uuid",
+    "status",
+    "tags",
+    "annotation",
+    "urgency",
+    "modified",
+    "parent",
+];
 
 fn tag_ok(name: &str) -> bool {
     !name.is_empty()
-        && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '@' | '/'))
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '@' | '/'))
 }
 
 fn parse_subst(a: &str) -> Option<Subst> {
     let (body, global) = if let Some(b) = a.strip_suffix("/g") {
         (b, true)
-    } else if let Some(b) = a.strip_suffix('/') {
-        (b, false)
     } else {
-        return None;
+        let b = a.strip_suffix('/')?;
+        (b, false)
     };
     let body = body.strip_prefix('/')?;
     let (from, to) = body.split_once('/')?;
@@ -97,8 +117,7 @@ pub fn parse_mods(args: &[String], cfg: &Config) -> Result<Mods, ModError> {
         }
         if let Some(sep) = a.find([':', '=']) {
             let (name, value) = (&a[..sep], &a[sep + 1..]);
-            let looks_like_name = !name.is_empty()
-                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            let looks_like_name = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
             if looks_like_name {
                 if let Some((canon, is_uda)) = canonical_attr_name(name, cfg) {
                     if !is_uda && READ_ONLY.contains(&canon.as_str()) {
@@ -126,10 +145,16 @@ pub enum Mode {
 pub enum Change {
     Description(String),
     /// Plain string property (project, UDAs, ...). `None` removes it.
-    Prop { name: String, value: Option<String> },
+    Prop {
+        name: String,
+        value: Option<String>,
+    },
     Priority(Option<String>),
     /// Timestamp property: due, wait, scheduled, until, start, end, entry. `None` clears it.
-    Timestamp { name: &'static str, value: Option<i64> },
+    Timestamp {
+        name: &'static str,
+        value: Option<i64>,
+    },
     AddTag(String),
     RemoveTag(String),
     AddDep(Uuid),
@@ -182,7 +207,12 @@ fn validate_uda(name: &str, value: &str, cfg: &Config, clock: &Clock) -> Result<
             .ok_or_else(|| ModError(format!("'{value}' is not a valid date (uda {name})"))),
         UdaType::String => {
             if !def.values.is_empty() && !def.values.iter().any(|v| v == value) {
-                let allowed: Vec<&str> = def.values.iter().map(String::as_str).filter(|v| !v.is_empty()).collect();
+                let allowed: Vec<&str> = def
+                    .values
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|v| !v.is_empty())
+                    .collect();
                 return err(format!(
                     "'{value}' is not an allowed value for {name}; use one of: {}",
                     allowed.join(", ")
@@ -198,9 +228,14 @@ fn validate_uda(name: &str, value: &str, cfg: &Config, clock: &Clock) -> Result<
 /// always literal text, as in Taskwarrior (there are no `$1` groups).
 fn substitute(text: &str, from: &str, to: &str, global: bool, ctx: &EvalCtx) -> Result<String, ModError> {
     if !ctx.regex_enabled() {
-        return Ok(if global { text.replace(from, to) } else { text.replacen(from, to, 1) });
+        return Ok(if global {
+            text.replace(from, to)
+        } else {
+            text.replacen(from, to, 1)
+        });
     }
-    let rx = Rx::new(from, ctx.case_sensitive()).map_err(|why| ModError(format!("'{from}' is not a valid regular expression: {why}")))?;
+    let rx = Rx::new(from, ctx.case_sensitive())
+        .map_err(|why| ModError(format!("'{from}' is not a valid regular expression: {why}")))?;
     let mut out = String::with_capacity(text.len());
     let mut at = 0;
     for (start, end) in rx.spans(text) {
@@ -259,7 +294,7 @@ pub fn plan(
         let base = description.clone().unwrap_or_else(|| cur.description.clone());
         description = Some(substitute(&base, &s.from, &s.to, s.global, ctx)?);
     }
-    if mode == Mode::Add && description.as_deref().map_or(true, |d| d.trim().is_empty()) {
+    if mode == Mode::Add && description.as_deref().is_none_or(|d| d.trim().is_empty()) {
         return err("a task must have a description");
     }
     if let Some(d) = description {
@@ -304,7 +339,11 @@ pub fn plan(
                     if current.is_some_and(|c| c.uuid == target) {
                         return err("a task can't depend on itself");
                     }
-                    out.push(if remove { Change::RemoveDep(target) } else { Change::AddDep(target) });
+                    out.push(if remove {
+                        Change::RemoveDep(target)
+                    } else {
+                        Change::AddDep(target)
+                    });
                 }
             }
             "recur" => {
@@ -315,7 +354,10 @@ pub fn plan(
                     }
                 } else {
                     crate::recur::validate_period(v).map_err(ModError)?;
-                    out.push(Change::Prop { name: "recur".into(), value: Some(v.to_owned()) });
+                    out.push(Change::Prop {
+                        name: "recur".into(),
+                        value: Some(v.to_owned()),
+                    });
                 }
             }
             n if ts_prop(n).is_some() => {
@@ -328,11 +370,18 @@ pub fn plan(
                             .ts,
                     )
                 };
-                out.push(Change::Timestamp { name: ts_prop(n).unwrap(), value });
+                out.push(Change::Timestamp {
+                    name: ts_prop(n).unwrap(),
+                    value,
+                });
             }
             uda => out.push(Change::Prop {
                 name: uda.to_owned(),
-                value: if v.is_empty() { None } else { Some(validate_uda(uda, v, cfg, &ctx.clock)?) },
+                value: if v.is_empty() {
+                    None
+                } else {
+                    Some(validate_uda(uda, v, cfg, &ctx.clock)?)
+                },
             }),
         }
     }
@@ -377,23 +426,30 @@ pub fn plan(
 fn add_defaults(out: &mut Vec<Change>, ctx: &EvalCtx) {
     let setting = |key: &str| ctx.cfg.settings.get(key).map(|v| v.trim()).filter(|v| !v.is_empty());
     let given_prop = |out: &[Change], prop: &str| {
-        out.iter().rev().find_map(|c| match c {
-            Change::Prop { name, value } if name == prop => Some(value.is_some()),
-            _ => None,
-        })
-        .unwrap_or(false)
+        out.iter()
+            .rev()
+            .find_map(|c| match c {
+                Change::Prop { name, value } if name == prop => Some(value.is_some()),
+                _ => None,
+            })
+            .unwrap_or(false)
     };
     let given_date = |out: &[Change], prop: &str| {
-        out.iter().rev().find_map(|c| match c {
-            Change::Timestamp { name, value } if *name == prop => Some(value.is_some()),
-            _ => None,
-        })
-        .unwrap_or(false)
+        out.iter()
+            .rev()
+            .find_map(|c| match c {
+                Change::Timestamp { name, value } if *name == prop => Some(value.is_some()),
+                _ => None,
+            })
+            .unwrap_or(false)
     };
 
     if let Some(p) = setting("default.project") {
         if !given_prop(out, "project") {
-            out.push(Change::Prop { name: "project".into(), value: Some(p.to_owned()) });
+            out.push(Change::Prop {
+                name: "project".into(),
+                value: Some(p.to_owned()),
+            });
         }
     }
     for (key, prop) in [("default.due", "due"), ("default.scheduled", "scheduled")] {
@@ -402,7 +458,10 @@ fn add_defaults(out: &mut Vec<Change>, ctx: &EvalCtx) {
             continue;
         }
         if let Some(d) = parse_date_expr(v, &ctx.clock) {
-            out.push(Change::Timestamp { name: ts_prop(prop).unwrap(), value: Some(d.ts) });
+            out.push(Change::Timestamp {
+                name: ts_prop(prop).unwrap(),
+                value: Some(d.ts),
+            });
         }
     }
 }
@@ -432,7 +491,13 @@ fn final_recur(out: &[Change], current: Option<&Facts>) -> Option<String> {
 
 /// Taskwarrior's consistency rules for recurring tasks (`Task::validate_add`,
 /// `CmdModify::checkConsistency`).
-fn recurrence_rules(_m: &Mods, mode: Mode, current: Option<&Facts>, out: &[Change], _ctx: &EvalCtx) -> Result<(), ModError> {
+fn recurrence_rules(
+    _m: &Mods,
+    mode: Mode,
+    current: Option<&Facts>,
+    out: &[Change],
+    _ctx: &EvalCtx,
+) -> Result<(), ModError> {
     let due = final_due(out, current);
     let recur = final_recur(out, current);
 
@@ -482,10 +547,20 @@ mod tests {
 
     impl H {
         fn new(rc: &str) -> H {
-            let a = Facts { uuid: Uuid::from_u128(0xaaaa_0000_0000_0000_0000_0000_0000_0001), ..task("alpha") };
-            let b = Facts { uuid: Uuid::from_u128(0xbbbb_0000_0000_0000_0000_0000_0000_0002), ..task("beta") };
+            let a = Facts {
+                uuid: Uuid::from_u128(0xaaaa_0000_0000_0000_0000_0000_0000_0001),
+                ..task("alpha")
+            };
+            let b = Facts {
+                uuid: Uuid::from_u128(0xbbbb_0000_0000_0000_0000_0000_0000_0002),
+                ..task("beta")
+            };
             let ids = BTreeMap::from([(a.uuid, 1), (b.uuid, 2)]);
-            H { cfg: parse(rc).config, ids, all: vec![a, b] }
+            H {
+                cfg: parse(rc).config,
+                ids,
+                all: vec![a, b],
+            }
         }
 
         fn plan(&self, mode: Mode, line: &str, cur: Option<&Facts>) -> Result<Vec<Change>, ModError> {
@@ -497,12 +572,26 @@ mod tests {
     #[test]
     fn parses_attributes_tags_words_and_substitution() {
         let cfg = Config::default();
-        let m = parse_mods(&words("Buy milk project:Home +errand -later due:tomorrow '/milk/oat milk/g' rc.x=1"), &cfg).unwrap();
+        let m = parse_mods(
+            &words("Buy milk project:Home +errand -later due:tomorrow '/milk/oat milk/g' rc.x=1"),
+            &cfg,
+        )
+        .unwrap();
         assert_eq!(m.words, ["Buy", "milk"]);
-        assert_eq!(m.attrs, [("project".into(), "Home".into()), ("due".into(), "tomorrow".into())]);
+        assert_eq!(
+            m.attrs,
+            [("project".into(), "Home".into()), ("due".into(), "tomorrow".into())]
+        );
         assert_eq!(m.add_tags, ["errand"]);
         assert_eq!(m.remove_tags, ["later"]);
-        assert_eq!(m.subst, Some(Subst { from: "milk".into(), to: "oat milk".into(), global: true }));
+        assert_eq!(
+            m.subst,
+            Some(Subst {
+                from: "milk".into(),
+                to: "oat milk".into(),
+                global: true
+            })
+        );
     }
 
     #[test]
@@ -516,7 +605,10 @@ mod tests {
     fn read_only_attributes_are_rejected() {
         let cfg = Config::default();
         for bad in ["status:completed", "uuid:abc", "urgency:5", "id:3", "modified:today"] {
-            assert!(parse_mods(&words(bad), &cfg).unwrap_err().0.contains("can't be set"), "{bad}");
+            assert!(
+                parse_mods(&words(bad), &cfg).unwrap_err().0.contains("can't be set"),
+                "{bad}"
+            );
         }
         // Recurrence is supported now: `recur:` parses like any other attribute.
         assert_eq!(parse_mods(&words("recur:weekly"), &cfg).unwrap().attrs[0].0, "recur");
@@ -532,9 +624,18 @@ mod tests {
     #[test]
     fn add_builds_description_and_fields() {
         let h = H::new("");
-        let c = h.plan(Mode::Add, "Write report project:Work priority:H +x due:2026-12-25T08:30", None).unwrap();
+        let c = h
+            .plan(
+                Mode::Add,
+                "Write report project:Work priority:H +x due:2026-12-25T08:30",
+                None,
+            )
+            .unwrap();
         assert!(c.contains(&Change::Description("Write report".into())));
-        assert!(c.contains(&Change::Prop { name: "project".into(), value: Some("Work".into()) }));
+        assert!(c.contains(&Change::Prop {
+            name: "project".into(),
+            value: Some("Work".into())
+        }));
         assert!(c.contains(&Change::Priority(Some("H".into()))));
         assert!(c.contains(&Change::AddTag("x".into())));
         let due = c.iter().find_map(|c| match c {
@@ -547,7 +648,11 @@ mod tests {
     #[test]
     fn add_requires_a_description() {
         let h = H::new("");
-        assert!(h.plan(Mode::Add, "project:Home +a", None).unwrap_err().0.contains("description"));
+        assert!(h
+            .plan(Mode::Add, "project:Home +a", None)
+            .unwrap_err()
+            .0
+            .contains("description"));
         // Modify may omit it.
         assert!(h.plan(Mode::Modify, "project:Home", Some(&h.all[0])).is_ok());
     }
@@ -555,17 +660,31 @@ mod tests {
     #[test]
     fn empty_values_clear_attributes() {
         let h = H::new("");
-        let c = h.plan(Mode::Modify, "project: due: priority: wait:", Some(&h.all[0])).unwrap();
-        assert!(c.contains(&Change::Prop { name: "project".into(), value: None }));
+        let c = h
+            .plan(Mode::Modify, "project: due: priority: wait:", Some(&h.all[0]))
+            .unwrap();
+        assert!(c.contains(&Change::Prop {
+            name: "project".into(),
+            value: None
+        }));
         assert!(c.contains(&Change::Priority(None)));
-        assert!(c.contains(&Change::Timestamp { name: "due", value: None }));
-        assert!(c.contains(&Change::Timestamp { name: "wait", value: None }));
+        assert!(c.contains(&Change::Timestamp {
+            name: "due",
+            value: None
+        }));
+        assert!(c.contains(&Change::Timestamp {
+            name: "wait",
+            value: None
+        }));
     }
 
     #[test]
     fn substitution_edits_existing_description() {
         let h = H::new("");
-        let cur = Facts { description: "buy milk and milk".into(), ..task("x") };
+        let cur = Facts {
+            description: "buy milk and milk".into(),
+            ..task("x")
+        };
         let first = h.plan(Mode::Modify, "/milk/oat/", Some(&cur)).unwrap();
         assert_eq!(first, [Change::Description("buy oat and milk".into())]);
         let all = h.plan(Mode::Modify, "/milk/oat/g", Some(&cur)).unwrap();
@@ -575,7 +694,10 @@ mod tests {
     #[test]
     fn substitution_is_a_regular_expression_with_a_literal_replacement() {
         let h = H::new("");
-        let cur = Facts { description: "buy milk and eggs".into(), ..task("x") };
+        let cur = Facts {
+            description: "buy milk and eggs".into(),
+            ..task("x")
+        };
         let d = |filter: &str, cur: &Facts| match h.plan(Mode::Modify, filter, Some(cur)).unwrap().as_slice() {
             [Change::Description(d)] => d.clone(),
             other => panic!("{other:?}"),
@@ -583,12 +705,19 @@ mod tests {
         assert_eq!(d("/m.lk/oat/", &cur), "buy oat and eggs");
         assert_eq!(d("/milk|eggs/X/", &cur), "buy X and eggs", "the first match only");
         assert_eq!(d("/milk|eggs/X/g", &cur), "buy X and X", "every match with g");
-        assert_eq!(d("/(milk)/[$1]/", &cur), "buy [$1] and eggs", "the replacement is plain text");
+        assert_eq!(
+            d("/(milk)/[$1]/", &cur),
+            "buy [$1] and eggs",
+            "the replacement is plain text"
+        );
         assert_eq!(d("/^buy/get/", &cur), "get milk and eggs");
         assert_eq!(d("/nothing/x/", &cur), "buy milk and eggs");
         // The engine reads bytes like Taskwarrior's, so `.` is one byte and "é" is two. A match that
         // would cut a character in half is skipped, which keeps the description valid text.
-        let cafe = Facts { description: "café au lait".into(), ..task("x") };
+        let cafe = Facts {
+            description: "café au lait".into(),
+            ..task("x")
+        };
         assert_eq!(d("/caf./X/", &cafe), "café au lait");
         assert_eq!(d("/caf../X/", &cafe), "X au lait");
         assert_eq!(d("/café/X/", &cafe), "X au lait");
@@ -603,23 +732,51 @@ mod tests {
     #[test]
     fn dependencies_by_id_uuid_and_removal() {
         let h = H::new("");
-        let me = Facts { uuid: Uuid::from_u128(9), ..task("me") };
-        let c = h.plan(Mode::Modify, "depends:1,bbbb0000 depends:-2", Some(&me)).unwrap();
+        let me = Facts {
+            uuid: Uuid::from_u128(9),
+            ..task("me")
+        };
+        let c = h
+            .plan(Mode::Modify, "depends:1,bbbb0000 depends:-2", Some(&me))
+            .unwrap();
         assert_eq!(c[0], Change::AddDep(h.all[0].uuid));
         assert_eq!(c[1], Change::AddDep(h.all[1].uuid));
         assert_eq!(c[2], Change::RemoveDep(h.all[1].uuid));
-        assert_eq!(h.plan(Mode::Modify, "depends:", Some(&me)).unwrap(), [Change::ClearDeps]);
-        assert!(h.plan(Mode::Modify, "depends:99", Some(&me)).unwrap_err().0.contains("no task with id 99"));
-        assert!(h.plan(Mode::Modify, "depends:zzzz", Some(&me)).unwrap_err().0.contains("no task matches"));
+        assert_eq!(
+            h.plan(Mode::Modify, "depends:", Some(&me)).unwrap(),
+            [Change::ClearDeps]
+        );
+        assert!(h
+            .plan(Mode::Modify, "depends:99", Some(&me))
+            .unwrap_err()
+            .0
+            .contains("no task with id 99"));
+        assert!(h
+            .plan(Mode::Modify, "depends:zzzz", Some(&me))
+            .unwrap_err()
+            .0
+            .contains("no task matches"));
         let first = h.all[0].clone();
-        assert!(h.plan(Mode::Modify, "depends:1", Some(&first)).unwrap_err().0.contains("itself"));
+        assert!(h
+            .plan(Mode::Modify, "depends:1", Some(&first))
+            .unwrap_err()
+            .0
+            .contains("itself"));
     }
 
     #[test]
     fn invalid_values_are_reported() {
         let h = H::new("");
-        assert!(h.plan(Mode::Add, "x priority:Z", None).unwrap_err().0.contains("priority"));
-        assert!(h.plan(Mode::Add, "x due:nonsense", None).unwrap_err().0.contains("valid date"));
+        assert!(h
+            .plan(Mode::Add, "x priority:Z", None)
+            .unwrap_err()
+            .0
+            .contains("priority"));
+        assert!(h
+            .plan(Mode::Add, "x due:nonsense", None)
+            .unwrap_err()
+            .0
+            .contains("valid date"));
     }
 
     #[test]
@@ -629,21 +786,54 @@ mod tests {
              uda.points.type=numeric\nuda.ship.type=date\n",
         );
         let c = h.plan(Mode::Add, "x points:3.5 ship:2026-12-25", None).unwrap();
-        assert!(c.contains(&Change::Prop { name: "points".into(), value: Some("3.5".into()) }));
-        assert!(c.contains(&Change::Prop { name: "ship".into(), value: Some("1798156800".into()) }));
+        assert!(c.contains(&Change::Prop {
+            name: "points".into(),
+            value: Some("3.5".into())
+        }));
+        assert!(c.contains(&Change::Prop {
+            name: "ship".into(),
+            value: Some("1798156800".into())
+        }));
         // Default applied because estimate wasn't given.
-        assert!(c.contains(&Change::Prop { name: "estimate".into(), value: Some("small".into()) }));
+        assert!(c.contains(&Change::Prop {
+            name: "estimate".into(),
+            value: Some("small".into())
+        }));
         // Explicit value suppresses the default.
         let c = h.plan(Mode::Add, "x estimate:big", None).unwrap();
-        assert!(c.contains(&Change::Prop { name: "estimate".into(), value: Some("big".into()) }));
-        assert!(!c.contains(&Change::Prop { name: "estimate".into(), value: Some("small".into()) }));
+        assert!(c.contains(&Change::Prop {
+            name: "estimate".into(),
+            value: Some("big".into())
+        }));
+        assert!(!c.contains(&Change::Prop {
+            name: "estimate".into(),
+            value: Some("small".into())
+        }));
         // Validation.
-        assert!(h.plan(Mode::Add, "x estimate:huge", None).unwrap_err().0.contains("use one of: big, small"));
-        assert!(h.plan(Mode::Add, "x points:abc", None).unwrap_err().0.contains("not a number"));
-        assert!(h.plan(Mode::Add, "x ship:never", None).unwrap_err().0.contains("valid date"));
+        assert!(h
+            .plan(Mode::Add, "x estimate:huge", None)
+            .unwrap_err()
+            .0
+            .contains("use one of: big, small"));
+        assert!(h
+            .plan(Mode::Add, "x points:abc", None)
+            .unwrap_err()
+            .0
+            .contains("not a number"));
+        assert!(h
+            .plan(Mode::Add, "x ship:never", None)
+            .unwrap_err()
+            .0
+            .contains("valid date"));
         // Clearing is always allowed, defaults aren't re-applied on modify.
         let c = h.plan(Mode::Modify, "estimate:", Some(&h.all[0])).unwrap();
-        assert_eq!(c, [Change::Prop { name: "estimate".into(), value: None }]);
+        assert_eq!(
+            c,
+            [Change::Prop {
+                name: "estimate".into(),
+                value: None
+            }]
+        );
     }
 
     #[test]

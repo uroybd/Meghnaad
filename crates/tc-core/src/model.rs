@@ -57,9 +57,27 @@ pub struct Facts {
 
 /// Stored attributes that are not UDAs.
 const CORE: &[&str] = &[
-    "status", "description", "entry", "modified", "start", "end", "due", "wait", "scheduled",
-    "until", "recur", "parent", "mask", "imask", "rtype", "template", "last", "project",
-    "priority", "depends", "tags",
+    "status",
+    "description",
+    "entry",
+    "modified",
+    "start",
+    "end",
+    "due",
+    "wait",
+    "scheduled",
+    "until",
+    "recur",
+    "parent",
+    "mask",
+    "imask",
+    "rtype",
+    "template",
+    "last",
+    "project",
+    "priority",
+    "depends",
+    "tags",
 ];
 
 fn is_core_key(k: &str) -> bool {
@@ -91,7 +109,10 @@ impl Facts {
         let nonempty = |s: &str| (!s.is_empty()).then(|| s.to_owned());
         let mut annotations: Vec<Note> = t
             .get_annotations()
-            .map(|a| Note { entry: a.entry.timestamp(), text: a.description })
+            .map(|a| Note {
+                entry: a.entry.timestamp(),
+                text: a.description,
+            })
             .collect();
         annotations.sort_by_key(|a| a.entry);
         Facts {
@@ -142,7 +163,11 @@ impl Facts {
             return DateState::BeforeToday;
         }
         if clock.same_day(ts, clock.now) {
-            return if ts < clock.now { DateState::EarlierToday } else { DateState::LaterToday };
+            return if ts < clock.now {
+                DateState::EarlierToday
+            } else {
+                DateState::LaterToday
+            };
         }
         let period: i64 = cfg.settings.get("due").and_then(|v| v.parse().ok()).unwrap_or(7);
         if period == 0 || ts < today + period * DAY {
@@ -153,7 +178,7 @@ impl Facts {
     }
 
     pub fn is_ready(&self, clock: &Clock) -> bool {
-        self.status == "pending" && !self.blocked && self.scheduled.map_or(true, |s| clock.now > s)
+        self.status == "pending" && !self.blocked && self.scheduled.is_none_or(|s| clock.now > s)
     }
 
     pub fn has_uda(&self, cfg: &Config) -> bool {
@@ -174,14 +199,22 @@ impl Facts {
             } else if n.text == stop_text {
                 // A stop with no start has nothing to close.
                 if let Some(b) = began.take() {
-                    out.push(Session { start: b, end: Some(n.entry), seconds: (n.entry - b).max(0) });
+                    out.push(Session {
+                        start: b,
+                        end: Some(n.entry),
+                        seconds: (n.entry - b).max(0),
+                    });
                 }
             }
         }
         if let Some(s) = self.start {
             // Active now; an earlier start marker (if any) says when this session really began.
             let b = began.unwrap_or(s);
-            out.push(Session { start: b, end: None, seconds: (now - b).max(0) });
+            out.push(Session {
+                start: b,
+                end: None,
+                seconds: (now - b).max(0),
+            });
         }
         out
     }
@@ -197,7 +230,11 @@ impl Facts {
     /// removed from the config, or one defined only on another machine). They are shown but
     /// never edited, since their type and allowed values are unknown.
     pub fn orphan_keys(&self, cfg: &Config) -> Vec<String> {
-        self.extra.keys().filter(|k| !cfg.udas.contains_key(*k)).cloned().collect()
+        self.extra
+            .keys()
+            .filter(|k| !cfg.udas.contains_key(*k))
+            .cloned()
+            .collect()
     }
 
     /// `Some(answer)` if `name` is a Taskwarrior virtual tag, `None` otherwise.
@@ -227,15 +264,9 @@ impl Facts {
                 self.status != "recurring"
                     && matches!(due_state(), Some(DateState::EarlierToday | DateState::BeforeToday))
             }
-            "WEEK" => due_between(
-                clock.start_of_week(now),
-                clock.start_of_week(now) + 7 * DAY - 1,
-            ),
+            "WEEK" => due_between(clock.start_of_week(now), clock.start_of_week(now) + 7 * DAY - 1),
             "MONTH" => due_between(clock.start_of_month(now), clock.start_of_next_month(now) - 1),
-            "QUARTER" => due_between(
-                clock.start_of_quarter(now),
-                clock.start_of_next_quarter(now) - 1,
-            ),
+            "QUARTER" => due_between(clock.start_of_quarter(now), clock.start_of_next_quarter(now) - 1),
             "YEAR" => due_between(clock.start_of_year(now), clock.start_of_next_year(now) - 1),
             "ACTIVE" => self.start.is_some(),
             "SCHEDULED" => self.scheduled.is_some(),
@@ -269,12 +300,42 @@ impl Facts {
 
     pub fn active_virtual_tags(&self, cfg: &Config, clock: &Clock) -> Vec<&'static str> {
         const ALL: &[&str] = &[
-            "ACTIVE", "ANNOTATED", "BLOCKED", "BLOCKING", "CHILD", "COMPLETED", "DELETED", "DUE",
-            "DUETODAY", "INSTANCE", "MONTH", "ORPHAN", "OVERDUE", "PARENT", "PENDING", "PRIORITY",
-            "PROJECT", "QUARTER", "READY", "SCHEDULED", "TAGGED", "TEMPLATE", "TODAY",
-            "TOMORROW", "UDA", "UNBLOCKED", "UNTIL", "WAITING", "WEEK", "YEAR", "YESTERDAY",
+            "ACTIVE",
+            "ANNOTATED",
+            "BLOCKED",
+            "BLOCKING",
+            "CHILD",
+            "COMPLETED",
+            "DELETED",
+            "DUE",
+            "DUETODAY",
+            "INSTANCE",
+            "MONTH",
+            "ORPHAN",
+            "OVERDUE",
+            "PARENT",
+            "PENDING",
+            "PRIORITY",
+            "PROJECT",
+            "QUARTER",
+            "READY",
+            "SCHEDULED",
+            "TAGGED",
+            "TEMPLATE",
+            "TODAY",
+            "TOMORROW",
+            "UDA",
+            "UNBLOCKED",
+            "UNTIL",
+            "WAITING",
+            "WEEK",
+            "YEAR",
+            "YESTERDAY",
         ];
-        ALL.iter().copied().filter(|t| self.virtual_tag(t, cfg, clock) == Some(true)).collect()
+        ALL.iter()
+            .copied()
+            .filter(|t| self.virtual_tag(t, cfg, clock) == Some(true))
+            .collect()
     }
 }
 
@@ -424,7 +485,10 @@ mod journal_tests {
     const S: &str = "Started task";
     const E: &str = "Stopped task";
     fn n(entry: i64, text: &str) -> Note {
-        Note { entry, text: text.into() }
+        Note {
+            entry,
+            text: text.into(),
+        }
     }
 
     #[test]
@@ -475,7 +539,10 @@ mod session_tests {
     const S: &str = "Started task";
     const E: &str = "Stopped task";
     fn n(entry: i64, text: &str) -> Note {
-        Note { entry, text: text.into() }
+        Note {
+            entry,
+            text: text.into(),
+        }
     }
 
     #[test]
@@ -486,8 +553,16 @@ mod session_tests {
         assert_eq!(
             t.sessions(S, E, NOW + 9999),
             vec![
-                Session { start: NOW, end: Some(NOW + 600), seconds: 600 },
-                Session { start: NOW + 1000, end: Some(NOW + 1300), seconds: 300 },
+                Session {
+                    start: NOW,
+                    end: Some(NOW + 600),
+                    seconds: 600
+                },
+                Session {
+                    start: NOW + 1000,
+                    end: Some(NOW + 1300),
+                    seconds: 300
+                },
             ]
         );
     }
@@ -499,7 +574,14 @@ mod session_tests {
         t.annotations = vec![n(NOW, S), n(NOW + 600, E), n(NOW + 1000, S)];
         let s = t.sessions(S, E, NOW + 1500);
         assert_eq!(s.len(), 2);
-        assert_eq!(s[1], Session { start: NOW + 1000, end: None, seconds: 500 });
+        assert_eq!(
+            s[1],
+            Session {
+                start: NOW + 1000,
+                end: None,
+                seconds: 500
+            }
+        );
         assert_eq!(t.active_seconds(S, E, NOW + 1500), Some(1100));
     }
 
@@ -507,7 +589,14 @@ mod session_tests {
     fn a_started_task_with_no_marker_still_has_a_session() {
         let mut t = task("x");
         t.start = Some(NOW);
-        assert_eq!(t.sessions(S, E, NOW + 90), vec![Session { start: NOW, end: None, seconds: 90 }]);
+        assert_eq!(
+            t.sessions(S, E, NOW + 90),
+            vec![Session {
+                start: NOW,
+                end: None,
+                seconds: 90
+            }]
+        );
     }
 
     #[test]
@@ -515,7 +604,14 @@ mod session_tests {
         let mut t = task("x");
         t.annotations = vec![n(NOW, E), n(NOW + 5, S), n(NOW + 5, E)]; // stop-first, then an instant session
         let s = t.sessions(S, E, NOW + 100);
-        assert_eq!(s, vec![Session { start: NOW + 5, end: Some(NOW + 5), seconds: 0 }]);
+        assert_eq!(
+            s,
+            vec![Session {
+                start: NOW + 5,
+                end: Some(NOW + 5),
+                seconds: 0
+            }]
+        );
         assert_eq!(t.active_seconds(S, E, NOW + 100), Some(0));
     }
 

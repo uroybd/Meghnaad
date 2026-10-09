@@ -70,13 +70,23 @@ async fn add_tasks(r: &mut R, from: usize, n: usize) {
     for i in from..from + n {
         let mut t = r.create_task(uuid::Uuid::new_v4(), &mut ops).await.unwrap();
         t.set_status(Status::Pending, &mut ops).unwrap();
-        t.set_description(format!("Task number {i}: write the quarterly report for the team"), &mut ops).unwrap();
-        t.set_value("project", Some(format!("Work.Area{}", i % 7)), &mut ops).unwrap();
-        t.set_value("priority", Some(["H", "M", "L"][i % 3].into()), &mut ops).unwrap();
+        t.set_description(
+            format!("Task number {i}: write the quarterly report for the team"),
+            &mut ops,
+        )
+        .unwrap();
+        t.set_value("project", Some(format!("Work.Area{}", i % 7)), &mut ops)
+            .unwrap();
+        t.set_value("priority", Some(["H", "M", "L"][i % 3].into()), &mut ops)
+            .unwrap();
         t.add_tag(&"next".parse().unwrap(), &mut ops).unwrap();
-        t.set_value("due", Some((1_800_000_000 + i as i64 * 3600).to_string()), &mut ops).unwrap();
+        t.set_value("due", Some((1_800_000_000 + i as i64 * 3600).to_string()), &mut ops)
+            .unwrap();
         t.add_annotation(
-            taskchampion::Annotation { entry: taskchampion::chrono::Utc::now(), description: "a note about it".into() },
+            taskchampion::Annotation {
+                entry: taskchampion::chrono::Utc::now(),
+                description: "a note about it".into(),
+            },
             &mut ops,
         )
         .unwrap();
@@ -100,7 +110,16 @@ fn clock() -> Clock {
 
 async fn run(r: &mut R, line: &str) -> CliResult {
     let mut undo = UndoStack::default();
-    execute(r, &Config::default(), clock(), &split_words(line), Options::default(), &mut undo).await.result
+    execute(
+        r,
+        &Config::default(),
+        clock(),
+        &split_words(line),
+        Options::default(),
+        &mut undo,
+    )
+    .await
+    .result
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -147,7 +166,10 @@ async fn restoring_a_snapshot_and_answering_requests_stay_small() {
             serde_json::to_vec(&r).unwrap().len()
         })
         .await;
-        println!("`{line}` over 3001 tasks: peak {peak:.1} MB (held {held:.2} MB), response {:.1} MB", res as f64 / MB);
+        println!(
+            "`{line}` over 3001 tasks: peak {peak:.1} MB (held {held:.2} MB), response {:.1} MB",
+            res as f64 / MB
+        );
         assert!(peak < 60.0, "`{line}` took {peak:.1} MB");
     }
 }

@@ -53,7 +53,13 @@ pub fn history(ops: &[Operation], is_date: &dyn Fn(&str) -> bool) -> Vec<Entry> 
     let mut updates: Vec<Update> = ops
         .iter()
         .filter_map(|op| match op {
-            Operation::Update { property, old_value, value, timestamp, .. } => Some(Update {
+            Operation::Update {
+                property,
+                old_value,
+                value,
+                timestamp,
+                ..
+            } => Some(Update {
                 at: timestamp.timestamp(),
                 prop: property,
                 old: old_value.as_deref(),
@@ -76,8 +82,10 @@ pub fn history(ops: &[Operation], is_date: &dyn Fn(&str) -> bool) -> Vec<Entry> 
             end += 1;
         }
         let group = &updates[i..end];
-        let changes: Vec<Change> =
-            group.iter().filter_map(|u| change(u, group, is_date, &mut last_start)).collect();
+        let changes: Vec<Change> = group
+            .iter()
+            .filter_map(|u| change(u, group, is_date, &mut last_start))
+            .collect();
         if !changes.is_empty() {
             out.push(Entry { at: first, changes });
         }
@@ -86,7 +94,12 @@ pub fn history(ops: &[Operation], is_date: &dyn Fn(&str) -> bool) -> Vec<Entry> 
     out
 }
 
-fn change(u: &Update, group: &[Update], is_date: &dyn Fn(&str) -> bool, last_start: &mut Option<i64>) -> Option<Change> {
+fn change(
+    u: &Update,
+    group: &[Update],
+    is_date: &dyn Fn(&str) -> bool,
+    last_start: &mut Option<i64>,
+) -> Option<Change> {
     // Never interesting: the modification time, and the legacy `depends` and `tags` properties.
     if matches!(u.prop, "modified" | "depends" | "tags") {
         return None;
@@ -119,7 +132,10 @@ fn change(u: &Update, group: &[Update], is_date: &dyn Fn(&str) -> bool, last_sta
             // Without the matching start in the history (a snapshot dropped it), there is nothing
             // honest to measure from; Taskwarrior prints the time since 1970 here.
             let duration = last_start.map(|s| format_duration(stopped - s));
-            Change { duration, ..make("deleted", u.prop) }
+            Change {
+                duration,
+                ..make("deleted", u.prop)
+            }
         } else {
             make("deleted", u.prop)
         }),
@@ -201,9 +217,16 @@ mod tests {
     #[test]
     fn a_group_only_reaches_a_second_past_its_first_operation() {
         // 100, 101 and 102 are not one command: 102 is two seconds after the first.
-        let ops = [up(100, "a", None, Some("1")), up(101, "b", None, Some("1")), up(102, "c", None, Some("1"))];
+        let ops = [
+            up(100, "a", None, Some("1")),
+            up(101, "b", None, Some("1")),
+            up(102, "c", None, Some("1")),
+        ];
         let h = history(&ops, &dates);
-        assert_eq!(h.iter().map(|e| (e.at, e.changes.len())).collect::<Vec<_>>(), [(100, 2), (102, 1)]);
+        assert_eq!(
+            h.iter().map(|e| (e.at, e.changes.len())).collect::<Vec<_>>(),
+            [(100, 2), (102, 1)]
+        );
     }
 
     #[test]
@@ -269,7 +292,11 @@ mod tests {
 
     #[test]
     fn other_operation_kinds_are_not_history() {
-        let ops = [Operation::Create { uuid: Uuid::nil() }, Operation::UndoPoint, up(5, "due", Some("1"), Some("2"))];
+        let ops = [
+            Operation::Create { uuid: Uuid::nil() },
+            Operation::UndoPoint,
+            up(5, "due", Some("1"), Some("2")),
+        ];
         let h = history(&ops, &dates);
         assert_eq!(kinds(&h[0]), [("changed", "due")]);
     }

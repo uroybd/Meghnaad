@@ -54,31 +54,92 @@ const DAY: i64 = 86_400;
 
 /// Seconds in each duration unit Taskwarrior knows (`Duration.cpp`).
 const UNITS: &[(&str, i64)] = &[
-    ("annual", 365 * DAY), ("biannual", 730 * DAY), ("bimonthly", 61 * DAY), ("biweekly", 14 * DAY),
-    ("biyearly", 730 * DAY), ("daily", DAY), ("days", DAY), ("day", DAY), ("d", DAY),
-    ("fortnight", 14 * DAY), ("hours", 3600), ("hour", 3600), ("hrs", 3600), ("hr", 3600), ("h", 3600),
-    ("minutes", 60), ("minute", 60), ("mins", 60), ("min", 60), ("monthly", 30 * DAY),
-    ("months", 30 * DAY), ("month", 30 * DAY), ("mnths", 30 * DAY), ("mths", 30 * DAY),
-    ("mth", 30 * DAY), ("mos", 30 * DAY), ("mo", 30 * DAY), ("m", 30 * DAY), ("quarterly", 91 * DAY),
-    ("quarters", 91 * DAY), ("quarter", 91 * DAY), ("qrtrs", 91 * DAY), ("qrtr", 91 * DAY),
-    ("qtrs", 91 * DAY), ("qtr", 91 * DAY), ("q", 91 * DAY), ("semiannual", 183 * DAY),
-    ("sennight", 14 * DAY), ("seconds", 1), ("second", 1), ("secs", 1), ("sec", 1), ("s", 1),
-    ("weekdays", DAY), ("weekly", 7 * DAY), ("weeks", 7 * DAY), ("week", 7 * DAY), ("wks", 7 * DAY),
-    ("wk", 7 * DAY), ("w", 7 * DAY), ("yearly", 365 * DAY), ("years", 365 * DAY), ("year", 365 * DAY),
-    ("yrs", 365 * DAY), ("yr", 365 * DAY), ("y", 365 * DAY),
+    ("annual", 365 * DAY),
+    ("biannual", 730 * DAY),
+    ("bimonthly", 61 * DAY),
+    ("biweekly", 14 * DAY),
+    ("biyearly", 730 * DAY),
+    ("daily", DAY),
+    ("days", DAY),
+    ("day", DAY),
+    ("d", DAY),
+    ("fortnight", 14 * DAY),
+    ("hours", 3600),
+    ("hour", 3600),
+    ("hrs", 3600),
+    ("hr", 3600),
+    ("h", 3600),
+    ("minutes", 60),
+    ("minute", 60),
+    ("mins", 60),
+    ("min", 60),
+    ("monthly", 30 * DAY),
+    ("months", 30 * DAY),
+    ("month", 30 * DAY),
+    ("mnths", 30 * DAY),
+    ("mths", 30 * DAY),
+    ("mth", 30 * DAY),
+    ("mos", 30 * DAY),
+    ("mo", 30 * DAY),
+    ("m", 30 * DAY),
+    ("quarterly", 91 * DAY),
+    ("quarters", 91 * DAY),
+    ("quarter", 91 * DAY),
+    ("qrtrs", 91 * DAY),
+    ("qrtr", 91 * DAY),
+    ("qtrs", 91 * DAY),
+    ("qtr", 91 * DAY),
+    ("q", 91 * DAY),
+    ("semiannual", 183 * DAY),
+    ("sennight", 14 * DAY),
+    ("seconds", 1),
+    ("second", 1),
+    ("secs", 1),
+    ("sec", 1),
+    ("s", 1),
+    ("weekdays", DAY),
+    ("weekly", 7 * DAY),
+    ("weeks", 7 * DAY),
+    ("week", 7 * DAY),
+    ("wks", 7 * DAY),
+    ("wk", 7 * DAY),
+    ("w", 7 * DAY),
+    ("yearly", 365 * DAY),
+    ("years", 365 * DAY),
+    ("year", 365 * DAY),
+    ("yrs", 365 * DAY),
+    ("yr", 365 * DAY),
+    ("y", 365 * DAY),
 ];
 
 /// Words that name a date by themselves.
 const NAMED_DATES: &[&str] = &[
-    "now", "today", "yesterday", "tomorrow", "sod", "eod", "sow", "eow", "som", "eom", "soy", "eoy",
-    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "now",
+    "today",
+    "yesterday",
+    "tomorrow",
+    "sod",
+    "eod",
+    "sow",
+    "eow",
+    "som",
+    "eom",
+    "soy",
+    "eoy",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
 ];
 
 // ---------------------------------------------------------------------------------------------
 // Lexing
 
 fn is_boundary(rest: &[u8]) -> bool {
-    rest.first().map_or(true, |c| !(c.is_ascii_alphanumeric() || *c == b'_'))
+    rest.first().is_none_or(|c| !(c.is_ascii_alphanumeric() || *c == b'_'))
 }
 
 /// The ISO date (and date-time) at the start of `s`, and its length.
@@ -237,7 +298,10 @@ fn tokenize(src: &str) -> Vec<Tok> {
             continue;
         }
         // Operators, longest first.
-        let ops = ["!==", "==", "!=", "<=", ">=", "!~", "&&", "||", "^", "!", "*", "/", "%", "+", "-", "<", ">", "=", "~", "(", ")"];
+        let ops = [
+            "!==", "==", "!=", "<=", ">=", "!~", "&&", "||", "^", "!", "*", "/", "%", "+", "-", "<", ">", "=", "~",
+            "(", ")",
+        ];
         if let Some(op) = ops.iter().find(|o| rest.starts_with(o.as_bytes())) {
             out.push(((*op).to_owned(), T::Op));
             i += op.len();
@@ -293,7 +357,9 @@ struct Parse<'a>(&'a mut Vec<Tok>, usize);
 
 impl Parse<'_> {
     fn is_op(&self, ops: &[&str]) -> bool {
-        self.0.get(self.1).is_some_and(|(t, k)| *k == T::Op && ops.contains(&t.as_str()))
+        self.0
+            .get(self.1)
+            .is_some_and(|(t, k)| *k == T::Op && ops.contains(&t.as_str()))
     }
 
     /// Logical --> Regex {( "and" | "or" | "xor" ) Regex}, and so on down the precedence table.
@@ -439,13 +505,23 @@ fn fmt_real(x: f64) -> String {
         return "0".into();
     }
     if !x.is_finite() {
-        return if x.is_nan() { "nan".into() } else if x > 0.0 { "inf".into() } else { "-inf".into() };
+        return if x.is_nan() {
+            "nan".into()
+        } else if x > 0.0 {
+            "inf".into()
+        } else {
+            "-inf".into()
+        };
     }
     let sci = format!("{x:.5e}");
     let (mant, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
     let exp: i32 = exp.parse().unwrap_or(0);
     let trim = |s: &str| -> String {
-        if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_owned() } else { s.to_owned() }
+        if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_owned()
+        } else {
+            s.to_owned()
+        }
     };
     if !(-4..6).contains(&exp) {
         format!("{}e{}{:02}", trim(mant), if exp < 0 { '-' } else { '+' }, exp.abs())
@@ -513,14 +589,22 @@ fn literal(tok: &Tok, clock: &Clock, dom: DomFn) -> Result<V, String> {
         T::Op => return Err("Operator expected.".into()),
         T::Number => {
             if text.bytes().all(|c| c.is_ascii_digit()) {
-                V::Int(text.parse().map_err(|_| "The expression could not be evaluated.".to_owned())?)
+                V::Int(
+                    text.parse()
+                        .map_err(|_| "The expression could not be evaluated.".to_owned())?,
+                )
             } else {
-                V::Real(text.parse().map_err(|_| "The expression could not be evaluated.".to_owned())?)
+                V::Real(
+                    text.parse()
+                        .map_err(|_| "The expression could not be evaluated.".to_owned())?,
+                )
             }
         }
         T::Str => V::Str(text.clone()),
         T::Date => V::Date(
-            parse_date(text, clock).map(|d| d.ts).ok_or_else(|| "The expression could not be evaluated.".to_owned())?,
+            parse_date(text, clock)
+                .map(|d| d.ts)
+                .ok_or_else(|| "The expression could not be evaluated.".to_owned())?,
         ),
         T::Dur => V::Dur(duration_of(text).ok_or_else(|| "The expression could not be evaluated.".to_owned())?),
         // Named constants first, then the DOM; a word that is neither is a string.
@@ -866,7 +950,8 @@ fn run_postfix(tokens: &[Tok], clock: &Clock, dom: DomFn) -> Result<V, String> {
                 }
                 let r = stack.pop().ok_or_else(could_not)?;
                 let l = stack.pop().ok_or_else(could_not)?;
-                let ord = |want: &[std::cmp::Ordering]| V::Bool(compare(&l, &r, clock).is_some_and(|o| want.contains(&o)));
+                let ord =
+                    |want: &[std::cmp::Ordering]| V::Bool(compare(&l, &r, clock).is_some_and(|o| want.contains(&o)));
                 stack.push(match op {
                     "and" | "&&" => V::Bool(truthy(&l) && truthy(&r)),
                     "or" | "||" => V::Bool(truthy(&l) || truthy(&r)),
@@ -907,7 +992,6 @@ pub fn calc(expression: &str, postfix: bool, clock: &Clock, dom: DomFn) -> Resul
     Ok(show(&v, clock))
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The DOM (`DOM.cpp`)
 
@@ -946,7 +1030,9 @@ impl DomSource<'_> {
                 self.tasks.iter().find(|t| t.uuid.to_string().starts_with(&h))
             } else if !head.is_empty() && head.bytes().all(|c| c.is_ascii_digit()) {
                 let id: u32 = head.parse().unwrap_or(0);
-                (id != 0).then(|| self.tasks.iter().find(|t| self.ids.get(&t.uuid) == Some(&id))).flatten()
+                (id != 0)
+                    .then(|| self.tasks.iter().find(|t| self.ids.get(&t.uuid) == Some(&id)))
+                    .flatten()
             } else {
                 None
             };
@@ -965,9 +1051,16 @@ impl DomSource<'_> {
         if let Some(key) = name.strip_prefix("rc.").filter(|k| !k.is_empty()) {
             // Everything the app holds (UDAs, reports, contexts, urgency, settings), else the default.
             let held = crate::taskrc::render(self.cfg);
-            let found = held.lines().find_map(|l| l.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| v));
+            let found = held
+                .lines()
+                .find_map(|l| l.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| v));
             return found
-                .or_else(|| crate::taskrc::SETTING_DEFAULTS.iter().find(|(k, _)| *k == key).map(|(_, v)| *v))
+                .or_else(|| {
+                    crate::taskrc::SETTING_DEFAULTS
+                        .iter()
+                        .find(|(k, _)| *k == key)
+                        .map(|(_, v)| *v)
+                })
                 .and_then(text);
         }
         match name {
@@ -1022,13 +1115,13 @@ impl DomSource<'_> {
                     ("modified", _) => self.date(t.modified),
                     ("recur", _) => Dom::Dur(t.recur.as_deref().and_then(crate::dates::parse_duration).unwrap_or(0)),
                     ("parent", _) => Dom::Text(t.parent.map(|p| p.to_string()).unwrap_or_default()),
-                    ("depends", _) => {
-                        Dom::Text(t.depends.iter().map(Uuid::to_string).collect::<Vec<_>>().join(","))
-                    }
+                    ("depends", _) => Dom::Text(t.depends.iter().map(Uuid::to_string).collect::<Vec<_>>().join(",")),
                     ("mask", _) => Dom::Text(t.mask.clone().unwrap_or_default()),
                     ("imask", _) => Dom::Real(t.imask.map_or(0.0, |i| i as f64)),
                     (name, true) => {
-                        let Some(raw) = t.extra.get(name) else { return Some(Dom::Text(String::new())) };
+                        let Some(raw) = t.extra.get(name) else {
+                            return Some(Dom::Text(String::new()));
+                        };
                         match self.cfg.udas.get(name).map(|u| u.ty) {
                             Some(UdaType::Numeric) => Dom::Real(raw.trim().parse().unwrap_or(0.0)),
                             Some(UdaType::Date) => self.date(raw.trim().parse().ok()),
@@ -1041,7 +1134,11 @@ impl DomSource<'_> {
             }
             // `tags.<word>`
             if attr == "tags" {
-                return Some(Dom::Text(if t.tags.contains(rest[1]) { rest[1].to_owned() } else { String::new() }));
+                return Some(Dom::Text(if t.tags.contains(rest[1]) {
+                    rest[1].to_owned()
+                } else {
+                    String::new()
+                }));
             }
             // `due.year` and the other parts of a date.
             let ts = match attr.as_str() {
@@ -1069,7 +1166,11 @@ impl DomSource<'_> {
             ["annotations", "count"] => Some(Dom::Int(notes.len() as i64)),
             ["annotations", n, field @ ("entry" | "description")] => {
                 let note = notes.get(n.parse::<usize>().ok()?.checked_sub(1)?)?;
-                Some(if *field == "entry" { Dom::Date(note.entry) } else { Dom::Text(note.text.clone()) })
+                Some(if *field == "entry" {
+                    Dom::Date(note.entry)
+                } else {
+                    Dom::Text(note.text.clone())
+                })
             }
             ["annotations", n, "entry", part] => {
                 let note = notes.get(n.parse::<usize>().ok()?.checked_sub(1)?)?;
@@ -1114,12 +1215,31 @@ mod tests {
     #[test]
     fn arithmetic_like_taskwarrior() {
         for (e, want) in [
-            ("1 + 2", "3"), ("1 + 2 * 3", "7"), ("(1 + 2) * 3", "9"), ("7 / 2", "3"), ("7.0 / 2", "3.5"),
-            ("7 % 3", "1"), ("2 ^ 10", "1024"), ("2 ^ 3 ^ 2", "512"), ("-3 + 1", "-2"), ("- 3", "-3"),
-            ("3 - -2", "5"), ("1.5 + 1.5", "3"), ("0.1 + 0.2", "0.3"), ("1 / 3", "0"), ("-7 / 2", "-3"),
-            ("-7 % 3", "-1"), ("7 % -3", "1"), ("1 ++ 2", "3"), ("1 / 3.0", "0.333333"),
-            ("100.0 / 3", "33.3333"), ("0.000001", "1e-06"), ("123456789.123", "1.23457e+08"),
-            ("2.5 ^ 2", "6.25"), ("pi", "3.14159"), ("pi * 2", "6.28318"),
+            ("1 + 2", "3"),
+            ("1 + 2 * 3", "7"),
+            ("(1 + 2) * 3", "9"),
+            ("7 / 2", "3"),
+            ("7.0 / 2", "3.5"),
+            ("7 % 3", "1"),
+            ("2 ^ 10", "1024"),
+            ("2 ^ 3 ^ 2", "512"),
+            ("-3 + 1", "-2"),
+            ("- 3", "-3"),
+            ("3 - -2", "5"),
+            ("1.5 + 1.5", "3"),
+            ("0.1 + 0.2", "0.3"),
+            ("1 / 3", "0"),
+            ("-7 / 2", "-3"),
+            ("-7 % 3", "-1"),
+            ("7 % -3", "1"),
+            ("1 ++ 2", "3"),
+            ("1 / 3.0", "0.333333"),
+            ("100.0 / 3", "33.3333"),
+            ("0.000001", "1e-06"),
+            ("123456789.123", "1.23457e+08"),
+            ("2.5 ^ 2", "6.25"),
+            ("pi", "3.14159"),
+            ("pi * 2", "6.28318"),
         ] {
             assert_eq!(c(e), want, "{e}");
         }
@@ -1128,14 +1248,19 @@ mod tests {
     #[test]
     fn errors_use_taskwarriors_words() {
         for (e, want) in [
-            ("5 / 0", "! Cannot divide by zero"), ("5 % 0", "! Cannot modulo zero"), ("5.0 / 0", "! Cannot divide by zero"),
+            ("5 / 0", "! Cannot divide by zero"),
+            ("5 % 0", "! Cannot modulo zero"),
+            ("5.0 / 0", "! Cannot divide by zero"),
             ("2 ^ 0.5", "! Cannot exponentiate to a non-integer power"),
             // The unary minus is stacked so that `^` is applied too early; Taskwarrior can't evaluate it either.
             ("2 ^ -1", "! The expression could not be evaluated."),
-            ("1 +", "! The expression could not be evaluated."), ("(1 + 2", "! Mismatched parentheses in expression"),
-            ("1 2", "! The value is not an expression."), ("not true", "! The value is not an expression."),
+            ("1 +", "! The expression could not be evaluated."),
+            ("(1 + 2", "! Mismatched parentheses in expression"),
+            ("1 2", "! The value is not an expression."),
+            ("not true", "! The value is not an expression."),
             ("", "! No expression to evaluate."),
-            ("2026-12-25 * 2", "! Cannot multiply date values"), ("2026-12-25 + 2026-12-25", "! Cannot add two date values"),
+            ("2026-12-25 * 2", "! Cannot multiply date values"),
+            ("2026-12-25 + 2026-12-25", "! Cannot add two date values"),
         ] {
             assert_eq!(c(e), want, "{e}");
         }
@@ -1144,11 +1269,26 @@ mod tests {
     #[test]
     fn logic_and_comparison() {
         for (e, want) in [
-            ("1 < 2", "true"), ("2 < 1", "false"), ("1 <= 1", "true"), ("1 == 1", "true"), ("1 != 2", "true"),
-            ("1 == 1.0", "true"), ("true and false", "false"), ("true or false", "true"), ("true xor true", "false"),
-            ("!true", "false"), ("1 and 0", "false"), ("4 xor 0", "true"), ("!0", "true"), ("!5", "false"),
-            ("1 < 2 < 3", "true"), ("3 > 2 > 1", "false"), ("1 = 1", "true"), ("1 != 1", "false"),
-            ("true + 1", "2"), ("true * 3", "3"),
+            ("1 < 2", "true"),
+            ("2 < 1", "false"),
+            ("1 <= 1", "true"),
+            ("1 == 1", "true"),
+            ("1 != 2", "true"),
+            ("1 == 1.0", "true"),
+            ("true and false", "false"),
+            ("true or false", "true"),
+            ("true xor true", "false"),
+            ("!true", "false"),
+            ("1 and 0", "false"),
+            ("4 xor 0", "true"),
+            ("!0", "true"),
+            ("!5", "false"),
+            ("1 < 2 < 3", "true"),
+            ("3 > 2 > 1", "false"),
+            ("1 = 1", "true"),
+            ("1 != 1", "false"),
+            ("true + 1", "2"),
+            ("true * 3", "3"),
         ] {
             assert_eq!(c(e), want, "{e}");
         }
@@ -1157,13 +1297,36 @@ mod tests {
     #[test]
     fn durations() {
         for (e, want) in [
-            ("2 days", "P2D"), ("2d", "P2D"), ("2 days + 3 hours", "P2DT3H"), ("1h + 30min", "PT1H30M"),
-            ("2d * 2", "P4D"), ("2d / 2", "P1D"), ("1w + 1d", "P8D"), ("P1D", "P1D"), ("P1D + P2D", "P3D"),
-            ("2d > 1d", "true"), ("90m", "P2700D"), ("120min", "PT2H"), ("3600s", "PT1H"), ("36 hours", "P1DT12H"),
-            ("1y", "P365D"), ("1 year", "P365D"), ("2 months", "P60D"), ("1q", "P91D"), ("1d + 30s", "P1DT30S"),
-            ("2h * 1.5", "PT3H"), ("1h / 3", "PT20M"), ("1d / 1h", "24"), ("7d / 2d", "3.5"), ("10 * 1d", "P10D"),
-            ("PT90M", "PT1H30M"), ("P1Y2M3DT4H5M6S", "P428DT4H5M6S"), ("P1W", "P7D"), ("0d", "PT0S"),
-            ("-1d", "-P1D"), ("2d - 3d", "-P1D"),
+            ("2 days", "P2D"),
+            ("2d", "P2D"),
+            ("2 days + 3 hours", "P2DT3H"),
+            ("1h + 30min", "PT1H30M"),
+            ("2d * 2", "P4D"),
+            ("2d / 2", "P1D"),
+            ("1w + 1d", "P8D"),
+            ("P1D", "P1D"),
+            ("P1D + P2D", "P3D"),
+            ("2d > 1d", "true"),
+            ("90m", "P2700D"),
+            ("120min", "PT2H"),
+            ("3600s", "PT1H"),
+            ("36 hours", "P1DT12H"),
+            ("1y", "P365D"),
+            ("1 year", "P365D"),
+            ("2 months", "P60D"),
+            ("1q", "P91D"),
+            ("1d + 30s", "P1DT30S"),
+            ("2h * 1.5", "PT3H"),
+            ("1h / 3", "PT20M"),
+            ("1d / 1h", "24"),
+            ("7d / 2d", "3.5"),
+            ("10 * 1d", "P10D"),
+            ("PT90M", "PT1H30M"),
+            ("P1Y2M3DT4H5M6S", "P428DT4H5M6S"),
+            ("P1W", "P7D"),
+            ("0d", "PT0S"),
+            ("-1d", "-P1D"),
+            ("2d - 3d", "-P1D"),
         ] {
             assert_eq!(c(e), want, "{e}");
         }
@@ -1172,13 +1335,21 @@ mod tests {
     #[test]
     fn dates() {
         for (e, want) in [
-            ("2026-12-25", "2026-12-25T00:00:00"), ("2026-12-25 - 2026-12-01", "P24D"),
-            ("2026-12-25 + 1w", "2027-01-01T00:00:00"), ("2026-12-25 + 2d", "2026-12-27T00:00:00"),
-            ("2026-12-25 - 1d", "2026-12-24T00:00:00"), ("2026-12-25T10:00", "2026-12-25T10:00:00"),
-            ("2026-12-25 < 2026-12-26", "true"), ("2026-12-25 == 2026-12-25", "true"),
-            ("5 + 2026-12-25", "2026-12-25T00:00:05"), ("2026-12-25 - 5", "2026-12-24T23:59:55"),
-            ("2026-12-25 + 1y", "2027-12-25T00:00:00"), ("2026-12-25 + 1 month", "2027-01-24T00:00:00"),
-            ("now - now", "PT0S"), ("today - today", "PT0S"), ("now > 2000-01-01", "true"),
+            ("2026-12-25", "2026-12-25T00:00:00"),
+            ("2026-12-25 - 2026-12-01", "P24D"),
+            ("2026-12-25 + 1w", "2027-01-01T00:00:00"),
+            ("2026-12-25 + 2d", "2026-12-27T00:00:00"),
+            ("2026-12-25 - 1d", "2026-12-24T00:00:00"),
+            ("2026-12-25T10:00", "2026-12-25T10:00:00"),
+            ("2026-12-25 < 2026-12-26", "true"),
+            ("2026-12-25 == 2026-12-25", "true"),
+            ("5 + 2026-12-25", "2026-12-25T00:00:05"),
+            ("2026-12-25 - 5", "2026-12-24T23:59:55"),
+            ("2026-12-25 + 1y", "2027-12-25T00:00:00"),
+            ("2026-12-25 + 1 month", "2027-01-24T00:00:00"),
+            ("now - now", "PT0S"),
+            ("today - today", "PT0S"),
+            ("now > 2000-01-01", "true"),
         ] {
             assert_eq!(c(e), want, "{e}");
         }
@@ -1187,12 +1358,24 @@ mod tests {
     #[test]
     fn strings_keep_their_quotes_as_typed() {
         for (e, want) in [
-            ("\"abc\"", "\"abc\""), ("'abc'", "'abc'"), ("abc", "abc"), ("abc + def", "abcdef"),
-            ("\"abc\" + \"def\"", "\"abc\"def"), ("\"abc\" + 1", "\"abc\"1"), ("1 + \"abc\"", "1abc"),
-            ("\"abc\" - \"def\"", "\"abc\"-\"def\""), ("\"abc\" * 3", "\"abc\"\"abc\"\"abc\""),
-            ("\"abc\" == \"abc\"", "true"), ("\"abc\" == \"ABC\"", "false"), ("\"abc\" = \"ab\"", "true"),
-            ("\"abc\" == abc", "true"), ("a < b", "true"), ("\"abc\" < \"abd\"", "true"), ("\"abc\" and 1", "true"),
-            ("\"a b\"", "\"a b\""), ("\"\" + \"\"", "\"\""),
+            ("\"abc\"", "\"abc\""),
+            ("'abc'", "'abc'"),
+            ("abc", "abc"),
+            ("abc + def", "abcdef"),
+            ("\"abc\" + \"def\"", "\"abc\"def"),
+            ("\"abc\" + 1", "\"abc\"1"),
+            ("1 + \"abc\"", "1abc"),
+            ("\"abc\" - \"def\"", "\"abc\"-\"def\""),
+            ("\"abc\" * 3", "\"abc\"\"abc\"\"abc\""),
+            ("\"abc\" == \"abc\"", "true"),
+            ("\"abc\" == \"ABC\"", "false"),
+            ("\"abc\" = \"ab\"", "true"),
+            ("\"abc\" == abc", "true"),
+            ("a < b", "true"),
+            ("\"abc\" < \"abd\"", "true"),
+            ("\"abc\" and 1", "true"),
+            ("\"a b\"", "\"a b\""),
+            ("\"\" + \"\"", "\"\""),
         ] {
             assert_eq!(c(e), want, "{e}");
         }
@@ -1201,8 +1384,12 @@ mod tests {
     #[test]
     fn postfix_reads_the_operator_last() {
         for (e, want) in [
-            ("1 2 +", "3"), ("1 2 + 3 *", "9"), ("2 days 3 hours +", "P2DT3H"), ("1 2 < ", "true"),
-            ("2 3 ^", "8"), ("1 +", "! The expression could not be evaluated."),
+            ("1 2 +", "3"),
+            ("1 2 + 3 *", "9"),
+            ("2 days 3 hours +", "P2DT3H"),
+            ("1 2 < ", "true"),
+            ("2 3 ^", "8"),
+            ("1 +", "! The expression could not be evaluated."),
             ("1 2", "! The value is not an expression."),
         ] {
             assert_eq!(p(e), want, "{e}");

@@ -32,7 +32,7 @@ fn truthy(v: &str) -> bool {
 /// here. Instances are numbered by their index in the template's mask, which is what keeps a second
 /// replica from finding anything missing in the ordinary case.
 pub fn enabled(cfg: &Config) -> bool {
-    cfg.settings.get("recurrence").map_or(true, |v| truthy(v))
+    cfg.settings.get("recurrence").is_none_or(|v| truthy(v))
 }
 
 /// `recurrence.confirmation`: what editing a recurring task does to the rest of its series.
@@ -48,7 +48,11 @@ pub enum Confirmation {
 
 /// Same reading as Taskwarrior: unset or `prompt` asks, a true-ish value is yes, anything else no.
 pub fn confirmation(cfg: &Config) -> Confirmation {
-    match cfg.settings.get("recurrence.confirmation").map(|v| v.trim().to_ascii_lowercase()) {
+    match cfg
+        .settings
+        .get("recurrence.confirmation")
+        .map(|v| v.trim().to_ascii_lowercase())
+    {
         None => Confirmation::Prompt,
         Some(v) if v.is_empty() || v == "prompt" => Confirmation::Prompt,
         Some(v) if truthy(&v) => Confirmation::Yes,
@@ -58,7 +62,10 @@ pub fn confirmation(cfg: &Config) -> Confirmation {
 
 /// `recurrence.limit`: how many future instances to keep ready (default 1).
 pub fn limit(cfg: &Config) -> usize {
-    cfg.settings.get("recurrence.limit").and_then(|v| v.trim().parse().ok()).unwrap_or(1)
+    cfg.settings
+        .get("recurrence.limit")
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(1)
 }
 
 fn leading_int(s: &str) -> i64 {
@@ -71,7 +78,10 @@ fn leading_int(s: &str) -> i64 {
 #[derive(Debug, PartialEq, Eq)]
 enum Step {
     /// n months; `keep_time` is false for the `PnM` form, which Taskwarrior resets to midnight.
-    Months { n: u32, keep_time: bool },
+    Months {
+        n: u32,
+        keep_time: bool,
+    },
     Years(u32),
     Weekdays,
     Seconds(i64),
@@ -99,7 +109,14 @@ fn classify(period: &str) -> Result<Step, String> {
     }
     if p.starts_with('P') && p.ends_with('M') && p.len() > 2 && p[1..p.len() - 1].chars().all(|c| c.is_ascii_digit()) {
         let n = leading_int(&p[1..]);
-        return if n <= 0 { Err(invalid(n)) } else { Ok(Step::Months { n: n as u32, keep_time: false }) };
+        return if n <= 0 {
+            Err(invalid(n))
+        } else {
+            Ok(Step::Months {
+                n: n as u32,
+                keep_time: false,
+            })
+        };
     }
     if first_digit && p.ends_with('q') {
         let n = leading_int(p);
@@ -182,7 +199,11 @@ pub struct Dates {
 pub fn generate_due_dates(parent: &Facts, limit: usize, clock: &Clock) -> Dates {
     let (Some(first), Some(recur)) = (parent.due, parent.recur.as_deref()) else {
         // Not a usable template. Taskwarrior retires the parent; we leave it alone.
-        return Dates { due: vec![], depleted: false, capped: false };
+        return Dates {
+            due: vec![],
+            depleted: false,
+            capped: false,
+        };
     };
     let mask = parent.mask.as_deref().unwrap_or("");
     let mut out = Vec::new();
@@ -193,21 +214,39 @@ pub fn generate_due_dates(parent: &Facts, limit: usize, clock: &Clock) -> Dates 
         if parent.until.is_some_and(|u| i > u) {
             // Past the end date: if every instance so far is finished, the series is done.
             let depleted = mask.chars().count() == out.len() && !mask.contains('-');
-            return Dates { due: out, depleted, capped: false };
+            return Dates {
+                due: out,
+                depleted,
+                capped: false,
+            };
         }
         if i > clock.now {
             future += 1;
         }
         if future >= limit.max(1) {
-            return Dates { due: out, depleted: false, capped: false };
+            return Dates {
+                due: out,
+                depleted: false,
+                capped: false,
+            };
         }
         if out.len() >= MAX_INSTANCES {
-            return Dates { due: out, depleted: false, capped: true };
+            return Dates {
+                due: out,
+                depleted: false,
+                capped: true,
+            };
         }
         match next_recurrence(i, recur, clock) {
             Ok(Some(next)) if next > i => i = next,
             // No further date, an invalid period, or one that doesn't advance: stop here.
-            _ => return Dates { due: out, depleted: false, capped: false },
+            _ => {
+                return Dates {
+                    due: out,
+                    depleted: false,
+                    capped: false,
+                }
+            }
         }
     }
 }
@@ -238,12 +277,25 @@ pub fn set_mask(mask: &str, index: usize, ch: char) -> String {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
     /// Create instance number `index` of `parent`.
-    CreateInstance { parent: Uuid, index: usize, due: i64, wait: Option<i64>, scheduled: Option<i64> },
-    SetMask { parent: Uuid, mask: String },
+    CreateInstance {
+        parent: Uuid,
+        index: usize,
+        due: i64,
+        wait: Option<i64>,
+        scheduled: Option<i64>,
+    },
+    SetMask {
+        parent: Uuid,
+        mask: String,
+    },
     /// The series has ended: retire the parent (delete it).
-    ExpireParent { parent: Uuid },
+    ExpireParent {
+        parent: Uuid,
+    },
     /// A pending task passed its `until` date.
-    ExpireTask { task: Uuid },
+    ExpireTask {
+        task: Uuid,
+    },
 }
 
 /// What `handleRecurrence` + `handleUntil` would do right now.
@@ -268,7 +320,13 @@ pub fn plan(all: &[Facts], cfg: &Config, clock: &Clock) -> Vec<Action> {
             let shifted = |t: Option<i64>| t.zip(p.due).map(|(t, due)| d + (t - due));
             let wait = shifted(p.wait);
             mask.push(if wait.is_some() { 'W' } else { '-' });
-            out.push(Action::CreateInstance { parent: p.uuid, index: i, due: d, wait, scheduled: shifted(p.scheduled) });
+            out.push(Action::CreateInstance {
+                parent: p.uuid,
+                index: i,
+                due: d,
+                wait,
+                scheduled: shifted(p.scheduled),
+            });
         }
         if changed {
             out.push(Action::SetMask { parent: p.uuid, mask });
@@ -307,7 +365,7 @@ mod tests {
         assert_eq!(next(at(2026, 1, 15), "monthly"), Some(at(2026, 2, 15)));
         assert_eq!(next(at(2026, 1, 31), "monthly"), Some(at(2026, 2, 28)));
         assert_eq!(next(at(2028, 1, 31), "monthly"), Some(at(2028, 2, 29))); // leap year
-        // Chained from the previous date, as in Taskwarrior: the 31st drifts to the 28th.
+                                                                             // Chained from the previous date, as in Taskwarrior: the 31st drifts to the 28th.
         assert_eq!(next(at(2026, 2, 28), "monthly"), Some(at(2026, 3, 28)));
         assert_eq!(next(at(2026, 12, 20), "monthly"), Some(at(2027, 1, 20)));
         assert_eq!(next(at(2026, 5, 31), "P1M"), Some(at(2026, 6, 30)));
@@ -332,7 +390,11 @@ mod tests {
     fn the_iso_month_form_resets_the_time_like_taskwarrior_does() {
         let t = Clock::utc(0);
         let got = next_recurrence(at(2026, 1, 10), "P2M", &t).unwrap().unwrap();
-        assert_eq!(got, at(2026, 3, 10), "P2M is the named bimonthly period and keeps the time");
+        assert_eq!(
+            got,
+            at(2026, 3, 10),
+            "P2M is the named bimonthly period and keeps the time"
+        );
         let got = next_recurrence(at(2026, 1, 10), "P5M", &t).unwrap().unwrap();
         assert_eq!(t.ymd_hms(got), (2026, 6, 10, 0, 0, 0), "PnM drops the time of day");
     }
@@ -360,7 +422,12 @@ mod tests {
     #[test]
     fn calendar_steps_use_the_viewers_timezone() {
         // 22:00Z on Jan 31 is already Feb 1 in IST (+5:30): monthly lands on Mar 1 local.
-        let ist = Clock { now: 0, tz_offset: 19_800, week_starts_monday: true, ..Clock::utc(0) };
+        let ist = Clock {
+            now: 0,
+            tz_offset: 19_800,
+            week_starts_monday: true,
+            ..Clock::utc(0)
+        };
         let jan31_2200z = Clock::utc(0).from_ymd_hms(2026, 1, 31, 22, 0, 0).unwrap();
         let n = next_recurrence(jan31_2200z, "monthly", &ist).unwrap().unwrap();
         assert_eq!(ist.ymd_hms(n), (2026, 3, 1, 3, 30, 0));
@@ -368,7 +435,19 @@ mod tests {
 
     #[test]
     fn invalid_periods_are_rejected_with_a_reason() {
-        for ok in ["daily", "weekly", "monthly", "3d", "2q", "6m", "P1M", "weekdays", "fortnight", "annual", "1h"] {
+        for ok in [
+            "daily",
+            "weekly",
+            "monthly",
+            "3d",
+            "2q",
+            "6m",
+            "P1M",
+            "weekdays",
+            "fortnight",
+            "annual",
+            "1h",
+        ] {
             assert!(validate_period(ok).is_ok(), "{ok}");
         }
         assert!(validate_period("0m").unwrap_err().contains("hence invalid"));
@@ -381,7 +460,12 @@ mod tests {
     }
 
     fn parent(due: i64, recur: &str) -> Facts {
-        Facts { status: "recurring".into(), due: Some(due), recur: Some(recur.into()), ..task("rent") }
+        Facts {
+            status: "recurring".into(),
+            due: Some(due),
+            recur: Some(recur.into()),
+            ..task("rent")
+        }
     }
 
     #[test]
@@ -389,7 +473,14 @@ mod tests {
         let now = at(2026, 10, 7);
         let p = parent(at(2026, 10, 20), "weekly");
         let d = generate_due_dates(&p, 1, &clock_at(now));
-        assert_eq!(d, Dates { due: vec![at(2026, 10, 20)], depleted: false, capped: false });
+        assert_eq!(
+            d,
+            Dates {
+                due: vec![at(2026, 10, 20)],
+                depleted: false,
+                capped: false
+            }
+        );
     }
 
     #[test]
@@ -406,7 +497,16 @@ mod tests {
         let now = at(2026, 10, 7) + 3600; // 10:30
         let p = parent(at(2026, 10, 4), "daily");
         let d = generate_due_dates(&p, 1, &clock_at(now));
-        assert_eq!(d.due, [at(2026, 10, 4), at(2026, 10, 5), at(2026, 10, 6), at(2026, 10, 7), at(2026, 10, 8)]);
+        assert_eq!(
+            d.due,
+            [
+                at(2026, 10, 4),
+                at(2026, 10, 5),
+                at(2026, 10, 6),
+                at(2026, 10, 7),
+                at(2026, 10, 8)
+            ]
+        );
     }
 
     #[test]
@@ -446,7 +546,14 @@ mod tests {
     fn a_parent_without_due_or_recur_generates_nothing_and_is_left_alone() {
         let mut p = parent(0, "daily");
         p.due = None;
-        assert_eq!(generate_due_dates(&p, 1, &clock_at(0)), Dates { due: vec![], depleted: false, capped: false });
+        assert_eq!(
+            generate_due_dates(&p, 1, &clock_at(0)),
+            Dates {
+                due: vec![],
+                depleted: false,
+                capped: false
+            }
+        );
         let mut q = parent(at(2026, 1, 1), "daily");
         q.recur = None;
         assert!(generate_due_dates(&q, 1, &clock_at(0)).due.is_empty());
@@ -484,12 +591,21 @@ mod tests {
     fn planning_creates_missing_instances_and_the_mask() {
         let now = at(2026, 10, 7);
         let p = parent(at(2026, 10, 20), "weekly");
-        let acts = plan(&[p.clone()], &cfg(""), &clock_at(now));
+        let acts = plan(std::slice::from_ref(&p), &cfg(""), &clock_at(now));
         assert_eq!(
             acts,
             vec![
-                Action::CreateInstance { parent: p.uuid, index: 0, due: at(2026, 10, 20), wait: None, scheduled: None },
-                Action::SetMask { parent: p.uuid, mask: "-".into() },
+                Action::CreateInstance {
+                    parent: p.uuid,
+                    index: 0,
+                    due: at(2026, 10, 20),
+                    wait: None,
+                    scheduled: None
+                },
+                Action::SetMask {
+                    parent: p.uuid,
+                    mask: "-".into()
+                },
             ]
         );
     }
@@ -499,7 +615,10 @@ mod tests {
         let now = at(2026, 10, 7);
         let mut p = parent(at(2026, 10, 20), "weekly");
         p.mask = Some("-".into());
-        assert!(plan(&[p.clone()], &cfg(""), &clock_at(now)).is_empty(), "already has its instance");
+        assert!(
+            plan(&[p.clone()], &cfg(""), &clock_at(now)).is_empty(),
+            "already has its instance"
+        );
         // The instance was completed: a new future date has no instance yet.
         p.mask = Some("+".into());
         let acts = plan(&[p.clone()], &cfg(""), &clock_at(now));
@@ -511,8 +630,17 @@ mod tests {
         assert_eq!(
             acts,
             vec![
-                Action::CreateInstance { parent: p.uuid, index: 1, due: at(2026, 10, 27), wait: None, scheduled: None },
-                Action::SetMask { parent: p.uuid, mask: "+-".into() },
+                Action::CreateInstance {
+                    parent: p.uuid,
+                    index: 1,
+                    due: at(2026, 10, 27),
+                    wait: None,
+                    scheduled: None
+                },
+                Action::SetMask {
+                    parent: p.uuid,
+                    mask: "+-".into()
+                },
             ]
         );
     }
@@ -528,8 +656,17 @@ mod tests {
         assert_eq!(
             acts,
             vec![
-                Action::CreateInstance { parent: p.uuid, index: 1, due: at(2026, 10, 27), wait: Some(at(2026, 10, 25)), scheduled: Some(at(2026, 10, 26)) },
-                Action::SetMask { parent: p.uuid, mask: "-W".into() },
+                Action::CreateInstance {
+                    parent: p.uuid,
+                    index: 1,
+                    due: at(2026, 10, 27),
+                    wait: Some(at(2026, 10, 25)),
+                    scheduled: Some(at(2026, 10, 26))
+                },
+                Action::SetMask {
+                    parent: p.uuid,
+                    mask: "-W".into()
+                },
             ]
         );
     }
@@ -547,6 +684,12 @@ mod tests {
         fine.uuid = Uuid::from_u128(3);
         fine.until = Some(now + 3600);
         let acts = plan(&[p.clone(), late.clone(), fine], &cfg(""), &clock_at(now));
-        assert_eq!(acts, vec![Action::ExpireParent { parent: p.uuid }, Action::ExpireTask { task: late.uuid }]);
+        assert_eq!(
+            acts,
+            vec![
+                Action::ExpireParent { parent: p.uuid },
+                Action::ExpireTask { task: late.uuid }
+            ]
+        );
     }
 }

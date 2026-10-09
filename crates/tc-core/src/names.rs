@@ -57,7 +57,10 @@ mod tests {
     #[test]
     fn rejects_malformed_names() {
         assert_eq!(parse_version_name("v-abc"), None);
-        assert_eq!(parse_version_name("x-00000000000000000000000000000001-00000000000000000000000000000002"), None);
+        assert_eq!(
+            parse_version_name("x-00000000000000000000000000000001-00000000000000000000000000000002"),
+            None
+        );
         assert_eq!(parse_snapshot_name("s-zz"), None);
         assert_eq!(parse_snapshot_name("latest"), None);
     }

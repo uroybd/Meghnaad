@@ -98,13 +98,15 @@ impl Config {
     /// `weekstart`: weeks start on Monday if the taskrc says so; otherwise on Sunday, which is
     /// Taskwarrior's default (`weekstart=sunday`).
     pub fn week_starts_monday(&self) -> bool {
-        self.settings.get("weekstart").is_some_and(|v| v.trim().eq_ignore_ascii_case("monday"))
+        self.settings
+            .get("weekstart")
+            .is_some_and(|v| v.trim().eq_ignore_ascii_case("monday"))
     }
 
     /// `regex`: whether filter text and `/from/to/` substitutions are regular expressions. On unless
     /// the taskrc turns it off, as in Taskwarrior (`regex=1` is its default).
     pub fn regex_enabled(&self) -> bool {
-        self.settings.get("regex").map_or(true, |v| truthy(v))
+        self.settings.get("regex").is_none_or(|v| truthy(v))
     }
 
     /// `urgency.inherit`: a blocking task takes the highest urgency of what it blocks. Off unless
@@ -142,12 +144,12 @@ impl Config {
 
     /// `confirmation`: ask before deleting and undoing (Taskwarrior's default is on).
     pub fn confirmation(&self) -> bool {
-        self.settings.get("confirmation").map_or(true, |v| truthy(v))
+        self.settings.get("confirmation").is_none_or(|v| truthy(v))
     }
 
     /// `hooks`: the master switch for hooks (Taskwarrior's default is on).
     pub fn hooks(&self) -> bool {
-        self.settings.get("hooks").map_or(true, |v| truthy(v))
+        self.settings.get("hooks").is_none_or(|v| truthy(v))
     }
 
     /// An integer setting as Taskwarrior reads it (`strtol`): the leading digits, and 0 for text
@@ -171,7 +173,7 @@ impl Config {
     /// `date.iso`: whether ISO-8601 dates typed by themselves (`2026-12-25`, `2026-W52`) are
     /// understood. A date matching `dateformat` is understood either way. Default on.
     pub fn date_iso(&self) -> bool {
-        self.settings.get("date.iso").map_or(true, |v| truthy(v))
+        self.settings.get("date.iso").is_none_or(|v| truthy(v))
     }
 
     /// `dateformat`: the pattern typed dates are read in first. Taskwarrior's default is `Y-M-D`;
@@ -237,25 +239,29 @@ impl Config {
 
     /// `allow.empty.filter`: whether a command that changes tasks may run with no filter at all.
     pub fn allow_empty_filter(&self) -> bool {
-        self.settings.get("allow.empty.filter").map_or(true, |v| truthy(v))
+        self.settings.get("allow.empty.filter").is_none_or(|v| truthy(v))
     }
 
     /// `dependency.confirmation`: ask before repairing a dependency chain broken by finishing or
     /// deleting a task in the middle of it. Off repairs it without asking.
     pub fn dependency_confirmation(&self) -> bool {
-        self.settings.get("dependency.confirmation").map_or(true, |v| truthy(v))
+        self.settings.get("dependency.confirmation").is_none_or(|v| truthy(v))
     }
 
     /// `journal.info`: whether `info` lists the task's change history (Taskwarrior's default is on).
     pub fn journal_info(&self) -> bool {
-        self.settings.get("journal.info").map_or(true, |v| truthy(v))
+        self.settings.get("journal.info").is_none_or(|v| truthy(v))
     }
 
     /// `(start annotation, stop annotation)` when `journal.time` is on.
     pub fn journal(&self) -> Option<(String, String)> {
         let on = self.settings.get("journal.time").is_some_and(|v| truthy(v));
         let text = |key: &str, default: &str| {
-            self.settings.get(key).filter(|s| !s.is_empty()).cloned().unwrap_or_else(|| default.to_owned())
+            self.settings
+                .get(key)
+                .filter(|s| !s.is_empty())
+                .cloned()
+                .unwrap_or_else(|| default.to_owned())
         };
         on.then(|| {
             (
@@ -296,27 +302,52 @@ const SENSITIVE_WORDS: &[&str] = &[
 /// false positive only hides a setting, a false negative leaks a credential.
 pub fn is_sensitive(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    SENSITIVE_PREFIXES.iter().any(|p| n.starts_with(p))
-        || n == "sync"
-        || SENSITIVE_WORDS.iter().any(|w| n.contains(w))
+    SENSITIVE_PREFIXES.iter().any(|p| n.starts_with(p)) || n == "sync" || SENSITIVE_WORDS.iter().any(|w| n.contains(w))
 }
 
 /// Taskwarrior's defaults for the settings this app reads, for the ones that have one: what `rc.<name>`
 /// in `calc` and `show` fall back to when the taskrc is silent.
 pub const SETTING_DEFAULTS: &[(&str, &str)] = &[
-    ("regex", "1"), ("calendar.details", "sparse"), ("calendar.details.report", "list"),
-    ("calendar.holidays", "none"), ("calendar.legend", "1"), ("calendar.offset", "0"),
-    ("calendar.offset.value", "-1"), ("displayweeknumber", "1"), ("dateformat", "Y-M-D"),
-    ("dateformat.holiday", "YMD"), ("dateformat.report", ""), ("dateformat.info", "Y-M-D H:N:S"),
-    ("dateformat.annotation", ""), ("summary.all.projects", "0"), ("default.command", "next"),
-    ("due", "7"), ("recurrence", "1"), ("recurrence.limit", "1"), ("recurrence.indicator", "R"),
-    ("recurrence.confirmation", "prompt"), ("journal.time", "0"),
-    ("journal.time.start.annotation", "Started task"), ("journal.time.stop.annotation", "Stopped task"),
-    ("journal.info", "1"), ("abbreviation.minimum", "2"), ("expressions", "infix"), ("date.iso", "1"),
-    ("list.all.projects", "0"), ("list.all.tags", "0"), ("complete.all.tags", "0"),
-    ("active.indicator", "*"), ("tag.indicator", "+"), ("dependency.indicator", "D"),
-    ("hooks", "1"), ("confirmation", "1"), ("bulk", "3"), ("allow.empty.filter", "1"), ("dependency.confirmation", "1"),
-    ("weekstart", "sunday"), ("search.case.sensitive", "1"),
+    ("regex", "1"),
+    ("calendar.details", "sparse"),
+    ("calendar.details.report", "list"),
+    ("calendar.holidays", "none"),
+    ("calendar.legend", "1"),
+    ("calendar.offset", "0"),
+    ("calendar.offset.value", "-1"),
+    ("displayweeknumber", "1"),
+    ("dateformat", "Y-M-D"),
+    ("dateformat.holiday", "YMD"),
+    ("dateformat.report", ""),
+    ("dateformat.info", "Y-M-D H:N:S"),
+    ("dateformat.annotation", ""),
+    ("summary.all.projects", "0"),
+    ("default.command", "next"),
+    ("due", "7"),
+    ("recurrence", "1"),
+    ("recurrence.limit", "1"),
+    ("recurrence.indicator", "R"),
+    ("recurrence.confirmation", "prompt"),
+    ("journal.time", "0"),
+    ("journal.time.start.annotation", "Started task"),
+    ("journal.time.stop.annotation", "Stopped task"),
+    ("journal.info", "1"),
+    ("abbreviation.minimum", "2"),
+    ("expressions", "infix"),
+    ("date.iso", "1"),
+    ("list.all.projects", "0"),
+    ("list.all.tags", "0"),
+    ("complete.all.tags", "0"),
+    ("active.indicator", "*"),
+    ("tag.indicator", "+"),
+    ("dependency.indicator", "D"),
+    ("hooks", "1"),
+    ("confirmation", "1"),
+    ("bulk", "3"),
+    ("allow.empty.filter", "1"),
+    ("dependency.confirmation", "1"),
+    ("weekstart", "sunday"),
+    ("search.case.sensitive", "1"),
 ];
 
 const SCALAR_SETTINGS: &[&str] = &[
@@ -418,7 +449,11 @@ fn atoi(v: &str) -> i64 {
     };
     let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
     let n: i64 = digits.parse().unwrap_or(0);
-    if neg { -n } else { n }
+    if neg {
+        -n
+    } else {
+        n
+    }
 }
 
 fn truthy(v: &str) -> bool {
@@ -437,8 +472,8 @@ pub fn apply_override(cfg: &mut Config, key: &str, value: &str) -> Result<(), St
     }
     let parts: Vec<&str> = key.split('.').collect();
     if let ["report", name, attr] = parts.as_slice() {
-        let mut def = crate::report::resolve(cfg, name)
-            .ok_or_else(|| format!("'{name}' is not a report (rc.{key})"))?;
+        let mut def =
+            crate::report::resolve(cfg, name).ok_or_else(|| format!("'{name}' is not a report (rc.{key})"))?;
         let v = unescape(value);
         match *attr {
             "columns" => def.columns = split_list(&v).into_iter().filter(|c| !c.is_empty()).collect(),
@@ -461,7 +496,10 @@ pub fn apply_override(cfg: &mut Config, key: &str, value: &str) -> Result<(), St
     let c = p.config;
     cfg.udas.extend(c.udas);
     for (n, ctx) in c.contexts {
-        let e = cfg.contexts.entry(n.clone()).or_insert_with(|| ContextDef { name: n, ..Default::default() });
+        let e = cfg.contexts.entry(n.clone()).or_insert_with(|| ContextDef {
+            name: n,
+            ..Default::default()
+        });
         if ctx.read.is_some() {
             e.read = ctx.read;
         }
@@ -487,7 +525,15 @@ enum RcProblem {
 }
 
 /// The attributes a report definition has, as `report.<name>.<attr>`.
-const REPORT_ATTRS: &[&str] = &["description", "columns", "labels", "sort", "filter", "context", "dateformat"];
+const REPORT_ATTRS: &[&str] = &[
+    "description",
+    "columns",
+    "labels",
+    "sort",
+    "filter",
+    "context",
+    "dateformat",
+];
 
 /// Whether a context may set `key` to `value`, judged the way a taskrc line would be.
 fn check_context_rc(key: &str, value: &str) -> Result<(), RcProblem> {
@@ -497,7 +543,11 @@ fn check_context_rc(key: &str, value: &str) -> Result<(), RcProblem> {
     }
     // A report's attribute: its name may be defined elsewhere in the file, so only the shape is checked.
     if let ["report", n, attr] = key.split('.').collect::<Vec<_>>().as_slice() {
-        return if valid_ident(n) && REPORT_ATTRS.contains(attr) { Ok(()) } else { Err(RcProblem::Unused) };
+        return if valid_ident(n) && REPORT_ATTRS.contains(attr) {
+            Ok(())
+        } else {
+            Err(RcProblem::Unused)
+        };
     }
     let probe = parse(&format!("{key}={value}"));
     if !probe.ignored.is_empty() {
@@ -511,7 +561,16 @@ fn check_context_rc(key: &str, value: &str) -> Result<(), RcProblem> {
 
 /// The built-in urgency terms: `urgency.<term>.coefficient`.
 const URGENCY_TERMS: &[&str] = &[
-    "project", "active", "scheduled", "waiting", "blocked", "annotations", "tags", "due", "blocking", "age",
+    "project",
+    "active",
+    "scheduled",
+    "waiting",
+    "blocked",
+    "annotations",
+    "tags",
+    "due",
+    "blocking",
+    "age",
 ];
 
 /// Most urgency settings one save may carry.
@@ -523,13 +582,18 @@ pub fn valid_urgency_key(key: &str) -> bool {
     let name_ok = |n: &str| {
         !n.is_empty()
             && !n.contains(".coefficient")
-            && n.chars().all(|c| !c.is_whitespace() && !c.is_control() && c != '=' && c != '#')
+            && n.chars()
+                .all(|c| !c.is_whitespace() && !c.is_control() && c != '=' && c != '#')
     };
-    let Some(rest) = key.strip_prefix("urgency.") else { return false };
+    let Some(rest) = key.strip_prefix("urgency.") else {
+        return false;
+    };
     if rest == "age.max" {
         return true;
     }
-    let Some(body) = rest.strip_suffix(".coefficient") else { return false };
+    let Some(body) = rest.strip_suffix(".coefficient") else {
+        return false;
+    };
     if URGENCY_TERMS.contains(&body) {
         return true;
     }
@@ -560,7 +624,9 @@ pub fn set_urgency(cfg: &mut Config, urgency: BTreeMap<String, f64>, inherit: bo
             return Err(format!("'{key}' is not an urgency setting that can be saved"));
         }
         if !value.is_finite() || value.abs() > 1e6 {
-            return Err(format!("{key}: the value must be a number between -1000000 and 1000000"));
+            return Err(format!(
+                "{key}: the value must be a number between -1000000 and 1000000"
+            ));
         }
     }
     cfg.urgency = urgency;
@@ -681,8 +747,7 @@ pub fn parse(text: &str) -> Parsed {
         let parts: Vec<&str> = name.split('.').collect();
         match parts.as_slice() {
             ["uda", n, attr]
-                if valid_ident(n)
-                    && matches!(*attr, "type" | "label" | "values" | "default" | "indicator") =>
+                if valid_ident(n) && matches!(*attr, "type" | "label" | "values" | "default" | "indicator") =>
             {
                 raw_uda
                     .entry((*n).to_owned())
@@ -693,8 +758,7 @@ pub fn parse(text: &str) -> Parsed {
                 if valid_ident(n)
                     && matches!(
                         *attr,
-                        "description" | "columns" | "labels" | "sort" | "filter" | "context"
-                            | "dateformat"
+                        "description" | "columns" | "labels" | "sort" | "filter" | "context" | "dateformat"
                     ) =>
             {
                 raw_report
@@ -750,7 +814,8 @@ pub fn parse(text: &str) -> Parsed {
                 } else if crate::dates::parse_date_expr(value, &crate::dates::Clock::utc(0)).is_some() {
                     p.config.settings.insert(name.to_owned(), value.to_owned());
                 } else {
-                    p.warnings.push(format!("{name}: '{value}' is not a date or duration, ignored"));
+                    p.warnings
+                        .push(format!("{name}: '{value}' is not a date or duration, ignored"));
                 }
             }
             // `alias.<name>=<words>`: the name is everything after `alias.` (it may hold dots, as
@@ -767,7 +832,8 @@ pub fn parse(text: &str) -> Parsed {
                 if matches!(value.trim().to_ascii_lowercase().as_str(), "sunday" | "monday") {
                     p.config.settings.insert(name.to_owned(), value.trim().to_owned());
                 } else {
-                    p.warnings.push(format!("weekstart: '{value}' is not Sunday or Monday, ignored"));
+                    p.warnings
+                        .push(format!("weekstart: '{value}' is not Sunday or Monday, ignored"));
                 }
             }
             ["limit"] => {
@@ -776,7 +842,8 @@ pub fn parse(text: &str) -> Parsed {
                 if crate::filter::parse_limit(value).is_some() {
                     p.config.settings.insert(name.to_owned(), value.to_owned());
                 } else {
-                    p.warnings.push(format!("limit: '{value}' is not a number, 'page' or 'none', ignored"));
+                    p.warnings
+                        .push(format!("limit: '{value}' is not a number, 'page' or 'none', ignored"));
                 }
             }
             ["urgency", "inherit"] => {
@@ -810,7 +877,8 @@ pub fn parse(text: &str) -> Parsed {
             Some("duration") => UdaType::Duration,
             Some("uuid") => UdaType::Uuid,
             Some(other) => {
-                p.warnings.push(format!("uda.{name}: unknown type {other:?}, UDA skipped"));
+                p.warnings
+                    .push(format!("uda.{name}: unknown type {other:?}, UDA skipped"));
                 continue;
             }
             None => {
@@ -921,7 +989,10 @@ verbose=nothing
         assert_eq!(r.filter.as_deref(), Some("status:pending +work"));
         assert!(!r.context);
         // Overriding a built-in report's filter alone is valid.
-        assert_eq!(p.config.reports["next"].filter.as_deref(), Some("status:pending limit:10"));
+        assert_eq!(
+            p.config.reports["next"].filter.as_deref(),
+            Some("status:pending limit:10")
+        );
         assert_eq!(p.config.contexts["work"].read.as_deref(), Some("+work or project:Work"));
         assert_eq!(p.config.active_context.as_deref(), Some("work"));
         assert_eq!(p.config.urgency["urgency.user.tag.next.coefficient"], 15.0);
@@ -932,7 +1003,14 @@ verbose=nothing
     #[test]
     fn urgency_inherit_is_off_unless_set() {
         assert!(!Config::default().urgency_inherit());
-        for (v, want) in [("1", true), ("yes", true), ("on", true), ("0", false), ("no", false), ("maybe", false)] {
+        for (v, want) in [
+            ("1", true),
+            ("yes", true),
+            ("on", true),
+            ("0", false),
+            ("no", false),
+            ("maybe", false),
+        ] {
             let p = parse(&format!("urgency.inherit={v}\n"));
             assert_eq!(p.config.urgency_inherit(), want, "{v}");
             assert!(p.warnings.is_empty(), "{v}: {:?}", p.warnings);
@@ -1009,7 +1087,12 @@ verbose=nothing
     fn limit_setting_is_kept_when_valid_and_reported_when_not() {
         use crate::filter::Limit;
         assert_eq!(Config::default().default_limit(), Limit::None);
-        for (v, want) in [("25", Limit::N(25)), ("page", Limit::Page), ("none", Limit::None), ("0", Limit::None)] {
+        for (v, want) in [
+            ("25", Limit::N(25)),
+            ("page", Limit::Page),
+            ("none", Limit::None),
+            ("0", Limit::None),
+        ] {
             let p = parse(&format!("limit={v}\n"));
             assert_eq!(p.config.default_limit(), want, "{v}");
             assert!(p.warnings.is_empty() && p.ignored.is_empty(), "{v}: {:?}", p.warnings);
@@ -1019,7 +1102,11 @@ verbose=nothing
             let p = parse(&format!("limit={bad}\n"));
             assert_eq!(p.config.default_limit(), Limit::None, "{bad:?} is not used");
             assert!(!p.config.settings.contains_key("limit"));
-            assert!(p.warnings.iter().any(|w| w.starts_with("limit:")), "{bad:?}: {:?}", p.warnings);
+            assert!(
+                p.warnings.iter().any(|w| w.starts_with("limit:")),
+                "{bad:?}: {:?}",
+                p.warnings
+            );
         }
         // `recurrence.limit` is a different setting and must stay out of the way.
         assert_eq!(parse("recurrence.limit=3\n").config.default_limit(), Limit::None);
@@ -1062,7 +1149,11 @@ verbose=nothing
         assert_eq!(rc.len(), 3, "{rc:?}");
         // Credentials are refused by name and never stored; settings with no use here are only named.
         assert_eq!(p.blocked, ["context.work.rc.sync.encryption_secret"]);
-        for unused in ["context.work.rc.data.location", "context.work.rc.context", "context.work.rc.limit2"] {
+        for unused in [
+            "context.work.rc.data.location",
+            "context.work.rc.context",
+            "context.work.rc.limit2",
+        ] {
             assert!(p.ignored.contains(&unused.to_owned()), "{unused}: {:?}", p.ignored);
         }
         let text = render(&p.config);
@@ -1077,7 +1168,11 @@ verbose=nothing
         let p = parse("context.work.rc.limit=lots\ncontext.work.rc.default.due=whenever\n");
         assert!(p.config.contexts.is_empty(), "nothing usable, so no context is created");
         assert_eq!(p.warnings.len(), 2, "{:?}", p.warnings);
-        assert!(p.warnings.iter().all(|w| w.starts_with("context.work.rc.")), "{:?}", p.warnings);
+        assert!(
+            p.warnings.iter().all(|w| w.starts_with("context.work.rc.")),
+            "{:?}",
+            p.warnings
+        );
     }
 
     #[test]
@@ -1163,8 +1258,14 @@ verbose=nothing
         assert!(!everything.contains("smuggled-TOKEN"));
         assert!(!everything.contains("hunter2"));
         // The user is told which names were refused (names only).
-        for name in ["sync.encryption_secret", "sync.aws.secret_access_key", "taskd.server",
-                     "SYNC.AWS.REGION", "my.api_token", "webhook.password"] {
+        for name in [
+            "sync.encryption_secret",
+            "sync.aws.secret_access_key",
+            "taskd.server",
+            "SYNC.AWS.REGION",
+            "my.api_token",
+            "webhook.password",
+        ] {
             assert!(p.blocked.iter().any(|b| b == name), "{name} not reported blocked");
         }
         // Legitimate config survives alongside.
@@ -1233,7 +1334,10 @@ dateformat.report=Y-M-D H:N
         let text = render(&cfg);
         let again = parse(&text);
         assert_eq!(again.config, cfg, "rendered:\n{text}");
-        assert!(again.warnings.is_empty() && again.blocked.is_empty() && again.ignored.is_empty(), "{again:?}");
+        assert!(
+            again.warnings.is_empty() && again.blocked.is_empty() && again.ignored.is_empty(),
+            "{again:?}"
+        );
         // And it is a fixed point: rendering again changes nothing.
         assert_eq!(render(&again.config), text);
     }
@@ -1246,9 +1350,15 @@ dateformat.report=Y-M-D H:N
 
     #[test]
     fn the_rendered_text_never_holds_a_blocked_setting() {
-        let cfg = parse(&format!("{FULL}\nsync.encryption_secret=TOPSECRET\nsync.aws.bucket=b\nmy.api_token=tok\n")).config;
+        let cfg = parse(&format!(
+            "{FULL}\nsync.encryption_secret=TOPSECRET\nsync.aws.bucket=b\nmy.api_token=tok\n"
+        ))
+        .config;
         let text = render(&cfg);
-        assert!(!text.contains("TOPSECRET") && !text.contains("sync.") && !text.contains("api_token"), "{text}");
+        assert!(
+            !text.contains("TOPSECRET") && !text.contains("sync.") && !text.contains("api_token"),
+            "{text}"
+        );
     }
 
     #[test]
@@ -1275,9 +1385,13 @@ dateformat.report=Y-M-D H:N
     #[test]
     fn multi_line_values_cannot_inject_extra_settings() {
         let mut cfg = Config::default();
-        cfg.settings.insert("default.command".into(), "next\nsync.encryption_secret=x".into());
+        cfg.settings
+            .insert("default.command".into(), "next\nsync.encryption_secret=x".into());
         let text = render(&cfg);
         let p = parse(&text);
-        assert!(p.blocked.is_empty(), "an embedded newline must not create a second setting: {text:?}");
+        assert!(
+            p.blocked.is_empty(),
+            "an embedded newline must not create a second setting: {text:?}"
+        );
     }
 }

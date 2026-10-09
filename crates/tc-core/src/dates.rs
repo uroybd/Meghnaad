@@ -3,8 +3,7 @@
 //! caller's timezone (a fixed UTC offset), since a Worker has no ambient local zone.
 
 use taskchampion::chrono::{
-    DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime,
-    TimeZone, Utc, Weekday,
+    DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,7 +33,10 @@ impl DateFormat {
         let mut buf = [0u8; 32];
         if pattern.is_ascii() && pattern.len() <= buf.len() {
             buf[..pattern.len()].copy_from_slice(pattern.as_bytes());
-            DateFormat { buf, len: pattern.len() as u8 }
+            DateFormat {
+                buf,
+                len: pattern.len() as u8,
+            }
         } else {
             DateFormat { buf, len: 0 }
         }
@@ -97,12 +99,32 @@ impl DateFormat {
         // Names are matched on their first three letters or more (`closeEnough`).
         let name_of = |name: &[u8], full: &[&str]| -> Option<usize> {
             let n = std::str::from_utf8(name).ok()?.to_ascii_lowercase();
-            (n.len() >= 3).then(|| full.iter().position(|f| f.starts_with(&n))).flatten()
+            (n.len() >= 3)
+                .then(|| full.iter().position(|f| f.starts_with(&n)))
+                .flatten()
         };
-        const DAYS: [&str; 7] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+        const DAYS: [&str; 7] = [
+            "sunday",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+        ];
         const MONTHS_LC: [&str; 12] = [
-            "january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
-            "november", "december",
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
         ];
 
         for (i, c) in f.iter().enumerate() {
@@ -148,7 +170,10 @@ impl DateFormat {
                 b'A' | b'B' => {
                     // The name runs to the next character of the pattern (or the end).
                     let stop = f.get(i + 1).copied();
-                    let end = t[at..].iter().position(|x| Some(*x) == stop).map_or(t.len(), |p| at + p);
+                    let end = t[at..]
+                        .iter()
+                        .position(|x| Some(*x) == stop)
+                        .map_or(t.len(), |p| at + p);
                     if end > at {
                         let n = name_of(&t[at..end], if *c == b'A' { &DAYS } else { &MONTHS_LC })?;
                         if *c == b'B' {
@@ -190,8 +215,21 @@ impl DateFormat {
             }
         }
         let timed = hour != -1 || minute != -1 || second != -1;
-        let to_u = |v: i32, default: u32| if v == -1 { default } else { u32::try_from(v).unwrap_or(u32::MAX) };
-        let ts = clock.from_ymd_hms(year, to_u(month, 1), to_u(day, 1), to_u(hour, 0), to_u(minute, 0), to_u(second, 0))?;
+        let to_u = |v: i32, default: u32| {
+            if v == -1 {
+                default
+            } else {
+                u32::try_from(v).unwrap_or(u32::MAX)
+            }
+        };
+        let ts = clock.from_ymd_hms(
+            year,
+            to_u(month, 1),
+            to_u(day, 1),
+            to_u(hour, 0),
+            to_u(minute, 0),
+            to_u(second, 0),
+        )?;
         Some(ParsedDate { ts, day: !timed })
     }
 }
@@ -212,10 +250,13 @@ impl Clock {
     }
 
     fn local(&self, ts: i64) -> DateTime<FixedOffset> {
-        self.tz().timestamp_opt(ts, 0).single().unwrap_or_else(|| self.tz().timestamp_opt(0, 0).unwrap())
+        self.tz()
+            .timestamp_opt(ts, 0)
+            .single()
+            .unwrap_or_else(|| self.tz().timestamp_opt(0, 0).unwrap())
     }
 
-    fn from_naive(&self, dt: NaiveDateTime) -> Option<i64> {
+    fn timestamp_of(&self, dt: NaiveDateTime) -> Option<i64> {
         match self.tz().from_local_datetime(&dt) {
             LocalResult::Single(t) | LocalResult::Ambiguous(t, _) => Some(t.timestamp()),
             LocalResult::None => None,
@@ -225,7 +266,7 @@ impl Clock {
     /// Midnight at the start of the local day containing `ts`.
     pub fn start_of_day(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
-        self.from_naive(d.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(d.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn start_of_week(&self, ts: i64) -> i64 {
@@ -236,46 +277,54 @@ impl Clock {
             d.weekday().num_days_from_sunday()
         };
         let start = d - Duration::days(back as i64);
-        self.from_naive(start.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(start.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn start_of_month(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
         let first = NaiveDate::from_ymd_opt(d.year(), d.month(), 1).unwrap();
-        self.from_naive(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn start_of_quarter(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
         let first = NaiveDate::from_ymd_opt(d.year(), (d.month0() / 3) * 3 + 1, 1).unwrap();
-        self.from_naive(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn start_of_next_quarter(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
         let q = d.month0() / 3;
-        let (y, m) = if q == 3 { (d.year() + 1, 1) } else { (d.year(), (q + 1) * 3 + 1) };
+        let (y, m) = if q == 3 {
+            (d.year() + 1, 1)
+        } else {
+            (d.year(), (q + 1) * 3 + 1)
+        };
         let first = NaiveDate::from_ymd_opt(y, m, 1).unwrap();
-        self.from_naive(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn start_of_year(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
         let first = NaiveDate::from_ymd_opt(d.year(), 1, 1).unwrap();
-        self.from_naive(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn start_of_next_month(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
-        let (y, m) = if d.month() == 12 { (d.year() + 1, 1) } else { (d.year(), d.month() + 1) };
+        let (y, m) = if d.month() == 12 {
+            (d.year() + 1, 1)
+        } else {
+            (d.year(), d.month() + 1)
+        };
         let first = NaiveDate::from_ymd_opt(y, m, 1).unwrap();
-        self.from_naive(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn start_of_next_year(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
         let first = NaiveDate::from_ymd_opt(d.year() + 1, 1, 1).unwrap();
-        self.from_naive(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
     }
 
     pub fn same_day(&self, a: i64, b: i64) -> bool {
@@ -297,23 +346,62 @@ pub struct ParsedDate {
 /// unit needs no number (`daily`, `weekly`, `fortnight`), meaning one of it. Order matters: longer
 /// names come first so that `months` is not read as `m` + `onths`.
 const UNITS: &[(&str, i64, bool)] = &[
-    ("annual", 365 * DAY, true), ("biannual", 730 * DAY, true), ("bimonthly", 61 * DAY, true),
-    ("biweekly", 14 * DAY, true), ("biyearly", 730 * DAY, true), ("daily", DAY, true),
-    ("days", DAY, false), ("day", DAY, true), ("d", DAY, false), ("fortnight", 14 * DAY, true),
-    ("hours", 3600, false), ("hour", 3600, true), ("hrs", 3600, false), ("hr", 3600, true), ("h", 3600, false),
-    ("minutes", 60, false), ("minute", 60, true), ("mins", 60, false), ("min", 60, true),
-    ("monthly", 30 * DAY, true), ("months", 30 * DAY, false), ("month", 30 * DAY, true),
-    ("mnths", 30 * DAY, false), ("mths", 30 * DAY, false), ("mth", 30 * DAY, true),
-    ("mos", 30 * DAY, false), ("mo", 30 * DAY, true), ("m", 30 * DAY, false),
-    ("quarterly", 91 * DAY, true), ("quarters", 91 * DAY, false), ("quarter", 91 * DAY, true),
-    ("qrtrs", 91 * DAY, false), ("qrtr", 91 * DAY, true), ("qtrs", 91 * DAY, false),
-    ("qtr", 91 * DAY, true), ("q", 91 * DAY, false),
-    ("semiannual", 183 * DAY, true), ("sennight", 14 * DAY, false),
-    ("seconds", 1, false), ("second", 1, true), ("secs", 1, false), ("sec", 1, true), ("s", 1, false),
-    ("weekdays", DAY, true), ("weekly", 7 * DAY, true), ("weeks", 7 * DAY, false), ("week", 7 * DAY, true),
-    ("wks", 7 * DAY, false), ("wk", 7 * DAY, true), ("w", 7 * DAY, false),
-    ("yearly", 365 * DAY, true), ("years", 365 * DAY, false), ("year", 365 * DAY, true),
-    ("yrs", 365 * DAY, false), ("yr", 365 * DAY, true), ("y", 365 * DAY, false),
+    ("annual", 365 * DAY, true),
+    ("biannual", 730 * DAY, true),
+    ("bimonthly", 61 * DAY, true),
+    ("biweekly", 14 * DAY, true),
+    ("biyearly", 730 * DAY, true),
+    ("daily", DAY, true),
+    ("days", DAY, false),
+    ("day", DAY, true),
+    ("d", DAY, false),
+    ("fortnight", 14 * DAY, true),
+    ("hours", 3600, false),
+    ("hour", 3600, true),
+    ("hrs", 3600, false),
+    ("hr", 3600, true),
+    ("h", 3600, false),
+    ("minutes", 60, false),
+    ("minute", 60, true),
+    ("mins", 60, false),
+    ("min", 60, true),
+    ("monthly", 30 * DAY, true),
+    ("months", 30 * DAY, false),
+    ("month", 30 * DAY, true),
+    ("mnths", 30 * DAY, false),
+    ("mths", 30 * DAY, false),
+    ("mth", 30 * DAY, true),
+    ("mos", 30 * DAY, false),
+    ("mo", 30 * DAY, true),
+    ("m", 30 * DAY, false),
+    ("quarterly", 91 * DAY, true),
+    ("quarters", 91 * DAY, false),
+    ("quarter", 91 * DAY, true),
+    ("qrtrs", 91 * DAY, false),
+    ("qrtr", 91 * DAY, true),
+    ("qtrs", 91 * DAY, false),
+    ("qtr", 91 * DAY, true),
+    ("q", 91 * DAY, false),
+    ("semiannual", 183 * DAY, true),
+    ("sennight", 14 * DAY, false),
+    ("seconds", 1, false),
+    ("second", 1, true),
+    ("secs", 1, false),
+    ("sec", 1, true),
+    ("s", 1, false),
+    ("weekdays", DAY, true),
+    ("weekly", 7 * DAY, true),
+    ("weeks", 7 * DAY, false),
+    ("week", 7 * DAY, true),
+    ("wks", 7 * DAY, false),
+    ("wk", 7 * DAY, true),
+    ("w", 7 * DAY, false),
+    ("yearly", 365 * DAY, true),
+    ("years", 365 * DAY, false),
+    ("year", 365 * DAY, true),
+    ("yrs", 365 * DAY, false),
+    ("yr", 365 * DAY, true),
+    ("y", 365 * DAY, false),
 ];
 
 /// ISO 8601 designated duration: `P1Y2M3W4DT5H6M7S` (a year is 365 days, a month 30).
@@ -362,28 +450,31 @@ pub fn parse_duration(input: &str) -> Option<i64> {
         Some(b) => (true, b),
         None => (false, s),
     };
-    let secs = if let Some(iso) = parse_iso_duration(&body.to_ascii_uppercase()).filter(|_| body.starts_with(['P', 'p'])) {
-        iso
-    } else {
-        let body = body.to_ascii_lowercase();
-        let split = body.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(body.len());
-        let (num, unit) = body.split_at(split);
-        if unit.is_empty() {
-            // A bare number is seconds.
-            num.parse::<f64>().ok()?.round() as i64
+    let secs =
+        if let Some(iso) = parse_iso_duration(&body.to_ascii_uppercase()).filter(|_| body.starts_with(['P', 'p'])) {
+            iso
         } else {
-            let (_, mult, standalone) = UNITS.iter().find(|(name, ..)| *name == unit)?;
-            let n: f64 = if num.is_empty() {
-                if !standalone {
-                    return None;
-                }
-                1.0
+            let body = body.to_ascii_lowercase();
+            let split = body
+                .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+                .unwrap_or(body.len());
+            let (num, unit) = body.split_at(split);
+            if unit.is_empty() {
+                // A bare number is seconds.
+                num.parse::<f64>().ok()?.round() as i64
             } else {
-                num.parse().ok()?
-            };
-            (n * *mult as f64).round() as i64
-        }
-    };
+                let (_, mult, standalone) = UNITS.iter().find(|(name, ..)| *name == unit)?;
+                let n: f64 = if num.is_empty() {
+                    if !standalone {
+                        return None;
+                    }
+                    1.0
+                } else {
+                    num.parse().ok()?
+                };
+                (n * *mult as f64).round() as i64
+            }
+        };
     Some(if neg { -secs } else { secs })
 }
 
@@ -398,7 +489,7 @@ impl Clock {
     /// The instant for a local calendar time, or `None` if the date doesn't exist (Feb 30).
     pub fn from_ymd_hms(&self, y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> Option<i64> {
         let dt = NaiveDate::from_ymd_opt(y, m, d)?.and_hms_opt(h, mi, s)?;
-        self.from_naive(dt)
+        self.timestamp_of(dt)
     }
 
     /// 0 = Sunday .. 6 = Saturday, in local time.
@@ -448,8 +539,7 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
 
     if let Some(wd) = weekday_from(&s) {
         let today = clock.local(now).date_naive().weekday();
-        let mut ahead = (wd.num_days_from_monday() as i64 - today.num_days_from_monday() as i64)
-            .rem_euclid(7);
+        let mut ahead = (wd.num_days_from_monday() as i64 - today.num_days_from_monday() as i64).rem_euclid(7);
         if ahead == 0 {
             ahead = 7;
         }
@@ -467,7 +557,10 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
     }
     if s.len() == 8 && s.chars().all(|c| c.is_ascii_digit()) {
         let d = NaiveDate::parse_from_str(&s, "%Y%m%d").ok()?;
-        return Some(ParsedDate { ts: clock.from_naive(d.and_time(NaiveTime::MIN))?, day: true });
+        return Some(ParsedDate {
+            ts: clock.timestamp_of(d.and_time(NaiveTime::MIN))?,
+            day: true,
+        });
     }
 
     // Explicit offset or Z: absolute.
@@ -480,16 +573,24 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
         }
     }
     // Local date/time without zone.
-    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"] {
+    for fmt in [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    ] {
         if let Ok(n) = NaiveDateTime::parse_from_str(input.trim(), fmt) {
-            return exact(clock.from_naive(n)?);
+            return exact(clock.timestamp_of(n)?);
         }
     }
     // A bare ISO date is only understood with `date.iso` (on by default); with it off the date
     // has to match `dateformat`, which was tried above.
     if clock.iso {
         if let Ok(d) = NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
-            return Some(ParsedDate { ts: clock.from_naive(d.and_time(NaiveTime::MIN))?, day: true });
+            return Some(ParsedDate {
+                ts: clock.timestamp_of(d.and_time(NaiveTime::MIN))?,
+                day: true,
+            });
         }
     }
 
@@ -507,7 +608,10 @@ pub fn parse_date_expr(value: &str, clock: &Clock) -> Option<ParsedDate> {
             let (l, r) = (&value[..i], &value[i + 1..]);
             if let (Some(base), Some(d)) = (parse_date(l, clock), parse_duration(r)) {
                 let d = if c == '+' { d } else { -d };
-                return Some(ParsedDate { ts: base.ts + d, day: false });
+                return Some(ParsedDate {
+                    ts: base.ts + d,
+                    day: false,
+                });
             }
         }
     }
@@ -532,7 +636,13 @@ mod tests {
     #[test]
     fn synonyms() {
         let c = utc();
-        assert_eq!(parse_date("today", &c).unwrap(), ParsedDate { ts: ts(2026, 10, 7, 0, 0, 0), day: true });
+        assert_eq!(
+            parse_date("today", &c).unwrap(),
+            ParsedDate {
+                ts: ts(2026, 10, 7, 0, 0, 0),
+                day: true
+            }
+        );
         assert_eq!(parse_date("tomorrow", &c).unwrap().ts, ts(2026, 10, 8, 0, 0, 0));
         assert_eq!(parse_date("yesterday", &c).unwrap().ts, ts(2026, 10, 6, 0, 0, 0));
         assert_eq!(parse_date("eod", &c).unwrap().ts, ts(2026, 10, 7, 23, 59, 59));
@@ -546,7 +656,10 @@ mod tests {
 
     #[test]
     fn sunday_week_start() {
-        let c = Clock { week_starts_monday: false, ..utc() };
+        let c = Clock {
+            week_starts_monday: false,
+            ..utc()
+        };
         assert_eq!(parse_date("sow", &c).unwrap().ts, ts(2026, 10, 4, 0, 0, 0));
     }
 
@@ -562,11 +675,26 @@ mod tests {
     #[test]
     fn iso_forms() {
         let c = utc();
-        assert_eq!(parse_date("2026-12-25", &c).unwrap(), ParsedDate { ts: ts(2026, 12, 25, 0, 0, 0), day: true });
+        assert_eq!(
+            parse_date("2026-12-25", &c).unwrap(),
+            ParsedDate {
+                ts: ts(2026, 12, 25, 0, 0, 0),
+                day: true
+            }
+        );
         assert_eq!(parse_date("20261225", &c).unwrap().ts, ts(2026, 12, 25, 0, 0, 0));
         let t = parse_date("2026-12-25T08:30", &c).unwrap();
-        assert_eq!(t, ParsedDate { ts: ts(2026, 12, 25, 8, 30, 0), day: false });
-        assert_eq!(parse_date("2026-12-25T08:30:00Z", &c).unwrap().ts, ts(2026, 12, 25, 8, 30, 0));
+        assert_eq!(
+            t,
+            ParsedDate {
+                ts: ts(2026, 12, 25, 8, 30, 0),
+                day: false
+            }
+        );
+        assert_eq!(
+            parse_date("2026-12-25T08:30:00Z", &c).unwrap().ts,
+            ts(2026, 12, 25, 8, 30, 0)
+        );
         assert_eq!(parse_date("1700000000", &c).unwrap().ts, 1_700_000_000);
         assert!(parse_date("2026-13-45", &c).is_none());
         assert!(parse_date("banana", &c).is_none());
@@ -594,7 +722,21 @@ mod tests {
     #[test]
     fn units_that_need_a_number_do_not_stand_alone() {
         // `d`, `w`, `h` mean nothing without a count; `day`, `week`, `hour` do.
-        for bad in ["d", "w", "h", "m", "q", "y", "", "P", "PT", "P1X", "3parsecs", "weekdaysx", "1.2.3d"] {
+        for bad in [
+            "d",
+            "w",
+            "h",
+            "m",
+            "q",
+            "y",
+            "",
+            "P",
+            "PT",
+            "P1X",
+            "3parsecs",
+            "weekdaysx",
+            "1.2.3d",
+        ] {
             assert_eq!(parse_duration(bad), None, "{bad:?}");
         }
         assert_eq!(parse_duration("day"), Some(DAY));
@@ -604,7 +746,12 @@ mod tests {
 
     #[test]
     fn local_calendar_helpers() {
-        let c = Clock { now: NOW, tz_offset: 19_800, week_starts_monday: true, ..Clock::utc(0) };
+        let c = Clock {
+            now: NOW,
+            tz_offset: 19_800,
+            week_starts_monday: true,
+            ..Clock::utc(0)
+        };
         assert_eq!(c.ymd_hms(NOW), (2026, 10, 7, 18, 0, 0)); // 12:30Z is 18:00 in IST
         assert_eq!(c.from_ymd_hms(2026, 10, 7, 18, 0, 0), Some(NOW));
         assert_eq!(c.from_ymd_hms(2026, 2, 30, 0, 0, 0), None);
@@ -625,7 +772,12 @@ mod tests {
     #[test]
     fn timezone_shifts_day_boundaries() {
         // 12:30 UTC is 18:00 in IST (+5:30): still the same day. 20:00 UTC is already tomorrow.
-        let ist = |now| Clock { now, tz_offset: 19_800, week_starts_monday: true, ..Clock::utc(0) };
+        let ist = |now| Clock {
+            now,
+            tz_offset: 19_800,
+            week_starts_monday: true,
+            ..Clock::utc(0)
+        };
         let c = ist(NOW);
         assert_eq!(parse_date("today", &c).unwrap().ts, ts(2026, 10, 6, 18, 30, 0));
         let late = ist(ts(2026, 10, 7, 20, 0, 0));
@@ -657,7 +809,11 @@ pub fn format_vague(secs: i64) -> String {
     } else {
         String::new()
     };
-    if neg && !body.is_empty() { format!("-{body}") } else { body }
+    if neg && !body.is_empty() {
+        format!("-{body}")
+    } else {
+        body
+    }
 }
 
 #[cfg(test)]
@@ -705,17 +861,35 @@ mod pattern_tests {
     fn a_pattern_reads_the_dates_it_describes() {
         assert_eq!(read("Y-M-D", "2026-12-25"), Some((2026, 12, 25, 0, 0, true)));
         assert_eq!(read("m/d/Y", "12/25/2026"), Some((2026, 12, 25, 0, 0, true)));
-        assert_eq!(read("m/d/Y", "1/2/2026"), Some((2026, 1, 2, 0, 0, true)), "m and d take one or two digits");
+        assert_eq!(
+            read("m/d/Y", "1/2/2026"),
+            Some((2026, 1, 2, 0, 0, true)),
+            "m and d take one or two digits"
+        );
         assert_eq!(read("m/d/Y", "01/02/2026"), Some((2026, 1, 2, 0, 0, true)));
-        assert_eq!(read("d.m.Y H:N", "25.12.2026 10:30"), Some((2026, 12, 25, 10, 30, false)));
-        assert_eq!(read("y-M-D", "26-12-25"), Some((2026, 12, 25, 0, 0, true)), "y is two digits, 20xx");
-        assert_eq!(read("A, B d, Y", "Friday, December 25, 2026"), Some((2026, 12, 25, 0, 0, true)));
+        assert_eq!(
+            read("d.m.Y H:N", "25.12.2026 10:30"),
+            Some((2026, 12, 25, 10, 30, false))
+        );
+        assert_eq!(
+            read("y-M-D", "26-12-25"),
+            Some((2026, 12, 25, 0, 0, true)),
+            "y is two digits, 20xx"
+        );
+        assert_eq!(
+            read("A, B d, Y", "Friday, December 25, 2026"),
+            Some((2026, 12, 25, 0, 0, true))
+        );
         assert_eq!(read("a b D Y", "Fri Dec 25 2026"), Some((2026, 12, 25, 0, 0, true)));
     }
 
     #[test]
     fn a_pattern_refuses_what_it_does_not_describe() {
-        assert_eq!(read("Y-M-D", "2026-12-25T10:00"), None, "the rest of the input must be nothing, or a space");
+        assert_eq!(
+            read("Y-M-D", "2026-12-25T10:00"),
+            None,
+            "the rest of the input must be nothing, or a space"
+        );
         assert_eq!(read("Y-M-D", "12/25/2026"), None);
         assert_eq!(read("m/d/Y", "02/30/2026"), None, "February has no 30th");
         assert_eq!(read("m/d/Y", "13/01/2026"), None);
@@ -740,13 +914,20 @@ mod pattern_tests {
         // The default pattern is Y-M-D, so it still reads this.
         assert!(parse_date("2026-12-25", &off).is_some());
         // With another pattern and date.iso off, it is no date any more. (Checked against task 3.5.0.)
-        let us = Clock { iso: false, format: DateFormat::new("m/d/Y"), ..utc() };
+        let us = Clock {
+            iso: false,
+            format: DateFormat::new("m/d/Y"),
+            ..utc()
+        };
         assert!(parse_date("2026-12-25", &us).is_none());
         assert!(parse_date("12/25/2026", &us).is_some());
         // A date with a time is understood either way.
         assert!(parse_date("2026-12-25T10:00", &us).is_some());
         // And the pattern is read on top of the ISO forms, with date.iso on.
-        let both = Clock { format: DateFormat::new("m/d/Y"), ..utc() };
+        let both = Clock {
+            format: DateFormat::new("m/d/Y"),
+            ..utc()
+        };
         assert!(parse_date("2026-12-25", &both).is_some() && parse_date("12/25/2026", &both).is_some());
     }
 }

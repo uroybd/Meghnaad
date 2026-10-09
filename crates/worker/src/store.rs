@@ -49,12 +49,7 @@ impl ObjectStore for R2Store {
     /// Compare-and-swap via R2 conditional puts: `etagMatches` for replacing an existing value,
     /// `etagDoesNotMatch: "*"` for create-if-absent. A failed condition makes `put` resolve to
     /// `null`, surfaced by workers-rs as `None`.
-    async fn compare_and_swap(
-        &self,
-        name: &str,
-        expected: Option<&[u8]>,
-        new: &[u8],
-    ) -> Result<bool> {
+    async fn compare_and_swap(&self, name: &str, expected: Option<&[u8]>, new: &[u8]) -> Result<bool> {
         let current = self.0.get(name).execute().await.map_err(err)?;
         let condition = match (current, expected) {
             (None, None) => Conditional {
@@ -101,10 +96,22 @@ impl ObjectStore for R2Store {
     /// to create. No read first, unlike [`compare_and_swap`](Self::compare_and_swap).
     async fn swap_tagged(&self, name: &str, expected: Option<&str>, new: &[u8]) -> Result<bool> {
         let condition = match expected {
-            None => Conditional { etag_does_not_match: Some("*".into()), ..Default::default() },
-            Some(tag) => Conditional { etag_matches: Some(tag.to_owned()), ..Default::default() },
+            None => Conditional {
+                etag_does_not_match: Some("*".into()),
+                ..Default::default()
+            },
+            Some(tag) => Conditional {
+                etag_matches: Some(tag.to_owned()),
+                ..Default::default()
+            },
         };
-        let stored = self.0.put(name, new.to_vec()).only_if(condition).execute().await.map_err(err)?;
+        let stored = self
+            .0
+            .put(name, new.to_vec())
+            .only_if(condition)
+            .execute()
+            .await
+            .map_err(err)?;
         Ok(stored.is_some())
     }
 }

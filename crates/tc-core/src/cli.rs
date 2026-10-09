@@ -5,10 +5,10 @@
 //! This does not sync: the caller pulls before and pushes after (see `wrote`).
 
 use crate::dates::Clock;
-use crate::history;
 use crate::filter::{conjoin, split_words, EvalCtx, Filter, FilterError, Limit};
+use crate::history;
 use crate::model::{self, Facts};
-use crate::modify::{self, Change, Mode, ModError};
+use crate::modify::{self, Change, ModError, Mode};
 use crate::recur::{self, Action as Plan};
 use crate::report;
 use crate::run::{self, Output, Row};
@@ -134,8 +134,10 @@ fn filter_shaped(a: &str) -> bool {
 }
 
 fn all_names(cfg: &Config) -> Vec<(String, Cmd, bool)> {
-    let mut v: Vec<(String, Cmd, bool)> =
-        COMMANDS.iter().map(|(n, k, m)| ((*n).to_owned(), Cmd::Builtin(*k), *m)).collect();
+    let mut v: Vec<(String, Cmd, bool)> = COMMANDS
+        .iter()
+        .map(|(n, k, m)| ((*n).to_owned(), Cmd::Builtin(*k), *m))
+        .collect();
     for r in report::names(cfg) {
         v.push((r.clone(), Cmd::Report(r), false));
     }
@@ -200,7 +202,11 @@ pub fn parse_command(args: &[String], cfg: &Config) -> Result<Parsed, String> {
 
 fn parse_command_inner(args: &[String], cfg: &Config, allow_default: bool) -> Result<Parsed, String> {
     // Drop a leading "task" so pasting a shell line works.
-    let args: &[String] = if args.first().is_some_and(|a| a == "task") { &args[1..] } else { args };
+    let args: &[String] = if args.first().is_some_and(|a| a == "task") {
+        &args[1..]
+    } else {
+        args
+    };
 
     for (i, a) in args.iter().enumerate() {
         if filter_shaped(a) {
@@ -210,9 +216,17 @@ fn parse_command_inner(args: &[String], cfg: &Config, allow_default: bool) -> Re
             let before = args[..i].to_vec();
             let after = args[i + 1..].to_vec();
             return Ok(if takes_mods {
-                Parsed { cmd, filter: before, mods: after }
+                Parsed {
+                    cmd,
+                    filter: before,
+                    mods: after,
+                }
             } else {
-                Parsed { cmd, filter: [before, after].concat(), mods: vec![] }
+                Parsed {
+                    cmd,
+                    filter: [before, after].concat(),
+                    mods: vec![],
+                }
             });
         }
     }
@@ -225,18 +239,25 @@ fn parse_command_inner(args: &[String], cfg: &Config, allow_default: bool) -> Re
                 && a.chars().next().is_some_and(|c| c.is_ascii_digit())
         });
     if only_ids {
-        return Ok(Parsed { cmd: Cmd::Builtin(Info), filter: args.to_vec(), mods: vec![] });
+        return Ok(Parsed {
+            cmd: Cmd::Builtin(Info),
+            filter: args.to_vec(),
+            mods: vec![],
+        });
     }
     if !allow_default {
         return Err("no command given".into());
     }
-    let default = cfg.settings.get("default.command").map(String::as_str).unwrap_or("next");
+    let default = cfg
+        .settings
+        .get("default.command")
+        .map(String::as_str)
+        .unwrap_or("next");
     let mut dflt = split_words(default);
     if dflt.is_empty() {
         dflt.push("next".into());
     }
-    let mut p = parse_command_inner(&dflt, cfg, false)
-        .map_err(|e| format!("default.command is not usable: {e}"))?;
+    let mut p = parse_command_inner(&dflt, cfg, false).map_err(|e| format!("default.command is not usable: {e}"))?;
     p.filter.extend(args.iter().cloned());
     Ok(p)
 }
@@ -267,7 +288,9 @@ pub enum CliResult {
     /// A report: rows + column metadata.
     Report(Output),
     /// `info`: full details of each matched task.
-    Info { tasks: Vec<Row> },
+    Info {
+        tasks: Vec<Row>,
+    },
     /// Generic table (projects, tags, udas, ...).
     Table(TableOut),
     /// `summary`: progress per project.
@@ -276,10 +299,17 @@ pub enum CliResult {
     Calendar(Box<crate::calendar::CalendarOut>),
     /// `burndown.daily|weekly|monthly|annual`: pending, started and done over time.
     Burndown(Box<crate::burndown::BurndownOut>),
-    Text { lines: Vec<String> },
-    Json { value: serde_json::Value },
+    Text {
+        lines: Vec<String>,
+    },
+    Json {
+        value: serde_json::Value,
+    },
     /// A write happened.
-    Changed { message: String, tasks: Vec<ChangedTask> },
+    Changed {
+        message: String,
+        tasks: Vec<ChangedTask>,
+    },
     /// Taskwarrior wants an answer first. `ask` says what kind:
     /// * `plain`: one yes/no question (undo, a command with no filter): re-run with `confirmed`.
     /// * `permission`: one question per task the command would change (`bulk`, deleting): answer
@@ -288,8 +318,14 @@ pub enum CliResult {
     /// * `extras`: questions that only arise once those are answered (repair a dependency chain,
     ///   change the rest of a recurring series): answer with `Options::extras`, the keys to say
     ///   yes to.
-    Confirm { message: String, ask: Ask, items: Vec<ConfirmItem> },
-    Error { message: String },
+    Confirm {
+        message: String,
+        ask: Ask,
+        items: Vec<ConfirmItem>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// What a `Confirm` asks for.
@@ -393,7 +429,13 @@ async fn invert<S: Storage>(
                     });
                 }
             }
-            Operation::Update { uuid, property, old_value, value, .. } => {
+            Operation::Update {
+                uuid,
+                property,
+                old_value,
+                value,
+                ..
+            } => {
                 let Some(data) = replica.get_task_data(*uuid).await.map_err(e)? else {
                     return Err(stale());
                 };
@@ -439,9 +481,17 @@ pub struct Done {
 impl CommandInfo {
     fn of(p: &Parsed) -> CommandInfo {
         match &p.cmd {
-            Cmd::Report(n) => CommandInfo { name: n.clone(), report: true, filter: p.filter.clone() },
+            Cmd::Report(n) => CommandInfo {
+                name: n.clone(),
+                report: true,
+                filter: p.filter.clone(),
+            },
             Cmd::Builtin(k) => CommandInfo {
-                name: COMMANDS.iter().find(|(_, kk, _)| kk == k).map(|(n, ..)| (*n).to_owned()).unwrap_or_default(),
+                name: COMMANDS
+                    .iter()
+                    .find(|(_, kk, _)| kk == k)
+                    .map(|(n, ..)| (*n).to_owned())
+                    .unwrap_or_default(),
                 report: false,
                 filter: p.filter.clone(),
             },
@@ -450,11 +500,23 @@ impl CommandInfo {
 }
 
 fn error(m: impl Into<String>) -> Done {
-    Done { result: CliResult::Error { message: m.into() }, wrote: false, command: None, config: None, feedback: Vec::new() }
+    Done {
+        result: CliResult::Error { message: m.into() },
+        wrote: false,
+        command: None,
+        config: None,
+        feedback: Vec::new(),
+    }
 }
 
 fn ok(result: CliResult) -> Done {
-    Done { result, wrote: false, command: None, config: None, feedback: Vec::new() }
+    Done {
+        result,
+        wrote: false,
+        command: None,
+        config: None,
+        feedback: Vec::new(),
+    }
 }
 
 impl From<FilterError> for Done {
@@ -470,7 +532,11 @@ impl From<ModError> for Done {
 }
 
 fn plural(n: usize, one: &str) -> String {
-    if n == 1 { format!("1 {one}") } else { format!("{n} {one}s") }
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {one}s")
+    }
 }
 
 /// Does a command that changes `n` tasks ask first? Taskwarrior's `Command::permission`: deleting
@@ -487,7 +553,13 @@ fn asks(kind: Kind, n: usize, cfg: &Config) -> bool {
 }
 
 fn confirm_item(key: String, f: &Facts, ctx: &EvalCtx, question: String) -> ConfirmItem {
-    ConfirmItem { key, uuid: f.uuid, id: ctx.ids.get(&f.uuid).copied(), description: f.description.clone(), question }
+    ConfirmItem {
+        key,
+        uuid: f.uuid,
+        id: ctx.ids.get(&f.uuid).copied(),
+        description: f.description.clone(),
+        question,
+    }
 }
 
 fn verb_of(kind: Kind) -> &'static str {
@@ -504,7 +576,10 @@ fn verb_of(kind: Kind) -> &'static str {
 
 /// Taskwarrior's wording of the question about one task.
 fn permission_question(kind: Kind, f: &Facts, ctx: &EvalCtx, all: &[Facts]) -> String {
-    let id = ctx.ids.get(&f.uuid).map_or_else(|| f.uuid.to_string()[..8].to_owned(), u32::to_string);
+    let id = ctx
+        .ids
+        .get(&f.uuid)
+        .map_or_else(|| f.uuid.to_string()[..8].to_owned(), u32::to_string);
     let what = match kind {
         Done => "Complete task",
         Delete => "Delete task",
@@ -518,11 +593,17 @@ fn permission_question(kind: Kind, f: &Facts, ctx: &EvalCtx, all: &[Facts]) -> S
     };
     // A recurring template takes its pending instances with it.
     let instances = if kind == Delete && f.status == "recurring" {
-        all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending").count()
+        all.iter()
+            .filter(|c| c.parent == Some(f.uuid) && c.status == "pending")
+            .count()
     } else {
         0
     };
-    let extra = if instances > 0 { format!(" and its {}", plural(instances, "pending instance")) } else { String::new() };
+    let extra = if instances > 0 {
+        format!(" and its {}", plural(instances, "pending instance"))
+    } else {
+        String::new()
+    };
     format!("{what} {id} '{}'{extra}?", f.description)
 }
 
@@ -562,13 +643,18 @@ fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut dyn FnMut(&Facts)
         let Some(me) = state.get_mut(&t.uuid) else { continue };
         me.0 = false;
         let waits_on: Vec<Uuid> = me.1.clone();
-        let blocking: Vec<Uuid> =
-            waits_on.into_iter().filter(|d| state.get(d).is_some_and(|s| s.0)).collect();
+        let blocking: Vec<Uuid> = waits_on
+            .into_iter()
+            .filter(|d| state.get(d).is_some_and(|s| s.0))
+            .collect();
         if blocking.is_empty() {
             continue;
         }
-        let blocked: Vec<Uuid> =
-            state.iter().filter(|(_, (open, deps))| *open && deps.contains(&t.uuid)).map(|(u, _)| *u).collect();
+        let blocked: Vec<Uuid> = state
+            .iter()
+            .filter(|(_, (open, deps))| *open && deps.contains(&t.uuid))
+            .map(|(u, _)| *u)
+            .collect();
         if blocked.is_empty() || !ask(t) {
             continue;
         }
@@ -587,7 +673,11 @@ fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut dyn FnMut(&Facts)
             let now = &state.get(&f.uuid)?.1;
             let removed: Vec<Uuid> = f.depends.iter().filter(|d| !now.contains(d)).copied().collect();
             let added: Vec<Uuid> = now.iter().filter(|d| !f.depends.contains(d)).copied().collect();
-            (!removed.is_empty() || !added.is_empty()).then_some(Repair { task: f.uuid, removed, added })
+            (!removed.is_empty() || !added.is_empty()).then_some(Repair {
+                task: f.uuid,
+                removed,
+                added,
+            })
         })
         .collect()
 }
@@ -620,8 +710,14 @@ fn add_note(task: &mut Task, text: &str, now: i64, ops: &mut Operations) -> Resu
         at += 1;
     }
     let entry = Utc.timestamp_opt(at, 0).single().unwrap_or_else(Utc::now);
-    task.add_annotation(Annotation { entry, description: text.to_owned() }, ops)
-        .map_err(|e| e.to_string())
+    task.add_annotation(
+        Annotation {
+            entry,
+            description: text.to_owned(),
+        },
+        ops,
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Operations) -> Result<(), String> {
@@ -681,7 +777,15 @@ pub async fn execute<S: Storage>(
             overridden = c;
             &overridden
         }
-        Err(m) => return Done { result: CliResult::Error { message: m }, wrote: false, command: None, config: None, feedback: Vec::new() },
+        Err(m) => {
+            return Done {
+                result: CliResult::Error { message: m },
+                wrote: false,
+                command: None,
+                config: None,
+                feedback: Vec::new(),
+            }
+        }
     };
     // While a context is active its own settings (`context.<name>.rc.<key>`) are in force. They come
     // last: they beat a command-line override too, as in Taskwarrior, which looks a setting up in
@@ -706,7 +810,13 @@ pub async fn execute<S: Storage>(
     let parsed = parse_command(args, cfg).ok();
     let command = parsed.as_ref().map(CommandInfo::of);
     // `show` and `config` are about the settings, not the tasks: no replica, no housekeeping.
-    if let Some(p @ Parsed { cmd: Cmd::Builtin(Show | Config), .. }) = &parsed {
+    if let Some(
+        p @ Parsed {
+            cmd: Cmd::Builtin(Show | Config),
+            ..
+        },
+    ) = &parsed
+    {
         return settings_command(stored, cfg, p, &opts, command);
     }
     // Hooks: `on-launch` comes first, before anything is read or written.
@@ -719,14 +829,23 @@ pub async fn execute<S: Storage>(
     }
     // Housekeeping Taskwarrior does before every command: create due recurring instances and
     // expire tasks past `until`. On unless `recurrence` is turned off; see `recur::enabled`.
-    let skip = matches!(parsed.as_ref().map(|p| &p.cmd), Some(Cmd::Builtin(Undo | Sync | Help | Version)));
+    let skip = matches!(
+        parsed.as_ref().map(|p| &p.cmd),
+        Some(Cmd::Builtin(Undo | Sync | Help | Version))
+    );
     let (maintained, tasks) = if skip || !recur::enabled(cfg) {
         (false, None)
     } else {
         match maintain(replica, cfg, clock).await {
             Ok(m) => m,
             Err(m) => {
-                return Done { result: CliResult::Error { message: m }, wrote: false, command, config: None, feedback: hk.finish(true) }
+                return Done {
+                    result: CliResult::Error { message: m },
+                    wrote: false,
+                    command,
+                    config: None,
+                    feedback: hk.finish(true),
+                }
             }
         }
     };
@@ -739,8 +858,20 @@ pub async fn execute<S: Storage>(
 
 /// Properties an instance does not inherit from its parent: identity and bookkeeping, and the
 /// dates, which are computed per instance.
-const NOT_INHERITED: &[&str] =
-    &["uuid", "mask", "imask", "parent", "status", "entry", "due", "wait", "scheduled", "start", "end", "modified"];
+const NOT_INHERITED: &[&str] = &[
+    "uuid",
+    "mask",
+    "imask",
+    "parent",
+    "status",
+    "entry",
+    "due",
+    "wait",
+    "scheduled",
+    "start",
+    "end",
+    "modified",
+];
 
 /// Create the recurring instances that are due, retire finished series and expire tasks past
 /// `until`. Returns whether anything was written and, when nothing was, the tasks it read, so the
@@ -765,7 +896,13 @@ async fn maintain<S: Storage>(
 
     for action in plan {
         match action {
-            Plan::CreateInstance { parent, index, due, wait, scheduled } => {
+            Plan::CreateInstance {
+                parent,
+                index,
+                due,
+                wait,
+                scheduled,
+            } => {
                 let data = replica
                     .get_task_data(parent)
                     .await
@@ -802,9 +939,12 @@ async fn maintain<S: Storage>(
                 // An expired instance frees its slot in the parent's mask.
                 if let Some(f) = all.iter().find(|f| f.uuid == parent) {
                     if let (Some(pu), Some(i)) = (f.parent, f.imask) {
-                        let cur = masks
-                            .entry(pu)
-                            .or_insert_with(|| all.iter().find(|x| x.uuid == pu).and_then(|x| x.mask.clone()).unwrap_or_default());
+                        let cur = masks.entry(pu).or_insert_with(|| {
+                            all.iter()
+                                .find(|x| x.uuid == pu)
+                                .and_then(|x| x.mask.clone())
+                                .unwrap_or_default()
+                        });
                         *cur = recur::set_mask(cur, i, 'X');
                         dirty.push(pu);
                     }
@@ -847,15 +987,23 @@ fn with_overrides(cfg: &Config, args: &[String]) -> Result<Option<Config>, Strin
 fn settings_command(stored: &Config, cfg: &Config, p: &Parsed, opts: &Options, command: Option<CommandInfo>) -> Done {
     use crate::settings::{self, Outcome};
     // `rc.bulk:5` is a setting for this command; it isn't one of its words.
-    let words: Vec<String> =
-        p.filter.iter().filter(|w| !(w.starts_with("rc.") && w.contains([':', '=']))).cloned().collect();
+    let words: Vec<String> = p
+        .filter
+        .iter()
+        .filter(|w| !(w.starts_with("rc.") && w.contains([':', '='])))
+        .cloned()
+        .collect();
     let mut done = if p.cmd == Cmd::Builtin(Show) {
         ok(settings::show(cfg, &words))
     } else {
         match settings::config(stored, &words, cfg.confirmation(), opts.confirmed) {
             Outcome::Error(m) => error(m),
             Outcome::Nothing(m) => ok(CliResult::Text { lines: vec![m] }),
-            Outcome::Ask(m) => ok(CliResult::Confirm { message: m, ask: Ask::Plain, items: vec![] }),
+            Outcome::Ask(m) => ok(CliResult::Confirm {
+                message: m,
+                ask: Ask::Plain,
+                items: vec![],
+            }),
             Outcome::Saved { config, message } => {
                 let mut d = ok(CliResult::Text { lines: vec![message] });
                 d.config = Some(*config);
@@ -868,6 +1016,7 @@ fn settings_command(stored: &Config, cfg: &Config, p: &Parsed, opts: &Options, c
 }
 
 /// `tasks` are the tasks as they are now, if the caller has just read them.
+#[allow(clippy::too_many_arguments)]
 async fn execute_inner<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
@@ -935,7 +1084,13 @@ fn select_from<'a>(
     let combined = conjoin(&[context, user_filter.to_vec()]);
     let f = Filter::parse(&combined, ctx)?;
     let mut v: Vec<&Facts> = pool.iter().copied().filter(|x| f.matches(x, ctx)).collect();
-    v.sort_by_key(|x| (ctx.ids.get(&x.uuid).copied().unwrap_or(u32::MAX), x.entry.unwrap_or(0), x.uuid));
+    v.sort_by_key(|x| {
+        (
+            ctx.ids.get(&x.uuid).copied().unwrap_or(u32::MAX),
+            x.entry.unwrap_or(0),
+            x.uuid,
+        )
+    });
     Ok((v, f.limit))
 }
 
@@ -944,10 +1099,38 @@ const SPECIAL_TAGS: &[&str] = &["nocolor", "nonag", "nocal", "next"];
 
 /// Virtual tags (`+OVERDUE`), offered for completion too.
 const VIRTUAL_TAG_NAMES: &[&str] = &[
-    "ACTIVE", "ANNOTATED", "BLOCKED", "BLOCKING", "CHILD", "COMPLETED", "DELETED", "DUE", "DUETODAY",
-    "INSTANCE", "LATEST", "MONTH", "ORPHAN", "OVERDUE", "PARENT", "PENDING", "PRIORITY", "PROJECT",
-    "QUARTER", "READY", "SCHEDULED", "TAGGED", "TEMPLATE", "TODAY", "TOMORROW", "UDA", "UNBLOCKED",
-    "UNTIL", "WAITING", "WEEK", "YEAR", "YESTERDAY",
+    "ACTIVE",
+    "ANNOTATED",
+    "BLOCKED",
+    "BLOCKING",
+    "CHILD",
+    "COMPLETED",
+    "DELETED",
+    "DUE",
+    "DUETODAY",
+    "INSTANCE",
+    "LATEST",
+    "MONTH",
+    "ORPHAN",
+    "OVERDUE",
+    "PARENT",
+    "PENDING",
+    "PRIORITY",
+    "PROJECT",
+    "QUARTER",
+    "READY",
+    "SCHEDULED",
+    "TAGGED",
+    "TEMPLATE",
+    "TODAY",
+    "TOMORROW",
+    "UDA",
+    "UNBLOCKED",
+    "UNTIL",
+    "WAITING",
+    "WEEK",
+    "YEAR",
+    "YESTERDAY",
 ];
 
 fn changed(all_after: &[Facts], uuids: &[Uuid], message: String) -> CliResult {
@@ -957,7 +1140,11 @@ fn changed(all_after: &[Facts], uuids: &[Uuid], message: String) -> CliResult {
         tasks: uuids
             .iter()
             .filter_map(|u| all_after.iter().find(|f| f.uuid == *u))
-            .map(|f| ChangedTask { uuid: f.uuid, id: ids.get(&f.uuid).copied(), description: f.description.clone() })
+            .map(|f| ChangedTask {
+                uuid: f.uuid,
+                id: ids.get(&f.uuid).copied(),
+                description: f.description.clone(),
+            })
             .collect(),
     }
 }
@@ -1023,9 +1210,16 @@ async fn add<S: Storage>(
         Some(n) => format!("Created task {n}."),
         None => format!("Created task {}.", &uuid.to_string()[..8]),
     };
-    Done { result: changed(&after, &[uuid], msg), wrote: true, command: None, config: None, feedback: Vec::new() }
+    Done {
+        result: changed(&after, &[uuid], msg),
+        wrote: true,
+        command: None,
+        config: None,
+        feedback: Vec::new(),
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn builtin<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
@@ -1063,7 +1257,9 @@ async fn builtin<S: Storage>(
             footer: vec![],
             highlight: vec![],
             title: None,
-            headers: ["Name", "Type", "Label", "Values", "Default"].map(String::from).to_vec(),
+            headers: ["Name", "Type", "Label", "Values", "Default"]
+                .map(String::from)
+                .to_vec(),
             rows: cfg
                 .udas
                 .values()
@@ -1072,7 +1268,12 @@ async fn builtin<S: Storage>(
                         u.name.clone(),
                         format!("{:?}", u.ty).to_lowercase(),
                         u.label.clone().unwrap_or_default(),
-                        u.values.iter().filter(|v| !v.is_empty()).cloned().collect::<Vec<_>>().join(","),
+                        u.values
+                            .iter()
+                            .filter(|v| !v.is_empty())
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(","),
                         u.default.clone().unwrap_or_default(),
                     ]
                 })
@@ -1091,7 +1292,11 @@ async fn builtin<S: Storage>(
                         c.name.clone(),
                         c.read.clone().unwrap_or_default(),
                         c.write.clone().unwrap_or_default(),
-                        if cfg.active_context.as_deref() == Some(&c.name) { "yes".into() } else { String::new() },
+                        if cfg.active_context.as_deref() == Some(&c.name) {
+                            "yes".into()
+                        } else {
+                            String::new()
+                        },
                     ]
                 })
                 .collect(),
@@ -1100,13 +1305,36 @@ async fn builtin<S: Storage>(
         Show | Config => error("this command is handled before the tasks are read"),
         Columns => {
             let names = [
-                "id", "uuid", "status", "description", "project", "priority", "tags", "depends",
-                "entry", "start", "end", "due", "wait", "scheduled", "until", "modified", "urgency",
-                "annotations", "recur", "parent",
+                "id",
+                "uuid",
+                "status",
+                "description",
+                "project",
+                "priority",
+                "tags",
+                "depends",
+                "entry",
+                "start",
+                "end",
+                "due",
+                "wait",
+                "scheduled",
+                "until",
+                "modified",
+                "urgency",
+                "annotations",
+                "recur",
+                "parent",
             ];
             let mut rows: Vec<Vec<String>> = names.iter().map(|n| vec![(*n).into(), "built-in".into()]).collect();
             rows.extend(cfg.udas.keys().map(|n| vec![n.clone(), "uda".into()]));
-            ok(CliResult::Table(TableOut { title: None, footer: vec![], highlight: vec![], headers: vec!["Column".into(), "Kind".into()], rows }))
+            ok(CliResult::Table(TableOut {
+                title: None,
+                footer: vec![],
+                highlight: vec![],
+                headers: vec!["Column".into(), "Kind".into()],
+                rows,
+            }))
         }
         Summary => {
             // Every task the filter picks, finished ones included: that is what the progress bars count.
@@ -1115,11 +1343,16 @@ async fn builtin<S: Storage>(
                 Err(e) => return e.into(),
             };
             let all_projects = cfg.settings.get("summary.all.projects").is_some_and(|v| {
-                matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "on" | "yes" | "y" | "true")
+                matches!(
+                    v.trim().to_ascii_lowercase().as_str(),
+                    "1" | "on" | "yes" | "y" | "true"
+                )
             });
             let out = crate::summary::summarize(&sel, all_projects, &ctx.clock);
             if out.rows.is_empty() {
-                return ok(CliResult::Text { lines: vec!["No projects.".into()] });
+                return ok(CliResult::Text {
+                    lines: vec!["No projects.".into()],
+                });
             }
             ok(CliResult::Summary(out))
         }
@@ -1136,10 +1369,15 @@ async fn builtin<S: Storage>(
                 Err(e) => return e.into(),
             };
             // On unless `burndown.cumulative` turns it off, as in Taskwarrior.
-            let cumulative = cfg.settings.get("burndown.cumulative").map_or(true, |v| {
-                matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "on" | "yes" | "y" | "true")
+            let cumulative = cfg.settings.get("burndown.cumulative").is_none_or(|v| {
+                matches!(
+                    v.trim().to_ascii_lowercase().as_str(),
+                    "1" | "on" | "yes" | "y" | "true"
+                )
             });
-            ok(CliResult::Burndown(Box::new(crate::burndown::burndown(&sel, period, cumulative, &ctx.clock))))
+            ok(CliResult::Burndown(Box::new(crate::burndown::burndown(
+                &sel, period, cumulative, &ctx.clock,
+            ))))
         }
         Calendar => {
             // Overrides were applied already; what is left are the months asked for. Taskwarrior's
@@ -1185,9 +1423,15 @@ async fn builtin<S: Storage>(
         Projects | Tags => {
             // The working set (pending and recurring tasks), and with `list.all.projects` or
             // `list.all.tags` every other task too.
-            let everything = if kind == Projects { cfg.list_all_projects() } else { cfg.list_all_tags() };
-            let pool: Vec<&Facts> =
-                all.iter().filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring")).collect();
+            let everything = if kind == Projects {
+                cfg.list_all_projects()
+            } else {
+                cfg.list_all_tags()
+            };
+            let pool: Vec<&Facts> = all
+                .iter()
+                .filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring"))
+                .collect();
             // `tags` counts the tasks before the filter; `projects` the ones that match it.
             let before = pool.len();
             let sel = match select_from(&pool, ctx, cfg, &p.filter, true) {
@@ -1211,7 +1455,9 @@ async fn builtin<S: Storage>(
                     }
                 }
                 if unique.is_empty() {
-                    return ok(CliResult::Text { lines: vec!["No projects.".into()] });
+                    return ok(CliResult::Text {
+                        lines: vec!["No projects.".into()],
+                    });
                 }
                 let names: BTreeSet<String> = unique.keys().cloned().collect();
                 let rows: Vec<Vec<String>> = crate::summary::sort_projects(&names)
@@ -1246,7 +1492,9 @@ async fn builtin<S: Storage>(
                 }
             }
             if counts.is_empty() {
-                return ok(CliResult::Text { lines: vec!["No tags.".into()] });
+                return ok(CliResult::Text {
+                    lines: vec!["No tags.".into()],
+                });
             }
             ok(CliResult::Table(TableOut {
                 title: None,
@@ -1259,9 +1507,15 @@ async fn builtin<S: Storage>(
         // The lists shell completion asks for: just the names, one a line. They look at the filter
         // alone (no context), and `_projects` also lists the projects of deleted tasks.
         CompleteProjects | CompleteTags => {
-            let everything = if kind == CompleteProjects { cfg.list_all_projects() } else { cfg.complete_all_tags() };
-            let pool: Vec<&Facts> =
-                all.iter().filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring")).collect();
+            let everything = if kind == CompleteProjects {
+                cfg.list_all_projects()
+            } else {
+                cfg.complete_all_tags()
+            };
+            let pool: Vec<&Facts> = all
+                .iter()
+                .filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring"))
+                .collect();
             let sel = match select_from(&pool, ctx, cfg, &p.filter, false) {
                 Ok((s, _)) => s,
                 Err(e) => return e.into(),
@@ -1275,16 +1529,23 @@ async fn builtin<S: Storage>(
                 }
                 names.extend(SPECIAL_TAGS.iter().chain(VIRTUAL_TAG_NAMES).map(|t| (*t).to_owned()));
             }
-            ok(CliResult::Text { lines: names.into_iter().collect() })
+            ok(CliResult::Text {
+                lines: names.into_iter().collect(),
+            })
         }
         // `calc 1 + 2`: Taskwarrior's calculator. `expressions=postfix` reads `1 2 +` instead.
         Calc => {
             // `rc.bulk:5` is a setting for this command; a bare `rc.bulk` is something to look up.
             let is_override = |w: &str| w.starts_with("rc.") && w.contains([':', '=']);
-            let expression =
-                p.filter.iter().filter(|w| !is_override(w)).cloned().collect::<Vec<_>>().join(" ");
-            let sync_needed = expression.contains("tw.syncneeded")
-                && replica.num_local_operations().await.map_or(false, |n| n > 0);
+            let expression = p
+                .filter
+                .iter()
+                .filter(|w| !is_override(w))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let sync_needed =
+                expression.contains("tw.syncneeded") && replica.num_local_operations().await.is_ok_and(|n| n > 0);
             let urgency = |f: &Facts| ctx.urgency(f);
             let dom = crate::calc::DomSource {
                 tasks: all,
@@ -1317,7 +1578,9 @@ async fn builtin<S: Storage>(
                 }),
                 Info => {
                     if sel.is_empty() {
-                        return ok(CliResult::Text { lines: vec!["No matches.".into()] });
+                        return ok(CliResult::Text {
+                            lines: vec!["No matches.".into()],
+                        });
                     }
                     let mut tasks: Vec<Row> = sel.iter().map(|f| row(f)).collect();
                     if cfg.journal_info() {
@@ -1332,8 +1595,7 @@ async fn builtin<S: Storage>(
                     ok(CliResult::Info { tasks })
                 }
                 Export => ok(CliResult::Json {
-                    value: serde_json::to_value(sel.iter().map(|f| row(f)).collect::<Vec<_>>())
-                        .unwrap_or_default(),
+                    value: serde_json::to_value(sel.iter().map(|f| row(f)).collect::<Vec<_>>()).unwrap_or_default(),
                 }),
                 Ids => ok(CliResult::Text {
                     lines: vec![sel
@@ -1343,21 +1605,33 @@ async fn builtin<S: Storage>(
                         .collect::<Vec<_>>()
                         .join(" ")],
                 }),
-                _ => ok(CliResult::Text { lines: sel.iter().map(|f| f.uuid.to_string()).collect() }),
+                _ => ok(CliResult::Text {
+                    lines: sel.iter().map(|f| f.uuid.to_string()).collect(),
+                }),
             }
         }
         Undo => {
             let Some(last) = undo.0.last().cloned() else {
-                return ok(CliResult::Text { lines: vec!["Nothing to undo.".into()] });
+                return ok(CliResult::Text {
+                    lines: vec!["Nothing to undo.".into()],
+                });
             };
             if cfg.confirmation() && !opts.confirmed {
                 return ok(CliResult::Confirm {
-                    message: "The undo command is not reversible.  Are you sure you want to revert to the previous state?".into(),
+                    message:
+                        "The undo command is not reversible.  Are you sure you want to revert to the previous state?"
+                            .into(),
                     ask: Ask::Plain,
                     items: vec![],
                 });
             }
-            let reverse = match invert(replica, &last, Utc.timestamp_opt(ctx.clock.now, 0).single().unwrap_or_else(Utc::now)).await {
+            let reverse = match invert(
+                replica,
+                &last,
+                Utc.timestamp_opt(ctx.clock.now, 0).single().unwrap_or_else(Utc::now),
+            )
+            .await
+            {
                 Ok(r) => r,
                 Err(m) => return error(m),
             };
@@ -1365,7 +1639,15 @@ async fn builtin<S: Storage>(
                 return error(e.to_string());
             }
             undo.0.pop();
-            Done { result: CliResult::Text { lines: vec!["Undone.".into()] }, wrote: true, command: None, config: None, feedback: Vec::new() }
+            Done {
+                result: CliResult::Text {
+                    lines: vec!["Undone.".into()],
+                },
+                wrote: true,
+                command: None,
+                config: None,
+                feedback: Vec::new(),
+            }
         }
         // Everything that writes to selected tasks.
         Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend => {
@@ -1375,6 +1657,7 @@ async fn builtin<S: Storage>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn write_selected<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
@@ -1403,7 +1686,9 @@ async fn write_selected<S: Storage>(
         Err(e) => return e.into(),
     };
     if sel.is_empty() {
-        return ok(CliResult::Text { lines: vec!["No matches.".into()] });
+        return ok(CliResult::Text {
+            lines: vec!["No matches.".into()],
+        });
     }
     if empty_filter && !opts.confirmed {
         return ok(CliResult::Confirm {
@@ -1421,7 +1706,10 @@ async fn write_selected<S: Storage>(
     // Taskwarrior does: attributes, tags and substitutions are applied to each task (`done
     // end:-2h`, `start due:eow`, `annotate hello due:eow`), and the plain words that are left
     // are the annotation or the text. `denotate` takes the whole of it as the text to match.
-    let reads_changes = matches!(kind, Modify | Done | Delete | Start | Stop | Annotate | Append | Prepend);
+    let reads_changes = matches!(
+        kind,
+        Modify | Done | Delete | Start | Stop | Annotate | Append | Prepend
+    );
     let mods = if reads_changes {
         match modify::parse_mods(&p.mods, cfg) {
             Ok(m) => Some(m),
@@ -1434,8 +1722,15 @@ async fn write_selected<S: Storage>(
         // A GUI note or addition is text, whatever it looks like.
         (_, Annotate | Append | Prepend) if !opts.typed => (p.mods.join(" "), None),
         (Some(m), Done | Delete | Start | Stop | Annotate | Append | Prepend) => {
-            let others = !m.attrs.is_empty() || !m.add_tags.is_empty() || !m.remove_tags.is_empty() || m.subst.is_some();
-            (m.words.join(" "), others.then(|| modify::Mods { words: Vec::new(), ..m.clone() }))
+            let others =
+                !m.attrs.is_empty() || !m.add_tags.is_empty() || !m.remove_tags.is_empty() || m.subst.is_some();
+            (
+                m.words.join(" "),
+                others.then(|| modify::Mods {
+                    words: Vec::new(),
+                    ..m.clone()
+                }),
+            )
         }
         _ => (p.mods.join(" "), None),
     };
@@ -1489,20 +1784,42 @@ async fn write_selected<S: Storage>(
                 let message = if items.len() == 1 {
                     items[0].question.clone()
                 } else {
-                    format!("This will {} {}. Choose which ones to go ahead with.", verb_of(kind), plural(items.len(), "task"))
+                    format!(
+                        "This will {} {}. Choose which ones to go ahead with.",
+                        verb_of(kind),
+                        plural(items.len(), "task")
+                    )
                 };
-                return ok(CliResult::Confirm { message, ask: Ask::Permission, items });
+                return ok(CliResult::Confirm {
+                    message,
+                    ask: Ask::Permission,
+                    items,
+                });
             }
             Some(yes) => {
-                declined = would_change.iter().filter(|f| !yes.contains(&f.uuid.to_string())).copied().collect();
+                declined = would_change
+                    .iter()
+                    .filter(|f| !yes.contains(&f.uuid.to_string()))
+                    .copied()
+                    .collect();
             }
         }
     }
     if !declined.is_empty() && declined.len() == would_change.len() {
-        return ok(CliResult::Text { lines: declined.iter().map(|_| declined_line(kind).to_owned()).collect() });
+        return ok(CliResult::Text {
+            lines: declined.iter().map(|_| declined_line(kind).to_owned()).collect(),
+        });
     }
-    let chosen: Vec<&Facts> = sel.iter().filter(|f| !declined.iter().any(|d| d.uuid == f.uuid)).copied().collect();
-    let changing: Vec<&Facts> = would_change.iter().filter(|f| !declined.iter().any(|d| d.uuid == f.uuid)).copied().collect();
+    let chosen: Vec<&Facts> = sel
+        .iter()
+        .filter(|f| !declined.iter().any(|d| d.uuid == f.uuid))
+        .copied()
+        .collect();
+    let changing: Vec<&Facts> = would_change
+        .iter()
+        .filter(|f| !declined.iter().any(|d| d.uuid == f.uuid))
+        .copied()
+        .collect();
 
     // Deleting a recurring template also deletes its pending instances, as in Taskwarrior
     // (otherwise they would be orphaned). Instances themselves are deleted one at a time.
@@ -1564,7 +1881,12 @@ async fn write_selected<S: Storage>(
             if asking {
                 // Asked on the assumption that the earlier ones are repaired; a later one that
                 // then turns out not to arise is simply never used.
-                items.push(confirm_item(key, f, ctx, "Would you like the dependency chain fixed?".into()));
+                items.push(confirm_item(
+                    key,
+                    f,
+                    ctx,
+                    "Would you like the dependency chain fixed?".into(),
+                ));
                 true
             } else {
                 said_yes(&key)
@@ -1578,7 +1900,11 @@ async fn write_selected<S: Storage>(
         } else {
             "A few more questions about these tasks.".to_owned()
         };
-        return ok(CliResult::Confirm { message, ask: Ask::Extras, items });
+        return ok(CliResult::Confirm {
+            message,
+            ask: Ask::Extras,
+            items,
+        });
     }
 
     let mut ops = Operations::new();
@@ -1664,7 +1990,11 @@ async fn write_selected<S: Storage>(
                 Append | Prepend if text.trim().is_empty() => {}
                 Append | Prepend => {
                     let d = task.get_description().to_owned();
-                    let new = if kind == Append { format!("{d} {text}") } else { format!("{text} {d}") };
+                    let new = if kind == Append {
+                        format!("{d} {text}")
+                    } else {
+                        format!("{text} {d}")
+                    };
                     task.set_description(new, &mut ops).map_err(e)?;
                 }
                 Modify => {
@@ -1674,7 +2004,8 @@ async fn write_selected<S: Storage>(
                     // The descriptive changes (not dates or the recurrence itself, which are per
                     // instance) also reach the rest of the series, when that was asked for.
                     if propagate.contains(&f.uuid) {
-                        let shared: Vec<Change> = changes.iter().filter(|c| shared_with_instances(c)).cloned().collect();
+                        let shared: Vec<Change> =
+                            changes.iter().filter(|c| shared_with_instances(c)).cloned().collect();
                         if !shared.is_empty() {
                             for c in series_of(f, all) {
                                 // A task that is itself being modified got the change already.
@@ -1701,9 +2032,12 @@ async fn write_selected<S: Storage>(
             if changed {
                 if let (Some(parent), Some(index)) = (f.parent, f.imask) {
                     let ch = recur::mask_char(&model::status_str(&task.get_status()), task.is_waiting());
-                    let cur = masks
-                        .entry(parent)
-                        .or_insert_with(|| all.iter().find(|x| x.uuid == parent).and_then(|x| x.mask.clone()).unwrap_or_default());
+                    let cur = masks.entry(parent).or_insert_with(|| {
+                        all.iter()
+                            .find(|x| x.uuid == parent)
+                            .and_then(|x| x.mask.clone())
+                            .unwrap_or_default()
+                    });
                     let next = recur::set_mask(cur, index, ch);
                     if next != *cur {
                         *cur = next;
@@ -1735,7 +2069,9 @@ async fn write_selected<S: Storage>(
     let mut repaired: Vec<Uuid> = Vec::new();
     if !touched.is_empty() {
         for r in &repairs {
-            let Ok(Some(mut t)) = replica.get_task(r.task).await else { continue };
+            let Ok(Some(mut t)) = replica.get_task(r.task).await else {
+                continue;
+            };
             let mut changes: Vec<Change> = r.removed.iter().map(|u| Change::RemoveDep(*u)).collect();
             changes.extend(r.added.iter().map(|u| Change::AddDep(*u)));
             if let Err(m) = apply_changes(&mut t, &changes, &mut ops) {
@@ -1753,7 +2089,12 @@ async fn write_selected<S: Storage>(
             Delete => "already deleted",
             _ => "nothing to change",
         };
-        return ok(CliResult::Text { lines: vec![format!("No changes: the task{} {why}.", if sel.len() == 1 { " is" } else { "s are" })] });
+        return ok(CliResult::Text {
+            lines: vec![format!(
+                "No changes: the task{} {why}.",
+                if sel.len() == 1 { " is" } else { "s are" }
+            )],
+        });
     }
 
     undo.push(&ops);
@@ -1775,17 +2116,28 @@ async fn write_selected<S: Storage>(
         message.push_str(&format!(" Skipped {}.", plural(declined.len(), "task")));
     }
     if !repaired.is_empty() {
-        message.push_str(&format!(" Repaired the dependencies of {}.", plural(repaired.len(), "task")));
+        message.push_str(&format!(
+            " Repaired the dependencies of {}.",
+            plural(repaired.len(), "task")
+        ));
         touched.extend(repaired);
     }
-    Done { result: changed(&after, &touched, message), wrote: true, command: None, config: None, feedback: Vec::new() }
+    Done {
+        result: changed(&after, &touched, message),
+        wrote: true,
+        command: None,
+        config: None,
+        feedback: Vec::new(),
+    }
 }
 
 /// The rest of `f`'s recurring series: for a template its pending instances; for an instance its
 /// pending siblings and the template. Empty for an ordinary task.
 fn series_of<'a>(f: &Facts, all: &'a [Facts]) -> Vec<&'a Facts> {
     if f.status == "recurring" {
-        all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending").collect()
+        all.iter()
+            .filter(|c| c.parent == Some(f.uuid) && c.status == "pending")
+            .collect()
     } else if let Some(parent) = f.parent {
         all.iter()
             .filter(|c| c.uuid != f.uuid && (c.uuid == parent || (c.parent == Some(parent) && c.status == "pending")))
@@ -1800,7 +2152,9 @@ fn shared_with_instances(c: &Change) -> bool {
     match c {
         Change::Description(_) | Change::Priority(_) | Change::AddTag(_) | Change::RemoveTag(_) => true,
         Change::Prop { name, .. } => !matches!(name.as_str(), "recur" | "rtype"),
-        Change::Timestamp { .. } | Change::AddDep(_) | Change::RemoveDep(_) | Change::ClearDeps | Change::Recurring => false,
+        Change::Timestamp { .. } | Change::AddDep(_) | Change::RemoveDep(_) | Change::ClearDeps | Change::Recurring => {
+            false
+        }
     }
 }
 
@@ -1866,7 +2220,9 @@ mod tests {
         assert_eq!(p("3 ann hello").cmd, Cmd::Builtin(Annotate));
         assert_eq!(p("3 den hi").cmd, Cmd::Builtin(Denotate));
         // `de` could be delete/denotate/...
-        assert!(parse_command(&split_words("3 de"), &Config::default()).unwrap_err().contains("ambiguous"));
+        assert!(parse_command(&split_words("3 de"), &Config::default())
+            .unwrap_err()
+            .contains("ambiguous"));
     }
 
     #[test]

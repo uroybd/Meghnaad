@@ -22,8 +22,7 @@ use async_trait::async_trait;
 use futures_util::future::join_all;
 use std::collections::BTreeMap;
 use taskchampion::server::{
-    AddVersionResult, GetVersionResult, HistorySegment, Server, Snapshot, SnapshotUrgency,
-    VersionId,
+    AddVersionResult, GetVersionResult, HistorySegment, Server, Snapshot, SnapshotUrgency, VersionId,
 };
 use uuid::Uuid;
 
@@ -55,16 +54,16 @@ struct Seen {
 
 /// The child of `parent` that is on the chain leading to `head`. Several objects can share a
 /// parent after races; only the one that is `head` itself, or that has children of its own, is real.
-fn next_on_chain(
-    index: &BTreeMap<VersionId, Vec<VersionId>>,
-    parent: VersionId,
-    head: VersionId,
-) -> Option<VersionId> {
+fn next_on_chain(index: &BTreeMap<VersionId, Vec<VersionId>>, parent: VersionId, head: VersionId) -> Option<VersionId> {
     let children = index.get(&parent)?;
     if let Some(c) = children.iter().find(|c| **c == head) {
         return Some(*c);
     }
-    children.iter().rev().find(|c| index.get(*c).is_some_and(|g| !g.is_empty())).copied()
+    children
+        .iter()
+        .rev()
+        .find(|c| index.get(*c).is_some_and(|g| !g.is_empty()))
+        .copied()
 }
 
 /// Read the bucket's salt, creating it if this is the first client.
@@ -92,7 +91,12 @@ fn id_bytes(id: VersionId) -> Vec<u8> {
 
 impl<S: ObjectStore> CloudServer<S> {
     pub fn with_cryptor(store: S, cryptor: Cryptor) -> Self {
-        Self { store, cryptor, seen: Seen::default(), urgency: None }
+        Self {
+            store,
+            cryptor,
+            seen: Seen::default(),
+            urgency: None,
+        }
     }
 
     /// Always report this snapshot urgency after a push, instead of drawing one at random.
@@ -142,7 +146,9 @@ impl<S: ObjectStore> CloudServer<S> {
     /// first). Versions that are not on it, such as leftovers from a lost race, are absent.
     async fn chain_positions(&mut self) -> Result<BTreeMap<VersionId, usize>> {
         let mut position = BTreeMap::new();
-        let Some(head) = self.latest().await? else { return Ok(position) };
+        let Some(head) = self.latest().await? else {
+            return Ok(position);
+        };
         self.seen.head = Some(head);
         if self.seen.index.is_none() {
             self.seen.index = Some(self.load_index().await?);
@@ -171,7 +177,11 @@ impl<S: ObjectStore> CloudServer<S> {
             [only] => Ok(Some(*only)),
             many => {
                 let position = self.chain_positions().await?;
-                Ok(many.iter().filter_map(|v| position.get(v).map(|p| (*p, *v))).max().map(|(_, v)| v))
+                Ok(many
+                    .iter()
+                    .filter_map(|v| position.get(v).map(|p| (*p, *v)))
+                    .max()
+                    .map(|(_, v)| v))
             }
         }
     }
@@ -181,13 +191,17 @@ impl<S: ObjectStore> CloudServer<S> {
     /// written meanwhile.
     async fn drop_superseded_snapshots(&mut self, version: VersionId) -> Result<()> {
         let all = self.store.list(names::SNAPSHOT_PREFIX).await?;
-        let others: Vec<VersionId> =
-            Self::snapshot_versions(&all).into_iter().filter(|v| *v != version).collect();
+        let others: Vec<VersionId> = Self::snapshot_versions(&all)
+            .into_iter()
+            .filter(|v| *v != version)
+            .collect();
         if others.is_empty() {
             return Ok(());
         }
         let position = self.chain_positions().await?;
-        let Some(mine) = position.get(&version).copied() else { return Ok(()) };
+        let Some(mine) = position.get(&version).copied() else {
+            return Ok(());
+        };
         for other in others {
             if position.get(&other).is_some_and(|p| *p < mine) {
                 self.store.del(&names::snapshot_name(other)).await?;
@@ -196,11 +210,7 @@ impl<S: ObjectStore> CloudServer<S> {
         Ok(())
     }
 
-    async fn add_version_inner(
-        &mut self,
-        parent: VersionId,
-        segment: HistorySegment,
-    ) -> Result<AddVersionResult> {
+    async fn add_version_inner(&mut self, parent: VersionId, segment: HistorySegment) -> Result<AddVersionResult> {
         // Whatever we learned about the bucket is about to be out of date.
         self.seen = Seen::default();
 
@@ -221,7 +231,11 @@ impl<S: ObjectStore> CloudServer<S> {
         let sealed = self.cryptor.seal(version, &segment)?;
         self.store.put(&name, &sealed).await?;
 
-        if !self.store.swap_tagged(LATEST, tag.as_deref(), &id_bytes(version)).await? {
+        if !self
+            .store
+            .swap_tagged(LATEST, tag.as_deref(), &id_bytes(version))
+            .await?
+        {
             // Lost the race; our upload is an orphan.
             self.store.del(&name).await?;
             let latest = self.latest().await?.unwrap_or(Uuid::nil());
@@ -286,15 +300,18 @@ impl<S: ObjectStore> CloudServer<S> {
         if let Some(index) = &self.seen.index {
             let mut at = version;
             while want.len() < PREFETCH {
-                let Some(next) = next_on_chain(index, at, head) else { break };
+                let Some(next) = next_on_chain(index, at, head) else {
+                    break;
+                };
                 want.push((at, next));
                 at = next;
             }
         }
         let store = &self.store;
-        let fetched = join_all(want.iter().map(|(p, c)| async move {
-            (*c, store.get(&names::version_name(*p, *c)).await)
-        }))
+        let fetched = join_all(
+            want.iter()
+                .map(|(p, c)| async move { (*c, store.get(&names::version_name(*p, *c)).await) }),
+        )
         .await;
         for (child, body) in fetched {
             if let Some(body) = body? {
@@ -324,19 +341,12 @@ impl<S: ObjectStore> Server for CloudServer<S> {
         Ok((res, urgency))
     }
 
-    async fn get_child_version(
-        &mut self,
-        parent_version_id: VersionId,
-    ) -> TcResult<GetVersionResult> {
+    async fn get_child_version(&mut self, parent_version_id: VersionId) -> TcResult<GetVersionResult> {
         Ok(self.get_child_inner(parent_version_id).await?)
     }
 
-    async fn add_snapshot(
-        &mut self,
-        version_id: VersionId,
-        snapshot: Snapshot,
-    ) -> TcResult<()> {
-        let sealed = self.cryptor.seal(version_id, &snapshot).map_err(Error::from)?;
+    async fn add_snapshot(&mut self, version_id: VersionId, snapshot: Snapshot) -> TcResult<()> {
+        let sealed = self.cryptor.seal(version_id, &snapshot)?;
         // A snapshot only makes the next cold start shorter, and the version it describes is
         // already on the server. Failing the sync here would leave the replica believing that
         // version was never sent, and it would send it again. So problems are not reported.

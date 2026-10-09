@@ -22,12 +22,7 @@ pub trait ObjectStore {
 
     /// Atomically replace `name` with `new` iff its current value equals `expected` (`None`
     /// meaning "does not exist"). Returns whether the swap happened.
-    async fn compare_and_swap(
-        &self,
-        name: &str,
-        expected: Option<&[u8]>,
-        new: &[u8],
-    ) -> Result<bool>;
+    async fn compare_and_swap(&self, name: &str, expected: Option<&[u8]>, new: &[u8]) -> Result<bool>;
 
     /// The object's value together with an opaque tag naming exactly this version of it (an ETag).
     /// Hand the tag to [`swap_tagged`](Self::swap_tagged) to replace it only if nobody else has.
@@ -78,12 +73,7 @@ impl ObjectStore for MemStore {
             .collect())
     }
 
-    async fn compare_and_swap(
-        &self,
-        name: &str,
-        expected: Option<&[u8]>,
-        new: &[u8],
-    ) -> Result<bool> {
+    async fn compare_and_swap(&self, name: &str, expected: Option<&[u8]>, new: &[u8]) -> Result<bool> {
         let mut map = self.0.borrow_mut();
         if map.get(name).map(Vec::as_slice) != expected {
             return Ok(false);

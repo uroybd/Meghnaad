@@ -44,7 +44,9 @@ async fn run_yes(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
     let mut o = Options::default();
     for _ in 0..5 {
         let (res, wrote) = run_opts(r, cfg, line, o.clone()).await;
-        let CliResult::Confirm { ask, items, .. } = &res else { return (res, wrote) };
+        let CliResult::Confirm { ask, items, .. } = &res else {
+            return (res, wrote);
+        };
         let keys: Vec<String> = items.iter().map(|i| i.key.clone()).collect();
         match ask {
             Ask::Plain => o.confirmed = true,
@@ -57,7 +59,9 @@ async fn run_yes(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
 
 /// The questions in a `Confirm`, or a panic.
 fn asked(res: &CliResult) -> (Ask, &[ConfirmItem]) {
-    let CliResult::Confirm { ask, items, .. } = res else { panic!("not a question: {res:?}") };
+    let CliResult::Confirm { ask, items, .. } = res else {
+        panic!("not a question: {res:?}")
+    };
     (*ask, items)
 }
 
@@ -72,7 +76,12 @@ fn message(res: &CliResult) -> String {
 }
 
 async fn descs(r: &mut R) -> Vec<String> {
-    let mut v: Vec<_> = load_facts(r).await.unwrap().into_iter().map(|f| f.description).collect();
+    let mut v: Vec<_> = load_facts(r)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|f| f.description)
+        .collect();
     v.sort();
     v
 }
@@ -81,7 +90,12 @@ async fn descs(r: &mut R) -> Vec<String> {
 async fn add_then_report_shows_it_with_fields() {
     let mut r = replica();
     let cfg = Config::default();
-    let (res, wrote) = run(&mut r, &cfg, "add Buy milk project:Home priority:H +errand due:tomorrow").await;
+    let (res, wrote) = run(
+        &mut r,
+        &cfg,
+        "add Buy milk project:Home priority:H +errand due:tomorrow",
+    )
+    .await;
     assert!(wrote);
     assert_eq!(message(&res), "Created task 1.");
 
@@ -116,9 +130,23 @@ async fn done_modify_start_stop_delete_by_id() {
     assert!(first.tags.contains("x"));
 
     run(&mut r, &cfg, "1 start").await;
-    assert!(load_facts(&mut r).await.unwrap().iter().find(|x| x.description == "first").unwrap().start.is_some());
+    assert!(load_facts(&mut r)
+        .await
+        .unwrap()
+        .iter()
+        .find(|x| x.description == "first")
+        .unwrap()
+        .start
+        .is_some());
     run(&mut r, &cfg, "1 stop").await;
-    assert!(load_facts(&mut r).await.unwrap().iter().find(|x| x.description == "first").unwrap().start.is_none());
+    assert!(load_facts(&mut r)
+        .await
+        .unwrap()
+        .iter()
+        .find(|x| x.description == "first")
+        .unwrap()
+        .start
+        .is_none());
 
     let (res, _) = run(&mut r, &cfg, "1 done").await;
     assert_eq!(message(&res), "Completed 1 task.");
@@ -134,7 +162,13 @@ async fn done_modify_start_stop_delete_by_id() {
     let (res, _) = run_yes(&mut r, &cfg, "1 delete").await;
     assert_eq!(message(&res), "Deleted 1 task.");
     assert_eq!(
-        load_facts(&mut r).await.unwrap().iter().find(|x| x.description == "second").unwrap().status,
+        load_facts(&mut r)
+            .await
+            .unwrap()
+            .iter()
+            .find(|x| x.description == "second")
+            .unwrap()
+            .status,
         "deleted"
     );
 }
@@ -179,11 +213,14 @@ async fn multi_task_writes_need_confirmation() {
         run(&mut r, &cfg, &format!("add {t} project:P")).await;
     }
     let (res, wrote) = run(&mut r, &cfg, "project:P done").await;
-    assert!(!wrote && message(&res).contains("complete 3 tasks"), "{}", message(&res));
+    assert!(
+        !wrote && message(&res).contains("complete 3 tasks"),
+        "{}",
+        message(&res)
+    );
     assert!(load_facts(&mut r).await.unwrap().iter().all(|f| f.status == "pending"));
 
-    let (res, wrote) =
-        run_yes(&mut r, &cfg, "project:P done").await;
+    let (res, wrote) = run_yes(&mut r, &cfg, "project:P done").await;
     assert!(wrote);
     assert_eq!(message(&res), "Completed 3 tasks.");
 }
@@ -199,7 +236,9 @@ async fn a_write_with_no_filter_asks_first_and_then_changes_everything() {
         let (res, wrote) = run(&mut r, &cfg, line).await;
         assert!(!wrote, "{line}");
         assert!(
-            message(&res).starts_with("CONFIRM: This command has no filter, and will modify all (including completed and deleted) tasks."),
+            message(&res).starts_with(
+                "CONFIRM: This command has no filter, and will modify all (including completed and deleted) tasks."
+            ),
             "{line}: {}",
             message(&res)
         );
@@ -254,7 +293,11 @@ async fn deleting_asks_unless_confirmation_is_off() {
     // One task or two (below `bulk`): deleting asks, other changes don't.
     for line in ["1 delete", "1,2 delete"] {
         let (res, wrote) = run(&mut r, &cfg, line).await;
-        assert!(!wrote && message(&res).starts_with("CONFIRM:"), "{line}: {}", message(&res));
+        assert!(
+            !wrote && message(&res).starts_with("CONFIRM:"),
+            "{line}: {}",
+            message(&res)
+        );
     }
     let (_, wrote) = run(&mut r, &cfg, "1,2 modify +t").await;
     assert!(wrote, "two tasks are fewer than `bulk`");
@@ -276,7 +319,11 @@ async fn bulk_sets_how_many_tasks_a_change_may_touch_unasked() {
     }
     // The default is 3: a change to three tasks or more asks, whatever the command.
     let (res, wrote) = run(&mut r, &cfg, "1-3 modify +t").await;
-    assert!(!wrote && message(&res).contains("This will modify 3 tasks"), "{}", message(&res));
+    assert!(
+        !wrote && message(&res).contains("This will modify 3 tasks"),
+        "{}",
+        message(&res)
+    );
     let (_, wrote) = run(&mut r, &cfg, "1-2 modify +t").await;
     assert!(wrote);
 
@@ -313,20 +360,37 @@ async fn bulk_asks_about_each_task_and_goes_ahead_with_the_ones_approved() {
     assert!(!wrote);
     let (ask, items) = asked(&res);
     assert_eq!(ask, Ask::Permission);
-    let names: Vec<(&str, &str)> = items.iter().map(|i| (i.description.as_str(), i.question.as_str())).collect();
+    let names: Vec<(&str, &str)> = items
+        .iter()
+        .map(|i| (i.description.as_str(), i.question.as_str()))
+        .collect();
     assert_eq!(
         names,
-        [("a", "Modify task 1 'a'?"), ("b", "Modify task 2 'b'?"), ("c", "Modify task 3 'c'?"), ("d", "Modify task 4 'd'?")]
+        [
+            ("a", "Modify task 1 'a'?"),
+            ("b", "Modify task 2 'b'?"),
+            ("c", "Modify task 3 'c'?"),
+            ("d", "Modify task 4 'd'?")
+        ]
     );
 
     // "yes" for a and c, "no" for b and d.
     let yes = vec![items[0].key.clone(), items[2].key.clone()];
-    let o = Options { approved: Some(yes), ..Options::default() };
+    let o = Options {
+        approved: Some(yes),
+        ..Options::default()
+    };
     let (res, wrote) = run_opts(&mut r, &cfg, "1-4 modify +t", o).await;
     assert!(wrote);
     assert_eq!(message(&res), "Modified 2 tasks. Skipped 2 tasks.");
     let tagged: Vec<String> = {
-        let mut v: Vec<_> = load_facts(&mut r).await.unwrap().into_iter().filter(|f| f.tags.contains("t")).map(|f| f.description).collect();
+        let mut v: Vec<_> = load_facts(&mut r)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.tags.contains("t"))
+            .map(|f| f.description)
+            .collect();
         v.sort();
         v
     };
@@ -340,7 +404,10 @@ async fn approving_none_changes_nothing_and_says_so_like_taskwarrior() {
     for t in ["a", "b", "c"] {
         run(&mut r, &cfg, &format!("add {t}")).await;
     }
-    let o = Options { approved: Some(vec![]), ..Options::default() };
+    let o = Options {
+        approved: Some(vec![]),
+        ..Options::default()
+    };
     let (res, wrote) = run_opts(&mut r, &cfg, "1-3 delete", o).await;
     assert!(!wrote);
     assert_eq!(message(&res), "Task not deleted.\nTask not deleted.\nTask not deleted.");
@@ -355,8 +422,13 @@ async fn only_the_tasks_a_command_would_change_are_asked_about() {
         run(&mut r, &cfg, &format!("add {t}")).await;
     }
     run(&mut r, &cfg, "1 done").await; // `a` is finished
-    // Four tasks are selected (past `bulk`), but `done` has nothing to do for the finished one.
-    let (res, _) = run(&mut r, &cfg, "description:a or description:b or description:c or description:d done").await;
+                                       // Four tasks are selected (past `bulk`), but `done` has nothing to do for the finished one.
+    let (res, _) = run(
+        &mut r,
+        &cfg,
+        "description:a or description:b or description:c or description:d done",
+    )
+    .await;
     let (_, items) = asked(&res);
     let asked_about: Vec<&str> = items.iter().map(|i| i.description.as_str()).collect();
     assert_eq!(asked_about, ["b", "c", "d"]);
@@ -373,7 +445,10 @@ async fn deleting_one_task_is_a_single_question_with_taskwarriors_wording() {
     run(&mut r, &cfg, "add Pay rent").await;
     let (res, _) = run(&mut r, &cfg, "1 delete").await;
     let (ask, items) = asked(&res);
-    assert_eq!((ask, items.len(), message(&res).as_str()), (Ask::Permission, 1, "CONFIRM: Delete task 1 'Pay rent'?"));
+    assert_eq!(
+        (ask, items.len(), message(&res).as_str()),
+        (Ask::Permission, 1, "CONFIRM: Delete task 1 'Pay rent'?")
+    );
 }
 
 #[tokio::test]
@@ -388,8 +463,16 @@ async fn undo_asks_unless_confirmation_is_off() {
     run(&mut r, &cfg, "1 done").await;
     let (res, wrote) = run(&mut r, &cfg, "undo").await;
     assert!(!wrote);
-    assert!(message(&res).starts_with("CONFIRM: The undo command is not reversible."), "{}", message(&res));
-    assert_eq!(load_facts(&mut r).await.unwrap()[0].status, "completed", "nothing was undone yet");
+    assert!(
+        message(&res).starts_with("CONFIRM: The undo command is not reversible."),
+        "{}",
+        message(&res)
+    );
+    assert_eq!(
+        load_facts(&mut r).await.unwrap()[0].status,
+        "completed",
+        "nothing was undone yet"
+    );
 
     // Off: straight away.
     let (res, wrote) = run(&mut r, &parse("confirmation=0\n").config, "undo").await;
@@ -409,7 +492,14 @@ mod chain_repair {
 
     fn deps_of(f: &[tc_core::model::Facts], d: &str) -> Vec<String> {
         let by = |u: &uuid::Uuid| f.iter().find(|x| &x.uuid == u).unwrap().description.clone();
-        let mut v: Vec<String> = f.iter().find(|x| x.description == d).unwrap().depends.iter().map(by).collect();
+        let mut v: Vec<String> = f
+            .iter()
+            .find(|x| x.description == d)
+            .unwrap()
+            .depends
+            .iter()
+            .map(by)
+            .collect();
         v.sort();
         v
     }
@@ -419,20 +509,37 @@ mod chain_repair {
         let mut r = replica();
         let cfg = Config::default();
         chain(&mut r, &cfg).await;
-        let two = load_facts(&mut r).await.unwrap().iter().find(|f| f.description == "two").unwrap().uuid.to_string();
+        let two = load_facts(&mut r)
+            .await
+            .unwrap()
+            .iter()
+            .find(|f| f.description == "two")
+            .unwrap()
+            .uuid
+            .to_string();
 
         let (res, wrote) = run(&mut r, &cfg, &format!("{two} done")).await;
         assert!(!wrote);
         let (ask, items) = asked(&res);
         assert_eq!(ask, Ask::Extras);
         assert_eq!(items.len(), 1);
-        assert_eq!((items[0].question.as_str(), items[0].description.as_str()), ("Would you like the dependency chain fixed?", "two"));
+        assert_eq!(
+            (items[0].question.as_str(), items[0].description.as_str()),
+            ("Would you like the dependency chain fixed?", "two")
+        );
 
         // Yes: `one` stops waiting on `two` and waits on `three` instead.
-        let o = Options { extras: Some(vec![items[0].key.clone()]), ..Options::default() };
+        let o = Options {
+            extras: Some(vec![items[0].key.clone()]),
+            ..Options::default()
+        };
         let (res, wrote) = run_opts(&mut r, &cfg, &format!("{two} done"), o).await;
         assert!(wrote, "{}", message_of(&res));
-        assert!(message_of(&res).contains("Repaired the dependencies of 1 task"), "{}", message_of(&res));
+        assert!(
+            message_of(&res).contains("Repaired the dependencies of 1 task"),
+            "{}",
+            message_of(&res)
+        );
         let f = load_facts(&mut r).await.unwrap();
         assert_eq!(deps_of(&f, "one"), ["three"]);
         assert_eq!(f.iter().find(|x| x.description == "two").unwrap().status, "completed");
@@ -447,7 +554,10 @@ mod chain_repair {
         let mut r = replica();
         let cfg = Config::default();
         chain(&mut r, &cfg).await;
-        let o = Options { extras: Some(vec![]), ..Options::default() };
+        let o = Options {
+            extras: Some(vec![]),
+            ..Options::default()
+        };
         let (_, wrote) = run_opts(&mut r, &cfg, "2 done", o).await;
         assert!(wrote);
         let f = load_facts(&mut r).await.unwrap();
@@ -461,7 +571,11 @@ mod chain_repair {
         let cfg = parse("dependency.confirmation=off\n").config;
         chain(&mut r, &cfg).await;
         let (res, wrote) = run(&mut r, &cfg, "2 delete").await; // deleting asks, but the repair doesn't
-        assert!(!wrote && message_of(&res).starts_with("CONFIRM: Delete task"), "{}", message_of(&res));
+        assert!(
+            !wrote && message_of(&res).starts_with("CONFIRM: Delete task"),
+            "{}",
+            message_of(&res)
+        );
         let (res, wrote) = run_yes(&mut r, &cfg, "2 delete").await;
         assert!(wrote, "{}", message_of(&res));
         assert_eq!(deps_of(&load_facts(&mut r).await.unwrap(), "one"), ["three"]);
@@ -524,16 +638,32 @@ async fn dependencies_block_and_unblock() {
     assert!(blocked.blocked);
     assert!(f.iter().find(|x| x.description == "blocker").unwrap().blocking);
     // `unblocked` report hides it; completing the blocker frees it.
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "unblocked").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "unblocked").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 1);
     run(&mut r, &cfg, "1 done").await;
-    assert!(!load_facts(&mut r).await.unwrap().iter().find(|x| x.description == "blocked").unwrap().blocked);
+    assert!(
+        !load_facts(&mut r)
+            .await
+            .unwrap()
+            .iter()
+            .find(|x| x.description == "blocked")
+            .unwrap()
+            .blocked
+    );
 }
 
 /// Urgency of the task called `name` in the `next` report run with the given settings.
 async fn urgency_of(r: &mut R, cfg: &Config, line: &str, name: &str) -> f64 {
-    let (CliResult::Report(o), _) = run(r, cfg, line).await else { panic!("not a report") };
-    o.rows.iter().find(|x| x.facts.description == name).unwrap_or_else(|| panic!("no {name}")).urgency
+    let (CliResult::Report(o), _) = run(r, cfg, line).await else {
+        panic!("not a report")
+    };
+    o.rows
+        .iter()
+        .find(|x| x.facts.description == name)
+        .unwrap_or_else(|| panic!("no {name}"))
+        .urgency
 }
 
 #[tokio::test]
@@ -559,7 +689,9 @@ async fn urgency_inherit_is_off_by_default_and_follows_the_setting() {
     let once = urgency_of(&mut r, &cfg, "rc.urgency.inherit:1 next", "blocker").await;
     assert!((once - inherited).abs() < 1e-9);
     // The `urgency` filter sees the inherited score too.
-    let (CliResult::Report(o), _) = run(&mut r, &on, "next urgency.over:12.5").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &on, "next urgency.over:12.5").await else {
+        panic!()
+    };
     assert_eq!(o.rows.iter().filter(|x| x.facts.description == "blocker").count(), 1);
 }
 
@@ -594,7 +726,9 @@ async fn count_skips_recurring_templates_like_taskwarrior() {
 
 /// (rows shown, tasks matched) for a report command.
 async fn shown(r: &mut R, cfg: &Config, line: &str) -> (usize, usize) {
-    let (CliResult::Report(o), _) = run(r, cfg, line).await else { panic!("{line}: not a report") };
+    let (CliResult::Report(o), _) = run(r, cfg, line).await else {
+        panic!("{line}: not a report")
+    };
     (o.rows.len(), o.matched)
 }
 
@@ -609,7 +743,11 @@ async fn the_limit_setting_cuts_reports_short_unless_the_command_says_otherwise(
     assert_eq!(shown(&mut r, &plain, "list").await, (6, 6));
 
     let cfg = parse("limit=2\n").config;
-    assert_eq!(shown(&mut r, &cfg, "list").await, (2, 6), "the report stops at 2 and still says how many matched");
+    assert_eq!(
+        shown(&mut r, &cfg, "list").await,
+        (2, 6),
+        "the report stops at 2 and still says how many matched"
+    );
     assert_eq!(shown(&mut r, &cfg, "all").await, (2, 6));
     // The same through `rc.limit:` on the command line, with nothing in the taskrc.
     assert_eq!(shown(&mut r, &plain, "rc.limit:3 list").await, (3, 6));
@@ -617,7 +755,11 @@ async fn the_limit_setting_cuts_reports_short_unless_the_command_says_otherwise(
     assert_eq!(shown(&mut r, &cfg, "list limit:4").await, (4, 6));
     assert_eq!(shown(&mut r, &cfg, "list limit:none").await, (6, 6));
     assert_eq!(shown(&mut r, &cfg, "list limit:0").await, (6, 6));
-    assert_eq!(shown(&mut r, &cfg, "rc.limit:5 list").await, (5, 6), "rc beats the taskrc");
+    assert_eq!(
+        shown(&mut r, &cfg, "rc.limit:5 list").await,
+        (5, 6),
+        "rc beats the taskrc"
+    );
     // `page` has no meaning in a browser, so it shows everything.
     assert_eq!(shown(&mut r, &parse("limit=page\n").config, "list").await, (6, 6));
     // The built-in `next` carries its own `limit:page`, which wins, as in Taskwarrior.
@@ -636,14 +778,27 @@ async fn the_limit_setting_never_hides_tasks_from_export_count_or_info() {
     }
     let (res, _) = run(&mut r, &cfg, "count").await;
     assert_eq!(message(&res), "5");
-    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "export").await else { panic!("not json") };
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "export").await else {
+        panic!("not json")
+    };
     assert_eq!(value.as_array().unwrap().len(), 5);
-    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "status:pending export").await else { panic!("not json") };
-    assert_eq!(value.as_array().unwrap().len(), 5, "what the Projects view and reminders read");
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "status:pending export").await else {
+        panic!("not json")
+    };
+    assert_eq!(
+        value.as_array().unwrap().len(),
+        5,
+        "what the Projects view and reminders read"
+    );
 }
 
 async fn only_task(r: &mut R, description: &str) -> tc_core::model::Facts {
-    load_facts(r).await.unwrap().into_iter().find(|f| f.description == description).unwrap_or_else(|| panic!("no {description}"))
+    load_facts(r)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|f| f.description == description)
+        .unwrap_or_else(|| panic!("no {description}"))
 }
 
 #[tokio::test]
@@ -661,20 +816,31 @@ async fn new_tasks_get_the_default_project_due_and_scheduled() {
     // A duration is "from now", like typing `due:3d`.
     let due = t.due.expect("a default due date");
     assert!((before + 3 * 86_400..=after + 3 * 86_400).contains(&due), "{due}");
-    assert!(t.scheduled.is_some_and(|s| s > before + 86_400 * 365), "{:?}", t.scheduled);
+    assert!(
+        t.scheduled.is_some_and(|s| s > before + 86_400 * 365),
+        "{:?}",
+        t.scheduled
+    );
 
     // What the user gives wins, field by field.
     run(&mut r, &cfg, "add explicit project:Work due:2031-05-05").await;
     let t = only_task(&mut r, "explicit").await;
     assert_eq!(t.project.as_deref(), Some("Work"));
-    assert!(t.due.is_some_and(|d| d > before + 86_400 * 365 * 4), "the typed due date was kept");
+    assert!(
+        t.due.is_some_and(|d| d > before + 86_400 * 365 * 4),
+        "the typed due date was kept"
+    );
     assert!(t.scheduled.is_some(), "but the scheduled default still applies");
 
     // Taskwarrior fills them in when a task is added, not when one is changed.
     run(&mut r, &Config::default(), "add later").await;
     let (res, _) = run(&mut r, &cfg, "later modify +x").await;
     let t = only_task(&mut r, "later").await;
-    assert!(t.project.is_none() && t.due.is_none() && t.scheduled.is_none(), "{}", message(&res));
+    assert!(
+        t.project.is_none() && t.due.is_none() && t.scheduled.is_none(),
+        "{}",
+        message(&res)
+    );
 }
 
 #[tokio::test]
@@ -682,24 +848,39 @@ async fn a_default_due_date_does_not_stand_in_for_a_recurring_tasks_own() {
     let mut r = replica();
     let cfg = parse("default.due=3d\n").config;
     let (res, wrote) = run(&mut r, &cfg, "add Water plants recur:weekly").await;
-    assert!(!wrote && message(&res).contains("must also have a 'due' date"), "{}", message(&res));
+    assert!(
+        !wrote && message(&res).contains("must also have a 'due' date"),
+        "{}",
+        message(&res)
+    );
 }
 
 #[tokio::test]
 async fn an_unusable_default_is_ignored_and_adding_still_works() {
     let p = parse("default.due=whenever\ndefault.project=\n");
-    assert!(p.warnings.iter().any(|w| w.starts_with("default.due:")), "{:?}", p.warnings);
+    assert!(
+        p.warnings.iter().any(|w| w.starts_with("default.due:")),
+        "{:?}",
+        p.warnings
+    );
     assert!(!p.config.settings.contains_key("default.due") && !p.config.settings.contains_key("default.project"));
     // Set on a command line instead of a taskrc, the same rules apply.
     let mut r = replica();
-    run(&mut r, &Config::default(), "rc.default.project:Inbox rc.default.due:nonsense add via rc").await;
+    run(
+        &mut r,
+        &Config::default(),
+        "rc.default.project:Inbox rc.default.due:nonsense add via rc",
+    )
+    .await;
     let t = only_task(&mut r, "via rc").await;
     assert_eq!(t.project.as_deref(), Some("Inbox"));
     assert!(t.due.is_none());
 }
 
 async fn names_in(r: &mut R, cfg: &Config, line: &str) -> Vec<String> {
-    let (CliResult::Report(o), _) = run(r, cfg, line).await else { panic!("{line}: not a report") };
+    let (CliResult::Report(o), _) = run(r, cfg, line).await else {
+        panic!("{line}: not a report")
+    };
     o.rows.into_iter().map(|x| x.facts.description).collect()
 }
 
@@ -712,8 +893,15 @@ async fn blocked_and_blocking_reports_split_a_dependency_chain() {
     run(&mut r, &cfg, "add unrelated").await;
     // Which id the blocker has depends on entry-time ties; find it by name.
     let blocker_id = {
-        let (CliResult::Report(o), _) = run(&mut r, &cfg, "all").await else { panic!() };
-        o.rows.iter().find(|x| x.facts.description == "the blocker").unwrap().id.unwrap()
+        let (CliResult::Report(o), _) = run(&mut r, &cfg, "all").await else {
+            panic!()
+        };
+        o.rows
+            .iter()
+            .find(|x| x.facts.description == "the blocker")
+            .unwrap()
+            .id
+            .unwrap()
     };
     let _ = blocker_id;
 
@@ -737,13 +925,50 @@ async fn long_and_ls_are_taskwarriors_reports() {
         assert_eq!(rows.len(), 2, "{name}: {rows:?}");
         assert!(!rows.contains(&"waiting one".to_string()), "{name}");
     }
-    let (CliResult::Report(long), _) = run(&mut r, &cfg, "long").await else { panic!() };
+    let (CliResult::Report(long), _) = run(&mut r, &cfg, "long").await else {
+        panic!()
+    };
     let labels: Vec<&str> = long.columns.iter().map(|c| c.label.as_str()).collect();
-    assert_eq!(labels, ["ID", "A", "Created", "Mod", "Deps", "P", "Project", "Tags", "Recur", "Wait", "Sched", "Due", "Until", "Description"]);
+    assert_eq!(
+        labels,
+        [
+            "ID",
+            "A",
+            "Created",
+            "Mod",
+            "Deps",
+            "P",
+            "Project",
+            "Tags",
+            "Recur",
+            "Wait",
+            "Sched",
+            "Due",
+            "Until",
+            "Description"
+        ]
+    );
     assert_eq!(long.sort.as_deref(), Some("modified-"));
-    let (CliResult::Report(ls), _) = run(&mut r, &cfg, "ls").await else { panic!() };
+    let (CliResult::Report(ls), _) = run(&mut r, &cfg, "ls").await else {
+        panic!()
+    };
     let labels: Vec<&str> = ls.columns.iter().map(|c| c.label.as_str()).collect();
-    assert_eq!(labels, ["ID", "A", "D", "Project", "Tags", "R", "Wait", "S", "Due", "Until", "Description"]);
+    assert_eq!(
+        labels,
+        [
+            "ID",
+            "A",
+            "D",
+            "Project",
+            "Tags",
+            "R",
+            "Wait",
+            "S",
+            "Due",
+            "Until",
+            "Description"
+        ]
+    );
     assert_eq!(ls.sort.as_deref(), Some("start-,description+"));
 
     // A taskrc still overrides one attribute of them, like any built-in.
@@ -756,7 +981,12 @@ async fn a_contexts_own_settings_apply_only_while_it_is_active() {
     let mut r = replica();
     let plain = Config::default();
     for i in 0..6 {
-        run(&mut r, &plain, &format!("add task {i} +{}", if i < 2 { "a" } else { "b" })).await;
+        run(
+            &mut r,
+            &plain,
+            &format!("add task {i} +{}", if i < 2 { "a" } else { "b" }),
+        )
+        .await;
     }
     let rc = "context.work.rc.limit=2\ncontext.home.rc.limit=4\n\
               context.home.rc.report.list.filter=+b\n";
@@ -767,7 +997,11 @@ async fn a_contexts_own_settings_apply_only_while_it_is_active() {
     let cfg = parse(&format!("context=work\n{rc}")).config;
     assert_eq!(shown(&mut r, &cfg, "list").await, (2, 6));
     // Switching context for one command switches its settings too.
-    assert_eq!(shown(&mut r, &cfg, "rc.context:home list").await, (4, 4), "limit 4, and list is filtered to +b");
+    assert_eq!(
+        shown(&mut r, &cfg, "rc.context:home list").await,
+        (4, 4),
+        "limit 4, and list is filtered to +b"
+    );
     // They win over a command-line `rc.` override, which is how Taskwarrior looks settings up.
     assert_eq!(shown(&mut r, &cfg, "rc.limit:5 list").await, (2, 6));
     // `limit:` on the command line is a filter word, not a setting, so it still wins.
@@ -804,7 +1038,11 @@ async fn text_in_filters_and_substitutions_is_a_regular_expression() {
 
     assert_eq!(count(run(&mut r, &cfg, "count m.lk").await.0), "1", "a wildcard");
     assert_eq!(count(run(&mut r, &cfg, "count /^(Buy|Water)/").await.0), "2");
-    assert_eq!(count(run(&mut r, &cfg, "count passport").await.0), "1", "found in an annotation");
+    assert_eq!(
+        count(run(&mut r, &cfg, "count passport").await.0),
+        "1",
+        "found in an annotation"
+    );
     assert_eq!(count(run(&mut r, &cfg, "count desc.has:pass.ort").await.0), "1");
     assert_eq!(count(run(&mut r, &cfg, "count desc.hasnt:pass.ort").await.0), "2");
     // "the" is a whole word in one description and in another task's annotation.
@@ -816,7 +1054,11 @@ async fn text_in_filters_and_substitutions_is_a_regular_expression() {
 
     // Mistakes are errors that say what is wrong, not silent empty results.
     let (res, wrote) = run(&mut r, &cfg, "count /(/").await;
-    assert!(!wrote && message(&res).contains("not a valid regular expression"), "{}", message(&res));
+    assert!(
+        !wrote && message(&res).contains("not a valid regular expression"),
+        "{}",
+        message(&res)
+    );
     let (res, _) = run(&mut r, &cfg, "count /a(?=b)/").await;
     assert!(message(&res).contains("lookahead"), "{}", message(&res));
 
@@ -840,8 +1082,15 @@ async fn summary_shows_progress_per_project() {
         other => panic!("not a summary: {other:?}"),
     };
     let s = tpl(run(&mut r, &cfg, "summary").await.0);
-    let labels: Vec<(&str, usize, usize)> = s.rows.iter().map(|x| (x.label.as_str(), x.depth, x.remaining)).collect();
-    assert_eq!(labels, [("(none)", 0, 1), ("Home", 0, 2), ("Kitchen", 1, 1), ("Work", 0, 1)]);
+    let labels: Vec<(&str, usize, usize)> = s
+        .rows
+        .iter()
+        .map(|x| (x.label.as_str(), x.depth, x.remaining))
+        .collect();
+    assert_eq!(
+        labels,
+        [("(none)", 0, 1), ("Home", 0, 2), ("Kitchen", 1, 1), ("Work", 0, 1)]
+    );
 
     // Finish one: it shows as progress, and finished projects only appear with the setting.
     let (res, _) = run(&mut r, &cfg, "project:Work done").await;
@@ -849,12 +1098,22 @@ async fn summary_shows_progress_per_project() {
     let s = tpl(run(&mut r, &cfg, "summary").await.0);
     assert!(!s.rows.iter().any(|x| x.project == "Work"), "nothing left to do there");
     let all = parse("summary.all.projects=1\n").config;
-    let w = tpl(run(&mut r, &all, "summary").await.0).rows.into_iter().find(|x| x.project == "Work").unwrap();
-    assert_eq!((w.complete.as_str(), w.bar, w.completed, w.remaining), ("100%", 30, 1, 0));
+    let w = tpl(run(&mut r, &all, "summary").await.0)
+        .rows
+        .into_iter()
+        .find(|x| x.project == "Work")
+        .unwrap();
+    assert_eq!(
+        (w.complete.as_str(), w.bar, w.completed, w.remaining),
+        ("100%", 30, 1, 0)
+    );
 
     // A filter narrows it, an abbreviation works, and an empty result says so.
     let h = tpl(run(&mut r, &cfg, "project:Home summary").await.0);
-    assert_eq!(h.rows.iter().map(|x| x.project.as_str()).collect::<Vec<_>>(), ["Home", "Home.Kitchen"]);
+    assert_eq!(
+        h.rows.iter().map(|x| x.project.as_str()).collect::<Vec<_>>(),
+        ["Home", "Home.Kitchen"]
+    );
     assert!(matches!(run(&mut r, &cfg, "summ").await.0, CliResult::Summary(_)));
     let (res, _) = run(&mut r, &cfg, "project:Nowhere summary").await;
     assert_eq!(message(&res), "No projects.");
@@ -874,13 +1133,30 @@ async fn calendar_lays_out_months_and_takes_the_arguments_taskwarrior_does() {
     assert_eq!(c.months.len(), 3);
     assert_eq!(cal(run(&mut r, &cfg, "calendar y").await.0).months.len(), 12);
     assert_eq!(months(&cal(run(&mut r, &cfg, "calendar 3 2031").await.0))[0], (2031, 3));
-    assert_eq!(months(&cal(run(&mut r, &cfg, "cale march 2031").await.0))[0], (2031, 3), "abbreviated command (`cal` is ambiguous with `calc`, as in Taskwarrior), named month");
+    assert_eq!(
+        months(&cal(run(&mut r, &cfg, "cale march 2031").await.0))[0],
+        (2031, 3),
+        "abbreviated command (`cal` is ambiguous with `calc`, as in Taskwarrior), named month"
+    );
     let (res, wrote) = run(&mut r, &cfg, "calendar 13 2031").await;
-    assert!(!wrote && message(&res).contains("not a valid month"), "{}", message(&res));
+    assert!(
+        !wrote && message(&res).contains("not a valid month"),
+        "{}",
+        message(&res)
+    );
     let (res, _) = run(&mut r, &cfg, "calendar whenever").await;
-    assert!(message(&res).contains("Could not recognize argument 'whenever'"), "{}", message(&res));
+    assert!(
+        message(&res).contains("Could not recognize argument 'whenever'"),
+        "{}",
+        message(&res)
+    );
     // `rc.` overrides are settings, not arguments.
-    assert_eq!(cal(run(&mut r, &cfg, "rc.calendar.monthsperline:2 calendar").await.0).months.len(), 2);
+    assert_eq!(
+        cal(run(&mut r, &cfg, "rc.calendar.monthsperline:2 calendar").await.0)
+            .months
+            .len(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -896,11 +1172,21 @@ async fn weeks_start_on_sunday_unless_told_otherwise_like_taskwarrior() {
     // In the taskrc, on a command line, and refused when it isn't one of the two.
     let monday = parse("weekstart=Monday\n").config;
     assert_eq!(cal(run(&mut r, &monday, "calendar").await.0).weekdays[0], "Mo");
-    assert_eq!(cal(run(&mut r, &Config::default(), "rc.weekstart:monday calendar").await.0).weekdays[0], "Mo");
-    assert_eq!(cal(run(&mut r, &monday, "rc.weekstart:sunday calendar").await.0).weekdays[0], "Su");
+    assert_eq!(
+        cal(run(&mut r, &Config::default(), "rc.weekstart:monday calendar").await.0).weekdays[0],
+        "Mo"
+    );
+    assert_eq!(
+        cal(run(&mut r, &monday, "rc.weekstart:sunday calendar").await.0).weekdays[0],
+        "Su"
+    );
     let p = parse("weekstart=friday\n");
-    assert!(p.config.settings.get("weekstart").is_none());
-    assert!(p.warnings.iter().any(|w| w.starts_with("weekstart:")), "{:?}", p.warnings);
+    assert!(!p.config.settings.contains_key("weekstart"));
+    assert!(
+        p.warnings.iter().any(|w| w.starts_with("weekstart:")),
+        "{:?}",
+        p.warnings
+    );
 }
 
 #[tokio::test]
@@ -922,15 +1208,25 @@ async fn burndown_charts_take_a_filter_and_the_cumulative_setting() {
     assert_eq!(all.bars.len(), 30);
     assert_eq!(last(&all), (1, 0, 1), "one open, one finished");
     // A filter narrows the chart, and so does the rest of the command-line grammar.
-    assert_eq!(last(&chart(run(&mut r, &cfg, "project:Home burndown.daily").await.0)), (1, 0, 0));
-    assert_eq!(last(&chart(run(&mut r, &cfg, "burndown.daily project:Work").await.0)), (0, 0, 1));
+    assert_eq!(
+        last(&chart(run(&mut r, &cfg, "project:Home burndown.daily").await.0)),
+        (1, 0, 0)
+    );
+    assert_eq!(
+        last(&chart(run(&mut r, &cfg, "burndown.daily project:Work").await.0)),
+        (0, 0, 1)
+    );
     // The other periods have their own commands.
     assert_eq!(chart(run(&mut r, &cfg, "burndown.weekly").await.0).bars.len(), 26);
     assert_eq!(chart(run(&mut r, &cfg, "burndown.monthly").await.0).bars.len(), 24);
     assert_eq!(chart(run(&mut r, &cfg, "burndown.annual").await.0).bars.len(), 10);
     // `burndown.cumulative` is on by default; off, done shows only on the day it happened.
     let flat = parse("burndown.cumulative=off\n").config;
-    assert_eq!(last(&chart(run(&mut r, &flat, "burndown.daily").await.0)), (1, 0, 1), "it was finished today");
+    assert_eq!(
+        last(&chart(run(&mut r, &flat, "burndown.daily").await.0)),
+        (1, 0, 1),
+        "it was finished today"
+    );
     let from_yesterday = chart(run(&mut r, &flat, "burndown.daily").await.0);
     assert_eq!(from_yesterday.bars[28].done, 0);
 }
@@ -946,21 +1242,43 @@ async fn a_calendar_filter_narrows_which_tasks_colour_the_days() {
         other => panic!("not a calendar: {other:?}"),
     };
     let due_days = |c: &tc_core::calendar::CalendarOut| {
-        c.months.iter().flat_map(|m| m.weeks.iter().flat_map(|w| w.days.iter().flatten())).filter(|d| d.due.is_some()).count()
+        c.months
+            .iter()
+            .flat_map(|m| m.weeks.iter().flat_map(|w| w.days.iter().flatten()))
+            .filter(|d| d.due.is_some())
+            .count()
     };
     assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar").await.0)), 1);
     assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar project:Nowhere").await.0)), 0);
     assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar project:Work").await.0)), 1);
     assert_eq!(due_days(&cal(run(&mut r, &cfg, "calendar +NOSUCHTAG").await.0)), 0);
     // Filters and months go together, in any order.
-    assert_eq!(cal(run(&mut r, &cfg, "calendar project:Work y").await.0).months.len(), 12);
+    assert_eq!(
+        cal(run(&mut r, &cfg, "calendar project:Work y").await.0).months.len(),
+        12
+    );
     // The details report is narrowed the same way.
     let full = parse("calendar.details=full\n").config;
-    let rows = |res: CliResult| cal(res).details.unwrap().rows.iter().map(|x| x.facts.description.clone()).collect::<Vec<_>>();
-    assert_eq!(rows(run(&mut r, &full, "calendar project:Work").await.0), ["work thing"]);
+    let rows = |res: CliResult| {
+        cal(res)
+            .details
+            .unwrap()
+            .rows
+            .iter()
+            .map(|x| x.facts.description.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        rows(run(&mut r, &full, "calendar project:Work").await.0),
+        ["work thing"]
+    );
     // A word that is neither a month argument nor filter-shaped is still a mistake.
     let (res, _) = run(&mut r, &cfg, "calendar Work").await;
-    assert!(message(&res).contains("Could not recognize argument 'Work'"), "{}", message(&res));
+    assert!(
+        message(&res).contains("Could not recognize argument 'Work'"),
+        "{}",
+        message(&res)
+    );
 }
 
 #[tokio::test]
@@ -976,22 +1294,44 @@ async fn calendar_colours_what_is_due_and_lists_it_in_full_mode() {
     };
     let c = cal(run(&mut r, &cfg, "calendar").await.0);
     let due_days = |c: &tc_core::calendar::CalendarOut| {
-        c.months.iter().flat_map(|m| m.weeks.iter().flat_map(|w| w.days.iter().flatten())).filter(|d| d.due.is_some()).count()
+        c.months
+            .iter()
+            .flat_map(|m| m.weeks.iter().flat_map(|w| w.days.iter().flatten()))
+            .filter(|d| d.due.is_some())
+            .count()
     };
-    assert_eq!(due_days(&c), 1, "this month's, once: `nocal` is left off and 2031 is out of range");
+    assert_eq!(
+        due_days(&c),
+        1,
+        "this month's, once: `nocal` is left off and 2031 is out of range"
+    );
     assert!(c.details.is_none(), "sparse is the default");
 
     let full = parse("calendar.details=full\n").config;
     let c = cal(run(&mut r, &full, "calendar").await.0);
     let d = c.details.expect("a report of what is due");
     assert_eq!(d.report, "list");
-    assert_eq!(d.rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(), ["this month"]);
+    assert_eq!(
+        d.rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(),
+        ["this month"]
+    );
     let far = cal(run(&mut r, &full, "calendar 6 2031").await.0);
-    assert_eq!(far.details.unwrap().rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(), ["far away"]);
+    assert_eq!(
+        far.details
+            .unwrap()
+            .rows
+            .iter()
+            .map(|x| x.facts.description.as_str())
+            .collect::<Vec<_>>(),
+        ["far away"]
+    );
 
     // Its report can be another one, and it has to exist.
     let long = parse("calendar.details=full\ncalendar.details.report=long\n").config;
-    assert_eq!(cal(run(&mut r, &long, "calendar").await.0).details.unwrap().report, "long");
+    assert_eq!(
+        cal(run(&mut r, &long, "calendar").await.0).details.unwrap().report,
+        "long"
+    );
     let bad = parse("calendar.details=full\ncalendar.details.report=nosuch\n").config;
     let (res, _) = run(&mut r, &bad, "calendar").await;
     assert!(message(&res).contains("calendar.details.report"), "{}", message(&res));
@@ -1014,7 +1354,9 @@ async fn udas_and_custom_reports_from_taskrc() {
     let (res, _) = run(&mut r, &cfg, "add bad estimate:huge").await;
     assert!(message(&res).contains("use one of: big, small"), "{}", message(&res));
 
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized").await else {
+        panic!()
+    };
     let order: Vec<&str> = o.rows.iter().map(|r| r.facts.description.as_str()).collect();
     assert_eq!(order, ["big thing", "small thing"]);
     assert_eq!(o.rows[0].facts.extra["points"], "8");
@@ -1022,13 +1364,19 @@ async fn udas_and_custom_reports_from_taskrc() {
     assert_eq!(o.description.as_deref(), Some("By size"));
 
     // Filtering on UDAs from the command line.
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized estimate:big").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized estimate:big").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 1);
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized points.after:5").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized points.after:5").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 1);
     // And modifying them.
     run(&mut r, &cfg, "estimate:small modify estimate:big").await;
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized estimate:big").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized estimate:big").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 2);
 }
 
@@ -1039,10 +1387,14 @@ async fn context_filters_reads_and_tags_new_tasks() {
     run(&mut r, &cfg, "add in context").await; // gets +work from the write rule
     let none = Config::default();
     run(&mut r, &none, "add outside context").await;
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "list").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "list").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 1);
     assert_eq!(o.rows[0].facts.description, "in context");
-    let (CliResult::Report(o), _) = run(&mut r, &none, "list").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &none, "list").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 2);
 }
 
@@ -1059,17 +1411,27 @@ async fn read_commands() {
     assert_eq!(message(&run(&mut r, &cfg, "+x +y count").await.0), "1");
     assert_eq!(message(&run(&mut r, &cfg, "ids").await.0), "1 2 3");
 
-    let (CliResult::Table(t), _) = run(&mut r, &cfg, "projects").await else { panic!() };
+    let (CliResult::Table(t), _) = run(&mut r, &cfg, "projects").await else {
+        panic!()
+    };
     assert_eq!(t.rows, [vec!["(none)", "1"], vec!["Home", "2"]]);
-    let (CliResult::Table(t), _) = run(&mut r, &cfg, "tags").await else { panic!() };
+    let (CliResult::Table(t), _) = run(&mut r, &cfg, "tags").await else {
+        panic!()
+    };
     assert_eq!(t.rows, [vec!["x", "2"], vec!["y", "1"]]);
 
-    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "2 info").await else { panic!() };
+    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "2 info").await else {
+        panic!()
+    };
     assert_eq!(tasks[0].facts.description, "b");
-    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "2").await else { panic!() };
+    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "2").await else {
+        panic!()
+    };
     assert_eq!(tasks.len(), 1, "a bare id means info");
 
-    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "project:Home export").await else { panic!() };
+    let (CliResult::Json { value }, _) = run(&mut r, &cfg, "project:Home export").await else {
+        panic!()
+    };
     assert_eq!(value.as_array().unwrap().len(), 2);
     assert!(value[0]["uuid"].is_string() && value[0]["urgency"].is_number());
 
@@ -1109,16 +1471,24 @@ async fn overdue_and_due_virtual_tags_work_through_the_cli() {
     run(&mut r, &cfg, "add soon due:2d").await;
     run(&mut r, &cfg, "add far due:30d").await;
     run(&mut r, &cfg, "add never").await;
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "overdue").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "overdue").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 1);
     assert_eq!(o.rows[0].facts.description, "late");
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "list +DUE").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "list +DUE").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 1);
     assert_eq!(o.rows[0].facts.description, "soon");
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "next due.before:7d").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "next due.before:7d").await else {
+        panic!()
+    };
     assert_eq!(o.rows.len(), 2);
     // `next` sorts by urgency: the overdue one first.
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "next").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "next").await else {
+        panic!()
+    };
     assert_eq!(o.rows[0].facts.description, "late");
     let _ = DAY;
 }
@@ -1158,7 +1528,10 @@ mod with_sync {
 
     /// Like `run`, but with an explicit undo stack, so two replicas don't share one.
     async fn run_own(r: &mut R, cfg: &Config, line: &str, undo: &mut UndoStack) -> (CliResult, bool) {
-        let yes = Options { confirmed: true, ..Options::default() }; // `undo` asks first
+        let yes = Options {
+            confirmed: true,
+            ..Options::default()
+        }; // `undo` asks first
         let d = execute(r, cfg, clock(), &split_words(line), yes, undo).await;
         (d.result, d.wrote)
     }
@@ -1226,10 +1599,14 @@ async fn orphan_udas_are_shown_but_read_only() {
     r.commit_operations(ops).await.unwrap();
 
     // Shown: in reports (as an orphan) and in info/export.
-    let (CliResult::Report(o), _) = run(&mut r, &cfg, "list").await else { panic!() };
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "list").await else {
+        panic!()
+    };
     assert_eq!(o.rows[0].orphans, ["legacy"]);
     assert_eq!(o.rows[0].facts.extra["legacy"], "kept");
-    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "1 info").await else { panic!() };
+    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "1 info").await else {
+        panic!()
+    };
     assert_eq!(tasks[0].facts.extra["legacy"], "kept");
     let (res, _) = run(&mut r, &cfg, "+ORPHAN count").await;
     assert_eq!(message(&res), "1");
@@ -1256,14 +1633,28 @@ async fn responses_say_how_the_line_was_understood() {
         let (cfgc, line) = (cfg.clone(), line);
         async move {
             let mut rr = replica();
-            let d = execute(&mut rr, &cfgc, clock(), &split_words(line), Options::default(), &mut UndoStack::default()).await;
+            let d = execute(
+                &mut rr,
+                &cfgc,
+                clock(),
+                &split_words(line),
+                Options::default(),
+                &mut UndoStack::default(),
+            )
+            .await;
             d.command
         }
     };
     let c = info("project:Home +a work").await.unwrap();
-    assert_eq!((c.name.as_str(), c.report, c.filter.clone()), ("work", true, vec!["project:Home".to_string(), "+a".into()]));
+    assert_eq!(
+        (c.name.as_str(), c.report, c.filter.clone()),
+        ("work", true, vec!["project:Home".to_string(), "+a".into()])
+    );
     let c = info("task 3 modify +x").await.unwrap();
-    assert_eq!((c.name.as_str(), c.report, c.filter.clone()), ("modify", false, vec!["3".to_string()]));
+    assert_eq!(
+        (c.name.as_str(), c.report, c.filter.clone()),
+        ("modify", false, vec!["3".to_string()])
+    );
     // Abbreviations resolve to the canonical name; the default report is reported as such.
     assert_eq!(info("3 ann hi").await.unwrap().name, "annotate");
     let c = info("+x").await.unwrap();
@@ -1292,7 +1683,10 @@ mod overrides_and_journal {
         run(&mut r, &cfg, "add mango priority:M due:1d").await;
 
         let order = |res: CliResult| match res {
-            CliResult::Report(o) => (o.sort.clone(), o.rows.iter().map(|x| x.facts.description.clone()).collect::<Vec<_>>()),
+            CliResult::Report(o) => (
+                o.sort.clone(),
+                o.rows.iter().map(|x| x.facts.description.clone()).collect::<Vec<_>>(),
+            ),
             other => panic!("{other:?}"),
         };
         // The `list` report's own sort is start-,due+,project+,urgency-.
@@ -1319,19 +1713,34 @@ mod overrides_and_journal {
         let mut r = replica();
         run(&mut r, &cfg, "add a").await;
         let (res, _) = run(&mut r, &cfg, "rc.report.list.sort:nonsense+ list").await;
-        assert!(message(&res).contains("'nonsense' column is not a valid sort field"), "{}", message(&res));
+        assert!(
+            message(&res).contains("'nonsense' column is not a valid sort field"),
+            "{}",
+            message(&res)
+        );
         let (res, _) = run(&mut r, &cfg, "rc.report.list.sort:due list").await;
         assert!(message(&res).contains("must end in + or -"), "{}", message(&res));
         let (res, _) = run(&mut r, &cfg, "rc.report.nope.sort:due+ list").await;
         assert!(message(&res).contains("not a report"), "{}", message(&res));
         // Credentials can't be injected through the command line either.
-        for line in ["rc.sync.encryption_secret:x list", "rc.sync.aws.bucket=b list", "rc.my.api_token:t list"] {
+        for line in [
+            "rc.sync.encryption_secret:x list",
+            "rc.sync.aws.bucket=b list",
+            "rc.my.api_token:t list",
+        ] {
             let (res, _) = run(&mut r, &cfg, line).await;
-            assert!(message(&res).contains("can't be set from a command line"), "{line}: {}", message(&res));
+            assert!(
+                message(&res).contains("can't be set from a command line"),
+                "{line}: {}",
+                message(&res)
+            );
         }
         // Harmless settings the real task accepts are fine.
         for line in ["rc.verbose:nothing list", "rc.confirmation=no list"] {
-            assert!(matches!(run(&mut r, &cfg, line).await.0, CliResult::Report(_)), "{line}");
+            assert!(
+                matches!(run(&mut r, &cfg, line).await.0, CliResult::Report(_)),
+                "{line}"
+            );
         }
     }
 
@@ -1341,12 +1750,27 @@ mod overrides_and_journal {
         let mut r = replica();
         run(&mut r, &cfg, "add one +work").await;
         run(&mut r, &cfg, "add two").await;
-        let rows = |res: CliResult| match res { CliResult::Report(o) => o.rows.len(), o => panic!("{o:?}") };
+        let rows = |res: CliResult| match res {
+            CliResult::Report(o) => o.rows.len(),
+            o => panic!("{o:?}"),
+        };
         assert_eq!(rows(run(&mut r, &cfg, "list").await.0), 2);
         assert_eq!(rows(run(&mut r, &cfg, "rc.context:w list").await.0), 1);
         assert_eq!(rows(run(&mut r, &cfg, "rc.report.list.filter:+work list").await.0), 1);
-        let CliResult::Report(o) = run(&mut r, &cfg, "rc.report.list.columns:id,description rc.report.list.labels:N,T list").await.0 else { panic!() };
-        assert_eq!(o.columns.iter().map(|c| c.label.as_str()).collect::<Vec<_>>(), ["N", "T"]);
+        let CliResult::Report(o) = run(
+            &mut r,
+            &cfg,
+            "rc.report.list.columns:id,description rc.report.list.labels:N,T list",
+        )
+        .await
+        .0
+        else {
+            panic!()
+        };
+        assert_eq!(
+            o.columns.iter().map(|c| c.label.as_str()).collect::<Vec<_>>(),
+            ["N", "T"]
+        );
     }
 
     #[tokio::test]
@@ -1397,7 +1821,9 @@ mod overrides_and_journal {
 
     #[tokio::test]
     async fn journal_text_is_configurable_and_off_by_default() {
-        let cfg = parse("journal.time=on\njournal.time.start.annotation=Clock in\njournal.time.stop.annotation=Clock out\n").config;
+        let cfg =
+            parse("journal.time=on\njournal.time.start.annotation=Clock in\njournal.time.stop.annotation=Clock out\n")
+                .config;
         let mut r = replica();
         run(&mut r, &cfg, "add custom").await;
         run(&mut r, &cfg, "1 start").await;
@@ -1409,11 +1835,16 @@ mod overrides_and_journal {
         run(&mut r, &off, "add plain").await;
         run(&mut r, &off, "1 start").await;
         run(&mut r, &off, "1 stop").await;
-        assert!(notes(&only(&mut r).await).is_empty(), "journal.time is off unless enabled");
+        assert!(
+            notes(&only(&mut r).await).is_empty(),
+            "journal.time is off unless enabled"
+        );
     }
 
     fn history_of(res: CliResult) -> Vec<(String, String)> {
-        let CliResult::Info { tasks } = res else { panic!("{res:?}") };
+        let CliResult::Info { tasks } = res else {
+            panic!("{res:?}")
+        };
         tasks[0]
             .history
             .iter()
@@ -1434,12 +1865,27 @@ mod overrides_and_journal {
 
         let h = history_of(run(&mut r, &cfg, &format!("{id} info")).await.0);
         let has = |k: &str, p: &str| h.iter().any(|(kk, pp)| kk == k && pp == p);
-        assert!(has("set", "description") && has("set", "project") && has("set", "priority"), "{h:?}");
-        assert!(has("tag_added", "x") && has("tag_added", "y") && has("tag_deleted", "x"), "{h:?}");
+        assert!(
+            has("set", "description") && has("set", "project") && has("set", "priority"),
+            "{h:?}"
+        );
+        assert!(
+            has("tag_added", "x") && has("tag_added", "y") && has("tag_deleted", "x"),
+            "{h:?}"
+        );
         assert!(has("changed", "project"), "{h:?}");
-        assert!(h.iter().any(|(k, p)| k == "note_added" && p.starts_with("annotation_")), "{h:?}");
-        assert!(has("set", "start") && has("deleted", "start") && has("changed", "status"), "{h:?}");
-        assert!(!h.iter().any(|(_, p)| p == "modified"), "the modification time is never listed");
+        assert!(
+            h.iter().any(|(k, p)| k == "note_added" && p.starts_with("annotation_")),
+            "{h:?}"
+        );
+        assert!(
+            has("set", "start") && has("deleted", "start") && has("changed", "status"),
+            "{h:?}"
+        );
+        assert!(
+            !h.iter().any(|(_, p)| p == "modified"),
+            "the modification time is never listed"
+        );
 
         // A Taskwarrior config says `journal.info=off` or `0`; the web replica follows.
         for off in ["journal.info=off\n", "journal.info=0\n"] {
@@ -1457,7 +1903,9 @@ mod overrides_and_journal {
         let mut r = replica();
         run(&mut r, &cfg, "add Alpha").await;
         let (res, _) = run(&mut r, &cfg, "export").await;
-        let CliResult::Json { value } = res else { panic!("{res:?}") };
+        let CliResult::Json { value } = res else {
+            panic!("{res:?}")
+        };
         assert!(value[0].get("history").is_none(), "{value}");
     }
 
@@ -1482,9 +1930,16 @@ mod overrides_and_journal {
         let mut r = replica();
         run(&mut r, &on, "add timed").await;
         run(&mut r, &on, "1 start").await;
-        let CliResult::Info { tasks } = run(&mut r, &on, "1 info").await.0 else { panic!() };
-        assert!(tasks[0].active_seconds.is_some(), "an active task reports its tracked time");
-        let CliResult::Info { tasks } = run(&mut r, &Config::default(), "1 info").await.0 else { panic!() };
+        let CliResult::Info { tasks } = run(&mut r, &on, "1 info").await.0 else {
+            panic!()
+        };
+        assert!(
+            tasks[0].active_seconds.is_some(),
+            "an active task reports its tracked time"
+        );
+        let CliResult::Info { tasks } = run(&mut r, &Config::default(), "1 info").await.0 else {
+            panic!()
+        };
         assert!(tasks[0].active_seconds.is_none(), "no journal, no tracked time");
     }
 }
@@ -1497,13 +1952,20 @@ async fn info_rows_carry_the_sessions_when_journalling() {
     run(&mut r, &cfg, "1 start").await;
     run(&mut r, &cfg, "1 stop").await;
     run(&mut r, &cfg, "1 start").await;
-    let CliResult::Info { tasks } = run(&mut r, &cfg, "1 info").await.0 else { panic!() };
+    let CliResult::Info { tasks } = run(&mut r, &cfg, "1 info").await.0 else {
+        panic!()
+    };
     let s = &tasks[0].sessions;
     assert_eq!(s.len(), 2, "{s:?}");
-    assert!(s[0].end.is_some() && s[1].end.is_none(), "the second session is still running: {s:?}");
+    assert!(
+        s[0].end.is_some() && s[1].end.is_none(),
+        "the second session is still running: {s:?}"
+    );
     assert!(s[0].start <= s[0].end.unwrap());
     // Off by default: no sessions without journal.time.
-    let CliResult::Info { tasks } = run(&mut r, &Config::default(), "1 info").await.0 else { panic!() };
+    let CliResult::Info { tasks } = run(&mut r, &Config::default(), "1 info").await.0 else {
+        panic!()
+    };
     assert!(tasks[0].sessions.is_empty());
 }
 
@@ -1650,7 +2112,11 @@ mod recurrence {
         let (_, wrote) = run_yes(&mut r, &cfg, "1 delete").await;
         assert!(wrote);
         let v = all(&mut r).await;
-        assert!(v.iter().all(|f| f.status == "deleted"), "{:?}", v.iter().map(|f| &f.status).collect::<Vec<_>>());
+        assert!(
+            v.iter().all(|f| f.status == "deleted"),
+            "{:?}",
+            v.iter().map(|f| &f.status).collect::<Vec<_>>()
+        );
     }
 
     #[tokio::test]
@@ -1663,14 +2129,21 @@ mod recurrence {
             run(&mut r, &cfg, "list").await;
         }
         let v = all(&mut r).await;
-        assert!(v.iter().all(|f| f.status == "deleted"), "{:?}", v.iter().map(|f| &f.status).collect::<Vec<_>>());
+        assert!(
+            v.iter().all(|f| f.status == "deleted"),
+            "{:?}",
+            v.iter().map(|f| &f.status).collect::<Vec<_>>()
+        );
     }
 
     // ---- recurrence.confirmation
 
     /// A template with two open instances, `recurrence.confirmation` set to `mode`.
     async fn series(mode: &str) -> (R, Config) {
-        let cfg = parse(&format!("recurrence=on\nrecurrence.limit=2\nrecurrence.confirmation={mode}\n")).config;
+        let cfg = parse(&format!(
+            "recurrence=on\nrecurrence.limit=2\nrecurrence.confirmation={mode}\n"
+        ))
+        .config;
         let mut r = replica();
         run(&mut r, &cfg, "add Water plants recur:daily due:3d").await;
         run(&mut r, &cfg, "list").await;
@@ -1687,7 +2160,14 @@ mod recurrence {
     fn answer(res: &CliResult, yes: bool) -> Options {
         let (ask, items) = asked(res);
         assert_eq!(ask, Ask::Extras);
-        Options { extras: Some(if yes { items.iter().map(|i| i.key.clone()).collect() } else { vec![] }), ..Options::default() }
+        Options {
+            extras: Some(if yes {
+                items.iter().map(|i| i.key.clone()).collect()
+            } else {
+                vec![]
+            }),
+            ..Options::default()
+        }
     }
 
     #[tokio::test]
@@ -1697,7 +2177,10 @@ mod recurrence {
         let (res, wrote) = run(&mut r, &cfg, "1 modify Feed plants").await;
         assert!(!wrote);
         let (ask, items) = asked(&res);
-        assert!(ask == Ask::Extras && items[0].question.contains("pending recurrences"), "{res:?}");
+        assert!(
+            ask == Ask::Extras && items[0].question.contains("pending recurrences"),
+            "{res:?}"
+        );
         assert_eq!(descriptions(&mut r).await, before, "asking must not write");
         // Unset means the same as `prompt`.
         let cfg = parse("recurrence=on\nrecurrence.limit=2\n").config;
@@ -1711,15 +2194,27 @@ mod recurrence {
         let (asked_res, _) = run(&mut r, &cfg, "1 modify Feed plants").await;
         let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(&asked_res, true)).await;
         assert!(wrote);
-        assert!(all(&mut r).await.iter().all(|f| f.description == "Feed plants"), "{:?}", descriptions(&mut r).await);
+        assert!(
+            all(&mut r).await.iter().all(|f| f.description == "Feed plants"),
+            "{:?}",
+            descriptions(&mut r).await
+        );
 
         let (mut r, cfg) = series("prompt").await;
         let (asked_res, _) = run(&mut r, &cfg, "1 modify Feed plants").await;
         let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(&asked_res, false)).await;
         assert!(wrote);
         let v = all(&mut r).await;
-        assert_eq!(template(&v).description, "Feed plants", "the edited task itself always changes");
-        assert!(instances(&v).iter().all(|f| f.description == "Water plants"), "{:?}", descriptions(&mut r).await);
+        assert_eq!(
+            template(&v).description,
+            "Feed plants",
+            "the edited task itself always changes"
+        );
+        assert!(
+            instances(&v).iter().all(|f| f.description == "Water plants"),
+            "{:?}",
+            descriptions(&mut r).await
+        );
     }
 
     #[tokio::test]
@@ -1747,7 +2242,11 @@ mod recurrence {
         let (_, wrote) = run(&mut r, &cfg, &format!("{first} modify priority:H project:Garden")).await;
         assert!(wrote);
         let v = all(&mut r).await;
-        assert!(v.iter().all(|f| f.priority.as_deref() == Some("H") && f.project.as_deref() == Some("Garden")), "{v:?}");
+        assert!(
+            v.iter()
+                .all(|f| f.priority.as_deref() == Some("H") && f.project.as_deref() == Some("Garden")),
+            "{v:?}"
+        );
 
         // Dates stay per instance: moving one instance does not move the others.
         let due_before: Vec<_> = instances(&v).iter().map(|f| f.due).collect();
@@ -1775,7 +2274,16 @@ mod aliases_and_abbreviations {
 
     /// A typed line: aliases stand for their words.
     async fn typed(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
-        run_opts(r, cfg, line, Options { typed: true, ..Options::default() }).await
+        run_opts(
+            r,
+            cfg,
+            line,
+            Options {
+                typed: true,
+                ..Options::default()
+            },
+        )
+        .await
     }
 
     fn is_version(res: &CliResult) -> bool {
@@ -1789,7 +2297,11 @@ mod aliases_and_abbreviations {
         run(&mut r, &cfg, "add old thing").await;
         // `rm` is `delete`, which asks first.
         let (res, wrote) = typed(&mut r, &cfg, "1 rm").await;
-        assert!(!wrote && message(&res).starts_with("CONFIRM: Delete task 1"), "{}", message(&res));
+        assert!(
+            !wrote && message(&res).starts_with("CONFIRM: Delete task 1"),
+            "{}",
+            message(&res)
+        );
         // `burndown` is `burndown.weekly`.
         let (res, _) = typed(&mut r, &cfg, "burndown").await;
         let CliResult::Burndown(b) = res else { panic!("{res:?}") };
@@ -1805,7 +2317,10 @@ mod aliases_and_abbreviations {
         // One alias, several words: a filter and a report.
         let (res, _) = typed(&mut r, &cfg, "bills").await;
         let CliResult::Report(o) = res else { panic!("{res:?}") };
-        assert_eq!(o.rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(), ["Pay rent"]);
+        assert_eq!(
+            o.rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(),
+            ["Pay rent"]
+        );
         // The taskrc's `rm` replaces the built-in one.
         let (res, wrote) = typed(&mut r, &cfg, "description:Walk rm").await;
         assert!(wrote, "{}", message(&res));
@@ -1849,14 +2364,25 @@ mod aliases_and_abbreviations {
         run(&mut r, &Config::default(), "add Pay rent project:home").await;
         let at = |n: u32| parse(&format!("abbreviation.minimum={n}\n")).config;
         // Checked against task 3.5.0: `ve` is `version` at 2 but not at 3, `ver` not at 4.
-        for (min, word, command) in [(2, "ve", true), (3, "ve", false), (3, "ver", true), (4, "ver", false), (4, "vers", true), (1, "ve", true)] {
+        for (min, word, command) in [
+            (2, "ve", true),
+            (3, "ve", false),
+            (3, "ver", true),
+            (4, "ver", false),
+            (4, "vers", true),
+            (1, "ve", true),
+        ] {
             let (res, _) = run(&mut r, &at(min), word).await;
             assert_eq!(is_version(&res), command, "min {min}: {word}: {res:?}");
         }
         // Attribute names follow it too: `pro:` is `project:` unless the minimum is above 3.
         for (min, matches) in [(2, 1), (3, 1), (4, 0)] {
             let (res, _) = run(&mut r, &at(min), "pro:home count").await;
-            assert_eq!(message(&res), if matches == 1 { "1" } else { "0" }, "min {min}: {res:?}");
+            assert_eq!(
+                message(&res),
+                if matches == 1 { "1" } else { "0" },
+                "min {min}: {res:?}"
+            );
         }
         let (res, _) = run(&mut r, &at(4), "proj:home count").await;
         assert_eq!(message(&res), "1");
@@ -1890,7 +2416,10 @@ mod project_and_tag_lists {
 
     fn table(res: &CliResult) -> (Vec<(String, String)>, Vec<String>) {
         let CliResult::Table(t) = res else { panic!("{res:?}") };
-        (t.rows.iter().map(|r| (r[0].clone(), r[1].clone())).collect(), t.footer.clone())
+        (
+            t.rows.iter().map(|r| (r[0].clone(), r[1].clone())).collect(),
+            t.footer.clone(),
+        )
     }
     fn rows(v: &[(&str, &str)]) -> Vec<(String, String)> {
         v.iter().map(|(a, b)| ((*a).to_owned(), (*b).to_owned())).collect()
@@ -1903,7 +2432,14 @@ mod project_and_tag_lists {
         let (got, footer) = table(&res);
         assert_eq!(
             got,
-            rows(&[("(none)", "1"), ("home", "2"), ("  travel", "1"), ("later", "1"), ("work", "1"), ("  docs", "1")])
+            rows(&[
+                ("(none)", "1"),
+                ("home", "2"),
+                ("  travel", "1"),
+                ("later", "1"),
+                ("work", "1"),
+                ("  docs", "1")
+            ])
         );
         assert_eq!(footer, ["5 projects (5 tasks)"]);
         // A filter narrows it, and the footer follows.
@@ -1921,7 +2457,15 @@ mod project_and_tag_lists {
         let (got, footer) = table(&res);
         assert_eq!(
             got,
-            rows(&[("(none)", "1"), ("home", "3"), ("  travel", "2"), ("later", "1"), ("old", "1"), ("work", "1"), ("  docs", "1")])
+            rows(&[
+                ("(none)", "1"),
+                ("home", "3"),
+                ("  travel", "2"),
+                ("later", "1"),
+                ("old", "1"),
+                ("work", "1"),
+                ("  docs", "1")
+            ])
         );
         assert_eq!(footer, ["6 projects (7 tasks)"]);
         // `rc.list.all.projects:1` on one command does the same.
@@ -1942,7 +2486,15 @@ mod project_and_tag_lists {
         let (got, footer) = table(&res);
         assert_eq!(
             got,
-            rows(&[("done", "1"), ("gone", "1"), ("trashed", "1"), ("waiting", "1"), ("x", "2"), ("y", "1"), ("z", "1")])
+            rows(&[
+                ("done", "1"),
+                ("gone", "1"),
+                ("trashed", "1"),
+                ("waiting", "1"),
+                ("x", "2"),
+                ("y", "1"),
+                ("z", "1")
+            ])
         );
         assert_eq!(footer, ["7 tags", "(8 tasks)"], "the deleted task's tag counts here");
     }
@@ -1958,16 +2510,38 @@ mod project_and_tag_lists {
         assert_eq!(lines(res), ["home", "home.travel", "later", "work.docs"]);
         // Unlike `projects`, this one also names the projects of deleted tasks.
         let cfg = parse("list.all.projects=1\n").config;
-        assert_eq!(lines(run(&mut r, &cfg, "_projects").await.0), ["home", "home.travel", "later", "old", "trash", "work.docs"]);
+        assert_eq!(
+            lines(run(&mut r, &cfg, "_projects").await.0),
+            ["home", "home.travel", "later", "old", "trash", "work.docs"]
+        );
 
         let tags = lines(run(&mut r, &Config::default(), "_tags").await.0);
-        for t in ["ACTIVE", "YESTERDAY", "next", "nocal", "nocolor", "nonag", "waiting", "x", "y", "z"] {
+        for t in [
+            "ACTIVE",
+            "YESTERDAY",
+            "next",
+            "nocal",
+            "nocolor",
+            "nonag",
+            "waiting",
+            "x",
+            "y",
+            "z",
+        ] {
             assert!(tags.contains(&t.to_owned()), "{t} in {tags:?}");
         }
-        assert!(!tags.contains(&"gone".to_owned()), "finished tasks' tags only with complete.all.tags");
+        assert!(
+            !tags.contains(&"gone".to_owned()),
+            "finished tasks' tags only with complete.all.tags"
+        );
         let cfg = parse("complete.all.tags=1\n").config;
         let tags = lines(run(&mut r, &cfg, "_tags").await.0);
-        assert!(["done", "gone", "trashed"].iter().all(|t| tags.contains(&(*t).to_owned())), "{tags:?}");
+        assert!(
+            ["done", "gone", "trashed"]
+                .iter()
+                .all(|t| tags.contains(&(*t).to_owned())),
+            "{tags:?}"
+        );
         // Sorted as bytes, so the capitals come first (as in the real output).
         assert_eq!(tags[0], "ACTIVE");
     }
@@ -2000,7 +2574,10 @@ mod indicator_columns {
         )
         .await;
         let labels: Vec<&str> = o.columns.iter().map(|c| c.label.as_str()).collect();
-        assert_eq!(labels, ["Description", "Started", "A", "Tags", "T", "Tag", "Depends", "D", "Dep"]);
+        assert_eq!(
+            labels,
+            ["Description", "Started", "A", "Tags", "T", "Tag", "Depends", "D", "Dep"]
+        );
     }
 
     #[tokio::test]
@@ -2020,7 +2597,11 @@ mod indicator_columns {
         let o = report_with(&Config::default(), "description,depends").await;
         let by = |d: &str| o.rows.iter().find(|r| r.facts.description == d).map(|r| r.pending_deps);
         assert_eq!(by("beta"), Some(1));
-        assert_eq!(by("delta"), Some(0), "it depends on a finished task, which holds nothing up");
+        assert_eq!(
+            by("delta"),
+            Some(0),
+            "it depends on a finished task, which holds nothing up"
+        );
         assert_eq!(by("alpha"), Some(0));
     }
 }
@@ -2079,7 +2660,10 @@ mod the_calculator {
         assert_eq!(calc(&parse("expressions=infix\n").config, "calc 1 + 2").await, "3");
         // Mistakes say what is wrong, as errors.
         assert_eq!(calc(&cfg, "calc 5 / 0").await, "ERROR: Cannot divide by zero");
-        assert_eq!(calc(&cfg, "calc (1 + 2").await, "ERROR: Mismatched parentheses in expression");
+        assert_eq!(
+            calc(&cfg, "calc (1 + 2").await,
+            "ERROR: Mismatched parentheses in expression"
+        );
     }
 
     #[tokio::test]
@@ -2121,18 +2705,36 @@ mod the_calculators_references {
     async fn a_task_by_id_gives_its_attributes_in_their_own_types() {
         let (mut r, cfg) = world().await;
         for (e, want) in [
-            ("1.description", "Buy milk"), ("1.project", "home.shop"), ("1.priority", "H"), ("1.status", "pending"),
-            ("1.due", "2026-12-25T10:00:00"), ("1.est", "3"), ("1.tags", "x,y"), ("1.id", "1"),
-            ("1.end", ""), ("1.note", ""), ("1.depends", ""), ("1.mask", ""), ("1.parent", ""), ("1.imask", "0"),
-            ("1.recur", "PT0S"), ("1.when", "2026-03-04T05:06:07"), ("1.len", "PT1H30M"),
-            ("2.description", "other"), ("3.status", "waiting"), ("3.wait", "2099-01-01T00:00:00"),
+            ("1.description", "Buy milk"),
+            ("1.project", "home.shop"),
+            ("1.priority", "H"),
+            ("1.status", "pending"),
+            ("1.due", "2026-12-25T10:00:00"),
+            ("1.est", "3"),
+            ("1.tags", "x,y"),
+            ("1.id", "1"),
+            ("1.end", ""),
+            ("1.note", ""),
+            ("1.depends", ""),
+            ("1.mask", ""),
+            ("1.parent", ""),
+            ("1.imask", "0"),
+            ("1.recur", "PT0S"),
+            ("1.when", "2026-03-04T05:06:07"),
+            ("1.len", "PT1H30M"),
+            ("2.description", "other"),
+            ("3.status", "waiting"),
+            ("3.wait", "2099-01-01T00:00:00"),
         ] {
             assert_eq!(calc(&mut r, &cfg, e).await, want, "{e}");
         }
         // They are values, so they can be calculated with.
         for (e, want) in [
-            ("1.due + 1d", "2026-12-26T10:00:00"), ("1.due - 2026-12-01", "P24DT10H"), ("1.est * 2", "6"),
-            ("\"1.description == 'Buy milk'\"", "true"), ("1.len * 2", "PT3H"),
+            ("1.due + 1d", "2026-12-26T10:00:00"),
+            ("1.due - 2026-12-01", "P24DT10H"),
+            ("1.est * 2", "6"),
+            ("\"1.description == 'Buy milk'\"", "true"),
+            ("1.len * 2", "PT3H"),
         ] {
             assert_eq!(calc(&mut r, &cfg, e).await, want, "{e}");
         }
@@ -2146,11 +2748,18 @@ mod the_calculators_references {
         let uuid = calc(&mut r, &cfg, "1.uuid").await;
         assert_eq!(uuid.len(), 36);
         for name in [uuid.clone(), uuid[..8].to_owned(), uuid[..12].to_owned()] {
-            assert_eq!(calc(&mut r, &cfg, &format!("{name}.project")).await, "home.shop", "{name}");
+            assert_eq!(
+                calc(&mut r, &cfg, &format!("{name}.project")).await,
+                "home.shop",
+                "{name}"
+            );
         }
         // Seven characters are too few to be a uuid; the id-less word is just a word.
         let short = &uuid[..7];
-        assert_eq!(calc(&mut r, &cfg, &format!("{short}.project")).await, format!("{short}.project"));
+        assert_eq!(
+            calc(&mut r, &cfg, &format!("{short}.project")).await,
+            format!("{short}.project")
+        );
         assert_eq!(calc(&mut r, &cfg, "4.depends").await, uuid);
     }
 
@@ -2158,10 +2767,23 @@ mod the_calculators_references {
     async fn what_is_not_a_reference_is_a_word_as_in_taskwarrior() {
         let (mut r, cfg) = world().await;
         for e in [
-            "1.nope", "99.description", "due", "description", "rc.nope", "1.uuid.short", "1.est.year",
-            "1.description.x", "1.annotations.5.description", "1.annotations.0.description",
+            "1.nope",
+            "99.description",
+            "due",
+            "description",
+            "rc.nope",
+            "1.uuid.short",
+            "1.est.year",
+            "1.description.x",
+            "1.annotations.5.description",
+            "1.annotations.0.description",
             // Attribute names are exact: no abbreviations here.
-            "1.desc", "1.proj", "1.pri", "1.dep", "1.ann", "1.sta",
+            "1.desc",
+            "1.proj",
+            "1.pri",
+            "1.dep",
+            "1.ann",
+            "1.sta",
         ] {
             assert_eq!(calc(&mut r, &cfg, e).await, e, "{e}");
         }
@@ -2171,11 +2793,21 @@ mod the_calculators_references {
     async fn parts_of_dates_tags_and_annotations() {
         let (mut r, cfg) = world().await;
         for (e, want) in [
-            ("1.due.year", "2026"), ("1.due.month", "12"), ("1.due.day", "25"), ("1.due.hour", "10"),
-            ("1.due.minute", "0"), ("1.due.second", "0"), ("1.due.weekday", "5"), ("1.due.julian", "359"),
-            ("1.when.year", "2026"), ("1.when.hour", "5"), ("1.end.year", "1970"),
-            ("1.tags.x", "x"), ("1.tags.nope", ""),
-            ("1.annotations.count", "2"), ("1.annotations.1.description", "first note"),
+            ("1.due.year", "2026"),
+            ("1.due.month", "12"),
+            ("1.due.day", "25"),
+            ("1.due.hour", "10"),
+            ("1.due.minute", "0"),
+            ("1.due.second", "0"),
+            ("1.due.weekday", "5"),
+            ("1.due.julian", "359"),
+            ("1.when.year", "2026"),
+            ("1.when.hour", "5"),
+            ("1.end.year", "1970"),
+            ("1.tags.x", "x"),
+            ("1.tags.nope", ""),
+            ("1.annotations.count", "2"),
+            ("1.annotations.1.description", "first note"),
             ("1.annotations.2.description", "second note"),
         ] {
             assert_eq!(calc(&mut r, &cfg, e).await, want, "{e}");
@@ -2186,7 +2818,13 @@ mod the_calculators_references {
         assert_eq!(calc(&mut r, &monday, "1.due.week").await, "52");
         // An annotation's time is a date, with the same parts.
         assert!(calc(&mut r, &cfg, "1.annotations.1.entry").await.starts_with("20"));
-        assert!(calc(&mut r, &cfg, "1.annotations.1.entry.year").await.parse::<i32>().unwrap() >= 2026);
+        assert!(
+            calc(&mut r, &cfg, "1.annotations.1.entry.year")
+                .await
+                .parse::<i32>()
+                .unwrap()
+                >= 2026
+        );
     }
 
     #[tokio::test]
@@ -2195,12 +2833,22 @@ mod the_calculators_references {
         let tuned = parse(&format!("{UDAS}bulk=7\ndateformat=m/d/Y\n")).config;
         for (e, want) in [
             // Defaults when the taskrc is silent, as Taskwarrior has them.
-            ("rc.bulk", "3"), ("rc.confirmation", "1"), ("rc.dateformat", "Y-M-D"), ("rc.dateformat.info", "Y-M-D H:N:S"),
-            ("rc.weekstart", "sunday"), ("rc.abbreviation.minimum", "2"), ("rc.expressions", "infix"),
+            ("rc.bulk", "3"),
+            ("rc.confirmation", "1"),
+            ("rc.dateformat", "Y-M-D"),
+            ("rc.dateformat.info", "Y-M-D H:N:S"),
+            ("rc.weekstart", "sunday"),
+            ("rc.abbreviation.minimum", "2"),
+            ("rc.expressions", "infix"),
             // Everything the app holds can be asked, UDAs included.
-            ("rc.uda.est.type", "numeric"), ("rc.uda.when.type", "date"),
-            ("tw.version", "3.5.0"), ("system.version", "3.5.0"), ("tw.program", "task"), ("context.program", "task"),
-            ("tw.width", "80"), ("tw.height", "24"),
+            ("rc.uda.est.type", "numeric"),
+            ("rc.uda.when.type", "date"),
+            ("tw.version", "3.5.0"),
+            ("system.version", "3.5.0"),
+            ("tw.program", "task"),
+            ("context.program", "task"),
+            ("tw.width", "80"),
+            ("tw.height", "24"),
             // Changes not yet synced: this replica never syncs (the real client says 1 here too).
             ("tw.syncneeded", "1"),
         ] {
@@ -2240,7 +2888,10 @@ mod changes_after_a_command_word {
         assert!(near(f.end, 2 * 3600), "end {:?}", f.end);
         assert_eq!(f.priority.as_deref(), Some("H"));
         assert!(f.tags.contains("x"));
-        assert_eq!(f.annotations.iter().map(|a| a.text.as_str()).collect::<Vec<_>>(), ["some words"]);
+        assert_eq!(
+            f.annotations.iter().map(|a| a.text.as_str()).collect::<Vec<_>>(),
+            ["some words"]
+        );
     }
 
     #[tokio::test]
@@ -2265,7 +2916,10 @@ mod changes_after_a_command_word {
         let f = one(&mut r).await;
         assert!(f.start.is_none());
         assert_eq!(f.project.as_deref(), Some("P"));
-        assert_eq!(f.annotations.iter().map(|a| a.text.as_str()).collect::<Vec<_>>(), ["note words"]);
+        assert_eq!(
+            f.annotations.iter().map(|a| a.text.as_str()).collect::<Vec<_>>(),
+            ["note words"]
+        );
     }
 
     #[tokio::test]
@@ -2282,7 +2936,16 @@ mod changes_after_a_command_word {
 
     /// A typed line, like the console's.
     async fn typed(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
-        run_opts(r, cfg, line, Options { typed: true, ..Options::default() }).await
+        run_opts(
+            r,
+            cfg,
+            line,
+            Options {
+                typed: true,
+                ..Options::default()
+            },
+        )
+        .await
     }
 
     #[tokio::test]
@@ -2305,7 +2968,11 @@ mod changes_after_a_command_word {
         // With nothing at all there is nothing to do.
         for cmd in ["1 annotate", "1 append", "1 prepend"] {
             let (res, wrote) = typed(&mut r, &cfg, cmd).await;
-            assert!(!wrote && message(&res).contains("needs some text"), "{cmd}: {}", message(&res));
+            assert!(
+                !wrote && message(&res).contains("needs some text"),
+                "{cmd}: {}",
+                message(&res)
+            );
         }
     }
 
@@ -2327,7 +2994,18 @@ mod show_and_config {
 
     async fn done(r: &mut R, cfg: &Config, line: &str, confirmed: bool) -> Done {
         let mut undo = UndoStack::default();
-        execute(r, cfg, clock(), &split_words(line), Options { confirmed, ..Options::default() }, &mut undo).await
+        execute(
+            r,
+            cfg,
+            clock(),
+            &split_words(line),
+            Options {
+                confirmed,
+                ..Options::default()
+            },
+            &mut undo,
+        )
+        .await
     }
 
     #[tokio::test]
@@ -2336,16 +3014,28 @@ mod show_and_config {
         let cfg = parse("bulk=7\ndefault.project=Home\n").config;
         let d = done(&mut r, &cfg, "show", false).await;
         assert!(!d.wrote && d.config.is_none());
-        let CliResult::Table(t) = d.result else { panic!("{:?}", d.result) };
+        let CliResult::Table(t) = d.result else {
+            panic!("{:?}", d.result)
+        };
         let at = |n: &str| t.rows.iter().position(|row| row[0] == n).unwrap();
         assert_eq!(t.rows[at("bulk")][1], "7");
         assert!(t.highlight.contains(&at("bulk")) && !t.highlight.contains(&at("confirmation")));
         assert_eq!(t.rows[at("bulk") + 1], ["  Default value", "3"]);
         // Narrowed by a word.
-        let CliResult::Table(t) = done(&mut r, &cfg, "show default", false).await.result else { panic!() };
-        assert!(t.rows.iter().all(|row| row[0].trim_start().starts_with("default") || row[0] == "  Default value"));
+        let CliResult::Table(t) = done(&mut r, &cfg, "show default", false).await.result else {
+            panic!()
+        };
+        assert!(t
+            .rows
+            .iter()
+            .all(|row| row[0].trim_start().starts_with("default") || row[0] == "  Default value"));
         // An `rc.` override is a setting for this command, not a word of it, and shows as changed.
-        let CliResult::Table(t) = done(&mut r, &Config::default(), "rc.bulk:5 show bulk", false).await.result else { panic!() };
+        let CliResult::Table(t) = done(&mut r, &Config::default(), "rc.bulk:5 show bulk", false)
+            .await
+            .result
+        else {
+            panic!()
+        };
         assert_eq!(t.rows[0], ["bulk", "5"]);
         assert_eq!(t.highlight, [0, 1]);
     }
@@ -2358,8 +3048,15 @@ mod show_and_config {
         let d = done(&mut r, &cfg, "config bulk 9", false).await;
         assert!(d.config.is_none());
         match &d.result {
-            CliResult::Confirm { ask: Ask::Plain, message, .. } => {
-                assert_eq!(message, "Are you sure you want to change the value of 'bulk' from '7' to '9'?");
+            CliResult::Confirm {
+                ask: Ask::Plain,
+                message,
+                ..
+            } => {
+                assert_eq!(
+                    message,
+                    "Are you sure you want to change the value of 'bulk' from '7' to '9'?"
+                );
             }
             other => panic!("{other:?}"),
         }
@@ -2370,13 +3067,22 @@ mod show_and_config {
         let quiet = parse("confirmation=off\nbulk=7\n").config;
         let d = done(&mut r, &quiet, "config default.command next +PENDING", false).await;
         let saved = d.config.expect("new settings");
-        assert_eq!(saved.settings.get("default.command").map(String::as_str), Some("next +PENDING"));
+        assert_eq!(
+            saved.settings.get("default.command").map(String::as_str),
+            Some("next +PENDING")
+        );
         assert_eq!(saved.bulk(), 7, "the rest is kept");
         // Removing puts back the default; removing what isn't there is an error.
         let d = done(&mut r, &quiet, "config bulk", false).await;
         assert_eq!(d.config.expect("new settings").bulk(), 3);
-        assert_eq!(message(&done(&mut r, &quiet, "config nothing.here", false).await.result), "ERROR: No entry named 'nothing.here' found.");
-        assert_eq!(message(&done(&mut r, &quiet, "config", false).await.result), "ERROR: Specify the name of a config variable to modify.");
+        assert_eq!(
+            message(&done(&mut r, &quiet, "config nothing.here", false).await.result),
+            "ERROR: No entry named 'nothing.here' found."
+        );
+        assert_eq!(
+            message(&done(&mut r, &quiet, "config", false).await.result),
+            "ERROR: Specify the name of a config variable to modify."
+        );
     }
 
     #[tokio::test]
@@ -2403,13 +3109,20 @@ mod show_and_config {
         ] {
             let d = done(&mut r, &quiet, line, false).await;
             let m = message(&d.result);
-            assert!(m.starts_with("ERROR:") && !m.contains("hunter2") && !m.contains("AKIA"), "{line}: {m}");
+            assert!(
+                m.starts_with("ERROR:") && !m.contains("hunter2") && !m.contains("AKIA"),
+                "{line}: {m}"
+            );
             assert!(d.config.is_none(), "{line} produced a new config");
         }
         // And `show` has nothing of the kind to show.
         for word in ["sync", "secret", "token", "password"] {
             let d = done(&mut r, &quiet, &format!("show {word}"), false).await;
-            assert!(matches!(d.result, CliResult::Text { .. }), "show {word}: {:?}", d.result);
+            assert!(
+                matches!(d.result, CliResult::Text { .. }),
+                "show {word}: {:?}",
+                d.result
+            );
         }
     }
 
@@ -2451,7 +3164,10 @@ mod hooks {
             Ok(())
         }
         fn on_add(&self, h: &mut Hooked, mut task: Facts) -> Result<Facts, Reject> {
-            self.seen.lock().unwrap().push(format!("add {} [{}]", task.description, task.status));
+            self.seen
+                .lock()
+                .unwrap()
+                .push(format!("add {} [{}]", task.description, task.status));
             if self.refuse_new {
                 h.warn("no new tasks");
                 return Err("add refused".into());
@@ -2464,7 +3180,10 @@ mod hooks {
             Ok(task)
         }
         fn on_modify(&self, h: &mut Hooked, old: &Facts, mut new: Facts) -> Result<Facts, Reject> {
-            self.seen.lock().unwrap().push(format!("modify {} {}->{}", old.description, old.status, new.status));
+            self.seen
+                .lock()
+                .unwrap()
+                .push(format!("modify {} {}->{}", old.description, old.status, new.status));
             if self.refuse_done && new.status == "completed" {
                 h.warn("finish it later");
                 return Err("done refused".into());
@@ -2481,7 +3200,11 @@ mod hooks {
 
     async fn go(r: &mut R, cfg: &Config, line: &str, hooks: &Arc<Probe>) -> Done {
         let mut undo = UNDO.with(|u| u.borrow().clone());
-        let o = Options { hooks: Some(hooks.clone()), confirmed: true, ..Options::default() };
+        let o = Options {
+            hooks: Some(hooks.clone()),
+            confirmed: true,
+            ..Options::default()
+        };
         let d = execute(r, cfg, clock(), &split_words(line), o, &mut undo).await;
         UNDO.with(|u| *u.borrow_mut() = undo);
         d
@@ -2494,7 +3217,10 @@ mod hooks {
     #[tokio::test]
     async fn a_hook_can_change_a_new_task_and_say_something_and_one_undo_takes_it_all_back() {
         let (mut r, cfg) = (replica(), Config::default());
-        let p = Arc::new(Probe { tag_new: true, ..Probe::default() });
+        let p = Arc::new(Probe {
+            tag_new: true,
+            ..Probe::default()
+        });
         let d = go(&mut r, &cfg, "add Buy milk", &p).await;
         assert_eq!(texts(&d), ["launch: add Buy milk", "tagged", "exit: 1 changed"]);
         let all = load_facts(&mut r).await.unwrap();
@@ -2511,12 +3237,18 @@ mod hooks {
     #[tokio::test]
     async fn a_hook_can_refuse_an_add() {
         let (mut r, cfg) = (replica(), Config::default());
-        let p = Arc::new(Probe { refuse_new: true, ..Probe::default() });
+        let p = Arc::new(Probe {
+            refuse_new: true,
+            ..Probe::default()
+        });
         let d = go(&mut r, &cfg, "add Nope", &p).await;
         assert_eq!(message(&d.result), "ERROR: add refused");
         assert!(!d.wrote);
         assert!(descs(&mut r).await.is_empty());
-        assert!(d.feedback.iter().any(|l| l.kind == Kind::Warn && l.text == "no new tasks"));
+        assert!(d
+            .feedback
+            .iter()
+            .any(|l| l.kind == Kind::Warn && l.text == "no new tasks"));
         // A refused add changed nothing, so the exit hook has nothing to report.
         assert_eq!(d.feedback.last().map(|l| l.text.as_str()), Some("exit: 0 changed"));
     }
@@ -2527,23 +3259,39 @@ mod hooks {
         let quiet = Arc::new(Probe::default());
         go(&mut r, &cfg, "add Write report", &quiet).await;
 
-        let refuse = Arc::new(Probe { refuse_done: true, ..Probe::default() });
+        let refuse = Arc::new(Probe {
+            refuse_done: true,
+            ..Probe::default()
+        });
         let d = go(&mut r, &cfg, "1 done", &refuse).await;
         assert_eq!(message(&d.result), "ERROR: done refused");
         assert_eq!(refuse.seen.lock().unwrap()[0], "modify Write report pending->completed");
-        assert_eq!(load_facts(&mut r).await.unwrap()[0].status, "pending", "a refused change is not saved");
+        assert_eq!(
+            load_facts(&mut r).await.unwrap()[0].status,
+            "pending",
+            "a refused change is not saved"
+        );
 
-        let rename = Arc::new(Probe { rename_on_modify: true, ..Probe::default() });
+        let rename = Arc::new(Probe {
+            rename_on_modify: true,
+            ..Probe::default()
+        });
         let d = go(&mut r, &cfg, "1 modify project:Work", &rename).await;
         assert!(d.wrote);
         let f = &load_facts(&mut r).await.unwrap()[0];
-        assert_eq!((f.description.as_str(), f.project.as_deref()), ("Write report!", Some("Work")));
+        assert_eq!(
+            (f.description.as_str(), f.project.as_deref()),
+            ("Write report!", Some("Work"))
+        );
     }
 
     #[tokio::test]
     async fn on_launch_can_stop_a_command_before_it_does_anything() {
         let (mut r, cfg) = (replica(), Config::default());
-        let p = Arc::new(Probe { refuse_launch: true, ..Probe::default() });
+        let p = Arc::new(Probe {
+            refuse_launch: true,
+            ..Probe::default()
+        });
         let d = go(&mut r, &cfg, "add Never", &p).await;
         assert_eq!(message(&d.result), "ERROR: not today");
         assert!(descs(&mut r).await.is_empty());
@@ -2553,7 +3301,11 @@ mod hooks {
     #[tokio::test]
     async fn hooks_off_runs_none_and_a_plain_run_prints_nothing() {
         let (mut r, cfg) = (replica(), Config::default());
-        let p = Arc::new(Probe { tag_new: true, refuse_launch: true, ..Probe::default() });
+        let p = Arc::new(Probe {
+            tag_new: true,
+            refuse_launch: true,
+            ..Probe::default()
+        });
         for line in ["rc.hooks:off add Free", "rc.hooks:0 add Also free"] {
             let d = go(&mut r, &cfg, line, &p).await;
             assert!(d.wrote && d.feedback.is_empty(), "{line}: {:?}", d.feedback);
@@ -2563,7 +3315,15 @@ mod hooks {
         assert!(load_facts(&mut r).await.unwrap().iter().all(|f| f.tags.is_empty()));
         // Without any hooks supplied, the shipped placeholders do nothing.
         let mut undo = UndoStack::default();
-        let d = execute(&mut r, &cfg, clock(), &split_words("add Plain"), Options::default(), &mut undo).await;
+        let d = execute(
+            &mut r,
+            &cfg,
+            clock(),
+            &split_words("add Plain"),
+            Options::default(),
+            &mut undo,
+        )
+        .await;
         assert!(d.wrote && d.feedback.is_empty());
     }
 }

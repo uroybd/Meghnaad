@@ -5,8 +5,23 @@ use crate::taskrc::{Config, ReportDef};
 use serde::Serialize;
 
 pub const BUILTIN_NAMES: &[&str] = &[
-    "next", "list", "long", "ls", "all", "completed", "waiting", "newest", "oldest", "overdue",
-    "active", "ready", "recurring", "blocked", "unblocked", "blocking", "minimal",
+    "next",
+    "list",
+    "long",
+    "ls",
+    "all",
+    "completed",
+    "waiting",
+    "newest",
+    "oldest",
+    "overdue",
+    "active",
+    "ready",
+    "recurring",
+    "blocked",
+    "unblocked",
+    "blocking",
+    "minimal",
 ];
 
 struct Builtin {
@@ -190,7 +205,11 @@ pub fn resolve(config: &Config, name: &str) -> Option<ReportDef> {
             name: b.name,
             description: c.description.clone().or(b.description),
             // Columns and labels travel together; a custom column list drops default labels.
-            columns: if c.columns.is_empty() { b.columns } else { c.columns.clone() },
+            columns: if c.columns.is_empty() {
+                b.columns
+            } else {
+                c.columns.clone()
+            },
             labels: if c.columns.is_empty() && c.labels.is_empty() {
                 b.labels
             } else {
@@ -207,7 +226,13 @@ pub fn resolve(config: &Config, name: &str) -> Option<ReportDef> {
 /// All report names, built-ins first, then custom ones, each once.
 pub fn names(config: &Config) -> Vec<String> {
     let mut v: Vec<String> = BUILTIN_NAMES.iter().map(|s| (*s).to_owned()).collect();
-    v.extend(config.reports.keys().filter(|k| !BUILTIN_NAMES.contains(&k.as_str())).cloned());
+    v.extend(
+        config
+            .reports
+            .keys()
+            .filter(|k| !BUILTIN_NAMES.contains(&k.as_str()))
+            .cloned(),
+    );
     v
 }
 
@@ -253,7 +278,11 @@ pub fn parse_sort(spec: &str) -> Result<SortSpec, String> {
         if column.is_empty() {
             return Err("empty sort column".into());
         }
-        keys.push(SortKey { column: column.to_owned(), descending, break_after });
+        keys.push(SortKey {
+            column: column.to_owned(),
+            descending,
+            break_after,
+        });
     }
     Ok(SortSpec::Keys(keys))
 }
@@ -274,7 +303,9 @@ mod tests {
 
     #[test]
     fn sort_spec_parses_directions_and_breaks() {
-        let SortSpec::Keys(k) = parse_sort("due+,priority-,project+/").unwrap() else { panic!() };
+        let SortSpec::Keys(k) = parse_sort("due+,priority-,project+/").unwrap() else {
+            panic!()
+        };
         assert_eq!(k.len(), 3);
         assert!(!k[0].descending && !k[0].break_after);
         assert!(k[1].descending);

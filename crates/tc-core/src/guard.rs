@@ -13,7 +13,12 @@ pub fn is_local_host(host: &str) -> bool {
     let parts: Vec<&str> = h.split('.').collect();
     parts.len() == 4
         && parts[0] == "127"
-        && parts.iter().all(|p| !p.is_empty() && p.len() <= 3 && p.bytes().all(|b| b.is_ascii_digit()) && p.parse::<u16>().is_ok_and(|n| n <= 255))
+        && parts.iter().all(|p| {
+            !p.is_empty()
+                && p.len() <= 3
+                && p.bytes().all(|b| b.is_ascii_digit())
+                && p.parse::<u16>().is_ok_and(|n| n <= 255)
+        })
 }
 
 /// Cross-site request check for state-changing requests.
@@ -26,7 +31,9 @@ pub fn origin_allowed(origin_header: Option<&str>, request_origin: &str) -> bool
     match origin_header.map(str::trim) {
         None => true,
         Some("") | Some("null") => false,
-        Some(o) => o.trim_end_matches('/').eq_ignore_ascii_case(request_origin.trim_end_matches('/')),
+        Some(o) => o
+            .trim_end_matches('/')
+            .eq_ignore_ascii_case(request_origin.trim_end_matches('/')),
     }
 }
 
@@ -36,7 +43,15 @@ mod tests {
 
     #[test]
     fn loopback_hosts_are_local() {
-        for h in ["localhost", "LOCALHOST", "127.0.0.1", "127.12.0.9", "[::1]", "::1", "app.localhost"] {
+        for h in [
+            "localhost",
+            "LOCALHOST",
+            "127.0.0.1",
+            "127.12.0.9",
+            "[::1]",
+            "::1",
+            "app.localhost",
+        ] {
             assert!(is_local_host(h), "{h}");
         }
     }
@@ -44,9 +59,21 @@ mod tests {
     #[test]
     fn everything_else_is_not_local() {
         for h in [
-            "example.com", "taskwarrior-web.me.workers.dev", "localhost.evil.com", "127.0.0.1.evil.com",
-            "evil127.0.0.1", "0.0.0.0", "10.0.0.5", "192.168.1.2", "128.0.0.1", "127.0.0", "127.0.0.1.5",
-            "127.0.0.256", "", "::2", "notlocalhost",
+            "example.com",
+            "taskwarrior-web.me.workers.dev",
+            "localhost.evil.com",
+            "127.0.0.1.evil.com",
+            "evil127.0.0.1",
+            "0.0.0.0",
+            "10.0.0.5",
+            "192.168.1.2",
+            "128.0.0.1",
+            "127.0.0",
+            "127.0.0.1.5",
+            "127.0.0.256",
+            "",
+            "::2",
+            "notlocalhost",
         ] {
             assert!(!is_local_host(h), "{h:?} must not count as local");
         }
@@ -63,8 +90,15 @@ mod tests {
     #[test]
     fn cross_site_and_opaque_origins_are_refused() {
         let me = "https://tasks.example.com";
-        for o in ["https://evil.example", "http://tasks.example.com", "https://tasks.example.com.evil.io",
-                  "https://tasks.example.com:8443", "null", "", "  "] {
+        for o in [
+            "https://evil.example",
+            "http://tasks.example.com",
+            "https://tasks.example.com.evil.io",
+            "https://tasks.example.com:8443",
+            "null",
+            "",
+            "  ",
+        ] {
             assert!(!origin_allowed(Some(o), me), "{o:?}");
         }
     }

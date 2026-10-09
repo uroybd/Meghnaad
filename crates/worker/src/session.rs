@@ -3,6 +3,7 @@
 //! The first request in an isolate derives the key (slow PBKDF2) and bootstraps a replica from the
 //! bucket's snapshot. Later requests reuse them, so each `sync` only downloads versions added since.
 
+use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -17,7 +18,6 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use worker::Env;
-use js_sys::{Array, Object, Reflect, Uint8Array};
 
 use crate::store::R2Store;
 
@@ -47,15 +47,20 @@ struct Stored {
 fn decode(bytes: &[u8]) -> Result<Config, String> {
     let v: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     if v.get("version").is_some() && v.get("config").is_some() {
-        serde_json::from_value::<Stored>(v).map(|s| s.config).map_err(|e| e.to_string())
+        serde_json::from_value::<Stored>(v)
+            .map(|s| s.config)
+            .map_err(|e| e.to_string())
     } else {
         serde_json::from_value::<Config>(v).map_err(|e| e.to_string())
     }
 }
 
 fn encode(cfg: &Config) -> worker::Result<Vec<u8>> {
-    serde_json::to_vec(&Stored { version: SCHEMA_VERSION, config: cfg.clone() })
-        .map_err(|e| worker::Error::RustError(e.to_string()))
+    serde_json::to_vec(&Stored {
+        version: SCHEMA_VERSION,
+        config: cfg.clone(),
+    })
+    .map_err(|e| worker::Error::RustError(e.to_string()))
 }
 
 pub struct State {
@@ -103,7 +108,10 @@ fn rust_err(e: impl ToString) -> worker::Error {
 pub async fn config(env: &Env) -> worker::Result<Rc<Config>> {
     let now = js_sys::Date::now();
     if let Some(c) = CONFIG.with(|c| {
-        c.borrow().as_ref().filter(|(at, _)| now - at < CONFIG_TTL_MS).map(|(_, c)| c.clone())
+        c.borrow()
+            .as_ref()
+            .filter(|(at, _)| now - at < CONFIG_TTL_MS)
+            .map(|(_, c)| c.clone())
     }) {
         return Ok(c);
     }
@@ -137,7 +145,11 @@ pub async fn config(env: &Env) -> worker::Result<Rc<Config>> {
 /// Whether there are earlier (readable) settings to restore.
 pub async fn has_previous(env: &Env) -> worker::Result<bool> {
     let store = R2Store(env.bucket("TASKS")?);
-    Ok(store.get(PREV_KEY).await.map_err(rust_err)?.is_some_and(|b| decode(&b).is_ok()))
+    Ok(store
+        .get(PREV_KEY)
+        .await
+        .map_err(rust_err)?
+        .is_some_and(|b| decode(&b).is_ok()))
 }
 
 fn remember(cfg: Config) {
@@ -200,7 +212,11 @@ async fn derive_key_natively(salt: &[u8], secret: &[u8]) -> Result<[u8; KEY_LEN]
     Reflect::set(&params, &"name".into(), &"PBKDF2".into())?;
     Reflect::set(&params, &"hash".into(), &"SHA-256".into())?;
     Reflect::set(&params, &"salt".into(), &Uint8Array::from(salt))?;
-    Reflect::set(&params, &"iterations".into(), &JsValue::from_f64(f64::from(PBKDF2_ITERATIONS)))?;
+    Reflect::set(
+        &params,
+        &"iterations".into(),
+        &JsValue::from_f64(f64::from(PBKDF2_ITERATIONS)),
+    )?;
     let bits = JsFuture::from(subtle.derive_bits_with_object(&params, &base, (KEY_LEN * 8) as u32)?).await?;
     Uint8Array::new(&bits)
         .to_vec()

@@ -78,7 +78,11 @@ pub fn urgency(f: &Facts, cfg: &Config, clock: &Clock) -> f64 {
 pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<String, f64>) -> f64 {
     let c = |k: &str| coef.get(k).copied().unwrap_or(0.0);
     let term = |coefficient: f64, factor: f64| {
-        if coefficient.abs() > EPSILON { factor * coefficient } else { 0.0 }
+        if coefficient.abs() > EPSILON {
+            factor * coefficient
+        } else {
+            0.0
+        }
     };
     let b = |x: bool| if x { 1.0 } else { 0.0 };
 
@@ -93,7 +97,10 @@ pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<Stri
     v += term(c("urgency.blocked.coefficient"), b(f.blocked));
     v += term(c("urgency.annotations.coefficient"), ramp(f.annotations.len()));
     v += term(c("urgency.tags.coefficient"), ramp(f.tags.len()));
-    v += term(c("urgency.due.coefficient"), f.due.map_or(0.0, |d| urgency_due(d, clock)));
+    v += term(
+        c("urgency.due.coefficient"),
+        f.due.map_or(0.0, |d| urgency_due(d, clock)),
+    );
     v += term(c("urgency.blocking.coefficient"), b(f.blocking));
     v += term(
         c("urgency.age.coefficient"),
@@ -105,7 +112,9 @@ pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<Stri
         if value.abs() <= EPSILON {
             continue;
         }
-        let Some(name) = key.strip_suffix(".coefficient") else { continue };
+        let Some(name) = key.strip_suffix(".coefficient") else {
+            continue;
+        };
         if let Some(p) = name.strip_prefix("urgency.user.project.") {
             // Exact project or any sub-project.
             if project == p || project.starts_with(&format!("{p}.")) {
@@ -146,13 +155,11 @@ pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<Stri
 /// Returns the urgency of every *blocking* task; the caller uses its own score for the rest.
 /// Mirrors `Task::urgency_c`/`urgency_inherit`: the 0.01 is added to every blocking task, even
 /// when nothing it blocks is more urgent. Tasks that are completed or deleted block nothing.
-pub fn inherited(
-    all: &[Facts],
-    cfg: &Config,
-    clock: &Clock,
-    coef: &BTreeMap<String, f64>,
-) -> BTreeMap<Uuid, f64> {
-    let base: BTreeMap<Uuid, f64> = all.iter().map(|f| (f.uuid, urgency_with(f, cfg, clock, coef))).collect();
+pub fn inherited(all: &[Facts], cfg: &Config, clock: &Clock, coef: &BTreeMap<String, f64>) -> BTreeMap<Uuid, f64> {
+    let base: BTreeMap<Uuid, f64> = all
+        .iter()
+        .map(|f| (f.uuid, urgency_with(f, cfg, clock, coef)))
+        .collect();
     // blocker -> the live tasks that depend on it
     let mut blocked_by: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
     for f in all.iter().filter(|f| f.status != "completed" && f.status != "deleted") {
@@ -193,7 +200,13 @@ pub fn inherited(
         }
     }
 
-    let mut walk = Walk { base: &base, blocked_by: &blocked_by, blocking: &blocking, done: BTreeMap::new(), active: BTreeSet::new() };
+    let mut walk = Walk {
+        base: &base,
+        blocked_by: &blocked_by,
+        blocking: &blocking,
+        done: BTreeMap::new(),
+        active: BTreeSet::new(),
+    };
     for id in &blocking {
         walk.of(*id);
     }
@@ -292,7 +305,10 @@ mod tests {
     fn annotations_ramp() {
         let mut t = task("x");
         for i in 0..3 {
-            t.annotations.push(crate::model::Note { entry: NOW, text: format!("n{i}") });
+            t.annotations.push(crate::model::Note {
+                entry: NOW,
+                text: format!("n{i}"),
+            });
             close(u(&t), [0.8, 0.9, 1.0][i]);
         }
     }
@@ -327,7 +343,7 @@ mod tests {
         t.extra.insert("estimate".into(), "huge".into());
         t.extra.insert("points".into(), "3".into());
         t.due = Some(NOW); // zeroed by urgency.due.coefficient=0
-        // project 1.0 + tags 0.8 + Work 3.0 - 1.5 + keyword 2.0 - 4.0 + points 0.5
+                           // project 1.0 + tags 0.8 + Work 3.0 - 1.5 + keyword 2.0 - 4.0 + points 0.5
         close(urgency(&t, &cfg, &c), 1.0 + 0.8 + 3.0 - 1.5 + 2.0 - 4.0 + 0.5);
         t.tags.insert("next".into());
         // next now only worth the overridden 1.0, and tags ramp to 2 -> 0.9
@@ -366,7 +382,10 @@ mod tests {
         let high = urgency(&all[2], &cfg, &clock());
         assert!(high > own);
         close(got[&Uuid::from_u128(1)], high + 0.01);
-        assert!(!got.contains_key(&Uuid::from_u128(2)), "tasks that block nothing keep their own score");
+        assert!(
+            !got.contains_key(&Uuid::from_u128(2)),
+            "tasks that block nothing keep their own score"
+        );
     }
 
     #[test]

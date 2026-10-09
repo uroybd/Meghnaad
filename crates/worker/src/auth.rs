@@ -126,7 +126,12 @@ async fn refresh_keys(team_domain: &str) -> Result<(), AuthError> {
         let key: CryptoKey = JsFuture::from(promise).await.map_err(js_err)?.unchecked_into();
         keys.insert(kid.to_owned(), key);
     }
-    KEYS.with(|c| *c.borrow_mut() = KeyCache { keys, fetched_at: Date::now() });
+    KEYS.with(|c| {
+        *c.borrow_mut() = KeyCache {
+            keys,
+            fetched_at: Date::now(),
+        }
+    });
     Ok(())
 }
 
@@ -165,10 +170,18 @@ fn setting(env: &Env, name: &str) -> Option<String> {
 /// Local development only. Even if `DEV_AUTH_BYPASS` is set by mistake on a deployed Worker, it
 /// has no effect unless the request really is addressed to a loopback host.
 fn dev_bypass(req: &Request, env: &Env) -> bool {
-    if !env.var("DEV_AUTH_BYPASS").map(|v| v.to_string() == "1").unwrap_or(false) {
+    if !env
+        .var("DEV_AUTH_BYPASS")
+        .map(|v| v.to_string() == "1")
+        .unwrap_or(false)
+    {
         return false;
     }
-    let host = req.url().ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default();
+    let host = req
+        .url()
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_default();
     if tc_core::guard::is_local_host(&host) {
         return true;
     }
@@ -182,12 +195,17 @@ pub fn missing_settings(req: &Request, env: &Env) -> Vec<&'static str> {
     if dev_bypass(req, env) {
         return Vec::new();
     }
-    ["TEAM_DOMAIN", "POLICY_AUD"].into_iter().filter(|n| setting(env, n).is_none()).collect()
+    ["TEAM_DOMAIN", "POLICY_AUD"]
+        .into_iter()
+        .filter(|n| setting(env, n).is_none())
+        .collect()
 }
 
 pub async fn verify(req: &Request, env: &Env) -> Result<Identity, AuthError> {
     if dev_bypass(req, env) {
-        return Ok(Identity { email: Some("dev@localhost".into()) });
+        return Ok(Identity {
+            email: Some("dev@localhost".into()),
+        });
     }
 
     let team_domain = setting(env, "TEAM_DOMAIN").ok_or_else(|| AuthError::Config("TEAM_DOMAIN is not set".into()))?;
@@ -201,8 +219,7 @@ pub async fn verify(req: &Request, env: &Env) -> Result<Identity, AuthError> {
         .flatten()
         .ok_or(AuthError::Rejected("missing Access token"))?;
     let mut parts = token.split('.');
-    let (Some(h), Some(p), Some(s), None) = (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
+    let (Some(h), Some(p), Some(s), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
         return Err(AuthError::Rejected("malformed token"));
     };
 
@@ -219,12 +236,7 @@ pub async fn verify(req: &Request, env: &Env) -> Result<Identity, AuthError> {
     let signing_input = format!("{h}.{p}");
     let verified = JsFuture::from(
         subtle()?
-            .verify_with_object_and_u8_array_and_u8_array(
-                &algo(false),
-                &key,
-                &signature,
-                signing_input.as_bytes(),
-            )
+            .verify_with_object_and_u8_array_and_u8_array(&algo(false), &key, &signature, signing_input.as_bytes())
             .map_err(js_err)?,
     )
     .await

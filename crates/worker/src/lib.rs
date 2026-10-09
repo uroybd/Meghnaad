@@ -224,7 +224,9 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     if let Some(new) = done.config {
         if let Err(e) = session::save_config(&ctx.env, new).await {
             worker::console_error!("saving settings failed: {e}");
-            result = CliResult::Error { message: "The settings could not be saved. Nothing was changed.".into() };
+            result = CliResult::Error {
+                message: "The settings could not be saved. Nothing was changed.".into(),
+            };
         }
     }
     if done.wrote {
@@ -264,7 +266,9 @@ async fn get_config(ctx: RouteContext<()>) -> RouteResult {
         })
         .collect();
     // The journal.time marker texts, so the UI can hide those annotations and show sessions instead.
-    let journal = live.journal().map(|(start, stop)| serde_json::json!({ "start": start, "stop": stop }));
+    let journal = live
+        .journal()
+        .map(|(start, stop)| serde_json::json!({ "start": start, "stop": stop }));
     let has_previous = session::has_previous(&ctx.env).await?;
     json(&serde_json::json!({
         "config": &*cfg,
@@ -347,6 +351,9 @@ async fn put_urgency(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
 async fn restore_taskrc(ctx: RouteContext<()>) -> RouteResult {
     match session::restore_config(&ctx.env).await? {
         None => Err(ApiError::BadRequest("there are no earlier settings to restore".into())),
-        Some(config) => json(&summary(&taskrc::Parsed { config, ..Default::default() })),
+        Some(config) => json(&summary(&taskrc::Parsed {
+            config,
+            ..Default::default()
+        })),
     }
 }

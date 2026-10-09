@@ -38,7 +38,11 @@ impl Rx {
             .size_limit(1 << 20)
             .build()
             .map_err(|e| explain(&e))?;
-        Ok(Rx { re, pattern: pattern.to_owned(), case_sensitive })
+        Ok(Rx {
+            re,
+            pattern: pattern.to_owned(),
+            case_sensitive,
+        })
     }
 
     /// Whether the pattern is found anywhere in `text`.
@@ -48,17 +52,29 @@ impl Rx {
 
     /// The byte ranges of the non-overlapping matches in `text`, left to right.
     pub fn spans(&self, text: &str) -> Vec<(usize, usize)> {
-        self.re.find_iter(text.as_bytes()).map(|m| (m.start(), m.end())).collect()
+        self.re
+            .find_iter(text.as_bytes())
+            .map(|m| (m.start(), m.end()))
+            .collect()
     }
 }
 
 fn explain(e: &regex::Error) -> String {
     let text = e.to_string();
-    let last = text.lines().last().unwrap_or("").trim_start_matches("error: ").to_owned();
+    let last = text
+        .lines()
+        .last()
+        .unwrap_or("")
+        .trim_start_matches("error: ")
+        .to_owned();
     if last.contains("Unicode not allowed") {
         return "non-ASCII characters can't be used inside [...]".to_owned();
     }
-    if last.is_empty() { text } else { last }
+    if last.is_empty() {
+        text
+    } else {
+        last
+    }
 }
 
 /// Refuse what Taskwarrior's grammar doesn't have, and what this engine can't do, with a reason.
@@ -69,7 +85,9 @@ pub fn check_ecmascript(pattern: &str) -> Result<(), String> {
     while i < b.len() {
         match b[i] {
             b'\\' => {
-                let Some(&e) = b.get(i + 1) else { return Err("a pattern can't end with a backslash".into()) };
+                let Some(&e) = b.get(i + 1) else {
+                    return Err("a pattern can't end with a backslash".into());
+                };
                 match e {
                     b'd' | b'D' | b'w' | b'W' | b's' | b'S' | b'n' | b'r' | b't' | b'f' | b'v' => {}
                     b'b' | b'B' if !in_class => {}
@@ -81,7 +99,10 @@ pub fn check_ecmascript(pattern: &str) -> Result<(), String> {
                         return Err("backreferences (\\1) are valid in Taskwarrior but not supported here".into());
                     }
                     b'0' | b'c' | b'k' | b'p' | b'P' | b'A' | b'z' | b'Z' | b'h' | b'H' | b'Q' | b'E' => {
-                        return Err(format!("\\{} isn't part of the ECMAScript syntax Taskwarrior uses", e as char));
+                        return Err(format!(
+                            "\\{} isn't part of the ECMAScript syntax Taskwarrior uses",
+                            e as char
+                        ));
                     }
                     c if c.is_ascii_alphanumeric() => {
                         return Err(format!("\\{} isn't a valid escape", c as char));
@@ -104,8 +125,14 @@ pub fn check_ecmascript(pattern: &str) -> Result<(), String> {
                 Some(b'=' | b'!') => {
                     return Err("lookahead ((?=…) and (?!…)) is valid in Taskwarrior but not supported here".into());
                 }
-                Some(b'<') => return Err("lookbehind and named groups aren't part of the syntax Taskwarrior uses".into()),
-                _ => return Err("inline flags and group options like (?i) aren't part of the syntax Taskwarrior uses".into()),
+                Some(b'<') => {
+                    return Err("lookbehind and named groups aren't part of the syntax Taskwarrior uses".into())
+                }
+                _ => {
+                    return Err(
+                        "inline flags and group options like (?i) aren't part of the syntax Taskwarrior uses".into(),
+                    )
+                }
             },
             _ => {}
         }
@@ -128,7 +155,10 @@ impl TextMatch {
         if regex {
             Rx::new(text, case_sensitive).map(TextMatch::Pattern)
         } else {
-            Ok(TextMatch::Plain { needle: text.to_owned(), case_sensitive })
+            Ok(TextMatch::Plain {
+                needle: text.to_owned(),
+                case_sensitive,
+            })
         }
     }
 
@@ -136,7 +166,13 @@ impl TextMatch {
         match self {
             TextMatch::Pattern(rx) => rx.is_match(hay),
             TextMatch::Plain { needle, case_sensitive } => {
-                let fold = |s: &str| if *case_sensitive { s.to_owned() } else { s.to_lowercase() };
+                let fold = |s: &str| {
+                    if *case_sensitive {
+                        s.to_owned()
+                    } else {
+                        s.to_lowercase()
+                    }
+                };
                 let (h, n) = (fold(hay), fold(needle));
                 if let Some(rest) = n.strip_prefix('^') {
                     h.starts_with(rest)
@@ -200,7 +236,11 @@ mod tests {
 
     #[test]
     fn refuses_what_ecmascript_has_and_this_engine_cannot_do() {
-        for (p, word) in [("foo(?=bar)", "lookahead"), ("foo(?!bar)", "lookahead"), ("(a)\\1", "backreference")] {
+        for (p, word) in [
+            ("foo(?=bar)", "lookahead"),
+            ("foo(?!bar)", "lookahead"),
+            ("(a)\\1", "backreference"),
+        ] {
             let e = Rx::new(p, true).unwrap_err();
             assert!(e.contains(word) && e.contains("not supported here"), "{p}: {e}");
         }
@@ -208,7 +248,9 @@ mod tests {
 
     #[test]
     fn refuses_syntax_ecmascript_does_not_have() {
-        for p in ["(?i)foo", "(?<=a)b", "(?<n>a)", "(?>a)", "\\p{L}", "\\Aa", "a\\z", "\\q", "\\cJ", "[]", "[^]", "a\\"] {
+        for p in [
+            "(?i)foo", "(?<=a)b", "(?<n>a)", "(?>a)", "\\p{L}", "\\Aa", "a\\z", "\\q", "\\cJ", "[]", "[^]", "a\\",
+        ] {
             assert!(Rx::new(p, true).is_err(), "{p} should be refused");
         }
         // And ordinary mistakes are errors rather than silent misses.
@@ -224,7 +266,10 @@ mod tests {
         // Catastrophic for a backtracking engine; linear here.
         let rx = Rx::new("(a+)+$", true).unwrap();
         assert!(!rx.is_match(&format!("{}b", "a".repeat(5_000))));
-        assert!(Rx::new("(((a{100}){100}){100}){100}", true).is_err(), "an enormous program is refused");
+        assert!(
+            Rx::new("(((a{100}){100}){100}){100}", true).is_err(),
+            "an enormous program is refused"
+        );
     }
 
     #[test]
@@ -237,7 +282,10 @@ mod tests {
     #[test]
     fn plain_text_is_the_regex_off_reading() {
         let t = |needle: &str, cs: bool| TextMatch::new(needle, false, cs).unwrap();
-        assert!(t("a.b", true).is_match("xa.by") && !t("a.b", true).is_match("xaxby"), "no metacharacters");
+        assert!(
+            t("a.b", true).is_match("xa.by") && !t("a.b", true).is_match("xaxby"),
+            "no metacharacters"
+        );
         assert!(t("^buy", true).is_match("buy milk") && !t("^milk", true).is_match("buy milk"));
         assert!(t("milk$", true).is_match("buy milk") && !t("buy$", true).is_match("buy milk"));
         assert!(t("MILK", false).is_match("buy milk") && !t("MILK", true).is_match("buy milk"));
