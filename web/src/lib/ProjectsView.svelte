@@ -1,11 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runCli } from './api';
-  import { formatFor } from './dateformat';
-  import { formatMoment } from './dates';
-  import { Check, ChevronDown, ChevronRight, Folder } from './icons';
+  import { ChevronDown, ChevronRight, Folder } from './icons';
   import { buildTree, expandable, type ProjectNode } from './projects';
   import { store } from './store.svelte';
+  import TaskLine from './TaskLine.svelte';
   import type { Row } from './types';
 
   let rows = $state<Row[]>([]);
@@ -15,8 +14,6 @@
   let seeded = false;
 
   const tree = $derived(buildTree(rows, store.now));
-  const settings = $derived(store.config?.config.settings);
-  const fmt = $derived(formatFor('report', settings));
 
   async function load() {
     try {
@@ -57,13 +54,6 @@
   const expandAll = () => (open = new Set(expandable(tree)));
   const collapseAll = () => (open = new Set());
 
-  const due = (r: Row) => formatMoment(r.due, undefined, fmt);
-  const late = (r: Row) => r.due != null && r.due < store.now;
-
-  function done(r: Row) {
-    void store.act(null, [r.uuid, 'done']);
-  }
-
   /** Show this project in the Tasks view, with the full report and filter bar. */
   function inTasks(n: ProjectNode) {
     store.filter = n.name ? `project:${n.name}` : 'project:';
@@ -98,19 +88,7 @@
     {#if isOpen}
       <ul class="tree">
         {#each n.children as c (c.name)}{@render branch(c, depth + 1)}{/each}
-        {#each n.own as r (r.uuid)}
-          <li class="task" style="--depth: {depth + 1}">
-            <button class="ghost tick" aria-label="Mark done: {r.description}" title="Mark done" onclick={() => done(r)}
-              ><Check size={15} /></button
-            >
-            <button class="ghost desc" onclick={() => store.openDetail(r.uuid)}>
-              {#if r.priority}<span class="pri pri-{r.priority}">{r.priority}</span>{/if}
-              <span class="text">{r.description}</span>
-            </button>
-            {#each r.tags as t, _i (_i)}<span class="tag">+{t}</span>{/each}
-            {#if r.due != null}<span class="due" class:late={late(r)}>{due(r)}</span>{/if}
-          </li>
-        {/each}
+        {#each n.own as r (r.uuid)}<TaskLine row={r} depth={depth + 1} />{/each}
         {#if n.children.length === 0 && n.own.length === 0}<li class="dim empty" style="--depth: {depth + 1}">
             Nothing here.
           </li>{/if}
@@ -155,15 +133,12 @@
     margin: 0;
     padding: 0;
   }
-  .head,
-  .task {
+  .head {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 3px 0 3px calc(var(--depth) * 20px);
     min-width: 0;
-  }
-  .head {
     border-bottom: 1px solid var(--line);
   }
   .toggle {
@@ -183,8 +158,7 @@
     color: var(--dim);
     font-size: 13px;
   }
-  .late,
-  .due.late {
+  .late {
     color: var(--err);
     font-size: 13px;
   }
@@ -193,53 +167,10 @@
     color: var(--accent);
     white-space: nowrap;
   }
-  .task {
-    padding-left: calc(var(--depth) * 20px + 4px);
-  }
-  .tick {
-    line-height: 0;
-    color: var(--dim);
-  }
-  .tick:hover {
-    color: var(--ok);
-  }
-  .desc {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    text-align: left;
-    min-width: 0;
-    flex: 0 1 auto;
-  }
-  .text {
-    overflow-wrap: anywhere;
-  }
-  .pri {
-    font-size: 11px;
-    font-weight: 700;
-  }
-  .pri-H {
-    color: var(--pri-h);
-  }
-  .pri-M {
-    color: var(--pri-m);
-  }
-  .pri-L {
-    color: var(--pri-l);
-  }
-  .tag,
-  .due {
-    color: var(--dim);
-    font-size: 13px;
-    white-space: nowrap;
-  }
   .empty {
     padding-left: calc(var(--depth) * 20px + 4px);
   }
   @media (max-width: 760px) {
-    .task {
-      flex-wrap: wrap;
-    }
     .link {
       display: none;
     }

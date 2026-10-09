@@ -16,6 +16,7 @@ desktop](#different-from-the-desktop)
 | --- | --- |
 | **Tasks** | Any report as a table, with filters. Click a row for the task's detail |
 | **Projects** | Projects and sub-projects, with their tasks underneath |
+| **Tags** | Every tag with its pending tasks and how many are overdue, expandable |
 | **Summary** | How far along each project is |
 | **Calendar** | Months, with what is due or scheduled on which day |
 | **Burndown** | Pending, started and done over time |
@@ -25,6 +26,12 @@ Summary, Calendar and Burndown have the same filter box as Tasks (Tab completes,
 helpers are below it) and it is focused when you open the page (not on a phone, where that would raise the keyboard).
 The header also has the running **timer**, the **bell** (reminders), **urgency** (coefficients) and **taskrc**
 (settings). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
+
+**Tag chips are buttons.** In the table on the Tasks page, clicking a tag chip toggles `+tag` in that report's filter (a
+pressed chip means it is in the filter; click it again to take it out), exactly as typing `+tag` would. Anywhere else (a
+report printed in the Console, the task detail, the Projects page, a task on the Tags page itself) it opens that tag's entry
+on the **Tags** page, expanded and highlighted. A tag no pending task has still gets its entry, so a chip from a report of
+finished tasks works too. **Open in Tasks** on an entry filters the Tasks page by that tag.
 
 The **last command** is shown above the prompt, including what a click ran: pick a report or sort a column and you can
 see the exact command, then press **↑** to edit and re-run it.

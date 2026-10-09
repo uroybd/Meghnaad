@@ -3,6 +3,7 @@
   import ResultView from './ResultView.svelte';
   import { clickSort, parseSort, serializeSort, withSortOverride } from './sortSpec';
   import { store } from './store.svelte';
+  import { activeTags, toggleTag } from './tagfilter';
 
   // A header click rewrites `rc.report.<name>.sort:…` in the filter, exactly what you'd type in the
   // console, so the table, the filter chips and the "last command" line stay in step.
@@ -14,12 +15,22 @@
     const def = store.reports.find((x) => x.name === store.report)?.sort ?? null;
     store.filter = withSortOverride(store.filter, store.report, res.reset ? null : serializeSort(res.keys), def);
   }
+
+  // A tag chip in this table toggles that tag in the report's filter, as typing `+tag` would.
+  const toggle = (tag: string) => (store.filter = toggleTag(store.filter, tag));
+  const active = $derived(activeTags(store.filter));
 </script>
 
 <FilterBar />
 {#if store.live}
   <div class:stale={store.live.loading && store.live.result}>
-    <ResultView entry={store.live} onedit={(row, from) => (store.editing = { row, from })} onsort={sortBy} />
+    <ResultView
+      entry={store.live}
+      onedit={(row, from) => (store.editing = { row, from })}
+      onsort={sortBy}
+      ontag={toggle}
+      activeTags={active}
+    />
   </div>
 {/if}
 

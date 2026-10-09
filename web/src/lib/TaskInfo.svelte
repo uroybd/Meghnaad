@@ -7,6 +7,7 @@
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
   import { visibleNotes } from './journal';
   import ProjectPath from './ProjectPath.svelte';
+  import TagChip from './TagChip.svelte';
   import { describeRecur } from './recurrence';
   import StatusPill, { type Kind } from './StatusPill.svelte';
   import UuidTip from './UuidTip.svelte';
@@ -120,7 +121,7 @@
       <dd class="pri-{task.priority.toLowerCase()}">{task.priority}</dd>{/if}
     {#if task.tags.length}<dt>Tags</dt>
       <dd>
-        {#each task.tags as t (t)}<span class="tagpill">{t}</span>{/each}
+        {#each task.tags as t (t)}<TagChip tag={t} />{/each}
       </dd>{/if}
     {#each dates as [label, ts], _i (_i)}
       {#if ts != null}<dt>{label}</dt>

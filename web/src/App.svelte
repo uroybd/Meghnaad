@@ -8,6 +8,7 @@
     ChartColumn,
     FileText,
     Folder,
+    Tag,
     ListChecks,
     Menu,
     Plus,
@@ -21,6 +22,7 @@
   import CalendarPage from './lib/CalendarPage.svelte';
   import ConsoleView from './lib/ConsoleView.svelte';
   import ProjectsView from './lib/ProjectsView.svelte';
+  import TagsView from './lib/TagsView.svelte';
   import DetailDrawer from './lib/DetailDrawer.svelte';
   import NotifyDialog from './lib/NotifyDialog.svelte';
   import { getSetup, type SetupStatus } from './lib/api';
@@ -111,6 +113,9 @@
         <button class:on={store.view === 'projects'} aria-label="Projects" onclick={() => (store.view = 'projects')}
           ><Folder size={15} /> <span class="lbl">Projects</span></button
         >
+        <button class:on={store.view === 'tags'} aria-label="Tags" onclick={() => (store.view = 'tags')}
+          ><Tag size={15} /> <span class="lbl">Tags</span></button
+        >
         <button class:on={store.view === 'summary'} aria-label="Summary" onclick={() => (store.view = 'summary')}
           ><ChartColumn size={15} /> <span class="lbl">Summary</span></button
         >
@@ -188,8 +193,9 @@
 
     <main class="main" class:console={store.view === 'console'}>
       {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView
-        />{:else if store.view === 'summary'}<SummaryPage />{:else if store.view === 'calendar'}<CalendarPage
-        />{:else if store.view === 'burndown'}<BurndownPage />{:else}<ConsoleView />{/if}
+        />{:else if store.view === 'tags'}<TagsView />{:else if store.view === 'summary'}<SummaryPage
+        />{:else if store.view === 'calendar'}<CalendarPage />{:else if store.view === 'burndown'}<BurndownPage
+        />{:else}<ConsoleView />{/if}
     </main>
 
     <button

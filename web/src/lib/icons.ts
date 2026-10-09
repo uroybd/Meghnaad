@@ -30,6 +30,7 @@ export { default as Repeat } from '@lucide/svelte/icons/repeat';
 export { default as RotateCcw } from '@lucide/svelte/icons/rotate-ccw';
 export { default as SlidersHorizontal } from '@lucide/svelte/icons/sliders-horizontal';
 export { default as Square } from '@lucide/svelte/icons/square';
+export { default as Tag } from '@lucide/svelte/icons/tag';
 export { default as Terminal } from '@lucide/svelte/icons/terminal';
 export { default as Timer } from '@lucide/svelte/icons/timer';
 export { default as Trash2 } from '@lucide/svelte/icons/trash-2';

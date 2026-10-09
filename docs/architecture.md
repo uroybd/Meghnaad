@@ -147,7 +147,7 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 
 - `store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the
   answers to questions in flight, and the toast.
-- **Pages** (`TasksView`, `ProjectsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`) are thin. Each
+- **Pages** (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`) are thin. Each
   asks the engine for a result and hands it to a shared component, so the console and the pages draw the same thing.
 - `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`, `BurndownView`,
   `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the console, ran the command). A report's cells are formatted in `format.ts`, the one place that knows `dateformat`,

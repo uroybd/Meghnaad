@@ -62,7 +62,9 @@ class Store {
   entries = $state<Entry[]>([]);
   /** The live table in the Tasks view: the report currently in focus. */
   live = $state<Entry | null>(null);
-  view = $state<'tasks' | 'projects' | 'summary' | 'calendar' | 'burndown' | 'console'>('tasks');
+  view = $state<'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'console'>('tasks');
+  /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
+  tagFocus = $state<{ tag: string; n: number } | null>(null);
   /** The filter on each of the Summary, Calendar and Burndown pages (Taskwarrior filter syntax). */
   summaryFilter = $state('');
   calendarFilter = $state('');
@@ -203,6 +205,13 @@ class Store {
     } catch {
       /* private mode */
     }
+  }
+
+  /** Show a tag's entry on the Tags page: what a tag chip does wherever it is not toggling a report's filter. */
+  showTag(tag: string) {
+    this.tagFocus = { tag, n: (this.tagFocus?.n ?? 0) + 1 };
+    this.detail = null;
+    this.view = 'tags';
   }
 
   notify(text: string, kind: Toast['kind'] = 'ok') {

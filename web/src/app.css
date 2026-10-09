@@ -250,6 +250,25 @@ button:has(> .lucide-icon:only-child) {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
 }
+/* A tag chip you can click: in the live table it toggles the tag in the filter, elsewhere it opens the Tags page. */
+button.tagpill {
+  font-size: 12px;
+  line-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+button.tagpill:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-color: var(--accent);
+}
+.tagpill.on {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
 .urg-low {
   color: var(--dim);
 }

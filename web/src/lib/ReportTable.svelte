@@ -3,6 +3,7 @@
   import { cell, rowClass } from './format';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Square, Trash2 } from './icons';
   import ProjectPath from './ProjectPath.svelte';
+  import TagChip from './TagChip.svelte';
   import UuidTip from './UuidTip.svelte';
   import { describeRecur } from './recurrence';
   import { baseColumn, parseSort, SORTABLE, sortState } from './sortSpec';
@@ -14,12 +15,18 @@
     entry = null,
     onedit,
     onsort,
+    ontag,
+    activeTags = [],
   }: {
     result: ReportResult;
     entry?: Entry | null;
     onedit?: (row: Row) => void;
     /** Provided for the focused report only: header clicks sort it through the command line. */
     onsort?: (column: string, shift: boolean) => void;
+    /** Provided for the focused report only: a tag chip toggles that tag in the report's filter. Without it a chip opens the tag's entry on the Tags page. */
+    ontag?: (tag: string) => void;
+    /** The tags the focused report's filter already requires, shown as pressed chips. */
+    activeTags?: string[];
   } = $props();
 
   const udas = $derived(store.config?.config.udas ?? {});
@@ -163,7 +170,7 @@
                 {:else if c.segments}
                   <ProjectPath segments={c.segments} />
                 {:else if c.chips}
-                  {#each c.chips as t (t)}<span class="tagpill">{t}</span>{/each}
+                  {#each c.chips as t (t)}<TagChip tag={t} active={activeTags.includes(t)} onclick={ontag} />{/each}
                 {:else}
                   {c.text}
                 {/if}

@@ -66,7 +66,7 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 
 | | |
 | --- | --- |
-| **[Using Meghnaad](docs/using.md)** | The pages, the console (`show`, `config`), Taskwarrior's questions, hooks, recurring tasks, urgency, time tracking, the phone layout |
+| **[Using Meghnaad](docs/using.md)** | The pages (click a tag chip to filter by it), the console (`show`, `config`), Taskwarrior's questions, hooks, recurring tasks, urgency, time tracking, the phone layout |
 | **[Deploying](docs/deploy.md)** | Plans you need, the guided setup, a manual GitHub Actions deploy, Cloudflare Access, connecting your `task` CLI, configuration, fixing problems |
 | **[Architecture](docs/architecture.md)** | How it works, the engine, sync, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every Taskwarrior `taskrc` option: done, partial, not done, not applicable |
@@ -161,7 +161,7 @@ setup is in [Deploying](docs/deploy.md#d-from-github-actions-manual).
 
 ## Using it
 
-The header has **Tasks**, **Projects**, **Summary**, **Calendar**, **Burndown** and **Console**. Anything you can click
+The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown** and **Console**. Anything you can click
 you can type:
 
 ```
