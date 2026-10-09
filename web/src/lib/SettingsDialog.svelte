@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getTaskrcText, putTaskrc, restoreTaskrc } from './api';
   import { RotateCcw, TriangleAlert } from './icons';
+  import { applyTheme, colourOff, expandIncludes, fetchTheme, THEMES, withColour } from './themes';
   import { store } from './store.svelte';
   import type { TaskrcResponse } from './types';
 
@@ -48,12 +49,31 @@
     saved = text = r.text;
   }
 
+  // A theme: its colour lines replace the box's colour lines (Save keeps them). Taskwarrior's are static files.
+  async function pickTheme(e: Event) {
+    const el = e.currentTarget as HTMLSelectElement;
+    const id = el.value;
+    el.value = '';
+    if (!id) return;
+    error = null;
+    try {
+      text = applyTheme(text, id, id === 'meghnaad' ? '' : await fetchTheme(id));
+      result = null;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const coloursOff = $derived(colourOff(text));
+
   async function save() {
     busy = true;
     error = null;
     try {
+      // `include dark-256.theme`, as a desktop taskrc has it, becomes that theme's lines.
+      text = await expandIncludes(text, fetchTheme);
       applied(await putTaskrc(text));
-      await store.loadConfig();
+      await store.settingsChanged();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -72,7 +92,7 @@
     error = null;
     try {
       applied(await restoreTaskrc());
-      await store.loadConfig();
+      await store.settingsChanged();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -101,6 +121,26 @@
     </p>
   {/if}
 
+  <div class="colours">
+    <label
+      >Colour theme
+      <select onchange={pickTheme} aria-label="Colour theme">
+        <option value="">choose…</option>
+        {#each THEMES as t (t.id)}<option value={t.id} title={t.note}>{t.label}</option>{/each}
+      </select>
+    </label>
+    <label class="check"
+      ><input
+        type="checkbox"
+        checked={!coloursOff}
+        onchange={(e) => (text = withColour(text, e.currentTarget.checked))}
+      />
+      Colours</label
+    >
+    <span class="dim"
+      >A theme replaces the colour lines below; Save to keep it. The Meghnaad theme is what applies when there are none.</span
+    >
+  </div>
   <label class="file">Choose a file <input type="file" onchange={onfile} /></label>
   <label for="rc-text" class="sr-only">Saved taskrc settings</label>
   <textarea
@@ -177,6 +217,25 @@
   textarea {
     width: 100%;
     margin: 8px 0;
+  }
+  .colours {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+    margin: 0 0 10px;
+  }
+  .colours select {
+    margin-left: 6px;
+  }
+  .colours .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .colours .dim {
+    flex-basis: 100%;
+    font-size: 12.5px;
   }
   .file {
     display: block;

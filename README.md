@@ -24,6 +24,9 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 - **Taskwarrior 3.5.0 and newer.** Settings removed or deprecated before it are not supported.
 - **Your `taskrc`, safely.** Import your UDAs, custom reports, contexts and settings. Sync settings and anything that
   looks like a credential are blocked. See [taskrc support](docs/taskrc-support.md) for what is and isn't read.
+- **Colours as on the desktop.** Taskwarrior's `color.*` rules, precedence and themes (the 16 standard ones are a
+  picker), drawn softly for a web page, with a default theme of their own and friendly colour names (`coral`, `sage`,
+  `sky`).
 - **Hooks, as Rust.** Taskwarrior's `on-add`, `on-modify`, `on-launch` and `on-exit` become functions you fill in and
   deploy with the Worker; they can edit a task, refuse a command and print to the Console. See [Hooks](#hooks).
 - **Built for a phone as well as a desk**, with time tracking, reminders and a console with completion.

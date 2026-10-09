@@ -1,7 +1,9 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
   import { formatMoment } from './dates';
+  import { css, look } from './colors';
   import { Check } from './icons';
+  import { scheme } from './scheme.svelte';
   import { store } from './store.svelte';
   import TagChip from './TagChip.svelte';
   import type { Row } from './types';
@@ -19,7 +21,7 @@
   class:finished={!pending}
   class:completed={row.status === 'completed'}
   class:deleted={row.status === 'deleted'}
-  style="--depth: {depth}"
+  style="--depth: {depth};{css(look(row.style, scheme.dark))}"
 >
   {#if pending}
     <button

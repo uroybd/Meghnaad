@@ -39,14 +39,14 @@ Each row below counts once, even where a row covers several related options.
 | Dates and calendar | 16 | 0 | 0 | 1 | 0 |
 | Journal | 4 | 0 | 0 | 0 | 0 |
 | Dependencies | 1 | 0 | 0 | 1 | 0 |
-| Colour | 0 | 0 | 0 | 1 | 0 |
+| Colour | 7 | 1 | 0 | 1 | 0 |
 | Urgency | 17 | 0 | 0 | 0 | 0 |
 | Defaults | 5 | 0 | 0 | 0 | 0 |
 | Reports | 10 | 0 | 0 | 0 | 0 |
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **83** | **3** | **2** | **15** | **1** |
+| **Total** | **90** | **4** | **2** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -170,9 +170,28 @@ The `calendar` command is supported, with Taskwarrior's arguments (`calendar`, `
 
 ## Colour
 
+Taskwarrior's colour rules are supported, drawn on a web page instead of a terminal. A colour is a palette index
+underneath, as in a terminal (`rgb440`, `gray12`, `color214` are the exact xterm colours); the basic sixteen are drawn in
+a softer palette that follows the light or dark page, and a background in them is tinted into the page. A foreground that
+would not show on the page is moved toward readable. Besides Taskwarrior's names (`red`, `cyan`, ...) the basic colours
+have friendlier ones: `ink`, `coral`/`rose`, `sage`/`moss`, `amber`/`sand`, `sky`/`ocean`, `orchid`/`plum`, `teal`/`aqua`,
+`snow`/`pearl`, and `slate` for bright black; `bold coral on sky` is `bold red on blue`.
+
 | Option | Status | Remark |
 | --- | --- | --- |
-| `color`, `fontunderline`, `rule.color.merge`, `rule.precedence.color`, `color.*` | N/A | The app has its own light and dark theme, and does not use Taskwarrior colour rules |
+| `color` | Done | On unless the taskrc says `color=off` (or `rc.color:off` for one command); then nothing is coloured: rows, charts, the history graph |
+| `color.active`, `.blocked`, `.blocking`, `.completed`, `.deleted`, `.due`, `.due.today`, `.overdue`, `.recurring`, `.scheduled`, `.tagged`, `.until`, `.project.none`, `.tag.none` | Done | Colour the task's whole row. Ported from Taskwarrior's `rules.cpp`, and each is checked against the colour the real `task` gives a task |
+| `color.tag.<name>`, `color.project.<name>`, `color.keyword.<word>`, `color.uda.<name>`, `color.uda.<name>.<value>` | Done | A tag (virtual ones too), a project or one inside it, a word in the description or a note (case as `search.case.sensitive`), a UDA with a value or this value (`none` for no value) |
+| `rule.precedence.color`, `rule.color.merge` | Done | The order the rules apply in, as Taskwarrior reads it (a word completes to every rule it begins: `tag.`, `keyword.`), and whether colours blend or the highest rule wins. The `nocolor` tag exempts a task |
+| `color.alternate` | Done | Shades every other row of a report, with the rules laid over it |
+| `color.calendar.*`, `color.burndown.*`, `color.summary.*`, `color.history.*` | Done | The calendar's days, the burndown bars, the summary bar, and the history graph (counts inside coloured bars, as Taskwarrior draws it in colour) |
+| `color.header`, `.label`, `.label.sort`, `.footnote`, `.warning`, `.error`, `.debug`, `color.sync.*`, `color.undo.*` | Partial | Read, checked, listed by `show` and `colors legend`, but not drawn: the app has no table header, footnote or sync output to colour |
+| `fontunderline` | N/A | The table header underline of a terminal |
+| Themes | Done | `web/public/themes/` has the 16 standard Taskwarrior themes and the app's own. The taskrc dialog's **Colour theme** picker puts a theme's lines into the box, and a pasted `include dark-256.theme` line is expanded to them. The files are static assets, not part of the Worker |
+
+Where the app differs from the desktop: with no `color.*` lines the rows follow **Meghnaad's own theme**
+(`meghnaad.theme`: soft colours, no zebra), not Taskwarrior's defaults, which are the `default` theme in the picker. And a
+`#` starts a comment anywhere in a taskrc line (`bulk=5 # five`), as in Taskwarrior, which several themes rely on.
 
 ## Urgency
 

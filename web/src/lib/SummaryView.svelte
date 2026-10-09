@@ -112,14 +112,14 @@
   .bar {
     height: 12px;
     border-radius: 6px;
-    background: var(--panel-2);
+    background: var(--cc-summary-background-bg, var(--panel-2));
     border: 1px solid var(--line);
     overflow: hidden;
   }
   .bar span {
     display: block;
     height: 100%;
-    background: var(--ok);
+    background: var(--cc-summary-bar-bg, var(--ok));
     border-radius: 6px 0 0 6px;
   }
   .count {

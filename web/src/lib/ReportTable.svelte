@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
+  import { look, rowVars } from './colors';
   import { cell, rowClass } from './format';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import ProjectPath from './ProjectPath.svelte';
@@ -7,6 +8,7 @@
   import UuidTip from './UuidTip.svelte';
   import { describeRecur } from './recurrence';
   import { groupHeads } from './groups';
+  import { scheme } from './scheme.svelte';
   import { baseColumn, groupColumn, parseSort, SORTABLE, sortState } from './sortSpec';
   import { store, type Entry } from './store.svelte';
   import type { ReportResult, Row } from './types';
@@ -183,8 +185,11 @@
           {#if heads[i]}
             <tr class="grouphead"><th colspan={result.columns.length + 1} scope="colgroup">{heads[i]}</th></tr>
           {/if}
+          {@const l = look(row.style, scheme.dark)}
           <tr
             class={rowClass(row)}
+            class:ruled={!!l}
+            style={rowVars(l)}
             class:gap={result.breaks[i] && heads.length === 0}
             class:selected={store.detail?.uuid === row.uuid}
             tabindex="0"
@@ -383,10 +388,6 @@
   .pri-l {
     color: var(--pri-l);
   }
-  td.overdue {
-    color: var(--err);
-    font-weight: 600;
-  }
   td.id:not(.dim) {
     font-weight: 700;
   }
@@ -409,12 +410,15 @@
   tr.deleted td {
     background: color-mix(in srgb, var(--err) 9%, transparent);
   }
-  tr.waiting td,
-  tr.blocked td {
+  tr.waiting td {
     color: var(--dim);
   }
-  tr.active td.description {
-    font-weight: 600;
+  /* The colour rules (color.active, color.overdue, ...) lay their colour on the whole row. */
+  tr.ruled td {
+    color: var(--row-fg, inherit);
+    background: var(--row-bg, transparent);
+    font-weight: var(--row-weight, inherit);
+    text-decoration: var(--row-deco, none);
   }
   tbody tr:hover {
     background: var(--panel-2);
@@ -570,9 +574,6 @@
       content: '#';
       opacity: 0.6;
     }
-    td.overdue {
-      color: var(--err);
-    }
     td.priority.pri-h {
       color: var(--pri-h);
     }
@@ -589,8 +590,13 @@
       background: color-mix(in srgb, var(--err) 9%, var(--panel));
     }
     tr.completed td,
-    tr.deleted td {
+    tr.deleted td,
+    tr.ruled td {
       background: transparent;
+    }
+    /* A card is one box: the rule's background is the card's. */
+    tr.ruled {
+      background: var(--row-bg, var(--panel));
     }
     td.actions {
       order: 99;

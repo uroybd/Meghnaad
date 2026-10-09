@@ -35,7 +35,24 @@ export interface Facts {
   extra: Record<string, string>;
 }
 
+/** A colour style from the engine: palette indexes (0-15 basic and bright, 16-231 cube, 232-255 grays). */
+export interface Resolved {
+  bold?: boolean;
+  underline?: boolean;
+  inverse?: boolean;
+  fg?: number;
+  bg?: number;
+}
+
+/** A run of coloured text. */
+export interface Span {
+  text: string;
+  style?: Resolved;
+}
+
 export interface Row extends Facts {
+  /** How the colour rules (`color.*`) colour this task; absent when none applies or colour is off. */
+  style?: Resolved;
   urgency: number;
   /** Working-set number; specific to the web UI and usually differs from a desktop's. */
   id: number | null;
@@ -218,6 +235,13 @@ export interface TextResult {
   kind: 'text';
   lines: string[];
 }
+/** Coloured text (`colors`, the history graph). */
+export interface StyledResult {
+  kind: 'styled';
+  lines: Span[][];
+  /** Draw the colours as they are (a palette), not softened to suit the page. */
+  swatch?: boolean;
+}
 /** A file to offer as a download (`export`). */
 export interface FileResult {
   kind: 'file';
@@ -271,6 +295,7 @@ export type CliResult =
   | TextResult
   | JsonResult
   | FileResult
+  | StyledResult
   | ChangedResult
   | ConfirmResult
   | ErrorResult;
@@ -332,6 +357,10 @@ export interface ConfigResponse {
   journal: { start: string; stop: string } | null;
   /** There are earlier saved settings to restore. */
   has_previous: boolean;
+  /** Whether tasks are coloured (`color`). */
+  color: boolean;
+  /** Every colour in force, by name without `color.` (`calendar.today`): palette indexes, for the charts. */
+  colors: Record<string, Resolved>;
   /** Taskwarrior's built-in urgency coefficients: what a setting falls back to. */
   urgency_defaults: Record<string, number>;
   /** `urgency.inherit`: blocking tasks take the highest urgency of what they block. */

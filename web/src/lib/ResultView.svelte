@@ -4,6 +4,7 @@
   import ConfirmView from './ConfirmView.svelte';
   import FileView from './FileView.svelte';
   import ReportTable from './ReportTable.svelte';
+  import StyledView from './StyledView.svelte';
   import SummaryView from './SummaryView.svelte';
   import TaskInfo from './TaskInfo.svelte';
   import type { Entry } from './store.svelte';
@@ -75,6 +76,8 @@
     </p>{/if}
 {:else if r.kind === 'text'}
   <pre class="mono">{r.lines.join('\n')}</pre>
+{:else if r.kind === 'styled'}
+  <StyledView result={r} />
 {:else if r.kind === 'file'}
   <FileView result={r} />
 {:else if r.kind === 'json'}

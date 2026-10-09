@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cell, rowClass, segmentHue, urgencyLevel } from './format';
+import { cell, rowClass, urgencyLevel } from './format';
 import type { Column, Row, UdaDef } from './types';
 
 const NOW = 1_791_376_200; // 2026-10-07T12:30:00Z
@@ -64,11 +64,6 @@ describe('cell', () => {
     expect(cell(col('due'), row(), ctx).text).toBe('');
   });
 
-  it('marks an overdue due date', () => {
-    const r = row({ due: NOW - DAY, virtual_tags: ['OVERDUE'] });
-    expect(cell(col('due'), r, ctx).cls).toBe('overdue');
-  });
-
   it('start.active is a star', () => {
     expect(cell(col('start.active'), row({ start: NOW }), ctx).text).toBe('*');
     expect(cell(col('start.active'), row(), ctx).text).toBe('');
@@ -103,17 +98,10 @@ describe('cell', () => {
     expect(c.uuid).toBe('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
   });
 
-  it('a project is split into parts so each can have its own colour', () => {
+  it('a project is split into its parts', () => {
     const c = cell(col('project'), row({ project: 'Home.Kitchen.Sink' }), ctx);
     expect(c.text).toBe('Home.Kitchen.Sink');
     expect(c.segments?.map((s) => s.text)).toEqual(['Home', 'Kitchen', 'Sink']);
-    // The same name is the same colour wherever it appears, in any project.
-    const other = cell(col('project'), row({ project: 'Work.Home' }), ctx).segments!;
-    expect(other[1].hue).toBe(c.segments![0].hue);
-    expect(segmentHue('Home')).toBe(segmentHue('Home'));
-    // Different names usually differ; at least some of these must.
-    const hues = new Set(['Home', 'Work', 'Side', 'Health', 'Garden', 'Errands'].map(segmentHue));
-    expect(hues.size).toBeGreaterThan(2);
     // The parent format shows the path above the project, still in parts; no project, no parts.
     expect(cell(col('project.parent'), row({ project: 'Home.Kitchen' }), ctx).segments?.map((s) => s.text)).toEqual([
       'Home',

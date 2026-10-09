@@ -832,8 +832,9 @@ pub fn parse(text: &str) -> Parsed {
     let mut raw_report: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
 
     for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+        // A `#` starts a comment, anywhere in the line, as in Taskwarrior (`bulk=5 # five` is 5).
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
             continue;
         }
         if let Some(rest) = line.strip_prefix("include") {
@@ -1519,5 +1520,23 @@ dateformat.report=Y-M-D H:N
             p.blocked.is_empty(),
             "an embedded newline must not create a second setting: {text:?}"
         );
+    }
+
+    #[test]
+    fn a_hash_starts_a_comment_anywhere_in_a_line_as_in_taskwarrior() {
+        let p =
+            parse("bulk=5 # five\n  limit = 12   # c\ncolor.active=bold red#x\n# whole line\ndefault.command=a\\#b\n");
+        assert_eq!(p.config.settings.get("bulk").map(String::as_str), Some("5"));
+        assert_eq!(p.config.settings.get("limit").map(String::as_str), Some("12"));
+        assert_eq!(
+            p.config.settings.get("color.active").map(String::as_str),
+            Some("bold red")
+        );
+        // As the real one reads it, the escape does not protect the hash.
+        assert_eq!(
+            p.config.settings.get("default.command").map(String::as_str),
+            Some("a\\")
+        );
+        assert!(p.warnings.is_empty(), "{:?}", p.warnings);
     }
 }

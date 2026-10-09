@@ -192,6 +192,32 @@ list, with what each does, is [taskrc support](taskrc-support.md)).
   a command-line `rc.` override included.
 - A UDA that exists on a task but isn't defined in your taskrc is shown but **read-only**.
 
+## Colours
+
+Rows are coloured by Taskwarrior's colour rules, and the same colours reach the calendar, the burndown and the summary
+bar, and the history graph. With nothing set you get **Meghnaad's own theme**: the active task on a soft green,
+overdue in coral, due soon in amber, blocked ones dimmed, priorities and `+next` marked, and no zebra. Everything is
+Taskwarrior's, so your `color.*` lines work as they do on the desktop:
+
+```
+color.active=bold on sage                  # a rule: `sage` is a softer name for green
+color.tag.work=sky                         # a tag, `project.Home`, `keyword.milk`, `uda.estimate.big` likewise
+color.overdue=bold rgb500
+rule.precedence.color=overdue,active,tag.  # which rule wins; `rule.color.merge=off` makes the winner replace, not blend
+color.alternate=on gray2                   # shade every other row
+```
+
+The **taskrc** dialog has a **Colour theme** picker (Meghnaad's own, Taskwarrior's default, and the 16 standard
+themes such as `dark-256` and `solarized-light-256`) and a **Colours** switch; choosing a theme replaces the colour lines
+in the box, and Save keeps them. A pasted `include dark-256.theme` line is read as that theme. `color=off` (or `rc.color:off`)
+turns every colour off, and a task tagged `nocolor` is never coloured.
+
+`colors` (Console) draws the palette, `colors bold coral on sky` a sample, and `colors legend` every colour in force, each
+in its own colour. Colours are Taskwarrior's palette (`rgb440`, `gray12`, `color214`, `on bright blue`); the basic ones are
+drawn softly for the page, and a colour that would not show on it is nudged toward readable. The friendly names are
+`ink`, `coral`/`rose`, `sage`/`moss`, `amber`/`sand`, `sky`/`ocean`, `orchid`/`plum`, `teal`/`aqua`, `snow`/`pearl`,
+`slate`. [taskrc support](taskrc-support.md#colour) lists every colour setting.
+
 ## Urgency
 
 A task's urgency is the sum of Taskwarrior's `urgency.*` terms, with its built-in coefficients unless your taskrc

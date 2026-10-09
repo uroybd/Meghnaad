@@ -1,19 +1,13 @@
 <script lang="ts">
-  /** A project path with each part in its own colour and the dots between them muted. */
-  let { segments }: { segments: { text: string; hue: number }[] } = $props();
+  /** A project path, `Home.Kitchen`, with the dots between its parts muted. Colour comes from `color.project.*`. */
+  let { segments }: { segments: { text: string }[] } = $props();
 </script>
 
 <span class="path"
-  >{#each segments as seg, i (i)}{#if i > 0}<span class="dot">.</span>{/if}<span class="seg" style="--h: {seg.hue}"
-      >{seg.text}</span
-    >{/each}</span
+  >{#each segments as seg, i (i)}{#if i > 0}<span class="dot">.</span>{/if}<span>{seg.text}</span>{/each}</span
 >
 
 <style>
-  .seg {
-    color: hsl(var(--h) var(--seg-s) var(--seg-l));
-    font-weight: 500;
-  }
   .dot {
     color: var(--dim);
     opacity: 0.55;

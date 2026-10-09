@@ -154,7 +154,7 @@
   }
   .wk {
     width: 2.2em;
-    color: var(--dim);
+    color: var(--cc-calendar-weeknumber-fg, var(--dim));
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
   }
@@ -176,32 +176,39 @@
   button.cell:hover {
     outline: 1px solid var(--accent);
   }
+  /* Each state takes its colour from `color.calendar.*` (set on the page by App.svelte from chartProps); without one, it is left plain. */
   .weekend .cell {
-    color: var(--dim);
+    color: var(--cc-calendar-weekend-fg, var(--dim));
+    background: var(--cc-calendar-weekend-bg, transparent);
   }
   .holiday .cell {
-    background: color-mix(in srgb, var(--warn) 22%, transparent);
-    color: var(--text);
+    color: var(--cc-calendar-holiday-fg, var(--text));
+    background: var(--cc-calendar-holiday-bg, transparent);
+    font-weight: var(--cc-calendar-holiday-w, inherit);
   }
   .scheduled .cell {
-    box-shadow: inset 0 -3px 0 hsl(25 var(--seg-s) var(--seg-l));
+    color: var(--cc-calendar-scheduled-fg, inherit);
+    background: var(--cc-calendar-scheduled-bg, transparent);
+    font-weight: var(--cc-calendar-scheduled-w, inherit);
   }
   td[data-due='due'] .cell {
-    background: color-mix(in srgb, var(--ok) 24%, transparent);
-    color: var(--text);
-    font-weight: 600;
+    color: var(--cc-calendar-due-fg, var(--text));
+    background: var(--cc-calendar-due-bg, transparent);
+    font-weight: var(--cc-calendar-due-w, 600);
   }
   td[data-due='due-today'] .cell {
-    background: color-mix(in srgb, hsl(290 var(--seg-s) var(--seg-l)) 26%, transparent);
-    color: var(--text);
-    font-weight: 600;
+    color: var(--cc-calendar-due-today-fg, var(--text));
+    background: var(--cc-calendar-due-today-bg, transparent);
+    font-weight: var(--cc-calendar-due-today-w, 600);
   }
   td[data-due='overdue'] .cell {
-    background: color-mix(in srgb, var(--err) 26%, transparent);
-    color: var(--text);
-    font-weight: 600;
+    color: var(--cc-calendar-overdue-fg, var(--text));
+    background: var(--cc-calendar-overdue-bg, transparent);
+    font-weight: var(--cc-calendar-overdue-w, 600);
   }
   .today .cell {
+    color: var(--cc-calendar-today-fg, inherit);
+    background: var(--cc-calendar-today-bg, transparent);
     outline: 2px solid var(--accent);
     outline-offset: -2px;
     font-weight: 700;
@@ -227,27 +234,28 @@
     border: 1px solid var(--line);
   }
   .lg-today::before {
+    background: var(--cc-calendar-today-bg, transparent);
     outline: 2px solid var(--accent);
     outline-offset: -2px;
     border: 0;
   }
   .lg-weekend::before {
-    background: var(--panel-2);
+    background: var(--cc-calendar-weekend-bg, var(--panel-2));
   }
   .lg-due::before {
-    background: color-mix(in srgb, var(--ok) 24%, transparent);
+    background: var(--cc-calendar-due-bg, transparent);
   }
   .lg-duetoday::before {
-    background: color-mix(in srgb, hsl(290 var(--seg-s) var(--seg-l)) 26%, transparent);
+    background: var(--cc-calendar-due-today-bg, transparent);
   }
   .lg-overdue::before {
-    background: color-mix(in srgb, var(--err) 26%, transparent);
+    background: var(--cc-calendar-overdue-bg, transparent);
   }
   .lg-scheduled::before {
-    box-shadow: inset 0 -3px 0 hsl(25 var(--seg-s) var(--seg-l));
+    background: var(--cc-calendar-scheduled-bg, transparent);
   }
   .lg-holiday::before {
-    background: color-mix(in srgb, var(--warn) 22%, transparent);
+    background: var(--cc-calendar-holiday-bg, transparent);
   }
   .lg-week::before {
     display: none;

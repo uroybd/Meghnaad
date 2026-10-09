@@ -1040,4 +1040,31 @@ mod tests {
         let cfg = crate::taskrc::parse(&text).config;
         assert_eq!(lines_of(&(to_ansi(&legend(&effective(&cfg))) + "\n")), lines_of(want));
     }
+
+    #[test]
+    fn every_bundled_theme_imports_cleanly() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/public/themes");
+        let mut seen = 0;
+        for entry in std::fs::read_dir(&dir).expect("the themes directory") {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("theme") {
+                continue;
+            }
+            let p = crate::taskrc::parse(&std::fs::read_to_string(&path).unwrap());
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            assert!(p.warnings.is_empty(), "{name}: {:?}", p.warnings);
+            assert!(
+                p.blocked.is_empty() && p.ignored.is_empty(),
+                "{name}: {:?} {:?}",
+                p.blocked,
+                p.ignored
+            );
+            assert!(
+                p.config.settings.keys().any(|k| k.starts_with("color.")),
+                "{name} sets no colour"
+            );
+            seen += 1;
+        }
+        assert_eq!(seen, 17, "16 of Taskwarrior's and the app's own");
+    }
 }

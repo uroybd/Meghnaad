@@ -120,14 +120,15 @@
     font-weight: 600;
     fill: var(--text);
   }
+  /* The bars take `color.burndown.pending`, `.started` and `.done` (set on the page by App.svelte from chartProps). */
   .pending {
-    fill: color-mix(in srgb, var(--err) 80%, transparent);
+    fill: var(--cc-burndown-pending-bg, color-mix(in srgb, var(--err) 80%, transparent));
   }
   .started {
-    fill: color-mix(in srgb, var(--warn) 85%, transparent);
+    fill: var(--cc-burndown-started-bg, color-mix(in srgb, var(--warn) 85%, transparent));
   }
   .done {
-    fill: color-mix(in srgb, var(--ok) 75%, transparent);
+    fill: var(--cc-burndown-done-bg, color-mix(in srgb, var(--ok) 75%, transparent));
   }
   rect {
     shape-rendering: crispEdges;
@@ -153,13 +154,13 @@
     border-radius: 3px;
   }
   .key.done::before {
-    background: color-mix(in srgb, var(--ok) 75%, transparent);
+    background: var(--cc-burndown-done-bg, color-mix(in srgb, var(--ok) 75%, transparent));
   }
   .key.started::before {
-    background: color-mix(in srgb, var(--warn) 85%, transparent);
+    background: var(--cc-burndown-started-bg, color-mix(in srgb, var(--warn) 85%, transparent));
   }
   .key.pending::before {
-    background: color-mix(in srgb, var(--err) 80%, transparent);
+    background: var(--cc-burndown-pending-bg, color-mix(in srgb, var(--err) 80%, transparent));
   }
   .rates {
     display: grid;

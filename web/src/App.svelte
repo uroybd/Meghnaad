@@ -32,6 +32,8 @@
   import QuickAdd from './lib/QuickAdd.svelte';
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import SummaryPage from './lib/SummaryPage.svelte';
+  import { chartProps } from './lib/colors';
+  import { scheme } from './lib/scheme.svelte';
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
@@ -60,6 +62,16 @@
     const s = await getSetup();
     if (s && !s.configured) setup = s;
     else start();
+  });
+
+  // The colours the charts use (`color.calendar.*`, `color.burndown.*`, ...), as custom properties on the page.
+  let chartSet: string[] = [];
+  $effect(() => {
+    const props = chartProps(store.config?.colors, scheme.dark);
+    const root = document.documentElement.style;
+    for (const k of chartSet) root.removeProperty(k);
+    for (const [k, v] of Object.entries(props)) root.setProperty(k, v);
+    chartSet = Object.keys(props);
   });
 
   // Re-check reminders and the running task after any change.

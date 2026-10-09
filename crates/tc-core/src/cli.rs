@@ -334,6 +334,9 @@ pub enum CliResult {
     /// Coloured text: runs of text, each with its colour (`colors`, the history graph).
     Styled {
         lines: Vec<Vec<crate::color::Span>>,
+        /// The colours are the point (a palette, a sample): draw them exactly, not softened to suit the page.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        swatch: bool,
     },
     /// A file for the browser to offer as a download (`export`).
     File {
@@ -1709,16 +1712,18 @@ async fn builtin<S: Storage>(
             if words.iter().any(|w| !w.is_empty() && "legend".starts_with(w.as_str())) {
                 return ok(CliResult::Styled {
                     lines: crate::color::legend(&crate::color::effective(cfg)),
+                    swatch: true,
                 });
             }
             if words.is_empty() {
                 return ok(CliResult::Styled {
                     lines: crate::color::palette(),
+                    swatch: true,
                 });
             }
             let words: Vec<String> = words.into_iter().cloned().collect();
             match crate::color::sample(&words) {
-                Ok(lines) => ok(CliResult::Styled { lines }),
+                Ok(lines) => ok(CliResult::Styled { lines, swatch: true }),
                 Err(m) => error(m),
             }
         }
@@ -1765,7 +1770,7 @@ async fn builtin<S: Storage>(
                         style("color.history.delete"),
                     ];
                     crate::activity::history_graph_coloured(&sel, period, &ctx.clock, 80, colours)
-                        .map(|lines| CliResult::Styled { lines })
+                        .map(|lines| CliResult::Styled { lines, swatch: false })
                 } else {
                     crate::activity::history_graph(&sel, period, &ctx.clock, 80).map(|lines| CliResult::Text { lines })
                 }
@@ -2379,7 +2384,7 @@ fn help(cfg: &Config) -> Vec<String> {
         String::new(),
         "Write:  add  modify  done  delete  start  stop  annotate  denotate  append  prepend  undo".into(),
         "Read:   info  count  projects  tags  udas  columns  reports  contexts  show  config  export  ids  uuids  calc".into(),
-        "Charts:  summary  calendar  burndown.daily|weekly|monthly|annual  history.daily|weekly|monthly|annual  ghistory.*  timesheet".into(),
+        "Charts:  summary  calendar  burndown.daily|weekly|monthly|annual  history.daily|weekly|monthly|annual  ghistory.*  timesheet  colors".into(),
         format!("Reports: {}", report::names(cfg).join(" ")),
         String::new(),
         "Filters:  project:Home  +tag  -tag  +OVERDUE  due.before:eow  priority:H  /text/  3  1-4,7".into(),

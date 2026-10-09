@@ -128,6 +128,16 @@ class Store {
     }
   }
 
+  /**
+   * The saved settings changed (the taskrc dialog, `config`): read them again, and draw again what is on screen,
+   * since they can change what it shows (colours, a UDA, a report, `dateformat`).
+   */
+  async settingsChanged() {
+    await this.loadConfig();
+    if (this.live) void this.refresh(this.live);
+    this.rev++;
+  }
+
   async loadConfig() {
     try {
       this.config = await getConfig();
@@ -297,7 +307,7 @@ class Store {
     const res = await this.#exec(e);
     // `config` rewrites the saved settings: pick them up so the pages follow.
     if (res?.command?.name === 'config') {
-      if (res.result.kind !== 'error') void this.loadConfig();
+      if (res.result.kind !== 'error') void this.settingsChanged();
       else this.#redact(e);
     }
     if (res?.command?.report && res.result.kind === 'report' && !inConsole) {

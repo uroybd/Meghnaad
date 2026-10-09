@@ -66,6 +66,7 @@ export const COMMANDS: Record<string, string> = {
   show: 'show every setting, changed ones highlighted',
   config: 'change a setting: config name value (no value removes it)',
   information: 'show everything about tasks (same as info)',
+  colors: 'the colour palette; `colors legend` lists yours; `colors bold red on blue` shows a sample',
   timesheet: 'what was completed and started, by week (the last four weeks)',
   'history.daily': 'tasks added, completed and deleted, by day',
   'history.weekly': 'tasks added, completed and deleted, by week',

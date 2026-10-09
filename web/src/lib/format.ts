@@ -12,21 +12,11 @@ export interface Cell {
   lines?: string[];
   cls?: string;
   /** A project path as coloured parts, so the dots between them can be muted. */
-  segments?: { text: string; hue: number }[];
+  segments?: { text: string }[];
   /** Tags, each shown as a pill. */
   chips?: string[];
   /** The task's uuid, for the copy tooltip on an ID cell. */
   uuid?: string;
-}
-
-/** The hues a project segment can take: blue, violet, pink, orange, green, teal, amber, purple. */
-const SEGMENT_HUES = [215, 265, 330, 12, 150, 180, 38, 290];
-
-/** A stable colour for a name, so `Home` looks the same in every row and every report. */
-export function segmentHue(name: string): number {
-  let h = 0x811c9dc5; // FNV-1a
-  for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 0x01000193);
-  return SEGMENT_HUES[(h >>> 0) % SEGMENT_HUES.length];
 }
 
 export type UrgencyLevel = 'low' | 'mid' | 'high' | 'crit';
@@ -109,9 +99,9 @@ function descriptionCell(row: Row, format: string | null, ctx: Ctx): Cell {
   }
 }
 
-/** A project path as coloured parts. */
-export function projectSegments(path: string): { text: string; hue: number }[] {
-  return path.split('.').map((s) => ({ text: s, hue: segmentHue(s) }));
+/** A project path as its parts (`Home.Kitchen` is `Home` and `Kitchen`). */
+export function projectSegments(path: string): { text: string }[] {
+  return path.split('.').map((s) => ({ text: s }));
 }
 
 function projectCell(p: string | null, format: string | null): Cell {
@@ -146,7 +136,6 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
 
   if ((DATE_PROPS as readonly string[]).includes(name)) {
     const c = dateCell(row[name as DateProp], name, f, ctx);
-    if (name === 'due' && row.virtual_tags.includes('OVERDUE')) c.cls = 'overdue';
     return c;
   }
 

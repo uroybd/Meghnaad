@@ -2582,12 +2582,13 @@ mod indicator_columns {
 
     #[tokio::test]
     async fn the_indicator_settings_shorten_the_label_to_their_own_length() {
-        let cfg = parse("tag.indicator=##\ndependency.indicator=DEP\nactive.indicator=>>\n").config;
+        let cfg = parse("tag.indicator=@@\ndependency.indicator=DEP\nactive.indicator=>>\n").config;
         let o = report_with(&cfg, "description,start.active,tags.indicator,depends.indicator").await;
         let labels: Vec<&str> = o.columns.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(labels, ["Description", "A", "Ta", "Dep"]);
-        // The real `task` with `dependency.indicator=DEP` printed `Dep`; with `#` as the tag mark, `T`.
-        let cfg = parse("tag.indicator=#\n").config;
+        // The real `task` with `dependency.indicator=DEP` printed `Dep`; with `@` as the tag mark, `T`. (A `#` in a
+        // taskrc line starts a comment, so it cannot be an indicator there.)
+        let cfg = parse("tag.indicator=@\n").config;
         let o = report_with(&cfg, "description,tags.indicator").await;
         assert_eq!(o.columns[1].label, "T");
     }
@@ -3534,7 +3535,7 @@ mod activity_reports {
         }
         // With colour on the graph is coloured bars with their counts, and a legend in the same colours.
         let (res, _) = run(&mut r, &cfg, "description:One ghistory.monthly").await;
-        let CliResult::Styled { lines } = res else {
+        let CliResult::Styled { lines, .. } = res else {
             panic!("{res:?}")
         };
         assert!(
@@ -3879,7 +3880,7 @@ mod report_defaults {
         let mut r = replica();
         let cfg = parse("color.active=bold red\n").config;
         let text = |res: CliResult| {
-            let CliResult::Styled { lines } = res else {
+            let CliResult::Styled { lines, .. } = res else {
                 panic!("{res:?}")
             };
             lines
