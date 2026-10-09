@@ -1,6 +1,7 @@
 <script lang="ts">
   import BurndownView from './BurndownView.svelte';
   import CalendarView from './CalendarView.svelte';
+  import ConfirmView from './ConfirmView.svelte';
   import ReportTable from './ReportTable.svelte';
   import SummaryView from './SummaryView.svelte';
   import TaskInfo from './TaskInfo.svelte';
@@ -49,17 +50,7 @@
     {#each r.tasks as t}<li>{t.id ?? t.uuid.slice(0, 8)} {t.description}</li>{/each}
   </ul>
 {:else if r.kind === 'confirm'}
-  <div class="confirm" role="alert">
-    <span>{r.message}</span>
-    {#if r.recurrence}
-      <button class="primary" onclick={() => store.answerRecurrence(entry, true)}>All pending</button>
-      <button onclick={() => store.answerRecurrence(entry, false)}>Only this one</button>
-      <button class="ghost" onclick={() => store.confirm(entry, false)}>Cancel</button>
-    {:else}
-      <button class="primary" onclick={() => store.confirm(entry, true)}>Yes</button>
-      <button onclick={() => store.confirm(entry, false)}>No</button>
-    {/if}
-  </div>
+  {#key r}<ConfirmView {entry} result={r} />{/key}
 {:else if r.kind === 'error'}
   <p class="err" role="alert">{r.message}</p>
 {/if}
@@ -70,7 +61,6 @@
   table { border-collapse: collapse; }
   th, td { text-align: left; padding: 2px 16px 2px 0; }
   th { color: var(--dim); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); }
-  .confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 0; }
   .changed { margin: 0; padding-left: 18px; color: var(--dim); }
   p { margin: 4px 0; }
 </style>

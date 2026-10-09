@@ -2,7 +2,7 @@
 
 use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::Replica;
-use tc_core::cli::{execute, load_facts, CliResult, Options, UndoStack};
+use tc_core::cli::{execute, load_facts, Ask, CliResult, ConfirmItem, Options, UndoStack};
 use tc_core::dates::{Clock, DAY};
 use tc_core::filter::split_words;
 use tc_core::taskrc::{parse, Config};
@@ -36,6 +36,29 @@ async fn run_opts(r: &mut R, cfg: &Config, line: &str, o: Options) -> (CliResult
     let d = execute(r, cfg, clock(), &split_words(line), o, &mut undo).await;
     UNDO.with(|u| *u.borrow_mut() = undo);
     (d.result, d.wrote)
+}
+
+/// Run a command and say yes to every question it asks, as a user pressing "yes" and "select all"
+/// would. (The questions can come in up to three rounds.)
+async fn run_yes(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
+    let mut o = Options::default();
+    for _ in 0..5 {
+        let (res, wrote) = run_opts(r, cfg, line, o.clone()).await;
+        let CliResult::Confirm { ask, items, .. } = &res else { return (res, wrote) };
+        let keys: Vec<String> = items.iter().map(|i| i.key.clone()).collect();
+        match ask {
+            Ask::Plain => o.confirmed = true,
+            Ask::Permission => o.approved = Some(keys),
+            Ask::Extras => o.extras = Some(keys),
+        }
+    }
+    panic!("still being asked after five rounds: {line}");
+}
+
+/// The questions in a `Confirm`, or a panic.
+fn asked(res: &CliResult) -> (Ask, &[ConfirmItem]) {
+    let CliResult::Confirm { ask, items, .. } = res else { panic!("not a question: {res:?}") };
+    (*ask, items)
 }
 
 fn message(res: &CliResult) -> String {
@@ -105,7 +128,10 @@ async fn done_modify_start_stop_delete_by_id() {
     assert!(first.end.is_some(), "completing must set `end` like the CLI does");
 
     // `second` is now id 1 (ids renumber over pending tasks only).
-    let (res, _) = run(&mut r, &cfg, "1 delete").await;
+    let (res, wrote) = run(&mut r, &cfg, "1 delete").await;
+    assert!(!wrote);
+    assert_eq!(message(&res), "CONFIRM: Delete task 1 'second'?"); // `confirmation` is on by default
+    let (res, _) = run_yes(&mut r, &cfg, "1 delete").await;
     assert_eq!(message(&res), "Deleted 1 task.");
     assert_eq!(
         load_facts(&mut r).await.unwrap().iter().find(|x| x.description == "second").unwrap().status,
@@ -157,19 +183,321 @@ async fn multi_task_writes_need_confirmation() {
     assert!(load_facts(&mut r).await.unwrap().iter().all(|f| f.status == "pending"));
 
     let (res, wrote) =
-        run_opts(&mut r, &cfg, "project:P done", Options { confirmed: true, ..Options::default() }).await;
+        run_yes(&mut r, &cfg, "project:P done").await;
     assert!(wrote);
     assert_eq!(message(&res), "Completed 3 tasks.");
 }
 
 #[tokio::test]
-async fn empty_filter_writes_are_refused() {
+async fn a_write_with_no_filter_asks_first_and_then_changes_everything() {
     let mut r = replica();
     let cfg = Config::default();
     run(&mut r, &cfg, "add a").await;
+    run(&mut r, &cfg, "add b").await;
+    run(&mut r, &cfg, "1 done").await;
     for line in ["done", "delete", "modify +x"] {
         let (res, wrote) = run(&mut r, &cfg, line).await;
-        assert!(!wrote && message(&res).contains("no tasks specified"), "{line}: {}", message(&res));
+        assert!(!wrote, "{line}");
+        assert!(
+            message(&res).starts_with("CONFIRM: This command has no filter, and will modify all (including completed and deleted) tasks."),
+            "{line}: {}",
+            message(&res)
+        );
+    }
+    // Yes: every task is changed, finished ones included.
+    let (res, wrote) = run_yes(&mut r, &cfg, "modify +x").await;
+    assert!(wrote, "{}", message(&res));
+    assert!(load_facts(&mut r).await.unwrap().iter().all(|f| f.tags.contains("x")));
+}
+
+#[tokio::test]
+async fn allow_empty_filter_off_refuses_and_confirmation_off_prevents_it() {
+    let mut r = replica();
+    run(&mut r, &Config::default(), "add a").await;
+    let no = parse("allow.empty.filter=0\n").config;
+    for line in ["done", "delete", "modify +x"] {
+        let (res, wrote) = run_yes(&mut r, &no, line).await; // even a "yes" can't get past it
+        assert!(!wrote);
+        assert_eq!(
+            message(&res),
+            "ERROR: You did not specify a filter, and with the 'allow.empty.filter' value, no action is taken.",
+            "{line}"
+        );
+    }
+    // Allowed, but with `confirmation` off there is nobody to ask: Taskwarrior stops, too.
+    let quiet = parse("confirmation=off\n").config;
+    let (res, wrote) = run(&mut r, &quiet, "modify +x").await;
+    assert!(!wrote);
+    assert_eq!(message(&res), "ERROR: Command prevented from running.");
+    // With a filter, none of this applies.
+    let (_, wrote) = run(&mut r, &no, "+nope modify +x").await;
+    assert!(!wrote);
+    let (_, wrote) = run(&mut r, &no, "1 modify +x").await;
+    assert!(wrote);
+}
+
+#[tokio::test]
+async fn an_active_context_counts_as_a_filter() {
+    let mut r = replica();
+    let cfg = parse("context.work.read=+w\ncontext=work\nallow.empty.filter=0\n").config;
+    run(&mut r, &Config::default(), "add a +w").await;
+    let (res, wrote) = run(&mut r, &cfg, "modify project:P").await;
+    assert!(wrote, "{}", message(&res));
+}
+
+#[tokio::test]
+async fn deleting_asks_unless_confirmation_is_off() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add one").await;
+    run(&mut r, &cfg, "add two").await;
+    // One task or two (below `bulk`): deleting asks, other changes don't.
+    for line in ["1 delete", "1,2 delete"] {
+        let (res, wrote) = run(&mut r, &cfg, line).await;
+        assert!(!wrote && message(&res).starts_with("CONFIRM:"), "{line}: {}", message(&res));
+    }
+    let (_, wrote) = run(&mut r, &cfg, "1,2 modify +t").await;
+    assert!(wrote, "two tasks are fewer than `bulk`");
+    let (_, wrote) = run(&mut r, &cfg, "1 annotate hello").await;
+    assert!(wrote);
+
+    let off = parse("confirmation=off\n").config;
+    let (res, wrote) = run(&mut r, &off, "1 delete").await;
+    assert!(wrote, "{}", message(&res));
+    assert_eq!(message(&res), "Deleted 1 task.");
+}
+
+#[tokio::test]
+async fn bulk_sets_how_many_tasks_a_change_may_touch_unasked() {
+    let mut r = replica();
+    let cfg = Config::default();
+    for t in ["a", "b", "c", "d"] {
+        run(&mut r, &cfg, &format!("add {t} project:P")).await;
+    }
+    // The default is 3: a change to three tasks or more asks, whatever the command.
+    let (res, wrote) = run(&mut r, &cfg, "1-3 modify +t").await;
+    assert!(!wrote && message(&res).contains("This will modify 3 tasks"), "{}", message(&res));
+    let (_, wrote) = run(&mut r, &cfg, "1-2 modify +t").await;
+    assert!(wrote);
+
+    let five = parse("bulk=5\n").config;
+    let (_, wrote) = run(&mut r, &five, "project:P modify +u").await;
+    assert!(wrote, "four tasks are fewer than 5");
+    let two = parse("bulk=2\n").config;
+    let (res, wrote) = run(&mut r, &two, "1-2 done").await;
+    assert!(!wrote && message(&res).starts_with("CONFIRM:"), "{}", message(&res));
+
+    // 0 means the count never asks; with `confirmation` off nothing does.
+    let never = parse("bulk=0\n").config;
+    let (_, wrote) = run(&mut r, &never, "project:P modify +v").await;
+    assert!(wrote);
+    let (res, wrote) = run(&mut r, &parse("bulk=0\nconfirmation=off\n").config, "project:P delete").await;
+    assert!(wrote, "{}", message(&res));
+    // But `bulk` still asks when `confirmation` is off.
+    let mut r2 = replica();
+    for t in ["a", "b", "c"] {
+        run(&mut r2, &cfg, &format!("add {t}")).await;
+    }
+    let (res, wrote) = run(&mut r2, &parse("confirmation=off\n").config, "1-3 delete").await;
+    assert!(!wrote && message(&res).starts_with("CONFIRM:"), "{}", message(&res));
+}
+
+#[tokio::test]
+async fn bulk_asks_about_each_task_and_goes_ahead_with_the_ones_approved() {
+    let mut r = replica();
+    let cfg = Config::default();
+    for t in ["a", "b", "c", "d"] {
+        run(&mut r, &cfg, &format!("add {t}")).await;
+    }
+    let (res, wrote) = run(&mut r, &cfg, "1-4 modify +t").await;
+    assert!(!wrote);
+    let (ask, items) = asked(&res);
+    assert_eq!(ask, Ask::Permission);
+    let names: Vec<(&str, &str)> = items.iter().map(|i| (i.description.as_str(), i.question.as_str())).collect();
+    assert_eq!(
+        names,
+        [("a", "Modify task 1 'a'?"), ("b", "Modify task 2 'b'?"), ("c", "Modify task 3 'c'?"), ("d", "Modify task 4 'd'?")]
+    );
+
+    // "yes" for a and c, "no" for b and d.
+    let yes = vec![items[0].key.clone(), items[2].key.clone()];
+    let o = Options { approved: Some(yes), ..Options::default() };
+    let (res, wrote) = run_opts(&mut r, &cfg, "1-4 modify +t", o).await;
+    assert!(wrote);
+    assert_eq!(message(&res), "Modified 2 tasks. Skipped 2 tasks.");
+    let tagged: Vec<String> = {
+        let mut v: Vec<_> = load_facts(&mut r).await.unwrap().into_iter().filter(|f| f.tags.contains("t")).map(|f| f.description).collect();
+        v.sort();
+        v
+    };
+    assert_eq!(tagged, ["a", "c"]);
+}
+
+#[tokio::test]
+async fn approving_none_changes_nothing_and_says_so_like_taskwarrior() {
+    let mut r = replica();
+    let cfg = Config::default();
+    for t in ["a", "b", "c"] {
+        run(&mut r, &cfg, &format!("add {t}")).await;
+    }
+    let o = Options { approved: Some(vec![]), ..Options::default() };
+    let (res, wrote) = run_opts(&mut r, &cfg, "1-3 delete", o).await;
+    assert!(!wrote);
+    assert_eq!(message(&res), "Task not deleted.\nTask not deleted.\nTask not deleted.");
+    assert!(load_facts(&mut r).await.unwrap().iter().all(|f| f.status == "pending"));
+}
+
+#[tokio::test]
+async fn only_the_tasks_a_command_would_change_are_asked_about() {
+    let mut r = replica();
+    let cfg = Config::default();
+    for t in ["a", "b", "c", "d"] {
+        run(&mut r, &cfg, &format!("add {t}")).await;
+    }
+    run(&mut r, &cfg, "1 done").await; // `a` is finished
+    // Four tasks are selected (past `bulk`), but `done` has nothing to do for the finished one.
+    let (res, _) = run(&mut r, &cfg, "description:a or description:b or description:c or description:d done").await;
+    let (_, items) = asked(&res);
+    let asked_about: Vec<&str> = items.iter().map(|i| i.description.as_str()).collect();
+    assert_eq!(asked_about, ["b", "c", "d"]);
+    // A modification that changes nothing is not asked about either.
+    run(&mut r, &cfg, "2,3,4 modify +same").await;
+    let (res, wrote) = run(&mut r, &cfg, "+same modify +same").await;
+    assert!(wrote && !matches!(res, CliResult::Confirm { .. }), "{res:?}");
+}
+
+#[tokio::test]
+async fn deleting_one_task_is_a_single_question_with_taskwarriors_wording() {
+    let mut r = replica();
+    let cfg = Config::default();
+    run(&mut r, &cfg, "add Pay rent").await;
+    let (res, _) = run(&mut r, &cfg, "1 delete").await;
+    let (ask, items) = asked(&res);
+    assert_eq!((ask, items.len(), message(&res).as_str()), (Ask::Permission, 1, "CONFIRM: Delete task 1 'Pay rent'?"));
+}
+
+#[tokio::test]
+async fn undo_asks_unless_confirmation_is_off() {
+    let mut r = replica();
+    let cfg = Config::default();
+    UNDO.with(|u| *u.borrow_mut() = UndoStack::default());
+    // Nothing to undo: no question needed.
+    assert!(message(&run(&mut r, &cfg, "undo").await.0).contains("Nothing to undo"));
+
+    run(&mut r, &cfg, "add keep me").await;
+    run(&mut r, &cfg, "1 done").await;
+    let (res, wrote) = run(&mut r, &cfg, "undo").await;
+    assert!(!wrote);
+    assert!(message(&res).starts_with("CONFIRM: The undo command is not reversible."), "{}", message(&res));
+    assert_eq!(load_facts(&mut r).await.unwrap()[0].status, "completed", "nothing was undone yet");
+
+    // Off: straight away.
+    let (res, wrote) = run(&mut r, &parse("confirmation=0\n").config, "undo").await;
+    assert!(wrote, "{}", message(&res));
+    assert_eq!(load_facts(&mut r).await.unwrap()[0].status, "pending");
+}
+
+mod chain_repair {
+    use super::*;
+
+    /// 3 <- 2 <- 1: task 1 waits on 2, which waits on 3.
+    async fn chain(r: &mut R, cfg: &Config) {
+        run(r, cfg, "add three").await;
+        run(r, cfg, "add two depends:1").await;
+        run(r, cfg, "add one depends:2").await;
+    }
+
+    fn deps_of(f: &[tc_core::model::Facts], d: &str) -> Vec<String> {
+        let by = |u: &uuid::Uuid| f.iter().find(|x| &x.uuid == u).unwrap().description.clone();
+        let mut v: Vec<String> = f.iter().find(|x| x.description == d).unwrap().depends.iter().map(by).collect();
+        v.sort();
+        v
+    }
+
+    #[tokio::test]
+    async fn finishing_the_middle_of_a_chain_offers_to_repair_it() {
+        let mut r = replica();
+        let cfg = Config::default();
+        chain(&mut r, &cfg).await;
+        let two = load_facts(&mut r).await.unwrap().iter().find(|f| f.description == "two").unwrap().uuid.to_string();
+
+        let (res, wrote) = run(&mut r, &cfg, &format!("{two} done")).await;
+        assert!(!wrote);
+        let (ask, items) = asked(&res);
+        assert_eq!(ask, Ask::Extras);
+        assert_eq!(items.len(), 1);
+        assert_eq!((items[0].question.as_str(), items[0].description.as_str()), ("Would you like the dependency chain fixed?", "two"));
+
+        // Yes: `one` stops waiting on `two` and waits on `three` instead.
+        let o = Options { extras: Some(vec![items[0].key.clone()]), ..Options::default() };
+        let (res, wrote) = run_opts(&mut r, &cfg, &format!("{two} done"), o).await;
+        assert!(wrote, "{}", message_of(&res));
+        assert!(message_of(&res).contains("Repaired the dependencies of 1 task"), "{}", message_of(&res));
+        let f = load_facts(&mut r).await.unwrap();
+        assert_eq!(deps_of(&f, "one"), ["three"]);
+        assert_eq!(f.iter().find(|x| x.description == "two").unwrap().status, "completed");
+    }
+
+    fn message_of(res: &CliResult) -> String {
+        super::message(res)
+    }
+
+    #[tokio::test]
+    async fn saying_no_completes_the_task_and_leaves_the_chain() {
+        let mut r = replica();
+        let cfg = Config::default();
+        chain(&mut r, &cfg).await;
+        let o = Options { extras: Some(vec![]), ..Options::default() };
+        let (_, wrote) = run_opts(&mut r, &cfg, "2 done", o).await;
+        assert!(wrote);
+        let f = load_facts(&mut r).await.unwrap();
+        assert_eq!(deps_of(&f, "one"), ["two"], "untouched");
+        assert_eq!(f.iter().find(|x| x.description == "two").unwrap().status, "completed");
+    }
+
+    #[tokio::test]
+    async fn dependency_confirmation_off_repairs_without_asking() {
+        let mut r = replica();
+        let cfg = parse("dependency.confirmation=off\n").config;
+        chain(&mut r, &cfg).await;
+        let (res, wrote) = run(&mut r, &cfg, "2 delete").await; // deleting asks, but the repair doesn't
+        assert!(!wrote && message_of(&res).starts_with("CONFIRM: Delete task"), "{}", message_of(&res));
+        let (res, wrote) = run_yes(&mut r, &cfg, "2 delete").await;
+        assert!(wrote, "{}", message_of(&res));
+        assert_eq!(deps_of(&load_facts(&mut r).await.unwrap(), "one"), ["three"]);
+    }
+
+    #[tokio::test]
+    async fn only_the_middle_of_a_chain_is_a_broken_chain() {
+        let mut r = replica();
+        let cfg = Config::default();
+        chain(&mut r, &cfg).await;
+        // `three` waits on nothing; `one` has nothing waiting on it: neither leaves a gap.
+        let (res, wrote) = run(&mut r, &cfg, "description:one done").await;
+        assert!(wrote, "{}", message_of(&res));
+        let (res, wrote) = run(&mut r, &cfg, "description:three done").await;
+        assert!(wrote, "{}", message_of(&res));
+    }
+
+    #[tokio::test]
+    async fn the_chain_is_checked_task_by_task_in_the_order_they_are_finished() {
+        let cfg = Config::default();
+        // `two` (lower id) is finished before `one` (which waits on it): that breaks the chain.
+        let mut r = replica();
+        chain(&mut r, &cfg).await;
+        let (res, wrote) = run(&mut r, &cfg, "description:one or description:two done").await;
+        assert!(!wrote);
+        assert_eq!(asked(&res).0, Ask::Extras, "{}", message_of(&res));
+
+        // `one` first (it has the lower id here), so by the time `two` goes nothing waits on it.
+        let mut r = replica();
+        run(&mut r, &cfg, "add one").await;
+        run(&mut r, &cfg, "add two").await;
+        run(&mut r, &cfg, "add three").await;
+        run(&mut r, &cfg, "1 modify depends:2").await;
+        run(&mut r, &cfg, "2 modify depends:3").await;
+        let (res, wrote) = run(&mut r, &cfg, "1,2 done").await;
+        assert!(wrote, "{}", message_of(&res));
     }
 }
 
@@ -180,7 +508,7 @@ async fn undo_reverses_the_last_change() {
     run(&mut r, &cfg, "add keep me").await;
     run(&mut r, &cfg, "1 done").await;
     assert_eq!(load_facts(&mut r).await.unwrap()[0].status, "completed");
-    let (res, wrote) = run(&mut r, &cfg, "undo").await;
+    let (res, wrote) = run_yes(&mut r, &cfg, "undo").await;
     assert!(wrote, "{}", message(&res));
     assert_eq!(load_facts(&mut r).await.unwrap()[0].status, "pending");
 }
@@ -817,7 +1145,7 @@ mod with_sync {
         run(&mut a, &cfg, "1 done").await;
         sync(&mut a, &store).await; // the Worker does this after every write
 
-        let (res, wrote) = run(&mut a, &cfg, "undo").await;
+        let (res, wrote) = run_yes(&mut a, &cfg, "undo").await;
         assert!(wrote, "{}", message(&res));
         sync(&mut a, &store).await;
 
@@ -830,7 +1158,8 @@ mod with_sync {
 
     /// Like `run`, but with an explicit undo stack, so two replicas don't share one.
     async fn run_own(r: &mut R, cfg: &Config, line: &str, undo: &mut UndoStack) -> (CliResult, bool) {
-        let d = execute(r, cfg, clock(), &split_words(line), Options::default(), undo).await;
+        let yes = Options { confirmed: true, ..Options::default() }; // `undo` asks first
+        let d = execute(r, cfg, clock(), &split_words(line), yes, undo).await;
         (d.result, d.wrote)
     }
 
@@ -867,15 +1196,15 @@ mod with_sync {
         run(&mut r, &cfg, "add one").await;
         run(&mut r, &cfg, "1 modify +a").await;
         run(&mut r, &cfg, "1 modify +b").await;
-        run(&mut r, &cfg, "undo").await;
+        run_yes(&mut r, &cfg, "undo").await;
         let f = &load_facts(&mut r).await.unwrap()[0];
         assert!(f.tags.contains("a") && !f.tags.contains("b"));
-        run(&mut r, &cfg, "undo").await;
+        run_yes(&mut r, &cfg, "undo").await;
         assert!(load_facts(&mut r).await.unwrap()[0].tags.is_empty());
-        run(&mut r, &cfg, "undo").await; // undoes the add itself
+        run_yes(&mut r, &cfg, "undo").await; // undoes the add itself
         let f = load_facts(&mut r).await.unwrap();
         assert!(f.is_empty() || f[0].status == "deleted", "{f:?}");
-        let (res, wrote) = run(&mut r, &cfg, "undo").await;
+        let (res, wrote) = run_yes(&mut r, &cfg, "undo").await;
         assert!(!wrote && message(&res).contains("Nothing to undo"));
     }
 }
@@ -1083,6 +1412,55 @@ mod overrides_and_journal {
         assert!(notes(&only(&mut r).await).is_empty(), "journal.time is off unless enabled");
     }
 
+    fn history_of(res: CliResult) -> Vec<(String, String)> {
+        let CliResult::Info { tasks } = res else { panic!("{res:?}") };
+        tasks[0]
+            .history
+            .iter()
+            .flat_map(|e| e.changes.iter().map(|c| (c.kind.to_owned(), c.prop.clone())))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn info_lists_what_changed_unless_journal_info_is_off() {
+        let cfg = Config::default();
+        let mut r = replica();
+        run(&mut r, &cfg, "add Alpha project:home +x priority:H").await;
+        run(&mut r, &cfg, "1 modify project:work -x +y").await;
+        run(&mut r, &cfg, "1 annotate a note").await;
+        run(&mut r, &cfg, "1 start").await;
+        run(&mut r, &cfg, "1 done").await;
+        let id = only(&mut r).await.uuid.to_string();
+
+        let h = history_of(run(&mut r, &cfg, &format!("{id} info")).await.0);
+        let has = |k: &str, p: &str| h.iter().any(|(kk, pp)| kk == k && pp == p);
+        assert!(has("set", "description") && has("set", "project") && has("set", "priority"), "{h:?}");
+        assert!(has("tag_added", "x") && has("tag_added", "y") && has("tag_deleted", "x"), "{h:?}");
+        assert!(has("changed", "project"), "{h:?}");
+        assert!(h.iter().any(|(k, p)| k == "note_added" && p.starts_with("annotation_")), "{h:?}");
+        assert!(has("set", "start") && has("deleted", "start") && has("changed", "status"), "{h:?}");
+        assert!(!h.iter().any(|(_, p)| p == "modified"), "the modification time is never listed");
+
+        // A Taskwarrior config says `journal.info=off` or `0`; the web replica follows.
+        for off in ["journal.info=off\n", "journal.info=0\n"] {
+            let h = history_of(run(&mut r, &parse(off).config, &format!("{id} info")).await.0);
+            assert!(h.is_empty(), "{off}: {h:?}");
+        }
+        // The command line can switch it too, like any setting.
+        let h = history_of(run(&mut r, &cfg, &format!("rc.journal.info:off {id} info")).await.0);
+        assert!(h.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_history_stays_out_of_reports_and_exports() {
+        let cfg = Config::default();
+        let mut r = replica();
+        run(&mut r, &cfg, "add Alpha").await;
+        let (res, _) = run(&mut r, &cfg, "export").await;
+        let CliResult::Json { value } = res else { panic!("{res:?}") };
+        assert!(value[0].get("history").is_none(), "{value}");
+    }
+
     #[tokio::test]
     async fn start_reopens_a_completed_task() {
         let cfg = Config::default();
@@ -1269,7 +1647,7 @@ mod recurrence {
         assert!(message(&res).starts_with("CONFIRM"), "{}", message(&res));
         let (res, wrote) = run(&mut r, &cfg, "1 delete").await;
         assert!(!wrote, "still asking: {}", message(&res));
-        let (_, wrote) = run_opts(&mut r, &cfg, "1 delete", Options { confirmed: true, ..Options::default() }).await;
+        let (_, wrote) = run_yes(&mut r, &cfg, "1 delete").await;
         assert!(wrote);
         let v = all(&mut r).await;
         assert!(v.iter().all(|f| f.status == "deleted"), "{:?}", v.iter().map(|f| &f.status).collect::<Vec<_>>());
@@ -1305,8 +1683,11 @@ mod recurrence {
         v
     }
 
-    fn answer(yes: bool) -> Options {
-        Options { recurrence: Some(yes), ..Options::default() }
+    /// Say yes (`true`) to the question just asked in `res`, or no (`false`).
+    fn answer(res: &CliResult, yes: bool) -> Options {
+        let (ask, items) = asked(res);
+        assert_eq!(ask, Ask::Extras);
+        Options { extras: Some(if yes { items.iter().map(|i| i.key.clone()).collect() } else { vec![] }), ..Options::default() }
     }
 
     #[tokio::test]
@@ -1315,26 +1696,26 @@ mod recurrence {
         let before = descriptions(&mut r).await;
         let (res, wrote) = run(&mut r, &cfg, "1 modify Feed plants").await;
         assert!(!wrote);
-        assert!(
-            matches!(&res, CliResult::Confirm { recurrence: true, message, .. } if message.contains("pending recurrences")),
-            "{res:?}"
-        );
+        let (ask, items) = asked(&res);
+        assert!(ask == Ask::Extras && items[0].question.contains("pending recurrences"), "{res:?}");
         assert_eq!(descriptions(&mut r).await, before, "asking must not write");
         // Unset means the same as `prompt`.
         let cfg = parse("recurrence=on\nrecurrence.limit=2\n").config;
         let (res, _) = run(&mut r, &cfg, "1 modify Feed plants").await;
-        assert!(matches!(res, CliResult::Confirm { recurrence: true, .. }), "{res:?}");
+        assert_eq!(asked(&res).0, Ask::Extras, "{res:?}");
     }
 
     #[tokio::test]
     async fn answering_yes_changes_the_whole_series_and_no_changes_only_the_task() {
         let (mut r, cfg) = series("prompt").await;
-        let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(true)).await;
+        let (asked_res, _) = run(&mut r, &cfg, "1 modify Feed plants").await;
+        let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(&asked_res, true)).await;
         assert!(wrote);
         assert!(all(&mut r).await.iter().all(|f| f.description == "Feed plants"), "{:?}", descriptions(&mut r).await);
 
         let (mut r, cfg) = series("prompt").await;
-        let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(false)).await;
+        let (asked_res, _) = run(&mut r, &cfg, "1 modify Feed plants").await;
+        let (_, wrote) = run_opts(&mut r, &cfg, "1 modify Feed plants", answer(&asked_res, false)).await;
         assert!(wrote);
         let v = all(&mut r).await;
         assert_eq!(template(&v).description, "Feed plants", "the edited task itself always changes");

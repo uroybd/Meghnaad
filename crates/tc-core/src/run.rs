@@ -29,6 +29,9 @@ pub struct Row {
     pub active_seconds: Option<i64>,
     /// The tracked work sessions (only when `journal.time` is enabled).
     pub sessions: Vec<Session>,
+    /// What changed and when, for `info` under `journal.info` (empty everywhere else).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<crate::history::Entry>,
 }
 
 impl Row {
@@ -43,6 +46,7 @@ impl Row {
             orphans: f.orphan_keys(cfg),
             active_seconds: journal.as_ref().and_then(|(s, e)| f.active_seconds(s, e, ctx.clock.now)),
             sessions: journal.map(|(s, e)| f.sessions(&s, &e, ctx.clock.now)).unwrap_or_default(),
+            history: vec![],
         }
     }
 }
@@ -82,7 +86,7 @@ pub fn working_set_ids(all: &[Facts]) -> BTreeMap<Uuid, u32> {
     pending.iter().zip(1u32..).map(|(f, n)| (f.uuid, n)).collect()
 }
 
-fn kind_of(name: &str, cfg: &Config) -> &'static str {
+pub(crate) fn kind_of(name: &str, cfg: &Config) -> &'static str {
     match name {
         "id" => "id",
         "uuid" | "parent" | "recur" | "mask" | "imask" | "template" | "rtype" => "string",
@@ -443,7 +447,7 @@ mod tests {
         let ctx = EvalCtx::new(cfg, clock(), &ids);
         let mut rows: Vec<Row> = all
             .iter()
-            .map(|f| Row { facts: f.clone(), urgency: ctx.urgency(f), id: ids.get(&f.uuid).copied(), virtual_tags: vec![], orphans: vec![], active_seconds: None, sessions: vec![] })
+            .map(|f| Row { facts: f.clone(), urgency: ctx.urgency(f), id: ids.get(&f.uuid).copied(), virtual_tags: vec![], orphans: vec![], active_seconds: None, sessions: vec![], history: vec![] })
             .collect();
         sort_rows(&mut rows, &parse_sort(spec).unwrap(), cfg, &ids, 1);
         rows.into_iter().map(|r| r.facts.description).collect()

@@ -27,8 +27,7 @@ it (tables, forms, a detail view), and both go through the same command engine.
 - **Time tracking** (`journal.time`), a sessions table per task, and reminders while the tab is open.
 
 > **Status.** Verified end to end against the released `task` 3.5.0 using a local S3-compatible server (both
-> directions: tasks, UDAs, custom reports, timed due dates). It has **not yet been run against a real R2 bucket**;
-> see [Known limitations](#known-limitations).
+> directions: tasks, UDAs, custom reports, timed due dates), and in use against a real R2 bucket.
 
 ## Screenshots
 
@@ -332,7 +331,11 @@ Notes that differ from Taskwarrior on a desktop:
 
 - **Numeric ids are specific to this app** (pending tasks numbered by creation time). They won't match your laptop's.
   Use uuid prefixes where it matters.
-- A command that would change several tasks asks you to confirm first.
+- **Confirmations follow your taskrc**, as in Taskwarrior: `delete` and `undo` ask (`confirmation`), any change to
+  `bulk` tasks or more (default 3) asks, a command with no filter asks before it changes everything
+  (`allow.empty.filter`), and finishing or deleting a task in the middle of a dependency chain offers to repair the
+  chain (`dependency.confirmation`). Taskwarrior's per-task yes / no / all / quit becomes a table with a tick for each task
+  the command would change: tick all, none, or the ones you want.
 - `undo` works on the last few commands made in this session of the Worker; it is forgotten when the Worker is
   recycled.
 
@@ -351,7 +354,9 @@ commands · `Esc` closes a menu · `Ctrl+L` clears.
   The detail view uses the same styling, plus a coloured pill for the task's state (pending, waiting, blocked,
   blocking, recurring, completed, deleted).
 - **Click a row** for the detail view: all fields, annotations, dependencies you can follow, and (with
-  `journal.time`) a table of work sessions. Row buttons: done, start/stop, edit, delete.
+  `journal.time`) a table of work sessions, and a collapsed History table of what changed and when (`journal.info`, on
+  by default, worded like `task info`). History comes from the task's operation log, so changes made before the
+  last snapshot are not in it. Row buttons: done, start/stop, edit, delete.
 - **Add tasks** from the sidebar. *More fields…* opens the full form: project, priority, due/wait/scheduled/until,
   tags, dependencies, UDAs, "start now", and a first note.
 - **Annotations and string UDAs can span several lines.** In an annotation box Enter saves and Shift+Enter starts a new
@@ -527,14 +532,12 @@ changing filters, sorting, urgency or journalling, read the C++ first.
 
 ## Known limitations
 
-- **Not yet tested against real R2.** The CLI's own use of R2's conditional writes is a good sign, but run a
-  `task sync` and a web edit against a scratch bucket before trusting it with data you can't lose.
 - **Recurring tasks** follow Taskwarrior's rules and were checked against real `task` 3.5.0 in both directions, and both sides create instances by default (see above).
 - **Phone layout** was verified in an emulated phone browser (touch, 390px); try it on your own device before relying on it, in particular the on-screen keyboard and safe-area insets.
 - **Snapshots** are written the way the CLI writes them: on about one push in ten, never on a pull, replacing the one before. A Worker that has been idle starts from the newest snapshot and replays only the versions after it, so use of either side keeps the first request quick. **Deleting old versions** (those older than about 180 days that a snapshot covers) is still left to the CLI.
 - **Dates you type** aren't parsed with your `dateformat`: use `2026-12-25`, `2026-12-25T08:30` or words like `friday`, `3d`. (Dates *shown* follow it; see Tasks view.)
 - **Not every `taskrc` option is supported.** Terminal, colour and local-file options don't apply to a web app, and some
-  (`default.project`, `alias.*`, `context.<name>.rc.*`, …) aren't implemented yet. See [taskrc support](docs/taskrc-support.md).
+  (`alias.*`, `expressions`, …) aren't implemented yet. See [taskrc support](docs/taskrc-support.md).
 - Single user: one set of settings and one shared replica per Worker instance.
 
 ## About the name

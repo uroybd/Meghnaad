@@ -5,6 +5,7 @@
 //! This does not sync: the caller pulls before and pushes after (see `wrote`).
 
 use crate::dates::Clock;
+use crate::history;
 use crate::filter::{conjoin, split_words, EvalCtx, Filter, FilterError, Limit};
 use crate::model::{self, Facts};
 use crate::modify::{self, Change, Mode, ModError};
@@ -13,7 +14,7 @@ use crate::report;
 use crate::run::{self, Output, Row};
 use crate::taskrc::Config;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use taskchampion::chrono::{DateTime, TimeZone, Utc};
 use taskchampion::storage::Storage;
@@ -234,20 +235,47 @@ pub enum CliResult {
     Json { value: serde_json::Value },
     /// A write happened.
     Changed { message: String, tasks: Vec<ChangedTask> },
-    /// A multi-task write needs confirmation; re-run with `confirmed`.
-    /// `recurrence`: the question is whether to change the rest of a recurring series too. Answer
-    /// with `Options::recurrence` (yes = all pending recurrences, no = only the task itself).
-    Confirm { message: String, count: usize, #[serde(default)] recurrence: bool },
+    /// Taskwarrior wants an answer first. `ask` says what kind:
+    /// * `plain`: one yes/no question (undo, a command with no filter): re-run with `confirmed`.
+    /// * `permission`: one question per task the command would change (`bulk`, deleting): answer
+    ///   with `Options::approved`, the keys of the tasks to go ahead with (all and none are the
+    ///   same as Taskwarrior's "all" and "quit").
+    /// * `extras`: questions that only arise once those are answered (repair a dependency chain,
+    ///   change the rest of a recurring series): answer with `Options::extras`, the keys to say
+    ///   yes to.
+    Confirm { message: String, ask: Ask, items: Vec<ConfirmItem> },
     Error { message: String },
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+/// What a `Confirm` asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Ask {
+    Plain,
+    Permission,
+    Extras,
+}
+
+/// One question about one task.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfirmItem {
+    /// What to send back to say yes (a task's uuid for `permission`, `dep:<uuid>` or `rec:<uuid>`
+    /// for `extras`).
+    pub key: String,
+    pub uuid: Uuid,
+    pub id: Option<u32>,
+    pub description: String,
+    pub question: String,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Options {
-    /// The caller has already confirmed a multi-task change.
+    /// The caller has answered yes to the plain questions (undo, a command with no filter).
     pub confirmed: bool,
-    /// The answer to a `recurrence` confirmation: change the whole pending series (`true`) or
-    /// only the task itself (`false`). `None` = not asked yet.
-    pub recurrence: Option<bool>,
+    /// The answer to a `permission` confirmation: the tasks to go ahead with. `None` = not asked.
+    pub approved: Option<Vec<String>>,
+    /// The answer to an `extras` confirmation: the questions answered yes. `None` = not asked.
+    pub extras: Option<Vec<String>>,
     pub seed: u64,
 }
 
@@ -387,6 +415,125 @@ impl From<ModError> for Done {
 
 fn plural(n: usize, one: &str) -> String {
     if n == 1 { format!("1 {one}") } else { format!("{n} {one}s") }
+}
+
+/// Does a command that changes `n` tasks ask first? Taskwarrior's `Command::permission`: deleting
+/// asks when `confirmation` is on, and any change asks once it reaches `bulk` tasks (0 = never
+/// because of the count). Everything else, a few tasks at a time, goes ahead. (Taskwarrior asks
+/// about each task in turn, with yes / no / all / quit; here one question covers the lot.)
+fn asks(kind: Kind, n: usize, cfg: &Config) -> bool {
+    let guarded = kind == Delete && cfg.confirmation();
+    if n == 1 {
+        return guarded;
+    }
+    let bulk = cfg.bulk();
+    (bulk != 0 && n >= bulk) || guarded
+}
+
+fn confirm_item(key: String, f: &Facts, ctx: &EvalCtx, question: String) -> ConfirmItem {
+    ConfirmItem { key, uuid: f.uuid, id: ctx.ids.get(&f.uuid).copied(), description: f.description.clone(), question }
+}
+
+fn verb_of(kind: Kind) -> &'static str {
+    match kind {
+        Done => "complete",
+        Delete => "delete",
+        Start => "start",
+        Stop => "stop",
+        Annotate => "annotate",
+        Denotate => "remove an annotation from",
+        _ => "modify",
+    }
+}
+
+/// Taskwarrior's wording of the question about one task.
+fn permission_question(kind: Kind, f: &Facts, ctx: &EvalCtx, all: &[Facts]) -> String {
+    let id = ctx.ids.get(&f.uuid).map_or_else(|| f.uuid.to_string()[..8].to_owned(), u32::to_string);
+    let what = match kind {
+        Done => "Complete task",
+        Delete => "Delete task",
+        Start => "Start task",
+        Stop => "Stop task",
+        Annotate => "Annotate task",
+        Denotate => "Denotate task",
+        Append => "Append to task",
+        Prepend => "Prepend to task",
+        _ => "Modify task",
+    };
+    // A recurring template takes its pending instances with it.
+    let instances = if kind == Delete && f.status == "recurring" {
+        all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending").count()
+    } else {
+        0
+    };
+    let extra = if instances > 0 { format!(" and its {}", plural(instances, "pending instance")) } else { String::new() };
+    format!("{what} {id} '{}'{extra}?", f.description)
+}
+
+/// What Taskwarrior prints for a task that was not changed after all.
+fn declined_line(kind: Kind) -> &'static str {
+    match kind {
+        Done => "Task not completed.",
+        Delete => "Task not deleted.",
+        Start => "Task not started.",
+        Stop => "Task not stopped.",
+        Annotate => "Task not annotated.",
+        Denotate => "Task not denotated.",
+        Append => "Task not appended.",
+        Prepend => "Task not prepended.",
+        _ => "Task not modified.",
+    }
+}
+
+/// What repairing a dependency chain does to one task still waiting on something that was
+/// finished or deleted: it stops waiting on that, and waits on what that task was waiting on.
+struct Repair {
+    task: Uuid,
+    removed: Vec<Uuid>,
+    added: Vec<Uuid>,
+}
+
+/// The chain repairs Taskwarrior would offer for finishing or deleting `changing`, in the order it
+/// would meet them (`dependencyChainOnComplete`): a task that was waiting on something open and
+/// that others are waiting on leaves them waiting on its own blockers instead. `ask` decides, for
+/// each such task, whether the repair goes ahead (it may also be recording the question).
+fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut dyn FnMut(&Facts) -> bool) -> Vec<Repair> {
+    let open = |f: &Facts| !matches!(f.status.as_str(), "completed" | "deleted");
+    // Each task as the command goes along: still open, and what it depends on.
+    let mut state: BTreeMap<Uuid, (bool, Vec<Uuid>)> =
+        all.iter().map(|f| (f.uuid, (open(f), f.depends.clone()))).collect();
+    for t in changing {
+        let Some(me) = state.get_mut(&t.uuid) else { continue };
+        me.0 = false;
+        let waits_on: Vec<Uuid> = me.1.clone();
+        let blocking: Vec<Uuid> =
+            waits_on.into_iter().filter(|d| state.get(d).is_some_and(|s| s.0)).collect();
+        if blocking.is_empty() {
+            continue;
+        }
+        let blocked: Vec<Uuid> =
+            state.iter().filter(|(_, (open, deps))| *open && deps.contains(&t.uuid)).map(|(u, _)| *u).collect();
+        if blocked.is_empty() || !ask(t) {
+            continue;
+        }
+        for b in blocked {
+            let deps = &mut state.get_mut(&b).expect("just listed").1;
+            deps.retain(|d| *d != t.uuid);
+            for r in &blocking {
+                if *r != b && !deps.contains(r) {
+                    deps.push(*r);
+                }
+            }
+        }
+    }
+    all.iter()
+        .filter_map(|f| {
+            let now = &state.get(&f.uuid)?.1;
+            let removed: Vec<Uuid> = f.depends.iter().filter(|d| !now.contains(d)).copied().collect();
+            let added: Vec<Uuid> = now.iter().filter(|d| !f.depends.contains(d)).copied().collect();
+            (!removed.is_empty() || !added.is_empty()).then_some(Repair { task: f.uuid, removed, added })
+        })
+        .collect()
 }
 
 pub async fn load_facts<S: Storage>(r: &mut Replica<S>) -> Result<Vec<Facts>, taskchampion::Error> {
@@ -943,7 +1090,17 @@ async fn builtin<S: Storage>(
                     if sel.is_empty() {
                         return ok(CliResult::Text { lines: vec!["No matches.".into()] });
                     }
-                    ok(CliResult::Info { tasks: sel.iter().map(|f| row(f)).collect() })
+                    let mut tasks: Vec<Row> = sel.iter().map(|f| row(f)).collect();
+                    if cfg.journal_info() {
+                        let is_date = |p: &str| p != "last" && run::kind_of(p, cfg) == "date";
+                        for t in &mut tasks {
+                            match replica.get_task_operations(t.facts.uuid).await {
+                                Ok(ops) => t.history = history::history(&ops, &is_date),
+                                Err(e) => return error(e.to_string()),
+                            }
+                        }
+                    }
+                    ok(CliResult::Info { tasks })
                 }
                 Export => ok(CliResult::Json {
                     value: serde_json::to_value(sel.iter().map(|f| row(f)).collect::<Vec<_>>())
@@ -964,6 +1121,13 @@ async fn builtin<S: Storage>(
             let Some(last) = undo.0.last().cloned() else {
                 return ok(CliResult::Text { lines: vec!["Nothing to undo.".into()] });
             };
+            if cfg.confirmation() && !opts.confirmed {
+                return ok(CliResult::Confirm {
+                    message: "The undo command is not reversible.  Are you sure you want to revert to the previous state?".into(),
+                    ask: Ask::Plain,
+                    items: vec![],
+                });
+            }
             let reverse = match invert(replica, &last, Utc.timestamp_opt(ctx.clock.now, 0).single().unwrap_or_else(Utc::now)).await {
                 Ok(r) => r,
                 Err(m) => return error(m),
@@ -992,8 +1156,17 @@ async fn write_selected<S: Storage>(
     opts: Options,
     undo: &mut UndoStack,
 ) -> Done {
-    if p.filter.is_empty() {
-        return error("no tasks specified: give an id, a uuid or a filter");
+    // Taskwarrior's safety net: a command that changes tasks, given no filter, would change them
+    // all (finished and deleted ones too). `allow.empty.filter` forbids that; otherwise it asks,
+    // and with `confirmation` off it refuses. The context's filter counts as a filter.
+    let empty_filter = conjoin(&[context_read(cfg), p.filter.clone()]).is_empty();
+    if empty_filter {
+        if !cfg.allow_empty_filter() {
+            return error("You did not specify a filter, and with the 'allow.empty.filter' value, no action is taken.");
+        }
+        if !cfg.confirmation() {
+            return error("Command prevented from running.");
+        }
     }
     let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
         Ok(s) => s,
@@ -1002,36 +1175,14 @@ async fn write_selected<S: Storage>(
     if sel.is_empty() {
         return ok(CliResult::Text { lines: vec!["No matches.".into()] });
     }
-    // Deleting a recurring template also deletes its pending instances, as in Taskwarrior
-    // (otherwise they would be orphaned). Instances themselves are deleted one at a time.
-    let mut targets: Vec<&Facts> = sel.clone();
-    if kind == Delete {
-        for f in &sel {
-            if f.status == "recurring" {
-                for c in all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending") {
-                    if !targets.iter().any(|t| t.uuid == c.uuid) {
-                        targets.push(c);
-                    }
-                }
-            }
-        }
-    }
-    let cascaded = targets.len() > sel.len();
-    let verb = match kind {
-        Done => "complete",
-        Delete => "delete",
-        Start => "start",
-        Stop => "stop",
-        Annotate => "annotate",
-        Denotate => "remove an annotation from",
-        _ => "modify",
-    };
-    if targets.len() > 1 && !opts.confirmed {
-        let extra = if cascaded { " (a recurring task and its pending instances)" } else { "" };
+    if empty_filter && !opts.confirmed {
         return ok(CliResult::Confirm {
-            message: format!("This will {verb} {}{extra}. Continue?", plural(targets.len(), "task")),
-            count: targets.len(),
-            recurrence: false,
+            message: format!(
+                "This command has no filter, and will modify all (including completed and deleted) tasks.  Are you sure? ({} in all.)",
+                plural(sel.len(), "task")
+            ),
+            ask: Ask::Plain,
+            items: vec![],
         });
     }
 
@@ -1048,29 +1199,128 @@ async fn write_selected<S: Storage>(
         return error("this command needs some text");
     }
 
-    // Editing one task of a recurring series can carry over to the rest (`recurrence.confirmation`).
-    let mut propagate = false;
-    if matches!(kind, Modify) {
-        propagate = match recur::confirmation(cfg) {
-            recur::Confirmation::Yes => true,
-            recur::Confirmation::No => false,
-            recur::Confirmation::Prompt => {
-                if targets.iter().any(|f| !series_of(f, all).is_empty()) {
-                    match opts.recurrence {
-                        Some(answer) => answer,
-                        None => {
-                            return ok(CliResult::Confirm {
-                                message: "This is a recurring task. Do you want to modify all pending recurrences of this same task?".into(),
-                                count: targets.len(),
-                                recurrence: true,
-                            });
-                        }
-                    }
+    // The tasks this command would change: those are the ones Taskwarrior asks about.
+    let mut would_change: Vec<&Facts> = Vec::new();
+    for f in &sel {
+        let changes = match kind {
+            Done => f.status == "pending",
+            Delete => f.status != "deleted",
+            Start => f.status != "recurring" && f.start.is_none(),
+            Stop => f.status != "recurring" && f.start.is_some(),
+            Modify => match modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(f), ctx, all) {
+                Ok(c) => !c.is_empty(),
+                Err(e) => return error(e.0),
+            },
+            _ => true,
+        };
+        if changes {
+            would_change.push(f);
+        }
+    }
+
+    // Permission, task by task (Taskwarrior's yes / no / all / quit, as a table): deleting asks
+    // when `confirmation` is on, and any change asks once it reaches `bulk` tasks.
+    let mut declined: Vec<&Facts> = Vec::new();
+    if !would_change.is_empty() && asks(kind, sel.len(), cfg) {
+        match &opts.approved {
+            None => {
+                let items: Vec<ConfirmItem> = would_change
+                    .iter()
+                    .map(|f| confirm_item(f.uuid.to_string(), f, ctx, permission_question(kind, f, ctx, all)))
+                    .collect();
+                let message = if items.len() == 1 {
+                    items[0].question.clone()
                 } else {
-                    false
+                    format!("This will {} {}. Choose which ones to go ahead with.", verb_of(kind), plural(items.len(), "task"))
+                };
+                return ok(CliResult::Confirm { message, ask: Ask::Permission, items });
+            }
+            Some(yes) => {
+                declined = would_change.iter().filter(|f| !yes.contains(&f.uuid.to_string())).copied().collect();
+            }
+        }
+    }
+    if !declined.is_empty() && declined.len() == would_change.len() {
+        return ok(CliResult::Text { lines: declined.iter().map(|_| declined_line(kind).to_owned()).collect() });
+    }
+    let chosen: Vec<&Facts> = sel.iter().filter(|f| !declined.iter().any(|d| d.uuid == f.uuid)).copied().collect();
+    let changing: Vec<&Facts> = would_change.iter().filter(|f| !declined.iter().any(|d| d.uuid == f.uuid)).copied().collect();
+
+    // Deleting a recurring template also deletes its pending instances, as in Taskwarrior
+    // (otherwise they would be orphaned). Instances themselves are deleted one at a time.
+    let mut targets: Vec<&Facts> = chosen.clone();
+    if kind == Delete {
+        for f in &chosen {
+            if f.status == "recurring" {
+                for c in all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending") {
+                    if !targets.iter().any(|t| t.uuid == c.uuid) {
+                        targets.push(c);
+                    }
                 }
             }
+        }
+    }
+
+    // What only comes up once the above is settled, asked in one more table: carrying a change to
+    // the rest of a recurring series (`recurrence.confirmation`), and repairing a dependency
+    // chain that finishing or deleting a task in the middle of it breaks
+    // (`dependency.confirmation`).
+    let asking = opts.extras.is_none();
+    let said_yes = |key: &str| opts.extras.as_ref().is_some_and(|y| y.iter().any(|k| k == key));
+    let mut items: Vec<ConfirmItem> = Vec::new();
+    let mut propagate: BTreeSet<Uuid> = BTreeSet::new();
+    if matches!(kind, Modify) {
+        let mode = recur::confirmation(cfg);
+        for f in &changing {
+            if series_of(f, all).is_empty() {
+                continue;
+            }
+            match mode {
+                recur::Confirmation::Yes => {
+                    propagate.insert(f.uuid);
+                }
+                recur::Confirmation::No => {}
+                recur::Confirmation::Prompt => {
+                    let key = format!("rec:{}", f.uuid);
+                    if asking {
+                        items.push(confirm_item(
+                            key,
+                            f,
+                            ctx,
+                            "This is a recurring task. Do you want to modify all pending recurrences of this same task?".into(),
+                        ));
+                    } else if said_yes(&key) {
+                        propagate.insert(f.uuid);
+                    }
+                }
+            }
+        }
+    }
+    let mut repairs: Vec<Repair> = Vec::new();
+    if matches!(kind, Done | Delete) {
+        let mut ask = |f: &Facts| -> bool {
+            if !cfg.dependency_confirmation() {
+                return true;
+            }
+            let key = format!("dep:{}", f.uuid);
+            if asking {
+                // Asked on the assumption that the earlier ones are repaired; a later one that
+                // then turns out not to arise is simply never used.
+                items.push(confirm_item(key, f, ctx, "Would you like the dependency chain fixed?".into()));
+                true
+            } else {
+                said_yes(&key)
+            }
         };
+        repairs = chain_repairs(&changing, all, &mut ask);
+    }
+    if asking && !items.is_empty() {
+        let message = if items.len() == 1 {
+            items[0].question.clone()
+        } else {
+            "A few more questions about these tasks.".to_owned()
+        };
+        return ok(CliResult::Confirm { message, ask: Ask::Extras, items });
     }
 
     let mut ops = Operations::new();
@@ -1152,7 +1402,7 @@ async fn write_selected<S: Storage>(
                     apply_changes(&mut task, &changes, &mut ops)?;
                     // The descriptive changes (not dates or the recurrence itself, which are per
                     // instance) also reach the rest of the series, when that was asked for.
-                    if propagate {
+                    if propagate.contains(&f.uuid) {
                         let shared: Vec<Change> = changes.iter().filter(|c| shared_with_instances(c)).cloned().collect();
                         if !shared.is_empty() {
                             for c in series_of(f, all) {
@@ -1205,6 +1455,19 @@ async fn write_selected<S: Storage>(
     }
     touched.extend(instances_touched);
 
+    let mut repaired: Vec<Uuid> = Vec::new();
+    if !touched.is_empty() {
+        for r in &repairs {
+            let Ok(Some(mut t)) = replica.get_task(r.task).await else { continue };
+            let mut changes: Vec<Change> = r.removed.iter().map(|u| Change::RemoveDep(*u)).collect();
+            changes.extend(r.added.iter().map(|u| Change::AddDep(*u)));
+            if let Err(m) = apply_changes(&mut t, &changes, &mut ops) {
+                return error(m);
+            }
+            repaired.push(r.task);
+        }
+    }
+
     if touched.is_empty() {
         let why = match kind {
             Start => "already active",
@@ -1230,11 +1493,15 @@ async fn write_selected<S: Storage>(
         Denotate => "Updated",
         _ => "Modified",
     };
-    Done {
-        result: changed(&after, &touched, format!("{past} {}.", plural(touched.len(), "task"))),
-        wrote: true,
-        command: None,
+    let mut message = format!("{past} {}.", plural(touched.len(), "task"));
+    if !declined.is_empty() {
+        message.push_str(&format!(" Skipped {}.", plural(declined.len(), "task")));
     }
+    if !repaired.is_empty() {
+        message.push_str(&format!(" Repaired the dependencies of {}.", plural(repaired.len(), "task")));
+        touched.extend(repaired);
+    }
+    Done { result: changed(&after, &touched, message), wrote: true, command: None }
 }
 
 /// The rest of `f`'s recurring series: for a template its pending instances; for an instance its

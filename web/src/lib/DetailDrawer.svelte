@@ -71,12 +71,13 @@
   }
 
   async function del() {
-    if (!confirmDelete) {
+    // The second click answers Taskwarrior's "Delete task N?"; with `confirmation` off there is none.
+    if (store.confirmation && !confirmDelete) {
       confirmDelete = true;
       setTimeout(() => (confirmDelete = false), 3000);
       return;
     }
-    const res = await act('delete');
+    const res = await store.act(store.detail?.from ?? null, [uuid, 'delete'], { approved: [uuid] });
     if (res && res.result.kind !== 'error') store.detail = null;
   }
 

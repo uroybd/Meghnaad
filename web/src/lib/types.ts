@@ -46,6 +46,31 @@ export interface Row extends Facts {
   active_seconds: number | null;
   /** Tracked work sessions (only when `journal.time` is on); the running one has no `end`. */
   sessions: Session[];
+  /** What changed and when (`info`, when `journal.info` is on). */
+  history?: HistoryEntry[];
+}
+
+export type HistoryKind =
+  | 'set' | 'changed' | 'deleted'
+  | 'note_added' | 'note_changed' | 'note_deleted'
+  | 'tag_added' | 'tag_deleted' | 'dep_added' | 'dep_deleted';
+
+export interface HistoryChange {
+  kind: HistoryKind;
+  /** The property; for the tag and dependency kinds, the tag or the uuid. */
+  prop: string;
+  old: string | null;
+  value: string | null;
+  /** The values are epoch seconds to show in the date format. */
+  date: boolean;
+  /** For a deleted `start`: how long the task ran, already formatted. */
+  duration: string | null;
+}
+
+/** The changes made at one moment. */
+export interface HistoryEntry {
+  at: number;
+  changes: HistoryChange[];
 }
 
 export interface Session {
@@ -154,12 +179,25 @@ export interface ChangedResult {
   message: string;
   tasks: { uuid: string; id: number | null; description: string }[];
 }
+/** One question about one task. */
+export interface ConfirmItem {
+  /** What to send back to say yes. */
+  key: string;
+  uuid: string;
+  id: number | null;
+  description: string;
+  question: string;
+}
+/**
+ * Taskwarrior wants an answer: `plain` is one yes/no; `permission` has a question per task the
+ * command would change (tick the ones to go ahead with); `extras` are follow-up questions that
+ * only arise once those are answered (repair a dependency chain, change a recurring series).
+ */
 export interface ConfirmResult {
   kind: 'confirm';
   message: string;
-  count: number;
-  /** The question is about the rest of a recurring series (answer with all / only this one). */
-  recurrence?: boolean;
+  ask: 'plain' | 'permission' | 'extras';
+  items: ConfirmItem[];
 }
 export interface ErrorResult { kind: 'error'; message: string }
 

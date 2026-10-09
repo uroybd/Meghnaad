@@ -140,6 +140,36 @@ impl Config {
             .unwrap_or(crate::filter::Limit::None)
     }
 
+    /// `confirmation`: ask before deleting and undoing (Taskwarrior's default is on).
+    pub fn confirmation(&self) -> bool {
+        self.settings.get("confirmation").map_or(true, |v| truthy(v))
+    }
+
+    /// `bulk`: a change to this many tasks or more asks first; 0 never asks because of the count.
+    /// Taskwarrior reads it as an integer (`atoi`): text that isn't one counts as 0. Default 3.
+    pub fn bulk(&self) -> usize {
+        let Some(v) = self.settings.get("bulk") else { return 3 };
+        let v = v.trim();
+        let digits: String = v.strip_prefix('+').unwrap_or(v).chars().take_while(char::is_ascii_digit).collect();
+        digits.parse().unwrap_or(0)
+    }
+
+    /// `allow.empty.filter`: whether a command that changes tasks may run with no filter at all.
+    pub fn allow_empty_filter(&self) -> bool {
+        self.settings.get("allow.empty.filter").map_or(true, |v| truthy(v))
+    }
+
+    /// `dependency.confirmation`: ask before repairing a dependency chain broken by finishing or
+    /// deleting a task in the middle of it. Off repairs it without asking.
+    pub fn dependency_confirmation(&self) -> bool {
+        self.settings.get("dependency.confirmation").map_or(true, |v| truthy(v))
+    }
+
+    /// `journal.info`: whether `info` lists the task's change history (Taskwarrior's default is on).
+    pub fn journal_info(&self) -> bool {
+        self.settings.get("journal.info").map_or(true, |v| truthy(v))
+    }
+
     /// `(start annotation, stop annotation)` when `journal.time` is on.
     pub fn journal(&self) -> Option<(String, String)> {
         let on = self.settings.get("journal.time").is_some_and(|v| truthy(v));
@@ -213,6 +243,10 @@ const SCALAR_SETTINGS: &[&str] = &[
     "recurrence.limit",
     "recurrence.indicator",
     "recurrence.confirmation",
+    "confirmation",
+    "bulk",
+    "allow.empty.filter",
+    "dependency.confirmation",
     "journal.time",
     "journal.time.start.annotation",
     "journal.time.stop.annotation",

@@ -36,13 +36,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export interface CliInput {
+/** Answers already given to the engine's questions about one command. */
+export interface Answers {
+  /** Yes to the plain questions (undo, a command with no filter). */
+  confirmed?: boolean;
+  /** The tasks to go ahead with, when asked which ones (Taskwarrior's yes/no/all/quit, as ticks). */
+  approved?: string[];
+  /** The follow-up questions answered yes (repair a dependency chain, change a recurring series). */
+  extras?: string[];
+}
+
+export interface CliInput extends Answers {
   /** Exactly one of these: a typed command line, or pre-split args (no quoting concerns). */
   line?: string;
   args?: string[];
-  confirmed?: boolean;
-  /** Answer to a recurring-series question: change every pending recurrence, or only this task. */
-  recurrence?: boolean;
 }
 
 export function runCli(input: CliInput): Promise<CliResponse> {

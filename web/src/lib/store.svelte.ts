@@ -1,4 +1,4 @@
-import { ApiError, getConfig, runCli, type CliInput } from './api';
+import { ApiError, getConfig, runCli, type Answers, type CliInput } from './api';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import type { TaskRef, Vocab } from './completion';
 import type { CliResponse, CliResult, ConfigResponse, ReportMeta, Row } from './types';
@@ -13,6 +13,8 @@ export interface Entry {
   /** Transport-level failure (not a command error, which arrives as an `error` result). */
   failure: string | null;
   at: number;
+  /** What was already answered on this command, for the questions that follow the first. */
+  answers?: Answers;
 }
 
 export interface Toast {
@@ -164,11 +166,12 @@ class Store {
     this.tasks = [...tasks.values()];
   }
 
-  async #exec(e: Entry, confirmed = false, recurrence?: boolean): Promise<CliResponse | null> {
+  async #exec(e: Entry, answers: Answers = {}): Promise<CliResponse | null> {
     e.loading = true;
     e.failure = null;
+    e.answers = answers;
     try {
-      const res = await runCli({ ...e.input, confirmed, recurrence });
+      const res = await runCli({ ...e.input, ...answers });
       e.result = res.result;
       if (res.result.kind === 'report') this.#learn(res.result.rows);
       if (res.result.kind === 'info') this.#learn(res.result.tasks);
@@ -243,45 +246,58 @@ class Store {
     await this.#exec(e);
   }
 
-  /** Answer a confirmation prompt on an entry. */
+  /** Answer a plain yes/no question on an entry. */
   async confirm(e: Entry, yes: boolean) {
     if (!yes) {
       e.result = { kind: 'text', lines: ['Cancelled.'] };
       return;
     }
-    const res = await this.#exec(e, true);
+    const res = await this.#exec(e, { ...e.answers, confirmed: true });
     if (res?.wrote && this.live) void this.refresh(this.live);
   }
 
-  /** Answer "change the whole recurring series?" on an entry: true = all pending, false = only this task. */
-  async answerRecurrence(e: Entry, all: boolean) {
-    const res = await this.#exec(e, true, all);
+  /** Answer a per-task question on an entry with the keys that were ticked. */
+  async answerItems(e: Entry, keys: string[]) {
+    const r = e.result;
+    if (r?.kind !== 'confirm') return;
+    const more: Answers = r.ask === 'permission' ? { approved: keys } : { extras: keys };
+    const res = await this.#exec(e, { ...e.answers, ...more });
     if (res?.wrote && this.live) void this.refresh(this.live);
+  }
+
+  /** The taskrc's `confirmation` (on unless turned off): the delete buttons ask before they delete. */
+  get confirmation(): boolean {
+    const v = this.config?.config.settings?.confirmation;
+    return v === undefined || /^(1|y|yes|on|true)$/i.test(v.trim());
   }
 
   /** A GUI action (done, start, add, ...): run it, report the outcome, refresh what's on screen. */
   async act(
     from: Entry | null,
     args: string[],
-    confirmed = false,
-    recurrence?: boolean,
+    answers: Answers = {},
+    again = false,
   ): Promise<CliResponse | null> {
-    if (!confirmed) this.remember(previewLine(args));
+    if (!again) this.remember(previewLine(args));
     try {
-      const res = await runCli({ args, confirmed, recurrence });
+      const res = await runCli({ args, ...answers });
       const r = res.result;
       if (r.kind === 'error') this.notify(r.message, 'err');
       else if (r.kind === 'changed') this.notify(r.message);
       else if (r.kind === 'text') this.notify(r.lines.join(' '));
       else if (r.kind === 'confirm') {
-        // Ask, then repeat the command with the answer. A recurring-series question has three
-        // outcomes (all pending / only this task / cancel), which two browser prompts can express.
+        // Ask, then repeat the command with the answer. A GUI action touches one task, so this is
+        // one question; a longer list (rare) is answered as a whole.
         if (typeof window !== 'undefined') {
-          if (r.recurrence) {
-            if (window.confirm(`${r.message}\n\nOK: change all pending recurrences.`)) return this.act(from, args, true, true);
-            if (window.confirm('Change only this task, and leave the other recurrences as they are?')) return this.act(from, args, true, false);
-          } else if (!confirmed && window.confirm(r.message)) {
-            return this.act(from, args, true);
+          const retry = (more: Answers) => this.act(from, args, { ...answers, ...more }, true);
+          if (r.ask === 'plain') {
+            if (!answers.confirmed && window.confirm(r.message)) return retry({ confirmed: true });
+          } else {
+            const keys = r.items.map((i) => i.key);
+            const question = r.items.length === 1 ? r.items[0].question : r.message;
+            if (window.confirm(question)) return retry(r.ask === 'permission' ? { approved: keys } : { extras: keys });
+            // A follow-up can be declined while the change itself still goes ahead.
+            if (r.ask === 'extras' && window.confirm('Go ahead with the change without that?')) return retry({ extras: [] });
           }
         }
         this.notify('Nothing was changed.');

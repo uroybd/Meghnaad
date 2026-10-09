@@ -28,10 +28,10 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
-| Miscellaneous | 8 | 6 | 6 | 5 | 0 |
+| Miscellaneous | 11 | 3 | 6 | 5 | 0 |
 | Dates and calendar | 15 | 0 | 0 | 1 | 0 |
-| Journal | 3 | 1 | 0 | 0 | 0 |
-| Dependencies | 0 | 0 | 0 | 1 | 0 |
+| Journal | 4 | 0 | 0 | 0 | 0 |
+| Dependencies | 1 | 0 | 0 | 1 | 0 |
 | Colour | 0 | 0 | 0 | 1 | 0 |
 | Urgency | 17 | 0 | 0 | 0 | 0 |
 | Defaults | 5 | 0 | 0 | 0 | 0 |
@@ -39,7 +39,7 @@ Each row below counts once, even where a row covers several related options.
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **69** | **7** | **8** | **15** | **1** |
+| **Total** | **74** | **3** | **8** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -74,9 +74,9 @@ Each row below counts once, even where a row covers several related options.
 | `recurrence.indicator` | Done | |
 | `recurrence.limit` | Done | |
 | `abbreviation.minimum` | Partial | Attribute abbreviations (`desc`, `proj`) work, with the minimum fixed at 2 characters |
-| `confirmation` | Partial | Changes to more than one task always ask first. The setting itself is not read |
-| `bulk` | Partial | The confirmation threshold is fixed at "more than one task" instead of configurable |
-| `allow.empty.filter` | Partial | Writes (`done`, `delete`, `modify`) with no filter are always refused ("no tasks specified"). Taskwarrior's default is to allow them after confirming |
+| `confirmation` | Done | On by default. `delete` asks ("Delete task 1 'x'?"), and so does `undo` when there is something to undo. Off: no question for those, though `bulk`, an empty filter and a recurring series still ask. Taskwarrior asks about each task in turn (yes / no / all / quit); here the same questions arrive together as a table with a tick per task (ticking all is "all", ticking none is "quit"), and only tasks the command would actually change are listed. The delete buttons in the app take the second click ("sure?") as the answer, or delete at once when the setting is off. Commands the app doesn't have (`purge`, `duplicate`, `edit`) have no question to ask |
+| `bulk` | Done | Default 3: a change to that many tasks or more asks first, for any command that changes tasks, with `confirmation` on or off. `0` never asks because of the count. Text that isn't a number counts as 0, as in Taskwarrior |
+| `allow.empty.filter` | Done | On by default. A command that changes tasks, given no filter, asks first ("This command has no filter, and will modify all (including completed and deleted) tasks"), and after a yes the `bulk` question still follows, as in Taskwarrior. Off: refused with Taskwarrior's message. With `confirmation` off and this on it is still refused ("Command prevented from running."), as in Taskwarrior. An active context counts as a filter |
 | `regex` | Partial | On by default, as in Taskwarrior. With it on, plain words, `/pattern/`, `.has`, `.hasnt`, `.startswith`, `.endswith`, `.word`, `.noword` and the `/from/to/` substitution in `modify` are regular expressions, and for the description the annotations are searched too. The syntax is ECMAScript, read byte by byte, as Taskwarrior's C++ `std::regex` does: `.` is one byte, and `\w`, `\d`, `\s`, `\b` and case folding are ASCII only. **Not supported: lookahead (`(?=…)`, `(?!…)`) and backreferences (`\1`)**, which ECMAScript has; a pattern that uses them is refused with a message that says so. So is syntax ECMAScript doesn't have (`(?i)`, lookbehind, named groups). Also different: `.` matches `\r` here and not there; a substitution edits the description only, not annotations; and a replacement that would cut a character in half is skipped. `regex=off` matches plain text, with a leading `^` or trailing `$` as an anchor |
 | `expressions` | Not done | Infix filters only |
 | `alias.<name>` | Not done | Aliases are not expanded |
@@ -123,13 +123,14 @@ The `calendar` command is supported, with Taskwarrior's arguments (`calendar`, `
 | `journal.time` | Done | `start` and `stop` write the annotations; the detail view turns them into a sessions table and hides the markers |
 | `journal.time.start.annotation` | Done | |
 | `journal.time.stop.annotation` | Done | |
-| `journal.info` | Partial | Stored, but not read. The detail view always shows tracked time when `journal.time` is on, and hides the marker annotations |
+| `journal.info` | Done | The detail view (collapsed until opened) and `info` list what changed and when, built from the replica's operation log and worded like Taskwarrior's `info` journal: changes within a second share a row, `modified` is never listed, a stopped `start` reports its duration (measured to `end` when `done end:` is given). Differences: a `start` removed with no matching start in the history (a snapshot dropped it) says `Start deleted.` rather than a time since 1970. History before a snapshot is not available, as with the CLI |
 
 ## Dependencies
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `dependency.reminder`, `dependency.confirmation` | N/A | Prompts for the command line. Dependencies themselves (`depends:`, `+BLOCKED`, `+BLOCKING`) work |
+| `dependency.confirmation` | Done | On by default. Finishing or deleting a task that waits on something and has others waiting on it breaks the chain; the app asks "Would you like the dependency chain fixed?" and, on yes, makes those tasks wait on what it waited on (checked against `task` 3.5.0, task by task in the order they are finished). Off repairs without asking. The questions for several tasks arrive together as a table, after the permission one. A repair that only becomes necessary because of an earlier "no" is not offered, and is left alone |
+| `dependency.reminder` | N/A | The reminder text printed to a terminal after `done`, `delete` and `start`. Dependencies themselves (`depends:`, `+BLOCKED`, `+BLOCKING`) work |
 
 ## Colour
 
@@ -221,4 +222,6 @@ and picks the newest snapshot when it starts cold. Deleting old versions is left
 
 Roughly in order of how much they'd matter to someone coming from the CLI:
 
-1. `confirmation`, `bulk` and `allow.empty.filter`, if the stricter defaults get in the way.
+1. `alias.<name>`, so a typed shortcut expands as it does at a terminal.
+2. `list.all.projects`, `list.all.tags` and `complete.all.tags`, so `projects` and `tags` can count finished tasks too.
+3. `expressions`, for the filter forms the infix reader doesn't take.

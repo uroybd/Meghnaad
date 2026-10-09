@@ -2,6 +2,7 @@
   import { runCli } from './api';
   import { formatFor } from './dateformat';
   import { formatMoment, formatSeconds, formatStamp } from './dates';
+  import { describeChange } from './history';
   import { projectSegments, shortUuid, udaLabel, urgencyLevel } from './format';
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
   import { visibleNotes } from './journal';
@@ -29,6 +30,9 @@
   const defs = $derived(store.config?.config.udas ?? {});
   const infoFmt = $derived(formatFor('info', store.config?.config.settings));
   const noteFmt = $derived(formatFor('infoNote', store.config?.config.settings));
+  // History moments carry seconds (a row is the changes within one second); a configured
+  // `dateformat.info` wins, as in Taskwarrior.
+  const stamp = (epoch: number) => (infoFmt ? formatMoment(epoch, undefined, infoFmt) : formatStamp(epoch));
   const waiting = $derived(task.status === 'pending' && task.virtual_tags.includes('WAITING'));
   const udaKeys = $derived(Object.keys(task.extra).filter((k) => k in defs).sort());
   const dates: [string, number | null][] = $derived([
@@ -175,6 +179,26 @@
     </ul>
   {/if}
 
+  {#if task.history?.length}
+    <!-- Closed until asked for: the log grows with every edit and is rarely what you opened the task for. -->
+    <details class="hist">
+      <summary title="What changed and when, from the task's operation log (journal.info).">
+        History <span class="dim">· {task.history.length} {task.history.length === 1 ? 'moment' : 'moments'}</span>
+      </summary>
+      <div class="scroll"><table class="history" data-testid="history">
+        <thead><tr><th>Date</th><th>Modification</th></tr></thead>
+        <tbody>
+          {#each task.history as e}
+            <tr>
+              <td class="mono">{stamp(e.at)}</td>
+              <td>{#each e.changes as c}<div class="pre">{describeChange(c, stamp)}</div>{/each}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table></div>
+    </details>
+  {/if}
+
   {#if task.orphans.length}
     <h4 title="These properties exist on the task but aren't defined as UDAs in your taskrc.">
       <Lock size={13} /> Not defined in your taskrc <span class="chip">read-only</span>
@@ -206,6 +230,15 @@
   .sessions .num { text-align: right; padding-right: 0; font-variant-numeric: tabular-nums; }
   .sessions tfoot td { border-top: 1px solid var(--line); font-weight: 600; padding-top: 3px; }
   .sessions tr.running td { color: var(--ok); }
+  .hist { margin: 16px 0 6px; }
+  .hist summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+  .hist summary .dim { font-weight: 400; font-size: 13px; }
+  .hist[open] summary { margin-bottom: 6px; }
+  .history { width: 100%; border-collapse: collapse; font-size: 13px; margin: 2px 0 6px; }
+  .history th, .history td { text-align: left; padding: 3px 12px 3px 0; vertical-align: top; }
+  .history td:first-child { white-space: nowrap; color: var(--dim); }
+  .history th { color: var(--dim); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); }
+  .history tbody td { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
   .instances { list-style: none; padding: 0; margin: 2px 0; }
   .instances li { display: flex; align-items: center; gap: 6px; }
   .more { margin: 2px 0; font-size: 12px; }

@@ -43,10 +43,12 @@
     store.act(entry, [row.uuid, ...rest]);
   }
 
+  // The second click is the answer to Taskwarrior's "Delete task N?" (the `confirmation` setting);
+  // with it off, the first click deletes.
   function del(row: Row) {
-    if (pendingDelete === row.uuid) {
+    if (!store.confirmation || pendingDelete === row.uuid) {
       pendingDelete = null;
-      act(row, 'delete');
+      store.act(entry, [row.uuid, 'delete'], { approved: [row.uuid] });
     } else {
       pendingDelete = row.uuid;
       setTimeout(() => pendingDelete === row.uuid && (pendingDelete = null), 3000);
@@ -231,6 +233,10 @@
   tr.active td.description { font-weight: 600; }
   tbody tr:hover { background: var(--panel-2); }
   tr.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+  /* Room for the selection bar (and the hover tint) so the first column never touches it. */
+  @media (min-width: 761px) {
+    th:first-child, td:first-child { padding-left: 12px; }
+  }
   tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .note { font-size: 13px; margin-left: 1em; white-space: pre-wrap; }
   td.multiline { white-space: pre-line; }

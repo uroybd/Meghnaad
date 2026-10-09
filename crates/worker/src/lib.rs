@@ -153,11 +153,13 @@ struct CliRequest {
     args: Option<Vec<String>>,
     /// The browser's UTC offset in seconds east of UTC, so "today" is the user's today.
     tz: Option<i32>,
-    /// The user confirmed a multi-task change.
+    /// The user answered yes to the plain questions (undo, a command with no filter).
     #[serde(default)]
     confirmed: bool,
-    /// The answer to a recurring-task question: change the whole pending series, or only this task.
-    recurrence: Option<bool>,
+    /// The tasks the user approved, when asked which ones to go ahead with.
+    approved: Option<Vec<String>>,
+    /// The follow-up questions the user answered yes to (dependency repair, recurring series).
+    extras: Option<Vec<String>>,
 }
 
 const MAX_LINE: usize = 8 * 1024;
@@ -201,7 +203,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
         &cfg,
         clock,
         &args,
-        Options { confirmed: body.confirmed, recurrence: body.recurrence, seed: now as u64 },
+        Options { confirmed: body.confirmed, approved: body.approved, extras: body.extras, seed: now as u64 },
         &mut st.undo,
     )
     .await;

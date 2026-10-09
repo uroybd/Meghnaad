@@ -7,6 +7,7 @@ pub mod dates;
 pub mod error;
 pub mod filter;
 pub mod guard;
+pub mod history;
 pub mod model;
 pub mod modify;
 pub mod names;
