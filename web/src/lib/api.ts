@@ -11,7 +11,30 @@ export function tzOffsetSeconds(d = new Date()): number {
   return -d.getTimezoneOffset() * 60;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** Commands that change something: a request that carries one is never repeated on its own. */
+const WRITES = /\b(add|modify|done|delete|start|stop|annotate|denotate|append|prepend|undo|sync)\b/i;
+
+/** Could this request be sent a second time without doing anything twice? */
+function safeToRepeat(init?: RequestInit): boolean {
+  const method = (init?.method ?? 'GET').toUpperCase();
+  if (method === 'GET') return true;
+  if (method !== 'POST' || typeof init?.body !== 'string') return false;
+  try {
+    const b = JSON.parse(init.body) as { line?: string; args?: string[] };
+    return !WRITES.test(b.line ?? (b.args ?? []).join(' '));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Cloudflare answers 1102 ("Worker exceeded resource limits") when a request uses more CPU than the
+ * plan allows. The first request to an idle Worker does the most (it derives the key), and the next
+ * finds it warm, so one more try is usually all it takes.
+ */
+const RESOURCE_LIMIT = /\b1102\b|exceeded resource limits/i;
+
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, init);
@@ -27,7 +50,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     body = text ? JSON.parse(text) : null;
   } catch {
-    throw new ApiError(res.ok ? 'The server sent an unreadable response.' : `Server error (${res.status}).`, res.status);
+    if (!res.ok && !retried && RESOURCE_LIMIT.test(text) && safeToRepeat(init)) {
+      await new Promise((r) => setTimeout(r, 400));
+      return request<T>(path, init, true);
+    }
+    const why = RESOURCE_LIMIT.test(text)
+      ? 'The Worker ran out of CPU time on this request (Cloudflare error 1102). Try again; if it keeps happening, see docs/deploy.md (Troubleshooting a deployment).'
+      : `Server error (${res.status}).`;
+    throw new ApiError(res.ok ? 'The server sent an unreadable response.' : why, res.status);
   }
   if (!res.ok) {
     const msg = (body as { error?: string } | null)?.error ?? `Server error (${res.status}).`;

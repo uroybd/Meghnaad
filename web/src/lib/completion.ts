@@ -54,6 +54,7 @@ export const COMMANDS: Record<string, string> = {
   tags: 'list tags',
   summary: 'progress of each project',
   calendar: 'months, with what is due when',
+  calc: 'evaluate an expression: 1 + 2 * 3, 2 days + 3 hours',
   'burndown.daily': 'pending, started and done, by day',
   'burndown.weekly': 'pending, started and done, by week',
   'burndown.monthly': 'pending, started and done, by month',
@@ -105,7 +106,7 @@ const DATE_WORDS: Option[] = [
 
 export const VIRTUAL_TAGS = [
   'ACTIVE', 'ANNOTATED', 'BLOCKED', 'BLOCKING', 'CHILD', 'COMPLETED', 'DELETED', 'DUE', 'DUETODAY',
-  'INSTANCE', 'MONTH', 'ORPHAN', 'OVERDUE', 'PARENT', 'PENDING', 'PRIORITY', 'PROJECT', 'QUARTER',
+  'INSTANCE', 'LATEST', 'MONTH', 'ORPHAN', 'OVERDUE', 'PARENT', 'PENDING', 'PRIORITY', 'PROJECT', 'QUARTER',
   'READY', 'SCHEDULED', 'TAGGED', 'TEMPLATE', 'TODAY', 'TOMORROW', 'UDA', 'UNBLOCKED', 'UNTIL',
   'WAITING', 'WEEK', 'YEAR', 'YESTERDAY',
 ];

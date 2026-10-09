@@ -214,11 +214,15 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
         let pending = f.status == "pending"; // `waiting` is a pending task with a wait date
         match f.status.as_str() {
             _ if pending => {
+                // A range whose start is after its end is empty (a task can end before it began, after
+                // a sync or a hand edit); `BTreeMap::range` would panic on it.
                 let last = r.end.unwrap_or(now_epoch);
-                for (_, b) in bars.range_mut(r.entry..=last) {
-                    b.pending += 1;
+                if r.entry <= last {
+                    for (_, b) in bars.range_mut(r.entry..=last) {
+                        b.pending += 1;
+                    }
                 }
-                if let Some(s) = r.start {
+                if let Some(s) = r.start.filter(|s| *s <= last) {
                     for (_, b) in bars.range_mut(s..=last) {
                         b.pending -= 1;
                         b.started += 1;
@@ -227,13 +231,17 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
             }
             "completed" => {
                 let end = r.end.unwrap_or(r.entry);
-                for (_, b) in bars.range_mut(r.entry..end) {
-                    b.pending += 1;
+                if r.entry < end {
+                    for (_, b) in bars.range_mut(r.entry..end) {
+                        b.pending += 1;
+                    }
                 }
                 let done_from = r.entry.max(end);
                 if cumulative {
-                    for (_, b) in bars.range_mut(done_from..=now_epoch) {
-                        b.done += 1;
+                    if done_from <= now_epoch {
+                        for (_, b) in bars.range_mut(done_from..=now_epoch) {
+                            b.done += 1;
+                        }
                     }
                     if end < earliest {
                         carryover += 1;
@@ -430,5 +438,25 @@ mod tests {
         // A peak that is too recent to tell anything from.
         let recent = run(&[task(1, "completed", 2, Some(1)), task(2, "pending", 2, None)], Period::Daily, true);
         assert!(recent.no_convergence);
+    }
+
+    #[test]
+    fn a_task_that_ended_before_it_began_does_not_crash_the_chart() {
+        // Created today, "finished" four days ago: a sync, a hand edit or `modify end:` can do this.
+        // `BTreeMap::range` panics on a range whose start is after its end, which took the Worker down.
+        let mut backwards = task(1, "completed", 0, Some(4));
+        let o = run(&[backwards.clone()], Period::Daily, true);
+        // It counts as done from the day it was created, and was never pending.
+        assert_eq!(at(&o, 0), (0, 0, 1));
+        assert_eq!(at(&o, 4).2, 0);
+        let o = run(&[backwards.clone()], Period::Daily, false);
+        assert_eq!(at(&o, 0), (0, 0, 1));
+        // The same for a pending task with an end date, and a started one that began after it ended.
+        backwards.status = "pending".into();
+        backwards.start = Some(NOW);
+        let _ = run(&[backwards], Period::Weekly, true);
+        let mut late_start = task(2, "pending", 5, Some(3));
+        late_start.start = Some(NOW - DAY);
+        let _ = run(&[late_start], Period::Daily, true);
     }
 }

@@ -49,6 +49,8 @@ export interface Ctx {
   dates?: { report?: DateFmt; annotation?: DateFmt };
   /** `recurrence.indicator` (default R): what the `recur.indicator` column shows. */
   recurIndicator?: string;
+  /** `active.indicator` (*), `tag.indicator` (+) and `dependency.indicator` (D). */
+  indicators?: { active?: string; tag?: string; dependency?: string };
   /** `journal.time` marker texts: those annotations are bookkeeping and are left out of lists. */
   journal?: Markers | null;
 }
@@ -61,7 +63,6 @@ export function shortUuid(u: string): string {
 }
 
 function dateCell(ts: number | null, name: string, format: string | null, ctx: Ctx): Cell {
-  if (name === 'start' && format === 'active') return { text: ts == null ? '' : '*' };
   if (ts == null) return { text: '' };
   switch (format) {
     case 'relative':
@@ -139,6 +140,9 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
   const f = col.format;
   const name = col.name;
 
+  // `start.active`: the indicator while the task is started and not ended.
+  if (name === 'start' && f === 'active') return { text: row.start != null && row.end == null ? (ctx.indicators?.active ?? '*') : '' };
+
   if ((DATE_PROPS as readonly string[]).includes(name)) {
     const c = dateCell(row[name as DateProp], name, f, ctx);
     if (name === 'due' && row.virtual_tags.includes('OVERDUE')) c.cls = 'overdue';
@@ -166,13 +170,15 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
       return { text: row.priority ?? '', cls: row.priority ? `pri-${row.priority.toLowerCase()}` : undefined };
     case 'tags': {
       if (f === 'count') return { text: row.tags.length ? `[${row.tags.length}]` : '' };
-      if (f === 'indicator') return { text: row.tags.length ? '+' : '' };
+      if (f === 'indicator') return { text: row.tags.length ? (ctx.indicators?.tag ?? '+') : '' };
       if (f === 'list') return { text: row.tags.join(',') };
       return { text: row.tags.join(' '), chips: row.tags.length ? row.tags : undefined };
     }
     case 'depends': {
-      if (f === 'indicator') return { text: row.depends.length ? 'D' : '' };
-      if (f === 'count') return { text: row.depends.length ? `[${row.depends.length}]` : '' };
+      // Only the tasks still open count: a finished one no longer holds this one up.
+      const open = row.pending_deps ?? 0;
+      if (f === 'indicator') return { text: open ? (ctx.indicators?.dependency ?? 'D') : '' };
+      if (f === 'count') return { text: open ? `[${open}]` : '' };
       return { text: row.depends.map(shortUuid).join(' ') };
     }
     case 'urgency':

@@ -1,11 +1,23 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { Completer } from './completer.svelte';
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
   import { store } from './store.svelte';
 
+  /** Focus the prompt when it appears (not on a phone, where that would raise the keyboard). */
+  let { autofocus = false }: { autofocus?: boolean } = $props();
+
   let cursor = $state(-1); // -1 = the line being typed
-  let line = $state('');
+  // What was half-typed survives a trip to another page: this prompt is rebuilt when the Console
+  // opens or closes, since the Console carries its own.
+  let line = $state(store.promptLine);
+  $effect(() => {
+    store.promptLine = line;
+  });
+  onMount(() => {
+    if (autofocus && !window.matchMedia('(pointer: coarse)').matches) el?.focus();
+  });
   let saved = '';
   let el: HTMLInputElement;
   const completer = new Completer();

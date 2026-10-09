@@ -40,6 +40,7 @@
       <tbody>{#each r.rows as cells}<tr>{#each cells as c}<td>{c}</td>{/each}</tr>{/each}</tbody>
     </table></div>
   {/if}
+  {#if r.footer?.length}<p class="dim footer">{#each r.footer as line}<span>{line}</span> {/each}</p>{/if}
 {:else if r.kind === 'text'}
   <pre class="mono">{r.lines.join('\n')}</pre>
 {:else if r.kind === 'json'}
@@ -56,10 +57,12 @@
 {/if}
 
 <style>
+  .footer { display: flex; flex-wrap: wrap; gap: 0 0.7em; margin: 6px 0; }
   pre { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .scroll { overflow-x: auto; }
   table { border-collapse: collapse; }
-  th, td { text-align: left; padding: 2px 16px 2px 0; }
+  /* `pre`: the indentation of sub-projects in `projects` is made of spaces. */
+  th, td { text-align: left; padding: 2px 16px 2px 0; white-space: pre; }
   th { color: var(--dim); font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--line); }
   .changed { margin: 0; padding-left: 18px; color: var(--dim); }
   p { margin: 4px 0; }

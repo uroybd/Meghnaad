@@ -16,8 +16,6 @@ const MONTHS: [&str; 12] = [
 /// Index 0 is Sunday, as in Taskwarrior's `dayName`.
 const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-/// Shortest abbreviation accepted for `due` and month names, as in Taskwarrior.
-const ABBREVIATION_MINIMUM: usize = 2;
 
 /// How many months a bare `calendar` shows when `calendar.monthsperline` doesn't say.
 pub const DEFAULT_MONTHS: usize = 3;
@@ -252,12 +250,12 @@ fn complete(word: &str, candidates: &[String], min: usize) -> Vec<usize> {
 /// Whether `word` is one of the words `calendar` itself understands (`due`, `y`, a number or a
 /// month name), as opposed to a task filter. A malformed one still counts: `calendar 13` is
 /// reported as a bad month, not mistaken for a filter.
-pub fn is_argument(word: &str) -> bool {
+pub fn is_argument(word: &str, min: usize) -> bool {
     let months: Vec<String> = MONTHS.iter().map(|m| m.to_ascii_lowercase()).collect();
-    !complete(word, &["due".to_owned()], ABBREVIATION_MINIMUM).is_empty()
+    !complete(word, &["due".to_owned()], min).is_empty()
         || word.eq_ignore_ascii_case("y")
         || (!word.is_empty() && word.bytes().all(|c| c.is_ascii_digit()))
-        || !complete(word, &months, ABBREVIATION_MINIMUM).is_empty()
+        || !complete(word, &months, min).is_empty()
 }
 
 struct Args {
@@ -295,7 +293,7 @@ fn parse_args(words: &[String], min: usize) -> Result<Args, String> {
 
 /// Lay out the months `words` ask for. `tasks` are every task; only pending ones count.
 pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> Result<Plan, String> {
-    let args = parse_args(words, ABBREVIATION_MINIMUM)?;
+    let args = parse_args(words, cfg.abbreviation_minimum())?;
 
     let months_per_line = usize::try_from(int(cfg, "calendar.monthsperline")).ok().filter(|m| *m > 0).unwrap_or(DEFAULT_MONTHS);
     let (ty, tm, td, ..) = clock.ymd_hms(clock.now);

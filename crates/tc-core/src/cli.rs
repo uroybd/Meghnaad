@@ -37,6 +37,8 @@ pub enum Kind {
     Count,
     Projects,
     Tags,
+    CompleteProjects,
+    CompleteTags,
     Summary,
     Calendar,
     BurndownDaily,
@@ -55,6 +57,7 @@ pub enum Kind {
     Sync,
     Version,
     Help,
+    Calc,
 }
 
 use Kind::*;
@@ -81,6 +84,8 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("burndown.monthly", BurndownMonthly, false),
     ("burndown.annual", BurndownAnnual, false),
     ("tags", Tags, false),
+    ("_projects", CompleteProjects, false),
+    ("_tags", CompleteTags, false),
     ("udas", Udas, false),
     ("columns", Columns, false),
     ("reports", Reports, false),
@@ -93,6 +98,7 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("sync", Sync, false),
     ("version", Version, false),
     ("help", Help, false),
+    ("calc", Calc, false),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,13 +140,14 @@ fn all_names(cfg: &Config) -> Vec<(String, Cmd, bool)> {
     v
 }
 
-/// Exact match, else a unique prefix of at least two characters (`ann`, `proj`).
+/// Exact match, else a unique prefix of at least `abbreviation.minimum` characters (`ann`, `proj`).
 fn match_command(word: &str, cfg: &Config) -> Result<Option<(Cmd, bool)>, String> {
     let names = all_names(cfg);
     if let Some((_, c, m)) = names.iter().find(|(n, ..)| n == word) {
         return Ok(Some((c.clone(), *m)));
     }
-    if word.len() < 2 || !word.chars().all(|c| c.is_ascii_lowercase()) {
+    // Shorter than `abbreviation.minimum` it is not an abbreviation at all, just a word.
+    if word.len() < cfg.abbreviation_minimum().max(1) || !word.chars().all(|c| c.is_ascii_lowercase()) {
         return Ok(None);
     }
     let hits: Vec<&(String, Cmd, bool)> = names.iter().filter(|(n, ..)| n.starts_with(word)).collect();
@@ -153,6 +160,36 @@ fn match_command(word: &str, cfg: &Config) -> Result<Option<(Cmd, bool)>, String
             Err(format!("'{word}' is ambiguous: {}", list.join(", ")))
         }
     }
+}
+
+/// Replace each argument that is an alias by the words it stands for, over and over (an alias
+/// can use another) up to Taskwarrior's limit of ten rounds, so a loop ends. Arguments after `--`
+/// are left alone.
+pub fn expand_aliases(args: &[String], cfg: &Config) -> Vec<String> {
+    let aliases = cfg.aliases();
+    let mut args = args.to_vec();
+    for _ in 0..=10 {
+        let mut changed = false;
+        let mut next = Vec::with_capacity(args.len());
+        let mut terminated = false;
+        for a in &args {
+            if a == "--" {
+                terminated = true;
+            }
+            match aliases.get(a).filter(|_| !terminated) {
+                Some(words) => {
+                    next.extend(split_words(words));
+                    changed = true;
+                }
+                None => next.push(a.clone()),
+            }
+        }
+        args = next;
+        if !changed {
+            break;
+        }
+    }
+    args
 }
 
 pub fn parse_command(args: &[String], cfg: &Config) -> Result<Parsed, String> {
@@ -205,6 +242,9 @@ fn parse_command_inner(args: &[String], cfg: &Config, allow_default: bool) -> Re
 #[derive(Debug, Clone, Serialize)]
 pub struct TableOut {
     pub title: Option<String>,
+    /// Lines under the table (`5 projects (5 tasks)`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub footer: Vec<String>,
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
 }
@@ -276,6 +316,10 @@ pub struct Options {
     pub approved: Option<Vec<String>>,
     /// The answer to an `extras` confirmation: the questions answered yes. `None` = not asked.
     pub extras: Option<Vec<String>>,
+    /// The command was typed (a console line), so aliases (`alias.<name>`) stand for their words.
+    /// Pre-split arguments from the GUI are taken as they are: a note that happens to be `rm`
+    /// stays `rm`.
+    pub expand_aliases: bool,
     pub seed: u64,
 }
 
@@ -631,7 +675,19 @@ pub async fn execute<S: Storage>(
     let cfg: &Config = &in_context;
     // The first day of the week is a setting too (Sunday unless the taskrc, a context or a command
     // line says Monday), and it changes what `eow`, `sow` and the calendar mean.
-    let clock = Clock { week_starts_monday: cfg.week_starts_monday(), ..clock };
+    let clock = Clock {
+        week_starts_monday: cfg.week_starts_monday(),
+        iso: cfg.date_iso(),
+        format: cfg.date_format(),
+        ..clock
+    };
+    let expanded;
+    let args: &[String] = if opts.expand_aliases {
+        expanded = expand_aliases(args, cfg);
+        &expanded
+    } else {
+        args
+    };
     let parsed = parse_command(args, cfg).ok();
     let command = parsed.as_ref().map(CommandInfo::of);
     // Housekeeping Taskwarrior does before every command: create due recurring instances and
@@ -797,7 +853,7 @@ async fn execute_inner<S: Storage>(
             }
         }
         Cmd::Builtin(Add) => add(replica, cfg, &ctx, &all, &parsed, undo).await,
-        Cmd::Builtin(k) => builtin(replica, cfg, &ctx, &all, k, &parsed, opts, undo).await,
+        Cmd::Builtin(k) => builtin(replica, cfg, &ctx, &all, k, &parsed, args, opts, undo).await,
     }
 }
 
@@ -807,12 +863,36 @@ fn selected<'a>(
     cfg: &Config,
     user_filter: &[String],
 ) -> Result<(Vec<&'a Facts>, Limit), FilterError> {
-    let combined = conjoin(&[context_read(cfg), user_filter.to_vec()]);
+    let pool: Vec<&Facts> = all.iter().collect();
+    select_from(&pool, ctx, cfg, user_filter, true)
+}
+
+/// The tasks of `pool` that match the filter (and, with `use_context`, the active context's).
+fn select_from<'a>(
+    pool: &[&'a Facts],
+    ctx: &EvalCtx,
+    cfg: &Config,
+    user_filter: &[String],
+    use_context: bool,
+) -> Result<(Vec<&'a Facts>, Limit), FilterError> {
+    let context = if use_context { context_read(cfg) } else { Vec::new() };
+    let combined = conjoin(&[context, user_filter.to_vec()]);
     let f = Filter::parse(&combined, ctx)?;
-    let mut v: Vec<&Facts> = all.iter().filter(|x| f.matches(x, ctx)).collect();
+    let mut v: Vec<&Facts> = pool.iter().copied().filter(|x| f.matches(x, ctx)).collect();
     v.sort_by_key(|x| (ctx.ids.get(&x.uuid).copied().unwrap_or(u32::MAX), x.entry.unwrap_or(0), x.uuid));
     Ok((v, f.limit))
 }
+
+/// Tags with a meaning of their own to Taskwarrior, offered for completion whether used or not.
+const SPECIAL_TAGS: &[&str] = &["nocolor", "nonag", "nocal", "next"];
+
+/// Virtual tags (`+OVERDUE`), offered for completion too.
+const VIRTUAL_TAG_NAMES: &[&str] = &[
+    "ACTIVE", "ANNOTATED", "BLOCKED", "BLOCKING", "CHILD", "COMPLETED", "DELETED", "DUE", "DUETODAY",
+    "INSTANCE", "LATEST", "MONTH", "ORPHAN", "OVERDUE", "PARENT", "PENDING", "PRIORITY", "PROJECT",
+    "QUARTER", "READY", "SCHEDULED", "TAGGED", "TEMPLATE", "TODAY", "TOMORROW", "UDA", "UNBLOCKED",
+    "UNTIL", "WAITING", "WEEK", "YEAR", "YESTERDAY",
+];
 
 fn changed(all_after: &[Facts], uuids: &[Uuid], message: String) -> CliResult {
     let ids = run::working_set_ids(all_after);
@@ -893,6 +973,7 @@ async fn builtin<S: Storage>(
     all: &[Facts],
     kind: Kind,
     p: &Parsed,
+    args: &[String],
     opts: Options,
     undo: &mut UndoStack,
 ) -> Done {
@@ -905,6 +986,7 @@ async fn builtin<S: Storage>(
         }),
         Help => ok(CliResult::Text { lines: help(cfg) }),
         Reports => ok(CliResult::Table(TableOut {
+            footer: vec![],
             title: None,
             headers: vec!["Report".into(), "Description".into()],
             rows: report::names(cfg)
@@ -916,6 +998,7 @@ async fn builtin<S: Storage>(
                 .collect(),
         })),
         Udas => ok(CliResult::Table(TableOut {
+            footer: vec![],
             title: None,
             headers: ["Name", "Type", "Label", "Values", "Default"].map(String::from).to_vec(),
             rows: cfg
@@ -933,6 +1016,7 @@ async fn builtin<S: Storage>(
                 .collect(),
         })),
         Contexts => ok(CliResult::Table(TableOut {
+            footer: vec![],
             title: None,
             headers: ["Context", "Read filter", "Write", "Active"].map(String::from).to_vec(),
             rows: cfg
@@ -957,6 +1041,7 @@ async fn builtin<S: Storage>(
                 rows.push(vec![k.clone(), v.to_string()]);
             }
             ok(CliResult::Table(TableOut {
+                footer: vec![],
                 title: Some("Settings imported from your taskrc (sync and credential settings are never stored)".into()),
                 headers: vec!["Setting".into(), "Value".into()],
                 rows,
@@ -970,7 +1055,7 @@ async fn builtin<S: Storage>(
             ];
             let mut rows: Vec<Vec<String>> = names.iter().map(|n| vec![(*n).into(), "built-in".into()]).collect();
             rows.extend(cfg.udas.keys().map(|n| vec![n.clone(), "uda".into()]));
-            ok(CliResult::Table(TableOut { title: None, headers: vec!["Column".into(), "Kind".into()], rows }))
+            ok(CliResult::Table(TableOut { title: None, footer: vec![], headers: vec!["Column".into(), "Kind".into()], rows }))
         }
         Summary => {
             // Every task the filter picks, finished ones included: that is what the progress bars count.
@@ -1014,7 +1099,7 @@ async fn builtin<S: Storage>(
                 .iter()
                 .filter(|w| !w.starts_with("rc.") && !w.starts_with("rc:"))
                 .cloned()
-                .partition(|w| crate::calendar::is_argument(w) || !filter_shaped(w));
+                .partition(|w| crate::calendar::is_argument(w, cfg.abbreviation_minimum()) || !filter_shaped(w));
             let tasks: Vec<Facts> = if filter.is_empty() {
                 all.to_vec()
             } else {
@@ -1047,29 +1132,120 @@ async fn builtin<S: Storage>(
             ok(CliResult::Calendar(Box::new(out)))
         }
         Projects | Tags => {
-            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
-                Ok(s) => s,
+            // The working set (pending and recurring tasks), and with `list.all.projects` or
+            // `list.all.tags` every other task too.
+            let everything = if kind == Projects { cfg.list_all_projects() } else { cfg.list_all_tags() };
+            let pool: Vec<&Facts> =
+                all.iter().filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring")).collect();
+            // `tags` counts the tasks before the filter; `projects` the ones that match it.
+            let before = pool.len();
+            let sel = match select_from(&pool, ctx, cfg, &p.filter, true) {
+                Ok((s, _)) => s,
                 Err(e) => return e.into(),
             };
-            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-            for f in sel.iter().filter(|f| f.status == "pending") {
-                if kind == Projects {
-                    *counts.entry(f.project.clone().unwrap_or_default()).or_default() += 1;
-                } else {
-                    for t in &f.tags {
-                        *counts.entry(t.clone()).or_default() += 1;
+            if kind == Projects {
+                // A project's count includes its sub-projects' tasks; deleted tasks aren't counted.
+                let mut unique: BTreeMap<String, usize> = BTreeMap::new();
+                let mut quantity = sel.len();
+                for f in &sel {
+                    if f.status == "deleted" {
+                        quantity -= 1;
+                        continue;
+                    }
+                    let project = f.project.clone().unwrap_or_default();
+                    let mut chain = crate::summary::extract_parents(&project);
+                    chain.push(project);
+                    for c in chain {
+                        *unique.entry(c).or_default() += 1;
                     }
                 }
+                if unique.is_empty() {
+                    return ok(CliResult::Text { lines: vec!["No projects.".into()] });
+                }
+                let names: BTreeSet<String> = unique.keys().cloned().collect();
+                let rows: Vec<Vec<String>> = crate::summary::sort_projects(&names)
+                    .into_iter()
+                    .map(|name| {
+                        let label = if name.is_empty() {
+                            "(none)".to_owned()
+                        } else {
+                            let (last, depth) = crate::summary::indent(&name);
+                            format!("{}{last}", "  ".repeat(depth))
+                        };
+                        vec![label, unique.get(&name).copied().unwrap_or(0).to_string()]
+                    })
+                    .collect();
+                let projects = unique.len() - usize::from(unique.contains_key(""));
+                return ok(CliResult::Table(TableOut {
+                    title: None,
+                    footer: vec![format!(
+                        "{} {}",
+                        plural(projects, "project"),
+                        format!("({})", plural(quantity, "task"))
+                    )],
+                    headers: vec!["Project".into(), "Tasks".into()],
+                    rows,
+                }));
             }
-            let (h, label) = if kind == Projects { ("Project", "(none)") } else { ("Tag", "") };
+            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+            for f in &sel {
+                for t in &f.tags {
+                    *counts.entry(t.clone()).or_default() += 1;
+                }
+            }
+            if counts.is_empty() {
+                return ok(CliResult::Text { lines: vec!["No tags.".into()] });
+            }
             ok(CliResult::Table(TableOut {
                 title: None,
-                headers: vec![h.into(), "Tasks".into()],
-                rows: counts
-                    .into_iter()
-                    .map(|(k, n)| vec![if k.is_empty() { label.to_owned() } else { k }, n.to_string()])
-                    .collect(),
+                footer: vec![plural(counts.len(), "tag"), format!("({})", plural(before, "task"))],
+                headers: vec!["Tag".into(), "Count".into()],
+                rows: counts.into_iter().map(|(k, n)| vec![k, n.to_string()]).collect(),
             }))
+        }
+        // The lists shell completion asks for: just the names, one a line. They look at the filter
+        // alone (no context), and `_projects` also lists the projects of deleted tasks.
+        CompleteProjects | CompleteTags => {
+            let everything = if kind == CompleteProjects { cfg.list_all_projects() } else { cfg.complete_all_tags() };
+            let pool: Vec<&Facts> =
+                all.iter().filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring")).collect();
+            let sel = match select_from(&pool, ctx, cfg, &p.filter, false) {
+                Ok((s, _)) => s,
+                Err(e) => return e.into(),
+            };
+            let mut names: BTreeSet<String> = BTreeSet::new();
+            if kind == CompleteProjects {
+                names.extend(sel.iter().filter_map(|f| f.project.clone()).filter(|p| !p.is_empty()));
+            } else {
+                for f in &sel {
+                    names.extend(f.tags.iter().cloned());
+                }
+                names.extend(SPECIAL_TAGS.iter().chain(VIRTUAL_TAG_NAMES).map(|t| (*t).to_owned()));
+            }
+            ok(CliResult::Text { lines: names.into_iter().collect() })
+        }
+        // `calc 1 + 2`: Taskwarrior's calculator. `expressions=postfix` reads `1 2 +` instead.
+        Calc => {
+            // `rc.bulk:5` is a setting for this command; a bare `rc.bulk` is something to look up.
+            let is_override = |w: &str| w.starts_with("rc.") && w.contains([':', '=']);
+            let expression =
+                p.filter.iter().filter(|w| !is_override(w)).cloned().collect::<Vec<_>>().join(" ");
+            let sync_needed = expression.contains("tw.syncneeded")
+                && replica.num_local_operations().await.map_or(false, |n| n > 0);
+            let urgency = |f: &Facts| ctx.urgency(f);
+            let dom = crate::calc::DomSource {
+                tasks: all,
+                ids: ctx.ids,
+                cfg,
+                clock: &ctx.clock,
+                urgency: &urgency,
+                args: args.join(" "),
+                sync_needed,
+            };
+            match crate::calc::calc(&expression, cfg.expressions_postfix(), &ctx.clock, &|n| dom.get(n)) {
+                Ok(v) => ok(CliResult::Text { lines: vec![v] }),
+                Err(m) => error(m),
+            }
         }
         Info | Count | Export | Ids | Uuids => {
             let (sel, limit) = match selected(all, ctx, cfg, &p.filter) {
@@ -1532,7 +1708,7 @@ fn help(cfg: &Config) -> Vec<String> {
         "Usage: [filter] command [modifications]   (the leading `task` is optional)".to_owned(),
         String::new(),
         "Write:  add  modify  done  delete  start  stop  annotate  denotate  append  prepend  undo".into(),
-        "Read:   info  count  projects  tags  udas  columns  reports  contexts  show  export  ids  uuids".into(),
+        "Read:   info  count  projects  tags  udas  columns  reports  contexts  show  export  ids  uuids  calc".into(),
         format!("Reports: {}", report::names(cfg).join(" ")),
         String::new(),
         "Filters:  project:Home  +tag  -tag  +OVERDUE  due.before:eow  priority:H  /text/  3  1-4,7".into(),

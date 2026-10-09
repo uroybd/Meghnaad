@@ -49,6 +49,29 @@ describe('cell', () => {
     expect(cell(col('start.active'), row(), ctx).text).toBe('');
   });
 
+  it('start.active shows only while the task is started and not ended', () => {
+    expect(cell(col('start.active'), row({ start: NOW, end: NOW + 5 }), ctx).text).toBe('');
+  });
+
+  it('the indicator settings change what the indicator columns show', () => {
+    const custom = { ...ctx, indicators: { active: '>>', tag: '#', dependency: 'DEP' } };
+    expect(cell(col('start.active'), row({ start: NOW }), custom).text).toBe('>>');
+    expect(cell(col('tags.indicator'), row({ tags: ['x'] }), custom).text).toBe('#');
+    expect(cell(col('tags.indicator'), row(), custom).text).toBe('');
+    expect(cell(col('depends.indicator'), row({ pending_deps: 1 }), custom).text).toBe('DEP');
+    // Unset, they are Taskwarrior's: *, + and D.
+    expect(cell(col('tags.indicator'), row({ tags: ['x'] }), ctx).text).toBe('+');
+  });
+
+  it('only dependencies still open count for the dependency columns', () => {
+    // It depends on a task that has since been finished: nothing is holding it up.
+    const done = row({ depends: ['u'] });
+    expect(cell(col('depends.indicator'), done, ctx).text).toBe('');
+    expect(cell(col('depends.count'), done, ctx).text).toBe('');
+    const two = row({ depends: ['u', 'v', 'w'], pending_deps: 2 });
+    expect(cell(col('depends.count'), two, ctx).text).toBe('[2]');
+  });
+
   it('an id carries its uuid, for the copy tooltip', () => {
     const c = cell(col('id'), row(), ctx);
     expect(c.text).toBe('3');
@@ -111,7 +134,7 @@ describe('cell', () => {
     expect(cell(col('project.indented'), row({ project: 'a.b' }), ctx).text).toBe('  b');
     expect(cell(col('tags'), row({ tags: ['x', 'y'] }), ctx).text).toBe('x y');
     expect(cell(col('tags.count'), row({ tags: ['x', 'y'] }), ctx).text).toBe('[2]');
-    expect(cell(col('depends.indicator'), row({ depends: ['u'] }), ctx).text).toBe('D');
+    expect(cell(col('depends.indicator'), row({ depends: ['u'], pending_deps: 1 }), ctx).text).toBe('D');
     expect(cell(col('status.short'), row(), ctx).text).toBe('P');
     expect(cell(col('status.short'), row({ virtual_tags: ['WAITING'] }), ctx).text).toBe('W');
     expect(cell(col('priority'), row({ priority: 'H' }), ctx).cls).toBe('pri-h');

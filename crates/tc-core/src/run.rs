@@ -15,6 +15,10 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Row {
     #[serde(flatten)]
@@ -29,6 +33,10 @@ pub struct Row {
     pub active_seconds: Option<i64>,
     /// The tracked work sessions (only when `journal.time` is enabled).
     pub sessions: Vec<Session>,
+    /// How many of the tasks this one depends on are still open: what `depends.count` and
+    /// `depends.indicator` show (a finished task no longer holds this one up).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub pending_deps: u32,
     /// What changed and when, for `info` under `journal.info` (empty everywhere else).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<crate::history::Entry>,
@@ -46,6 +54,7 @@ impl Row {
             orphans: f.orphan_keys(cfg),
             active_seconds: journal.as_ref().and_then(|(s, e)| f.active_seconds(s, e, ctx.clock.now)),
             sessions: journal.map(|(s, e)| f.sessions(&s, &e, ctx.clock.now)).unwrap_or_default(),
+            pending_deps: f.depends.iter().filter(|d| ctx.ids.contains_key(d)).count() as u32,
             history: vec![],
         }
     }
@@ -108,12 +117,55 @@ pub(crate) fn kind_of(name: &str, cfg: &Config) -> &'static str {
     }
 }
 
-fn default_label(name: &str, cfg: &Config) -> String {
+/// The header of a column when the report gives it none: Taskwarrior's label for the column, which
+/// some styles shorten (`start.active` is `A`, `tags.indicator` as many letters of `Tags` as the
+/// indicator is long).
+fn default_label(name: &str, format: Option<&str>, cfg: &Config) -> String {
     if let Some(l) = cfg.udas.get(name).and_then(|u| u.label.clone()) {
         return l;
     }
-    let mut c = name.chars();
-    c.next().map_or_else(String::new, |f| f.to_uppercase().collect::<String>() + c.as_str())
+    let base = match name {
+        "id" => "ID",
+        "uuid" => "UUID",
+        "status" => "Status",
+        "description" => "Description",
+        "start" => "Started",
+        "end" => "Completed",
+        "entry" => "Added",
+        "modified" => "Modified",
+        "due" => "Due",
+        "wait" => "Wait",
+        "scheduled" => "Scheduled",
+        "until" => "Until",
+        "urgency" => "Urgency",
+        "depends" => "Depends",
+        "tags" => "Tags",
+        "recur" => "Recur",
+        "parent" => "Parent task",
+        "mask" => "Mask",
+        "imask" => "Mask Index",
+        "rtype" => "Recurrence type",
+        "project" => "Project",
+        "priority" => "Priority",
+        other => {
+            let mut c = other.chars();
+            return c.next().map_or_else(String::new, |f| f.to_uppercase().collect::<String>() + c.as_str());
+        }
+    };
+    // Cut to the indicator's length (bytes, as `std::string::substr` does).
+    let cut = |indicator: &str| base.get(..indicator.len().min(base.len())).unwrap_or(base).to_owned();
+    match (name, format) {
+        ("start", Some("active")) => "A".to_owned(),
+        ("entry", Some("age")) => "Age".to_owned(),
+        ("due" | "scheduled", Some("countdown")) => "Count".to_owned(),
+        ("status", Some("short")) => "St".to_owned(),
+        ("tags", Some("indicator")) => cut(&cfg.indicator("tag.indicator")),
+        ("tags", Some("count")) => "Tag".to_owned(),
+        ("depends", Some("indicator")) => cut(&cfg.indicator("dependency.indicator")),
+        ("depends", Some("count")) => "Dep".to_owned(),
+        ("recur", Some("indicator")) => cut(cfg.settings.get("recurrence.indicator").map_or("R", String::as_str)),
+        _ => base.to_owned(),
+    }
 }
 
 pub fn describe_columns(specs: &[String], labels: &[String], cfg: &Config) -> Vec<Column> {
@@ -129,7 +181,7 @@ pub fn describe_columns(specs: &[String], labels: &[String], cfg: &Config) -> Ve
                 .get(i)
                 .filter(|l| !l.is_empty())
                 .cloned()
-                .unwrap_or_else(|| default_label(&name, cfg));
+                .unwrap_or_else(|| default_label(&name, format.as_deref(), cfg));
             let kind = kind_of(&name, cfg);
             Column { spec: spec.clone(), name, format, label, kind }
         })
@@ -447,7 +499,7 @@ mod tests {
         let ctx = EvalCtx::new(cfg, clock(), &ids);
         let mut rows: Vec<Row> = all
             .iter()
-            .map(|f| Row { facts: f.clone(), urgency: ctx.urgency(f), id: ids.get(&f.uuid).copied(), virtual_tags: vec![], orphans: vec![], active_seconds: None, sessions: vec![], history: vec![] })
+            .map(|f| Row { facts: f.clone(), urgency: ctx.urgency(f), id: ids.get(&f.uuid).copied(), virtual_tags: vec![], orphans: vec![], active_seconds: None, sessions: vec![], pending_deps: 0, history: vec![] })
             .collect();
         sort_rows(&mut rows, &parse_sort(spec).unwrap(), cfg, &ids, 1);
         rows.into_iter().map(|r| r.facts.description).collect()

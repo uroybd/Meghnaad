@@ -49,7 +49,8 @@
 <style>
   .timer button { line-height: 0; }
   .timer .body { line-height: 1.3; }
-  .timer { display: inline-flex; align-items: center; border: 1px solid var(--ok); border-radius: 999px; padding: 0 4px; max-width: 26em; }
+  /* It gives way first when the header is tight; the task name inside is cut with an ellipsis. */
+  .timer { display: inline-flex; align-items: center; border: 1px solid var(--ok); border-radius: 999px; padding: 0 4px; max-width: 26em; min-width: 0; flex: 0 1 auto; }
   .body { display: inline-flex; gap: 6px; align-items: center; min-width: 0; padding: 0 4px; }
   .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14em; }
   .dot { display: inline-flex; color: var(--ok); animation: pulse 2s ease-in-out infinite; }

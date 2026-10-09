@@ -67,16 +67,23 @@ fn next_on_chain(
     children.iter().rev().find(|c| index.get(*c).is_some_and(|g| !g.is_empty())).copied()
 }
 
-/// Read the bucket's salt, creating it if this is the first client, and derive the key.
-/// Slow (PBKDF2); build once and reuse via [`CloudServer::with_cryptor`].
-pub async fn load_cryptor<S: ObjectStore>(store: &S, secret: &[u8]) -> Result<Cryptor> {
+/// Read the bucket's salt, creating it if this is the first client.
+pub async fn load_salt<S: ObjectStore>(store: &S) -> Result<Vec<u8>> {
     loop {
         if let Some(salt) = store.get(SALT).await? {
-            return Ok(Cryptor::new(&salt, secret));
+            return Ok(salt);
         }
         let salt = random_bytes::<16>()?;
         store.compare_and_swap(SALT, None, &salt).await?;
     }
+}
+
+/// Read the bucket's salt and derive the key from it with this crate's own PBKDF2. Slow (600k
+/// rounds); build once and reuse via [`CloudServer::with_cryptor`]. A host with a faster PBKDF2
+/// of its own (a browser engine's, a Worker's) can take [`load_salt`] and
+/// [`crate::crypto::Cryptor::from_key`] instead.
+pub async fn load_cryptor<S: ObjectStore>(store: &S, secret: &[u8]) -> Result<Cryptor> {
+    Ok(Cryptor::new(&load_salt(store).await?, secret))
 }
 
 fn id_bytes(id: VersionId) -> Vec<u8> {

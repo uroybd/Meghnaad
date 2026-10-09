@@ -14,11 +14,197 @@ pub struct Clock {
     /// Seconds east of UTC (e.g. +19800 for IST).
     pub tz_offset: i32,
     pub week_starts_monday: bool,
+    /// `date.iso`: whether an ISO date typed by itself (`2026-12-25`) is understood. A date that
+    /// matches `format` is understood either way.
+    pub iso: bool,
+    /// `dateformat`: tried first on every date typed.
+    pub format: DateFormat,
+}
+
+/// A `dateformat` pattern (`Y-M-D`, `m/d/Y H:N`), held inline so the clock stays `Copy`.
+/// Taskwarrior's patterns are short; one that doesn't fit (or isn't ASCII) is no pattern at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DateFormat {
+    buf: [u8; 32],
+    len: u8,
+}
+
+impl DateFormat {
+    pub fn new(pattern: &str) -> Self {
+        let mut buf = [0u8; 32];
+        if pattern.is_ascii() && pattern.len() <= buf.len() {
+            buf[..pattern.len()].copy_from_slice(pattern.as_bytes());
+            DateFormat { buf, len: pattern.len() as u8 }
+        } else {
+            DateFormat { buf, len: 0 }
+        }
+    }
+
+    /// Taskwarrior's own default.
+    pub fn default_pattern() -> Self {
+        Self::new("Y-M-D")
+    }
+
+    fn bytes(&self) -> &[u8] {
+        &self.buf[..self.len as usize]
+    }
+
+    /// `Datetime::parse_formatted`: read `input` in this pattern. `m`, `d`, `h`, `n`, `s`, `v`
+    /// take one or two digits, `M`, `D`, `H`, `N`, `S`, `V` exactly two, `y` two (20xx), `Y` four;
+    /// `a`/`A` and `b`/`B` are day and month names (short, long); anything else must match
+    /// literally. What the pattern leaves out is filled in from now, down from the year, and
+    /// anything still missing is the start of the period.
+    pub fn parse(&self, input: &str, clock: &Clock) -> Option<ParsedDate> {
+        let f = self.bytes();
+        if f.is_empty() {
+            return None;
+        }
+        let t = input.trim().as_bytes();
+        let mut at = 0usize;
+        let (mut month, mut day, mut year) = (-1i32, -1i32, -1i32);
+        let (mut hour, mut minute, mut second) = (-1i32, -1i32, -1i32);
+        let digit = |at: &mut usize| -> Option<i32> {
+            let c = *t.get(*at)?;
+            c.is_ascii_digit().then(|| {
+                *at += 1;
+                i32::from(c - b'0')
+            })
+        };
+        let digits = |at: &mut usize, n: usize| -> Option<i32> {
+            let part = t.get(*at..*at + n)?;
+            part.iter().all(u8::is_ascii_digit).then(|| {
+                *at += n;
+                std::str::from_utf8(part).ok().and_then(|p| p.parse().ok()).unwrap_or(0)
+            })
+        };
+        // One or two digits, the way Taskwarrior reads `m`, `d`, `h`, `n`, `s` and `v`: a leading
+        // zero takes the next digit in its place, and a first digit up to `tens` takes one more.
+        let loose = |at: &mut usize, tens_up_to: i32| -> Option<i32> {
+            let mut v = digit(at)?;
+            if v == 0 {
+                if let Some(d) = digit(at) {
+                    v = d;
+                }
+            }
+            if (1..=tens_up_to).contains(&v) {
+                let tens = v;
+                if let Some(d) = digit(at) {
+                    v = d + 10 * tens;
+                }
+            }
+            Some(v)
+        };
+        // Names are matched on their first three letters or more (`closeEnough`).
+        let name_of = |name: &[u8], full: &[&str]| -> Option<usize> {
+            let n = std::str::from_utf8(name).ok()?.to_ascii_lowercase();
+            (n.len() >= 3).then(|| full.iter().position(|f| f.starts_with(&n))).flatten()
+        };
+        const DAYS: [&str; 7] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+        const MONTHS_LC: [&str; 12] = [
+            "january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+            "november", "december",
+        ];
+
+        for (i, c) in f.iter().enumerate() {
+            match c {
+                b'm' => {
+                    // `m`: a first digit 0 is followed by the real one; a 1 may take a second (10-12).
+                    let mut v = digit(&mut at)?;
+                    if v == 0 {
+                        v = digit(&mut at).unwrap_or(0);
+                    }
+                    if v == 1 {
+                        if let Some(d) = digit(&mut at) {
+                            v = d + 10;
+                        }
+                    }
+                    month = v;
+                }
+                b'M' => month = digits(&mut at, 2)?,
+                b'd' => day = loose(&mut at, 3)?,
+                b'D' => day = digits(&mut at, 2)?,
+                b'y' => year = digits(&mut at, 2)? + 2000,
+                b'Y' => year = digits(&mut at, 4)?,
+                b'h' => hour = loose(&mut at, 2)?,
+                b'H' => hour = digits(&mut at, 2)?,
+                b'n' => minute = loose(&mut at, 5)?,
+                b'N' => minute = digits(&mut at, 2)?,
+                b's' => second = loose(&mut at, 5)?,
+                b'S' => second = digits(&mut at, 2)?,
+                b'v' => {
+                    loose(&mut at, 5)?;
+                }
+                b'V' => {
+                    digits(&mut at, 2)?;
+                }
+                b'a' => {
+                    name_of(t.get(at..at + 3)?, &DAYS)?;
+                    at += 3;
+                }
+                b'b' => {
+                    month = name_of(t.get(at..at + 3)?, &MONTHS_LC)? as i32 + 1;
+                    at += 3;
+                }
+                b'A' | b'B' => {
+                    // The name runs to the next character of the pattern (or the end).
+                    let stop = f.get(i + 1).copied();
+                    let end = t[at..].iter().position(|x| Some(*x) == stop).map_or(t.len(), |p| at + p);
+                    if end > at {
+                        let n = name_of(&t[at..end], if *c == b'A' { &DAYS } else { &MONTHS_LC })?;
+                        if *c == b'B' {
+                            month = n as i32 + 1;
+                        }
+                        at = end;
+                    }
+                }
+                other => {
+                    if t.get(at) != Some(other) {
+                        return None;
+                    }
+                    at += 1;
+                }
+            }
+        }
+        // `Y-M-D` must not take the front of `2026-12-25T10:00`.
+        if at < t.len() && !t[at].is_ascii_whitespace() {
+            return None;
+        }
+
+        if year == -1 {
+            let (y, mo, d, h, mi, s) = clock.ymd_hms(clock.now);
+            year = y;
+            if month == -1 {
+                month = mo as i32;
+                if day == -1 {
+                    day = d as i32;
+                    if hour == -1 {
+                        hour = h as i32;
+                        if minute == -1 {
+                            minute = mi as i32;
+                            if second == -1 {
+                                second = s as i32;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let timed = hour != -1 || minute != -1 || second != -1;
+        let to_u = |v: i32, default: u32| if v == -1 { default } else { u32::try_from(v).unwrap_or(u32::MAX) };
+        let ts = clock.from_ymd_hms(year, to_u(month, 1), to_u(day, 1), to_u(hour, 0), to_u(minute, 0), to_u(second, 0))?;
+        Some(ParsedDate { ts, day: !timed })
+    }
 }
 
 impl Clock {
     pub fn utc(now: i64) -> Self {
-        Clock { now, tz_offset: 0, week_starts_monday: true }
+        Clock {
+            now,
+            tz_offset: 0,
+            week_starts_monday: true,
+            iso: true,
+            format: DateFormat::default_pattern(),
+        }
     }
 
     pub fn tz(&self) -> FixedOffset {
@@ -270,6 +456,11 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
         return day(sod + ahead * DAY);
     }
 
+    // The user's `dateformat` first, as Taskwarrior does (default `Y-M-D`).
+    if let Some(d) = clock.format.parse(input, clock) {
+        return Some(d);
+    }
+
     // Epoch seconds (9+ digits distinguishes them from YYYYMMDD).
     if s.len() >= 9 && s.chars().all(|c| c.is_ascii_digit()) {
         return exact(s.parse().ok()?);
@@ -294,8 +485,12 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
             return exact(clock.from_naive(n)?);
         }
     }
-    if let Ok(d) = NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
-        return Some(ParsedDate { ts: clock.from_naive(d.and_time(NaiveTime::MIN))?, day: true });
+    // A bare ISO date is only understood with `date.iso` (on by default); with it off the date
+    // has to match `dateformat`, which was tried above.
+    if clock.iso {
+        if let Ok(d) = NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+            return Some(ParsedDate { ts: clock.from_naive(d.and_time(NaiveTime::MIN))?, day: true });
+        }
     }
 
     // Relative: now +/- duration.
@@ -409,7 +604,7 @@ mod tests {
 
     #[test]
     fn local_calendar_helpers() {
-        let c = Clock { now: NOW, tz_offset: 19_800, week_starts_monday: true };
+        let c = Clock { now: NOW, tz_offset: 19_800, week_starts_monday: true, ..Clock::utc(0) };
         assert_eq!(c.ymd_hms(NOW), (2026, 10, 7, 18, 0, 0)); // 12:30Z is 18:00 in IST
         assert_eq!(c.from_ymd_hms(2026, 10, 7, 18, 0, 0), Some(NOW));
         assert_eq!(c.from_ymd_hms(2026, 2, 30, 0, 0, 0), None);
@@ -430,7 +625,7 @@ mod tests {
     #[test]
     fn timezone_shifts_day_boundaries() {
         // 12:30 UTC is 18:00 in IST (+5:30): still the same day. 20:00 UTC is already tomorrow.
-        let ist = |now| Clock { now, tz_offset: 19_800, week_starts_monday: true };
+        let ist = |now| Clock { now, tz_offset: 19_800, week_starts_monday: true, ..Clock::utc(0) };
         let c = ist(NOW);
         assert_eq!(parse_date("today", &c).unwrap().ts, ts(2026, 10, 6, 18, 30, 0));
         let late = ist(ts(2026, 10, 7, 20, 0, 0));
@@ -484,5 +679,74 @@ mod vague_tests {
         assert_eq!(format_vague(365 * DAY), "1.0y");
         assert_eq!(format_vague(548 * DAY), "1.5y");
         assert_eq!(format_vague(-2 * DAY), "-2d");
+    }
+}
+
+#[cfg(test)]
+mod pattern_tests {
+    use super::*;
+
+    // 2026-10-07 (a Wednesday) 12:30:00 UTC.
+    const NOW: i64 = 1_791_376_200;
+
+    fn utc() -> Clock {
+        Clock::utc(NOW)
+    }
+
+    // `dateformat` patterns, read as Taskwarrior reads them.
+    fn read(pattern: &str, input: &str) -> Option<(i32, u32, u32, u32, u32, bool)> {
+        let c = utc();
+        let d = DateFormat::new(pattern).parse(input, &c)?;
+        let (y, m, day, h, mi, _) = c.ymd_hms(d.ts);
+        Some((y, m, day, h, mi, d.day))
+    }
+
+    #[test]
+    fn a_pattern_reads_the_dates_it_describes() {
+        assert_eq!(read("Y-M-D", "2026-12-25"), Some((2026, 12, 25, 0, 0, true)));
+        assert_eq!(read("m/d/Y", "12/25/2026"), Some((2026, 12, 25, 0, 0, true)));
+        assert_eq!(read("m/d/Y", "1/2/2026"), Some((2026, 1, 2, 0, 0, true)), "m and d take one or two digits");
+        assert_eq!(read("m/d/Y", "01/02/2026"), Some((2026, 1, 2, 0, 0, true)));
+        assert_eq!(read("d.m.Y H:N", "25.12.2026 10:30"), Some((2026, 12, 25, 10, 30, false)));
+        assert_eq!(read("y-M-D", "26-12-25"), Some((2026, 12, 25, 0, 0, true)), "y is two digits, 20xx");
+        assert_eq!(read("A, B d, Y", "Friday, December 25, 2026"), Some((2026, 12, 25, 0, 0, true)));
+        assert_eq!(read("a b D Y", "Fri Dec 25 2026"), Some((2026, 12, 25, 0, 0, true)));
+    }
+
+    #[test]
+    fn a_pattern_refuses_what_it_does_not_describe() {
+        assert_eq!(read("Y-M-D", "2026-12-25T10:00"), None, "the rest of the input must be nothing, or a space");
+        assert_eq!(read("Y-M-D", "12/25/2026"), None);
+        assert_eq!(read("m/d/Y", "02/30/2026"), None, "February has no 30th");
+        assert_eq!(read("m/d/Y", "13/01/2026"), None);
+        assert_eq!(read("Y-M-D", "26-12-25"), None, "Y wants four digits");
+        assert_eq!(read("", "2026-12-25"), None, "no pattern, nothing to read");
+        assert_eq!(read("Y-M-D", "tomorrow"), None);
+    }
+
+    #[test]
+    fn what_the_pattern_leaves_out_comes_from_now() {
+        // Now is 2026-10-07 12:30:00 UTC. A pattern with no year takes this year's... and, as
+        // Taskwarrior does, only fills from the year down when the year is the first thing missing.
+        assert_eq!(read("m/d", "12/25"), Some((2026, 12, 25, 0, 0, true)));
+        assert_eq!(read("H:N", "10:45"), Some((2026, 10, 7, 10, 45, false)));
+    }
+
+    #[test]
+    fn a_bare_iso_date_needs_date_iso_unless_the_pattern_reads_it() {
+        let on = utc();
+        let off = Clock { iso: false, ..utc() };
+        assert!(parse_date("2026-12-25", &on).is_some());
+        // The default pattern is Y-M-D, so it still reads this.
+        assert!(parse_date("2026-12-25", &off).is_some());
+        // With another pattern and date.iso off, it is no date any more. (Checked against task 3.5.0.)
+        let us = Clock { iso: false, format: DateFormat::new("m/d/Y"), ..utc() };
+        assert!(parse_date("2026-12-25", &us).is_none());
+        assert!(parse_date("12/25/2026", &us).is_some());
+        // A date with a time is understood either way.
+        assert!(parse_date("2026-12-25T10:00", &us).is_some());
+        // And the pattern is read on top of the ISO forms, with date.iso on.
+        let both = Clock { format: DateFormat::new("m/d/Y"), ..utc() };
+        assert!(parse_date("2026-12-25", &both).is_some() && parse_date("12/25/2026", &both).is_some());
     }
 }

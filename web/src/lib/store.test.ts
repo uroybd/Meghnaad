@@ -1,5 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { HISTORY_MAX, shortenUuids, store } from './store.svelte';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { runCli } from './api';
+vi.mock('./api', async (original) => ({ ...(await original<typeof import('./api')>()), runCli: vi.fn() }));
+
+import { reportArgs } from './cmdline';
+import { HISTORY_MAX, shortenUuids, store, type Entry } from './store.svelte';
 
 beforeEach(() => {
   store.history = [];
@@ -56,5 +60,59 @@ describe('shortenUuids', () => {
   it('shortens full uuids for display only', () => {
     expect(shortenUuids('task 074a5bbe-86f4-4fae-b6cd-cb118064ef58 done')).toBe('task 074a5bbe done');
     expect(shortenUuids('task 12345678 done')).toBe('task 12345678 done');
+  });
+});
+
+describe('focusReport', () => {
+  const key = (filter: string, report: string) => JSON.stringify(reportArgs(filter, report));
+
+  it('leaves the table to be run when no result is handed over', () => {
+    // The Tasks view skips a run whose arguments match `liveKey`, so a filter that was never run
+    // must not be recorded there (clicking a calendar day showed the unfiltered table).
+    store.liveKey = key('', 'next');
+    store.focusReport('next', ['due:2026-10-12']);
+    expect(store.view).toBe('tasks');
+    expect(store.filter).toBe('due:2026-10-12');
+    expect(store.liveKey).not.toBe(key('due:2026-10-12', 'next'));
+  });
+
+  it('marks the handed-over result as the one on screen', () => {
+    const from = { id: 1, input: { line: 'x' }, title: 'x', result: null, loading: false, failure: null, at: 0 } as Entry;
+    store.focusReport('next', ['project:Home'], from);
+    expect(store.liveKey).toBe(key('project:Home', 'next'));
+    expect(store.live?.input).toEqual({ args: reportArgs('project:Home', 'next') });
+  });
+});
+
+describe('running a report', () => {
+  const report = {
+    result: { kind: 'report', report: 'list', rows: [], columns: [], matched: 0, sort: null, breaks: [] },
+    command: { name: 'list', report: true, filter: ['project:Home'] },
+    wrote: false,
+  };
+
+  beforeEach(() => {
+    store.entries = [];
+    store.live = null;
+    vi.mocked(runCli).mockResolvedValue(report as never);
+  });
+
+  it('prints the table in the Console when typed there', async () => {
+    store.view = 'console';
+    const e = await store.run({ line: 'project:Home list' });
+    expect(store.view).toBe('console');
+    expect(store.entries.map((x) => x.id)).toEqual([e.id]);
+    expect(e.result?.kind).toBe('report');
+    expect(store.live).toBeNull();
+  });
+
+  it('opens it in the Tasks view when typed anywhere else', async () => {
+    store.view = 'calendar';
+    const e = await store.run({ line: 'project:Home list' });
+    expect(store.view).toBe('tasks');
+    expect(store.entries.find((x) => x.id === e.id)).toBeUndefined();
+    expect(store.report).toBe('list');
+    expect(store.filter).toBe('project:Home');
+    expect(store.live?.result?.kind).toBe('report');
   });
 });

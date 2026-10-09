@@ -46,6 +46,8 @@ export interface Row extends Facts {
   active_seconds: number | null;
   /** Tracked work sessions (only when `journal.time` is on); the running one has no `end`. */
   sessions: Session[];
+  /** How many of the tasks this one depends on are still open (absent when none). */
+  pending_deps?: number;
   /** What changed and when (`info`, when `journal.info` is on). */
   history?: HistoryEntry[];
 }
@@ -171,7 +173,7 @@ export interface BurndownResult {
   current_count: number;
 }
 
-export interface TableResult { kind: 'table'; title: string | null; headers: string[]; rows: string[][] }
+export interface TableResult { kind: 'table'; title: string | null; footer?: string[]; headers: string[]; rows: string[][] }
 export interface TextResult { kind: 'text'; lines: string[] }
 export interface JsonResult { kind: 'json'; value: unknown }
 export interface ChangedResult {

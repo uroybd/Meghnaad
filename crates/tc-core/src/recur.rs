@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn calendar_steps_use_the_viewers_timezone() {
         // 22:00Z on Jan 31 is already Feb 1 in IST (+5:30): monthly lands on Mar 1 local.
-        let ist = Clock { now: 0, tz_offset: 19_800, week_starts_monday: true };
+        let ist = Clock { now: 0, tz_offset: 19_800, week_starts_monday: true, ..Clock::utc(0) };
         let jan31_2200z = Clock::utc(0).from_ymd_hms(2026, 1, 31, 22, 0, 0).unwrap();
         let n = next_recurrence(jan31_2200z, "monthly", &ist).unwrap().unwrap();
         assert_eq!(ist.ymd_hms(n), (2026, 3, 1, 3, 30, 0));

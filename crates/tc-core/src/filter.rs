@@ -182,8 +182,8 @@ impl Attr {
     }
 }
 
-/// Resolve an attribute name, allowing unique abbreviations of at least two characters
-/// (`desc`, `proj`), as Taskwarrior does.
+/// Resolve an attribute name, allowing unique abbreviations of at least `abbreviation.minimum`
+/// characters (`desc`, `proj`), as Taskwarrior does.
 fn canonicalize(name: &str, cfg: &Config) -> Option<Attr> {
     let mut all: Vec<(String, Attr)> =
         CORE_NAMES.iter().map(|(n, c)| ((*n).to_owned(), Attr::Core(*c))).collect();
@@ -191,7 +191,8 @@ fn canonicalize(name: &str, cfg: &Config) -> Option<Attr> {
     if let Some((_, a)) = all.iter().find(|(n, _)| n == name) {
         return Some(a.clone());
     }
-    if name.len() < 2 {
+    // Shorter than `abbreviation.minimum` it is not an abbreviation of anything.
+    if name.len() < cfg.abbreviation_minimum().max(1) {
         return None;
     }
     let mut hits = all.iter().filter(|(n, _)| n.starts_with(name));

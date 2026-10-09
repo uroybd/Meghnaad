@@ -137,7 +137,7 @@
     {#if store.configError}<p class="err">{store.configError}</p>{/if}
   </aside>
 
-  <main class="main">
+  <main class="main" class:console={store.view === 'console'}>
     {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView />{:else if store.view === 'summary'}<SummaryPage />{:else if store.view === 'calendar'}<CalendarPage />{:else if store.view === 'burndown'}<BurndownPage />{:else}<ConsoleView />{/if}
   </main>
 
@@ -145,7 +145,8 @@
     <Plus size={22} />
   </button>
 
-  <div class="dock"><ConsoleInput /></div>
+  <!-- The Console has its prompt inside it; every other page shares this one. -->
+  {#if store.view !== 'console'}<div class="dock"><ConsoleInput /></div>{/if}
 
   {#if store.toast}
     <div class="toast" class:bad={store.toast.kind === 'err'} role="status">{store.toast.text}</div>
@@ -200,6 +201,8 @@
   .side li + li { margin-top: 2px; }
   .report.on { background: var(--panel-2); font-weight: 600; }
   .main { grid-area: main; overflow: auto; padding: 24px 36px 32px; min-width: 0; }
+  /* The Console fills the area and scrolls its own output, so its prompt can sit at the bottom. */
+  .main.console { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
   .dock { grid-area: dock; }
   .banner { grid-area: banner; display: flex; align-items: center; gap: 10px; padding: 10px 24px; background: color-mix(in srgb, var(--err) 14%, var(--panel)); border-bottom: 1px solid var(--err); font-size: 14px; }
   .toast { position: fixed; right: 16px; bottom: 76px; background: var(--panel); border: 1px solid var(--ok); color: var(--text); padding: 8px 14px; border-radius: var(--radius); box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); max-width: 28em; z-index: 20; }
@@ -241,6 +244,13 @@
       box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
     }
     .toast { left: 12px; right: 12px; bottom: calc(100px + env(safe-area-inset-bottom)); max-width: none; }
+  }
+  /* Six tabs and the settings buttons need the room: drop the words before anything is cut off. */
+  @media (max-width: 1400px) {
+    .top .btn .lbl { display: none; }
+  }
+  @media (max-width: 1100px) {
+    .tabs .lbl { display: none; }
   }
   @media (max-width: 430px) {
     .tabs .lbl, .top .btn .lbl { display: none; }

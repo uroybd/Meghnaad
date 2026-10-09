@@ -170,6 +170,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
         .json()
         .await
         .map_err(|e| ApiError::BadRequest(format!("invalid request body: {e}")))?;
+    let typed = body.line.is_some();
     let args = match (body.line, body.args) {
         (Some(l), None) => {
             if l.len() > MAX_LINE {
@@ -195,6 +196,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
         now,
         tz_offset: tz,
         week_starts_monday: in_context.week_starts_monday(),
+        ..Clock::utc(0)
     };
     let cfg = s.config.clone();
     let st = &mut *s.state;
@@ -203,7 +205,13 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
         &cfg,
         clock,
         &args,
-        Options { confirmed: body.confirmed, approved: body.approved, extras: body.extras, seed: now as u64 },
+        Options {
+            confirmed: body.confirmed,
+            approved: body.approved,
+            extras: body.extras,
+            expand_aliases: typed,
+            seed: now as u64,
+        },
         &mut st.undo,
     )
     .await;

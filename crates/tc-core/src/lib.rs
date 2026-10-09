@@ -1,4 +1,5 @@
 pub mod burndown;
+pub mod calc;
 pub mod calendar;
 pub mod cli;
 pub mod cloud;
@@ -20,6 +21,6 @@ pub mod summary;
 pub mod taskrc;
 pub mod urgency;
 
-pub use cloud::{load_cryptor, CloudServer};
+pub use cloud::{load_cryptor, load_salt, CloudServer};
 pub use error::{Error, Result};
 pub use store::{MemStore, ObjectStore};

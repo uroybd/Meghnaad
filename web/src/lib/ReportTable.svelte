@@ -33,6 +33,11 @@
     journal: store.config?.journal ?? null,
     dates: { report: formatFor('report', settings, reportFormat), annotation: formatFor('annotation', settings) },
     recurIndicator: settings?.['recurrence.indicator'] || undefined,
+    indicators: {
+      active: settings?.['active.indicator'],
+      tag: settings?.['tag.indicator'],
+      dependency: settings?.['dependency.indicator'],
+    },
   });
   const keys = $derived(parseSort(result.sort));
   let pendingDelete = $state<string | null>(null);
@@ -207,7 +212,8 @@
 {/if}
 
 <style>
-  .wrap { overflow-x: auto; }
+  /* Positioned, so the visually hidden header label stays inside it instead of widening the page. */
+  .wrap { overflow-x: auto; position: relative; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 9px 18px 9px 0; vertical-align: top; white-space: nowrap; }
   tbody td { border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }

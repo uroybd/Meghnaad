@@ -7,8 +7,9 @@
 
   const CELLS = 30; // the bar's width in Taskwarrior, in cells
 
-  // A project's name shows that project's tasks in the Tasks view (and its sub-projects').
-  const show = (project: string) => store.focusReport(store.report, [project ? `project:${project}` : 'project:']);
+  // A project's name shows that project's tasks in the Tasks view (and its sub-projects'), in the
+  // built-in `list` report, which is always there.
+  const show = (project: string) => store.focusReport('list', [project ? `project:${project}` : 'project:']);
 </script>
 
 <div class="scroll">

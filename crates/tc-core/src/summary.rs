@@ -45,7 +45,7 @@ pub fn extract_parents(project: &str) -> Vec<String> {
 }
 
 /// The last part of a project name and how deep it is: `a.b.c` is (`c`, 2).
-fn indent(project: &str) -> (String, usize) {
+pub(crate) fn indent(project: &str) -> (String, usize) {
     let parents = extract_parents(project);
     let depth = parents.len();
     let label = match parents.last() {
@@ -57,7 +57,7 @@ fn indent(project: &str) -> (String, usize) {
 
 /// Taskwarrior's `sort_projects`: names in order, with any parent that has no tasks of its own put
 /// in just before its first child, and each child directly after the latest parent.
-fn sort_projects(names: &BTreeSet<String>) -> Vec<String> {
+pub(crate) fn sort_projects(names: &BTreeSet<String>) -> Vec<String> {
     let mut sorted: Vec<String> = Vec::new();
     for project in names {
         let parents = extract_parents(project);

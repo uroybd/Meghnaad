@@ -1,6 +1,6 @@
 import { ApiError, getConfig, runCli, type Answers, type CliInput } from './api';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
-import type { TaskRef, Vocab } from './completion';
+import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
 import type { CliResponse, CliResult, ConfigResponse, ReportMeta, Row } from './types';
 
 export interface Entry {
@@ -84,6 +84,8 @@ class Store {
   editing = $state<{ row: Row; from: Entry | null } | null>(null);
   /** The add-task form (null = closed). `n` re-mounts it for "add another". */
   adding = $state<{ description: string; n: number } | null>(null);
+  /** Text typed at the prompt and not yet run. */
+  promptLine = $state('');
   /** The task detail drawer. */
   detail = $state<{ uuid: string; from: Entry | null } | null>(null);
   settingsOpen = $state(false);
@@ -115,9 +117,40 @@ class Store {
     try {
       this.config = await getConfig();
       this.configError = null;
+      void this.refreshNames();
     } catch (e) {
       this.configError = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  /**
+   * The project and tag names offered for completion normally come from the tasks on screen. With
+   * `complete.all.tags` (or `list.all.projects`) Taskwarrior offers the names of finished tasks too,
+   * so ask for them (`_tags`, `_projects`) rather than guess.
+   */
+  async refreshNames() {
+    const on = (k: string) => /^(1|y|yes|on|true)$/i.test((this.config?.config.settings?.[k] ?? '').trim());
+    const lines = async (cmd: string): Promise<string[]> => {
+      try {
+        const r = (await runCli({ args: [cmd] })).result;
+        return r.kind === 'text' ? r.lines : [];
+      } catch {
+        return [];
+      }
+    };
+    const [tags, projects] = await Promise.all([
+      on('complete.all.tags') ? lines('_tags') : [],
+      on('list.all.projects') ? lines('_projects') : [],
+    ]);
+    if (!tags.length && !projects.length) return;
+    const virtual = new Set(VIRTUAL_TAGS);
+    this.tags = [...new Set([...this.tags, ...tags.filter((t) => !virtual.has(t))])].sort();
+    const names = new Set(this.projects);
+    for (const p of projects) {
+      const parts = p.split('.');
+      for (let i = 1; i <= parts.length; i++) names.add(parts.slice(0, i).join('.'));
+    }
+    this.projects = [...names].sort();
   }
 
   /**
@@ -175,7 +208,7 @@ class Store {
       e.result = res.result;
       if (res.result.kind === 'report') this.#learn(res.result.rows);
       if (res.result.kind === 'info') this.#learn(res.result.tasks);
-      if (res.wrote) this.rev++;
+      if (res.wrote) this.written();
       return res;
     } catch (err) {
       e.failure = err instanceof ApiError || err instanceof Error ? err.message : String(err);
@@ -192,23 +225,27 @@ class Store {
     this.filter = filter.map(shellQuote).join(' ');
     this.view = 'tasks';
     const args = reportArgs(this.filter, this.report);
-    this.liveKey = JSON.stringify(args);
     if (from) {
-      // Hand over an already-fetched result instead of fetching it again.
-      const live: Entry = { ...from, id: nextId++, input: { args }, title: titleOf({ args }) };
-      this.live = live;
+      // Hand over an already-fetched result instead of fetching it again. Only then is the table
+      // already showing these arguments; otherwise the Tasks view must run them (marking them as
+      // loaded here would make it skip the run and keep showing the previous, unfiltered, table).
+      this.liveKey = JSON.stringify(args);
+      this.live = { ...from, id: nextId++, input: { args }, title: titleOf({ args }) };
     }
   }
 
   /** Run a command from the console. A report command focuses that report instead of scrolling. */
   async run(input: CliInput): Promise<Entry> {
+    // Typed in the Console, a report prints right there. From the bar under the other pages it opens
+    // in the Tasks view instead, where it can be sorted and filtered.
+    const inConsole = this.view === 'console';
     const e = $state<Entry>({
       id: nextId++, input, title: titleOf(input), result: null, loading: true, failure: null, at: Date.now(),
     });
     this.entries.push(e);
     this.remember(input.line ?? previewLine(input.args ?? []));
     const res = await this.#exec(e);
-    if (res?.command?.report && res.result.kind === 'report') {
+    if (res?.command?.report && res.result.kind === 'report' && !inConsole) {
       this.entries = this.entries.filter((x) => x.id !== e.id);
       this.focusReport(res.command.name, res.command.filter, e);
     } else if (res?.wrote && this.live) {
@@ -265,6 +302,12 @@ class Store {
     if (res?.wrote && this.live) void this.refresh(this.live);
   }
 
+  /** Something was written: let the views reload, and refresh the completion names if they depend on it. */
+  written() {
+    this.rev++;
+    void this.refreshNames();
+  }
+
   /** The taskrc's `confirmation` (on unless turned off): the delete buttons ask before they delete. */
   get confirmation(): boolean {
     const v = this.config?.config.settings?.confirmation;
@@ -303,7 +346,7 @@ class Store {
         this.notify('Nothing was changed.');
       }
       if (res.wrote) {
-        this.rev++;
+        this.written();
         const targets = new Set([from, this.live].filter((x): x is Entry => !!x));
         await Promise.all([...targets].map((t) => this.refresh(t)));
       }

@@ -12,11 +12,12 @@
   const dateFmt = $derived(formatFor('report', settings));
   const pad = (n: number) => String(n).padStart(2, '0');
 
-  // A click on a day with something due shows those tasks in the Tasks view.
+  // A click on a day with something due shows those tasks in the Tasks view, always in the built-in
+  // `list` report (the report in focus might filter or order them differently, or not exist any more).
   function show(m: CalendarMonth, d: CalendarDay) {
     if (!d.due && !d.scheduled) return;
     const day = `${m.year}-${pad(m.month)}-${pad(d.day)}`;
-    store.focusReport(store.report, [d.due ? `due:${day}` : `scheduled:${day}`]);
+    store.focusReport('list', [d.due ? `due:${day}` : `scheduled:${day}`]);
   }
 
   function describe(m: CalendarMonth, d: CalendarDay): string {

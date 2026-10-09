@@ -10,11 +10,14 @@ use std::sync::Arc;
 use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::{Replica, Server};
 use tc_core::cli::UndoStack;
-use tc_core::crypto::Cryptor;
+use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::taskrc::Config;
-use tc_core::{load_cryptor, CloudServer, ObjectStore};
+use tc_core::{load_salt, CloudServer, ObjectStore};
 use tokio::sync::{Mutex, OwnedMutexGuard};
+use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen_futures::JsFuture;
 use worker::Env;
+use js_sys::{Array, Object, Reflect, Uint8Array};
 
 use crate::store::R2Store;
 
@@ -182,6 +185,29 @@ pub async fn restore_config(env: &Env) -> worker::Result<Option<Config>> {
     Ok(Some(cfg))
 }
 
+/// PBKDF2-HMAC-SHA256 through the runtime's Web Crypto, which is native code. The result is the
+/// same key as [`tc_core::crypto::derive_key`]'s; the CLI is the judge of that (see
+/// `scripts/interop-local.sh`), since a different key could not read the bucket at all.
+async fn derive_key_natively(salt: &[u8], secret: &[u8]) -> Result<[u8; KEY_LEN], JsValue> {
+    let crypto = Reflect::get(&js_sys::global(), &"crypto".into())?;
+    let subtle = crypto.unchecked_into::<web_sys::Crypto>().subtle();
+    let usages = Array::of1(&"deriveBits".into());
+    let base: web_sys::CryptoKey =
+        JsFuture::from(subtle.import_key_with_str("raw", &Uint8Array::from(secret), "PBKDF2", false, &usages)?)
+            .await?
+            .unchecked_into();
+    let params = Object::new();
+    Reflect::set(&params, &"name".into(), &"PBKDF2".into())?;
+    Reflect::set(&params, &"hash".into(), &"SHA-256".into())?;
+    Reflect::set(&params, &"salt".into(), &Uint8Array::from(salt))?;
+    Reflect::set(&params, &"iterations".into(), &JsValue::from_f64(f64::from(PBKDF2_ITERATIONS)))?;
+    let bits = JsFuture::from(subtle.derive_bits_with_object(&params, &base, (KEY_LEN * 8) as u32)?).await?;
+    Uint8Array::new(&bits)
+        .to_vec()
+        .try_into()
+        .map_err(|_| JsValue::from_str("PBKDF2 returned the wrong number of bytes"))
+}
+
 pub async fn open(env: &Env) -> worker::Result<Session> {
     let bucket = env.bucket("TASKS")?;
     let cached = CACHE.with(|c| c.borrow().clone());
@@ -189,9 +215,18 @@ pub async fn open(env: &Env) -> worker::Result<Session> {
         Some(c) => c,
         None => {
             let secret = env.secret("TC_ENCRYPTION_SECRET")?.to_string();
-            let cryptor = load_cryptor(&R2Store(bucket.clone()), secret.as_bytes())
+            let salt = load_salt(&R2Store(bucket.clone()))
                 .await
                 .map_err(|e| worker::Error::RustError(e.to_string()))?;
+            // Deriving the key is the most expensive thing a cold instance does. The runtime's own
+            // PBKDF2 does it in about 40 ms of CPU; ours, in WebAssembly, in about 250.
+            let cryptor = match derive_key_natively(&salt, secret.as_bytes()).await {
+                Ok(key) => Cryptor::from_key(&key),
+                Err(e) => {
+                    worker::console_error!("native PBKDF2 failed ({e:?}); deriving the key in WebAssembly");
+                    Cryptor::new(&salt, secret.as_bytes())
+                }
+            };
             let c = Cached {
                 cryptor,
                 state: Arc::new(Mutex::new(State {

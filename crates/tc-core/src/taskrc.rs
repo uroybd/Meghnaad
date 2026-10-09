@@ -145,13 +145,89 @@ impl Config {
         self.settings.get("confirmation").map_or(true, |v| truthy(v))
     }
 
+    /// An integer setting as Taskwarrior reads it (`strtol`): the leading digits, and 0 for text
+    /// that isn't a number. `default` is what an unset setting means.
+    fn integer(&self, key: &str, default: i64) -> i64 {
+        self.settings.get(key).map_or(default, |v| atoi(v))
+    }
+
     /// `bulk`: a change to this many tasks or more asks first; 0 never asks because of the count.
-    /// Taskwarrior reads it as an integer (`atoi`): text that isn't one counts as 0. Default 3.
+    /// Default 3.
     pub fn bulk(&self) -> usize {
-        let Some(v) = self.settings.get("bulk") else { return 3 };
-        let v = v.trim();
-        let digits: String = v.strip_prefix('+').unwrap_or(v).chars().take_while(char::is_ascii_digit).collect();
-        digits.parse().unwrap_or(0)
+        self.integer("bulk", 3).max(0) as usize
+    }
+
+    /// `abbreviation.minimum`: the shortest abbreviation of a command, report, attribute or UDA
+    /// name that is understood (`ver` for `version` at 3). Default 2.
+    pub fn abbreviation_minimum(&self) -> usize {
+        self.integer("abbreviation.minimum", 2).max(0) as usize
+    }
+
+    /// `date.iso`: whether ISO-8601 dates typed by themselves (`2026-12-25`, `2026-W52`) are
+    /// understood. A date matching `dateformat` is understood either way. Default on.
+    pub fn date_iso(&self) -> bool {
+        self.settings.get("date.iso").map_or(true, |v| truthy(v))
+    }
+
+    /// `dateformat`: the pattern typed dates are read in first. Taskwarrior's default is `Y-M-D`;
+    /// an empty setting means no pattern.
+    pub fn date_format(&self) -> crate::dates::DateFormat {
+        match self.settings.get("dateformat") {
+            Some(p) => crate::dates::DateFormat::new(p),
+            None => crate::dates::DateFormat::default_pattern(),
+        }
+    }
+
+    /// `expressions=postfix` makes `calc` read `1 2 +`; anything else is infix (`1 + 2`).
+    pub fn expressions_postfix(&self) -> bool {
+        self.settings.get("expressions").is_some_and(|v| v == "postfix")
+    }
+
+    /// `list.all.projects`: `projects` counts finished tasks' projects too.
+    pub fn list_all_projects(&self) -> bool {
+        self.settings.get("list.all.projects").is_some_and(|v| truthy(v))
+    }
+
+    /// `list.all.tags`: `tags` counts finished tasks' tags too.
+    pub fn list_all_tags(&self) -> bool {
+        self.settings.get("list.all.tags").is_some_and(|v| truthy(v))
+    }
+
+    /// `complete.all.tags`: the tags offered for completion include finished tasks' tags.
+    pub fn complete_all_tags(&self) -> bool {
+        self.settings.get("complete.all.tags").is_some_and(|v| truthy(v))
+    }
+
+    /// What the `indicator` styles show: `active.indicator` (`*`), `tag.indicator` (`+`) and
+    /// `dependency.indicator` (`D`) unless the taskrc says otherwise.
+    pub fn indicator(&self, key: &str) -> String {
+        let default = match key {
+            "active.indicator" => "*",
+            "tag.indicator" => "+",
+            _ => "D",
+        };
+        self.settings.get(key).cloned().unwrap_or_else(|| default.to_owned())
+    }
+
+    /// `alias.<name>`: a word that stands for others on a command line. Taskwarrior ships with
+    /// `rm` (delete) and `burndown` (burndown.weekly), `history` and `ghistory`; the taskrc can
+    /// change or empty any of them.
+    pub fn aliases(&self) -> BTreeMap<String, String> {
+        let mut out: BTreeMap<String, String> = [
+            ("rm", "delete"),
+            ("history", "history.monthly"),
+            ("ghistory", "ghistory.monthly"),
+            ("burndown", "burndown.weekly"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+        for (k, v) in &self.settings {
+            if let Some(name) = k.strip_prefix("alias.") {
+                out.insert(name.to_owned(), v.clone());
+            }
+        }
+        out
     }
 
     /// `allow.empty.filter`: whether a command that changes tasks may run with no filter at all.
@@ -251,6 +327,15 @@ const SCALAR_SETTINGS: &[&str] = &[
     "journal.time.start.annotation",
     "journal.time.stop.annotation",
     "journal.info",
+    "abbreviation.minimum",
+    "expressions",
+    "date.iso",
+    "list.all.projects",
+    "list.all.tags",
+    "complete.all.tags",
+    "active.indicator",
+    "tag.indicator",
+    "dependency.indicator",
     "dateformat",
     "dateformat.report",
     "dateformat.info",
@@ -297,6 +382,19 @@ fn unescape(v: &str) -> String {
 fn split_list(v: &str) -> Vec<String> {
     // Whitespace within lists isn't permitted by Taskwarrior; trim anyway for forgiveness.
     v.split(',').map(|s| s.trim().to_owned()).collect()
+}
+
+/// `strtol`: optional sign and the digits that follow; anything else reads as 0.
+fn atoi(v: &str) -> i64 {
+    let t = v.trim_start();
+    let (neg, rest) = match t.as_bytes().first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let n: i64 = digits.parse().unwrap_or(0);
+    if neg { -n } else { n }
 }
 
 fn truthy(v: &str) -> bool {
@@ -630,6 +728,11 @@ pub fn parse(text: &str) -> Parsed {
                 } else {
                     p.warnings.push(format!("{name}: '{value}' is not a date or duration, ignored"));
                 }
+            }
+            // `alias.<name>=<words>`: the name is everything after `alias.` (it may hold dots, as
+            // `burndown.weekly` does). An empty value is allowed: it makes the word vanish.
+            ["alias", rest @ ..] if !rest.is_empty() && !rest.join(".").contains(char::is_whitespace) => {
+                p.config.settings.insert(name.to_owned(), unescape(value));
             }
             // `holiday.<id>.name`, and `.date` or `.start` and `.end`, for the calendar.
             ["holiday", id, attr] if valid_ident(id) && matches!(*attr, "name" | "date" | "start" | "end") => {

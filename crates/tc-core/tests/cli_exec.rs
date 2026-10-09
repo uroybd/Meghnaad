@@ -874,7 +874,7 @@ async fn calendar_lays_out_months_and_takes_the_arguments_taskwarrior_does() {
     assert_eq!(c.months.len(), 3);
     assert_eq!(cal(run(&mut r, &cfg, "calendar y").await.0).months.len(), 12);
     assert_eq!(months(&cal(run(&mut r, &cfg, "calendar 3 2031").await.0))[0], (2031, 3));
-    assert_eq!(months(&cal(run(&mut r, &cfg, "cal march 2031").await.0))[0], (2031, 3), "abbreviated command, named month");
+    assert_eq!(months(&cal(run(&mut r, &cfg, "cale march 2031").await.0))[0], (2031, 3), "abbreviated command (`cal` is ambiguous with `calc`, as in Taskwarrior), named month");
     let (res, wrote) = run(&mut r, &cfg, "calendar 13 2031").await;
     assert!(!wrote && message(&res).contains("not a valid month"), "{}", message(&res));
     let (res, _) = run(&mut r, &cfg, "calendar whenever").await;
@@ -1767,5 +1767,450 @@ mod recurrence {
         run(&mut r, &cfg, "add plain").await;
         let (res, wrote) = run(&mut r, &cfg, "1 modify +x").await;
         assert!(wrote && !matches!(res, CliResult::Confirm { .. }), "{res:?}");
+    }
+}
+
+mod aliases_and_abbreviations {
+    use super::*;
+
+    /// A typed line: aliases stand for their words.
+    async fn typed(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
+        run_opts(r, cfg, line, Options { expand_aliases: true, ..Options::default() }).await
+    }
+
+    fn is_version(res: &CliResult) -> bool {
+        matches!(res, CliResult::Text { lines } if lines.iter().any(|l| l.contains("tc-core")))
+    }
+
+    #[tokio::test]
+    async fn taskwarriors_own_aliases_work_without_any_taskrc() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add old thing").await;
+        // `rm` is `delete`, which asks first.
+        let (res, wrote) = typed(&mut r, &cfg, "1 rm").await;
+        assert!(!wrote && message(&res).starts_with("CONFIRM: Delete task 1"), "{}", message(&res));
+        // `burndown` is `burndown.weekly`.
+        let (res, _) = typed(&mut r, &cfg, "burndown").await;
+        let CliResult::Burndown(b) = res else { panic!("{res:?}") };
+        assert_eq!(b.title, "Weekly Burndown");
+    }
+
+    #[tokio::test]
+    async fn the_taskrc_adds_changes_and_empties_aliases() {
+        let mut r = replica();
+        run(&mut r, &Config::default(), "add Pay rent project:home +bill").await;
+        run(&mut r, &Config::default(), "add Walk dog").await;
+        let cfg = parse("alias.bills=project:home +bill list\nalias.rm=done\nalias.hush=\n").config;
+        // One alias, several words: a filter and a report.
+        let (res, _) = typed(&mut r, &cfg, "bills").await;
+        let CliResult::Report(o) = res else { panic!("{res:?}") };
+        assert_eq!(o.rows.iter().map(|x| x.facts.description.as_str()).collect::<Vec<_>>(), ["Pay rent"]);
+        // The taskrc's `rm` replaces the built-in one.
+        let (res, wrote) = typed(&mut r, &cfg, "description:Walk rm").await;
+        assert!(wrote, "{}", message(&res));
+        assert_eq!(message(&res), "Completed 1 task.");
+        // An empty alias makes the word vanish.
+        let (res, _) = typed(&mut r, &cfg, "hush list").await;
+        assert!(matches!(res, CliResult::Report(_)), "{res:?}");
+    }
+
+    #[tokio::test]
+    async fn an_alias_can_use_another_and_a_loop_ends() {
+        let mut r = replica();
+        run(&mut r, &Config::default(), "add Pay rent").await;
+        let cfg = parse("alias.one=two\nalias.two=count\nalias.ping=pong\nalias.pong=ping\n").config;
+        let (res, _) = typed(&mut r, &cfg, "one").await;
+        assert_eq!(message(&res), "1");
+        // A cycle gives up after Taskwarrior's ten rounds instead of hanging.
+        let _ = typed(&mut r, &cfg, "ping").await;
+    }
+
+    #[tokio::test]
+    async fn aliases_are_for_typed_lines_not_for_the_gui_or_after_a_double_dash() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add keep").await;
+        // Pre-split arguments (the GUI) are taken as they are: this note is the word `rm`.
+        let (res, wrote) = run(&mut r, &cfg, "1 annotate rm").await;
+        assert!(wrote, "{}", message(&res));
+        let f = load_facts(&mut r).await.unwrap();
+        assert_eq!(f[0].annotations[0].text, "rm");
+        // After `--` a typed line keeps the word too.
+        let args: Vec<String> = ["1", "annotate", "--", "rm"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(tc_core::cli::expand_aliases(&args, &cfg), args);
+        let args: Vec<String> = ["rm", "1"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(tc_core::cli::expand_aliases(&args, &cfg), ["delete", "1"]);
+    }
+
+    #[tokio::test]
+    async fn abbreviations_must_reach_abbreviation_minimum() {
+        let mut r = replica();
+        run(&mut r, &Config::default(), "add Pay rent project:home").await;
+        let at = |n: u32| parse(&format!("abbreviation.minimum={n}\n")).config;
+        // Checked against task 3.5.0: `ve` is `version` at 2 but not at 3, `ver` not at 4.
+        for (min, word, command) in [(2, "ve", true), (3, "ve", false), (3, "ver", true), (4, "ver", false), (4, "vers", true), (1, "ve", true)] {
+            let (res, _) = run(&mut r, &at(min), word).await;
+            assert_eq!(is_version(&res), command, "min {min}: {word}: {res:?}");
+        }
+        // Attribute names follow it too: `pro:` is `project:` unless the minimum is above 3.
+        for (min, matches) in [(2, 1), (3, 1), (4, 0)] {
+            let (res, _) = run(&mut r, &at(min), "pro:home count").await;
+            assert_eq!(message(&res), if matches == 1 { "1" } else { "0" }, "min {min}: {res:?}");
+        }
+        let (res, _) = run(&mut r, &at(4), "proj:home count").await;
+        assert_eq!(message(&res), "1");
+    }
+}
+
+mod project_and_tag_lists {
+    use super::*;
+
+    /// The data the real `task` 3.5.0 was asked about: nested projects, finished and deleted tasks.
+    async fn dataset() -> R {
+        let mut r = replica();
+        let cfg = Config::default();
+        for line in [
+            "add a project:home.travel +x +y",
+            "add b project:home +x",
+            "add c project:work.docs +z",
+            "add d",
+            "add e project:old +gone",
+            "add f project:home.travel +done",
+            "add g project:trash +trashed",
+            "add w project:later wait:2099-01-01 +waiting",
+        ] {
+            run(&mut r, &cfg, line).await;
+        }
+        run(&mut r, &cfg, "description:e done").await;
+        run(&mut r, &cfg, "description:f done").await;
+        run_yes(&mut r, &cfg, "description:g delete").await;
+        r
+    }
+
+    fn table(res: &CliResult) -> (Vec<(String, String)>, Vec<String>) {
+        let CliResult::Table(t) = res else { panic!("{res:?}") };
+        (t.rows.iter().map(|r| (r[0].clone(), r[1].clone())).collect(), t.footer.clone())
+    }
+    fn rows(v: &[(&str, &str)]) -> Vec<(String, String)> {
+        v.iter().map(|(a, b)| ((*a).to_owned(), (*b).to_owned())).collect()
+    }
+
+    #[tokio::test]
+    async fn projects_count_a_projects_children_and_indent_them_like_taskwarrior() {
+        let mut r = dataset().await;
+        let (res, _) = run(&mut r, &Config::default(), "projects").await;
+        let (got, footer) = table(&res);
+        assert_eq!(
+            got,
+            rows(&[("(none)", "1"), ("home", "2"), ("  travel", "1"), ("later", "1"), ("work", "1"), ("  docs", "1")])
+        );
+        assert_eq!(footer, ["5 projects (5 tasks)"]);
+        // A filter narrows it, and the footer follows.
+        let (res, _) = run(&mut r, &Config::default(), "project:home projects").await;
+        let (got, footer) = table(&res);
+        assert_eq!(got, rows(&[("home", "2"), ("  travel", "1")]));
+        assert_eq!(footer, ["2 projects (2 tasks)"]);
+    }
+
+    #[tokio::test]
+    async fn list_all_projects_adds_finished_tasks_but_never_deleted_ones() {
+        let mut r = dataset().await;
+        let cfg = parse("list.all.projects=1\n").config;
+        let (res, _) = run(&mut r, &cfg, "projects").await;
+        let (got, footer) = table(&res);
+        assert_eq!(
+            got,
+            rows(&[("(none)", "1"), ("home", "3"), ("  travel", "2"), ("later", "1"), ("old", "1"), ("work", "1"), ("  docs", "1")])
+        );
+        assert_eq!(footer, ["6 projects (7 tasks)"]);
+        // `rc.list.all.projects:1` on one command does the same.
+        let (res, _) = run(&mut r, &Config::default(), "rc.list.all.projects:1 projects").await;
+        assert_eq!(table(&res).1, ["6 projects (7 tasks)"]);
+    }
+
+    #[tokio::test]
+    async fn tags_count_before_the_filter_and_list_all_tags_includes_deleted_tasks() {
+        let mut r = dataset().await;
+        let (res, _) = run(&mut r, &Config::default(), "tags").await;
+        let (got, footer) = table(&res);
+        assert_eq!(got, rows(&[("waiting", "1"), ("x", "2"), ("y", "1"), ("z", "1")]));
+        assert_eq!(footer, ["4 tags", "(5 tasks)"]);
+
+        let cfg = parse("list.all.tags=on\n").config;
+        let (res, _) = run(&mut r, &cfg, "tags").await;
+        let (got, footer) = table(&res);
+        assert_eq!(
+            got,
+            rows(&[("done", "1"), ("gone", "1"), ("trashed", "1"), ("waiting", "1"), ("x", "2"), ("y", "1"), ("z", "1")])
+        );
+        assert_eq!(footer, ["7 tags", "(8 tasks)"], "the deleted task's tag counts here");
+    }
+
+    #[tokio::test]
+    async fn the_completion_lists_follow_their_own_settings() {
+        let mut r = dataset().await;
+        let lines = |res: CliResult| match res {
+            CliResult::Text { lines } => lines,
+            other => panic!("{other:?}"),
+        };
+        let (res, _) = run(&mut r, &Config::default(), "_projects").await;
+        assert_eq!(lines(res), ["home", "home.travel", "later", "work.docs"]);
+        // Unlike `projects`, this one also names the projects of deleted tasks.
+        let cfg = parse("list.all.projects=1\n").config;
+        assert_eq!(lines(run(&mut r, &cfg, "_projects").await.0), ["home", "home.travel", "later", "old", "trash", "work.docs"]);
+
+        let tags = lines(run(&mut r, &Config::default(), "_tags").await.0);
+        for t in ["ACTIVE", "YESTERDAY", "next", "nocal", "nocolor", "nonag", "waiting", "x", "y", "z"] {
+            assert!(tags.contains(&t.to_owned()), "{t} in {tags:?}");
+        }
+        assert!(!tags.contains(&"gone".to_owned()), "finished tasks' tags only with complete.all.tags");
+        let cfg = parse("complete.all.tags=1\n").config;
+        let tags = lines(run(&mut r, &cfg, "_tags").await.0);
+        assert!(["done", "gone", "trashed"].iter().all(|t| tags.contains(&(*t).to_owned())), "{tags:?}");
+        // Sorted as bytes, so the capitals come first (as in the real output).
+        assert_eq!(tags[0], "ACTIVE");
+    }
+}
+
+mod indicator_columns {
+    use super::*;
+
+    async fn report_with(cfg: &Config, columns: &str) -> tc_core::run::Output {
+        let mut r = replica();
+        let plain = Config::default();
+        run(&mut r, &plain, "add alpha +t1").await;
+        run(&mut r, &plain, "add beta +t1 +t2 depends:1").await;
+        run(&mut r, &plain, "add gamma").await;
+        run(&mut r, &plain, "add delta depends:3").await;
+        run(&mut r, &plain, "description:gamma done").await;
+        run(&mut r, &plain, "description:alpha start").await;
+        let line = format!("rc.report.list.columns:{columns} rc.report.list.labels: list");
+        let (res, _) = run(&mut r, cfg, &line).await;
+        let CliResult::Report(o) = res else { panic!("{res:?}") };
+        o
+    }
+
+    #[tokio::test]
+    async fn an_unlabelled_column_gets_taskwarriors_label_for_its_style() {
+        // The headers the real `task` 3.5.0 printed for these columns.
+        let o = report_with(
+            &Config::default(),
+            "description,start,start.active,tags,tags.indicator,tags.count,depends,depends.indicator,depends.count",
+        )
+        .await;
+        let labels: Vec<&str> = o.columns.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, ["Description", "Started", "A", "Tags", "T", "Tag", "Depends", "D", "Dep"]);
+    }
+
+    #[tokio::test]
+    async fn the_indicator_settings_shorten_the_label_to_their_own_length() {
+        let cfg = parse("tag.indicator=##\ndependency.indicator=DEP\nactive.indicator=>>\n").config;
+        let o = report_with(&cfg, "description,start.active,tags.indicator,depends.indicator").await;
+        let labels: Vec<&str> = o.columns.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, ["Description", "A", "Ta", "Dep"]);
+        // The real `task` with `dependency.indicator=DEP` printed `Dep`; with `#` as the tag mark, `T`.
+        let cfg = parse("tag.indicator=#\n").config;
+        let o = report_with(&cfg, "description,tags.indicator").await;
+        assert_eq!(o.columns[1].label, "T");
+    }
+
+    #[tokio::test]
+    async fn rows_say_how_many_dependencies_are_still_open() {
+        let o = report_with(&Config::default(), "description,depends").await;
+        let by = |d: &str| o.rows.iter().find(|r| r.facts.description == d).map(|r| r.pending_deps);
+        assert_eq!(by("beta"), Some(1));
+        assert_eq!(by("delta"), Some(0), "it depends on a finished task, which holds nothing up");
+        assert_eq!(by("alpha"), Some(0));
+    }
+}
+
+mod typed_dates {
+    use super::*;
+
+    /// `due:<value>` on a task, under these settings: did it take?
+    async fn takes(settings: &str, value: &str) -> bool {
+        let mut r = replica();
+        run(&mut r, &Config::default(), "add probe").await;
+        let cfg = parse(settings).config;
+        let (res, wrote) = run(&mut r, &cfg, &format!("1 modify due:{value}")).await;
+        wrote && !message(&res).starts_with("ERROR") && load_facts(&mut r).await.unwrap()[0].due.is_some()
+    }
+
+    #[tokio::test]
+    async fn date_iso_and_dateformat_decide_which_dates_are_understood_like_taskwarrior() {
+        // The matrix below is what task 3.5.0 itself accepted (a date or a date and time, typed as `due:`).
+        for (settings, input, ok) in [
+            ("", "2026-12-25", true),
+            ("", "12/25/2026", false),
+            ("dateformat=m/d/Y\n", "2026-12-25", true),
+            ("dateformat=m/d/Y\n", "12/25/2026", true),
+            ("date.iso=0\n", "2026-12-25", true), // the default pattern is Y-M-D
+            ("date.iso=0\n", "12/25/2026", false),
+            ("date.iso=0\ndateformat=m/d/Y\n", "2026-12-25", false),
+            ("date.iso=0\ndateformat=m/d/Y\n", "12/25/2026", true),
+            ("date.iso=0\ndateformat=m/d/Y\n", "2026-12-25T10:00", true),
+            ("date.iso=0\ndateformat=m/d/Y\n", "tomorrow", true),
+        ] {
+            assert_eq!(takes(settings, input).await, ok, "{settings:?} due:{input}");
+        }
+    }
+}
+
+mod the_calculator {
+    use super::*;
+
+    async fn calc(cfg: &Config, line: &str) -> String {
+        let mut r = replica();
+        message(&run(&mut r, cfg, line).await.0)
+    }
+
+    #[tokio::test]
+    async fn calc_is_a_command_and_expressions_chooses_how_it_reads() {
+        let cfg = Config::default();
+        assert_eq!(calc(&cfg, "calc 1 + 2 * 3").await, "7");
+        assert_eq!(calc(&cfg, "calc 2 days + 3 hours").await, "P2DT3H");
+        assert_eq!(calc(&cfg, "calc (1 + 2) * 3").await, "9");
+        // Postfix: set in the taskrc or for one command.
+        let postfix = parse("expressions=postfix\n").config;
+        assert_eq!(calc(&postfix, "calc 1 2 + 3 *").await, "9");
+        assert_eq!(calc(&cfg, "rc.expressions:postfix calc 1 2 + 3 *").await, "9");
+        // Anything but `postfix` is infix.
+        assert_eq!(calc(&parse("expressions=infix\n").config, "calc 1 + 2").await, "3");
+        // Mistakes say what is wrong, as errors.
+        assert_eq!(calc(&cfg, "calc 5 / 0").await, "ERROR: Cannot divide by zero");
+        assert_eq!(calc(&cfg, "calc (1 + 2").await, "ERROR: Mismatched parentheses in expression");
+    }
+
+    #[tokio::test]
+    async fn calc_knows_the_current_day_in_the_users_zone() {
+        // Dates come out in the clock's zone; `today - today` is nothing, `tomorrow - today` a day.
+        let cfg = Config::default();
+        assert_eq!(calc(&cfg, "calc today - today").await, "PT0S");
+        assert_eq!(calc(&cfg, "calc tomorrow - today").await, "P1D");
+    }
+}
+
+mod the_calculators_references {
+    use super::*;
+
+    const UDAS: &str = "uda.est.type=numeric\nuda.when.type=date\nuda.len.type=duration\nuda.note.type=string\n";
+
+    async fn world() -> (R, Config) {
+        let cfg = parse(UDAS).config;
+        let mut r = replica();
+        for line in [
+            "add Buy milk project:home.shop +x +y priority:H due:2026-12-25T10:00 est:3 when:2026-03-04T05:06:07 len:PT90M",
+            "add other",
+            "add later wait:2099-01-01",
+            "add blocked depends:1",
+        ] {
+            run(&mut r, &cfg, line).await;
+        }
+        run(&mut r, &cfg, "1 annotate first note").await;
+        run(&mut r, &cfg, "1 annotate second note").await;
+        (r, cfg)
+    }
+
+    async fn calc(r: &mut R, cfg: &Config, e: &str) -> String {
+        message(&run(r, cfg, &format!("calc {e}")).await.0)
+    }
+
+    // Every expected value is what `task calc` 3.5.0 printed for the same data.
+    #[tokio::test]
+    async fn a_task_by_id_gives_its_attributes_in_their_own_types() {
+        let (mut r, cfg) = world().await;
+        for (e, want) in [
+            ("1.description", "Buy milk"), ("1.project", "home.shop"), ("1.priority", "H"), ("1.status", "pending"),
+            ("1.due", "2026-12-25T10:00:00"), ("1.est", "3"), ("1.tags", "x,y"), ("1.id", "1"),
+            ("1.end", ""), ("1.note", ""), ("1.depends", ""), ("1.mask", ""), ("1.parent", ""), ("1.imask", "0"),
+            ("1.recur", "PT0S"), ("1.when", "2026-03-04T05:06:07"), ("1.len", "PT1H30M"),
+            ("2.description", "other"), ("3.status", "waiting"), ("3.wait", "2099-01-01T00:00:00"),
+        ] {
+            assert_eq!(calc(&mut r, &cfg, e).await, want, "{e}");
+        }
+        // They are values, so they can be calculated with.
+        for (e, want) in [
+            ("1.due + 1d", "2026-12-26T10:00:00"), ("1.due - 2026-12-01", "P24DT10H"), ("1.est * 2", "6"),
+            ("\"1.description == 'Buy milk'\"", "true"), ("1.len * 2", "PT3H"),
+        ] {
+            assert_eq!(calc(&mut r, &cfg, e).await, want, "{e}");
+        }
+        // The urgency is a number.
+        assert!(calc(&mut r, &cfg, "1.urgency").await.parse::<f64>().unwrap() > 8.0);
+    }
+
+    #[tokio::test]
+    async fn a_task_can_be_named_by_uuid_or_the_start_of_one() {
+        let (mut r, cfg) = world().await;
+        let uuid = calc(&mut r, &cfg, "1.uuid").await;
+        assert_eq!(uuid.len(), 36);
+        for name in [uuid.clone(), uuid[..8].to_owned(), uuid[..12].to_owned()] {
+            assert_eq!(calc(&mut r, &cfg, &format!("{name}.project")).await, "home.shop", "{name}");
+        }
+        // Seven characters are too few to be a uuid; the id-less word is just a word.
+        let short = &uuid[..7];
+        assert_eq!(calc(&mut r, &cfg, &format!("{short}.project")).await, format!("{short}.project"));
+        assert_eq!(calc(&mut r, &cfg, "4.depends").await, uuid);
+    }
+
+    #[tokio::test]
+    async fn what_is_not_a_reference_is_a_word_as_in_taskwarrior() {
+        let (mut r, cfg) = world().await;
+        for e in [
+            "1.nope", "99.description", "due", "description", "rc.nope", "1.uuid.short", "1.est.year",
+            "1.description.x", "1.annotations.5.description", "1.annotations.0.description",
+            // Attribute names are exact: no abbreviations here.
+            "1.desc", "1.proj", "1.pri", "1.dep", "1.ann", "1.sta",
+        ] {
+            assert_eq!(calc(&mut r, &cfg, e).await, e, "{e}");
+        }
+    }
+
+    #[tokio::test]
+    async fn parts_of_dates_tags_and_annotations() {
+        let (mut r, cfg) = world().await;
+        for (e, want) in [
+            ("1.due.year", "2026"), ("1.due.month", "12"), ("1.due.day", "25"), ("1.due.hour", "10"),
+            ("1.due.minute", "0"), ("1.due.second", "0"), ("1.due.weekday", "5"), ("1.due.julian", "359"),
+            ("1.when.year", "2026"), ("1.when.hour", "5"), ("1.end.year", "1970"),
+            ("1.tags.x", "x"), ("1.tags.nope", ""),
+            ("1.annotations.count", "2"), ("1.annotations.1.description", "first note"),
+            ("1.annotations.2.description", "second note"),
+        ] {
+            assert_eq!(calc(&mut r, &cfg, e).await, want, "{e}");
+        }
+        // The week number follows the first day of the week: 51 from Sunday, 52 from Monday.
+        assert_eq!(calc(&mut r, &cfg, "1.due.week").await, "51");
+        let monday = parse(&format!("{UDAS}weekstart=monday\n")).config;
+        assert_eq!(calc(&mut r, &monday, "1.due.week").await, "52");
+        // An annotation's time is a date, with the same parts.
+        assert!(calc(&mut r, &cfg, "1.annotations.1.entry").await.starts_with("20"));
+        assert!(calc(&mut r, &cfg, "1.annotations.1.entry.year").await.parse::<i32>().unwrap() >= 2026);
+    }
+
+    #[tokio::test]
+    async fn settings_the_program_and_the_system() {
+        let (mut r, cfg) = world().await;
+        let tuned = parse(&format!("{UDAS}bulk=7\ndateformat=m/d/Y\n")).config;
+        for (e, want) in [
+            // Defaults when the taskrc is silent, as Taskwarrior has them.
+            ("rc.bulk", "3"), ("rc.confirmation", "1"), ("rc.dateformat", "Y-M-D"), ("rc.dateformat.info", "Y-M-D H:N:S"),
+            ("rc.weekstart", "sunday"), ("rc.abbreviation.minimum", "2"), ("rc.expressions", "infix"),
+            // Everything the app holds can be asked, UDAs included.
+            ("rc.uda.est.type", "numeric"), ("rc.uda.when.type", "date"),
+            ("tw.version", "3.5.0"), ("system.version", "3.5.0"), ("tw.program", "task"), ("context.program", "task"),
+            ("tw.width", "80"), ("tw.height", "24"),
+            // Changes not yet synced: this replica never syncs (the real client says 1 here too).
+            ("tw.syncneeded", "1"),
+        ] {
+            assert_eq!(calc(&mut r, &cfg, e).await, want, "{e}");
+        }
+        assert_eq!(calc(&mut r, &tuned, "rc.bulk").await, "7");
+        assert_eq!(calc(&mut r, &tuned, "rc.dateformat").await, "m/d/Y");
+        // Settings are text, so they combine like text; and a number can be built from one.
+        assert_eq!(calc(&mut r, &tuned, "rc.bulk + 1").await, "71");
+        // The line as typed.
+        assert_eq!(calc(&mut r, &cfg, "tw.args").await, "task calc tw.args");
     }
 }
