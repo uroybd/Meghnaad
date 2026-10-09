@@ -211,7 +211,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
             extras: body.extras,
             typed,
             seed: now as u64,
-            // The hooks in tc-core's `hooks.rs`.
+            // The hooks in tc-core's `my_hooks.rs`.
             hooks: None,
         },
         &mut st.undo,

@@ -327,7 +327,7 @@ pub struct Options {
     /// that happens to be `rm`, or to start with `due:`, stays a note.
     pub typed: bool,
     pub seed: u64,
-    /// The hooks to run. `None` runs the ones in `hooks.rs`; tests supply their own.
+    /// The hooks to run. `None` runs the ones in `my_hooks.rs`; tests supply their own.
     pub hooks: Option<std::sync::Arc<dyn crate::hooks::Hooks>>,
 }
 

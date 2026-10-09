@@ -208,8 +208,9 @@ an instance links back to it. The recurring task itself is a template: you can e
 ## Hooks
 
 Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A Worker can't
-run scripts, so here a hook is a **Rust function you write in `crates/tc-core/src/hooks.rs`** and deploy with the
-Worker. The file ships with four commented-out placeholders in `MyHooks`, so nothing happens until you fill one in.
+run scripts, so here a hook is a **Rust function you write in `crates/tc-core/src/my_hooks.rs`** and deploy with the
+Worker. That file ships with four commented-out placeholders, so nothing happens until you fill one in. (The code that
+runs them, `hooks.rs`, is separate on purpose: see [Keeping your hooks across updates](#keeping-your-hooks-across-updates).)
 
 | Hook | Runs | It can |
 | --- | --- | --- |
@@ -244,10 +245,58 @@ fn on_modify(&self, _h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, R
 }
 ```
 
+Locally, `npm run dev` rebuilds the Worker when you save `my_hooks.rs`; for the deployed one, run `npm run deploy`.
+
 Notes: hooks run inside the Worker with no network or files, and `hooks=off` (or `rc.hooks:off`) turns them all off.
 `undo` and the recurring instances created in the background don't run hooks, as in Taskwarrior. A command that asks a
 question first runs `on_launch` once per round. Each hook you add makes the Worker a little bigger; a few hundred lines
 cost a few KB compressed, while a new dependency can cost far more.
+
+### Keeping your hooks across updates
+
+Your hooks are the only part of the code you change, and they live in one file, `my_hooks.rs`, apart from the engine
+that runs them (`hooks.rs`). Keep them as **one commit on a branch of their own**, and an update from upstream becomes a
+rebase that almost never has anything to resolve. This assumes you cloned or forked the project with git; `upstream`
+below is the project's repository.
+
+```bash
+# Once: keep `main` an untouched copy of upstream, and your hooks on a branch.
+git remote add upstream <the project's URL>        # skip if `origin` already is upstream
+git switch -c my-hooks
+#   …edit crates/tc-core/src/my_hooks.rs…
+git commit -am "My hooks"
+npm run deploy                                      # deploy from this branch
+```
+
+```bash
+# Each update:
+git fetch upstream
+git switch main && git merge --ff-only upstream/main   # main stays identical to upstream
+git switch my-hooks && git rebase main                 # your hooks, replayed on the new code
+npm run deploy
+```
+
+Because `main` is exactly upstream, `git diff main my-hooks` is always precisely your hooks, and a rebase only stops if
+upstream changed the *same lines* of `my_hooks.rs` (say, it reworded a placeholder or changed a hook's signature). Then
+git marks the file; fix it by hand, `git add crates/tc-core/src/my_hooks.rs`, `git rebase --continue`. Run
+`git config rerere.enabled true` once and git remembers how you resolved it. If upstream changes what a hook receives, the
+build fails in `my_hooks.rs` and the compiler says what to adjust.
+
+**As a patch file**, for keeping your hooks outside the clone, or moving them to a fresh checkout or another machine:
+
+```bash
+# Save: your commit as a patch (keeps its message), or just the file's changes.
+git format-patch main..my-hooks -o ~/my-hooks-patches
+git diff main my-hooks -- crates/tc-core/src/my_hooks.rs > ~/my-hooks.patch
+
+# Restore, on a clean, up-to-date checkout of upstream:
+git am -3 ~/my-hooks-patches/*.patch               # as a commit; -3 lets git merge if the file has moved on
+git apply --3way ~/my-hooks.patch                  # or as an uncommitted change (it is staged for you)
+```
+
+Either way a conflict is shown as ordinary `<<<<<<<` markers in `my_hooks.rs`. Keep the patch in your own repository or
+dotfiles next to your `.deploy.vars`; it is a few dozen lines, easy to read in review, and it is the whole of your
+customisation.
 
 ## Time tracking and reminders
 
@@ -270,6 +319,7 @@ can be tapped. You can install it to your home screen from the browser menu.
 - **Numeric ids belong to this app** (pending tasks numbered by creation time), so they won't match your laptop's. Use
   uuid prefixes where it matters.
 - **`undo`** works on the last few commands made while this Worker instance lives; it is forgotten when it is recycled.
-- **No hooks** (`on-add`, `on-modify`): a Worker can't run local programs.
+- **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a Worker can't run local programs, so they are functions in
+  `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
 - **`edit`, `purge`, `history.*`** are not in the app.
 - **The first request after a quiet spell** is slower: the Worker rebuilds its state from the bucket's newest snapshot.

@@ -54,7 +54,7 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Views** | `summary`, `calendar`, `burndown`, `calc` | The `summary`, `calendar`, `burndown.*` and `calc` commands, each a port of its Taskwarrior counterpart |
-| **Hooks** | `hooks` | Your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console |
+| **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
 | **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` commands that list and edit it under the same rules |
 
 ### How a command runs
@@ -65,8 +65,11 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
    settings (which win, as in Taskwarrior).
 2. Read the first day of the week, `date.iso` and `dateformat` into the clock, and expand aliases (typed lines only).
 3. Parse into a filter, a command and modifications. A word shorter than `abbreviation.minimum` is just a word.
-4. Do Taskwarrior's housekeeping first: create the recurring instances that are due, expire tasks past `until`.
-5. Load the tasks as plain "facts", number the pending ones, and run the command.
+4. Run the `on_launch` hook, which can refuse the command (`show` and `config` skip it: they are about settings).
+5. Do Taskwarrior's housekeeping first: create the recurring instances that are due, expire tasks past `until`.
+6. Load the tasks as plain "facts", number the pending ones, and run the command. `on_add` and `on_modify` fire inside
+   it, just before a write is committed.
+7. Run the `on_exit` hook, and return what the hooks printed with the result (`feedback`), for the Console to show.
 
 Writes go through one path (`write_selected`) so the safety rules are in one place:
 
@@ -130,7 +133,7 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 - **Pages** (`TasksView`, `ProjectsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`) are thin. Each
   asks the engine for a result and hands it to a shared component, so the console and the pages draw the same thing.
 - `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`, `BurndownView`,
-  `TaskInfo`, `ConfirmView`. A report's cells are formatted in `format.ts`, the one place that knows `dateformat`,
+  `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the console, ran the command). A report's cells are formatted in `format.ts`, the one place that knows `dateformat`,
   indicators and urgency colours.
 - The filter box (`FilterInput`, `FilterChips`) and the prompt share `completion.ts`; both feed the same engine.
 - The browser stores nothing but small conveniences (command history, reminder settings). Settings live in the bucket
@@ -146,7 +149,7 @@ dates each `date.iso`/`dateformat` combination accepts.
 | Layer | What it proves |
 | --- | --- |
 | `cargo test` (unit) | Each port against fixtures taken from the real `task` |
-| `tests/cli_exec.rs` | Real command lines against a real replica: writes, reports, confirmations, recurrence, calc |
+| `tests/cli_exec.rs` | Real command lines against a real replica: writes, reports, confirmations, recurrence, calc, `show`/`config`, hooks (injected through `Options.hooks`) |
 | `tests/sync_cost.rs`, `replica_sync.rs` | R2 call counts per sync; two replicas converging |
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
 | `npm --prefix web test` | The browser-side logic: formatting, completion, the store, the API client |

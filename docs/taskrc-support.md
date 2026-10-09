@@ -58,7 +58,7 @@ Each row below counts once, even where a row covers several related options.
 | `purge.on-sync` | Not done | The app never purges deleted tasks. Leave that to your CLI |
 | `data.location`, `TASKDATA` | N/A | Data lives in the R2 bucket |
 | `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; settings are saved in the bucket |
-| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A Worker can't run scripts, so the hooks are Rust functions in `crates/tc-core/src/hooks.rs`, compiled into the Worker: `on_launch`, `on_add`, `on_modify` and `on_exit`. See [Hooks](using.md#hooks) |
+| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A Worker can't run scripts, so the hooks are Rust functions in `crates/tc-core/src/my_hooks.rs`, compiled into the Worker: `on_launch`, `on_add`, `on_modify` and `on_exit`. See [Hooks](using.md#hooks) |
 | `hooks.location`, `debug.hooks` | N/A | There is no hooks directory to look in, and no scripts to trace |
 | `gc` | N/A | Working-set ids are computed by the app, not stored |
 | `exit.on.missing.db` | N/A | There is no local database |

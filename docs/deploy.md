@@ -31,7 +31,7 @@ things that differ between people:
 | **Cloudflare Access** | It tells you exactly what to click (see below) and asks for the team domain and AUD tag, then deploys again |
 
 Your answers are saved in `.deploy.vars` (git-ignored). Run **`npm run deploy`** whenever you update the code, or
-`npm run setup` again to change something; both are safe to repeat. `npm run deploy -- --check` prints the exact config
+`npm run setup` again to change something; both are safe to repeat. This is also how a change to your [hooks](using.md#hooks) (Rust in `crates/tc-core/src/my_hooks.rs`; [keep them as a patch](using.md#keeping-your-hooks-across-updates) so updates stay easy) reaches the Worker. `npm run deploy -- --check` prints the exact config
 that would be deployed. Any of the keys can be given as environment variables instead (handy in CI).
 
 **You can stop after the first deploy.** Until Access is connected, the app refuses every request and shows a **setup

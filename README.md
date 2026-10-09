@@ -24,6 +24,8 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 - **Taskwarrior 3.5.0 and newer.** Settings removed or deprecated before it are not supported.
 - **Your `taskrc`, safely.** Import your UDAs, custom reports, contexts and settings. Sync settings and anything that
   looks like a credential are blocked. See [taskrc support](docs/taskrc-support.md) for what is and isn't read.
+- **Hooks, as Rust.** Taskwarrior's `on-add`, `on-modify`, `on-launch` and `on-exit` become functions you fill in and
+  deploy with the Worker; they can edit a task, refuse a command and print to the Console. See [Hooks](#hooks).
 - **Built for a phone as well as a desk**, with time tracking, reminders and a console with completion.
 
 > **Status.** Verified end to end against the released `task` 3.5.0 using a local S3-compatible server (both
@@ -64,7 +66,7 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 
 | | |
 | --- | --- |
-| **[Using Meghnaad](docs/using.md)** | The pages, the console, Taskwarrior's questions, recurring tasks, urgency, time tracking, the phone layout |
+| **[Using Meghnaad](docs/using.md)** | The pages, the console (`show`, `config`), Taskwarrior's questions, hooks, recurring tasks, urgency, time tracking, the phone layout |
 | **[Deploying](docs/deploy.md)** | Plans you need, the guided setup, Cloudflare Access, connecting your `task` CLI, configuration, fixing problems |
 | **[Architecture](docs/architecture.md)** | How it works, the engine, sync, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every Taskwarrior `taskrc` option: done, partial, not done, not applicable |
@@ -116,7 +118,7 @@ flowchart TB
 | Offline | Works | Needs a connection |
 | Encryption key | Only on your machine | In a Worker secret; the Worker decrypts |
 | Task ids | Local to that replica | Computed separately, so they differ |
-| Hooks | `on-add`, `on-modify` | None |
+| Hooks | Scripts in `~/.task/hooks` | Rust functions in `my_hooks.rs`, compiled into the Worker; change one and redeploy |
 
 More in [Architecture](docs/architecture.md).
 
@@ -176,9 +178,11 @@ changes to many tasks, a command with no filter, breaking a dependency chain) ar
 ## Hooks
 
 Taskwarrior's `on-launch`, `on-add`, `on-modify` and `on-exit` hooks are Rust functions you fill in
-([`crates/tc-core/src/hooks.rs`](crates/tc-core/src/hooks.rs)) and deploy with the Worker. A hook gets the task, hands
+([`crates/tc-core/src/my_hooks.rs`](crates/tc-core/src/my_hooks.rs)) and deploy with the Worker. A hook gets the task, hands
 one back (changed or not) or refuses the command, and whatever it prints appears under the result in the Console. All
-four ship empty. See [Hooks](docs/using.md#hooks).
+four ship empty. Changing one means rebuilding the Worker (`npm run dev` does that on save, `npm run deploy` for the
+real one). See [Hooks](docs/using.md#hooks) for what they receive and may change, and
+[how to keep them as a patch](docs/using.md#keeping-your-hooks-across-updates) so you can pull upstream updates easily.
 
 **How much fits.** The Worker is about **783 KB compressed** (gzip) today, so a **1 MB compressed** budget leaves about
 **265 KB** for hooks. Measured by adding generated hook code to a release build:
@@ -247,6 +251,8 @@ CPU limit; use Workers Paid. The app retries read-only requests once on its own.
 - **`undo`** is kept in the Worker instance's memory and forgotten when it is recycled.
 - **Dates you type** are read in your `dateformat` first, then as ISO or words (`friday`, `3d`). ISO week and ordinal
   dates (`2026-W52`) aren't understood.
+- **Hooks are compiled in**, not scripts: they run inside the Worker with no network or files, and `undo` and the
+  recurring instances made in the background don't run them. See [Hooks](docs/using.md#hooks).
 - **Not every `taskrc` option applies.** Terminal, colour and local-file options don't make sense in a web app, and
   `include` and `purge.on-sync` aren't supported. See [taskrc support](docs/taskrc-support.md).
 - **Phone layout** was verified in an emulated phone browser; try it on your own device.

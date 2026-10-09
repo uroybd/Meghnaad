@@ -1,8 +1,8 @@
 //! Hooks: your own Rust, run at the same four moments Taskwarrior runs its scripts.
 //!
-//! A Worker can't run `~/.task/hooks/on-add.*`, so a hook here is a function in **this file**, compiled
-//! into the Worker. Fill in the placeholders in [`MyHooks`] at the bottom and redeploy. They all do nothing
-//! until you do.
+//! A Worker can't run `~/.task/hooks/on-add.*`, so a hook here is a Rust function, compiled
+//! into the Worker. Fill in the placeholders in [`MyHooks`](crate::my_hooks::MyHooks), in `my_hooks.rs`, and redeploy.
+//! They all do nothing until you do.
 //!
 //! * [`Hooks::on_launch`]: before a command runs. `Err` stops it.
 //! * [`Hooks::on_add`]: for each new task, before it is saved. Return the task (changed or not) or `Err`.
@@ -85,48 +85,6 @@ pub trait Hooks: std::fmt::Debug + Send + Sync {
     fn on_exit(&self, _h: &mut Hooked, _changed: &[Facts]) {}
 }
 
-/// Your hooks. Edit the functions; each one shows what is possible. They do nothing as shipped.
-#[derive(Debug, Default)]
-pub struct MyHooks;
-
-impl Hooks for MyHooks {
-    // Refuse a command, or just say something, before it runs:
-    //
-    // fn on_launch(&self, h: &mut Hooked, command: &str) -> Result<(), Reject> {
-    //     if command.starts_with("purge") {
-    //         return Err("No purging from the web.".into());
-    //     }
-    //     Ok(())
-    // }
-
-    // Fix a new task up: here, anything in project Work is also tagged +office.
-    //
-    // fn on_add(&self, h: &mut Hooked, mut task: Facts) -> Result<Facts, Reject> {
-    //     if task.project.as_deref() == Some("Work") {
-    //         task.tags.insert("office".into());
-    //         h.say("Tagged +office.");
-    //     }
-    //     Ok(task)
-    // }
-
-    // Look at what changed, and refuse or adjust it: here, a task can't be finished while it is blocked.
-    //
-    // fn on_modify(&self, h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, Reject> {
-    //     if old.status == "pending" && new.status == "completed" && old.blocked {
-    //         return Err("Finish what it depends on first.".into());
-    //     }
-    //     Ok(new)
-    // }
-
-    // Report on what the command did:
-    //
-    // fn on_exit(&self, h: &mut Hooked, changed: &[Facts]) {
-    //     if !changed.is_empty() {
-    //         h.say(format!("{} task(s) changed.", changed.len()));
-    //     }
-    // }
-}
-
 /// What the engine does with the hooks for one command: calls them, keeps what they print and the
 /// tasks they let through, and works out what a hook changed.
 pub struct Runner {
@@ -142,9 +100,9 @@ struct State {
 }
 
 impl Runner {
-    /// `hooks` is what the caller supplied (tests do; the Worker doesn't), else [`MyHooks`].
+    /// `hooks` is what the caller supplied (tests do; the Worker doesn't), else [`MyHooks`](crate::my_hooks::MyHooks).
     pub fn new(hooks: Option<Arc<dyn Hooks>>, enabled: bool) -> Runner {
-        Runner { hooks: hooks.unwrap_or_else(|| Arc::new(MyHooks)), enabled, state: Mutex::default() }
+        Runner { hooks: hooks.unwrap_or_else(|| Arc::new(crate::my_hooks::MyHooks)), enabled, state: Mutex::default() }
     }
 
     fn with<T>(&self, f: impl FnOnce(&dyn Hooks, &mut Hooked, &mut Vec<Facts>) -> T) -> T {
