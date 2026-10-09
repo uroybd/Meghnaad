@@ -1,0 +1,18 @@
+
+Use this command to see how colors are displayed by your terminal.
+
+
+16-color usage (supports underline, bold text, bright background):
+  [30;103mtask color black on bright yellow[0m
+  [4;36;104mtask color underline cyan on bright blue[0m
+
+256-color usage (supports underline):
+  [38;5;214;48;5;202mtask color color214 on color202[0m
+  [38;5;82;48;5;28mtask color rgb150 on rgb020[0m
+  [4;38;5;242;48;5;235mtask color underline grey10 on grey3[0m
+  [38;5;1;48;5;173mtask color red on color173[0m
+
+Your sample:
+
+  [31;104mtask color red on bright blue[0m
+

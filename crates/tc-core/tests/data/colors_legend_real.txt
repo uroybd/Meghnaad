@@ -1,0 +1,51 @@
+
+Here are the colors currently in use:
+Color                     Definition
+[38;5;231;48;5;166mcolor.active             [0m [38;5;231;48;5;166mrgb555 on rgb410 [0m
+[48;5;234mcolor.alternate          [0m [48;5;234mon gray2         [0m
+[38;5;7;48;5;8mcolor.blocked            [0m [38;5;7;48;5;8mwhite on color8  [0m
+[38;5;0;48;5;15mcolor.blocking           [0m [38;5;0;48;5;15mblack on color15 [0m
+[48;5;22mcolor.burndown.done      [0m [48;5;22mon rgb010        [0m
+[48;5;9mcolor.burndown.pending   [0m [48;5;9mon color9        [0m
+[48;5;11mcolor.burndown.started   [0m [48;5;11mon color11       [0m
+[38;5;0;48;5;1mcolor.calendar.due       [0m [38;5;0;48;5;1mcolor0 on color1 [0m
+[38;5;15;48;5;1mcolor.calendar.due.today [0m [38;5;15;48;5;1mcolor15 on color1[0m
+[38;5;0;48;5;11mcolor.calendar.holiday   [0m [38;5;0;48;5;11mcolor0 on color11[0m
+[38;5;0;48;5;9mcolor.calendar.overdue   [0m [38;5;0;48;5;9mcolor0 on color9 [0m
+[38;5;25;48;5;15mcolor.calendar.scheduled [0m [38;5;25;48;5;15mrgb013 on color15[0m
+[38;5;15;48;5;25mcolor.calendar.today     [0m [38;5;15;48;5;25mcolor15 on rgb013[0m
+[48;5;235mcolor.calendar.weekend   [0m [48;5;235mon color235      [0m
+[38;5;25mcolor.calendar.weeknumber[0m [38;5;25mrgb013           [0m
+color.completed
+[38;5;4mcolor.debug              [0m [38;5;4mcolor4           [0m
+color.deleted
+[38;5;1mcolor.due                [0m [38;5;1mcolor1           [0m
+[38;5;160mcolor.due.today          [0m [38;5;160mrgb400           [0m
+[37;41mcolor.error              [0m [37;41mwhite on red     [0m
+[38;5;3mcolor.footnote           [0m [38;5;3mcolor3           [0m
+[38;5;3mcolor.header             [0m [38;5;3mcolor3           [0m
+[38;5;0;48;5;196mcolor.history.add        [0m [38;5;0;48;5;196mcolor0 on rgb500 [0m
+[38;5;0;48;5;226mcolor.history.delete     [0m [38;5;0;48;5;226mcolor0 on rgb550 [0m
+[38;5;0;48;5;46mcolor.history.done       [0m [38;5;0;48;5;46mcolor0 on rgb050 [0m
+color.label
+color.label.sort
+[38;5;9mcolor.overdue            [0m [38;5;9mcolor9           [0m
+color.project.none
+[38;5;25mcolor.recurring          [0m [38;5;25mrgb013           [0m
+[48;5;17mcolor.scheduled          [0m [48;5;17mon rgb001        [0m
+[38;5;7;48;5;0mcolor.summary.background [0m [38;5;7;48;5;0mwhite on color0  [0m
+[38;5;0;48;5;77mcolor.summary.bar        [0m [38;5;0;48;5;77mblack on rgb141  [0m
+[38;5;22mcolor.sync.added         [0m [38;5;22mrgb010           [0m
+[38;5;11mcolor.sync.changed       [0m [38;5;11mcolor11          [0m
+[38;5;9mcolor.sync.rejected      [0m [38;5;9mcolor9           [0m
+[38;5;184mcolor.tag.next           [0m [38;5;184mrgb440           [0m
+color.tag.none
+[38;5;35mcolor.tagged             [0m [38;5;35mrgb031           [0m
+[38;5;255mcolor.uda.priority.H     [0m [38;5;255mcolor255         [0m
+[38;5;245mcolor.uda.priority.L     [0m [38;5;245mcolor245         [0m
+[38;5;250mcolor.uda.priority.M     [0m [38;5;250mcolor250         [0m
+[38;5;2mcolor.undo.after         [0m [38;5;2mcolor2           [0m
+[38;5;1mcolor.undo.before        [0m [38;5;1mcolor1           [0m
+color.until
+[1;31mcolor.warning            [0m [1;31mbold red         [0m
+

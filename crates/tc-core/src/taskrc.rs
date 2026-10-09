@@ -166,6 +166,11 @@ impl Config {
         self.settings.get("json.array").is_none_or(|v| truthy(v))
     }
 
+    /// `color`: whether tasks are coloured by the rules (on unless the taskrc turns it off).
+    pub fn color(&self) -> bool {
+        self.settings.get("color").is_none_or(|v| truthy(v))
+    }
+
     /// `hooks`: the master switch for hooks (Taskwarrior's default is on).
     pub fn hooks(&self) -> bool {
         self.settings.get("hooks").is_none_or(|v| truthy(v))
@@ -361,6 +366,7 @@ pub const SETTING_DEFAULTS: &[(&str, &str)] = &[
     ("tag.indicator", "+"),
     ("dependency.indicator", "D"),
     ("hooks", "1"),
+    ("color", "1"),
     ("json.array", "1"),
     ("confirmation", "1"),
     ("bulk", "3"),
@@ -394,6 +400,7 @@ const SCALAR_SETTINGS: &[&str] = &[
     "recurrence.indicator",
     "recurrence.confirmation",
     "hooks",
+    "color",
     "json.array",
     "confirmation",
     "bulk",
@@ -475,6 +482,10 @@ fn atoi(v: &str) -> i64 {
     } else {
         n
     }
+}
+
+pub fn truthy_setting(v: &str) -> bool {
+    truthy(v)
 }
 
 fn truthy(v: &str) -> bool {
@@ -559,6 +570,76 @@ const REPORT_ATTRS: &[&str] = &[
     "context",
     "dateformat",
 ];
+
+/// The colour settings and their Taskwarrior 3.5.0 defaults, as `task show color` prints them on a fresh
+/// install (`tests/data/color_defaults_real.json` is that capture, and a test compares them). An empty value
+/// means no colour: a rule that is off until the taskrc sets it.
+pub const COLOR_DEFAULTS: &[(&str, &str)] = &[
+    ("color.active", "rgb555 on rgb410"),
+    ("color.alternate", "on gray2"),
+    ("color.blocked", "white on color8"),
+    ("color.blocking", "black on color15"),
+    ("color.burndown.done", "on rgb010"),
+    ("color.burndown.pending", "on color9"),
+    ("color.burndown.started", "on color11"),
+    ("color.calendar.due", "color0 on color1"),
+    ("color.calendar.due.today", "color15 on color1"),
+    ("color.calendar.holiday", "color0 on color11"),
+    ("color.calendar.overdue", "color0 on color9"),
+    ("color.calendar.scheduled", "rgb013 on color15"),
+    ("color.calendar.today", "color15 on rgb013"),
+    ("color.calendar.weekend", "on color235"),
+    ("color.calendar.weeknumber", "rgb013"),
+    ("color.completed", ""),
+    ("color.debug", "color4"),
+    ("color.deleted", ""),
+    ("color.due", "color1"),
+    ("color.due.today", "rgb400"),
+    ("color.error", "white on red"),
+    ("color.footnote", "color3"),
+    ("color.header", "color3"),
+    ("color.history.add", "color0 on rgb500"),
+    ("color.history.delete", "color0 on rgb550"),
+    ("color.history.done", "color0 on rgb050"),
+    ("color.label", ""),
+    ("color.label.sort", ""),
+    ("color.overdue", "color9"),
+    ("color.project.none", ""),
+    ("color.recurring", "rgb013"),
+    ("color.scheduled", "on rgb001"),
+    ("color.summary.background", "white on color0"),
+    ("color.summary.bar", "black on rgb141"),
+    ("color.sync.added", "rgb010"),
+    ("color.sync.changed", "color11"),
+    ("color.sync.rejected", "color9"),
+    ("color.tag.next", "rgb440"),
+    ("color.tag.none", ""),
+    ("color.tagged", "rgb031"),
+    ("color.uda.priority.H", "color255"),
+    ("color.uda.priority.L", "color245"),
+    ("color.uda.priority.M", "color250"),
+    ("color.undo.after", "color2"),
+    ("color.undo.before", "color1"),
+    ("color.until", ""),
+    ("color.warning", "bold red"),
+    ("rule.color.merge", "1"),
+    ("rule.precedence.color", "deleted,completed,active,keyword.,tag.,project.,overdue,scheduled,due.today,due,blocked,blocking,recurring,tagged,uda."),
+];
+
+/// The app's own default colours: `web/public/themes/meghnaad.theme`, the same file the theme picker offers,
+/// read as `name=value` lines. These apply where the taskrc says nothing; Taskwarrior's own defaults are
+/// [`COLOR_DEFAULTS`] and the `taskwarrior` theme.
+pub fn app_colors() -> &'static [(&'static str, &'static str)] {
+    static COLORS: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
+    COLORS.get_or_init(|| {
+        include_str!("../../../web/public/themes/meghnaad.theme")
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .filter_map(|l| l.split_once('='))
+            .collect()
+    })
+}
 
 /// Taskwarrior's default `report.timesheet.filter`.
 pub const TIMESHEET_FILTER: &str =
@@ -851,6 +932,18 @@ pub fn parse(text: &str) -> Parsed {
                         .push(format!("{name}: '{value}' is not a date or duration, ignored"));
                 }
             }
+            // The order the colour rules apply in, and whether they blend.
+            ["rule", "precedence", "color"] | ["rule", "color", "merge"] => {
+                p.config.settings.insert(name.to_owned(), unescape(value));
+            }
+            // A colour rule or a chart colour: the value is a colour specification, which is checked here.
+            // An empty one is allowed; it switches the default rule off.
+            ["color", rest @ ..] if !rest.is_empty() => match crate::color::parse_style(&unescape(value)) {
+                Ok(_) => {
+                    p.config.settings.insert(name.to_owned(), unescape(value));
+                }
+                Err(why) => p.warnings.push(format!("{name}: {why}")),
+            },
             // `alias.<name>=<words>`: the name is everything after `alias.` (it may hold dots, as
             // `burndown.weekly` does). An empty value is allowed: it makes the word vanish.
             ["alias", rest @ ..] if !rest.is_empty() && !rest.join(".").contains(char::is_whitespace) => {

@@ -51,6 +51,7 @@ pub enum Kind {
     Contexts,
     Show,
     Timesheet,
+    Colors,
     HistoryDaily,
     HistoryWeekly,
     HistoryMonthly,
@@ -104,6 +105,7 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("contexts", Contexts, false),
     ("show", Show, false),
     ("timesheet", Timesheet, false),
+    ("colors", Colors, false),
     ("history.daily", HistoryDaily, false),
     ("history.weekly", HistoryWeekly, false),
     ("history.monthly", HistoryMonthly, false),
@@ -328,6 +330,10 @@ pub enum CliResult {
     Burndown(Box<crate::burndown::BurndownOut>),
     Text {
         lines: Vec<String>,
+    },
+    /// Coloured text: runs of text, each with its colour (`colors`, the history graph).
+    Styled {
+        lines: Vec<Vec<crate::color::Span>>,
     },
     /// A file for the browser to offer as a download (`export`).
     File {
@@ -1693,6 +1699,29 @@ async fn builtin<S: Storage>(
             }
         }
         Export => export(replica, cfg, ctx, all, p).await,
+        Colors => {
+            let words: Vec<&String> = p.filter.iter().filter(|w| !w.starts_with("rc.")).collect();
+            if !cfg.color() {
+                return ok(CliResult::Text {
+                    lines: vec![crate::color::OFF.to_owned()],
+                });
+            }
+            if words.iter().any(|w| !w.is_empty() && "legend".starts_with(w.as_str())) {
+                return ok(CliResult::Styled {
+                    lines: crate::color::legend(&crate::color::effective(cfg)),
+                });
+            }
+            if words.is_empty() {
+                return ok(CliResult::Styled {
+                    lines: crate::color::palette(),
+                });
+            }
+            let words: Vec<String> = words.into_iter().cloned().collect();
+            match crate::color::sample(&words) {
+                Ok(lines) => ok(CliResult::Styled { lines }),
+                Err(m) => error(m),
+            }
+        }
         Timesheet => {
             // With no filter of its own, the last four weeks (or `report.timesheet.filter`); and the active
             // context only if `report.timesheet.context` says so.
@@ -1723,7 +1752,23 @@ async fn builtin<S: Storage>(
                 Err(e) => return e.into(),
             };
             let result = if matches!(kind, GHistoryDaily | GHistoryWeekly | GHistoryMonthly | GHistoryAnnual) {
-                crate::activity::history_graph(&sel, period, &ctx.clock, 80).map(|lines| CliResult::Text { lines })
+                if cfg.color() {
+                    let all = crate::color::effective(cfg);
+                    let style = |k: &str| {
+                        all.get(k)
+                            .and_then(|v| crate::color::parse_style(v).ok())
+                            .unwrap_or_default()
+                    };
+                    let colours = [
+                        style("color.history.add"),
+                        style("color.history.done"),
+                        style("color.history.delete"),
+                    ];
+                    crate::activity::history_graph_coloured(&sel, period, &ctx.clock, 80, colours)
+                        .map(|lines| CliResult::Styled { lines })
+                } else {
+                    crate::activity::history_graph(&sel, period, &ctx.clock, 80).map(|lines| CliResult::Text { lines })
+                }
             } else {
                 crate::activity::history_table(&sel, period, &ctx.clock).map(CliResult::Table)
             };

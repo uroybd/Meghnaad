@@ -51,6 +51,9 @@ pub fn defaults() -> BTreeMap<String, String> {
         put("filter", r.filter.clone().unwrap_or_default());
         put("context", "1".into());
     }
+    for (k, v) in crate::taskrc::app_colors() {
+        d.insert((*k).to_owned(), (*v).to_owned());
+    }
     // `timesheet` is a command with report settings of its own.
     d.insert("report.timesheet.context".into(), "0".into());
     d.insert("report.timesheet.filter".into(), crate::taskrc::TIMESHEET_FILTER.into());
@@ -298,8 +301,13 @@ mod tests {
     #[test]
     fn show_has_no_way_to_reveal_a_sensitive_setting() {
         for word in ["sync", "secret", "token", "password", "credential"] {
-            let r = show(&Config::default(), &w(word));
-            assert!(matches!(r, CliResult::Text { .. }), "{word}: {r:?}");
+            // Nothing sensitive is listed. (Harmless names that happen to contain the word, such as the
+            // `color.sync.*` colours, are.)
+            match show(&Config::default(), &w(word)) {
+                CliResult::Text { .. } => {}
+                CliResult::Table(t) => assert!(t.rows.iter().all(|r| !is_sensitive(&r[0])), "{word}: {:?}", t.rows),
+                other => panic!("{word}: {other:?}"),
+            }
         }
     }
 

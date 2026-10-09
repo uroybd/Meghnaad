@@ -4,6 +4,7 @@
 
 use crate::calendar::week_number;
 use crate::cli::TableOut;
+use crate::color::{Span, Style};
 use crate::dates::Clock;
 use crate::model::Facts;
 use std::collections::BTreeMap;
@@ -171,9 +172,18 @@ pub fn history_table(tasks: &[&Facts], period: Period, clock: &Clock) -> Option<
     })
 }
 
-/// `ghistory.*`: the same as a graph, one row of `+` (added), `X` (completed) and `-` (deleted) per period.
-/// Taskwarrior fits it to the terminal; here `width` stands in for that (its default is 80).
-pub fn history_graph(tasks: &[&Facts], period: Period, clock: &Clock, width: usize) -> Option<Vec<String>> {
+/// What both drawings of the graph share: the date cells, their widths, and how long each bar is.
+struct Graph {
+    heads: Vec<&'static str>,
+    dates: Vec<Vec<String>>,
+    widths: Vec<usize>,
+    /// Per row: the counts, and the width of each of its three bars.
+    rows: Vec<(Counts, [usize; 3])>,
+    /// The width left of the added bars, so the completed and deleted ones line up to its right.
+    left: usize,
+}
+
+fn graph(tasks: &[&Facts], period: Period, clock: &Clock, width: usize) -> Option<Graph> {
     let g = groups(tasks, period, clock);
     let bar_width = width.saturating_sub(period.label_width());
     let max_added = g.values().map(|c| c.added).max().unwrap_or(0) as usize;
@@ -183,27 +193,18 @@ pub fn history_graph(tasks: &[&Facts], period: Period, clock: &Clock, width: usi
         return None;
     }
     let left = bar_width * max_added / max_line;
-
-    let mut dates: Vec<Vec<String>> = Vec::new();
-    let mut bars: Vec<String> = Vec::new();
+    let mut dates = Vec::new();
+    let mut rows = Vec::new();
     let mut last = 0;
     for (&ts, c) in &g {
         dates.push(date_cells(period, clock, ts, last));
         last = ts;
         let scale = |n: i64| bar_width * n as usize / max_line;
-        let (a, x, d) = (scale(c.added), scale(c.completed), scale(c.deleted));
-        bars.push(format!(
-            "{}{}{}{}",
-            " ".repeat(left.saturating_sub(a)),
-            "+".repeat(a),
-            "X".repeat(x),
-            "-".repeat(d)
-        ));
+        rows.push((*c, [scale(c.added), scale(c.completed), scale(c.deleted)]));
     }
-
     // Column widths: the widest cell, at least the heading's.
     let heads = period.date_headers();
-    let widths: Vec<usize> = heads
+    let widths = heads
         .iter()
         .enumerate()
         .map(|(i, h)| {
@@ -215,26 +216,95 @@ pub fn history_graph(tasks: &[&Facts], period: Period, clock: &Clock, width: usi
                 .max(h.len())
         })
         .collect();
-    let line = |cells: &[String], bar: &str| {
+    Some(Graph {
+        heads,
+        dates,
+        widths,
+        rows,
+        left,
+    })
+}
+
+impl Graph {
+    /// The date cells of a row, each padded to its column, with a space after.
+    fn label(&self, cells: &[String]) -> String {
         let mut out = String::new();
         for (i, c) in cells.iter().enumerate() {
             // The day is a number, so it sits on the right; the year and month on the left.
             if i == 2 {
-                out.push_str(&format!("{c:>w$} ", w = widths[i]));
+                out.push_str(&format!("{c:>w$} ", w = self.widths[i]));
             } else {
-                out.push_str(&format!("{c:<w$} ", w = widths[i]));
+                out.push_str(&format!("{c:<w$} ", w = self.widths[i]));
             }
         }
-        out.push_str(bar);
-        out.trim_end().to_string()
-    };
-    let head_cells: Vec<String> = heads.iter().map(|h| (*h).to_string()).collect();
-    let mut lines = vec![line(&head_cells, "Number Added/Completed/Deleted")];
-    for (cells, bar) in dates.iter().zip(&bars) {
-        lines.push(line(cells, bar));
+        out
+    }
+
+    fn head_label(&self) -> String {
+        self.label(&self.heads.iter().map(|h| (*h).to_string()).collect::<Vec<_>>())
+    }
+}
+
+/// `ghistory.*`: the same as a graph, one row of `+` (added), `X` (completed) and `-` (deleted) per period.
+/// Taskwarrior fits it to the terminal; here `width` stands in for that (its default is 80).
+pub fn history_graph(tasks: &[&Facts], period: Period, clock: &Clock, width: usize) -> Option<Vec<String>> {
+    let g = graph(tasks, period, clock, width)?;
+    let mut lines = vec![format!("{}Number Added/Completed/Deleted", g.head_label())
+        .trim_end()
+        .to_string()];
+    for (cells, (_, [a, x, d])) in g.dates.iter().zip(&g.rows) {
+        let bar = format!(
+            "{}{}{}{}",
+            " ".repeat(g.left.saturating_sub(*a)),
+            "+".repeat(*a),
+            "X".repeat(*x),
+            "-".repeat(*d)
+        );
+        lines.push(format!("{}{bar}", g.label(cells)).trim_end().to_string());
     }
     lines.push(String::new());
     lines.push("Legend: + Added, X Completed, - Deleted".into());
+    Some(lines)
+}
+
+/// The graph as Taskwarrior draws it with colour on: no `+X-`, but each bar a coloured run with its count
+/// at the right end (`color.history.add`, `.done`, `.delete`).
+pub fn history_graph_coloured(
+    tasks: &[&Facts],
+    period: Period,
+    clock: &Clock,
+    width: usize,
+    colours: [Style; 3],
+) -> Option<Vec<Vec<Span>>> {
+    let g = graph(tasks, period, clock, width)?;
+    let mut lines = vec![vec![Span::plain(
+        format!("{}Number Added/Completed/Deleted", g.head_label())
+            .trim_end()
+            .to_string(),
+    )]];
+    for (cells, (c, bars)) in g.dates.iter().zip(&g.rows) {
+        // A count right-aligned in its bar, or nothing when there are none.
+        let seg = |n: i64, w: usize| if n > 0 { format!("{:>w$}", n) } else { String::new() };
+        let a = seg(c.added, bars[0]);
+        let mut line = vec![
+            Span::plain(g.label(cells)),
+            Span::plain(" ".repeat(g.left.saturating_sub(a.chars().count()))),
+            Span::with(a, colours[0]),
+            Span::with(seg(c.completed, bars[1]), colours[1]),
+            Span::with(seg(c.deleted, bars[2]), colours[2]),
+        ];
+        line.retain(|s| !s.text.is_empty());
+        lines.push(line);
+    }
+    lines.push(vec![]);
+    lines.push(vec![
+        Span::plain("Legend: "),
+        Span::with("Added", colours[0]),
+        Span::plain(", "),
+        Span::with("Completed", colours[1]),
+        Span::plain(", "),
+        Span::with("Deleted", colours[2]),
+    ]);
     Some(lines)
 }
 
@@ -492,5 +562,42 @@ mod tests {
         let every: Vec<&Facts> = all.iter().collect();
         let t = timesheet(&every, &ids, &clock());
         assert_eq!(t.footer, ["13 completed, 2 started."]);
+    }
+
+    #[test]
+    fn coloured_history_graphs_read_like_the_real_ones() {
+        let (all, _) = tasks();
+        let want: Value = serde_json::from_str(include_str!("../tests/data/activity_graph_colour_real.json")).unwrap();
+        let add = crate::color::parse_style("color0 on rgb500").unwrap();
+        let done = crate::color::parse_style("color0 on rgb050").unwrap();
+        let delete = crate::color::parse_style("color0 on rgb550").unwrap();
+        for (name, period) in PERIODS {
+            for project in ["", "Work", "Home"] {
+                let key = if project.is_empty() {
+                    format!("ghistory.{name}")
+                } else {
+                    format!("ghistory.{name} {project}")
+                };
+                let lines = history_graph_coloured(&pick(&all, project), period, &clock(), 80, [add, done, delete])
+                    .expect("some tasks");
+                let seen: Vec<String> = lines
+                    .iter()
+                    .map(|l| {
+                        l.iter()
+                            .map(|s| s.text.as_str())
+                            .collect::<String>()
+                            .trim_end()
+                            .to_string()
+                    })
+                    .collect();
+                assert_eq!(serde_json::to_value(seen).unwrap(), want[&key], "{key}");
+                // The bars carry the three colours, in the order added, completed, deleted.
+                let used: Vec<Style> = lines.iter().flatten().filter_map(|s| s.style).collect();
+                assert!(
+                    used.contains(&add) && used.contains(&done) && used.contains(&delete),
+                    "{key}"
+                );
+            }
+        }
     }
 }

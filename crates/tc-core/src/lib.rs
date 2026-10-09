@@ -4,6 +4,7 @@ pub mod calc;
 pub mod calendar;
 pub mod cli;
 pub mod cloud;
+pub mod color;
 pub mod crypto;
 pub mod dates;
 pub mod error;

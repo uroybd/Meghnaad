@@ -3118,11 +3118,16 @@ mod show_and_config {
         // And `show` has nothing of the kind to show.
         for word in ["sync", "secret", "token", "password"] {
             let d = done(&mut r, &quiet, &format!("show {word}"), false).await;
-            assert!(
-                matches!(d.result, CliResult::Text { .. }),
-                "show {word}: {:?}",
-                d.result
-            );
+            // Nothing sensitive is listed; harmless names containing the word (`color.sync.added`) may be.
+            match &d.result {
+                CliResult::Text { .. } => {}
+                CliResult::Table(t) => assert!(
+                    t.rows.iter().all(|r| !tc_core::taskrc::is_sensitive(&r[0])),
+                    "show {word}: {:?}",
+                    t.rows
+                ),
+                other => panic!("show {word}: {other:?}"),
+            }
         }
     }
 
@@ -3527,8 +3532,27 @@ mod activity_reports {
             assert_eq!(t.rows.last().unwrap()[n - 5], "Average", "{cmd}");
             assert!(t.right.contains(&(n - 1)), "numbers on the right");
         }
-        // A filter narrows it, and the graph says what the marks mean.
+        // With colour on the graph is coloured bars with their counts, and a legend in the same colours.
         let (res, _) = run(&mut r, &cfg, "description:One ghistory.monthly").await;
+        let CliResult::Styled { lines } = res else {
+            panic!("{res:?}")
+        };
+        assert!(
+            lines[1].iter().any(|s| s.style.is_some() && s.text.trim() == "1"),
+            "{lines:?}"
+        );
+        assert_eq!(
+            lines
+                .last()
+                .unwrap()
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<String>(),
+            "Legend: Added, Completed, Deleted"
+        );
+        // With colour off it is made of `+`, `X` and `-`, and the legend says what they mean.
+        let off = parse("color=off\n").config;
+        let (res, _) = run(&mut r, &off, "description:One ghistory.monthly").await;
         let CliResult::Text { lines } = res else {
             panic!("{res:?}")
         };
@@ -3736,5 +3760,158 @@ mod report_defaults {
         let (order, breaks) = shown(run(&mut r, &cfg, "n").await.0);
         assert_eq!(order, "gbcadef");
         assert_eq!(breaks, [false, true, false, true, false, true, false]);
+    }
+
+    // ---- colour
+
+    fn rows(res: CliResult) -> Vec<tc_core::run::Row> {
+        let CliResult::Report(o) = res else { panic!("{res:?}") };
+        o.rows
+    }
+
+    fn style_of(rows: &[tc_core::run::Row], description: &str) -> Option<tc_core::color::Resolved> {
+        rows.iter()
+            .find(|r| r.facts.description == description)
+            .unwrap()
+            .style
+            .map(|s| s.resolved())
+    }
+
+    #[tokio::test]
+    async fn rows_come_back_coloured_by_the_apps_default_theme() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add plain").await;
+        run(&mut r, &cfg, "add working").await;
+        run(&mut r, &cfg, "description:working start").await;
+        run(&mut r, &cfg, "add late due:2020-01-01").await;
+        run(&mut r, &cfg, "add hidden due:2020-01-01 +nocolor").await;
+        let list = rows(run(&mut r, &cfg, "all").await.0);
+        assert_eq!(style_of(&list, "plain"), None, "no rule applies");
+        // active: bold on sage (basic green background)
+        let a = style_of(&list, "working").expect("active is coloured");
+        assert!(a.bold && a.fg.is_none() && a.bg == Some(2), "{a:?}");
+        // overdue: bold coral (red)
+        let o = style_of(&list, "late").expect("overdue is coloured");
+        assert!(o.bold && o.fg == Some(1), "{o:?}");
+        // `nocolor` beats everything
+        assert_eq!(style_of(&list, "hidden"), None);
+    }
+
+    #[tokio::test]
+    async fn the_taskrc_overrides_the_theme_and_color_off_turns_it_all_off() {
+        let mut r = replica();
+        let cfg = parse("color.active=bold red\ncolor.overdue=\n").config;
+        run(&mut r, &cfg, "add working").await;
+        run(&mut r, &cfg, "description:working start").await;
+        run(&mut r, &cfg, "add late due:2020-01-01").await;
+        let list = rows(run(&mut r, &cfg, "all").await.0);
+        assert_eq!(
+            style_of(&list, "working").unwrap().fg,
+            Some(1),
+            "a rule the taskrc changed"
+        );
+        assert_eq!(
+            style_of(&list, "late"),
+            None,
+            "an empty value switches a default rule off"
+        );
+        let off = parse("color=off\n").config;
+        let list = rows(run(&mut r, &off, "all").await.0);
+        assert!(list.iter().all(|r| r.style.is_none()));
+        // `rc.color:off` is the same for one command.
+        let list = rows(run(&mut r, &Config::default(), "rc.color:off all").await.0);
+        assert!(list.iter().all(|r| r.style.is_none()));
+    }
+
+    #[tokio::test]
+    async fn every_other_row_of_a_report_is_shaded_by_color_alternate() {
+        let mut r = replica();
+        let cfg = parse("color.alternate=on gray2\ncolor.tag.x=bold red\n").config;
+        for t in ["a", "b", "c +x", "d", "e +x"] {
+            run(&mut r, &cfg, &format!("add {t}")).await;
+        }
+        let list = rows(run(&mut r, &cfg, "oldest").await.0);
+        let bgs: Vec<Option<u8>> = list.iter().map(|r| r.style.and_then(|s| s.resolved().bg)).collect();
+        // Rows 2 and 4 (index 1 and 3) are shaded; the rule on row 5 adds to nothing (it is not odd).
+        assert_eq!(bgs, [None, Some(234), None, Some(234), None], "{bgs:?}");
+        // A rule on a shaded row is laid over the shading.
+        let c = list
+            .iter()
+            .find(|r| r.facts.description == "c")
+            .unwrap()
+            .style
+            .unwrap()
+            .resolved();
+        assert!(c.bold && c.fg == Some(1) && c.bg.is_none(), "{c:?}");
+        let shaded_and_ruled = rows(run(&mut r, &cfg, "newest").await.0);
+        let e = shaded_and_ruled
+            .iter()
+            .find(|r| r.facts.description == "e")
+            .unwrap()
+            .style
+            .unwrap()
+            .resolved();
+        assert!(e.bold && e.fg == Some(1), "{e:?}");
+    }
+
+    #[tokio::test]
+    async fn a_bad_colour_is_refused_with_taskwarriors_words() {
+        let p = parse("color.active=bold purple\ncolor.overdue=red\n");
+        assert_eq!(p.warnings, ["color.active: The color 'purple' is not recognized."]);
+        assert!(!p.config.settings.contains_key("color.active"));
+        assert!(p.config.settings.contains_key("color.overdue"));
+    }
+
+    #[tokio::test]
+    async fn show_lists_the_colour_settings_and_marks_the_ones_you_changed() {
+        let mut r = replica();
+        let cfg = parse("color.active=bold red\n").config;
+        let (res, _) = run(&mut r, &cfg, "show color.act").await;
+        let CliResult::Table(t) = res else { panic!("{res:?}") };
+        assert_eq!(t.rows[0], ["color.active", "bold red"]);
+        assert!(t.highlight.contains(&0));
+        assert_eq!(t.rows[1], ["  Default value", "bold on sage"]);
+    }
+
+    #[tokio::test]
+    async fn the_colors_command_shows_the_palette_a_sample_and_the_legend() {
+        let mut r = replica();
+        let cfg = parse("color.active=bold red\n").config;
+        let text = |res: CliResult| {
+            let CliResult::Styled { lines } = res else {
+                panic!("{res:?}")
+            };
+            lines
+                .iter()
+                .map(|l| l.iter().map(|s| s.text.as_str()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let palette = text(run(&mut r, &cfg, "colors").await.0);
+        assert!(palette.contains("Basic colors") && palette.contains("Gray ramp gray0 - gray23"));
+        // `color` is enough, as `task color` is in Taskwarrior.
+        assert_eq!(text(run(&mut r, &cfg, "color").await.0), palette);
+        let sample = text(run(&mut r, &cfg, "colors coral on bright sky").await.0);
+        assert!(
+            sample.contains("Your sample:\n\n  task color coral on bright sky"),
+            "{sample}"
+        );
+        assert_eq!(
+            message(&run(&mut r, &cfg, "colors purple").await.0),
+            "ERROR: The color 'purple' is not recognized."
+        );
+        let legend = text(run(&mut r, &cfg, "colors legend").await.0);
+        assert!(
+            legend.contains("color.active") && legend.contains("bold red"),
+            "{legend}"
+        );
+        // The names are Taskwarrior's, the colours the ones in force (the theme's, with the taskrc's on top).
+        assert!(
+            legend.contains("color.overdue") && legend.contains("bold coral"),
+            "{legend}"
+        );
+        let off = parse("color=off\n").config;
+        assert!(message(&run(&mut r, &off, "colors").await.0).starts_with("Color is currently turned off"));
     }
 }

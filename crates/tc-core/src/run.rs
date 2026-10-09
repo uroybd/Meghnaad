@@ -40,6 +40,9 @@ pub struct Row {
     /// What changed and when, for `info` under `journal.info` (empty everywhere else).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<crate::history::Entry>,
+    /// How the colour rules (`color.*`) colour this task; absent when none apply or colour is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<crate::color::Style>,
 }
 
 impl Row {
@@ -60,6 +63,7 @@ impl Row {
                 .unwrap_or_default(),
             pending_deps: f.depends.iter().filter(|d| ctx.ids.contains_key(d)).count() as u32,
             history: vec![],
+            style: ctx.style(f),
         }
     }
 }
@@ -510,6 +514,15 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
         rows.truncate(n);
     }
 
+    // Every other row is shaded (`color.alternate`), with the rules laid over it.
+    if let Some(rules) = ctx.rules() {
+        for (i, row) in rows.iter_mut().enumerate() {
+            if i % 2 == 1 {
+                row.style = rules.style_over(rules.alternate(), &row.facts, cfg, &req.clock);
+            }
+        }
+    }
+
     let mut breaks = vec![false; rows.len()];
     if let SortSpec::Keys(keys) = &sort {
         let brk: Vec<&SortKey> = keys.iter().filter(|k| k.break_after).collect();
@@ -576,6 +589,7 @@ mod tests {
                 sessions: vec![],
                 pending_deps: 0,
                 history: vec![],
+                style: None,
             })
             .collect();
         sort_rows(&mut rows, &parse_sort(spec).unwrap(), cfg, &ids, 1);

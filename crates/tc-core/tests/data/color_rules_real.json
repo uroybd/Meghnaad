@@ -1,0 +1,478 @@
+{
+ "now": 1791568919,
+ "tz_offset": 21600,
+ "tasks": [
+  {
+   "uuid": "00000001-0000-4000-8000-000000000001",
+   "description": "plain",
+   "status": "pending",
+   "entry": 1791136919
+  },
+  {
+   "uuid": "00000002-0000-4000-8000-000000000002",
+   "description": "active task",
+   "status": "pending",
+   "entry": 1791136919,
+   "start": 1791565319
+  },
+  {
+   "uuid": "00000003-0000-4000-8000-000000000003",
+   "description": "overdue task",
+   "status": "pending",
+   "entry": 1791136919,
+   "due": 1791309719
+  },
+  {
+   "uuid": "00000004-0000-4000-8000-000000000004",
+   "description": "due soon",
+   "status": "pending",
+   "entry": 1791136919,
+   "due": 1791741719
+  },
+  {
+   "uuid": "00000005-0000-4000-8000-000000000005",
+   "description": "due today",
+   "status": "pending",
+   "entry": 1791136919,
+   "due": 1791569219
+  },
+  {
+   "uuid": "00000006-0000-4000-8000-000000000006",
+   "description": "tagged foo",
+   "status": "pending",
+   "entry": 1791136919,
+   "tags": [
+    "foo"
+   ]
+  },
+  {
+   "uuid": "00000007-0000-4000-8000-000000000007",
+   "description": "tag next",
+   "status": "pending",
+   "entry": 1791136919,
+   "tags": [
+    "next"
+   ]
+  },
+  {
+   "uuid": "00000008-0000-4000-8000-000000000008",
+   "description": "in home",
+   "status": "pending",
+   "entry": 1791136919,
+   "project": "Home"
+  },
+  {
+   "uuid": "00000009-0000-4000-8000-000000000009",
+   "description": "in kitchen",
+   "status": "pending",
+   "entry": 1791136919,
+   "project": "Home.Kitchen"
+  },
+  {
+   "uuid": "0000000a-0000-4000-8000-00000000000a",
+   "description": "blocked one",
+   "status": "pending",
+   "entry": 1791136919,
+   "depends": [
+    "0000000b-0000-4000-8000-00000000000b"
+   ]
+  },
+  {
+   "uuid": "0000000b-0000-4000-8000-00000000000b",
+   "description": "blocking one",
+   "status": "pending",
+   "entry": 1791136919
+  },
+  {
+   "uuid": "0000000c-0000-4000-8000-00000000000c",
+   "description": "buy milk",
+   "status": "pending",
+   "entry": 1791136919
+  },
+  {
+   "uuid": "0000000d-0000-4000-8000-00000000000d",
+   "description": "has note",
+   "status": "pending",
+   "entry": 1791136919,
+   "annotations": [
+    {
+     "entry": 1791568819,
+     "text": "call the dentist"
+    }
+   ]
+  },
+  {
+   "uuid": "0000000e-0000-4000-8000-00000000000e",
+   "description": "high",
+   "status": "pending",
+   "entry": 1791136919,
+   "priority": "H"
+  },
+  {
+   "uuid": "0000000f-0000-4000-8000-00000000000f",
+   "description": "medium",
+   "status": "pending",
+   "entry": 1791136919,
+   "priority": "M"
+  },
+  {
+   "uuid": "00000010-0000-4000-8000-000000000010",
+   "description": "low",
+   "status": "pending",
+   "entry": 1791136919,
+   "priority": "L"
+  },
+  {
+   "uuid": "00000011-0000-4000-8000-000000000011",
+   "description": "scheduled task",
+   "status": "pending",
+   "entry": 1791136919,
+   "scheduled": 1791482519
+  },
+  {
+   "uuid": "00000012-0000-4000-8000-000000000012",
+   "description": "until task",
+   "status": "pending",
+   "entry": 1791136919,
+   "until": 1792432919
+  },
+  {
+   "uuid": "00000013-0000-4000-8000-000000000013",
+   "description": "recurring child",
+   "status": "pending",
+   "entry": 1791136919,
+   "due": 1793296919,
+   "recur": "weekly",
+   "parent": "00000063-0000-4000-8000-000000000063",
+   "imask": 0
+  },
+  {
+   "uuid": "00000014-0000-4000-8000-000000000014",
+   "description": "finished",
+   "status": "completed",
+   "entry": 1791136919,
+   "end": 1791482519
+  },
+  {
+   "uuid": "00000015-0000-4000-8000-000000000015",
+   "description": "removed",
+   "status": "deleted",
+   "entry": 1791136919,
+   "end": 1791482519
+  },
+  {
+   "uuid": "00000016-0000-4000-8000-000000000016",
+   "description": "no colour please",
+   "status": "pending",
+   "entry": 1791136919,
+   "due": 1791309719,
+   "tags": [
+    "nocolor"
+   ]
+  },
+  {
+   "uuid": "00000017-0000-4000-8000-000000000017",
+   "description": "busy one",
+   "status": "pending",
+   "entry": 1791136919,
+   "start": 1791568859,
+   "due": 1791482519,
+   "project": "Work",
+   "priority": "H",
+   "tags": [
+    "foo",
+    "bar"
+   ]
+  },
+  {
+   "uuid": "00000018-0000-4000-8000-000000000018",
+   "description": "Milk shouting",
+   "status": "pending",
+   "entry": 1791136919
+  },
+  {
+   "uuid": "00000019-0000-4000-8000-000000000019",
+   "description": "tmpl",
+   "status": "recurring",
+   "entry": 1791136919,
+   "due": 1791655319,
+   "recur": "weekly",
+   "mask": "-",
+   "rtype": "periodic"
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "defaults",
+   "rc": [],
+   "expected": {
+    "Milk shouting": "",
+    "active task": "\\e[38;5;231;48;5;166m",
+    "blocked one": "\\e[38;5;7;48;5;8m",
+    "blocking one": "\\e[38;5;0;48;5;15m",
+    "busy one": "\\e[38;5;231;48;5;166m",
+    "buy milk": "",
+    "due soon": "\\e[38;5;1m",
+    "due today": "\\e[38;5;160m",
+    "finished": "",
+    "has note": "",
+    "high": "\\e[38;5;255m",
+    "in home": "",
+    "in kitchen": "",
+    "low": "\\e[38;5;245m",
+    "medium": "\\e[38;5;250m",
+    "no colour please": "",
+    "overdue task": "\\e[38;5;9m",
+    "plain": "",
+    "recurring child": "\\e[38;5;25m",
+    "removed": "",
+    "scheduled task": "\\e[48;5;17m",
+    "tag next": "\\e[38;5;184m",
+    "tagged foo": "\\e[38;5;35m",
+    "tmpl": "\\e[38;5;1m",
+    "until task": ""
+   }
+  },
+  {
+   "name": "custom rules",
+   "rc": [
+    "color.active=bold red",
+    "color.overdue=on red",
+    "color.due=underline yellow",
+    "color.due.today=rgb505",
+    "color.blocked=gray5",
+    "color.blocking=bold cyan",
+    "color.tagged=green",
+    "color.tag.foo=on yellow",
+    "color.tag.next=rgb440 on gray3",
+    "color.project.Home=blue",
+    "color.project.none=white on color8",
+    "color.keyword.milk=underline magenta",
+    "color.keyword.dentist=bold",
+    "color.uda.priority.H=bold magenta",
+    "color.uda.priority.none=on gray1",
+    "color.recurring=underline gray9",
+    "color.scheduled=on rgb001",
+    "color.until=rgb014",
+    "color.completed=gray8",
+    "color.deleted=bold gray4"
+   ],
+   "expected": {
+    "Milk shouting": "\\e[38;5;7;48;5;8m",
+    "active task": "\\e[1;38;5;1;48;5;8m",
+    "blocked one": "\\e[38;5;7;48;5;8m",
+    "blocking one": "\\e[1;38;5;7;48;5;8m",
+    "busy one": "\\e[1;31;43m",
+    "buy milk": "\\e[4;38;5;5;48;5;8m",
+    "due soon": "\\e[4;38;5;7;48;5;8m",
+    "due today": "\\e[4;38;5;7;48;5;8m",
+    "finished": "\\e[38;5;240;48;5;8m",
+    "has note": "\\e[1;38;5;7;48;5;8m",
+    "high": "\\e[1;38;5;7;48;5;8m",
+    "in home": "\\e[38;5;4;48;5;233m",
+    "in kitchen": "\\e[38;5;4;48;5;233m",
+    "low": "\\e[38;5;7;48;5;8m",
+    "medium": "\\e[38;5;7;48;5;8m",
+    "no colour please": "",
+    "overdue task": "\\e[38;5;7;48;5;8m",
+    "plain": "\\e[38;5;7;48;5;8m",
+    "recurring child": "\\e[4;38;5;7;48;5;8m",
+    "removed": "\\e[1;38;5;236;48;5;8m",
+    "scheduled task": "\\e[38;5;7;48;5;8m",
+    "tag next": "\\e[38;5;184;48;5;235m",
+    "tagged foo": "\\e[38;5;7;48;5;3m",
+    "tmpl": "\\e[4;38;5;7;48;5;8m",
+    "until task": "\\e[38;5;7;48;5;8m"
+   }
+  },
+  {
+   "name": "merge off",
+   "rc": [
+    "rule.color.merge=off",
+    "color.active=bold red",
+    "color.overdue=on red",
+    "color.tag.foo=on yellow",
+    "color.project.Home=blue",
+    "color.uda.priority.H=bold magenta",
+    "color.tagged=green"
+   ],
+   "expected": {
+    "Milk shouting": "",
+    "active task": "\\e[1;31m",
+    "blocked one": "\\e[38;5;7;48;5;8m",
+    "blocking one": "\\e[38;5;0;48;5;15m",
+    "busy one": "\\e[1;31m",
+    "buy milk": "",
+    "due soon": "\\e[38;5;1m",
+    "due today": "\\e[38;5;160m",
+    "finished": "",
+    "has note": "",
+    "high": "\\e[1;35m",
+    "in home": "\\e[34m",
+    "in kitchen": "\\e[34m",
+    "low": "\\e[38;5;245m",
+    "medium": "\\e[38;5;250m",
+    "no colour please": "",
+    "overdue task": "\\e[41m",
+    "plain": "",
+    "recurring child": "\\e[38;5;25m",
+    "removed": "",
+    "scheduled task": "\\e[48;5;17m",
+    "tag next": "\\e[38;5;184m",
+    "tagged foo": "\\e[43m",
+    "tmpl": "\\e[38;5;1m",
+    "until task": ""
+   }
+  },
+  {
+   "name": "precedence reversed",
+   "rc": [
+    "rule.precedence.color=uda.,tagged,recurring,blocking,blocked,due,due.today,scheduled,overdue,project.,tag.,keyword.,active,completed,deleted",
+    "color.active=bold red",
+    "color.overdue=on red",
+    "color.tag.foo=on yellow",
+    "color.project.Home=blue",
+    "color.uda.priority.H=bold magenta",
+    "color.tagged=green",
+    "color.due=underline yellow"
+   ],
+   "expected": {
+    "Milk shouting": "",
+    "active task": "\\e[1;31m",
+    "blocked one": "\\e[38;5;7;48;5;8m",
+    "blocking one": "\\e[38;5;0;48;5;15m",
+    "busy one": "\\e[1;35;41m",
+    "buy milk": "",
+    "due soon": "\\e[4;33m",
+    "due today": "\\e[4;38;5;3m",
+    "finished": "",
+    "has note": "",
+    "high": "\\e[1;35m",
+    "in home": "\\e[34m",
+    "in kitchen": "\\e[34m",
+    "low": "\\e[38;5;245m",
+    "medium": "\\e[38;5;250m",
+    "no colour please": "",
+    "overdue task": "\\e[41m",
+    "plain": "",
+    "recurring child": "\\e[38;5;25m",
+    "removed": "",
+    "scheduled task": "\\e[48;5;17m",
+    "tag next": "\\e[38;5;2m",
+    "tagged foo": "\\e[32;43m",
+    "tmpl": "\\e[4;38;5;25m",
+    "until task": ""
+   }
+  },
+  {
+   "name": "short precedence",
+   "rc": [
+    "rule.precedence.color=tag.,project.",
+    "color.active=bold red",
+    "color.overdue=on red",
+    "color.tag.foo=on yellow",
+    "color.project.Home=blue",
+    "color.tagged=green",
+    "color.tag.next=rgb440"
+   ],
+   "expected": {
+    "Milk shouting": "",
+    "active task": "",
+    "blocked one": "",
+    "blocking one": "",
+    "busy one": "\\e[43m",
+    "buy milk": "",
+    "due soon": "",
+    "due today": "",
+    "finished": "",
+    "has note": "",
+    "high": "",
+    "in home": "\\e[34m",
+    "in kitchen": "\\e[34m",
+    "low": "",
+    "medium": "",
+    "no colour please": "",
+    "overdue task": "",
+    "plain": "",
+    "recurring child": "",
+    "removed": "",
+    "scheduled task": "",
+    "tag next": "\\e[38;5;184m",
+    "tagged foo": "\\e[43m",
+    "tmpl": "",
+    "until task": ""
+   }
+  },
+  {
+   "name": "abbreviated precedence",
+   "rc": [
+    "rule.precedence.color=ove,act,tag.f,keyword",
+    "color.active=bold red",
+    "color.overdue=on red",
+    "color.tag.foo=on yellow",
+    "color.keyword.milk=underline magenta"
+   ],
+   "expected": {
+    "Milk shouting": "",
+    "active task": "\\e[1;31m",
+    "blocked one": "",
+    "blocking one": "",
+    "busy one": "\\e[1;31;41m",
+    "buy milk": "\\e[4;35m",
+    "due soon": "",
+    "due today": "",
+    "finished": "",
+    "has note": "",
+    "high": "",
+    "in home": "",
+    "in kitchen": "",
+    "low": "",
+    "medium": "",
+    "no colour please": "",
+    "overdue task": "\\e[41m",
+    "plain": "",
+    "recurring child": "",
+    "removed": "",
+    "scheduled task": "",
+    "tag next": "",
+    "tagged foo": "\\e[43m",
+    "tmpl": "",
+    "until task": ""
+   }
+  },
+  {
+   "name": "case",
+   "rc": [
+    "color.keyword.MILK=bold green",
+    "color.project.home=red"
+   ],
+   "expected": {
+    "Milk shouting": "",
+    "active task": "\\e[38;5;231;48;5;166m",
+    "blocked one": "\\e[38;5;7;48;5;8m",
+    "blocking one": "\\e[38;5;0;48;5;15m",
+    "busy one": "\\e[38;5;231;48;5;166m",
+    "buy milk": "",
+    "due soon": "\\e[38;5;1m",
+    "due today": "\\e[38;5;160m",
+    "finished": "",
+    "has note": "",
+    "high": "\\e[38;5;255m",
+    "in home": "",
+    "in kitchen": "",
+    "low": "\\e[38;5;245m",
+    "medium": "\\e[38;5;250m",
+    "no colour please": "",
+    "overdue task": "\\e[38;5;9m",
+    "plain": "",
+    "recurring child": "\\e[38;5;25m",
+    "removed": "",
+    "scheduled task": "\\e[48;5;17m",
+    "tag next": "\\e[38;5;184m",
+    "tagged foo": "\\e[38;5;35m",
+    "tmpl": "\\e[38;5;1m",
+    "until task": ""
+   }
+  }
+ ]
+}

@@ -278,6 +278,10 @@ async fn get_config(ctx: RouteContext<()>) -> RouteResult {
         // Taskwarrior's built-in coefficients, so the UI can show what a setting falls back to.
         "urgency_defaults": tc_core::urgency::defaults(),
         "urgency_inherit": cfg.urgency_inherit(),
+        // Whether tasks are coloured, and every colour in force (`calendar.today`, `history.add`, ...) as
+        // palette indexes, for the charts and the like the page draws itself.
+        "color": cfg.color(),
+        "colors": tc_core::color::palette_for_page(&cfg),
         // Set when the saved settings exist but couldn't be read (they are left untouched).
         "config_error": session::config_error(),
     }))

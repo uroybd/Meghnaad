@@ -44,6 +44,8 @@ pub struct EvalCtx<'a> {
     coef: BTreeMap<String, f64>,
     /// Urgency of blocking tasks under `urgency.inherit`; empty when that is off.
     inherited: BTreeMap<Uuid, f64>,
+    /// The colour rules in force; `None` when `color` is off.
+    rules: Option<crate::color::Rules>,
 }
 
 impl<'a> EvalCtx<'a> {
@@ -54,7 +56,18 @@ impl<'a> EvalCtx<'a> {
             ids,
             coef: coefficients(cfg),
             inherited: BTreeMap::new(),
+            rules: crate::color::Rules::from_config(cfg),
         }
+    }
+
+    /// The colour the rules give a task, or none.
+    pub fn style(&self, f: &Facts) -> Option<crate::color::Style> {
+        self.rules.as_ref()?.style_for(f, self.cfg, &self.clock)
+    }
+
+    /// The colour rules, when colour is on.
+    pub fn rules(&self) -> Option<&crate::color::Rules> {
+        self.rules.as_ref()
     }
 
     /// Apply `urgency.inherit` (when the taskrc turns it on) using every task, since a task's
