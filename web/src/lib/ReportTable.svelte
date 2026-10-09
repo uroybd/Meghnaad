@@ -1,12 +1,13 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
   import { cell, rowClass } from './format';
-  import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Square, Trash2 } from './icons';
+  import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import ProjectPath from './ProjectPath.svelte';
   import TagChip from './TagChip.svelte';
   import UuidTip from './UuidTip.svelte';
   import { describeRecur } from './recurrence';
-  import { baseColumn, parseSort, SORTABLE, sortState } from './sortSpec';
+  import { groupHeads } from './groups';
+  import { baseColumn, groupColumn, parseSort, SORTABLE, sortState } from './sortSpec';
   import { store, type Entry } from './store.svelte';
   import type { ReportResult, Row } from './types';
 
@@ -15,6 +16,7 @@
     entry = null,
     onedit,
     onsort,
+    ongroup,
     ontag,
     activeTags = [],
   }: {
@@ -23,6 +25,8 @@
     onedit?: (row: Row) => void;
     /** Provided for the focused report only: header clicks sort it through the command line. */
     onsort?: (column: string, shift: boolean) => void;
+    /** Provided for the focused report only: choose the column the table is grouped by (null: none). */
+    ongroup?: (column: string | null) => void;
     /** Provided for the focused report only: a tag chip toggles that tag in the report's filter. Without it a chip opens the tag's entry on the Tags page. */
     ontag?: (tag: string) => void;
     /** The tags the focused report's filter already requires, shown as pressed chips. */
@@ -47,6 +51,9 @@
     },
   });
   const keys = $derived(parseSort(result.sort));
+  // A header above each group, when the sort has a `/`: what its tasks have in common.
+  const heads = $derived(groupHeads(result, ctx));
+  const grouped = $derived(groupColumn(keys));
   let pendingDelete = $state<string | null>(null);
 
   const sortable = (name: string) => !!onsort && (SORTABLE.has(baseColumn(name)) || baseColumn(name) in udas);
@@ -115,6 +122,13 @@
       >
         {#if primary?.desc}<ArrowDown size={16} />{:else}<ArrowUp size={16} />{/if}
       </button>
+      {#if ongroup}
+        <label class="dim" for="rt-group">Group</label>
+        <select id="rt-group" value={grouped ?? ''} onchange={(e) => ongroup(e.currentTarget.value || null)}>
+          <option value="">none</option>
+          {#each sortColumns as c (c.spec)}<option value={baseColumn(c.name)}>{c.label}</option>{/each}
+        </select>
+      {/if}
     </div>
   {/if}
   <div class="wrap">
@@ -138,6 +152,16 @@
                     </span>
                   {/if}
                 </button>
+                {#if ongroup}
+                  <button
+                    class="grp ghost"
+                    class:on={st?.group}
+                    aria-pressed={!!st?.group}
+                    title={st?.group ? `Stop grouping by ${col.label}` : `Group by ${col.label}`}
+                    aria-label={st?.group ? `Stop grouping by ${col.label}` : `Group by ${col.label}`}
+                    onclick={() => ongroup(baseColumn(col.name))}><Rows3 size={12} /></button
+                  >
+                {/if}
               {:else}
                 {col.label}
                 {#if st}
@@ -146,6 +170,9 @@
                   </span>
                 {/if}
               {/if}
+              {#if st?.group && !ongroup}
+                <span class="grpmark" title="The table is grouped by {col.label}"><Rows3 size={12} /></span>
+              {/if}
             </th>
           {/each}
           <th class="actions"><span class="sr-only">Actions</span></th>
@@ -153,9 +180,12 @@
       </thead>
       <tbody>
         {#each result.rows as row, i (row.uuid)}
+          {#if heads[i]}
+            <tr class="grouphead"><th colspan={result.columns.length + 1} scope="colgroup">{heads[i]}</th></tr>
+          {/if}
           <tr
             class={rowClass(row)}
-            class:gap={result.breaks[i]}
+            class:gap={result.breaks[i] && heads.length === 0}
             class:selected={store.detail?.uuid === row.uuid}
             tabindex="0"
             aria-label="Open details: {row.description}"
@@ -285,6 +315,43 @@
     color: var(--accent);
     font-weight: 700;
   }
+  /* The button that groups the table by this column, and the mark on the column that it is grouped by. */
+  th .grp {
+    padding: 0 3px;
+    line-height: 0;
+    color: var(--dim);
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  th:hover .grp,
+  th .grp:focus-visible,
+  th .grp.on {
+    opacity: 1;
+  }
+  th .grp.on,
+  .grpmark {
+    color: var(--accent);
+  }
+  .grpmark {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+  /* The header above a group of rows. */
+  tr.grouphead,
+  tr.grouphead:hover {
+    cursor: default;
+    background: transparent;
+  }
+  tr.grouphead th {
+    padding: 14px 0 4px;
+    border-bottom: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+    white-space: normal;
+  }
   .arrow {
     display: inline-flex;
     align-items: center;
@@ -332,12 +399,15 @@
   tr.gap td {
     border-top: 14px solid transparent;
   }
+  /* Finished tasks are shown by colour, not struck through: green for completed, red for deleted. */
   tr.done td {
     color: var(--dim);
-    text-decoration: line-through;
   }
-  tr.done td.actions {
-    text-decoration: none;
+  tr.completed td {
+    background: color-mix(in srgb, var(--ok) 9%, transparent);
+  }
+  tr.deleted td {
+    background: color-mix(in srgb, var(--err) 9%, transparent);
   }
   tr.waiting td,
   tr.blocked td {
@@ -406,6 +476,9 @@
     flex: 1;
     min-width: 0;
   }
+  .sortbar .dir + label {
+    margin-left: 6px;
+  }
 
   /* Phones: each task is a card. The first line is the description; the other columns follow as
      small "label value" pairs, and the buttons get their own row. */
@@ -440,6 +513,17 @@
     }
     tr.gap {
       margin-top: 18px;
+    }
+    tr.grouphead {
+      display: block;
+      margin: 14px 0 6px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+    tr.grouphead th {
+      display: block;
+      padding: 0 2px 4px;
     }
     tr.gap td {
       border-top: 0;
@@ -495,6 +579,18 @@
     tr.done td.description,
     tr.done td {
       color: var(--dim);
+    }
+    /* A card is one box: tint the box, not each piece of it. */
+    tr.completed,
+    tr.deleted {
+      background: color-mix(in srgb, var(--ok) 9%, var(--panel));
+    }
+    tr.deleted {
+      background: color-mix(in srgb, var(--err) 9%, var(--panel));
+    }
+    tr.completed td,
+    tr.deleted td {
+      background: transparent;
     }
     td.actions {
       order: 99;

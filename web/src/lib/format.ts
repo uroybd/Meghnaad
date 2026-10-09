@@ -204,7 +204,7 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
 /** CSS classes for a whole row. */
 export function rowClass(row: Row): string {
   const c: string[] = [];
-  if (row.status === 'completed' || row.status === 'deleted') c.push('done');
+  if (row.status === 'completed' || row.status === 'deleted') c.push('done', row.status);
   if (row.virtual_tags.includes('WAITING')) c.push('waiting');
   if (row.blocked) c.push('blocked');
   if (row.start != null && row.status === 'pending') c.push('active');

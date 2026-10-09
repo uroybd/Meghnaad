@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { clickSort, parseSort, serializeSort, sortOverride, sortState, withSortOverride } from './sortSpec';
+import {
+  clearGroups,
+  clickSort,
+  groupColumn,
+  parseSort,
+  serializeSort,
+  sortOverride,
+  sortState,
+  toggleGroup,
+  withSortOverride,
+} from './sortSpec';
 
 const k = (column: string, desc = false, brk = false) => ({ column, desc, brk });
 
@@ -79,9 +89,44 @@ describe('the sort token in a filter string', () => {
 describe('sortState', () => {
   it('reports direction and rank for a header', () => {
     const keys = parseSort('due+,project-');
-    expect(sortState(keys, 'due.relative')).toEqual({ desc: false, rank: 1 });
-    expect(sortState(keys, 'project')).toEqual({ desc: true, rank: 2 });
+    expect(sortState(keys, 'due.relative')).toEqual({ desc: false, rank: 1, group: false });
+    expect(sortState(keys, 'project')).toEqual({ desc: true, rank: 2, group: false });
     expect(sortState(keys, 'tags')).toBeNull();
-    expect(sortState(parseSort('due+'), 'due')).toEqual({ desc: false, rank: null });
+    expect(sortState(parseSort('due+'), 'due')).toEqual({ desc: false, rank: null, group: false });
+  });
+  it('says which column groups the table', () => {
+    expect(sortState(parseSort('project+/,due+'), 'project')?.group).toBe(true);
+    expect(sortState(parseSort('project+/,due+'), 'due')?.group).toBe(false);
+  });
+});
+
+describe('grouping', () => {
+  it('turns grouping on and off for a column the sort already uses, keeping its place and direction', () => {
+    const own = parseSort('urgency-,project-,due+');
+    expect(serializeSort(toggleGroup(parseSort('urgency-,project-'), 'project', own))).toBe('urgency-,project-/');
+    expect(serializeSort(toggleGroup(parseSort('urgency-,project-/'), 'project', own))).toBe('urgency-,project-');
+    expect(serializeSort(toggleGroup(parseSort('due.relative+'), 'due', own))).toBe('due+/');
+  });
+  it('takes a column back out of the sort when ending a grouping that added it, unless the report sorts by it', () => {
+    const defaults = parseSort('urgency-');
+    const grouped = toggleGroup(defaults, 'project', defaults);
+    expect(serializeSort(grouped)).toBe('project+/,urgency-');
+    expect(serializeSort(toggleGroup(grouped, 'project', defaults))).toBe('urgency-');
+    // `project` is in the report's own sort here, so it stays and only loses the slash.
+    const own2 = parseSort('project+/,description+');
+    expect(serializeSort(toggleGroup(own2, 'project', own2))).toBe('project+,description+');
+  });
+  it('groups by a column the sort does not use by sorting by it first', () => {
+    expect(serializeSort(toggleGroup(parseSort('urgency-'), 'project'))).toBe('project+/,urgency-');
+    expect(serializeSort(toggleGroup([], 'outcome'))).toBe('outcome+/');
+    // Never more keys than a header click allows.
+    expect(parseSort('a+,b+,c+,d+')).toHaveLength(4);
+    expect(toggleGroup(parseSort('a+,b+,c+,d+'), 'e')).toHaveLength(4);
+  });
+  it('clears every grouping and finds the first grouping column', () => {
+    const keys = parseSort('project+/,outcome+/,due+');
+    expect(groupColumn(keys)).toBe('project');
+    expect(serializeSort(clearGroups(keys))).toBe('project+,outcome+,due+');
+    expect(groupColumn(clearGroups(keys))).toBeNull();
   });
 });

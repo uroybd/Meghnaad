@@ -190,7 +190,8 @@ describe('cell', () => {
 
 describe('rowClass', () => {
   it('flags state', () => {
-    expect(rowClass(row({ status: 'completed' }))).toBe('done');
+    expect(rowClass(row({ status: 'completed' }))).toBe('done completed');
+    expect(rowClass(row({ status: 'deleted' }))).toBe('done deleted');
     expect(rowClass(row({ start: NOW, blocked: true }))).toBe('blocked active');
     expect(rowClass(row())).toBe('');
   });

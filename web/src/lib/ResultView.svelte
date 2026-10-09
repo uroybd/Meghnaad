@@ -13,12 +13,14 @@
     entry,
     onedit,
     onsort,
+    ongroup,
     ontag,
     activeTags,
   }: {
     entry: Entry;
     onedit?: (row: Row, from: Entry) => void;
     onsort?: (column: string, shift: boolean) => void;
+    ongroup?: (column: string | null) => void;
     ontag?: (tag: string) => void;
     activeTags?: string[];
   } = $props();
@@ -30,7 +32,15 @@
 {:else if !r}
   <p class="dim">Running…</p>
 {:else if r.kind === 'report'}
-  <ReportTable result={r} {entry} onedit={onedit && ((row) => onedit(row, entry))} {onsort} {ontag} {activeTags} />
+  <ReportTable
+    result={r}
+    {entry}
+    onedit={onedit && ((row) => onedit(row, entry))}
+    {onsort}
+    {ongroup}
+    {ontag}
+    {activeTags}
+  />
 {:else if r.kind === 'info'}
   {#each r.tasks as t (t.uuid)}<TaskInfo task={t} onedit={onedit && ((row) => onedit(row, entry))} />{/each}
 {:else if r.kind === 'summary'}

@@ -14,7 +14,13 @@
   const late = $derived(pending && row.due != null && row.due < store.now);
 </script>
 
-<li class="task" class:finished={!pending} style="--depth: {depth}">
+<li
+  class="task"
+  class:finished={!pending}
+  class:completed={row.status === 'completed'}
+  class:deleted={row.status === 'deleted'}
+  style="--depth: {depth}"
+>
   {#if pending}
     <button
       class="ghost tick"
@@ -46,9 +52,15 @@
     width: 28px;
     flex: none;
   }
+  /* Finished tasks are shown by colour, not struck through: green for completed, red for deleted. */
   .finished .text {
     color: var(--dim);
-    text-decoration: line-through;
+  }
+  .task.completed {
+    background: color-mix(in srgb, var(--ok) 9%, transparent);
+  }
+  .task.deleted {
+    background: color-mix(in srgb, var(--err) 9%, transparent);
   }
   .tick {
     line-height: 0;

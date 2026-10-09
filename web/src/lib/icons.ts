@@ -28,6 +28,7 @@ export { default as Pencil } from '@lucide/svelte/icons/pencil';
 export { default as Play } from '@lucide/svelte/icons/play';
 export { default as Plus } from '@lucide/svelte/icons/plus';
 export { default as Repeat } from '@lucide/svelte/icons/repeat';
+export { default as Rows3 } from '@lucide/svelte/icons/rows-3';
 export { default as RotateCcw } from '@lucide/svelte/icons/rotate-ccw';
 export { default as SlidersHorizontal } from '@lucide/svelte/icons/sliders-horizontal';
 export { default as Square } from '@lucide/svelte/icons/square';

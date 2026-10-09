@@ -113,9 +113,39 @@ export function withSortOverride(
   return words.map(shellQuote).join(' ');
 }
 
-/** For a header: its place in the active sort, or null. */
-export function sortState(keys: SortKey[], column: string): { desc: boolean; rank: number | null } | null {
+/** For a header: its place in the active sort (and whether it groups the table), or null. */
+export function sortState(
+  keys: SortKey[],
+  column: string,
+): { desc: boolean; rank: number | null; group: boolean } | null {
   const i = keys.findIndex((k) => k.column === baseColumn(column));
   if (i < 0) return null;
-  return { desc: keys[i].desc, rank: keys.length > 1 ? i + 1 : null };
+  return { desc: keys[i].desc, rank: keys.length > 1 ? i + 1 : null, group: keys[i].brk };
+}
+
+/**
+ * Group the table by `column`, or stop grouping by it: its sort key gains or loses the trailing `/`. A column
+ * the sort does not use yet becomes the first key, ascending, since a group is only whole when the grouping
+ * column is what the table is sorted by first.
+ */
+export function toggleGroup(current: SortKey[], column: string, defaults: SortKey[] = []): SortKey[] {
+  const base = baseColumn(column);
+  const key = current.find((k) => k.column === base);
+  if (key) {
+    // Ending a grouping that put the column into the sort takes it out again; one the report's own sort has
+    // keeps its place and loses only the `/`.
+    if (key.brk && !defaults.some((d) => d.column === base)) return current.filter((k) => k !== key);
+    return current.map((k) => (k === key ? { ...k, brk: !k.brk } : k));
+  }
+  return [{ column: base, desc: false, brk: true }, ...current].slice(0, MAX_KEYS);
+}
+
+/** The same sort with no grouping at all. */
+export function clearGroups(current: SortKey[]): SortKey[] {
+  return current.map((k) => ({ ...k, brk: false }));
+}
+
+/** The column the table is grouped by first, if any. */
+export function groupColumn(keys: SortKey[]): string | null {
+  return keys.find((k) => k.brk)?.column ?? null;
 }

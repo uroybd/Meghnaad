@@ -28,7 +28,7 @@ The header also has the running **timer**, the **bell** (reminders), **urgency**
 (settings). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
 
 **Projects and Tags start as your pending tasks** (a `status:pending` chip in their filter box). That is a filter like any
-other: take the chip away and finished tasks come in too, shown struck through, so a project or tag stays listed after
+other: take the chip away and finished tasks come in too, tinted green (completed) or red (deleted), so a project or tag stays listed after
 its last task is done. Any other filter works as well (`project:Home`, `due.before:eow`, `+work`).
 
 **Tag chips are buttons.** In the table on the Tasks page, clicking a tag chip toggles `+tag` in that report's filter (a
@@ -138,7 +138,14 @@ command would actually change are listed. A single task is a plain yes/no. The d
   Filters show as removable chips. A report's own filter and default sort are shown above the table.
 - **Sorting.** Click a column header (again to reverse, a third time to reset, Shift-click to add a tie-breaker). It is
   applied as `rc.report.<name>.sort:…`, so it matches what you would type.
-- **Reading the table.** IDs are bold, and hovering one shows the task's uuid with a Copy button. Project names are
+- **Grouping.** A `/` on a sort key (`project+/`) puts a gap in the table wherever that column's value changes, as in
+  Taskwarrior; here each group also gets a header saying what it has in common (`Project: Home`, or `Project: Home ·
+  Outcome: fail` when two columns break the table). The column the table is grouped by shows a small group icon in its
+  header. To choose it, hover a column's header and click its **Group** button (again to stop), or on a phone use the
+  **Group** picker beside **Sort**. It is the same command underneath: grouping by `project` adds
+  `rc.report.next.sort:project+/,urgency-` to the filter, and stopping removes it again. Works with UDAs, and
+  `minimal` is grouped by project to begin with.
+- **Reading the table.** Finished tasks are tinted instead of struck through: green for completed, red for deleted. IDs are bold, and hovering one shows the task's uuid with a Copy button. Project names are
   split at the dots, each part in its own colour. Tags are pills. Urgency is coloured by level (under 5, to 10, to 15,
   from 15). The `start.active`, `tags.indicator` and `depends.indicator` columns follow `active.indicator`,
   `tag.indicator` and `dependency.indicator`.
