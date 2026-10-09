@@ -30,17 +30,19 @@ jobs:
     # you can require an approval before a deploy runs. GitHub creates it on first use.
     environment: production
     env:
-      # Your deployment choices, as repository or environment *variables* (not secrets). All optional
-      # except what `npm run setup` would have asked for; see docs/deploy.md for each one.
-      R2_BUCKET: ${{ vars.R2_BUCKET }}
-      CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
-      TEAM_DOMAIN: ${{ vars.TEAM_DOMAIN }}
-      POLICY_AUD: ${{ vars.POLICY_AUD }}
-      WORKER_NAME: ${{ vars.WORKER_NAME }}
       # Whether the optional secret below exists (a step's own `if` can't look at a secret).
       HAS_ENCRYPTION_SECRET: ${{ secrets.TC_ENCRYPTION_SECRET != '' }}
     steps:
       - uses: actions/checkout@v4
+
+      # Your deployment choices are one repository (or environment) *variable*, DEPLOY_VARS, holding what
+      # `.deploy.vars` would: one KEY=value per line (R2_BUCKET, CUSTOM_DOMAIN, TEAM_DOMAIN, POLICY_AUD,
+      # WORKER_NAME, all optional; # comments are fine). It is written out as that file, which the deploy script
+      # already reads and validates. Passed through the environment, never pasted into the script.
+      - name: Write the deploy settings
+        env:
+          DEPLOY_VARS: ${{ vars.DEPLOY_VARS }}
+        run: printf '%s\n' "$DEPLOY_VARS" > .deploy.vars
 
       - uses: actions/setup-node@v4
         with:

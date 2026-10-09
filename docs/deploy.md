@@ -106,10 +106,27 @@ updating is one click. In your fork:
 | Secret | `CLOUDFLARE_API_TOKEN` | the token from step 1 |
 | Secret | `CLOUDFLARE_ACCOUNT_ID` | your account id |
 | Secret, *optional* | `TC_ENCRYPTION_SECRET` | the same value as `sync.encryption_secret`. If it is not set here, the Worker keeps the secret it already has from route A or C. Set it only if you want the workflow to be the one source of truth |
-| Variable | `R2_BUCKET`, `CUSTOM_DOMAIN`, `TEAM_DOMAIN`, `POLICY_AUD`, `WORKER_NAME` | the same choices as in `.deploy.vars` (see below), each optional. **Use the same values you deployed with**: leaving `TEAM_DOMAIN` and `POLICY_AUD` out of a later deploy removes nothing (`keep_vars`), but a different `R2_BUCKET` or `WORKER_NAME` points at a different bucket or Worker |
+| Variable | `DEPLOY_VARS` | your deployment choices, **the contents of your `.deploy.vars`**, one `KEY=value` per line (see below). Optional: without it the defaults apply |
 
-Choices are variables, not secrets, because none of them is one (a team domain and an AUD tag are in every request's
-token). The encryption secret and the API token are, and are only handed to the steps that need them.
+`DEPLOY_VARS` is a multi-line variable. Paste what `.deploy.vars` holds, for example:
+
+```
+# Same choices as `npm run setup` saved on your machine.
+R2_BUCKET=taskwarrior-sync
+CUSTOM_DOMAIN=tasks.example.com
+TEAM_DOMAIN=https://myteam.cloudflareaccess.com
+POLICY_AUD=<the 64-character Application Audience tag>
+WORKER_NAME=taskwarrior-web
+```
+
+All five are optional, `#` comments and blank lines are fine, and each value is checked the way `npm run deploy` checks it
+(a typo fails the run before anything is built; a dry run shows it quickly). The workflow writes the variable out as
+`.deploy.vars`, so it works exactly like a deploy from your machine. **Use the same values you deployed with**: leaving
+`TEAM_DOMAIN` and `POLICY_AUD` out of a later deploy removes nothing (`keep_vars`), but a different `R2_BUCKET` or
+`WORKER_NAME` points at a different bucket or Worker.
+
+It is a variable, not a secret, because none of it is one (a team domain and an AUD tag are in every request's token).
+The encryption secret and the API token are, and are only handed to the steps that need them.
 
 The workflow has two options when you run it. **Run the tests** (on by default) runs `npm test` and `npm run check`
 first, and a failure stops the deploy. **Dry run** only prints the Worker config the settings would produce, which is the
