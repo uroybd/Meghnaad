@@ -3,9 +3,9 @@
 Which of Taskwarrior's `taskrc` options Meghnaad handles, and which it doesn't.
 
 The list of options comes from the `taskrc(5)` man page of Taskwarrior **3.5.0**; the status of each one comes from
-reading this repository's code. The README explains [how the taskrc is imported](../README.md#your-taskrc). In short:
-you paste or choose your `~/.taskrc`, only an allowlist of settings is kept, and the result is saved in your bucket
-(`web/config.json`), not in your desktop file.
+reading this repository's code. [Using Meghnaad](using.md#your-taskrc) explains how the taskrc is imported. In short: you paste or choose your
+`~/.taskrc`, only an allowlist of settings is kept, and the result is saved in your bucket (`web/config.json`), not in
+your desktop file.
 
 **Scope.** This tracks Taskwarrior **3.5.0 and newer**, and only that. Settings that were removed or deprecated before
 3.5.0 are left out of this list and are not supported, even if an older taskrc still contains them.
@@ -28,8 +28,12 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- | --- | --- | --- |
 | Files, hooks and environment | 2 | 0 | 2 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
-| Miscellaneous | 11 | 3 | 6 | 5 | 0 |
-| Dates and calendar | 15 | 0 | 0 | 1 | 0 |
+| Commands, aliases and matching | 4 | 1 | 0 | 0 | 0 |
+| Confirmations and safety | 3 | 0 | 0 | 0 | 0 |
+| Recurrence | 4 | 0 | 0 | 0 | 0 |
+| Lists, indicators and charts | 6 | 0 | 0 | 0 | 0 |
+| Output and debugging | 0 | 1 | 0 | 5 | 0 |
+| Dates and calendar | 16 | 0 | 0 | 1 | 0 |
 | Journal | 4 | 0 | 0 | 0 | 0 |
 | Dependencies | 1 | 0 | 0 | 1 | 0 |
 | Colour | 0 | 0 | 0 | 1 | 0 |
@@ -39,7 +43,7 @@ Each row below counts once, even where a row covers several related options.
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **74** | **3** | **8** | **15** | **1** |
+| **Total** | **81** | **2** | **2** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -63,29 +67,56 @@ Each row below counts once, even where a row covers several related options.
 | `detection`, `defaultwidth`, `defaultheight`, `avoidlastcolumn`, `hyphenate`, `reserved.lines` | N/A | Terminal size and wrapping. The browser lays tables out itself |
 | `editor` | N/A | Tasks are edited in the app's editor form |
 
-## Miscellaneous
+## Commands, aliases and matching
+
+How a typed command line is read.
 
 | Option | Status | Remark |
 | --- | --- | --- |
 | `search.case.sensitive` | Done | |
-| `uda.<name>.indicator` | Done | Shown by the `indicator` column format |
-| `recurrence` | Done | On by default, as in Taskwarrior; `recurrence=off` (or `0`, `no`) turns it off. Before each command the app creates the instances that are due, retires finished series and expires tasks past `until`, the way `task` does. Taskwarrior itself advises one primary client with `recurrence=1` and `recurrence=0` on all the others when syncing several, because of a duplication bug. Instances are numbered by their index in the template's mask, which is what keeps a second replica from finding anything missing, but if you see duplicates, turn it off on one side. See [Recurring tasks](../README.md#recurring-tasks) |
-| `recurrence.confirmation` | Done | Unset or `prompt` asks (the question appears in the app), a true-ish value is yes, anything else no |
-| `recurrence.indicator` | Done | |
-| `recurrence.limit` | Done | |
-| `abbreviation.minimum` | Partial | Attribute abbreviations (`desc`, `proj`) work, with the minimum fixed at 2 characters |
+| `abbreviation.minimum` | Done | The shortest abbreviation understood, default 2: for commands and report names (`ver` for `version` at 3), attribute and UDA names (`proj:`, `desc:`) and the words `calendar` takes (`due`, month names). Shorter than that, a word is not an abbreviation but just a word, as in Taskwarrior (checked against `task` 3.5.0 at 1 to 4). Modifiers (`.has`, `.before`) are never abbreviated. Differences: an abbreviation that fits two commands is reported as ambiguous here, where Taskwarrior treats it as plain text; the names of days and months in dates stay at three letters, which Taskwarrior does not tie to this setting |
+| `regex` | Partial | On by default, as in Taskwarrior. With it on, plain words, `/pattern/`, `.has`, `.hasnt`, `.startswith`, `.endswith`, `.word`, `.noword` and the `/from/to/` substitution in `modify` are regular expressions, and for the description the annotations are searched too. The syntax is ECMAScript, read byte by byte, as Taskwarrior's C++ `std::regex` does: `.` is one byte, and `\w`, `\d`, `\s`, `\b` and case folding are ASCII only. **Not supported: lookahead (`(?=…)`, `(?!…)`) and backreferences (`\1`)**, which ECMAScript has; a pattern that uses them is refused with a message that says so. So is syntax ECMAScript doesn't have (`(?i)`, lookbehind, named groups). Also different: `.` matches `\r` here and not there; a substitution edits the description only, not annotations; and a replacement that would cut a character in half is skipped. `regex=off` matches plain text, with a leading `^` or trailing `$` as an anchor |
+| `expressions` | Done | `expressions=postfix` makes `calc` read `1 2 +` instead of `1 + 2`; anything else is infix. `calc` is a port of Taskwarrior's evaluator (same grammar, shunting-yard, operator table and per-type rules, so `7 / 2` is 3, `1y` is 365 days and `2 ^ -1` can't be evaluated) over integers, reals, booleans, strings, dates and durations, with Taskwarrior's messages. References into Taskwarrior's DOM work too: `1.due`, `<uuid>.project` (a uuid may be cut short to eight characters or more), `1.due.year` and the other parts of a date, `1.tags.x`, `1.annotations.1.description`, `rc.<setting>` (the default when the taskrc is silent), `tw.version`, `system.version` and the rest; attribute names must be exact (`1.desc` is just a word, as in Taskwarrior). `~` and `!~` are refused with Taskwarrior's own message, since `calc` has no task to match against. Filters are always infix, as in Taskwarrior, where the setting only concerns `calc` |
+| `alias.<name>` | Done | A typed word that is an alias stands for the words it is set to (`alias.rm=delete`), up to ten rounds so one alias can use another and a loop ends. Taskwarrior's own `rm` (delete), `burndown` (burndown.weekly), `history` and `ghistory` are there without a taskrc, and the taskrc can change or empty them. Only typed lines expand: arguments from the buttons are taken as they are, and so is everything after `--`. `history.*` and `ghistory.*` commands don't exist here |
+
+## Confirmations and safety
+
+The questions Taskwarrior asks before it changes things. Taskwarrior asks yes / no / all / quit about each task in turn; here the same questions arrive together as a table with a tick per task.
+
+| Option | Status | Remark |
+| --- | --- | --- |
 | `confirmation` | Done | On by default. `delete` asks ("Delete task 1 'x'?"), and so does `undo` when there is something to undo. Off: no question for those, though `bulk`, an empty filter and a recurring series still ask. Taskwarrior asks about each task in turn (yes / no / all / quit); here the same questions arrive together as a table with a tick per task (ticking all is "all", ticking none is "quit"), and only tasks the command would actually change are listed. The delete buttons in the app take the second click ("sure?") as the answer, or delete at once when the setting is off. Commands the app doesn't have (`purge`, `duplicate`, `edit`) have no question to ask |
 | `bulk` | Done | Default 3: a change to that many tasks or more asks first, for any command that changes tasks, with `confirmation` on or off. `0` never asks because of the count. Text that isn't a number counts as 0, as in Taskwarrior |
 | `allow.empty.filter` | Done | On by default. A command that changes tasks, given no filter, asks first ("This command has no filter, and will modify all (including completed and deleted) tasks"), and after a yes the `bulk` question still follows, as in Taskwarrior. Off: refused with Taskwarrior's message. With `confirmation` off and this on it is still refused ("Command prevented from running."), as in Taskwarrior. An active context counts as a filter |
-| `regex` | Partial | On by default, as in Taskwarrior. With it on, plain words, `/pattern/`, `.has`, `.hasnt`, `.startswith`, `.endswith`, `.word`, `.noword` and the `/from/to/` substitution in `modify` are regular expressions, and for the description the annotations are searched too. The syntax is ECMAScript, read byte by byte, as Taskwarrior's C++ `std::regex` does: `.` is one byte, and `\w`, `\d`, `\s`, `\b` and case folding are ASCII only. **Not supported: lookahead (`(?=…)`, `(?!…)`) and backreferences (`\1`)**, which ECMAScript has; a pattern that uses them is refused with a message that says so. So is syntax ECMAScript doesn't have (`(?i)`, lookbehind, named groups). Also different: `.` matches `\r` here and not there; a substitution edits the description only, not annotations; and a replacement that would cut a character in half is skipped. `regex=off` matches plain text, with a leading `^` or trailing `$` as an anchor |
-| `expressions` | Not done | Infix filters only |
-| `alias.<name>` | Not done | Aliases are not expanded |
-| `list.all.projects` | Not done | `projects` counts pending tasks only |
+
+## Recurrence
+
+See [Recurring tasks](using.md#recurring-tasks) for how it behaves.
+
+| Option | Status | Remark |
+| --- | --- | --- |
+| `recurrence` | Done | On by default, as in Taskwarrior; `recurrence=off` (or `0`, `no`) turns it off. Before each command the app creates the instances that are due, retires finished series and expires tasks past `until`, the way `task` does. Taskwarrior itself advises one primary client with `recurrence=1` and `recurrence=0` on all the others when syncing several, because of a duplication bug. Instances are numbered by their index in the template's mask, which is what keeps a second replica from finding anything missing, but if you see duplicates, turn it off on one side. See [Recurring tasks](using.md#recurring-tasks) |
+| `recurrence.confirmation` | Done | Unset or `prompt` asks (the question appears in the app), a true-ish value is yes, anything else no |
+| `recurrence.indicator` | Done | |
+| `recurrence.limit` | Done | |
+
+## Lists, indicators and charts
+
+| Option | Status | Remark |
+| --- | --- | --- |
+| `uda.<name>.indicator` | Done | Shown by the `indicator` column format |
+| `list.all.projects` | Done | `projects` also counts finished tasks (never deleted ones), and `_projects` lists their projects too (deleted tasks' as well, as in Taskwarrior). `projects` follows Taskwarrior's layout: a project's count includes its sub-projects, sub-projects are indented, and a line gives the number of projects and tasks |
 | `summary.all.projects` | Done | With it on, `summary` lists projects whose tasks are all finished too (their bar is full). Off by default |
-| `complete.all.tags`, `list.all.tags` | Not done | `tags` counts pending tasks only |
-| `active.indicator`, `tag.indicator`, `dependency.indicator` | Not done | The `indicator` column formats use Taskwarrior's defaults (`+`, `D`) and don't read these |
+| `complete.all.tags`, `list.all.tags` | Done | `list.all.tags` makes `tags` count finished and deleted tasks' tags too (the footer counts the tasks before the filter, as Taskwarrior does). `complete.all.tags` makes `_tags` list them, along with the built-in tags; with it set the app offers those tags for completion too |
+| `active.indicator`, `tag.indicator`, `dependency.indicator` | Done | What the `start.active`, `tags.indicator` and `depends.indicator` columns show (defaults `*`, `+`, `D`). Their headers follow Taskwarrior: `A`, and as many letters of `Tags` or `Depends` as the indicator is long. The dependency columns count only dependencies still open, so a finished task no longer shows `D` |
 | `burndown.cumulative` | Done | On by default, as in Taskwarrior: a finished task stays counted as done on every later bar. Off counts it only on the bar of the day it was finished. Used by `burndown.daily`, `.weekly`, `.monthly` and `.annual` |
-| `date.iso` | Not done | Not read |
+
+## Output and debugging
+
+Terminal output, and tools for debugging the command line client.
+
+| Option | Status | Remark |
+| --- | --- | --- |
 | `verbose` | N/A | Accepted and ignored |
 | `nag` | N/A | The reminder printed after a command in a terminal |
 | `annotation.info` | Partial | In Taskwarrior it decides whether `task info` shows annotations. The detail view here always shows them, like opening a file, so the setting is not read |
@@ -115,6 +146,7 @@ The `calendar` command is supported, with Taskwarrior's arguments (`calendar`, `
 | `calendar.monthsperline` | Done | How many months a bare `calendar` shows. A browser has no width in characters, so the default is 3 and the months wrap to fit |
 | `calendar.offset`, `calendar.offset.value` | Done | Moves the first month shown, by `value` months (default -1) when `offset` is on |
 | `displayweeknumber` | Done | Week numbers beside each week, on by default. They follow `weekstart`: ISO weeks for Monday, and weeks counted from the first Sunday for Sunday |
+| `date.iso` | Done | On by default. Off, an ISO date typed by itself (`2026-12-25`) is only understood if it matches `dateformat` (checked against `task` 3.5.0 for each combination); a date with a time (`2026-12-25T10:00`) and words (`tomorrow`) always are. Typed dates are read in `dateformat` first, like Taskwarrior (`dateformat=m/d/Y` accepts `12/25/2026`). Differences: ISO week and ordinal dates (`2026-W52`, `2026-359`) are not understood either way, and `20261225` is accepted here though Taskwarrior refuses it |
 
 ## Journal
 
@@ -140,7 +172,7 @@ The `calendar` command is supported, with Taskwarrior's arguments (`calendar`, `
 
 ## Urgency
 
-All of these can also be edited in the app (**urgency** in the header). See [Urgency](../README.md#urgency) for the
+All of these can also be edited in the app (**urgency** in the header). See [Urgency](using.md#urgency) for the
 inheritance rules, which follow Taskwarrior's source.
 
 | Option | Status | Remark |
@@ -218,10 +250,11 @@ The bucket side of sync is not configured from a taskrc, but it behaves like the
 after every command, writes a snapshot on about one push in ten (as `task sync` does, which never avoids snapshots),
 and picks the newest snapshot when it starts cold. Deleting old versions is left to the CLI.
 
-## Worth doing next
+## What is left
 
-Roughly in order of how much they'd matter to someone coming from the CLI:
+Two "Not done" rows remain, and neither can change in a browser:
 
-1. `alias.<name>`, so a typed shortcut expands as it does at a terminal.
-2. `list.all.projects`, `list.all.tags` and `complete.all.tags`, so `projects` and `tags` can count finished tasks too.
-3. `expressions`, for the filter forms the infix reader doesn't take.
+1. `include <file>`: a browser can't read a file, so this stays a paste-in step.
+2. `purge.on-sync`: the app never purges deleted tasks; that is left to the CLI.
+
+Beyond the taskrc, the commands `history.*`, `ghistory.*`, `edit` and `purge` are not in the app.
