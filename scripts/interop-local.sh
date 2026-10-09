@@ -313,7 +313,68 @@ want=$(tw "$C" count)
 [ "$got" = "$want" ] || fail "the web counts $got tasks; the CLI counts $want"
 webrows "all cli probe" | python3 -c 'import sys,json; r=json.load(sys.stdin); assert len(r)==100, len(r)' \
   || fail "the web missed some of the CLI's tasks after its snapshot"
-stop_dev
 ok "a cold web Worker read the CLI's snapshot and everything after it ($total tasks)"
+
+echo "== the web's export is the CLI's export"
+# Same tasks, two writers: the file the web offers must be what `task export` prints, key for key and in
+# the same order (only the local ids differ, and the CLI may have made instances the web has not seen).
+webcli '{"line":"export"}' | python3 -c 'import sys,json; sys.stdout.write(json.load(sys.stdin)["result"]["text"])' > "$WORK/web-export.json"
+tw "$C" export > "$WORK/cli-export.json"
+python3 - "$WORK/web-export.json" "$WORK/cli-export.json" <<'PY' || fail "the web's export differs from the CLI's"
+import sys, json
+load = lambda p: {t["uuid"]: t for t in json.load(open(p), object_pairs_hook=lambda kv: dict(kv))}
+def keys(p):
+    return {t["uuid"]: list(t) for t in json.load(open(p), object_pairs_hook=lambda kv: dict(kv))}
+web, cli = load(sys.argv[1]), load(sys.argv[2])
+both = sorted(set(web) & set(cli))
+assert len(both) > 100, len(both)
+wk, ck = keys(sys.argv[1]), keys(sys.argv[2])
+for u in both:
+    w, c = dict(web[u]), dict(cli[u])
+    for t in (w, c):
+        t.pop("id", None)
+    assert abs(w.pop("urgency") - c.pop("urgency")) < 0.01, (u, web[u], cli[u])
+    assert w == c, (u, w, c)
+    assert [k for k in wk[u] if k not in ("id",)] == [k for k in ck[u] if k not in ("id",)], (u, wk[u], ck[u])
+print(len(both), "tasks identical")
+PY
+ok "the web's export is byte-for-byte the CLI's, task by task"
+
+echo "== every built-in report selects and orders tasks as the CLI does"
+# `export <report>` applies the report's own filter and sort, so it shows both. Recurrence housekeeping is
+# off on both sides (it would make instances the other has not seen) and so is the page limit. Tasks whose
+# sort keys are all equal are put in the order of their ids, and ids belong to each replica, so what is
+# compared is the same set of tasks and the same sequence of sort-key values.
+for r in next list long ls all completed waiting newest oldest overdue active ready recurring blocked unblocked blocking minimal; do
+  webcli "{\"line\":\"rc.recurrence:off export $r\"}" | python3 -c 'import sys,json; sys.stdout.write(json.load(sys.stdin)["result"]["text"])' > "$WORK/web-$r.json"
+  tw "$C" rc.recurrence=off rc.defaultheight=100000 export "$r" > "$WORK/cli-$r.json"
+  python3 - "$r" "$WORK/web-$r.json" "$WORK/cli-$r.json" "$ROOT/crates/tc-core/tests/data/report_defaults_real.json" <<'PY' || fail "report $r differs between the web and the CLI"
+import sys, json, re
+name, web, cli, defaults = sys.argv[1:]
+spec = json.load(open(defaults))[f"report.{name}.sort"]
+fields = [re.sub(r"[+\-/]+$", "", part) for part in spec.split(",") if part]
+load = lambda p: json.load(open(p))
+w, c = load(web), load(cli)
+assert sorted(t["uuid"] for t in w) == sorted(t["uuid"] for t in c), (
+    f"different tasks: web {len(w)}, cli {len(c)}, only web {sorted({t['uuid'][:8] for t in w} - {t['uuid'][:8] for t in c})[:5]}, "
+    f"only cli {sorted({t['uuid'][:8] for t in c} - {t['uuid'][:8] for t in w})[:5]}")
+def key(t):
+    out = []
+    for f in fields:
+        if f == "urgency":
+            out.append(round(t.get("urgency", 0), 3))
+        elif f == "id":
+            continue
+        else:
+            out.append(t.get(f))
+    return out
+kw, kc = [key(t) for t in w], [key(t) for t in c]
+bad = next((i for i, (a, b) in enumerate(zip(kw, kc)) if a != b), None)
+assert bad is None, f"sort keys {fields} differ at row {bad}: web {kw[bad]} vs cli {kc[bad]}"
+print(f"  {name}: {len(w)} tasks, sort {spec}")
+PY
+done
+ok "all 17 built-in reports pick and order the same tasks as the CLI"
+stop_dev
 
 echo "ALL INTEROP CHECKS PASSED  (work dir: $WORK)"
