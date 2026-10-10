@@ -148,7 +148,7 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
     case 'uuid':
       return { text: f === 'short' ? shortUuid(row.uuid) : row.uuid };
     case 'status': {
-      const waiting = row.virtual_tags.includes('WAITING');
+      const waiting = row.waiting === true;
       if (f === 'short') return { text: waiting ? 'W' : (row.status[0] ?? '').toUpperCase() };
       return { text: waiting ? 'waiting' : row.status };
     }
@@ -194,7 +194,7 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
 export function rowClass(row: Row): string {
   const c: string[] = [];
   if (row.status === 'completed' || row.status === 'deleted') c.push('done', row.status);
-  if (row.virtual_tags.includes('WAITING')) c.push('waiting');
+  if (row.waiting) c.push('waiting');
   if (row.blocked) c.push('blocked');
   if (row.start != null && row.status === 'pending') c.push('active');
   return c.join(' ');

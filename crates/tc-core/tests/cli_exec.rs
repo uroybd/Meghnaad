@@ -1,16 +1,16 @@
 //! Real command lines against a real taskchampion `Replica` (in-memory storage).
 
-use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::Replica;
 use tc_core::cli::{execute, load_facts, Ask, CliResult, ConfirmItem, Options, UndoStack};
 use tc_core::dates::{Clock, DAY};
 use tc_core::filter::split_words;
 use tc_core::taskrc::{parse, Config};
+use tc_core::LiveStorage;
 
-type R = Replica<InMemoryStorage>;
+type R = Replica<LiveStorage>;
 
 fn replica() -> R {
-    Replica::new(InMemoryStorage::new())
+    Replica::new(LiveStorage::new())
 }
 
 thread_local! {
@@ -1493,6 +1493,68 @@ async fn overdue_and_due_virtual_tags_work_through_the_cli() {
     let _ = DAY;
 }
 
+#[tokio::test]
+async fn a_table_row_carries_waiting_and_only_info_lists_every_virtual_tag() {
+    let cfg = Config::default();
+    let mut r = replica();
+    run(&mut r, &cfg, "add hidden wait:5d").await;
+    run(&mut r, &cfg, "add shown due:-1d").await;
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "all").await else {
+        panic!()
+    };
+    for row in &o.rows {
+        assert!(row.virtual_tags.is_empty(), "a table row lists no virtual tags");
+        assert_eq!(row.waiting, row.facts.description == "hidden");
+    }
+    let json = serde_json::to_string(&o.rows).unwrap();
+    assert!(!json.contains("virtual_tags"), "{json}");
+    assert_eq!(json.matches("\"waiting\":true").count(), 1, "{json}");
+
+    // Filters ask each task about a virtual tag themselves, so they don't depend on the row's list.
+    for (filter, wanted) in [
+        ("+WAITING", "hidden"),
+        ("+OVERDUE", "shown"),
+        ("+PENDING +READY", "shown"),
+        ("-WAITING", "shown"),
+    ] {
+        let (CliResult::Report(o), _) = run(&mut r, &cfg, &format!("{filter} all")).await else {
+            panic!()
+        };
+        let got: Vec<&str> = o.rows.iter().map(|x| x.facts.description.as_str()).collect();
+        assert_eq!(got, [wanted], "{filter}");
+    }
+    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "description:shown info").await else {
+        panic!()
+    };
+    assert!(tasks[0].virtual_tags.contains(&"OVERDUE") && tasks[0].virtual_tags.contains(&"PENDING"));
+    let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "description:hidden info").await else {
+        panic!()
+    };
+    assert!(tasks[0].waiting && tasks[0].virtual_tags.contains(&"WAITING"));
+}
+
+/// Checked against `task +READY` on the same five tasks: a waiting task is not ready, nor one scheduled ahead.
+#[tokio::test]
+async fn ready_leaves_out_waiting_and_scheduled_ahead() {
+    let cfg = Config::default();
+    let mut r = replica();
+    for line in [
+        "add schedpast scheduled:-1d",
+        "add schedfuture scheduled:2d",
+        "add waitsched wait:3d",
+        "add plain",
+        "add waitpast wait:-1d",
+    ] {
+        run(&mut r, &cfg, line).await;
+    }
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "+READY all").await else {
+        panic!()
+    };
+    let mut got: Vec<&str> = o.rows.iter().map(|x| x.facts.description.as_str()).collect();
+    got.sort();
+    assert_eq!(got, ["plain", "schedpast", "waitpast"]);
+}
+
 mod with_sync {
     use super::*;
     use taskchampion::Server;
@@ -1841,19 +1903,27 @@ mod overrides_and_journal {
         );
     }
 
+    /// `(kind, property)` of every change `_history` lists.
     fn history_of(res: CliResult) -> Vec<(String, String)> {
-        let CliResult::Info { tasks } = res else {
+        let CliResult::Json { value } = res else {
             panic!("{res:?}")
         };
-        tasks[0]
-            .history
+        value
+            .as_array()
+            .unwrap()
             .iter()
-            .flat_map(|e| e.changes.iter().map(|c| (c.kind.to_owned(), c.prop.clone())))
+            .flat_map(|e| e["changes"].as_array().unwrap())
+            .map(|c| {
+                (
+                    c["kind"].as_str().unwrap().to_owned(),
+                    c["prop"].as_str().unwrap().to_owned(),
+                )
+            })
             .collect()
     }
 
     #[tokio::test]
-    async fn info_lists_what_changed_unless_journal_info_is_off() {
+    async fn history_lists_what_changed_unless_journal_info_is_off() {
         let cfg = Config::default();
         let mut r = replica();
         run(&mut r, &cfg, "add Alpha project:home +x priority:H").await;
@@ -1863,7 +1933,7 @@ mod overrides_and_journal {
         run(&mut r, &cfg, "1 done").await;
         let id = only(&mut r).await.uuid.to_string();
 
-        let h = history_of(run(&mut r, &cfg, &format!("{id} info")).await.0);
+        let h = history_of(run(&mut r, &cfg, &format!("_history {id}")).await.0);
         let has = |k: &str, p: &str| h.iter().any(|(kk, pp)| kk == k && pp == p);
         assert!(
             has("set", "description") && has("set", "project") && has("set", "priority"),
@@ -1889,24 +1959,51 @@ mod overrides_and_journal {
 
         // A Taskwarrior config says `journal.info=off` or `0`; the web replica follows.
         for off in ["journal.info=off\n", "journal.info=0\n"] {
-            let h = history_of(run(&mut r, &parse(off).config, &format!("{id} info")).await.0);
+            let h = history_of(run(&mut r, &parse(off).config, &format!("_history {id}")).await.0);
             assert!(h.is_empty(), "{off}: {h:?}");
         }
         // The command line can switch it too, like any setting.
-        let h = history_of(run(&mut r, &cfg, &format!("rc.journal.info:off {id} info")).await.0);
+        let h = history_of(run(&mut r, &cfg, &format!("rc.journal.info:off _history {id}")).await.0);
         assert!(h.is_empty());
     }
 
     #[tokio::test]
-    async fn the_history_stays_out_of_reports_and_exports() {
+    async fn the_history_stays_out_of_reports_exports_and_info_and_is_asked_for_alone() {
         let cfg = Config::default();
         let mut r = replica();
         run(&mut r, &cfg, "add Alpha").await;
+        run(&mut r, &cfg, "1 modify +x").await;
         let (res, _) = run(&mut r, &cfg, "_rows").await;
         let CliResult::Json { value } = res else {
             panic!("{res:?}")
         };
         assert!(value[0].get("history").is_none(), "{value}");
+        let id = value[0]["uuid"].as_str().unwrap().to_owned();
+        let (CliResult::Info { tasks }, _) = run(&mut r, &cfg, "1 info").await else {
+            panic!()
+        };
+        assert!(!serde_json::to_string(&tasks).unwrap().contains("history"));
+        assert!(!history_of(run(&mut r, &cfg, &format!("_history {id}")).await.0).is_empty());
+        // Only a whole uuid of one task; anything else says so.
+        for bad in [
+            "_history",
+            "_history 1",
+            "_history nope",
+            &format!("_history {id} {id}"),
+        ] {
+            let (res, wrote) = run(&mut r, &cfg, bad).await;
+            assert!(matches!(res, CliResult::Error { .. }) && !wrote, "{bad}: {res:?}");
+        }
+        // A task that is not there has no history.
+        let none = run(&mut r, &cfg, &format!("_history {}", uuid::Uuid::from_u128(77)))
+            .await
+            .0;
+        assert!(history_of(none).is_empty());
+        // Not a command `commands` lists: it is the app's own, like `_rows`.
+        let (CliResult::Table(t), _) = run(&mut r, &cfg, "commands").await else {
+            panic!()
+        };
+        assert!(!t.rows.iter().any(|row| row[0] == "_history" || row[0] == "_rows"));
     }
 
     #[tokio::test]
