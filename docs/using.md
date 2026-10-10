@@ -233,6 +233,13 @@ list, with what each does, is [taskrc support](taskrc-support.md)).
   `password`, `token`, …). Only the *names* of what was dropped are shown; the raw text is never stored.
 - What is saved is shown back, so each import edits it instead of replacing it. **Restore previous** undoes the last save.
 - `include` lines can't be followed; paste the included files too.
+- **Import from a link** keeps your dotfiles repository as the source: paste the address of the file (a GitHub or GitLab
+  file page works, as does a raw link or a gist's) and choose **Import**. The Worker fetches it, so the site's CORS
+  rules don't matter, and keeps what a pasted file would keep; the file itself never reaches the browser. It saves
+  straight away (**Restore previous** undoes it) and does not remember the link, so import again to refresh. Only
+  `https://` links to public web sites are followed (no addresses, ports or user names in the link; the same for any
+  redirect), up to 256 KB. The request carries no login, so the link must work without one (a secret gist's does). A
+  web page rather than the file is refused.
 - **A context** (`context.<name>.read` / `.write`) filters what you see and tags what you add. It can also carry its
   own settings, `context.<name>.rc.<key>`, in force while it is active; as in Taskwarrior they win over everything,
   a command-line `rc.` override included.

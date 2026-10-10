@@ -108,6 +108,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .get_async("/api/config", |_, ctx| wrap(get_config(ctx)))
         .get_async("/api/config/taskrc", |_, ctx| wrap(get_taskrc(ctx)))
         .put_async("/api/config/taskrc", |req, ctx| wrap(put_taskrc(req, ctx)))
+        .post_async("/api/config/taskrc/url", |req, ctx| wrap(import_taskrc_url(req, ctx)))
         .post_async("/api/config/taskrc/restore", |_, ctx| wrap(restore_taskrc(ctx)))
         .put_async("/api/config/urgency", |req, ctx| wrap(put_urgency(req, ctx)))
         .post_async("/api/cli", |req, ctx| wrap(cli(req, ctx)))
@@ -368,10 +369,83 @@ async fn put_taskrc(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     if text.len() > MAX_TASKRC_BYTES {
         return Err(ApiError::TooLarge);
     }
+    save_taskrc_text(&ctx, text).await
+}
+
+async fn save_taskrc_text(ctx: &RouteContext<()>, text: String) -> RouteResult {
     let parsed = taskrc::parse(&text);
     drop(text);
     session::save_config(&ctx.env, parsed.config.clone()).await?;
     json(&summary(&parsed))
+}
+
+/// Fetch a taskrc from a link (a dotfiles repository, a gist) and import it as a pasted one is. The Worker
+/// does the fetch, so the file never reaches the browser unfiltered and the site's CORS rules don't matter.
+/// The link is never logged or echoed: it may carry an access token.
+async fn import_taskrc_url(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let text = fetch_text(&req.text().await?).await?;
+    save_taskrc_text(&ctx, text).await
+}
+
+/// Redirects followed (a `github.com/.../raw/...` link answers with one); each is checked like the first link.
+const MAX_REDIRECTS: usize = 3;
+
+/// The page's own `fetch` is used directly (it takes the redirect mode as an option), which costs a fraction
+/// of what the `worker` crate's request types add to the module.
+async fn fetch_text(link: &str) -> Result<String, ApiError> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    let bad = |m: &str| ApiError::BadRequest(m.to_owned());
+    let global = js_sys::global();
+    let fetch: js_sys::Function = js_sys::Reflect::get(&global, &"fetch".into())
+        .map_err(|_| bad("fetching is not available"))?
+        .unchecked_into();
+    let options = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&options, &"redirect".into(), &"manual".into());
+    let mut url = tc_core::rc_url::source_url(link).map_err(ApiError::BadRequest)?;
+    for _ in 0..=MAX_REDIRECTS {
+        let promise = fetch
+            .call2(&global, &url.as_str().into(), &options)
+            .map_err(|_| bad("that is not a valid link"))?;
+        let res: web_sys::Response = JsFuture::from(js_sys::Promise::from(promise))
+            .await
+            .map_err(|_| bad("could not reach that address"))?
+            .unchecked_into();
+        let status = res.status();
+        if (300..400).contains(&status) {
+            let to = res.headers().get("location").ok().flatten().unwrap_or_default();
+            url =
+                tc_core::rc_url::follow(&url, &to).map_err(|_| bad("that address redirects somewhere not allowed"))?;
+            continue;
+        }
+        if status != 200 {
+            return Err(ApiError::BadRequest(format!(
+                "that address answered {status}, not a file"
+            )));
+        }
+        let kind = res.headers().get("content-type").ok().flatten().unwrap_or_default();
+        if kind.starts_with("text/html") {
+            return Err(bad("that link is a web page, not the file; use its raw link"));
+        }
+        let declared = res.headers().get("content-length").ok().flatten();
+        if declared.and_then(|n| n.parse::<usize>().ok()).unwrap_or(0) > MAX_TASKRC_BYTES {
+            return Err(bad("that file is too large for a taskrc"));
+        }
+        let body = res.text().map_err(|_| bad("could not read that address"))?;
+        let text = JsFuture::from(body)
+            .await
+            .map_err(|_| bad("could not read that address"))?
+            .as_string()
+            .ok_or_else(|| bad("that file is not text"))?;
+        if text.len() > MAX_TASKRC_BYTES {
+            return Err(bad("that file is too large for a taskrc"));
+        }
+        if tc_core::rc_url::looks_like_html(&text) {
+            return Err(bad("that link is a web page, not the file; use its raw link"));
+        }
+        return Ok(text);
+    }
+    Err(bad("that address redirects too many times"))
 }
 
 #[derive(Deserialize)]

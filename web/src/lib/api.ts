@@ -139,6 +139,15 @@ export function putTaskrc(text: string): Promise<TaskrcResponse> {
   });
 }
 
+/** Fetch a taskrc from a link (the Worker does the fetch) and save it as a pasted one is. */
+export function importTaskrcUrl(url: string): Promise<TaskrcResponse> {
+  return request<TaskrcResponse>('/api/config/taskrc/url', {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain' },
+    body: url,
+  });
+}
+
 /** Save the urgency settings: every one that differs from the built-in value, and `urgency.inherit`. */
 export function putUrgency(urgency: Record<string, number>, inherit: boolean): Promise<{ ok: true }> {
   return request<{ ok: true }>('/api/config/urgency', {

@@ -21,8 +21,8 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
   calendar, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `purge`, `duplicate`, `context`,
   `calc` and the confirmations are ported from the source and checked against the real `task` 3.5.0. Settings removed
   before 3.5.0 are not supported.
-- **Your `taskrc`, safely.** Import UDAs, reports, contexts and settings. Sync settings and credentials are blocked
-  ([what is read](docs/taskrc-support.md)).
+- **Your `taskrc`, safely.** Paste it, upload it or import it from a link (your dotfiles repository). UDAs, reports,
+  contexts and settings are kept; sync settings and credentials are blocked ([what is read](docs/taskrc-support.md)).
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
 - **Hooks, as Rust.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions you deploy with the Worker
   ([Hooks](#hooks)).
@@ -177,7 +177,7 @@ appears in the Console. All four ship empty. Changing one means rebuilding (`npm
 deploy` for the real one). See [Hooks](docs/using.md#hooks) and
 [keeping them as a patch](docs/using.md#keeping-your-hooks-across-updates).
 
-**How much fits.** The Worker is about **765 KB compressed** (gzip). A 1 MB budget leaves about **280 KB**. Measured on
+**How much fits.** The Worker is about **770 KB compressed** (gzip). A 1 MB budget leaves about **280 KB**. Measured on
 a release build:
 
 | Hook code | Added (compressed) |

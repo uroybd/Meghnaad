@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getTaskrcText, putTaskrc, restoreTaskrc } from './api';
+  import { getTaskrcText, importTaskrcUrl, putTaskrc, restoreTaskrc } from './api';
   import { RotateCcw, TriangleAlert } from './icons';
   import { applyTheme, colourOff, expandIncludes, fetchTheme, THEMES, withColour } from './themes';
   import { store } from './store.svelte';
@@ -14,6 +14,7 @@
   let result = $state<TaskrcResponse | null>(null);
   let error = $state<string | null>(null);
   let confirmRestore = $state(false);
+  let link = $state('');
 
   $effect(() => {
     dialog.showModal();
@@ -73,6 +74,21 @@
       // `include dark-256.theme`, as a desktop taskrc has it, becomes that theme's lines.
       text = await expandIncludes(text, fetchTheme);
       applied(await putTaskrc(text));
+      await store.settingsChanged();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // The Worker fetches the link and saves what it keeps, as a paste does: the file never reaches this page.
+  async function fromLink() {
+    busy = true;
+    error = null;
+    try {
+      applied(await importTaskrcUrl(link.trim()));
+      link = '';
       await store.settingsChanged();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -142,6 +158,28 @@
     >
   </div>
   <label class="file">Choose a file <input type="file" onchange={onfile} /></label>
+  <form
+    class="link"
+    onsubmit={(e) => {
+      e.preventDefault();
+      void fromLink();
+    }}
+  >
+    <label for="rc-link">Or import from a link</label>
+    <input
+      id="rc-link"
+      type="url"
+      bind:value={link}
+      placeholder="https://raw.githubusercontent.com/you/dotfiles/main/.taskrc"
+      spellcheck="false"
+      autocomplete="off"
+    />
+    <button disabled={busy || loading || !link.trim()}>Import</button>
+    <span class="dim"
+      >Fetched and saved straight away (Restore previous undoes it). GitHub and GitLab file pages work too. A public
+      link; keep it free of passwords.</span
+    >
+  </form>
   <label for="rc-text" class="sr-only">Saved taskrc settings</label>
   <textarea
     id="rc-text"
@@ -240,6 +278,21 @@
   .file {
     display: block;
     margin-top: 8px;
+  }
+  .link {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 8px;
+  }
+  .link input {
+    flex: 1 1 260px;
+    min-width: 0;
+  }
+  .link .dim {
+    flex-basis: 100%;
+    font-size: 12.5px;
   }
   .warn,
   .bad {

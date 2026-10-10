@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runCli, getConfig, importTasks, MAX_IMPORT_BYTES } from './api';
+import { runCli, getConfig, importTasks, importTaskrcUrl, MAX_IMPORT_BYTES } from './api';
 // The Worker's source, as text, to read its size limit from.
 import workerSource from '../../../crates/worker/src/lib.rs?raw';
 
@@ -87,5 +87,30 @@ describe('importing a file', () => {
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Task 2: due: bad' }), { status: 400 })),
     );
     await expect(importTasks('x', false)).rejects.toThrow('Task 2: due: bad');
+  });
+});
+
+describe('importing a taskrc from a link', () => {
+  it("sends only the link, as text, and shows the server's reason when it is refused", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ udas: 1, reports: 0, contexts: 0, blocked: [], ignored: [], warnings: [], text: '' }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'the link must start with https://' }), { status: 400 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(importTaskrcUrl('https://example.com/rc')).resolves.toMatchObject({ udas: 1 });
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe('/api/config/taskrc/url');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe('https://example.com/rc');
+    await expect(importTaskrcUrl('http://x')).rejects.toThrow('the link must start with https://');
+  });
+
+  it('is never repeated on its own', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => limit());
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(importTaskrcUrl('https://example.com/rc')).rejects.toThrow(/1102/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
