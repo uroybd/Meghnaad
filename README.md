@@ -5,35 +5,31 @@
 <h1 align="center">Meghnaad</h1>
 
 <p align="center">
-  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser. Runs on Cloudflare: a Rust Worker,
-  your existing R2 bucket as the sync store, and Cloudflare Access for login.
+  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser. A Rust Worker on Cloudflare, your existing R2
+  bucket as the sync store, Cloudflare Access for login.
 </p>
 
 ---
 
-Meghnaad is another **replica** of your Taskwarrior data. Your `task` CLI keeps syncing to R2 exactly as it does today;
-this app reads and writes the same bucket, so a task added in the browser shows up on your laptop after `task sync`,
-and the other way round. It is **console-first** (type `task`-style commands) with a normal interface beside it
-(tables, forms, charts), and both go through the same command engine.
+Meghnaad is another **replica** of your Taskwarrior data. The `task` CLI keeps syncing to R2 as it does today; this app
+reads and writes the same bucket. A task added here shows up on your laptop after `task sync`, and the other way round.
+It is **console-first** (type `task` commands) with tables, forms and charts beside it. Both use the same command engine.
 
-- **Works with the bucket you already have.** Point it at the R2 bucket your `task` already syncs to and give it the same
-  encryption secret. No migration, no new server, nothing changes for the CLI.
-- **Taskwarrior's behaviour, not an imitation of it.** Filters, virtual tags, urgency, report sorting, recurrence,
-  regular expressions, the calendar, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `duplicate`, `context`, `calc` and the
-  confirmations are ported from Taskwarrior's
-  source and checked against the real `task` 3.5.0.
-- **Taskwarrior 3.5.0 and newer.** Settings removed or deprecated before it are not supported.
-- **Your `taskrc`, safely.** Import your UDAs, custom reports, contexts and settings. Sync settings and anything that
-  looks like a credential are blocked. See [taskrc support](docs/taskrc-support.md) for what is and isn't read.
-- **Colours as on the desktop.** Taskwarrior's `color.*` rules, precedence and themes (the 16 standard ones are a
-  picker), drawn softly for a web page, with a default theme of their own and friendly colour names (`coral`, `sage`,
-  `sky`).
-- **Hooks, as Rust.** Taskwarrior's `on-add`, `on-modify`, `on-launch` and `on-exit` become functions you fill in and
-  deploy with the Worker; they can edit a task, refuse a command and print to the Console. See [Hooks](#hooks).
-- **Built for a phone as well as a desk**, with time tracking, reminders and a console with completion.
+- **Uses your existing bucket.** Same R2 bucket, same encryption secret. No migration, no new server, nothing changes
+  for the CLI.
+- **Taskwarrior's behaviour, not an imitation.** Filters, virtual tags, urgency, reports, recurrence, regexes, the
+  calendar, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `purge`, `duplicate`, `context`,
+  `calc` and the confirmations are ported from the source and checked against the real `task` 3.5.0. Settings removed
+  before 3.5.0 are not supported.
+- **Your `taskrc`, safely.** Import UDAs, reports, contexts and settings. Sync settings and credentials are blocked
+  ([what is read](docs/taskrc-support.md)).
+- **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
+- **Hooks, as Rust.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions you deploy with the Worker
+  ([Hooks](#hooks)).
+- **Works on a phone**, with time tracking, reminders and a console with completion.
 
-> **Status.** Verified end to end against the released `task` 3.5.0 using a local S3-compatible server (both
-> directions: tasks, UDAs, reports, recurring series, snapshots), and in use against a real R2 bucket.
+> **Status.** Verified against the released `task` 3.5.0 on a local S3-compatible server, in both directions (tasks,
+> UDAs, reports, recurring series, snapshots, purge, import), and in use on a real R2 bucket.
 
 <p align="center">
   <img src="docs/screenshots/tasks.png" alt="The Tasks view: the next report as a table, with the prompt underneath" width="900" />
@@ -70,10 +66,10 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 
 | | |
 | --- | --- |
-| **[Using Meghnaad](docs/using.md)** | The pages (click a tag chip to filter by it), the console (`show`, `config`), Taskwarrior's questions, hooks, recurring tasks, urgency, time tracking, the phone layout |
-| **[Deploying](docs/deploy.md)** | Plans you need, the guided setup, a manual GitHub Actions deploy, Cloudflare Access, connecting your `task` CLI, configuration, fixing problems |
-| **[Architecture](docs/architecture.md)** | How it works, the engine, sync, platform limits, how correctness is kept |
-| **[taskrc support](docs/taskrc-support.md)** | Every Taskwarrior `taskrc` option: done, partial, not done, not applicable |
+| **[Using Meghnaad](docs/using.md)** | Pages, console, confirmations, hooks, recurrence, urgency, time tracking |
+| **[Deploying](docs/deploy.md)** | Setup, GitHub Actions deploy, Access, connecting `task`, troubleshooting |
+| **[Architecture](docs/architecture.md)** | The engine, sync, platform limits, how correctness is kept |
+| **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
 
 ## How it works
 
@@ -106,15 +102,13 @@ flowchart TB
   wk -. "imported taskrc settings" .-> bucket
 ```
 
-- **The bucket** holds Taskwarrior's standard TaskChampion cloud layout, encrypted client-side. The Worker implements
-  the same protocol, so it and the CLI are interchangeable replicas.
-- **The Worker** keeps an in-memory replica and syncs before and after every command; an idle sync is one read. A
-  Worker that has been quiet rebuilds from the newest snapshot, which it writes now and then like the CLI does.
-- **One endpoint**, `POST /api/cli`, takes what you typed or what a button sends, so Taskwarrior's rules live in one
-  place: the `tc-core` crate. The browser draws results and holds nothing. (Importing a file has its own,
-  `POST /api/import`, since a file is more than a command line; the rules are still in `tc-core`.)
-- **Your imported taskrc settings** are stored in the same bucket, so they survive restarts and follow you between
-  devices.
+- **The bucket** holds TaskChampion's standard cloud layout, encrypted client-side. The Worker speaks the same protocol,
+  so it and the CLI are interchangeable replicas.
+- **The Worker** keeps an in-memory replica and syncs before and after every command (an idle sync is one read). After a
+  quiet spell it rebuilds from the newest snapshot.
+- **One endpoint**, `POST /api/cli`, takes what you type or click, so Taskwarrior's rules live in one place, `tc-core`.
+  The browser only draws. (`POST /api/import` carries a file's text.)
+- **Imported taskrc settings** are stored in the bucket, so they survive restarts and follow you between devices.
 
 |  | Desktop Taskwarrior | Meghnaad |
 | --- | --- | --- |
@@ -129,26 +123,22 @@ More in [Architecture](docs/architecture.md).
 
 ## Quick start (local)
 
-You can run everything on your machine without a Cloudflare account; wrangler simulates R2.
-
-**Prerequisites:** [Rust](https://rustup.rs) 1.91+ and Node.js 20+. The build installs the `wasm32-unknown-unknown`
-target and `worker-build` if they're missing.
+Runs without a Cloudflare account; wrangler simulates R2. You need [Rust](https://rustup.rs) 1.91+ and Node.js 20+.
 
 ```bash
 git clone <this repo> && cd Meghnaad
-npm install                      # one install covers the Worker tooling and the Svelte app
+npm install
 cp .dev.vars.example .dev.vars   # local-only secret + Access bypass
-npm run dev                      # builds the web app and the Worker, then serves everything
+npm run dev                      # builds the app and the Worker, then serves both
 ```
 
-The first run compiles the Worker to WASM (about a minute); after that it rebuilds when you edit `crates/`. Open
-**http://127.0.0.1:8787**. For a hot-reloading UI run `npm --prefix web run dev` in a second terminal, and for demo data
-run `./scripts/seed-dev.sh`. Local R2 data lives in `.wrangler/state`; delete it to start over. `DEV_AUTH_BYPASS=1` in
-`.dev.vars` makes the local server skip the Access check.
+The first build takes about a minute. Open **http://127.0.0.1:8787**. For a hot-reloading UI run
+`npm --prefix web run dev` in a second terminal; for demo data run `./scripts/seed-dev.sh`. Local R2 data lives in
+`.wrangler/state` (delete it to start over).
 
 ## Deploy to Cloudflare
 
-You need Cloudflare **Workers**, **R2** and **Access**; each has a free plan.
+You need Workers, R2 and Access; each has a free plan.
 
 ```bash
 npm install
@@ -156,13 +146,10 @@ npm run setup        # guided: bucket, domain, secret, Access; safe to repeat
 npm run deploy       # whenever you update the code
 ```
 
-Setup asks for your existing sync bucket and encryption secret, deploys, and tells you exactly what to click to connect
-Cloudflare Access. Until then the app shows a setup page and nothing is reachable. The dashboard and by-hand routes,
-and how to point your `task` CLI at R2 (`AWS_ENDPOINT_URL` and a few `task config` lines), are in
-**[Deploying](docs/deploy.md)**.
-
-To deploy from GitHub instead, the repository has a manual **Deploy** workflow (Actions → Deploy → Run workflow); the
-setup is in [Deploying](docs/deploy.md#d-from-github-actions-manual).
+Setup asks for your sync bucket and encryption secret, deploys, and tells you what to click to connect Access. Until
+then the app shows a setup page and nothing is reachable. Pointing your `task` CLI at R2 is in
+**[Deploying](docs/deploy.md)**. To deploy from GitHub instead, run the manual **Deploy** workflow
+([setup](docs/deploy.md#d-from-github-actions-manual)).
 
 ## Using it
 
@@ -179,49 +166,44 @@ history.monthly   ghistory.monthly   timesheet   export   (Console only; export 
 show weekstart     config weekstart monday   (Console only)
 ```
 
-A report typed in the Console prints there; typed elsewhere it opens in Tasks. Taskwarrior's confirmations (deleting,
-changes to many tasks, a command with no filter, breaking a dependency chain) arrive as a table of ticks. See
-**[Using Meghnaad](docs/using.md)** for the rest.
+A report typed in the Console prints there; elsewhere it opens in Tasks. Taskwarrior's confirmations arrive as a table of
+ticks. More in **[Using Meghnaad](docs/using.md)**.
 
 ## Hooks
 
-Taskwarrior's `on-launch`, `on-add`, `on-modify` and `on-exit` hooks are Rust functions you fill in
-([`crates/tc-core/src/my_hooks.rs`](crates/tc-core/src/my_hooks.rs)) and deploy with the Worker. A hook gets the task, hands
-one back (changed or not) or refuses the command, and whatever it prints appears under the result in the Console. All
-four ship empty. Changing one means rebuilding the Worker (`npm run dev` does that on save, `npm run deploy` for the
-real one). See [Hooks](docs/using.md#hooks) for what they receive and may change, and
-[how to keep them as a patch](docs/using.md#keeping-your-hooks-across-updates) so you can pull upstream updates easily.
+Taskwarrior's four hooks are Rust functions in [`crates/tc-core/src/my_hooks.rs`](crates/tc-core/src/my_hooks.rs),
+deployed with the Worker. A hook gets the task, returns it (changed or not) or refuses the command, and what it prints
+appears in the Console. All four ship empty. Changing one means rebuilding (`npm run dev` does it on save, `npm run
+deploy` for the real one). See [Hooks](docs/using.md#hooks) and
+[keeping them as a patch](docs/using.md#keeping-your-hooks-across-updates).
 
-**How much fits.** The Worker is about **776 KB compressed** (gzip) today, so a **1 MB compressed** budget leaves about
-**270 KB** for hooks. Measured by adding generated hook code to a release build:
+**How much fits.** The Worker is about **765 KB compressed** (gzip). A 1 MB budget leaves about **280 KB**. Measured on
+a release build:
 
-| Hook code | Added to the compressed Worker |
+| Hook code | Added (compressed) |
 | --- | --- |
 | ~300 lines | +4 KB |
 | ~1,400 lines | +10 KB |
 | ~5,700 lines | +19 KB |
 
-Generated code compresses unusually well, so for planning use the whole Worker's own ratio instead: about 12 bytes
-compressed per line of ordinary code, or roughly **20,000 lines** before the 1 MB mark. That is far more hook than anyone
-writes; what spends the budget in practice is a **dependency** (a general-purpose crate such as a regex engine can cost
-tens to hundreds of KB on its own; measure before adding one), not your lines. Measure with `npm run build` and `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`. The build leaves the debug
-function names out of the module (a fifth of it, and about 70 KB compressed); `KEEP_WASM_NAMES=1 npm run build` keeps
-them for a readable stack trace.
+Generated code compresses unusually well. For planning, use about 12 bytes per line of ordinary code, roughly 20,000
+lines before the limit. What really spends the budget is a **dependency** (a regex engine can cost hundreds of KB), so
+measure before adding one:
+`npm run build && gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`. The build drops debug function names (about
+70 KB compressed); `KEEP_WASM_NAMES=1 npm run build` keeps them for readable stack traces.
 
 ## Security
 
-- **Login** is Cloudflare Access. The Worker independently validates the `Cf-Access-Jwt-Assertion` token on every
-  `/api/*` request (RS256 signature against your team's keys, issuer, audience, expiry, not-before) and refuses forged,
-  `alg: none` and cookie-only tokens. Misconfiguration means `403`, never open. `npm run test:auth` proves it against a
-  mock Access.
-- **Cross-site requests:** writes whose `Origin` isn't this site are refused, API responses are `no-store`, and the app
-  shell carries a strict Content-Security-Policy.
+- **Login** is Cloudflare Access. The Worker validates the `Cf-Access-Jwt-Assertion` token on every `/api/*` request
+  (RS256 signature, issuer, audience, expiry, not-before) and refuses forged, `alg: none` and cookie-only tokens.
+  Misconfiguration means `403`, never open. `npm run test:auth` proves it against a mock Access.
+- **Cross-site requests:** writes from another `Origin` are refused, responses are `no-store`, and the app has a strict
+  Content-Security-Policy.
 - **Encryption** is TaskChampion's (PBKDF2-HMAC-SHA256, then ChaCha20-Poly1305). The Worker holds the secret to decrypt
-  on your behalf, a deliberate trade-off: whoever can read Worker secrets in your Cloudflare account can read your tasks.
-  It is not end-to-end encrypted from Cloudflare. The R2 token on your machines is separate from the Worker, which uses a
-  binding and holds no token.
+  for you, so whoever can read Worker secrets in your Cloudflare account can read your tasks. It is not end-to-end
+  encrypted from Cloudflare. The Worker uses an R2 binding and holds no R2 token.
 - **The taskrc importer** never stores, logs or returns sync or credential values; tests feed it a file full of secrets
-  and assert none appear anywhere.
+  and check none appear.
 
 ## Development
 
@@ -244,36 +226,33 @@ npm run test:auth             # Cloudflare Access: forged, expired, wrong-audien
 
 `interop-local.sh` needs `task`, the `aws` CLI, `sqlite3`, a built Worker and a local S3-compatible server that enforces
 conditional writes, for example `docker run -d --name tw-s3 -p 18333:8333 chrislusf/seaweedfs server -s3 -dir=/data`.
-It is self-contained and does not touch a dev server you have running.
+It does not touch a running dev server.
 
-Pushes to `main` and pull requests run the tests, formatting, linting (Rust and web) and the type check on GitHub (`.github/workflows/ci.yml`);
-deploying is the separate, manual workflow in [Deploying](docs/deploy.md#d-from-github-actions-manual).
+CI (`.github/workflows/ci.yml`) runs tests, formatting, linting and the type check on every push and pull request.
+Deploying is the separate manual workflow.
 
-**Taskwarrior's behaviour is ported from its source and checked against the real `task`**, so when changing filters,
-sorting, urgency, dates or confirmations, read the C++ first and compare. [Architecture](docs/architecture.md) explains
-the method and the test layers.
+Taskwarrior's behaviour is ported from its source and checked against the real `task`: when changing filters, sorting,
+urgency, dates or confirmations, read the C++ first and compare ([method](docs/architecture.md)).
 
 ## Troubleshooting
 
-The common ones are in [Deploying](docs/deploy.md#troubleshooting-a-deployment). The one worth knowing here:
-**Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a quiet spell, is the
-CPU limit. It is not common, and the app retries read-only requests once on its own. If it keeps happening, see
-[Deploying](docs/deploy.md#troubleshooting-a-deployment).
+See [Deploying](docs/deploy.md#troubleshooting-a-deployment). One to know: **Cloudflare error 1102** ("Worker exceeded
+resource limits"), usually on the first request after a quiet spell, is the CPU limit. It is uncommon and the app
+retries read-only requests once.
 
 ## Known limitations
 
 - **Single user:** one set of settings and one shared replica per Worker instance.
-- **Old versions** (older than about 180 days, covered by a snapshot) are cleaned up by the app the way the CLI does,
-  after about one push in twenty. A device that has been offline for longer than that may need a fresh `task sync`
-  set-up.
-- **`undo`** is kept in the Worker instance's memory and forgotten when it is recycled.
-- **Dates you type** are read in your `dateformat` first, then as ISO or words (`friday`, `3d`). ISO week and ordinal
-  dates (`2026-W52`) aren't understood.
-- **Hooks are compiled in**, not scripts: they run inside the Worker with no network or files. `undo` doesn't
-  run them; the recurring instances generated before a command do, as in Taskwarrior. See [Hooks](docs/using.md#hooks).
-- **Not every `taskrc` option applies.** Terminal, colour and local-file options don't make sense in a web app, and
-  `include` and `purge.on-sync` aren't supported. See [taskrc support](docs/taskrc-support.md).
-- **Phone layout** was verified in an emulated phone browser; try it on your own device.
+- **Old versions** (over 180 days old and covered by a snapshot) are cleaned up as the CLI does, after about one push in
+  twenty. A device offline for longer may need a fresh `task sync` set-up.
+- **`undo`** lives in the Worker instance's memory and is lost when it is recycled.
+- **Dates you type** are read in your `dateformat`, then as ISO or words (`friday`, `3d`). ISO week and ordinal dates
+  (`2026-W52`) aren't understood.
+- **Hooks are compiled in**: no network or files. `undo` doesn't run them
+  ([Hooks](docs/using.md#hooks)).
+- **Not every `taskrc` option applies:** terminal, colour and local-file options don't make sense here, and `include`
+  and `purge.on-sync` aren't supported ([taskrc support](docs/taskrc-support.md)).
+- **Phone layout** was checked in an emulated browser; try it on your device.
 
 ## About the name
 
@@ -281,8 +260,8 @@ CPU limit. It is not common, and the app retries read-only requests once on its 
   <img src="docs/name.svg" alt="Meghnaad: Taskwarrior (the warrior) running on Cloudflare (the cloud)" width="900" />
 </p>
 
-Meghnaad is the warrior of the Ramayana who fought from behind the clouds. This app is Taskwarrior (the warrior)
-running on Cloudflare (the cloud), with Cloudflare Access as the cover.
+Meghnaad is the warrior of the Ramayana who fought from behind the clouds: Taskwarrior (the warrior) running on
+Cloudflare (the cloud), with Access as the cover.
 
 ## License
 
