@@ -178,7 +178,10 @@ impl Facts {
     }
 
     pub fn is_ready(&self, clock: &Clock) -> bool {
-        self.status == "pending" && !self.blocked && self.scheduled.is_none_or(|s| clock.now > s)
+        self.status == "pending"
+            && !self.blocked
+            && !self.is_waiting(clock)
+            && self.scheduled.is_none_or(|s| clock.now > s)
     }
 
     pub fn has_uda(&self, cfg: &Config) -> bool {
