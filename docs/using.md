@@ -231,14 +231,17 @@ list, with what each does, is [taskrc support](taskrc-support.md)).
 
 Rows are coloured by Taskwarrior's colour rules, and the same colours reach the calendar, the burndown and the summary
 bar, and the history graph. With nothing set you get **Meghnaad's own theme**: the active task on a soft green,
-overdue in coral, due soon in amber, blocked ones dimmed, priorities and `+next` marked, and no zebra. Everything is
-Taskwarrior's, so your `color.*` lines work as they do on the desktop:
+overdue in coral, due soon in amber, blocked ones dimmed, priorities and `+next` marked, and no zebra. Colours do not
+blend (`rule.color.merge=no`): a row takes the colour of the first rule in `rule.precedence.color` that applies to it,
+so its look follows its state, and a keyword or tag rule you add replaces that colour instead of mixing with it. Put
+`rule.color.merge=yes` in your taskrc to blend as Taskwarrior does. Everything is Taskwarrior's, so your `color.*` lines
+work as they do on the desktop:
 
 ```
 color.active=bold on sage                  # a rule: `sage` is a softer name for green
 color.tag.work=sky                         # a tag, `project.Home`, `keyword.milk`, `uda.estimate.big` likewise
 color.overdue=bold rgb500
-rule.precedence.color=overdue,active,tag.  # which rule wins; `rule.color.merge=off` makes the winner replace, not blend
+rule.precedence.color=overdue,active,tag.  # which rule wins first; with `rule.color.merge=yes` the rules blend instead
 color.alternate=on gray2                   # shade every other row
 ```
 
@@ -293,6 +296,11 @@ an instance links back to it. The recurring task itself is a template: you can e
   all pending recurrences or only this task; `yes` always changes the whole series; `no` only the task you edited.
   Descriptive changes (description, project, priority, tags, UDAs) are shared; dates and the period stay per task.
 - Deleting a recurring task asks first, because it deletes its open instances too.
+- **Only periodic recurrence is acted on.** A template carries a recurrence type, `rtype`: `periodic` (every period from
+  the due date, the default and the only thing the app and `task` 3.5.0 create) or `chained` (the next instance starts
+  when the last one ends). Taskwarrior 3.5.0 knows the word `chained` but never acts on it, and does not let you set
+  it, so neither does this app: a template that arrives with `rtype:chained` (an import, or another client) is kept and
+  exported as it was, and its instances are made on the periodic schedule, as `task` makes them.
 - `recurrence.indicator` (default `R`) is what the `recur.indicator` column shows.
 
 ## Hooks

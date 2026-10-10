@@ -276,9 +276,11 @@ async fn import_tasks(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     }
 
     let mut s = open(&ctx.env).await?;
+    // `dateformat` and `date.iso` are left at their defaults on purpose: a file's dates are ISO, whatever you type.
     let clock = Clock {
         now: (js_sys::Date::now() / 1000.0) as i64,
         tz_offset: tz,
+        week_starts_monday: s.config.effective().week_starts_monday(),
         ..Clock::utc(0)
     };
     let cfg = s.config.clone();

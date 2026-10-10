@@ -15,6 +15,7 @@ npm run lint                  # Rust: rustfmt check + clippy -D warnings (engine
 cargo test                    # engine, end-to-end command tests, sync cost, memory budgets
 npm --prefix web test         # web unit tests
 npm run check                 # svelte-check (types, accessibility)
+node --test scripts/*.test.mjs  # the build and deploy scripts
 cargo check -p tw-worker --target wasm32-unknown-unknown
 ```
 
@@ -43,6 +44,11 @@ run `npm run format` after editing any code, not just at the end.
 - **Taskwarrior logic lives in `tc-core`**; the browser only draws. One endpoint, `POST /api/cli` (and `POST /api/import` for the text of a file; the browser only reads it).
 - **Secrets never leave the Worker.** The taskrc importer, `show` and `config` refuse sync and credential-like names and
   never echo their values; keep tests that prove it passing, and add one for any new path that handles settings.
+- **Mind the Worker's size.** The compressed Wasm has a budget (the README says how much is left for hooks), and every
+  feature spends some. Measure a release build before and after (`gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`),
+  and prefer reusing what is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config`
+  line editing) over a new instantiation. `twiggy` on a build made in a scratch directory shows where bytes go. The build
+  drops the debug names (`KEEP_WASM_NAMES=1` keeps them); measure with them left out, as the deploy does.
 - **Hooks** are user code. Users edit only `crates/tc-core/src/my_hooks.rs`, so keep engine changes in `hooks.rs` and
   keep `my_hooks.rs` stable, so their patch keeps applying (see `docs/using.md`, "Keeping your hooks across updates").
 

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runCli, getConfig, importTasks } from './api';
+import { runCli, getConfig, importTasks, MAX_IMPORT_BYTES } from './api';
+// The Worker's source, as text, to read its size limit from.
+import workerSource from '../../../crates/worker/src/lib.rs?raw';
 
 const limit = () => new Response('error code: 1102', { status: 500 });
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -53,6 +55,12 @@ describe("a request cut off by Cloudflare's resource limit (1102)", () => {
 });
 
 describe('importing a file', () => {
+  it('knows the same size limit as the Worker', () => {
+    // Two copies of one number, in two languages: this is what ties them together.
+    const mb = /const MAX_IMPORT_BYTES: usize = (\d+) \* 1024 \* 1024;/.exec(workerSource)?.[1];
+    expect(Number(mb) * 1024 * 1024).toBe(MAX_IMPORT_BYTES);
+  });
+
   it('sends the file as it is, with whether to apply it and the time zone', async () => {
     const fetchMock = vi.fn().mockImplementation(async () => ok({ applied: false, added: 1, modified: 0, skipped: 0 }));
     vi.stubGlobal('fetch', fetchMock);

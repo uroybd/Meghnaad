@@ -176,6 +176,7 @@ Released versions of Taskwarrior have no config key for a custom S3 endpoint, bu
 | The app shows an "Almost there" page | Access isn't connected yet: follow the page, or `npm run setup` |
 | `403` from `/api/*` after deploying | `TEAM_DOMAIN` / `POLICY_AUD` not set or wrong (the `iss`/`aud` of the token must match them exactly), or you're not signed in through Access. The Worker log says why (`auth rejected: …`) |
 | **Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a while | The CPU limit. On Workers Free it is 10 ms, less than a cold start needs: use Workers Paid. The app retries read-only requests once on its own, and the retry meets a warm instance. In the dashboard, "Exceeded CPU Time Limits" vs "Exceeded Memory" says which limit; `npx wrangler tail` shows it live |
+| A stack trace in `wrangler tail` shows only `wasm-function[1234]`, no names | The build leaves the debug function names out to save about 70 KB of the upload. Build and deploy once with `KEEP_WASM_NAMES=1` (`KEEP_WASM_NAMES=1 npm run deploy`) when you need to read one |
 | "task storage error" (502) | Wrong `TC_ENCRYPTION_SECRET` or the wrong bucket. The cached state resets on the next request |
 | `wrangler dev` says the assets directory is missing | Run `npm --prefix web run build` once |
 | `wrangler dev` exits with "register a workers.dev subdomain" | `wrangler.jsonc` has an extra `"remote": true` R2 binding (added when you ran `wrangler r2 bucket create`). Delete it, keeping only `TASKS` |

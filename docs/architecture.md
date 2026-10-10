@@ -71,10 +71,10 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | --- | --- | --- |
 | **Protocol** | `cloud`, `crypto`, `names`, `store` | TaskChampion's cloud server over an object store; PBKDF2 → ChaCha20-Poly1305; object names; the storage trait the Worker implements over R2 |
 | **Tasks** | `model`, `filter`, `modify`, `dates`, `rx`, `recur` | A plain view of a task; filter expressions; planning `modify`/`add`; Taskwarrior's date and duration parsing; Taskwarrior's regular expressions; recurring tasks |
-| **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, and dispatch to everything below |
+| **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations (`add`, `log`, `duplicate`, `modify`, …), undo, the `commands` listing, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Colour** | `color` | Taskwarrior's colour specifications and how they blend, the rules that colour a task (with precedence and merge), the `colors` command and the history graph's colours; checked against the escape codes of the real `task` |
-| **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; `import` reads it back (a port of `CmdImport`, checking the whole file before it writes anything); the app's pages use a separate, hidden `_rows` |
+| **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` (and `_get`, which reads the same DOM) and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; `import` reads it back (a port of `CmdImport`, checking the whole file before it writes anything); the app's pages use a separate, hidden `_rows` |
 | **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
 | **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`) |
 
@@ -138,8 +138,9 @@ What this app costs, measured (`crates/tc-core/tests/memory.rs`, and a local `wo
 - **A warm request** is a few milliseconds of CPU for a hundred tasks and tens for thousands (filtering, sorting,
   urgency, serialising).
 - **Memory** is small: restoring a snapshot of 3,000 tasks peaks near 6 MB, replaying 1,200 versions from nothing near
-  6 MB, and a request over 3,000 tasks 8 MB (19 MB for a full `export`). The test fails if a change makes any of
-  these much worse.
+  6 MB, and a request over 3,000 tasks 8 MB (19 MB for a full `export`). An `import` of the most one takes (5,000
+  tasks, a 2 MB file) peaks near 51 MB, and its `undo` step keeps about 8 MB while the instance lives, which is why the
+  request is capped. The test fails if a change makes any of these much worse.
 
 So the free plan's 10 ms CPU limit is below what the first request after an idle spell needs, and **the Worker needs
 the Workers Paid plan** (R2 and Access are fine on free). The app retries a read-only request once if Cloudflare cuts

@@ -78,6 +78,7 @@
       {/if}
     </p>
     {#each report.warnings as w, _i (_i)}<p class="warn">{w}</p>{/each}
+    {#each report.feedback as l, _i (_i)}<p class:warn={l.kind === 'warn'}>{l.text}</p>{/each}
     {#if report.lines.length}
       <details open={report.lines.length <= 12}>
         <summary>{words(report.lines.length + report.more)}</summary>

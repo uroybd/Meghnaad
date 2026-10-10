@@ -1,7 +1,9 @@
 # Meghnaad: the default colours of the web app. Soft basic colours (the page draws them gently, and lighter
 # as a background), few rules, no shading of alternate rows. Taskwarrior's own defaults are the "taskwarrior" theme.
+# Colours do not blend (`rule.color.merge=no`): a row takes the colour of the first rule below that applies to it,
+# so what a row looks like follows its state, and a keyword or tag rule you add replaces it instead of muddying it.
 rule.precedence.color=deleted,completed,active,keyword.,tag.,project.,overdue,scheduled,due.today,due,blocked,blocking,recurring,tagged,uda.
-rule.color.merge=1
+rule.color.merge=no
 color.alternate=
 color.active=bold on sage
 color.blocked=slate

@@ -3800,6 +3800,26 @@ mod report_defaults {
     }
 
     #[tokio::test]
+    async fn the_default_theme_does_not_blend_so_the_first_rule_that_applies_decides() {
+        let mut r = replica();
+        let cfg = Config::default();
+        // Active and overdue at once: active comes first in the precedence order.
+        run(&mut r, &cfg, "add both due:2020-01-01").await;
+        run(&mut r, &cfg, "description:both start").await;
+        let list = rows(run(&mut r, &cfg, "all").await.0);
+        let s = style_of(&list, "both").expect("coloured");
+        assert!(
+            s.bold && s.fg.is_none() && s.bg == Some(2),
+            "just the active rule: {s:?}"
+        );
+        // Taskwarrior's own way is a setting away: the two rules lay one on the other.
+        let blend = parse("rule.color.merge=yes\n").config;
+        let list = rows(run(&mut r, &blend, "all").await.0);
+        let s = style_of(&list, "both").expect("coloured");
+        assert!(s.bold && s.fg == Some(1) && s.bg == Some(2), "both rules: {s:?}");
+    }
+
+    #[tokio::test]
     async fn the_taskrc_overrides_the_theme_and_color_off_turns_it_all_off() {
         let mut r = replica();
         let cfg = parse("color.active=bold red\ncolor.overdue=\n").config;
@@ -4039,13 +4059,7 @@ mod duplicate_log_stats_context {
             .expect("a template")
             .clone();
 
-        let d = done(
-            &mut r,
-            &cfg,
-            &format!("{} duplicate", &instance.uuid.to_string()[..8]),
-            false,
-        )
-        .await;
+        let d = done(&mut r, &cfg, &format!("{} duplicate", instance.uuid), false).await;
         let m = message(&d.result);
         assert!(m.contains("was a recurring task.  The duplicated task is not."), "{m}");
         let CliResult::Changed { tasks, .. } = &d.result else {
@@ -4060,13 +4074,7 @@ mod duplicate_log_stats_context {
         assert!(copy.parent.is_none() && copy.recur.is_none() && copy.imask.is_none());
         assert_eq!(copy.status, "pending");
 
-        let d = done(
-            &mut r,
-            &cfg,
-            &format!("{} duplicate", &template.uuid.to_string()[..8]),
-            false,
-        )
-        .await;
+        let d = done(&mut r, &cfg, &format!("{} duplicate", template.uuid), false).await;
         let m = message(&d.result);
         assert!(
             m.contains("was a parent recurring task.  The duplicated task is too."),
@@ -4550,6 +4558,15 @@ mod commands_and_get {
     }
 
     #[tokio::test]
+    async fn get_reads_the_recurrence_attributes_too() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Water plants due:tomorrow recur:weekly").await;
+        run(&mut r, &cfg, "count").await; // the first command makes the first instance
+        assert_eq!(text(&mut r, &cfg, "_get 1.mask 1.imask").await, "- 0");
+    }
+
+    #[tokio::test]
     async fn get_wants_dom_references_and_nothing_else() {
         let mut r = replica();
         let cfg = Config::default();
@@ -4700,6 +4717,38 @@ mod import_command {
     }
 
     #[tokio::test]
+    async fn an_entry_or_end_made_up_here_never_replaces_a_stored_one() {
+        let mut r = replica();
+        let cfg = Config::default();
+        let id = "11111111-1111-4111-8111-111111111111";
+        // A file with no `entry`: the task gets one when it is imported.
+        let first = format!(r#"{{"description":"x","uuid":"{id}","priority":"H"}}"#);
+        go(&mut r, &cfg, &first, true).await.unwrap();
+        let entry = load_facts(&mut r).await.unwrap()[0].entry;
+        // The same task again, with one thing changed and still no `entry`, some time later.
+        let second = format!(r#"{{"description":"x","uuid":"{id}","priority":"L"}}"#);
+        let o = go(&mut r, &cfg, &second, true).await.unwrap();
+        assert_eq!(counts(&o), (0, 1, 0));
+        let f = &load_facts(&mut r).await.unwrap()[0];
+        assert_eq!(f.priority.as_deref(), Some("L"));
+        assert_eq!(f.entry, entry, "the creation date is not reset by a later import");
+        // The same for a finished task's `end`.
+        let done = r#"{"description":"y","uuid":"22222222-2222-4222-8222-222222222222","status":"completed"}"#;
+        go(&mut r, &cfg, done, true).await.unwrap();
+        let end = load_facts(&mut r)
+            .await
+            .unwrap()
+            .iter()
+            .find(|f| f.description == "y")
+            .unwrap()
+            .end;
+        let again = r#"{"description":"y renamed","uuid":"22222222-2222-4222-8222-222222222222","status":"completed"}"#;
+        go(&mut r, &cfg, again, true).await.unwrap();
+        let f = load_facts(&mut r).await.unwrap();
+        assert_eq!(f.iter().find(|f| f.description == "y renamed").unwrap().end, end);
+    }
+
+    #[tokio::test]
     async fn a_check_writes_nothing_and_a_bad_task_stops_everything() {
         let mut r = replica();
         let cfg = Config::default();
@@ -4758,8 +4807,9 @@ mod import_command {
     #[derive(Debug)]
     struct NoNope;
     impl Hooks for NoNope {
-        fn on_add(&self, _: &mut Hooked, task: Facts) -> Result<Facts, Reject> {
+        fn on_add(&self, h: &mut Hooked, task: Facts) -> Result<Facts, Reject> {
             if task.description == "nope" {
+                h.warn("not today");
                 return Err("no nopes".into());
             }
             Ok(task)
@@ -4783,7 +4833,8 @@ mod import_command {
         .await
         .err()
         .unwrap();
-        assert_eq!(e, "no nopes");
+        // The reason, then what the hook said before it refused.
+        assert_eq!(e, "no nopes\nnot today");
         assert!(load_facts(&mut r).await.unwrap().is_empty());
     }
 
@@ -4796,6 +4847,35 @@ mod import_command {
         );
         let e = go(&mut r, &Config::default(), &many, false).await.err().unwrap();
         assert!(e.contains("import at most"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn a_chained_template_is_kept_as_it_came_and_recurs_periodically_like_task_does() {
+        let mut r = replica();
+        let cfg = Config::default();
+        let file = r#"{"description":"Mow","uuid":"11111111-1111-4111-8111-111111111111","status":"recurring",
+            "due":"20271001T000000Z","recur":"weekly","rtype":"chained","entry":"20261001T100000Z"}"#;
+        go(&mut r, &cfg, file, true).await.unwrap();
+        // The next command makes the instances; the template still says what it said.
+        run(&mut r, &cfg, "count").await;
+        let all = load_facts(&mut r).await.unwrap();
+        assert!(
+            all.iter().any(|f| f.parent.is_some()),
+            "instances are made on the periodic schedule"
+        );
+        let exported = export_of(&mut r, &cfg).await;
+        let template = exported
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["uuid"] == "11111111-1111-4111-8111-111111111111")
+            .unwrap();
+        assert_eq!(template["rtype"], "chained");
+        // And importing the export again changes nothing.
+        let CliResult::File { text, .. } = run(&mut r, &cfg, "export").await.0 else {
+            panic!()
+        };
+        assert_eq!(counts(&go(&mut r, &cfg, &text, true).await.unwrap()), (0, 0, all.len()));
     }
 
     #[tokio::test]

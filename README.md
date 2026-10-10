@@ -19,7 +19,8 @@ and the other way round. It is **console-first** (type `task`-style commands) wi
 - **Works with the bucket you already have.** Point it at the R2 bucket your `task` already syncs to and give it the same
   encryption secret. No migration, no new server, nothing changes for the CLI.
 - **Taskwarrior's behaviour, not an imitation of it.** Filters, virtual tags, urgency, report sorting, recurrence,
-  regular expressions, the calendar, `summary`, `burndown`, `history`, `timesheet`, `export`, `calc` and the confirmations are ported from Taskwarrior's
+  regular expressions, the calendar, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `duplicate`, `context`, `calc` and the
+  confirmations are ported from Taskwarrior's
   source and checked against the real `task` 3.5.0.
 - **Taskwarrior 3.5.0 and newer.** Settings removed or deprecated before it are not supported.
 - **Your `taskrc`, safely.** Import your UDAs, custom reports, contexts and settings. Sync settings and anything that
@@ -191,8 +192,8 @@ four ship empty. Changing one means rebuilding the Worker (`npm run dev` does th
 real one). See [Hooks](docs/using.md#hooks) for what they receive and may change, and
 [how to keep them as a patch](docs/using.md#keeping-your-hooks-across-updates) so you can pull upstream updates easily.
 
-**How much fits.** The Worker is about **760 KB compressed** (gzip) today, so a **1 MB compressed** budget leaves about
-**290 KB** for hooks. Measured by adding generated hook code to a release build:
+**How much fits.** The Worker is about **776 KB compressed** (gzip) today, so a **1 MB compressed** budget leaves about
+**270 KB** for hooks. Measured by adding generated hook code to a release build:
 
 | Hook code | Added to the compressed Worker |
 | --- | --- |
@@ -203,9 +204,9 @@ real one). See [Hooks](docs/using.md#hooks) for what they receive and may change
 Generated code compresses unusually well, so for planning use the whole Worker's own ratio instead: about 12 bytes
 compressed per line of ordinary code, or roughly **20,000 lines** before the 1 MB mark. That is far more hook than anyone
 writes; what spends the budget in practice is a **dependency** (a general-purpose crate such as a regex engine can cost
-tens to hundreds of KB on its own; measure before adding one), not your lines. Measure with `npm run build` and `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`. The build leaves the debug function
-names out of the module (a fifth of it, and about 70 KB compressed); `KEEP_WASM_NAMES=1 npm run build` keeps them for a
-readable stack trace.
+tens to hundreds of KB on its own; measure before adding one), not your lines. Measure with `npm run build` and `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`. The build leaves the debug
+function names out of the module (a fifth of it, and about 70 KB compressed); `KEEP_WASM_NAMES=1 npm run build` keeps
+them for a readable stack trace.
 
 ## Security
 

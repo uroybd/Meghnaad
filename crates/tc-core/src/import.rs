@@ -273,6 +273,8 @@ fn convert(
 }
 
 /// `import`. With `apply` false it only reads: the report says what would happen.
+///
+/// When it fails, what the hooks printed still reaches the caller, after the reason, and `on_exit` still runs.
 pub async fn import<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
@@ -283,7 +285,28 @@ pub async fn import<S: Storage>(
     hooks: Option<Arc<dyn Hooks>>,
 ) -> Result<ImportOut, String> {
     let hk = Runner::new(hooks, cfg.hooks());
-    hk.launch("import")?;
+    let said = |m: String, lines: Vec<crate::hooks::Line>| lines.iter().fold(m, |m, l| format!("{m}\n{}", l.text));
+    if let Err(m) = hk.launch("import") {
+        return Err(said(m, hk.abort()));
+    }
+    match run(replica, cfg, clock, text, apply, undo, &hk).await {
+        Ok(mut out) => {
+            out.feedback = hk.finish(false);
+            Ok(out)
+        }
+        Err(m) => Err(said(m, hk.finish(true))),
+    }
+}
+
+async fn run<S: Storage>(
+    replica: &mut Replica<S>,
+    cfg: &Config,
+    clock: Clock,
+    text: &str,
+    apply: bool,
+    undo: &mut UndoStack,
+    hk: &Runner,
+) -> Result<ImportOut, String> {
     let objects = read(text)?;
     if objects.len() > MAX_TASKS {
         return Err(format!(
@@ -358,26 +381,24 @@ pub async fn import<S: Storage>(
                 map.insert(k.clone(), v.clone());
             }
         }
+        // A task that is there keeps the time of its last change and any `entry` or `end` that was made up
+        // here (the file had none), as Taskwarrior does: they must neither count as a difference nor be written.
+        let mut props = t.props;
+        if let Some(old) = &old {
+            let mut keep = vec!["modified"];
+            keep.extend(t.generated_entry.then_some("entry"));
+            keep.extend(t.generated_end.then_some("end"));
+            for k in keep {
+                match old.get(k) {
+                    Some(v) => props.insert(k.to_owned(), v.clone()),
+                    None => props.remove(k),
+                };
+            }
+        }
         let action = match &old {
             None => "add",
-            Some(old) => {
-                // Set aside what was made up here, and the time of the last change, as Taskwarrior does.
-                let mut same = t.props.clone();
-                let mut keep = vec!["modified"];
-                keep.extend(t.generated_entry.then_some("entry"));
-                keep.extend(t.generated_end.then_some("end"));
-                for k in keep {
-                    match old.get(k) {
-                        Some(v) => same.insert(k.to_owned(), v.clone()),
-                        None => same.remove(k),
-                    };
-                }
-                if &same == old {
-                    "skip"
-                } else {
-                    "mod"
-                }
-            }
+            Some(old) if &props == old => "skip",
+            Some(_) => "mod",
         };
         match action {
             "add" => out.added += 1,
@@ -398,7 +419,7 @@ pub async fn import<S: Storage>(
         }
 
         // Every attribute but `status`, which goes last (it settles `end`), as in `TDB2::add`.
-        let mut new = t.props;
+        let mut new = props;
         let mut task = match &old {
             None => replica.create_task(t.uuid, &mut ops).await.map_err(e)?,
             Some(_) => replica
@@ -448,7 +469,6 @@ pub async fn import<S: Storage>(
         replica.commit_operations(ops).await.map_err(e)?;
         out.applied = true;
     }
-    out.feedback = hk.finish(false);
     Ok(out)
 }
 

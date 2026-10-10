@@ -327,6 +327,11 @@ const COLUMN_NAMES: [&str; 20] = [
     "parent",
 ];
 
+/// Attributes of a recurring task that a DOM reference can name too, though no report has a column for them.
+/// (`rtype`, `last` and `template` are named by Taskwarrior as well, but the task view here doesn't hold them, so
+/// they would read as empty where `task` has a value: they are refused instead.)
+const DOM_ONLY: [&str; 2] = ["mask", "imask"];
+
 /// One row of `commands`: the name and category, then what the command does and takes.
 fn command_row(name: &str, category: &str, flags: &str, description: &str) -> Vec<String> {
     const FLAGS: [(char, &str); 7] = [
@@ -1758,7 +1763,7 @@ async fn builtin<S: Storage>(
         Get => {
             let is_override = |w: &str| w.starts_with("rc.") && w.contains([':', '=']);
             let words: Vec<&String> = p.filter.iter().filter(|w| !is_override(w)).collect();
-            let attribute = |a: &str| COLUMN_NAMES.contains(&a) || cfg.udas.contains_key(a);
+            let attribute = |a: &str| COLUMN_NAMES.contains(&a) || DOM_ONLY.contains(&a) || cfg.udas.contains_key(a);
             let date = |a: &str| run::kind_of(a, cfg) == "date";
             let urgency = |f: &Facts| ctx.urgency(f);
             let dom = crate::calc::DomSource {
