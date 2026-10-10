@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import BulkBar from './BulkBar.svelte';
   import FilterBar from './FilterBar.svelte';
   import ResultView from './ResultView.svelte';
   import { clearGroups, clickSort, parseSort, serializeSort, toggleGroup, withSortOverride } from './sortSpec';
+  import { selection } from './selection.svelte';
   import { store } from './store.svelte';
   import { activeTags, toggleTag } from './tagfilter';
 
@@ -28,9 +31,18 @@
   // A tag chip in this table toggles that tag in the report's filter, as typing `+tag` would.
   const toggle = (tag: string) => (store.filter = toggleTag(store.filter, tag));
   const active = $derived(activeTags(store.filter));
+
+  // A task that is not in the table any more (another filter, or it was finished) cannot stay ticked.
+  $effect(() => {
+    const r = store.live?.result;
+    if (r?.kind === 'report') selection.keep(new Set(r.rows.map((x) => x.uuid)));
+  });
+  // Leaving the Tasks view ends the selection.
+  onDestroy(() => selection.clear());
 </script>
 
 <FilterBar />
+<BulkBar />
 {#if store.live}
   <div class:stale={store.live.loading && store.live.result}>
     <ResultView
@@ -40,6 +52,7 @@
       ongroup={groupBy}
       ontag={toggle}
       activeTags={active}
+      selectable
     />
   </div>
 {/if}

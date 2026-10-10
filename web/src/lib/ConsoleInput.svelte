@@ -15,6 +15,18 @@
   $effect(() => {
     store.promptLine = line;
   });
+  // Something outside asked for the prompt (the bulk bar's Command): take its text, and the focus.
+  let asked = store.promptRequest?.n ?? 0;
+  $effect(() => {
+    const r = store.promptRequest;
+    if (!r || r.n === asked) return;
+    asked = r.n;
+    line = r.text;
+    cursor = -1;
+    completer.close();
+    el?.focus();
+    queueMicrotask(() => el?.setSelectionRange(line.length, line.length));
+  });
   onMount(() => {
     if (autofocus && !window.matchMedia('(pointer: coarse)').matches) el?.focus();
   });

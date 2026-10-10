@@ -1555,6 +1555,82 @@ async fn ready_leaves_out_waiting_and_scheduled_ahead() {
     assert_eq!(got, ["plain", "schedpast", "waitpast"]);
 }
 
+/// The commands the bulk bar sends: the whole uuids of the selected tasks side by side, then the verb, with the
+/// click as the answer to every "are you sure?".
+#[tokio::test]
+async fn bulk_commands_from_the_bar_change_exactly_the_selected_tasks() {
+    let cfg = Config::default();
+    let mut r = replica();
+    for d in ["a", "b", "c", "d", "e"] {
+        run(&mut r, &cfg, &format!("add {d} due:tomorrow +old")).await;
+    }
+    let (CliResult::Text { lines }, _) = run(&mut r, &cfg, "uuids").await else {
+        panic!()
+    };
+    async fn uuid_of(r: &mut R, name: &str) -> String {
+        let (CliResult::Text { lines }, _) = run(r, &Config::default(), &format!("description:{name} uuids")).await
+        else {
+            panic!()
+        };
+        lines[0].clone()
+    }
+    let (a, b, c, d) = (
+        uuid_of(&mut r, "a").await,
+        uuid_of(&mut r, "b").await,
+        uuid_of(&mut r, "c").await,
+        uuid_of(&mut r, "d").await,
+    );
+    assert_eq!(lines.len(), 5);
+    let yes = |uuids: &[&String]| Options {
+        approved: Some(uuids.iter().map(|u| (*u).clone()).collect()),
+        confirmed: true,
+        ..Options::default()
+    };
+
+    // Modify four tasks: set a project, add and remove tags, clear the due date.
+    let line = format!("{a} {b} {c} {d} modify project:Home +x +y -old due:");
+    let (res, wrote) = run_opts(&mut r, &cfg, &line, yes(&[&a, &b, &c, &d])).await;
+    assert!(wrote, "{res:?}");
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "all").await else {
+        panic!()
+    };
+    for row in &o.rows {
+        let touched = row.facts.description != "e";
+        assert_eq!(
+            row.facts.project.as_deref(),
+            touched.then_some("Home"),
+            "{}",
+            row.facts.description
+        );
+        assert_eq!(row.facts.due.is_none(), touched, "{}", row.facts.description);
+        let tags: Vec<&str> = row.facts.tags.iter().map(String::as_str).collect();
+        assert_eq!(tags == ["x", "y"], touched, "{}: {tags:?}", row.facts.description);
+        assert_eq!(tags.contains(&"old"), !touched, "{}", row.facts.description);
+    }
+
+    // Complete two, delete two.
+    let (_, wrote) = run_opts(&mut r, &cfg, &format!("{a} {b} done"), yes(&[&a, &b])).await;
+    assert!(wrote);
+    let (_, wrote) = run_opts(&mut r, &cfg, &format!("{c} {d} delete"), yes(&[&c, &d])).await;
+    assert!(wrote);
+    let (CliResult::Report(o), _) = run(&mut r, &cfg, "all").await else {
+        panic!()
+    };
+    let st = |name: &str| {
+        o.rows
+            .iter()
+            .find(|x| x.facts.description == name)
+            .unwrap()
+            .facts
+            .status
+            .clone()
+    };
+    assert_eq!(
+        ["a", "b", "c", "d", "e"].map(st),
+        ["completed", "completed", "deleted", "deleted", "pending"]
+    );
+}
+
 mod with_sync {
     use super::*;
     use taskchampion::Server;

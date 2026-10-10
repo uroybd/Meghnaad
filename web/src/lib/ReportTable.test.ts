@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import ReportTable from './ReportTable.svelte';
+import { selection } from './selection.svelte';
 import { store } from './store.svelte';
 import type { ConfigResponse, ReportResult, Row } from './types';
 
@@ -11,6 +12,8 @@ afterEach(() => {
   app = null;
   document.body.innerHTML = '';
   store.config = null;
+  store.detail = null;
+  selection.clear();
 });
 
 const row = (description: string, priority: string | null, style?: Row['style']): Row =>
@@ -47,7 +50,7 @@ const row = (description: string, priority: string | null, style?: Row['style'])
     style,
   }) as Row;
 
-function draw(rows: Row[], colors: Record<string, { fg?: number; bold?: boolean }>) {
+function draw(rows: Row[], colors: Record<string, { fg?: number; bold?: boolean }> = {}, selectable = false) {
   store.config = { colors, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
   const result: ReportResult = {
     kind: 'report',
@@ -62,7 +65,7 @@ function draw(rows: Row[], colors: Record<string, { fg?: number; bold?: boolean 
     matched: rows.length,
     sort: null,
   };
-  app = mount(ReportTable, { target: document.body, props: { result } });
+  app = mount(ReportTable, { target: document.body, props: { result, selectable } });
   flushSync();
 }
 const cellOf = (description: string, column: string) =>
@@ -93,5 +96,43 @@ describe('the priority cell', () => {
     draw([row('low', 'L'), row('none', null)], { 'uda.priority.H': { fg: 1 } });
     expect(cellOf('low', 'priority').style.color).toBe('');
     expect(cellOf('none', 'priority').style.color).toBe('');
+  });
+});
+
+describe('selecting tasks', () => {
+  const boxes = () => [...document.querySelectorAll<HTMLInputElement>('tbody td.sel input')];
+  const all = () => document.querySelector<HTMLInputElement>('th.sel input')!;
+
+  it('has no checkboxes unless asked', () => {
+    draw([row('a', null), row('b', null)]);
+    expect(document.querySelector('input[type="checkbox"]')).toBeNull();
+  });
+
+  it('has a checkbox on each row and one for all, and ticking selects the task', () => {
+    draw([row('a', null), row('b', null), row('c', null)], {}, true);
+    expect(boxes()).toHaveLength(3);
+    boxes()[1].click();
+    flushSync();
+    expect(selection.uuids).toEqual(['b']);
+    expect(document.querySelectorAll('tr.picked')).toHaveLength(1);
+    // Some are ticked: the all-box is half ticked, not ticked.
+    expect(all().indeterminate).toBe(true);
+    expect(all().checked).toBe(false);
+    expect(store.detail).toBeNull(); // the click did not also open the task
+    all().click();
+    flushSync();
+    expect(selection.uuids.sort()).toEqual(['a', 'b', 'c']);
+    expect(all().checked).toBe(true);
+    expect(all().indeterminate).toBe(false);
+    all().click();
+    flushSync();
+    expect(selection.count).toBe(0);
+  });
+
+  it('opens a task from its row as before', () => {
+    draw([row('a', null), row('b', null)], {}, true);
+    (document.querySelector('tbody tr td.description') as HTMLElement).click();
+    expect(store.detail?.uuid).toBe('a');
+    expect(selection.count).toBe(0);
   });
 });

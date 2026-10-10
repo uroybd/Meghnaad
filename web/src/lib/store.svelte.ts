@@ -102,6 +102,8 @@ class Store {
   adding = $state<{ description: string; n: number } | null>(null);
   /** Text typed at the prompt and not yet run. */
   promptLine = $state('');
+  /** Ask the prompt to take this text and the focus (the bulk bar's Command); `n` makes each ask a new one. */
+  promptRequest = $state<{ text: string; n: number } | null>(null);
   /** The task detail drawer. */
   detail = $state<{ uuid: string; from: Entry | null } | null>(null);
   settingsOpen = $state(false);
@@ -438,6 +440,11 @@ class Store {
 
   clear() {
     this.entries = [];
+  }
+
+  /** Put `text` at the prompt, with the cursor after it, ready to be carried on. */
+  requestPrompt(text: string) {
+    this.promptRequest = { text, n: (this.promptRequest?.n ?? 0) + 1 };
   }
 
   openDetail(uuid: string, from: Entry | null = null) {

@@ -18,6 +18,7 @@
     ongroup,
     ontag,
     activeTags,
+    selectable = false,
   }: {
     entry: Entry;
     onedit?: (row: Row, from: Entry) => void;
@@ -25,6 +26,7 @@
     ongroup?: (column: string | null) => void;
     ontag?: (tag: string) => void;
     activeTags?: string[];
+    selectable?: boolean;
   } = $props();
   const r = $derived(entry.result);
 </script>
@@ -42,6 +44,7 @@
     {ongroup}
     {ontag}
     {activeTags}
+    {selectable}
   />
 {:else if r.kind === 'info'}
   {#each r.tasks as t (t.uuid)}<TaskInfo task={t} onedit={onedit && ((row) => onedit(row, entry))} />{/each}

@@ -11,6 +11,7 @@
   import { groupHeads } from './groups';
   import { scheme } from './scheme.svelte';
   import { baseColumn, groupColumn, parseSort, SORTABLE, sortState } from './sortSpec';
+  import { selection } from './selection.svelte';
   import { store, type Entry } from './store.svelte';
   import type { ReportResult, Row } from './types';
 
@@ -22,6 +23,7 @@
     ongroup,
     ontag,
     activeTags = [],
+    selectable = false,
   }: {
     result: ReportResult;
     entry?: Entry | null;
@@ -34,6 +36,8 @@
     ontag?: (tag: string) => void;
     /** The tags the focused report's filter already requires, shown as pressed chips. */
     activeTags?: string[];
+    /** Provided for the focused report only: a checkbox on each row, to select several for the bulk actions. */
+    selectable?: boolean;
   } = $props();
 
   const udas = $derived(store.config?.config.udas ?? {});
@@ -91,6 +95,14 @@
   const primary = $derived(keys[0] ?? null);
 
   const isOpen = (row: Row) => row.status === 'pending';
+
+  // The select-all box: ticked when every row is, half when some are.
+  const allUuids = $derived(result.rows.map((r) => r.uuid));
+  const ticked = $derived(allUuids.filter((u) => selection.has(u)).length);
+  let allBox = $state<HTMLInputElement | undefined>();
+  $effect(() => {
+    if (allBox) allBox.indeterminate = ticked > 0 && ticked < allUuids.length;
+  });
   const ariaSort = (name: string) => {
     const s = sortState(keys, name);
     return s ? (s.desc ? 'descending' : 'ascending') : 'none';
@@ -138,6 +150,17 @@
     <table>
       <thead>
         <tr>
+          {#if selectable}
+            <th class="sel">
+              <input
+                type="checkbox"
+                bind:this={allBox}
+                checked={allUuids.length > 0 && ticked === allUuids.length}
+                aria-label="Select all {allUuids.length} tasks"
+                onchange={() => selection.toggleAll(allUuids)}
+              />
+            </th>
+          {/if}
           {#each result.columns as col (col.spec)}
             {@const st = sortState(keys, col.name)}
             <th class={col.kind} aria-sort={sortable(col.name) ? ariaSort(col.name) : undefined}>
@@ -184,7 +207,9 @@
       <tbody>
         {#each result.rows as row, i (row.uuid)}
           {#if heads[i]}
-            <tr class="grouphead"><th colspan={result.columns.length + 1} scope="colgroup">{heads[i]}</th></tr>
+            <tr class="grouphead"
+              ><th colspan={result.columns.length + 1 + (selectable ? 1 : 0)} scope="colgroup">{heads[i]}</th></tr
+            >
           {/if}
           {@const l = look(row.style, scheme.dark)}
           <tr
@@ -193,11 +218,25 @@
             style={rowVars(l)}
             class:gap={result.breaks[i] && heads.length === 0}
             class:selected={store.detail?.uuid === row.uuid}
+            class:picked={selectable && selection.has(row.uuid)}
+            class:selectable
             tabindex="0"
             aria-label="Open details: {row.description}"
             onclick={(e) => open(e, row)}
             onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(e, row)}
           >
+            {#if selectable}
+              <td class="sel">
+                <label class="selbox">
+                  <input
+                    type="checkbox"
+                    checked={selection.has(row.uuid)}
+                    aria-label="Select: {row.description}"
+                    onchange={() => selection.toggle(row.uuid)}
+                  />
+                </label>
+              </td>
+            {/if}
             {#each result.columns as col (col.spec)}
               {@const c = cell(col, row, ctx)}
               <td
@@ -437,6 +476,29 @@
     background: var(--panel-2);
     box-shadow: inset 3px 0 0 var(--accent);
   }
+  /* The ticked rows: a tint, so a selection reads at a glance across the table. */
+  tr.picked,
+  tr.picked:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  th.sel,
+  td.sel {
+    width: 1%;
+    padding-right: 6px;
+  }
+  /* The whole cell is the target, not just the box. */
+  .selbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    min-height: 24px;
+    cursor: pointer;
+  }
+  td.sel input,
+  th.sel input {
+    cursor: pointer;
+  }
   /* Room for the selection bar (and the hover tint) so the first column never touches it. */
   @media (min-width: 761px) {
     th:first-child,
@@ -569,6 +631,27 @@
       color: var(--text);
       padding-right: 2.4em;
       min-width: 0;
+    }
+    /* The tick box sits in the card's top left corner, with the description beside it. */
+    th.sel {
+      display: none;
+    }
+    td.sel {
+      position: absolute;
+      top: 6px;
+      left: 4px;
+      width: auto;
+      padding: 0;
+    }
+    td.sel::before {
+      display: none;
+    }
+    tr.selectable td.description {
+      padding-left: 34px;
+    }
+    .selbox {
+      min-width: 36px;
+      min-height: 36px;
     }
     td.description::before,
     td.actions::before {
