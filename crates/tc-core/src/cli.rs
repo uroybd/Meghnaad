@@ -68,6 +68,9 @@ pub enum Kind {
     Import,
     /// `_rows`: the app's own view of the selected tasks (what the pages draw from); not Taskwarrior's.
     Rows,
+    /// `_history <uuid>`: what changed and when for one task, from the operation log; the app's own. The detail
+    /// view asks for it when its History is opened, so `info` and the pages don't pay for it.
+    Journal,
     Ids,
     Uuids,
     Undo,
@@ -128,6 +131,7 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("export", Export, false),
     ("import", Import, false),
     ("_rows", Rows, false),
+    ("_history", Journal, false),
     ("information", Info, false),
     ("ids", Ids, false),
     ("uuids", Uuids, false),
@@ -1116,6 +1120,21 @@ pub async fn execute<S: Storage>(
     {
         return settings_command(replica, stored, cfg, clock, p, &opts, command).await;
     }
+    // `_history <uuid>` reads one task's operations: it needs none of the tasks loaded, and no housekeeping.
+    if let Some(
+        p @ Parsed {
+            cmd: Cmd::Builtin(Journal),
+            ..
+        },
+    ) = &parsed
+    {
+        let mut done = match journal_of(replica, cfg, &p.filter).await {
+            Ok(value) => ok(CliResult::Json { value }),
+            Err(m) => error(m),
+        };
+        done.command = command;
+        return done;
+    }
     // Hooks: `on-launch` comes first, before anything is read or written.
     let hk = crate::hooks::Runner::new(opts.hooks.clone(), cfg.hooks());
     if let Err(m) = hk.launch(&args.join(" ")) {
@@ -1348,6 +1367,30 @@ async fn settings_command<S: Storage>(
     };
     done.command = command;
     done
+}
+
+/// What changed and when for the task `words` names (a full uuid), as `info` once listed it. Empty when
+/// `journal.info` is off.
+async fn journal_of<S: Storage>(
+    replica: &mut Replica<S>,
+    cfg: &Config,
+    words: &[String],
+) -> Result<serde_json::Value, String> {
+    // An `rc.` override is already in `cfg`.
+    let words: Vec<&String> = words
+        .iter()
+        .filter(|w| !(w.starts_with("rc.") && w.contains([':', '='])))
+        .collect();
+    let uuid = match words[..] {
+        [w] => Uuid::parse_str(w).map_err(|_| format!("'{w}' is not a task uuid."))?,
+        _ => return Err("Give the uuid of one task.".into()),
+    };
+    if !cfg.journal_info() {
+        return Ok(serde_json::json!([]));
+    }
+    let ops = replica.get_task_operations(uuid).await.map_err(|e| e.to_string())?;
+    let is_date = |p: &str| p != "last" && run::kind_of(p, cfg) == "date";
+    serde_json::to_value(history::history(&ops, &is_date)).map_err(|e| e.to_string())
 }
 
 /// How many pending tasks `filter` picks (`context define` asks first if it picks none), or why it is not a filter.
@@ -1805,7 +1848,7 @@ async fn builtin<S: Storage>(
                 lines: vec![values.join(" ")],
             })
         }
-        Show | Config | Context => error("this command is handled before the tasks are read"),
+        Show | Config | Context | Journal => error("this command is handled before the tasks are read"),
         Columns => {
             let mut rows: Vec<Vec<String>> = COLUMN_NAMES
                 .iter()
@@ -2152,7 +2195,7 @@ async fn builtin<S: Storage>(
                 Limit::N(n) => sel.into_iter().take(n).collect(),
                 _ => sel,
             };
-            let row = |f: &Facts| Row::build(f, ctx);
+            let row = |f: &Facts| Row::build_full(f, ctx);
             match kind {
                 // Taskwarrior's `count` skips recurring parents (the templates), not the instances.
                 Count => ok(CliResult::Text {
@@ -2164,16 +2207,7 @@ async fn builtin<S: Storage>(
                             lines: vec!["No matches.".into()],
                         });
                     }
-                    let mut tasks: Vec<Row> = sel.iter().map(|f| row(f)).collect();
-                    if cfg.journal_info() {
-                        let is_date = |p: &str| p != "last" && run::kind_of(p, cfg) == "date";
-                        for t in &mut tasks {
-                            match replica.get_task_operations(t.facts.uuid).await {
-                                Ok(ops) => t.history = history::history(&ops, &is_date),
-                                Err(e) => return error(e.to_string()),
-                            }
-                        }
-                    }
+                    let tasks: Vec<Row> = sel.iter().map(|f| row(f)).collect();
                     ok(CliResult::Info { tasks })
                 }
                 Rows => ok(CliResult::Json {

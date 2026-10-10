@@ -56,7 +56,10 @@ export interface Row extends Facts {
   urgency: number;
   /** Working-set number; specific to the web UI and usually differs from a desktop's. */
   id: number | null;
-  virtual_tags: string[];
+  /** Every virtual tag that applies: only `info` fills it. */
+  virtual_tags?: string[];
+  /** The WAITING virtual tag (absent when false): what a table reads. */
+  waiting?: boolean;
   /** Properties in `extra` that the taskrc doesn't define as UDAs: shown, never edited. */
   orphans: string[];
   /** Tracked time in seconds when `journal.time` is on (includes the current stretch). */
@@ -65,8 +68,6 @@ export interface Row extends Facts {
   sessions: Session[];
   /** How many of the tasks this one depends on are still open (absent when none). */
   pending_deps?: number;
-  /** What changed and when (`info`, when `journal.info` is on). */
-  history?: HistoryEntry[];
 }
 
 export type HistoryKind =

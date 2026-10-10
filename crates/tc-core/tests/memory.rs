@@ -9,12 +9,12 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use taskchampion::server::SnapshotUrgency;
-use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::{Operations, Replica, Status};
 use tc_core::cli::{execute, CliResult, Options, UndoStack};
 use tc_core::dates::Clock;
 use tc_core::filter::split_words;
 use tc_core::taskrc::Config;
+use tc_core::LiveStorage;
 use tc_core::{load_cryptor, CloudServer, MemStore};
 
 struct Counting;
@@ -67,7 +67,7 @@ async fn measure<T, F: std::future::Future<Output = T>>(f: F) -> (f64, f64, T) {
     (peak as f64 / MB, held as f64 / MB, out)
 }
 
-type R = Replica<InMemoryStorage>;
+type R = Replica<LiveStorage>;
 
 async fn add_tasks(r: &mut R, from: usize, n: usize) {
     let mut ops = Operations::new();
@@ -134,14 +134,14 @@ async fn run(r: &mut R, line: &str) -> CliResult {
 async fn catching_up_from_scratch_over_many_versions_stays_small() {
     let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
     let (store, c) = bucket().await;
-    let mut a: R = Replica::new(InMemoryStorage::new());
+    let mut a: R = Replica::new(LiveStorage::new());
     // 1,200 versions of one change each, the way a busy week of edits from several devices looks.
     for i in 0..1200 {
         add_tasks(&mut a, i, 1).await;
         let mut s = server(&store, &c, SnapshotUrgency::None);
         a.sync(&mut s, true).await.unwrap();
     }
-    let mut b: R = Replica::new(InMemoryStorage::new());
+    let mut b: R = Replica::new(LiveStorage::new());
     let mut s = server(&store, &c, SnapshotUrgency::None);
     let (peak, held, _) = measure(async { b.sync(&mut s, true).await.unwrap() }).await;
     println!("cold start, 1200 versions: peak {peak:.1} MB, held afterwards {held:.1} MB");
@@ -156,7 +156,7 @@ async fn catching_up_from_scratch_over_many_versions_stays_small() {
 async fn restoring_a_snapshot_and_answering_requests_stay_small() {
     let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
     let (store, c) = bucket().await;
-    let mut a: R = Replica::new(InMemoryStorage::new());
+    let mut a: R = Replica::new(LiveStorage::new());
     for batch in 0..6 {
         add_tasks(&mut a, batch * 500, 500).await;
         let mut s = server(&store, &c, SnapshotUrgency::None);
@@ -167,7 +167,7 @@ async fn restoring_a_snapshot_and_answering_requests_stay_small() {
     let mut s = server(&store, &c, SnapshotUrgency::High);
     a.sync(&mut s, false).await.unwrap();
 
-    let mut b: R = Replica::new(InMemoryStorage::new());
+    let mut b: R = Replica::new(LiveStorage::new());
     let mut s = server(&store, &c, SnapshotUrgency::None);
     let (peak, held, _) = measure(async { b.sync(&mut s, true).await.unwrap() }).await;
     println!("cold start from a snapshot of 3001 tasks: peak {peak:.1} MB, held {held:.1} MB");
@@ -221,7 +221,7 @@ async fn importing_the_most_tasks_one_import_takes_stays_small() {
     );
 
     let (store, c) = bucket().await;
-    let mut a: R = Replica::new(InMemoryStorage::new());
+    let mut a: R = Replica::new(LiveStorage::new());
     let mut undo = UndoStack::default();
     let cfg = Config::default();
     // First the check, then the import and the sync that follows it, as the Worker does them.

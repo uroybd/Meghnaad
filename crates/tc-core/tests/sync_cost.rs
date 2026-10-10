@@ -4,9 +4,9 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::{Operations, Replica, Server, Status};
 use tc_core::crypto::Cryptor;
+use tc_core::LiveStorage;
 use tc_core::{load_cryptor, names, CloudServer, MemStore, ObjectStore, Result};
 
 /// A [`MemStore`] that counts what is asked of it, by kind. Clones share the counts.
@@ -60,10 +60,10 @@ impl ObjectStore for Counting {
     }
 }
 
-type R = Replica<InMemoryStorage>;
+type R = Replica<LiveStorage>;
 
 fn replica() -> R {
-    Replica::new(InMemoryStorage::new())
+    Replica::new(LiveStorage::new())
 }
 
 /// The key is derived once per Worker isolate and reused, so it is not part of a request's cost.

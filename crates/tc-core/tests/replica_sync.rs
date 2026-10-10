@@ -1,18 +1,18 @@
 //! Two independent TaskChampion replicas syncing through our `CloudServer` over one shared
 //! in-memory bucket.
 
-use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::{Operations, Replica, Server, Status};
+use tc_core::LiveStorage;
 use tc_core::{names, CloudServer, MemStore, ObjectStore};
 
-type R = Replica<InMemoryStorage>;
+type R = Replica<LiveStorage>;
 
 async fn server(store: &MemStore) -> Box<dyn Server> {
     Box::new(CloudServer::new(store.clone(), b"hunter2").await.unwrap())
 }
 
 fn replica() -> R {
-    Replica::new(InMemoryStorage::new())
+    Replica::new(LiveStorage::new())
 }
 
 async fn add_task(r: &mut R, description: &str) -> uuid::Uuid {

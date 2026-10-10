@@ -2,11 +2,11 @@
 //! newest snapshot, and versions older than 180 days that a snapshot covers.
 
 use taskchampion::server::{AddVersionResult, SnapshotUrgency, VersionId};
-use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::{Operations, Replica, Server, Status};
+use tc_core::LiveStorage;
 use tc_core::{names, CloudServer, MemStore, ObjectStore};
 
-type R = Replica<InMemoryStorage>;
+type R = Replica<LiveStorage>;
 type S = CloudServer<MemStore>;
 
 const DAY: i64 = 86_400;
@@ -67,7 +67,7 @@ async fn snapshots(store: &MemStore) -> Vec<VersionId> {
 #[tokio::test]
 async fn old_versions_a_snapshot_covers_are_deleted_and_the_tasks_survive() {
     let store = MemStore::new();
-    let mut a: R = Replica::new(InMemoryStorage::new());
+    let mut a: R = Replica::new(LiveStorage::new());
     // Six pushes long ago, the seventh with a snapshot, then one recent push.
     store.set_now(LONG_AGO);
     for i in 0..6 {
@@ -92,7 +92,7 @@ async fn old_versions_a_snapshot_covers_are_deleted_and_the_tasks_survive() {
     assert_eq!(snapshots(&store).await.len(), 1);
 
     // A new replica starts from the snapshot and replays what follows: every task is there.
-    let mut b: R = Replica::new(InMemoryStorage::new());
+    let mut b: R = Replica::new(LiveStorage::new());
     let mut s: Box<dyn Server> = Box::new(server(&store).await);
     b.sync(&mut s, true).await.unwrap();
     assert_eq!(b.all_tasks().await.unwrap().len(), 8);

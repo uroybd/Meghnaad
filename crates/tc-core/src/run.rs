@@ -19,6 +19,10 @@ fn is_zero(n: &u32) -> bool {
     *n == 0
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Row {
     #[serde(flatten)]
@@ -26,7 +30,13 @@ pub struct Row {
     pub urgency: f64,
     /// Working-set number, as used by `task 3 done`. Only pending tasks have one.
     pub id: Option<u32>,
+    /// Every virtual tag that applies. Only `info` (and `rows`) fill it: a table needs just `waiting`, and the
+    /// list is about 170 bytes a row to send and a screenful of date arithmetic to work out.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub virtual_tags: Vec<&'static str>,
+    /// The `WAITING` virtual tag: the one a table reads (the status cell and the row's look).
+    #[serde(skip_serializing_if = "is_false")]
+    pub waiting: bool,
     /// Properties not defined as UDAs in the taskrc: displayed, but read-only.
     pub orphans: Vec<String>,
     /// Time spent active, from the `journal.time` annotations (only when that is enabled).
@@ -37,15 +47,13 @@ pub struct Row {
     /// `depends.indicator` show (a finished task no longer holds this one up).
     #[serde(skip_serializing_if = "is_zero")]
     pub pending_deps: u32,
-    /// What changed and when, for `info` under `journal.info` (empty everywhere else).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub history: Vec<crate::history::Entry>,
     /// How the colour rules (`color.*`) colour this task; absent when none apply or colour is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub style: Option<crate::color::Style>,
 }
 
 impl Row {
+    /// A row for a table: no virtual-tag list (see [`Row::build_full`]).
     pub fn build(f: &Facts, ctx: &EvalCtx) -> Row {
         let cfg = ctx.cfg;
         let journal = cfg.journal();
@@ -53,7 +61,8 @@ impl Row {
             facts: f.clone(),
             urgency: ctx.urgency(f),
             id: ctx.ids.get(&f.uuid).copied(),
-            virtual_tags: f.active_virtual_tags(cfg, &ctx.clock),
+            virtual_tags: vec![],
+            waiting: f.is_waiting(&ctx.clock),
             orphans: f.orphan_keys(cfg),
             active_seconds: journal
                 .as_ref()
@@ -62,8 +71,15 @@ impl Row {
                 .map(|(s, e)| f.sessions(&s, &e, ctx.clock.now))
                 .unwrap_or_default(),
             pending_deps: f.depends.iter().filter(|d| ctx.ids.contains_key(d)).count() as u32,
-            history: vec![],
             style: ctx.style(f),
+        }
+    }
+
+    /// A row with every virtual tag listed, for the detail view.
+    pub fn build_full(f: &Facts, ctx: &EvalCtx) -> Row {
+        Row {
+            virtual_tags: f.active_virtual_tags(ctx.cfg, &ctx.clock),
+            ..Row::build(f, ctx)
         }
     }
 }
@@ -584,11 +600,11 @@ mod tests {
                 urgency: ctx.urgency(f),
                 id: ids.get(&f.uuid).copied(),
                 virtual_tags: vec![],
+                waiting: false,
                 orphans: vec![],
                 active_seconds: None,
                 sessions: vec![],
                 pending_deps: 0,
-                history: vec![],
                 style: None,
             })
             .collect();

@@ -12,7 +12,7 @@
   import StatusPill, { type Kind } from './StatusPill.svelte';
   import UuidTip from './UuidTip.svelte';
   import { store } from './store.svelte';
-  import type { Row } from './types';
+  import type { HistoryEntry, Row } from './types';
 
   let {
     task,
@@ -28,13 +28,40 @@
     embedded?: boolean;
   } = $props();
 
+  // The history is not part of the task: it is fetched when the section is opened, and again when the task changes.
+  let histOpen = $state(false);
+  let history = $state<HistoryEntry[] | null>(null);
+  let histError = $state<string | null>(null);
+  let asked = 0;
+  $effect(() => {
+    void task.uuid;
+    void task.modified;
+    if (!histOpen) return;
+    const mine = ++asked;
+    histError = null;
+    runCli({ args: ['_history', task.uuid] })
+      .then(({ result }) => {
+        if (mine !== asked) return;
+        if (result.kind === 'json') history = result.value as HistoryEntry[];
+        else histError = result.kind === 'error' ? result.message : 'The history could not be read.';
+      })
+      .catch((e) => {
+        if (mine === asked) histError = e instanceof Error ? e.message : String(e);
+      });
+  });
+  // Another task: forget the last one's history, so it is never shown against the wrong task.
+  $effect(() => {
+    void task.uuid;
+    history = null;
+  });
+
   const defs = $derived(store.config?.config.udas ?? {});
   const infoFmt = $derived(formatFor('info', store.config?.config.settings));
   const noteFmt = $derived(formatFor('infoNote', store.config?.config.settings));
   // History moments carry seconds (a row is the changes within one second); a configured
   // `dateformat.info` wins, as in Taskwarrior.
   const stamp = (epoch: number) => (infoFmt ? formatMoment(epoch, undefined, infoFmt) : formatStamp(epoch));
-  const waiting = $derived(task.status === 'pending' && task.virtual_tags.includes('WAITING'));
+  const waiting = $derived(task.status === 'pending' && task.waiting === true);
   const udaKeys = $derived(
     Object.keys(task.extra)
       .filter((k) => k in defs)
@@ -125,7 +152,7 @@
       </dd>{/if}
     {#each dates as [label, ts], _i (_i)}
       {#if ts != null}<dt>{label}</dt>
-        <dd class:overdue={label === 'Due' && task.virtual_tags.includes('OVERDUE')}>
+        <dd class:overdue={label === 'Due' && task.virtual_tags?.includes('OVERDUE')}>
           {formatMoment(ts, undefined, infoFmt)}
         </dd>{/if}
     {/each}
@@ -156,9 +183,9 @@
     {/each}
     <dt>Urgency</dt>
     <dd class="urg-{urgencyLevel(task.urgency)}">{task.urgency.toFixed(2)}</dd>
-    {#if task.virtual_tags.length}
+    {#if task.virtual_tags?.length}
       <dt>Virtual tags</dt>
-      <dd class="dim">{task.virtual_tags.join(' ')}</dd>
+      <dd class="dim">{task.virtual_tags?.join(' ')}</dd>
     {/if}
   </dl>
 
@@ -223,17 +250,26 @@
     </ul>
   {/if}
 
-  {#if task.history?.length}
-    <!-- Closed until asked for: the log grows with every edit and is rarely what you opened the task for. -->
-    <details class="hist">
-      <summary title="What changed and when, from the task's operation log (journal.info).">
-        History <span class="dim">· {task.history.length} {task.history.length === 1 ? 'moment' : 'moments'}</span>
-      </summary>
+  <!-- Closed until asked for, and fetched then (`_history`): the log grows with every edit, and is rarely what you opened the task for. -->
+  <details class="hist" bind:open={histOpen}>
+    <summary title="What changed and when, from the task's operation log (journal.info).">
+      History{#if history}
+        <span class="dim">· {history.length} {history.length === 1 ? 'moment' : 'moments'}</span>{/if}
+    </summary>
+    {#if histError}
+      <p class="err" role="alert">{histError}</p>
+    {:else if history === null}
+      <p class="dim">Loading…</p>
+    {:else if !history.length}
+      <p class="dim">
+        Nothing is recorded: <code>journal.info</code> is off, or the changes came before this app last started.
+      </p>
+    {:else}
       <div class="scroll">
         <table class="history" data-testid="history">
           <thead><tr><th>Date</th><th>Modification</th></tr></thead>
           <tbody>
-            {#each task.history as e, _i (_i)}
+            {#each history as e, _i (_i)}
               <tr>
                 <td class="mono">{stamp(e.at)}</td>
                 <td
@@ -244,8 +280,8 @@
           </tbody>
         </table>
       </div>
-    </details>
-  {/if}
+    {/if}
+  </details>
 
   {#if task.orphans.length}
     <h4 title="These properties exist on the task but aren't defined as UDAs in your taskrc.">
@@ -348,6 +384,9 @@
   }
   .sessions tr.running td {
     color: var(--ok);
+  }
+  .hist .err {
+    color: var(--err);
   }
   .hist {
     margin: 16px 0 6px;

@@ -160,7 +160,7 @@ describe('cell', () => {
     expect(cell(col('tags.count'), row({ tags: ['x', 'y'] }), ctx).text).toBe('[2]');
     expect(cell(col('depends.indicator'), row({ depends: ['u'], pending_deps: 1 }), ctx).text).toBe('D');
     expect(cell(col('status.short'), row(), ctx).text).toBe('P');
-    expect(cell(col('status.short'), row({ virtual_tags: ['WAITING'] }), ctx).text).toBe('W');
+    expect(cell(col('status.short'), row({ waiting: true }), ctx).text).toBe('W');
     expect(cell(col('priority'), row({ priority: 'H' }), ctx).cls).toBe('pri-h');
     expect(cell(col('urgency'), row(), ctx).text).toBe('4.50');
   });

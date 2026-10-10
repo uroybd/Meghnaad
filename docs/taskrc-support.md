@@ -159,7 +159,7 @@ The `calendar` command is supported, with Taskwarrior's arguments (`calendar`, `
 | `journal.time` | Done | `start` and `stop` write the annotations; the detail view turns them into a sessions table and hides the markers |
 | `journal.time.start.annotation` | Done | |
 | `journal.time.stop.annotation` | Done | |
-| `journal.info` | Done | The detail view (collapsed until opened) and `info` list what changed and when, built from the replica's operation log and worded like Taskwarrior's `info` journal: changes within a second share a row, `modified` is never listed, a stopped `start` reports its duration (measured to `end` when `done end:` is given). Differences: a `start` removed with no matching start in the history (a snapshot dropped it) says `Start deleted.` rather than a time since 1970. History before a snapshot is not available, as with the CLI |
+| `journal.info` | Done | The detail view and `info` (collapsed, and read only when opened) list what changed and when, built from the replica's operation log and worded like Taskwarrior's `info` journal: changes within a second share a row, `modified` is never listed, a stopped `start` reports its duration (measured to `end` when `done end:` is given). Differences: a `start` removed with no matching start in the history (a snapshot dropped it) says `Start deleted.` rather than a time since 1970. History before a snapshot is not available, as with the CLI |
 
 ## Dependencies
 

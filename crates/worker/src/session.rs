@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use taskchampion::storage::inmemory::InMemoryStorage;
 use taskchampion::{Replica, Server};
 use tc_core::cli::UndoStack;
 use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::taskrc::Config;
+use tc_core::LiveStorage;
 use tc_core::{load_salt, CloudServer, ObjectStore};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use wasm_bindgen::{JsCast, JsValue};
@@ -21,7 +21,7 @@ use worker::Env;
 
 use crate::store::R2Store;
 
-pub type Db = Replica<InMemoryStorage>;
+pub type Db = Replica<LiveStorage>;
 
 /// Where the allowlisted taskrc subset lives. Outside TaskChampion's own namespaces
 /// (`salt`, `latest`, `v-*`, `s-*`), so the `task` CLI never sees it. Because it is in the bucket
@@ -251,7 +251,7 @@ pub async fn open(env: &Env) -> worker::Result<Session> {
             let c = Cached {
                 cryptor,
                 state: Arc::new(Mutex::new(State {
-                    replica: Replica::new(InMemoryStorage::new()),
+                    replica: Replica::new(LiveStorage::new()),
                     undo: UndoStack::default(),
                 })),
             };
