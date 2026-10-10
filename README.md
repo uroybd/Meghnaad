@@ -190,8 +190,8 @@ four ship empty. Changing one means rebuilding the Worker (`npm run dev` does th
 real one). See [Hooks](docs/using.md#hooks) for what they receive and may change, and
 [how to keep them as a patch](docs/using.md#keeping-your-hooks-across-updates) so you can pull upstream updates easily.
 
-**How much fits.** The Worker is about **783 KB compressed** (gzip) today, so a **1 MB compressed** budget leaves about
-**265 KB** for hooks. Measured by adding generated hook code to a release build:
+**How much fits.** The Worker is about **760 KB compressed** (gzip) today, so a **1 MB compressed** budget leaves about
+**290 KB** for hooks. Measured by adding generated hook code to a release build:
 
 | Hook code | Added to the compressed Worker |
 | --- | --- |
@@ -202,7 +202,9 @@ real one). See [Hooks](docs/using.md#hooks) for what they receive and may change
 Generated code compresses unusually well, so for planning use the whole Worker's own ratio instead: about 12 bytes
 compressed per line of ordinary code, or roughly **20,000 lines** before the 1 MB mark. That is far more hook than anyone
 writes; what spends the budget in practice is a **dependency** (a general-purpose crate such as a regex engine can cost
-tens to hundreds of KB on its own; measure before adding one), not your lines. Measure with `npm run build` and `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`.
+tens to hundreds of KB on its own; measure before adding one), not your lines. Measure with `npm run build` and `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`. The build leaves the debug function
+names out of the module (a fifth of it, and about 70 KB compressed); `KEEP_WASM_NAMES=1 npm run build` keeps them for a
+readable stack trace.
 
 ## Security
 
