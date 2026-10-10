@@ -573,6 +573,57 @@ fn show(v: &V, clock: &Clock) -> String {
     }
 }
 
+/// A DOM value as `calc` and `_get` print it.
+pub fn dom_text(d: Dom, clock: &Clock) -> String {
+    show(&from_dom(d), clock)
+}
+
+/// Whether `word` is a DOM reference, as Taskwarrior's lexer decides it (`Lexer::isDOM`): `rc.<name>`,
+/// the fixed `tw.*`, `context.*` and `system.*` names, and, with or without a leading `<id>.` or `<uuid>.`,
+/// `tags.<word>`, an attribute, a part of a date attribute (`due.year`) or `annotations.count`,
+/// `annotations.<N>.description` and `annotations.<N>.entry` (and its parts). Whether it has a value is
+/// another matter.
+pub fn is_dom_ref(word: &str, is_attribute: &dyn Fn(&str) -> bool, is_date: &dyn Fn(&str) -> bool) -> bool {
+    const FIXED: [&str; 12] = [
+        "tw.syncneeded",
+        "tw.program",
+        "tw.args",
+        "tw.width",
+        "tw.height",
+        "tw.version",
+        "context.program",
+        "context.args",
+        "context.width",
+        "context.height",
+        "system.version",
+        "system.os",
+    ];
+    const PARTS: [&str; 9] = [
+        "year", "month", "day", "week", "weekday", "julian", "hour", "minute", "second",
+    ];
+    if word.strip_prefix("rc.").is_some_and(|k| !k.is_empty()) || FIXED.contains(&word) {
+        return true;
+    }
+    let task = |head: &str| {
+        head.bytes().all(|c| c.is_ascii_digit())
+            || (head.len() >= 8 && head.bytes().all(|c| c.is_ascii_hexdigit() || c == b'-'))
+    };
+    let rest = match word.split_once('.') {
+        Some((head, tail)) if !head.is_empty() && task(head) => tail,
+        _ => word,
+    };
+    let number = |n: &str| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit());
+    match rest.split('.').collect::<Vec<_>>()[..] {
+        ["tags", w] => !w.is_empty(),
+        [a] => is_attribute(a),
+        ["annotations", "count"] => true,
+        [a, part] => is_date(a) && PARTS.contains(&part),
+        ["annotations", n, "description" | "entry"] => number(n),
+        ["annotations", n, "entry", part] => number(n) && PARTS.contains(&part),
+        _ => false,
+    }
+}
+
 fn from_dom(d: Dom) -> V {
     match d {
         Dom::Int(i) => V::Int(i),
@@ -1202,6 +1253,50 @@ impl DomSource<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dom_references_are_the_ones_the_lexer_names() {
+        let attribute = |a: &str| ["due", "tags", "description", "id", "annotations", "entry", "est"].contains(&a);
+        let date = |a: &str| matches!(a, "due" | "entry");
+        let is = |w: &str| is_dom_ref(w, &attribute, &date);
+        for yes in [
+            "rc.bulk",
+            "rc.report.next.sort",
+            "tw.version",
+            "system.os",
+            "context.width",
+            "1.due",
+            "1.due.year",
+            "3d978566.description",
+            "3d978566-1111-2222-3333-444455556666.est",
+            "1.tags.work",
+            "due",
+            "1.annotations.count",
+            "1.annotations.2.description",
+            "1.annotations.2.entry",
+            "1.annotations.2.entry.hour",
+            "9.description",
+        ] {
+            assert!(is(yes), "{yes}");
+        }
+        for no in [
+            "rc.",
+            "foo",
+            "1",
+            "1.",
+            "1.nothing",
+            "tw.bogus",
+            "system.bogus",
+            "1.description.year",
+            "1.due.bogus",
+            "1.annotations.x.description",
+            "1.annotations.2",
+            "abc.due",
+            "+tag",
+        ] {
+            assert!(!is(no), "{no}");
+        }
+    }
+
     use super::*;
 
     fn c(expr: &str) -> String {

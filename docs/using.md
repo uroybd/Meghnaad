@@ -60,7 +60,7 @@ help
 | | |
 | --- | --- |
 | **Write** | `add` `log` `duplicate` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
-| **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `stats` `udas` `columns` `reports` `context` `show` `config` `export` `ids` `uuids` `calc` `_projects` `_tags` |
+| **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `stats` `udas` `columns` `reports` `context` `show` `config` `export` `ids` `uuids` `calc` `commands` `_get` `_projects` `_tags` |
 | **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
 
@@ -87,6 +87,12 @@ a copy of task 3 as a new pending task: it keeps everything but its identity, `s
 `duplicate` is applied to the copy (`3 duplicate due:eow +again`), and plain words become a note on it. Copying a
 recurring instance gives an ordinary task; copying a template gives another template. Both write like any other command,
 so they ask first at `bulk` tasks, and a `duplicate` with no filter asks as the others do.
+
+**`commands`** lists every command and report in a table (its category, whether it writes, and what it takes: a
+filter, modifications, other words), so it shows what this app understands, which is a little less than `task`. A
+report you define in the taskrc is there too. **`_get`** prints the value of each DOM reference it is given, separated
+by spaces: `_get 1.due 1.project rc.bulk tw.version`. A reference with no value prints as nothing; a word that is not a
+reference is an error. It reads the same references as `calc` (see below), and credentials are never among them.
 
 **`stats`** counts the tasks that match a filter (all of them, with none): by status, annotations, tags, projects,
 blocked and blocking, how old the oldest is and how often tasks are added and finished. The two rows about undo and the

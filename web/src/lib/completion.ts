@@ -66,6 +66,8 @@ export const COMMANDS: Record<string, string> = {
   reports: 'list reports',
   context: 'list, define (define work +work), delete or switch contexts; context none',
   stats: 'task database statistics',
+  commands: 'every command and report, and what each takes',
+  _get: 'the value of a reference: _get 1.due rc.bulk tw.version',
   show: 'show every setting, changed ones highlighted',
   config: 'change a setting: config name value (no value removes it)',
   information: 'show everything about tasks (same as info)',

@@ -74,6 +74,8 @@ pub enum Kind {
     Help,
     Calc,
     Config,
+    Commands,
+    Get,
 }
 
 use Kind::*;
@@ -126,12 +128,228 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("ids", Ids, false),
     ("uuids", Uuids, false),
     ("undo", Undo, false),
-    ("sync", Sync, false),
+    ("synchronize", Sync, false),
     ("version", Version, false),
     ("help", Help, false),
     ("calc", Calc, false),
     ("config", Config, false),
+    ("commands", Commands, false),
+    ("_get", Get, false),
 ];
+
+/// What `commands` says about each command (except the reports, which are all alike): its name, category,
+/// flags and description. The flags are `W` (it writes), `I` (shows ids), `G` (garbage-collects), `R` (runs
+/// recurrence), `C` (follows the context), `F` (takes a filter), `M` (takes modifications) and `S` (takes
+/// other words). The wording is Taskwarrior's.
+const COMMAND_INFO: &[(&str, &str, &str, &str)] = &[
+    ("_get", "internal", "S", "DOM Accessor"),
+    (
+        "_projects",
+        "internal",
+        "GRF",
+        "Shows only a list of all project names used",
+    ),
+    (
+        "_tags",
+        "internal",
+        "GRF",
+        "Shows only a list of all tags used, for autocompletion purposes",
+    ),
+    ("add", "operation", "WCM", "Adds a new task"),
+    ("annotate", "operation", "WFM", "Adds an annotation to an existing task"),
+    (
+        "append",
+        "operation",
+        "WFM",
+        "Appends text to an existing task description",
+    ),
+    (
+        "burndown.annual",
+        "graphs",
+        "GRCF",
+        "Shows a graphical burndown chart, by annual",
+    ),
+    (
+        "burndown.daily",
+        "graphs",
+        "GRCF",
+        "Shows a graphical burndown chart, by daily",
+    ),
+    (
+        "burndown.monthly",
+        "graphs",
+        "GRCF",
+        "Shows a graphical burndown chart, by monthly",
+    ),
+    (
+        "burndown.weekly",
+        "graphs",
+        "GRCF",
+        "Shows a graphical burndown chart, by weekly",
+    ),
+    ("calc", "misc", "S", "Calculator"),
+    ("calendar", "graphs", "IGS", "Shows a calendar, with due tasks marked"),
+    ("colors", "misc", "S", "All colors, a sample, or a legend"),
+    ("columns", "config", "S", "All supported columns and formatting styles"),
+    (
+        "commands",
+        "metadata",
+        "",
+        "Generates a list of all commands, with behavior details",
+    ),
+    ("config", "config", "S", "Change settings in the task configuration"),
+    (
+        "context",
+        "context",
+        "S",
+        "Set and define contexts (default filters / modifications)",
+    ),
+    ("count", "metadata", "GRCF", "Counts matching tasks"),
+    ("delete", "operation", "WCFM", "Deletes the specified task"),
+    ("denotate", "operation", "WCFS", "Deletes an annotation"),
+    ("done", "operation", "WCFM", "Marks the specified task as completed"),
+    ("duplicate", "operation", "WCFM", "Duplicates the specified tasks"),
+    ("export", "migration", "IGRFS", "Exports tasks in JSON format"),
+    (
+        "ghistory.annual",
+        "graphs",
+        "RCF",
+        "Shows a graphical report of task history, by year",
+    ),
+    (
+        "ghistory.daily",
+        "graphs",
+        "RCF",
+        "Shows a graphical report of task history, by day",
+    ),
+    (
+        "ghistory.monthly",
+        "graphs",
+        "RCF",
+        "Shows a graphical report of task history, by month",
+    ),
+    (
+        "ghistory.weekly",
+        "graphs",
+        "RCF",
+        "Shows a graphical report of task history, by week",
+    ),
+    ("help", "misc", "S", "Displays this usage help text"),
+    (
+        "history.annual",
+        "graphs",
+        "RCF",
+        "Shows a report of task history, by year",
+    ),
+    (
+        "history.daily",
+        "graphs",
+        "RCF",
+        "Shows a report of task history, by day",
+    ),
+    (
+        "history.monthly",
+        "graphs",
+        "RCF",
+        "Shows a report of task history, by month",
+    ),
+    (
+        "history.weekly",
+        "graphs",
+        "RCF",
+        "Shows a report of task history, by week",
+    ),
+    ("ids", "metadata", "IGRF", "Shows the IDs of matching tasks, as a range"),
+    ("information", "metadata", "F", "Shows all data and metadata"),
+    ("log", "operation", "WCM", "Adds a new task that is already completed"),
+    (
+        "modify",
+        "operation",
+        "WFM",
+        "Modifies the existing task with provided arguments.",
+    ),
+    (
+        "prepend",
+        "operation",
+        "WCFM",
+        "Prepends text to an existing task description",
+    ),
+    ("projects", "metadata", "GRCF", "Shows all project names used"),
+    ("reports", "config", "", "Lists all supported reports"),
+    ("show", "config", "S", "Shows all configuration variables or subset"),
+    ("start", "operation", "WCFM", "Marks specified task as started"),
+    ("stats", "metadata", "GCF", "Shows task database statistics"),
+    ("stop", "operation", "WCFM", "Removes the 'start' time from a task"),
+    ("summary", "graphs", "GCF", "Shows a report of task status by project"),
+    (
+        "synchronize",
+        "migration",
+        "WS",
+        "Synchronizes data with the Taskserver",
+    ),
+    ("tags", "metadata", "GCF", "Shows a list of all tags used"),
+    ("timesheet", "report", "GRF", "Summary of completed and started tasks"),
+    ("udas", "config", "", "Shows all the defined UDA details"),
+    ("undo", "operation", "W", "Reverts the most recent change to a task"),
+    (
+        "uuids",
+        "metadata",
+        "GRF",
+        "Shows the UUIDs of matching tasks, as a space-separated list",
+    ),
+    ("version", "misc", "", "Shows the Taskwarrior version number"),
+];
+
+/// The built-in columns, which are also the attributes a DOM reference can name (UDAs come on top).
+const COLUMN_NAMES: [&str; 20] = [
+    "id",
+    "uuid",
+    "status",
+    "description",
+    "project",
+    "priority",
+    "tags",
+    "depends",
+    "entry",
+    "start",
+    "end",
+    "due",
+    "wait",
+    "scheduled",
+    "until",
+    "modified",
+    "urgency",
+    "annotations",
+    "recur",
+    "parent",
+];
+
+/// One row of `commands`: the name and category, then what the command does and takes.
+fn command_row(name: &str, category: &str, flags: &str, description: &str) -> Vec<String> {
+    const FLAGS: [(char, &str); 7] = [
+        ('I', "ID"),
+        ('G', "GC"),
+        ('R', "Recur"),
+        ('C', "Ctxt"),
+        ('F', "Filt"),
+        ('M', "Mods"),
+        ('S', "Misc"),
+    ];
+    let mut row = vec![
+        name.to_owned(),
+        category.to_owned(),
+        if flags.contains('W') { "RW" } else { "RO" }.to_owned(),
+    ];
+    row.extend(FLAGS.iter().map(|(c, text)| {
+        if flags.contains(*c) {
+            (*text).to_owned()
+        } else {
+            String::new()
+        }
+    }));
+    row.push(description.to_owned());
+    row
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cmd {
@@ -1492,31 +1710,84 @@ async fn builtin<S: Storage>(
                 .collect(),
         })),
         // `show`, `config` and `context` are answered before the tasks are loaded (see `settings_command`).
+        Commands => {
+            let mut rows: Vec<Vec<String>> = COMMAND_INFO
+                .iter()
+                .map(|(n, c, f, d)| command_row(n, c, f, d))
+                .collect();
+            for name in report::names(cfg)
+                .into_iter()
+                .filter(|n| !COMMAND_INFO.iter().any(|i| i.0 == n))
+            {
+                let description = report::resolve(cfg, &name)
+                    .and_then(|r| r.description)
+                    .unwrap_or_default();
+                rows.push(command_row(&name, "report", "IGRCF", &description));
+            }
+            rows.sort();
+            ok(CliResult::Table(TableOut {
+                title: None,
+                footer: vec![],
+                highlight: vec![],
+                right: vec![],
+                headers: [
+                    "Command",
+                    "Category",
+                    "R/W",
+                    "ID",
+                    "GC",
+                    "Recur",
+                    "Context",
+                    "Filter",
+                    "Mods",
+                    "Misc",
+                    "Description",
+                ]
+                .map(String::from)
+                .to_vec(),
+                rows,
+            }))
+        }
+        // `_get 1.due rc.bulk`: the value of each DOM reference, space-separated. One with no value is empty.
+        Get => {
+            let is_override = |w: &str| w.starts_with("rc.") && w.contains([':', '=']);
+            let words: Vec<&String> = p.filter.iter().filter(|w| !is_override(w)).collect();
+            let attribute = |a: &str| COLUMN_NAMES.contains(&a) || cfg.udas.contains_key(a);
+            let date = |a: &str| run::kind_of(a, cfg) == "date";
+            let urgency = |f: &Facts| ctx.urgency(f);
+            let dom = crate::calc::DomSource {
+                tasks: all,
+                ids: ctx.ids,
+                cfg,
+                clock: &ctx.clock,
+                urgency: &urgency,
+                args: args.join(" "),
+                sync_needed: args.iter().any(|a| a == "tw.syncneeded")
+                    && replica.num_local_operations().await.is_ok_and(|n| n > 0),
+            };
+            let mut values = Vec::new();
+            for w in words {
+                if !crate::calc::is_dom_ref(w, &attribute, &date) {
+                    return error(format!("'{w}' is not a DOM reference."));
+                }
+                values.push(
+                    dom.get(w)
+                        .map_or_else(String::new, |v| crate::calc::dom_text(v, &ctx.clock)),
+                );
+            }
+            if values.is_empty() {
+                return error("No DOM reference specified.");
+            }
+            ok(CliResult::Text {
+                lines: vec![values.join(" ")],
+            })
+        }
         Show | Config | Context => error("this command is handled before the tasks are read"),
         Columns => {
-            let names = [
-                "id",
-                "uuid",
-                "status",
-                "description",
-                "project",
-                "priority",
-                "tags",
-                "depends",
-                "entry",
-                "start",
-                "end",
-                "due",
-                "wait",
-                "scheduled",
-                "until",
-                "modified",
-                "urgency",
-                "annotations",
-                "recur",
-                "parent",
-            ];
-            let mut rows: Vec<Vec<String>> = names.iter().map(|n| vec![(*n).into(), "built-in".into()]).collect();
+            let mut rows: Vec<Vec<String>> = COLUMN_NAMES
+                .iter()
+                .map(|n| vec![(*n).into(), "built-in".into()])
+                .collect();
             rows.extend(cfg.udas.keys().map(|n| vec![n.clone(), "uda".into()]));
             ok(CliResult::Table(TableOut {
                 title: None,

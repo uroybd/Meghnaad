@@ -4395,3 +4395,186 @@ mod duplicate_log_stats_context {
         assert!(m.starts_with("ERROR:") && d.config.is_none(), "{m}");
     }
 }
+
+mod commands_and_get {
+    use super::*;
+
+    async fn text(r: &mut R, cfg: &Config, line: &str) -> String {
+        message(&run(r, cfg, line).await.0)
+    }
+
+    #[tokio::test]
+    async fn commands_lists_every_command_and_report_with_what_it_takes() {
+        let mut r = replica();
+        let cfg = parse("report.mine.description=My own\nreport.mine.columns=id,description\n").config;
+        let (res, wrote) = run(&mut r, &cfg, "commands").await;
+        assert!(!wrote);
+        let CliResult::Table(t) = res else { panic!("{res:?}") };
+        assert_eq!(
+            t.headers,
+            [
+                "Command",
+                "Category",
+                "R/W",
+                "ID",
+                "GC",
+                "Recur",
+                "Context",
+                "Filter",
+                "Mods",
+                "Misc",
+                "Description"
+            ]
+        );
+        let row = |n: &str| {
+            t.rows
+                .iter()
+                .find(|r| r[0] == n)
+                .unwrap_or_else(|| panic!("{n}"))
+                .clone()
+        };
+        assert_eq!(
+            row("add"),
+            [
+                "add",
+                "operation",
+                "RW",
+                "",
+                "",
+                "",
+                "Ctxt",
+                "",
+                "Mods",
+                "",
+                "Adds a new task"
+            ]
+        );
+        assert_eq!(
+            row("undo"),
+            [
+                "undo",
+                "operation",
+                "RW",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Reverts the most recent change to a task"
+            ]
+        );
+        // A report is a command that shows tasks; its description is the report's own.
+        assert_eq!(
+            row("next"),
+            [
+                "next",
+                "report",
+                "RO",
+                "ID",
+                "GC",
+                "Recur",
+                "Ctxt",
+                "Filt",
+                "",
+                "",
+                "Most urgent tasks"
+            ]
+        );
+        assert_eq!(row("mine")[1..3], ["report", "RO"]);
+        assert_eq!(row("mine")[10], "My own");
+        // The names Taskwarrior uses, in its order (an underscore sorts first); nothing this app lacks.
+        let names: Vec<&str> = t.rows.iter().map(|r| r[0].as_str()).collect();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted);
+        assert_eq!(names[0], "_get");
+        for gone in ["edit", "purge", "import", "info", "_rows", "sync"] {
+            assert!(!names.contains(&gone), "{gone}");
+        }
+        for new in ["commands", "context", "duplicate", "log", "stats", "synchronize"] {
+            assert!(names.contains(&new), "{new}");
+        }
+        // `sync` still reaches it, as an abbreviation.
+        assert!(text(&mut r, &cfg, "sync").await.contains("automatic"));
+    }
+
+    #[tokio::test]
+    async fn get_prints_the_value_of_each_dom_reference() {
+        let mut r = replica();
+        let cfg = parse("bulk=7\n").config;
+        run(
+            &mut r,
+            &cfg,
+            "add Third project:Home.Kitchen +a +b due:2026-12-25T08:30 priority:H",
+        )
+        .await;
+        run(&mut r, &cfg, "1 annotate hello").await;
+        assert_eq!(
+            text(
+                &mut r,
+                &cfg,
+                "_get 1.description 1.project 1.due 1.due.year 1.tags rc.bulk tw.version"
+            )
+            .await,
+            "Third Home.Kitchen 2026-12-25T08:30:00 2026 a,b 7 3.5.0"
+        );
+        assert_eq!(
+            text(
+                &mut r,
+                &cfg,
+                "_get 1.priority 1.annotations.1.description 1.annotations.count"
+            )
+            .await,
+            "H hello 1"
+        );
+        // A reference with nothing behind it is an empty value, not an error, and still takes its place.
+        assert_eq!(
+            text(&mut r, &cfg, "_get 1.start 1.project 9.description rc.nosuch").await,
+            " Home.Kitchen  "
+        );
+        // A setting's default is its value too, and a command's own `rc.` override is not a reference.
+        assert_eq!(
+            text(&mut r, &Config::default(), "rc.bulk:5 _get rc.bulk rc.confirmation").await,
+            "5 1"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_wants_dom_references_and_nothing_else() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add one").await;
+        for (line, expected) in [
+            ("_get", "ERROR: No DOM reference specified."),
+            ("_get rc.bulk:5", "ERROR: No DOM reference specified."),
+            ("_get foo", "ERROR: 'foo' is not a DOM reference."),
+            ("_get 1.description foo", "ERROR: 'foo' is not a DOM reference."),
+            ("_get 1.nothing", "ERROR: '1.nothing' is not a DOM reference."),
+            ("_get tw.bogus", "ERROR: 'tw.bogus' is not a DOM reference."),
+        ] {
+            let (res, wrote) = run(&mut r, &cfg, line).await;
+            assert!(!wrote, "{line}");
+            assert_eq!(message(&res), expected, "{line}");
+        }
+    }
+
+    #[tokio::test]
+    async fn get_never_reveals_a_credential() {
+        let mut r = replica();
+        // The settings the app holds contain nothing of the kind (they are refused on the way in), so a
+        // reference to one is just empty.
+        for line in [
+            "_get rc.sync.encryption_secret",
+            "_get rc.taskd.password",
+            "_get rc.sync.aws.secret_access_key",
+        ] {
+            assert_eq!(text(&mut r, &quiet_cfg(), line).await, "", "{line}");
+        }
+    }
+
+    fn quiet_cfg() -> Config {
+        parse("confirmation=off\nsync.encryption_secret=hunter2\n").config
+    }
+}
