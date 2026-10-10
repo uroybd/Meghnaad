@@ -9,8 +9,8 @@
 //! taskrc dialog does), and nothing sensitive can pass through either command: a sync or
 //! credential-like name is refused by name, and nothing of that kind is ever stored to be shown.
 
-use crate::cli::TableOut;
-use crate::taskrc::{is_sensitive, parse, render, Config, SETTING_DEFAULTS};
+use crate::cli::{CliResult, TableOut};
+use crate::taskrc::{is_sensitive, parse, render, valid_ident, Config, ContextDef, SETTING_DEFAULTS};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// What `config` decided.
@@ -23,6 +23,8 @@ pub enum Outcome {
     Nothing(String),
     /// The settings now read like this; save them.
     Saved { config: Box<Config>, message: String },
+    /// Something to show; nothing changes.
+    Output(CliResult),
 }
 
 /// Taskwarrior's default value of every setting this app reads that has one: the plain settings,
@@ -79,8 +81,7 @@ fn same(a: &str, b: &str) -> bool {
 
 /// `show [all | word]`: every setting and its value, those you changed highlighted with the
 /// default beneath them. `words` is what followed the command.
-pub fn show(cfg: &Config, words: &[String]) -> crate::cli::CliResult {
-    use crate::cli::CliResult;
+pub fn show(cfg: &Config, words: &[String]) -> CliResult {
     let section = words.first().map_or("", String::as_str);
     let section = if section == "all" { "" } else { section };
 
@@ -223,6 +224,179 @@ pub fn config(stored: &Config, words: &[String], ask: bool, confirmed: bool) -> 
     }
 }
 
+/// Why a context's definition can't also be what new tasks get (its `write` rule): a rule for new
+/// tasks is a list of changes, which can't say "or", take a tag away, or compare with anything but `is`.
+fn not_a_write_rule(filter: &[String]) -> Option<String> {
+    filter.iter().find_map(|w| {
+        if w == "or" {
+            return Some("contains the 'OR' operator".to_owned());
+        }
+        if let Some((_, modifier, _)) = crate::filter::split_pair(w) {
+            if !matches!(modifier, "" | "is" | "equals") {
+                return Some(format!("contains an attribute modifier '{w}'"));
+            }
+        }
+        let tag = w.strip_prefix('-').and_then(|t| t.chars().next());
+        tag.is_some_and(char::is_alphabetic)
+            .then(|| format!("contains tag exclusion '{w}'"))
+    })
+}
+
+/// Change one setting of `cfg` (`None` removes it) the way `config` does, without asking.
+fn edit(cfg: &Config, name: &str, value: Option<&str>) -> Result<Config, String> {
+    let mut words = vec![name.to_owned()];
+    words.extend(value.map(str::to_owned));
+    match config(cfg, &words, false, true) {
+        Outcome::Saved { config, .. } => Ok(*config),
+        Outcome::Error(e) if value.is_none() && e.starts_with("No entry named") => Ok(cfg.clone()),
+        Outcome::Nothing(_) => Ok(cfg.clone()),
+        Outcome::Error(e) | Outcome::Ask(e) => Err(e),
+        Outcome::Output(_) => unreachable!("config shows nothing"),
+    }
+}
+
+/// `context`: list, show, define, delete and switch contexts. Like `config` it edits the saved
+/// settings (a context is the `context.<name>.read` and `.write` settings, and the active one is
+/// `context`) and asks first when `confirmation` is on. `matching` is, for `define`, how many pending
+/// tasks the new filter picks, or why it isn't a filter.
+pub fn context(
+    stored: &Config,
+    words: &[String],
+    ask: bool,
+    confirmed: bool,
+    matching: Option<Result<usize, String>>,
+) -> Outcome {
+    let text = |lines: &[String]| Outcome::Output(CliResult::Text { lines: lines.to_vec() });
+    let sub = words.first().map_or("", String::as_str);
+    let name = words.get(1).map_or("", String::as_str);
+    let done = |edited: Result<Config, String>, message: String| match edited {
+        Ok(config) => Outcome::Saved {
+            config: Box::new(config),
+            message,
+        },
+        Err(e) => Outcome::Error(e),
+    };
+    let key = |part: &str| format!("context.{name}.{part}");
+    match sub {
+        "" | "list" => {
+            if stored.contexts.is_empty() {
+                return Outcome::Error("No contexts defined.".into());
+            }
+            let row = |n: &str, kind: &str, def: &Option<String>, c: &ContextDef| {
+                let on = stored.active_context.as_deref() == Some(&c.name);
+                vec![
+                    n.to_owned(),
+                    kind.into(),
+                    def.clone().unwrap_or_default(),
+                    if on { "yes" } else { "no" }.into(),
+                ]
+            };
+            Outcome::Output(CliResult::Table(TableOut {
+                title: None,
+                footer: if sub.is_empty() {
+                    vec!["Use 'task context none' to unset the current context.".into()]
+                } else {
+                    vec![]
+                },
+                highlight: vec![],
+                right: vec![],
+                headers: ["Name", "Type", "Definition", "Active"].map(String::from).to_vec(),
+                rows: stored
+                    .contexts
+                    .values()
+                    .flat_map(|c| [row(&c.name, "read", &c.read, c), row("", "write", &c.write, c)])
+                    .collect(),
+            }))
+        }
+        "show" => match stored.active_context.as_ref().and_then(|a| stored.contexts.get(a)) {
+            Some(c) => {
+                let def = |d: &Option<String>| d.clone().unwrap_or_default();
+                text(&[
+                    format!("Context '{}' with ", c.name),
+                    String::new(),
+                    format!("* read filter: '{}'", def(&c.read)),
+                    format!("* write filter: '{}'", def(&c.write)),
+                    String::new(),
+                    "is currently applied.".into(),
+                ])
+            }
+            None => text(&["No context is currently applied.".into()]),
+        },
+        "none" if stored.active_context.is_none() => Outcome::Error("Context not unset.".into()),
+        "none" => done(edit(stored, "context", None), "Context unset.".into()),
+        "delete" => {
+            if name.is_empty() {
+                return Outcome::Error("Context name needs to be specified.".into());
+            }
+            if ask && !confirmed {
+                return Outcome::Ask(format!("Do you want to delete context '{name}'?"));
+            }
+            if !stored
+                .contexts
+                .get(name)
+                .is_some_and(|c| c.read.is_some() || c.write.is_some())
+            {
+                return Outcome::Error(format!("Context '{name}' not found."));
+            }
+            let active = stored.active_context.as_deref() == Some(name);
+            let edited = edit(stored, &key("read"), None)
+                .and_then(|c| edit(&c, &key("write"), None))
+                .and_then(|c| if active { edit(&c, "context", None) } else { Ok(c) });
+            done(edited, format!("Context '{name}' deleted."))
+        }
+        "define" => {
+            let filter = words.get(2..).unwrap_or_default();
+            if filter.is_empty() {
+                return Outcome::Error("Both context name and its definition must be provided.".into());
+            }
+            if matches!(name, "none" | "list" | "show") {
+                return Outcome::Error(format!(
+                    "The name '{name}' is reserved and not allowed to use as a context name."
+                ));
+            }
+            if !valid_ident(name) {
+                return Outcome::Error(format!(
+                    "'{name}' can't be a context name: use letters, digits and underscores."
+                ));
+            }
+            let value = filter.join(" ");
+            let count = match matching {
+                Some(Err(m)) => return Outcome::Error(format!("Filter validation failed: {m}")),
+                Some(Ok(n)) => n,
+                None => 1,
+            };
+            if count == 0 && ask && !confirmed {
+                return Outcome::Ask(format!(
+                    "The filter '{value}' matches 0 pending tasks. Do you wish to continue?"
+                ));
+            }
+            let reason = not_a_write_rule(filter);
+            let mut edited = edit(stored, &key("read"), Some(&value));
+            if reason.is_none() {
+                edited = edited.and_then(|c| edit(&c, &key("write"), Some(&value)));
+            }
+            let mut message = String::new();
+            if let Some(r) = &reason {
+                message = format!(
+                    "The filter '{value}' is not a valid modification string, because it {r}.\n\
+                     As such, value for the write context cannot be set (context will not apply on task add / task log).\n\n\
+                     Please use 'task config context.{name}.write <default mods>' to set default attribute values for new tasks in this context manually.\n\n"
+                );
+            }
+            let kind = if reason.is_some() { "read only" } else { "read, write" };
+            message.push_str(&format!(
+                "Context '{name}' defined ({kind}). Use 'task context {name}' to activate."
+            ));
+            done(edited, message)
+        }
+        _ if !stored.contexts.contains_key(sub) => Outcome::Error(format!("Context '{sub}' not found.")),
+        _ => done(
+            edit(stored, "context", Some(sub)),
+            format!("Context '{sub}' set. Use 'task context none' to remove."),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,6 +491,7 @@ mod tests {
         let saved = |o: Outcome| match o {
             Outcome::Saved { config, .. } => *config,
             Outcome::Error(e) | Outcome::Ask(e) | Outcome::Nothing(e) => panic!("{e}"),
+            Outcome::Output(_) => unreachable!("config shows nothing"),
         };
         let c = saved(config(&base, &w("bulk 9"), false, false));
         assert_eq!(c.bulk(), 9);
@@ -343,6 +518,7 @@ mod tests {
             Outcome::Ask(m) => m,
             Outcome::Saved { .. } => "saved".into(),
             Outcome::Error(e) | Outcome::Nothing(e) => e,
+            Outcome::Output(_) => unreachable!("config shows nothing"),
         };
         assert_eq!(
             q("bulk 9", false),

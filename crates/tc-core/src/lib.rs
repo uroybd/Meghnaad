@@ -22,6 +22,7 @@ pub mod report;
 pub mod run;
 pub mod rx;
 pub mod settings;
+pub mod stats;
 pub mod store;
 pub mod summary;
 pub mod taskrc;

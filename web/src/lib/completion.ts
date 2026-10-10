@@ -38,6 +38,8 @@ export interface Completion {
 
 export const COMMANDS: Record<string, string> = {
   add: 'create a task',
+  log: 'record a task that is already done',
+  duplicate: 'copy tasks, with changes: duplicate due:eow',
   modify: 'change tasks',
   done: 'complete tasks',
   delete: 'delete tasks',
@@ -62,7 +64,8 @@ export const COMMANDS: Record<string, string> = {
   udas: 'list user defined attributes',
   columns: 'list report columns',
   reports: 'list reports',
-  contexts: 'list contexts',
+  context: 'list, define (define work +work), delete or switch contexts; context none',
+  stats: 'task database statistics',
   show: 'show every setting, changed ones highlighted',
   config: 'change a setting: config name value (no value removes it)',
   information: 'show everything about tasks (same as info)',

@@ -305,10 +305,11 @@ class Store {
     this.entries.push(e);
     this.remember(input.line ?? previewLine(input.args ?? []));
     const res = await this.#exec(e);
-    // `config` rewrites the saved settings: pick them up so the pages follow.
-    if (res?.command?.name === 'config') {
-      if (res.result.kind !== 'error') void this.settingsChanged();
-      else this.#redact(e);
+    // `config` and `context` rewrite the saved settings: pick them up so the pages follow.
+    const name = res?.command?.name;
+    if (name === 'config' || name === 'context') {
+      if (res?.result.kind !== 'error') void this.settingsChanged();
+      else if (name === 'config') this.#redact(e);
     }
     if (res?.command?.report && res.result.kind === 'report' && !inConsole) {
       this.entries = this.entries.filter((x) => x.id !== e.id);

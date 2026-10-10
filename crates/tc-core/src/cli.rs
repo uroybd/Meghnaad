@@ -24,6 +24,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Add,
+    Log,
+    Duplicate,
     Modify,
     Done,
     Delete,
@@ -48,7 +50,8 @@ pub enum Kind {
     Udas,
     Columns,
     Reports,
-    Contexts,
+    Context,
+    Stats,
     Show,
     Timesheet,
     Colors,
@@ -78,6 +81,8 @@ use Kind::*;
 /// Command name, kind, whether the words after it are modifications (vs. more filter).
 const COMMANDS: &[(&str, Kind, bool)] = &[
     ("add", Add, true),
+    ("log", Log, true),
+    ("duplicate", Duplicate, true),
     ("modify", Modify, true),
     ("done", Done, true),
     ("delete", Delete, true),
@@ -102,7 +107,8 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("udas", Udas, false),
     ("columns", Columns, false),
     ("reports", Reports, false),
-    ("contexts", Contexts, false),
+    ("context", Context, false),
+    ("stats", Stats, false),
     ("show", Show, false),
     ("timesheet", Timesheet, false),
     ("colors", Colors, false),
@@ -614,16 +620,21 @@ fn verb_of(kind: Kind) -> &'static str {
         Stop => "stop",
         Annotate => "annotate",
         Denotate => "remove an annotation from",
+        Duplicate => "duplicate",
         _ => "modify",
     }
 }
 
+/// How a task is named in a message: its id, or the start of its uuid when it has none.
+fn ident(ctx: &EvalCtx, f: &Facts) -> String {
+    ctx.ids
+        .get(&f.uuid)
+        .map_or_else(|| f.uuid.to_string()[..8].to_owned(), u32::to_string)
+}
+
 /// Taskwarrior's wording of the question about one task.
 fn permission_question(kind: Kind, f: &Facts, ctx: &EvalCtx, all: &[Facts]) -> String {
-    let id = ctx
-        .ids
-        .get(&f.uuid)
-        .map_or_else(|| f.uuid.to_string()[..8].to_owned(), u32::to_string);
+    let id = ident(ctx, f);
     let what = match kind {
         Done => "Complete task",
         Delete => "Delete task",
@@ -633,6 +644,7 @@ fn permission_question(kind: Kind, f: &Facts, ctx: &EvalCtx, all: &[Facts]) -> S
         Denotate => "Denotate task",
         Append => "Append to task",
         Prepend => "Prepend to task",
+        Duplicate => "Duplicate task",
         _ => "Modify task",
     };
     // A recurring template takes its pending instances with it.
@@ -662,6 +674,7 @@ fn declined_line(kind: Kind) -> &'static str {
         Denotate => "Task not denotated.",
         Append => "Task not appended.",
         Prepend => "Task not prepended.",
+        Duplicate => "Task not duplicated.",
         _ => "Task not modified.",
     }
 }
@@ -853,15 +866,15 @@ pub async fn execute<S: Storage>(
     };
     let parsed = parse_command(args, cfg).ok();
     let command = parsed.as_ref().map(CommandInfo::of);
-    // `show` and `config` are about the settings, not the tasks: no replica, no housekeeping.
+    // `show`, `config` and `context` are about the settings, not the tasks: no housekeeping.
     if let Some(
         p @ Parsed {
-            cmd: Cmd::Builtin(Show | Config),
+            cmd: Cmd::Builtin(Show | Config | Context),
             ..
         },
     ) = &parsed
     {
-        return settings_command(stored, cfg, p, &opts, command);
+        return settings_command(replica, stored, cfg, clock, p, &opts, command).await;
     }
     // Hooks: `on-launch` comes first, before anything is read or written.
     let hk = crate::hooks::Runner::new(opts.hooks.clone(), cfg.hooks());
@@ -1042,9 +1055,17 @@ fn with_overrides(cfg: &Config, args: &[String]) -> Result<Option<Config>, Strin
     Ok(Some(c))
 }
 
-/// `show` and `config`. Neither can reach anything sensitive: such names are refused, and nothing of
-/// that kind is stored to be shown.
-fn settings_command(stored: &Config, cfg: &Config, p: &Parsed, opts: &Options, command: Option<CommandInfo>) -> Done {
+/// `show`, `config` and `context`. None can reach anything sensitive: such names are refused, and nothing
+/// of that kind is stored to be shown. Only `context define` reads the tasks, to see what its filter picks.
+async fn settings_command<S: Storage>(
+    replica: &mut Replica<S>,
+    stored: &Config,
+    cfg: &Config,
+    clock: Clock,
+    p: &Parsed,
+    opts: &Options,
+    command: Option<CommandInfo>,
+) -> Done {
     use crate::settings::{self, Outcome};
     // `rc.bulk:5` is a setting for this command; it isn't one of its words.
     let words: Vec<String> = p
@@ -1053,10 +1074,22 @@ fn settings_command(stored: &Config, cfg: &Config, p: &Parsed, opts: &Options, c
         .filter(|w| !(w.starts_with("rc.") && w.contains([':', '='])))
         .cloned()
         .collect();
-    let mut done = if p.cmd == Cmd::Builtin(Show) {
-        ok(settings::show(cfg, &words))
-    } else {
-        match settings::config(stored, &words, cfg.confirmation(), opts.confirmed) {
+    let outcome = match p.cmd {
+        Cmd::Builtin(Show) => Outcome::Output(settings::show(cfg, &words)),
+        Cmd::Builtin(Context) => {
+            let matching = match words.as_slice() {
+                [d, _, filter @ ..] if d == "define" && !filter.is_empty() => {
+                    Some(pending_matching(replica, cfg, clock, filter).await)
+                }
+                _ => None,
+            };
+            settings::context(stored, &words, cfg.confirmation(), opts.confirmed, matching)
+        }
+        _ => settings::config(stored, &words, cfg.confirmation(), opts.confirmed),
+    };
+    let mut done = {
+        match outcome {
+            Outcome::Output(r) => ok(r),
             Outcome::Error(m) => error(m),
             Outcome::Nothing(m) => ok(CliResult::Text { lines: vec![m] }),
             Outcome::Ask(m) => ok(CliResult::Confirm {
@@ -1065,7 +1098,9 @@ fn settings_command(stored: &Config, cfg: &Config, p: &Parsed, opts: &Options, c
                 items: vec![],
             }),
             Outcome::Saved { config, message } => {
-                let mut d = ok(CliResult::Text { lines: vec![message] });
+                let mut d = ok(CliResult::Text {
+                    lines: message.split('\n').map(str::to_owned).collect(),
+                });
                 d.config = Some(*config);
                 d
             }
@@ -1073,6 +1108,21 @@ fn settings_command(stored: &Config, cfg: &Config, p: &Parsed, opts: &Options, c
     };
     done.command = command;
     done
+}
+
+/// How many pending tasks `filter` picks (`context define` asks first if it picks none), or why it is not a filter.
+async fn pending_matching<S: Storage>(
+    replica: &mut Replica<S>,
+    cfg: &Config,
+    clock: Clock,
+    filter: &[String],
+) -> Result<usize, String> {
+    let all = load_facts(replica).await.map_err(|e| e.to_string())?;
+    let ids = run::working_set_ids(&all);
+    let ctx = EvalCtx::new(cfg, clock, &ids).with_inheritance(&all);
+    let f = Filter::parse(filter, &ctx).map_err(|e| e.0)?;
+    let pending = |x: &&Facts| matches!(x.status.as_str(), "pending" | "recurring");
+    Ok(all.iter().filter(pending).filter(|x| f.matches(x, &ctx)).count())
 }
 
 /// `tasks` are the tasks as they are now, if the caller has just read them.
@@ -1117,7 +1167,7 @@ async fn execute_inner<S: Storage>(
                 Err(e) => e.into(),
             }
         }
-        Cmd::Builtin(Add) => add(replica, cfg, &ctx, &all, &parsed, undo, hk).await,
+        Cmd::Builtin(k @ (Add | Log)) => add(replica, cfg, &ctx, &all, &parsed, k == Log, undo, hk).await,
         Cmd::Builtin(k) => builtin(replica, cfg, &ctx, &all, k, &parsed, args, opts, undo, hk).await,
     }
 }
@@ -1283,18 +1333,24 @@ fn changed(all_after: &[Facts], uuids: &[Uuid], message: String) -> CliResult {
     }
 }
 
+/// `add`, and `log` (a task that is already completed, with its `end` the moment it was entered).
+#[allow(clippy::too_many_arguments)]
 async fn add<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
     ctx: &EvalCtx<'_>,
     all: &[Facts],
     p: &Parsed,
+    log: bool,
     undo: &mut UndoStack,
     hk: &crate::hooks::Runner,
 ) -> Done {
     // `task rc.x:y add ...` is fine: overrides were applied before this point and aren't filters.
     if p.filter.iter().any(|w| !w.starts_with("rc.") && !w.starts_with("rc:")) {
-        return error("add takes a description and modifications, not a filter");
+        return error(format!(
+            "{} takes a description and modifications, not a filter",
+            if log { "log" } else { "add" }
+        ));
     }
     let mut mod_args = p.mods.clone();
     // The active context's `write` rule (e.g. `+work`) applies to new tasks.
@@ -1314,6 +1370,20 @@ async fn add<S: Storage>(
         Ok(c) => c,
         Err(e) => return e.into(),
     };
+    // A finished task has nothing to repeat and nothing to wait for.
+    let sets = |n: &str| {
+        changes.iter().any(|c| match c {
+            Change::Timestamp { name, value: Some(_) } => *name == n,
+            Change::Prop { name, value: Some(_) } => name == n,
+            _ => false,
+        })
+    };
+    if log && sets("recur") {
+        return error("You cannot log recurring tasks.");
+    }
+    if log && sets("wait") {
+        return error("You cannot log waiting tasks.");
+    }
 
     let uuid = match crate::crypto::new_uuid() {
         Ok(u) => u,
@@ -1322,9 +1392,14 @@ async fn add<S: Storage>(
     let mut ops = Operations::new();
     let result: Result<(), String> = async {
         let mut task = replica.create_task(uuid, &mut ops).await.map_err(|e| e.to_string())?;
-        task.set_status(Status::Pending, &mut ops).map_err(|e| e.to_string())?;
-        task.set_entry(Utc.timestamp_opt(ctx.clock.now, 0).single(), &mut ops)
-            .map_err(|e| e.to_string())?;
+        let entry = Utc.timestamp_opt(ctx.clock.now, 0).single();
+        task.set_entry(entry, &mut ops).map_err(|e| e.to_string())?;
+        if log {
+            // Set first, so completing the task keeps it (it only fills in a missing `end`).
+            task.set_timestamp("end", entry, &mut ops).map_err(|e| e.to_string())?;
+        }
+        let status = if log { Status::Completed } else { Status::Pending };
+        task.set_status(status, &mut ops).map_err(|e| e.to_string())?;
         apply_changes(&mut task, &changes, &mut ops)?;
         // `on-add`: the hook sees the task as the command built it and may change it or refuse.
         let hooked = hk.add(Facts::from_task(&task))?;
@@ -1341,6 +1416,7 @@ async fn add<S: Storage>(
     let after = load_facts(replica).await.unwrap_or_default();
     let id = run::working_set_ids(&after).get(&uuid).copied();
     let msg = match id {
+        _ if log => format!("Logged task {uuid}."),
         Some(n) => format!("Created task {n}."),
         None => format!("Created task {}.", &uuid.to_string()[..8]),
     };
@@ -1415,31 +1491,8 @@ async fn builtin<S: Storage>(
                 })
                 .collect(),
         })),
-        Contexts => ok(CliResult::Table(TableOut {
-            footer: vec![],
-            highlight: vec![],
-            right: vec![],
-            title: None,
-            headers: ["Context", "Read filter", "Write", "Active"].map(String::from).to_vec(),
-            rows: cfg
-                .contexts
-                .values()
-                .map(|c| {
-                    vec![
-                        c.name.clone(),
-                        c.read.clone().unwrap_or_default(),
-                        c.write.clone().unwrap_or_default(),
-                        if cfg.active_context.as_deref() == Some(&c.name) {
-                            "yes".into()
-                        } else {
-                            String::new()
-                        },
-                    ]
-                })
-                .collect(),
-        })),
-        // `show` and `config` are answered before any task is loaded (see `settings_command`).
-        Show | Config => error("this command is handled before the tasks are read"),
+        // `show`, `config` and `context` are answered before the tasks are loaded (see `settings_command`).
+        Show | Config | Context => error("this command is handled before the tasks are read"),
         Columns => {
             let names = [
                 "id",
@@ -1702,6 +1755,20 @@ async fn builtin<S: Storage>(
             }
         }
         Export => export(replica, cfg, ctx, all, p).await,
+        Stats => {
+            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
+                Ok(s) => s,
+                Err(e) => return e.into(),
+            };
+            // The web app syncs after every write, so this is normally nothing.
+            let backlog = replica.num_local_operations().await.unwrap_or(0);
+            ok(CliResult::Table(crate::stats::stats(
+                &sel,
+                &ctx.clock,
+                undo.0.len(),
+                backlog,
+            )))
+        }
         Colors => {
             let words: Vec<&String> = p.filter.iter().filter(|w| !w.starts_with("rc.")).collect();
             if !cfg.color() {
@@ -1870,10 +1937,10 @@ async fn builtin<S: Storage>(
             }
         }
         // Everything that writes to selected tasks.
-        Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend => {
+        Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend | Duplicate => {
             write_selected(replica, cfg, ctx, all, kind, p, opts, undo, hk).await
         }
-        Add => unreachable!("handled earlier"),
+        Add | Log => unreachable!("handled earlier"),
     }
 }
 
@@ -1928,7 +1995,7 @@ async fn write_selected<S: Storage>(
     // are the annotation or the text. `denotate` takes the whole of it as the text to match.
     let reads_changes = matches!(
         kind,
-        Modify | Done | Delete | Start | Stop | Annotate | Append | Prepend
+        Modify | Done | Delete | Start | Stop | Annotate | Append | Prepend | Duplicate
     );
     let mods = if reads_changes {
         match modify::parse_mods(&p.mods, cfg) {
@@ -1940,8 +2007,8 @@ async fn write_selected<S: Storage>(
     };
     let (text, extra): (String, Option<modify::Mods>) = match (&mods, kind) {
         // A GUI note or addition is text, whatever it looks like.
-        (_, Annotate | Append | Prepend) if !opts.typed => (p.mods.join(" "), None),
-        (Some(m), Done | Delete | Start | Stop | Annotate | Append | Prepend) => {
+        (_, Annotate | Append | Prepend | Duplicate) if !opts.typed => (p.mods.join(" "), None),
+        (Some(m), Done | Delete | Start | Stop | Annotate | Append | Prepend | Duplicate) => {
             let others =
                 !m.attrs.is_empty() || !m.add_tags.is_empty() || !m.remove_tags.is_empty() || m.subst.is_some();
             (
@@ -2134,7 +2201,18 @@ async fn write_selected<S: Storage>(
     let mut masks: BTreeMap<Uuid, String> = BTreeMap::new();
     let mut mask_dirty: Vec<Uuid> = Vec::new();
     let mut instances_touched: Vec<Uuid> = Vec::new();
+    // What `duplicate` has to say about the copies it made.
+    let mut notes: Vec<String> = Vec::new();
     for f in &targets {
+        if kind == Duplicate {
+            let (copy, note) = match duplicate(replica, f, extra.as_ref(), &text, ctx, all, hk, &mut ops).await {
+                Ok(c) => c,
+                Err(m) => return error(m),
+            };
+            touched.push(copy);
+            notes.extend(note);
+            continue;
+        }
         let outcome: Result<bool, String> = async {
             let mut changed = true;
             let mut task = replica
@@ -2329,9 +2407,13 @@ async fn write_selected<S: Storage>(
         Stop => "Stopped",
         Annotate => "Annotated",
         Denotate => "Updated",
+        Duplicate => "Duplicated",
         _ => "Modified",
     };
     let mut message = format!("{past} {}.", plural(touched.len(), "task"));
+    for n in &notes {
+        message.push_str(&format!(" {n}"));
+    }
     if !declined.is_empty() {
         message.push_str(&format!(" Skipped {}.", plural(declined.len(), "task")));
     }
@@ -2349,6 +2431,64 @@ async fn write_selected<S: Storage>(
         config: None,
         feedback: Vec::new(),
     }
+}
+
+/// `duplicate`: a copy of `f` as a new task, as in `CmdDuplicate`. It keeps everything but its identity,
+/// `start`, `end` and `entry`, and starts over as pending; a copy of a recurring instance is a plain task,
+/// a copy of a template is a template. What followed the command is applied to the copy, its words as a
+/// note. Returns the copy, and what Taskwarrior notes about it.
+#[allow(clippy::too_many_arguments)]
+async fn duplicate<S: Storage>(
+    replica: &mut Replica<S>,
+    f: &Facts,
+    extra: Option<&modify::Mods>,
+    text: &str,
+    ctx: &EvalCtx<'_>,
+    all: &[Facts],
+    hk: &crate::hooks::Runner,
+    ops: &mut Operations,
+) -> Result<(Uuid, Option<String>), String> {
+    let e = |e: taskchampion::Error| e.to_string();
+    let data = replica.get_task_data(f.uuid).await.map_err(e)?;
+    let data = data.ok_or_else(|| format!("task {} disappeared", f.uuid))?;
+    let template = f.status == "recurring";
+    let instance = f.parent.is_some();
+    let uuid = crate::crypto::new_uuid().map_err(|e| e.to_string())?;
+    let mut task = replica.create_task(uuid, ops).await.map_err(e)?;
+    for (k, v) in data.iter() {
+        let skip = matches!(k.as_str(), "status" | "start" | "end" | "entry" | "modified")
+            || (instance && matches!(k.as_str(), "parent" | "recur" | "until" | "imask"))
+            || (template && k == "mask");
+        if !skip {
+            task.set_value(k.clone(), Some(v.clone()), ops).map_err(e)?;
+        }
+    }
+    task.set_status(
+        if template && !instance {
+            Status::Recurring
+        } else {
+            Status::Pending
+        },
+        ops,
+    )
+    .map_err(e)?;
+    task.set_entry(Utc.timestamp_opt(ctx.clock.now, 0).single(), ops)
+        .map_err(e)?;
+    if let Some(x) = extra {
+        let changes = modify::plan(x, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
+        apply_changes(&mut task, &changes, ops)?;
+    }
+    if !text.trim().is_empty() {
+        add_note(&mut task, text, ctx.clock.now, ops)?;
+    }
+    let hooked = hk.add(Facts::from_task(&task))?;
+    apply_changes(&mut task, &hooked, ops)?;
+    let note = match (instance, template) {
+        (true, _) => Some("was a recurring task.  The duplicated task is not."),
+        (_, true) => Some("was a parent recurring task.  The duplicated task is too."),
+        _ => None,
+    };
+    Ok((uuid, note.map(|n| format!("Note: task {} {n}", ident(ctx, f)))))
 }
 
 /// The rest of `f`'s recurring series: for a template its pending instances; for an instance its

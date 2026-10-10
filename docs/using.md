@@ -59,8 +59,8 @@ help
 
 | | |
 | --- | --- |
-| **Write** | `add` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
-| **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `udas` `columns` `reports` `contexts` `show` `config` `export` `ids` `uuids` `calc` `_projects` `_tags` |
+| **Write** | `add` `log` `duplicate` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
+| **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `stats` `udas` `columns` `reports` `context` `show` `config` `export` `ids` `uuids` `calc` `_projects` `_tags` |
 | **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
 
@@ -80,6 +80,24 @@ changes, as in Taskwarrior: `3 done end:-2h` (finished two hours ago), `3 start 
 `3 annotate called her due:friday`. Attributes, tags and substitutions are applied to the task; the plain words left over
 are the annotation (or, for `annotate`, `append` and `prepend`, the text). The buttons send their text literally, so a
 note that starts with `due:` stays a note.
+
+**`log` and `duplicate`.** `log Paid the invoice project:Home` records a task that is already finished: its `end` is
+the moment you enter it, and it refuses `recur:` and `wait:`, which a finished task has no use for. `3 duplicate` makes
+a copy of task 3 as a new pending task: it keeps everything but its identity, `start`, `end` and `entry`. What follows
+`duplicate` is applied to the copy (`3 duplicate due:eow +again`), and plain words become a note on it. Copying a
+recurring instance gives an ordinary task; copying a template gives another template. Both write like any other command,
+so they ask first at `bulk` tasks, and a `duplicate` with no filter asks as the others do.
+
+**`stats`** counts the tasks that match a filter (all of them, with none): by status, annotations, tags, projects,
+blocked and blocking, how old the oldest is and how often tasks are added and finished. The two rows about undo and the
+sync backlog describe this Worker: `undo` is what it remembers, and the backlog is normally 0, since every write syncs.
+
+**Contexts.** `context define work +work or project:Work` saves a context, `context work` makes it the active one,
+`context none` turns it off, `context delete work` removes it, and `context` (or `context list`) lists them and
+`context show` says which one is in force (the filter bar above a table names it too). They edit the saved settings,
+the same ones the taskrc dialog and `config` do, so the pages follow at once. Defining asks first, as in Taskwarrior, when its filter
+matches no pending task, and deleting asks when `confirmation` is on. A filter that can't also be what new tasks get
+(one with `or`, a `-tag` or a modifier such as `.before`) makes a read-only context, and says so.
 
 **Where a report prints.** Typed in the Console, a report (`list`, `next`, …) prints there. Typed in the bar under any
 other page, it opens in the Tasks view, where it can be sorted and filtered.
@@ -380,5 +398,5 @@ can be tapped. You can install it to your home screen from the browser menu.
 - **`undo`** works on the last few commands made while this Worker instance lives; it is forgotten when it is recycled.
 - **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a Worker can't run local programs, so they are functions in
   `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
-- **`edit` and `purge`** are not in the app, nor is `colors` (a terminal colour chart).
+- **`edit` and `purge`** are not in the app (the detail view edits a task; deleting for good is left to your CLI).
 - **The first request after a quiet spell** is slower: the Worker rebuilds its state from the bucket's newest snapshot.

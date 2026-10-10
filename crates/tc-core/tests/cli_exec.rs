@@ -3916,3 +3916,482 @@ mod report_defaults {
         assert!(message(&run(&mut r, &off, "colors").await.0).starts_with("Color is currently turned off"));
     }
 }
+
+mod duplicate_log_stats_context {
+    use super::*;
+    use tc_core::cli::Done;
+    use tc_core::model::Facts;
+
+    async fn done(r: &mut R, cfg: &Config, line: &str, confirmed: bool) -> Done {
+        let mut undo = UndoStack::default();
+        let o = Options {
+            confirmed,
+            typed: true,
+            ..Options::default()
+        };
+        execute(r, cfg, clock(), &split_words(line), o, &mut undo).await
+    }
+
+    async fn find(r: &mut R, description: &str) -> Vec<Facts> {
+        let mut v = load_facts(r).await.unwrap();
+        v.retain(|f| f.description == description);
+        v
+    }
+
+    fn quiet() -> Config {
+        parse("confirmation=off\n").config
+    }
+
+    #[tokio::test]
+    async fn duplicate_copies_a_task_but_not_its_identity_start_end_or_entry() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(
+            &mut r,
+            &cfg,
+            "add Buy milk project:Home +errand due:tomorrow priority:H",
+        )
+        .await;
+        run(&mut r, &cfg, "1 annotate a note").await;
+        run(&mut r, &cfg, "1 start").await;
+        let (res, wrote) = run(&mut r, &cfg, "1 duplicate").await;
+        assert!(wrote);
+        assert_eq!(message(&res), "Duplicated 1 task.");
+        let CliResult::Changed { tasks, .. } = &res else {
+            panic!("{res:?}")
+        };
+        assert_eq!(tasks.len(), 1, "the copy is what is reported");
+
+        let both = find(&mut r, "Buy milk").await;
+        assert_eq!(both.len(), 2);
+        let (old, new) = if both[0].start.is_some() {
+            (&both[0], &both[1])
+        } else {
+            (&both[1], &both[0])
+        };
+        assert_ne!(old.uuid, new.uuid);
+        assert_eq!(tasks[0].uuid, new.uuid);
+        assert!(
+            old.start.is_some() && new.start.is_none(),
+            "a copy has not been started"
+        );
+        assert_eq!(new.status, "pending");
+        assert_eq!(new.project.as_deref(), Some("Home"));
+        assert_eq!(new.priority.as_deref(), Some("H"));
+        assert!(new.tags.contains("errand"));
+        assert_eq!(new.due, old.due);
+        assert_eq!(new.annotations.len(), 1);
+        assert_eq!(new.annotations[0].text, "a note");
+        assert!(new.entry.is_some() && new.entry >= old.entry);
+    }
+
+    #[tokio::test]
+    async fn what_follows_duplicate_is_applied_to_the_copy_and_its_words_become_a_note() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Buy milk project:Home +errand").await;
+        let d = done(&mut r, &cfg, "1 duplicate Another +x project:Work", false).await;
+        assert_eq!(message(&d.result), "Duplicated 1 task.");
+        let v = find(&mut r, "Buy milk").await;
+        assert_eq!(v.len(), 2, "the words are not a new description");
+        let copy = v
+            .iter()
+            .find(|f| f.project.as_deref() == Some("Work"))
+            .expect("the copy");
+        assert!(copy.tags.contains("x") && copy.tags.contains("errand"));
+        assert_eq!(copy.annotations.len(), 1);
+        assert_eq!(copy.annotations[0].text, "Another");
+        let original = v
+            .iter()
+            .find(|f| f.project.as_deref() == Some("Home"))
+            .expect("the original");
+        assert!(original.annotations.is_empty() && !original.tags.contains("x"));
+        // A change that can't be made stops it before anything is copied.
+        let d = done(&mut r, &cfg, "1 duplicate due:nonsense", false).await;
+        assert!(message(&d.result).starts_with("ERROR:"), "{}", message(&d.result));
+        assert_eq!(find(&mut r, "Buy milk").await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_finished_task_is_copied_as_a_pending_one() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Done thing").await;
+        run(&mut r, &cfg, "1 done").await;
+        run(&mut r, &cfg, "status:completed duplicate").await;
+        let v = find(&mut r, "Done thing").await;
+        assert_eq!(v.len(), 2);
+        let copy = v.iter().find(|f| f.status == "pending").expect("a pending copy");
+        assert_eq!(copy.end, None);
+    }
+
+    #[tokio::test]
+    async fn copying_a_recurring_instance_gives_a_plain_task_and_a_template_gives_a_template() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Water plants recur:daily due:tomorrow").await;
+        run(&mut r, &cfg, "count").await;
+        let all = load_facts(&mut r).await.unwrap();
+        let instance = all.iter().find(|f| f.parent.is_some()).expect("an instance").clone();
+        let template = all
+            .iter()
+            .find(|f| f.status == "recurring")
+            .expect("a template")
+            .clone();
+
+        let d = done(
+            &mut r,
+            &cfg,
+            &format!("{} duplicate", &instance.uuid.to_string()[..8]),
+            false,
+        )
+        .await;
+        let m = message(&d.result);
+        assert!(m.contains("was a recurring task.  The duplicated task is not."), "{m}");
+        let CliResult::Changed { tasks, .. } = &d.result else {
+            panic!("{m}")
+        };
+        let copy = load_facts(&mut r)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|f| f.uuid == tasks[0].uuid)
+            .unwrap();
+        assert!(copy.parent.is_none() && copy.recur.is_none() && copy.imask.is_none());
+        assert_eq!(copy.status, "pending");
+
+        let d = done(
+            &mut r,
+            &cfg,
+            &format!("{} duplicate", &template.uuid.to_string()[..8]),
+            false,
+        )
+        .await;
+        let m = message(&d.result);
+        assert!(
+            m.contains("was a parent recurring task.  The duplicated task is too."),
+            "{m}"
+        );
+        let CliResult::Changed { tasks, .. } = &d.result else {
+            panic!("{m}")
+        };
+        let copy = load_facts(&mut r)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|f| f.uuid == tasks[0].uuid)
+            .unwrap();
+        assert_eq!(copy.status, "recurring");
+        assert_eq!(copy.recur.as_deref(), Some("daily"));
+        assert_eq!(copy.mask, None, "it has made no instances of its own yet");
+    }
+
+    #[tokio::test]
+    async fn duplicate_asks_like_any_other_change() {
+        let mut r = replica();
+        let cfg = parse("bulk=2\n").config;
+        for t in ["a", "b", "c"] {
+            run(&mut r, &cfg, &format!("add {t}")).await;
+        }
+        // At `bulk` tasks it asks about each one.
+        let (res, wrote) = run(&mut r, &cfg, "+PENDING duplicate").await;
+        assert!(!wrote);
+        let (ask, items) = asked(&res);
+        assert_eq!(ask, Ask::Permission);
+        assert!(
+            items[0].question.starts_with("Duplicate task "),
+            "{}",
+            items[0].question
+        );
+        // No filter at all is the safety net's business.
+        let (res, wrote) = run(&mut r, &cfg, "duplicate").await;
+        assert!(
+            !wrote && message(&res).starts_with("CONFIRM: This command has no filter"),
+            "{}",
+            message(&res)
+        );
+        let off = parse("confirmation=off\n").config;
+        assert_eq!(
+            message(&run(&mut r, &off, "duplicate").await.0),
+            "ERROR: Command prevented from running."
+        );
+        let (res, wrote) = run_yes(&mut r, &cfg, "+PENDING duplicate").await;
+        assert!(wrote);
+        assert_eq!(message(&res), "Duplicated 3 tasks.");
+        assert_eq!(load_facts(&mut r).await.unwrap().len(), 6);
+    }
+
+    #[tokio::test]
+    async fn log_adds_a_task_that_is_already_completed() {
+        let mut r = replica();
+        let cfg = Config::default();
+        let (res, wrote) = run(&mut r, &cfg, "log Did a thing project:Home +x").await;
+        assert!(wrote);
+        let m = message(&res);
+        assert!(m.starts_with("Logged task ") && m.ends_with('.'), "{m}");
+        let f = &find(&mut r, "Did a thing").await[0];
+        assert!(m.contains(&f.uuid.to_string()));
+        assert_eq!(f.status, "completed");
+        assert_eq!(f.project.as_deref(), Some("Home"));
+        assert!(f.tags.contains("x"));
+        assert!(f.entry.is_some() && f.end == f.entry, "it ended when it was entered");
+        // Nothing is left to do.
+        assert_eq!(message(&run(&mut r, &cfg, "count +PENDING").await.0), "0");
+        // A date given for the end is kept.
+        run(&mut r, &cfg, "log Earlier end:yesterday").await;
+        let e = &find(&mut r, "Earlier").await[0];
+        assert!(e.end < e.entry);
+    }
+
+    #[tokio::test]
+    async fn log_refuses_what_a_finished_task_cannot_be() {
+        let mut r = replica();
+        let cfg = Config::default();
+        for (line, expected) in [
+            (
+                "log Repeat due:today recur:daily",
+                "ERROR: You cannot log recurring tasks.",
+            ),
+            ("log Hold wait:tomorrow", "ERROR: You cannot log waiting tasks."),
+            (
+                "project:Home log Thing",
+                "ERROR: log takes a description and modifications, not a filter",
+            ),
+        ] {
+            let (res, wrote) = run(&mut r, &cfg, line).await;
+            assert!(!wrote, "{line}");
+            assert_eq!(message(&res), expected, "{line}");
+        }
+        let (res, _) = run(&mut r, &cfg, "log").await;
+        assert!(message(&res).starts_with("ERROR:"), "{}", message(&res));
+        assert!(load_facts(&mut r).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn log_follows_the_active_contexts_write_rule() {
+        let mut r = replica();
+        let cfg = parse("context=work\ncontext.work.read=+work\ncontext.work.write=+work\n").config;
+        run(&mut r, &cfg, "log Reviewed").await;
+        assert!(find(&mut r, "Reviewed").await[0].tags.contains("work"));
+    }
+
+    #[tokio::test]
+    async fn stats_counts_the_database() {
+        let mut r = replica();
+        let cfg = quiet();
+        run(&mut r, &cfg, "add one project:Home +a").await;
+        run(&mut r, &cfg, "add two +b").await;
+        run(&mut r, &cfg, "add three wait:tomorrow").await;
+        run(&mut r, &cfg, "add four").await;
+        run(&mut r, &cfg, "4 delete").await;
+        run(&mut r, &cfg, "1 done").await;
+        run(&mut r, &cfg, "2 annotate hello").await;
+        let (res, wrote) = run(&mut r, &cfg, "stats").await;
+        assert!(!wrote);
+        let CliResult::Table(t) = res else { panic!("{res:?}") };
+        assert_eq!(t.headers, ["Category", "Data"]);
+        let v = |n: &str| {
+            t.rows
+                .iter()
+                .find(|row| row[0] == n)
+                .map(|row| row[1].clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            ["Pending", "Waiting", "Recurring", "Completed", "Deleted", "Total"].map(v),
+            ["1", "1", "0", "1", "1", "4"]
+        );
+        assert_eq!([v("Annotations"), v("Unique tags"), v("Projects")], ["1", "2", "1"]);
+        assert_eq!(v("Tasks tagged"), "50%");
+        assert!(v("Average desc length").ends_with(" characters"));
+        // It takes a filter.
+        let (res, _) = run(&mut r, &cfg, "project:Home stats").await;
+        let CliResult::Table(t) = res else { panic!() };
+        assert_eq!(t.rows.iter().find(|row| row[0] == "Total").unwrap()[1], "1");
+    }
+
+    #[tokio::test]
+    async fn context_defines_lists_shows_switches_and_deletes() {
+        let mut r = replica();
+        let cfg = quiet();
+        assert_eq!(
+            message(&done(&mut r, &cfg, "context", false).await.result),
+            "ERROR: No contexts defined."
+        );
+        assert_eq!(
+            message(&done(&mut r, &cfg, "context show", false).await.result),
+            "No context is currently applied."
+        );
+
+        run(&mut r, &cfg, "add a +errand").await;
+        let d = done(&mut r, &cfg, "context define work +errand", false).await;
+        assert_eq!(
+            message(&d.result),
+            "Context 'work' defined (read, write). Use 'task context work' to activate."
+        );
+        assert!(!d.wrote, "settings are saved by the caller, not as tasks");
+        let cfg = d.config.expect("new settings");
+        assert_eq!(cfg.contexts["work"].read.as_deref(), Some("+errand"));
+        assert_eq!(cfg.contexts["work"].write.as_deref(), Some("+errand"));
+        assert_eq!(cfg.active_context, None);
+
+        // The list has a read row and a write row for each, and says which is active.
+        let d = done(&mut r, &cfg, "context list", false).await;
+        let CliResult::Table(t) = d.result else { panic!() };
+        assert_eq!(t.headers, ["Name", "Type", "Definition", "Active"]);
+        assert_eq!(
+            t.rows,
+            [["work", "read", "+errand", "no"], ["", "write", "+errand", "no"]]
+        );
+        let d = done(&mut r, &cfg, "context", false).await;
+        let CliResult::Table(t) = d.result else { panic!() };
+        assert_eq!(t.footer, ["Use 'task context none' to unset the current context."]);
+
+        let d = done(&mut r, &cfg, "context work", false).await;
+        assert_eq!(
+            message(&d.result),
+            "Context 'work' set. Use 'task context none' to remove."
+        );
+        let cfg = d.config.expect("new settings");
+        assert_eq!(cfg.active_context.as_deref(), Some("work"));
+        assert_eq!(
+            message(&done(&mut r, &cfg, "context show", false).await.result),
+            "Context 'work' with \n\n* read filter: '+errand'\n* write filter: '+errand'\n\nis currently applied."
+        );
+        // It is in force: only tagged tasks show, and new ones get the tag.
+        run(&mut r, &cfg, "add b").await;
+        assert_eq!(shown(&mut r, &cfg, "list").await, (2, 2));
+        assert!(find(&mut r, "b").await[0].tags.contains("errand"));
+        run(&mut r, &Config::default(), "add c").await;
+        assert_eq!(shown(&mut r, &cfg, "list").await, (2, 2));
+        assert_eq!(shown(&mut r, &Config::default(), "list").await, (3, 3));
+
+        assert_eq!(
+            message(&done(&mut r, &cfg, "context nope", false).await.result),
+            "ERROR: Context 'nope' not found."
+        );
+        let d = done(&mut r, &cfg, "context none", false).await;
+        assert_eq!(message(&d.result), "Context unset.");
+        let off = d.config.expect("new settings");
+        assert_eq!(off.active_context, None);
+        assert_eq!(
+            message(&done(&mut r, &off, "context none", false).await.result),
+            "ERROR: Context not unset."
+        );
+
+        // Deleting the active one unsets it too.
+        let d = done(&mut r, &cfg, "context delete work", false).await;
+        assert_eq!(message(&d.result), "Context 'work' deleted.");
+        let gone = d.config.expect("new settings");
+        assert!(gone.contexts.is_empty() && gone.active_context.is_none());
+        assert_eq!(
+            message(&done(&mut r, &gone, "context delete work", false).await.result),
+            "ERROR: Context 'work' not found."
+        );
+        assert_eq!(
+            message(&done(&mut r, &gone, "context delete", false).await.result),
+            "ERROR: Context name needs to be specified."
+        );
+    }
+
+    #[tokio::test]
+    async fn a_filter_that_cannot_be_a_write_rule_defines_a_read_only_context() {
+        let mut r = replica();
+        for (filter, why) in [
+            ("project:Home or project:Work", "contains the 'OR' operator"),
+            (
+                "due.before:tomorrow",
+                "contains an attribute modifier 'due.before:tomorrow'",
+            ),
+            ("+x -y", "contains tag exclusion '-y'"),
+        ] {
+            let d = done(&mut r, &quiet(), &format!("context define c {filter}"), false).await;
+            let m = message(&d.result);
+            assert!(m.contains(&format!("because it {why}.")), "{filter}: {m}");
+            assert!(
+                m.ends_with("Context 'c' defined (read only). Use 'task context c' to activate."),
+                "{m}"
+            );
+            let cfg = d.config.expect("new settings");
+            assert_eq!(cfg.contexts["c"].read.as_deref(), Some(filter));
+            assert_eq!(cfg.contexts["c"].write, None);
+        }
+        // `is` and `equals` are changes too.
+        let d = done(&mut r, &quiet(), "context define c project.is:Home", false).await;
+        assert!(message(&d.result).contains("(read, write)"));
+    }
+
+    #[tokio::test]
+    async fn context_refuses_what_it_cannot_define() {
+        let mut r = replica();
+        let cfg = quiet();
+        for (line, expected) in [
+            (
+                "context define work",
+                "ERROR: Both context name and its definition must be provided.",
+            ),
+            (
+                "context define",
+                "ERROR: Both context name and its definition must be provided.",
+            ),
+            (
+                "context define list +x",
+                "ERROR: The name 'list' is reserved and not allowed to use as a context name.",
+            ),
+            (
+                "context define none +x",
+                "ERROR: The name 'none' is reserved and not allowed to use as a context name.",
+            ),
+            (
+                "context define a.b +x",
+                "ERROR: 'a.b' can't be a context name: use letters, digits and underscores.",
+            ),
+        ] {
+            let d = done(&mut r, &cfg, line, false).await;
+            assert_eq!(message(&d.result), expected, "{line}");
+            assert!(d.config.is_none(), "{line}");
+        }
+        let m = message(
+            &done(&mut r, &cfg, "context define work due.nonsense:x", false)
+                .await
+                .result,
+        );
+        assert!(m.starts_with("ERROR: Filter validation failed: "), "{m}");
+    }
+
+    #[tokio::test]
+    async fn context_asks_first_when_confirmation_is_on() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add a +errand").await;
+        // A filter that matches no pending task asks; one that matches goes ahead.
+        let d = done(&mut r, &cfg, "context define empty project:Nowhere", false).await;
+        assert_eq!(
+            message(&d.result),
+            "CONFIRM: The filter 'project:Nowhere' matches 0 pending tasks. Do you wish to continue?"
+        );
+        assert!(d.config.is_none());
+        let d = done(&mut r, &cfg, "context define empty project:Nowhere", true).await;
+        assert!(d.config.is_some());
+        assert!(done(&mut r, &cfg, "context define work +errand", false)
+            .await
+            .config
+            .is_some());
+
+        let cfg = parse("context.work.read=+errand\n").config;
+        let d = done(&mut r, &cfg, "context delete work", false).await;
+        assert_eq!(message(&d.result), "CONFIRM: Do you want to delete context 'work'?");
+        assert!(d.config.is_none());
+        assert!(done(&mut r, &cfg, "context delete work", true).await.config.is_some());
+        // Switching never asks.
+        assert!(done(&mut r, &cfg, "context work", false).await.config.is_some());
+    }
+
+    #[tokio::test]
+    async fn a_credential_like_context_name_is_refused_and_not_echoed() {
+        let mut r = replica();
+        let d = done(&mut r, &quiet(), "context define sync_secret +x", false).await;
+        let m = message(&d.result);
+        assert!(m.starts_with("ERROR:") && d.config.is_none(), "{m}");
+    }
+}

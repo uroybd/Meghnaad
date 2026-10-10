@@ -428,7 +428,7 @@ fn parse_ids(s: &str) -> Option<Vec<(u32, u32)>> {
 }
 
 /// `<name>[.<mod>](:|=)<value>`; `None` if it doesn't have that shape.
-fn split_pair(tok: &str) -> Option<(&str, &str, &str)> {
+pub(crate) fn split_pair(tok: &str) -> Option<(&str, &str, &str)> {
     let sep = tok.find([':', '='])?;
     let (lhs, value) = (&tok[..sep], &tok[sep + 1..]);
     let (name, modifier) = lhs.split_once('.').unwrap_or((lhs, ""));

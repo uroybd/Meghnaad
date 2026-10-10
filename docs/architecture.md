@@ -71,9 +71,9 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Colour** | `color` | Taskwarrior's colour specifications and how they blend, the rules that colour a task (with precedence and merge), the `colors` command and the history graph's colours; checked against the escape codes of the real `task` |
-| **Views** | `summary`, `calendar`, `burndown`, `activity`, `calc`, `export` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `calc` and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; the app's pages use a separate, hidden `_rows` |
+| **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; the app's pages use a separate, hidden `_rows` |
 | **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
-| **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` commands that list and edit it under the same rules |
+| **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`) |
 
 ### How a command runs
 
@@ -83,7 +83,7 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
    settings (which win, as in Taskwarrior).
 2. Read the first day of the week, `date.iso` and `dateformat` into the clock, and expand aliases (typed lines only).
 3. Parse into a filter, a command and modifications. A word shorter than `abbreviation.minimum` is just a word.
-4. Run the `on_launch` hook, which can refuse the command (`show` and `config` skip it: they are about settings).
+4. Run the `on_launch` hook, which can refuse the command (`show`, `config` and `context` skip it: they are about settings).
 5. Do Taskwarrior's housekeeping first: create the recurring instances that are due, expire tasks past `until`.
 6. Load the tasks as plain "facts", number the pending ones, and run the command. `on_add` and `on_modify` fire inside
    it, just before a write is committed.

@@ -261,9 +261,9 @@ A UDA that exists on a task but isn't defined in the taskrc is shown but read-on
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `context` | Done | The active context |
-| `context.<name>.read` | Done | |
-| `context.<name>.write` | Done | Applied to new tasks |
+| `context` | Done | The active context. `context <name>` and `context none` change it |
+| `context.<name>.read` | Done | `context define` writes it |
+| `context.<name>.write` | Done | Applied to new tasks (`add`, `log`). `context define` writes it too, unless the filter can't be one (`or`, `-tag`, a modifier) |
 | `context.<name>.rc.<key>` | Done | Settings that are in force while that context is the active one: `default.command`, `limit`, a report's filter or sort (`context.work.rc.report.next.filter`), urgency coefficients, and any other setting this app reads. As in Taskwarrior they win over everything else, a `rc.` override typed on the command line included, and `rc.context:home` for one command brings in `home`'s settings. They are checked like any taskrc line: credential-like keys are refused by name, a setting this app has no use for is only named, and a value that can't be used is dropped with a warning. A context cannot set `context` itself |
 
 ## Sync

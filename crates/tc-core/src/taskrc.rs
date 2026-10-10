@@ -428,7 +428,7 @@ const SCALAR_SETTINGS: &[&str] = &[
     "uda.priority.values",
 ];
 
-fn valid_ident(s: &str) -> bool {
+pub(crate) fn valid_ident(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
