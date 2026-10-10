@@ -64,6 +64,7 @@ pub enum Kind {
     GHistoryMonthly,
     GHistoryAnnual,
     Export,
+    Import,
     /// `_rows`: the app's own view of the selected tasks (what the pages draw from); not Taskwarrior's.
     Rows,
     Ids,
@@ -123,6 +124,7 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("ghistory.monthly", GHistoryMonthly, false),
     ("ghistory.annual", GHistoryAnnual, false),
     ("export", Export, false),
+    ("import", Import, false),
     ("_rows", Rows, false),
     ("information", Info, false),
     ("ids", Ids, false),
@@ -260,6 +262,7 @@ const COMMAND_INFO: &[(&str, &str, &str, &str)] = &[
         "Shows a report of task history, by week",
     ),
     ("ids", "metadata", "IGRF", "Shows the IDs of matching tasks, as a range"),
+    ("import", "migration", "WS", "Imports JSON files"),
     ("information", "metadata", "F", "Shows all data and metadata"),
     ("log", "operation", "WCM", "Adds a new task that is already completed"),
     (
@@ -562,6 +565,9 @@ pub enum CliResult {
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         swatch: bool,
     },
+    /// `import`: the page offers to pick a file to import (the file is read in the browser and sent to the
+    /// server, never named on the command line).
+    Import,
     /// A file for the browser to offer as a download (`export`).
     File {
         name: String,
@@ -995,7 +1001,7 @@ fn add_note(task: &mut Task, text: &str, now: i64, ops: &mut Operations) -> Resu
     .map_err(|e| e.to_string())
 }
 
-fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Operations) -> Result<(), String> {
+pub(crate) fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Operations) -> Result<(), String> {
     let e = |e: taskchampion::Error| e.to_string();
     for c in changes {
         match c {
@@ -2026,6 +2032,7 @@ async fn builtin<S: Storage>(
             }
         }
         Export => export(replica, cfg, ctx, all, p).await,
+        Import => ok(CliResult::Import),
         Stats => {
             let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
                 Ok(s) => s,

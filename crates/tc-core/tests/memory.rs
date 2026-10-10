@@ -53,6 +53,10 @@ static ALLOC: Counting = Counting;
 
 const MB: f64 = 1024.0 * 1024.0;
 
+/// The counters above are global, so tests that measure must not run side by side: one would count
+/// the other's memory.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Run `f` and report (peak above where it started, still held at the end), in MB.
 async fn measure<T, F: std::future::Future<Output = T>>(f: F) -> (f64, f64, T) {
     let base = CURRENT.load(Relaxed);
@@ -123,7 +127,12 @@ async fn run(r: &mut R, line: &str) -> CliResult {
 }
 
 #[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the lock only keeps the measuring tests apart; the runtime has one thread"
+)]
 async fn catching_up_from_scratch_over_many_versions_stays_small() {
+    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
     let (store, c) = bucket().await;
     let mut a: R = Replica::new(InMemoryStorage::new());
     // 1,200 versions of one change each, the way a busy week of edits from several devices looks.
@@ -140,7 +149,12 @@ async fn catching_up_from_scratch_over_many_versions_stays_small() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the lock only keeps the measuring tests apart; the runtime has one thread"
+)]
 async fn restoring_a_snapshot_and_answering_requests_stay_small() {
+    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
     let (store, c) = bucket().await;
     let mut a: R = Replica::new(InMemoryStorage::new());
     for batch in 0..6 {
@@ -172,4 +186,83 @@ async fn restoring_a_snapshot_and_answering_requests_stay_small() {
         );
         assert!(peak < 60.0, "`{line}` took {peak:.1} MB");
     }
+}
+
+/// A file of the most tasks an import takes, each with the usual attributes, a tag, an annotation and a
+/// dependency: what `export` writes for a big list.
+fn big_file(n: usize) -> String {
+    let tasks: Vec<String> = (0..n)
+        .map(|i| {
+            format!(
+                r#"{{"id":{i},"description":"Task number {i}: write the quarterly report for the team","entry":"20261001T100000Z","modified":"20261002T100000Z","priority":"{}","project":"Work.Area{}","status":"pending","uuid":"{}","due":"20261225T083000Z","annotations":[{{"entry":"20261002T000000Z","description":"a note about it"}}],"tags":["next","work"],"depends":["{}"],"urgency":9.5}}"#,
+                ["H", "M", "L"][i % 3],
+                i % 7,
+                uuid::Uuid::from_u128(i as u128 + 1),
+                uuid::Uuid::from_u128((i as u128 + 1) % n as u128 + 1),
+            )
+        })
+        .collect();
+    format!("[{}]", tasks.join(",\n"))
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[allow(
+    clippy::await_holding_lock,
+    reason = "the lock only keeps the measuring tests apart; the runtime has one thread"
+)]
+async fn importing_the_most_tasks_one_import_takes_stays_small() {
+    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+    let n = tc_core::import::MAX_TASKS;
+    let file = big_file(n);
+    println!("an import of {n} tasks is a file of {:.1} MB", file.len() as f64 / MB);
+    assert!(
+        file.len() < 3 * 1024 * 1024,
+        "the biggest import must fit the Worker's size limit"
+    );
+
+    let (store, c) = bucket().await;
+    let mut a: R = Replica::new(InMemoryStorage::new());
+    let mut undo = UndoStack::default();
+    let cfg = Config::default();
+    // First the check, then the import and the sync that follows it, as the Worker does them.
+    let (peak, held, out) = measure(async {
+        tc_core::import::import(&mut a, &cfg, clock(), &file, false, &mut undo, None)
+            .await
+            .unwrap()
+    })
+    .await;
+    println!("check of {n} new tasks: peak {peak:.1} MB, held {held:.1} MB");
+    assert_eq!(out.added, n);
+    assert!(peak < 60.0, "checking an import took {peak:.1} MB");
+
+    let (peak, held, _) = measure(async {
+        tc_core::import::import(&mut a, &cfg, clock(), &file, true, &mut undo, None)
+            .await
+            .unwrap()
+    })
+    .await;
+    println!("import of {n} new tasks: peak {peak:.1} MB, held {held:.1} MB");
+    assert!(peak < 60.0, "an import took {peak:.1} MB");
+    // What the batch costs to keep for `undo`.
+    let with = CURRENT.load(Relaxed);
+    drop(std::mem::take(&mut undo));
+    println!(
+        "the undo step holds {:.1} MB",
+        (with - CURRENT.load(Relaxed)) as f64 / MB
+    );
+    let mut s = server(&store, &c, SnapshotUrgency::None);
+    let (peak, _, _) = measure(async { a.sync(&mut s, true).await.unwrap() }).await;
+    println!("pushing it: peak {peak:.1} MB");
+    assert!(peak < 60.0, "pushing an import took {peak:.1} MB");
+
+    // The same file again: every task is looked up and compared, none is written.
+    let (peak, held, out) = measure(async {
+        tc_core::import::import(&mut a, &cfg, clock(), &file, true, &mut undo, None)
+            .await
+            .unwrap()
+    })
+    .await;
+    println!("import of the same {n} tasks again: peak {peak:.1} MB, held {held:.1} MB");
+    assert_eq!(out.skipped, n);
+    assert!(peak < 60.0, "an import of tasks already there took {peak:.1} MB");
 }

@@ -58,7 +58,7 @@
   }
 
   /** Commands with no page of their own: they only ever answer in the Console. */
-  const CONSOLE_ONLY = new Set(['show', 'config', 'export', 'timesheet', 'information', 'colors', 'color']);
+  const CONSOLE_ONLY = new Set(['show', 'config', 'export', 'import', 'timesheet', 'information', 'colors', 'color']);
 
   function consoleOnly(l: string): boolean {
     const words = l

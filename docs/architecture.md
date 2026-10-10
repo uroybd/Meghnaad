@@ -48,7 +48,10 @@ flowchart TB
 ## The request path
 
 Every action goes through one endpoint, `POST /api/cli`, with `{ "line": "…" }` (what you typed in the console) or
-`{ "args": […] }` (what a button sends). One endpoint means one place where Taskwarrior semantics live.
+`{ "args": […] }` (what a button sends). One endpoint means one place where Taskwarrior semantics live. The one
+exception is `POST /api/import`, which takes the *text of a file* (a command line can't carry one): the browser reads the
+file and sends it as it is, and `tc-core`'s `import` module parses and checks it, so the rules are still only in Rust.
+`?apply=1` writes it; without that it only reports what it would do.
 
 1. **Static files** (the app shell) are served by Cloudflare without running the Worker. Only `/api/*` runs it.
 2. **`auth.rs`** checks the Cloudflare Access token on every `/api/*` request: RS256 signature against your team's
@@ -71,7 +74,7 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Colour** | `color` | Taskwarrior's colour specifications and how they blend, the rules that colour a task (with precedence and merge), the `colors` command and the history graph's colours; checked against the escape codes of the real `task` |
-| **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; the app's pages use a separate, hidden `_rows` |
+| **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; `import` reads it back (a port of `CmdImport`, checking the whole file before it writes anything); the app's pages use a separate, hidden `_rows` |
 | **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
 | **Settings** | `taskrc`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`) |
 

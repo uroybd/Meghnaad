@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runCli, getConfig } from './api';
+import { runCli, getConfig, importTasks } from './api';
 
 const limit = () => new Response('error code: 1102', { status: 500 });
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -49,5 +49,35 @@ describe("a request cut off by Cloudflare's resource limit (1102)", () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(runCli({ args: ['next'] })).rejects.toThrow('bad filter');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('importing a file', () => {
+  it('sends the file as it is, with whether to apply it and the time zone', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ok({ applied: false, added: 1, modified: 0, skipped: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const file = '[{"description":"a"}]';
+    await importTasks(file, false);
+    await importTasks(file, true);
+    const [first, second] = fetchMock.mock.calls;
+    expect(first[0]).toMatch(/^\/api\/import\?apply=0&tz=-?\d+$/);
+    expect(second[0]).toMatch(/^\/api\/import\?apply=1&tz=-?\d+$/);
+    expect(second[1]).toMatchObject({ method: 'POST', body: file });
+  });
+
+  it('is never repeated on its own, even though its body parses as JSON', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => limit());
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(importTasks('[{"description":"a"}]', true)).rejects.toThrow(/1102/);
+    await expect(importTasks('{"description":"a"}', true)).rejects.toThrow(/1102/);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // once each
+  });
+
+  it("shows the server's reason when a file is refused", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'Task 2: due: bad' }), { status: 400 })),
+    );
+    await expect(importTasks('x', false)).rejects.toThrow('Task 2: due: bad');
   });
 });

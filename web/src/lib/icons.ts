@@ -18,6 +18,7 @@ export { default as CornerUpLeft } from '@lucide/svelte/icons/corner-up-left';
 export { default as CornerDownLeft } from '@lucide/svelte/icons/corner-down-left';
 export { default as Copy } from '@lucide/svelte/icons/copy';
 export { default as Download } from '@lucide/svelte/icons/download';
+export { default as Upload } from '@lucide/svelte/icons/upload';
 export { default as Eraser } from '@lucide/svelte/icons/eraser';
 export { default as FileText } from '@lucide/svelte/icons/file-text';
 export { default as Folder } from '@lucide/svelte/icons/folder';

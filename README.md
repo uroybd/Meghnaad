@@ -110,7 +110,8 @@ flowchart TB
 - **The Worker** keeps an in-memory replica and syncs before and after every command; an idle sync is one read. A
   Worker that has been quiet rebuilds from the newest snapshot, which it writes now and then like the CLI does.
 - **One endpoint**, `POST /api/cli`, takes what you typed or what a button sends, so Taskwarrior's rules live in one
-  place: the `tc-core` crate. The browser draws results and holds nothing.
+  place: the `tc-core` crate. The browser draws results and holds nothing. (Importing a file has its own,
+  `POST /api/import`, since a file is more than a command line; the rules are still in `tc-core`.)
 - **Your imported taskrc settings** are stored in the same bucket, so they survive restarts and follow you between
   devices.
 

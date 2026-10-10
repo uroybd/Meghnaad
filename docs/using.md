@@ -59,7 +59,7 @@ help
 
 | | |
 | --- | --- |
-| **Write** | `add` `log` `duplicate` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
+| **Write** | `add` `log` `duplicate` `import` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
 | **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `stats` `udas` `columns` `reports` `context` `show` `config` `export` `ids` `uuids` `calc` `commands` `_get` `_projects` `_tags` |
 | **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
@@ -93,6 +93,17 @@ filter, modifications, other words), so it shows what this app understands, whic
 report you define in the taskrc is there too. **`_get`** prints the value of each DOM reference it is given, separated
 by spaces: `_get 1.due 1.project rc.bulk tw.version`. A reference with no value prints as nothing; a word that is not a
 reference is an error. It reads the same references as `calc` (see below), and credentials are never among them.
+
+**`import`** brings tasks in from a file, such as one `export` wrote (or `task export` on your desktop). Typing it
+shows a **Choose a file…** button; the file is read in the browser and checked by the server, which then says how many
+tasks are new, how many would change and how many are already there, and lists them. Nothing is written until you press
+**Import**, and then all of it is or none, as one `undo` step. A task is matched by its `uuid`: new ones are added, one
+that differs takes the file's attributes whole (what the file leaves out is removed, as in Taskwarrior), and one that is
+the same is left alone, so importing the same file twice changes nothing. A file with a bad task (an invalid date or uuid,
+an unknown status, malformed annotations) is refused with the task's number and the reason. A file may be one task, an
+array, or a task to a line; the most is about 3 MB (a few thousand tasks) or 5,000 tasks at a time, so split a bigger one.
+Missing `entry`, `end` and `modified` are filled in, `default.project` and the UDA defaults apply to what lacks them, and
+hooks (`on_add`, `on_modify`) run for each task. `import-v2` (Taskwarrior 2's data files) is not in the app.
 
 **`stats`** counts the tasks that match a filter (all of them, with none): by status, annotations, tags, projects,
 blocked and blocking, how old the oldest is and how often tasks are added and finished. The two rows about undo and the
@@ -404,5 +415,6 @@ can be tapped. You can install it to your home screen from the browser menu.
 - **`undo`** works on the last few commands made while this Worker instance lives; it is forgotten when it is recycled.
 - **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a Worker can't run local programs, so they are functions in
   `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
-- **`edit` and `purge`** are not in the app (the detail view edits a task; deleting for good is left to your CLI).
+- **`edit`, `purge` and `import-v2`** are not in the app (the detail view edits a task; deleting for good is left to your
+  CLI; Taskwarrior 2's data files can't be read in a browser).
 - **The first request after a quiet spell** is slower: the Worker rebuilds its state from the bucket's newest snapshot.

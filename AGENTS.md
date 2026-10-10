@@ -40,7 +40,7 @@ run `npm run format` after editing any code, not just at the end.
 - **Docs move with the code.** A new or changed feature updates `docs/using.md`, and `docs/taskrc-support.md` for a
   setting, `docs/architecture.md` for a module, and the README if it is user-visible. Keep the Mermaid diagram identical
   in the README and `docs/architecture.md`.
-- **Taskwarrior logic lives in `tc-core`**; the browser only draws. One endpoint, `POST /api/cli`.
+- **Taskwarrior logic lives in `tc-core`**; the browser only draws. One endpoint, `POST /api/cli` (and `POST /api/import` for the text of a file; the browser only reads it).
 - **Secrets never leave the Worker.** The taskrc importer, `show` and `config` refuse sync and credential-like names and
   never echo their values; keep tests that prove it passing, and add one for any new path that handles settings.
 - **Hooks** are user code. Users edit only `crates/tc-core/src/my_hooks.rs`, so keep engine changes in `hooks.rs` and

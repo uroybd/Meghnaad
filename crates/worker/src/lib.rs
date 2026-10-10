@@ -111,6 +111,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .post_async("/api/config/taskrc/restore", |_, ctx| wrap(restore_taskrc(ctx)))
         .put_async("/api/config/urgency", |req, ctx| wrap(put_urgency(req, ctx)))
         .post_async("/api/cli", |req, ctx| wrap(cli(req, ctx)))
+        .post_async("/api/import", |req, ctx| wrap(import_tasks(req, ctx)))
         .run(req, env)
         .await?;
     // Task data must never be cached by a browser or an intermediary, or sniffed as another type.
@@ -245,6 +246,56 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
         "command": done.command,
         "feedback": done.feedback,
     }))
+}
+
+/// The most an import takes: a file of about this size holds a few thousand tasks, and the Worker has to hold
+/// the text, what it parses into and the operations it makes all at once.
+const MAX_IMPORT_BYTES: usize = 3 * 1024 * 1024;
+
+/// `POST /api/import`: the body is a file of tasks as `task export` writes it. Without `?apply=1` it only
+/// says what importing would do; with it the tasks are written (all of them or none). `?tz=` is the browser's
+/// UTC offset in seconds, for a date that gives no zone.
+async fn import_tasks(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let url = req.url()?;
+    let query = |name: &str| url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned());
+    let apply = query("apply").as_deref() == Some("1");
+    let tz = query("tz")
+        .and_then(|v| v.parse::<i32>().ok())
+        .unwrap_or(0)
+        .clamp(-14 * 3600, 14 * 3600);
+    let declared = req
+        .headers()
+        .get("content-length")?
+        .and_then(|l| l.parse::<usize>().ok());
+    if declared.is_some_and(|n| n > MAX_IMPORT_BYTES) {
+        return Err(ApiError::TooLarge);
+    }
+    let text = req.text().await?;
+    if text.len() > MAX_IMPORT_BYTES {
+        return Err(ApiError::TooLarge);
+    }
+
+    let mut s = open(&ctx.env).await?;
+    let clock = Clock {
+        now: (js_sys::Date::now() / 1000.0) as i64,
+        tz_offset: tz,
+        ..Clock::utc(0)
+    };
+    let cfg = s.config.clone();
+    let st = &mut *s.state;
+    let mut out = tc_core::import::import(&mut st.replica, &cfg, clock, &text, apply, &mut st.undo, None)
+        .await
+        .map_err(ApiError::BadRequest)?;
+    if out.applied {
+        // Push at once: the replica lives in this isolate's memory, which can be recycled.
+        if let Err(e) = s.sync().await {
+            worker::console_error!("sync after import failed: {e}");
+            out.warnings.push(
+                "The tasks were imported but couldn't be synced yet; it will be retried on the next request.".into(),
+            );
+        }
+    }
+    json(&out)
 }
 
 async fn get_config(ctx: RouteContext<()>) -> RouteResult {

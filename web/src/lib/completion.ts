@@ -82,6 +82,7 @@ export const COMMANDS: Record<string, string> = {
   'ghistory.monthly': 'the same as a graph, by month',
   'ghistory.annual': 'the same as a graph, by year',
   export: 'tasks as a JSON file to download (what task import reads)',
+  import: 'tasks from a JSON file (what export writes): choose the file on the page',
   ids: 'ids of matching tasks',
   uuids: 'uuids of matching tasks',
   help: 'how to use this',

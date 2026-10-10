@@ -251,6 +251,23 @@ export interface FileResult {
   /** How many tasks are in it. */
   count: number;
 }
+/** `import`: the page offers to pick a file; the file itself goes to `/api/import`. */
+export interface ImportResult {
+  kind: 'import';
+}
+/** What importing a file did (or, for a check, would do). */
+export interface ImportReport {
+  /** Whether the tasks were written. */
+  applied: boolean;
+  added: number;
+  modified: number;
+  skipped: number;
+  lines: { action: 'add' | 'mod' | 'skip'; uuid: string; description: string }[];
+  /** How many tasks there were beyond `lines`. */
+  more: number;
+  warnings: string[];
+  feedback: { kind: 'info' | 'warn'; text: string }[];
+}
 export interface JsonResult {
   kind: 'json';
   value: unknown;
@@ -295,6 +312,7 @@ export type CliResult =
   | TextResult
   | JsonResult
   | FileResult
+  | ImportResult
   | StyledResult
   | ChangedResult
   | ConfirmResult

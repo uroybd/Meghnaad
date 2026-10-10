@@ -1,4 +1,4 @@
-import type { CliResponse, ConfigResponse, TaskrcResponse } from './types';
+import type { CliResponse, ConfigResponse, ImportReport, TaskrcResponse } from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -23,7 +23,9 @@ function safeToRepeat(init?: RequestInit): boolean {
   if (method === 'GET') return true;
   if (method !== 'POST' || typeof init?.body !== 'string') return false;
   try {
-    const b = JSON.parse(init.body) as { line?: string; args?: string[] };
+    const b = JSON.parse(init.body) as { line?: string; args?: string[] } | null;
+    // Only a command line is known to be repeatable; any other body (a file to import) is not.
+    if (!b || Array.isArray(b) || typeof b !== 'object' || (b.line === undefined && b.args === undefined)) return false;
     return !WRITES.test(b.line ?? (b.args ?? []).join(' '));
   } catch {
     return false;
@@ -90,6 +92,21 @@ export function runCli(input: CliInput): Promise<CliResponse> {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...input, tz: tzOffsetSeconds() }),
+  });
+}
+
+/** The most the server takes in one import (it says so in the same words). */
+export const MAX_IMPORT_BYTES = 3 * 1024 * 1024;
+
+/**
+ * Send a file of tasks (what `export` writes) to be imported. Without `apply` it only reports what would
+ * happen; with it the tasks are written, all of them or none.
+ */
+export function importTasks(text: string, apply: boolean): Promise<ImportReport> {
+  return request<ImportReport>(`/api/import?apply=${apply ? 1 : 0}&tz=${tzOffsetSeconds()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+    body: text,
   });
 }
 

@@ -4490,10 +4490,18 @@ mod commands_and_get {
         sorted.sort_unstable();
         assert_eq!(names, sorted);
         assert_eq!(names[0], "_get");
-        for gone in ["edit", "purge", "import", "info", "_rows", "sync"] {
+        for gone in ["edit", "purge", "import-v2", "info", "_rows", "sync"] {
             assert!(!names.contains(&gone), "{gone}");
         }
-        for new in ["commands", "context", "duplicate", "log", "stats", "synchronize"] {
+        for new in [
+            "commands",
+            "context",
+            "duplicate",
+            "import",
+            "log",
+            "stats",
+            "synchronize",
+        ] {
             assert!(names.contains(&new), "{new}");
         }
         // `sync` still reaches it, as an abbreviation.
@@ -4576,5 +4584,226 @@ mod commands_and_get {
 
     fn quiet_cfg() -> Config {
         parse("confirmation=off\nsync.encryption_secret=hunter2\n").config
+    }
+}
+
+mod import_command {
+    use super::*;
+    use std::sync::Arc;
+    use tc_core::hooks::{Hooked, Hooks, Reject};
+    use tc_core::import::{import, ImportOut};
+    use tc_core::model::Facts;
+
+    async fn go(r: &mut R, cfg: &Config, text: &str, apply: bool) -> Result<ImportOut, String> {
+        let mut undo = UNDO.with(|u| u.borrow().clone());
+        let out = import(r, cfg, clock(), text, apply, &mut undo, None).await;
+        UNDO.with(|u| *u.borrow_mut() = undo);
+        out
+    }
+
+    fn counts(o: &ImportOut) -> (usize, usize, usize) {
+        (o.added, o.modified, o.skipped)
+    }
+
+    async fn export_of(r: &mut R, cfg: &Config) -> serde_json::Value {
+        let CliResult::File { text, .. } = run(r, cfg, "export").await.0 else {
+            panic!("not a file")
+        };
+        let mut v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        // Urgency depends on the time the command ran; ids on the replica.
+        for t in v.as_array_mut().unwrap() {
+            t.as_object_mut().unwrap().remove("urgency");
+        }
+        v
+    }
+
+    const FILE: &str = r#"[
+{"description":"First","uuid":"11111111-1111-4111-8111-111111111111","status":"pending","entry":"20261001T100000Z",
+ "project":"Home","tags":["a","b"],"due":"20261225T083000Z","priority":"H",
+ "annotations":[{"entry":"20261002T000000Z","description":"note one"}],
+ "depends":["22222222-2222-4222-8222-222222222222"],"id":99,"urgency":99},
+{"description":"Second","uuid":"22222222-2222-4222-8222-222222222222","status":"completed","entry":"20261001T100000Z"},
+{"description":"Later","uuid":"33333333-3333-4333-8333-333333333333","status":"waiting","wait":"20271001T000000Z"}
+]"#;
+
+    #[tokio::test]
+    async fn a_file_is_added_then_skipped_when_imported_again() {
+        let mut r = replica();
+        let cfg = Config::default();
+        let o = go(&mut r, &cfg, FILE, true).await.unwrap();
+        assert_eq!((counts(&o), o.applied), ((3, 0, 0), true));
+        assert_eq!(o.lines.iter().map(|l| l.action).collect::<Vec<_>>(), ["add"; 3]);
+        let all = load_facts(&mut r).await.unwrap();
+        let first = all.iter().find(|f| f.description == "First").unwrap();
+        assert_eq!(first.project.as_deref(), Some("Home"));
+        assert!(first.tags.contains("a") && first.tags.contains("b"));
+        assert_eq!(first.annotations[0].text, "note one");
+        assert_eq!(first.depends.len(), 1);
+        assert_eq!(first.entry, Some(1_790_848_800), "the file's entry is kept");
+        let second = all.iter().find(|f| f.description == "Second").unwrap();
+        assert_eq!(second.status, "completed");
+        assert!(second.end.is_some(), "a finished task without an end gets one");
+        let later = all.iter().find(|f| f.description == "Later").unwrap();
+        assert_eq!((later.status.as_str(), later.wait), ("pending", Some(1_822_348_800)));
+
+        // The same file again changes nothing, though `entry` and `end` of two tasks were made up.
+        let o = go(&mut r, &cfg, FILE, true).await.unwrap();
+        assert_eq!((counts(&o), o.applied), ((0, 0, 3), false));
+        assert_eq!(load_facts(&mut r).await.unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn what_export_writes_comes_back_as_it_was() {
+        let mut a = replica();
+        let cfg = parse("uda.est.type=numeric\nuda.size.type=string\n").config;
+        run(
+            &mut a,
+            &cfg,
+            "add Water plants project:Home.Kitchen +a +b due:2026-12-25T08:30 priority:H est:3.5 size:big",
+        )
+        .await;
+        run(&mut a, &cfg, "add Pay rent due:tomorrow +bills").await;
+        run(&mut a, &cfg, "1 annotate hello").await;
+        run(&mut a, &cfg, "2 start").await;
+        run(&mut a, &cfg, "add Done thing").await;
+        run(&mut a, &cfg, "3 done").await;
+        run(&mut a, &cfg, "add Hold wait:2030-01-01").await;
+        let before = export_of(&mut a, &cfg).await;
+        let CliResult::File { text, .. } = run(&mut a, &cfg, "export").await.0 else {
+            panic!()
+        };
+
+        let mut b = replica();
+        let o = go(&mut b, &cfg, &text, true).await.unwrap();
+        assert_eq!(counts(&o), (4, 0, 0));
+        assert_eq!(export_of(&mut b, &cfg).await, before);
+        // And once more: nothing to do.
+        assert_eq!(counts(&go(&mut b, &cfg, &text, true).await.unwrap()), (0, 0, 4));
+    }
+
+    #[tokio::test]
+    async fn a_changed_task_takes_the_files_attributes_whole() {
+        let mut r = replica();
+        let cfg = Config::default();
+        go(&mut r, &cfg, FILE, true).await.unwrap();
+        let changed = r#"{"description":"First renamed","uuid":"11111111-1111-4111-8111-111111111111",
+            "status":"pending","entry":"20261001T100000Z","priority":"L"}"#;
+        let o = go(&mut r, &cfg, changed, true).await.unwrap();
+        assert_eq!((counts(&o), o.lines[0].action), ((0, 1, 0), "mod"));
+        let all = load_facts(&mut r).await.unwrap();
+        let f = all.iter().find(|f| f.description == "First renamed").unwrap();
+        assert_eq!(f.priority.as_deref(), Some("L"));
+        assert!(f.project.is_none() && f.tags.is_empty() && f.annotations.is_empty() && f.depends.is_empty());
+        assert!(f.due.is_none(), "what the file leaves out is removed");
+        assert!(f.modified.unwrap() >= f.entry.unwrap());
+        assert_eq!(all.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_check_writes_nothing_and_a_bad_task_stops_everything() {
+        let mut r = replica();
+        let cfg = Config::default();
+        let o = go(&mut r, &cfg, FILE, false).await.unwrap();
+        assert_eq!((counts(&o), o.applied), ((3, 0, 0), false));
+        assert!(load_facts(&mut r).await.unwrap().is_empty());
+
+        let bad = r#"[{"description":"fine"},{"description":"bad","due":"garbage"},{"description":"also fine"}]"#;
+        let e = go(&mut r, &cfg, bad, true).await.err().unwrap();
+        assert!(e.starts_with("Task 2: due: 'garbage'"), "{e}");
+        assert!(load_facts(&mut r).await.unwrap().is_empty(), "nothing was imported");
+        let e = go(&mut r, &cfg, "{\"description\":\"a\"}\n{broken", true)
+            .await
+            .err()
+            .unwrap();
+        assert!(e.contains("line 2"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn a_uuid_twice_is_one_task_and_a_warning() {
+        let mut r = replica();
+        let cfg = Config::default();
+        let twice = r#"[{"description":"one","uuid":"11111111-1111-4111-8111-111111111111"},
+                        {"description":"two","uuid":"11111111-1111-4111-8111-111111111111"}]"#;
+        let o = go(&mut r, &cfg, twice, true).await.unwrap();
+        assert_eq!(counts(&o), (1, 0, 0));
+        assert_eq!(o.warnings.len(), 2);
+        assert!(o.warnings[0].starts_with("Input contains UUID '11111111-1111-4111-8111-111111111111' 2 times."));
+        assert_eq!(descs(&mut r).await, ["two"], "the later one wins");
+    }
+
+    #[tokio::test]
+    async fn defaults_fill_what_a_task_lacks_but_not_what_it_has() {
+        let mut r = replica();
+        let cfg = parse("default.project=Inbox\nuda.size.type=string\nuda.size.default=medium\n").config;
+        let file = r#"[{"description":"bare"},{"description":"owned","project":"Work","size":"big"}]"#;
+        go(&mut r, &cfg, file, true).await.unwrap();
+        let all = load_facts(&mut r).await.unwrap();
+        let get = |d: &str| all.iter().find(|f| f.description == d).unwrap().clone();
+        assert_eq!(get("bare").project.as_deref(), Some("Inbox"));
+        assert_eq!(get("bare").extra.get("size").map(String::as_str), Some("medium"));
+        assert_eq!(get("owned").project.as_deref(), Some("Work"));
+        assert_eq!(get("owned").extra.get("size").map(String::as_str), Some("big"));
+    }
+
+    #[tokio::test]
+    async fn an_import_is_one_undo_step() {
+        let mut r = replica();
+        let cfg = parse("confirmation=off\n").config;
+        go(&mut r, &cfg, FILE, true).await.unwrap();
+        assert_eq!(load_facts(&mut r).await.unwrap().len(), 3);
+        run(&mut r, &cfg, "undo").await;
+        assert!(load_facts(&mut r).await.unwrap().is_empty());
+    }
+
+    #[derive(Debug)]
+    struct NoNope;
+    impl Hooks for NoNope {
+        fn on_add(&self, _: &mut Hooked, task: Facts) -> Result<Facts, Reject> {
+            if task.description == "nope" {
+                return Err("no nopes".into());
+            }
+            Ok(task)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_hook_can_refuse_a_task_and_then_nothing_is_imported() {
+        let mut r = replica();
+        let cfg = Config::default();
+        let file = r#"[{"description":"fine"},{"description":"nope"}]"#;
+        let e = import(
+            &mut r,
+            &cfg,
+            clock(),
+            file,
+            true,
+            &mut UndoStack::default(),
+            Some(Arc::new(NoNope)),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(e, "no nopes");
+        assert!(load_facts(&mut r).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_import_is_limited_in_size() {
+        let mut r = replica();
+        let many = format!(
+            "[{}]",
+            vec![r#"{"description":"x"}"#; tc_core::import::MAX_TASKS + 1].join(",")
+        );
+        let e = go(&mut r, &Config::default(), &many, false).await.err().unwrap();
+        assert!(e.contains("import at most"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn the_import_command_asks_the_page_for_a_file() {
+        let mut r = replica();
+        assert!(matches!(
+            run(&mut r, &Config::default(), "import").await.0,
+            CliResult::Import
+        ));
     }
 }
