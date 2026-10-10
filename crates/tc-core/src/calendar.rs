@@ -396,7 +396,7 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
         // In the order Taskwarrior walks them (its task numbers). When several tasks are due on one
         // day the last one's state is the one shown, and a due date always shows over a scheduled one.
         let mut ordered: Vec<&Facts> = tasks.iter().filter(live).collect();
-        ordered.sort_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
+        ordered.sort_unstable_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
         for f in ordered {
             if let Some(s) = f.scheduled.filter(|s| *s > 0) {
                 scheduled_on.insert(day_of(s));

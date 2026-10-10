@@ -315,6 +315,27 @@ webrows "all cli probe" | python3 -c 'import sys,json; r=json.load(sys.stdin); a
   || fail "the web missed some of the CLI's tasks after its snapshot"
 ok "a cold web Worker read the CLI's snapshot and everything after it ($total tasks)"
 
+echo "== a task purged on one side is gone on the other"
+# `purge` removes a task for good (a Delete operation, not a status). The web purges one, the CLI must not
+# see it any more; then the CLI purges one and the web must not.
+webcli '{"line":"rc.confirmation:off add purged-by-web"}' >/dev/null
+webcli '{"line":"rc.confirmation:off description:purged-by-web delete"}' >/dev/null
+res=$(webcli '{"line":"rc.confirmation:off description:purged-by-web purge"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["message"])')
+[ "$res" = "Purged 1 task." ] || fail "the web said '$res' when purging"
+stop_dev
+r2_to_s3
+tw "$C" sync
+[ "$(tw "$C" export | grep -c purged-by-web || true)" = 0 ] || fail "the CLI still has the task the web purged"
+tw "$C" add purged-by-cli >/dev/null
+tw "$C" description:purged-by-cli delete >/dev/null
+tw "$C" description:purged-by-cli purge >/dev/null
+tw "$C" sync
+s3_to_r2
+start_dev
+[ "$(webrows "all purged-by" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')" = 0 ] \
+  || fail "the web still has a task one of the two sides purged"
+ok "a purge on the web is gone for the CLI, and one on the CLI is gone for the web"
+
 echo "== the web's export is the CLI's export"
 # Same tasks, two writers: the file the web offers must be what `task export` prints, key for key and in
 # the same order (only the local ids differ, and the CLI may have made instances the web has not seen).

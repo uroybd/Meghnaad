@@ -212,7 +212,7 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
         days.push(d);
         d = clock.start_of_day(d + 86_400 + 3_600 * 12); // the next midnight, whatever the clock does
     }
-    let index: BTreeMap<i64, usize> = days.iter().enumerate().map(|(i, d)| (*d, i)).collect();
+    let index: BTreeMap<i64, usize> = crate::ordered::map_of(days.iter().enumerate().map(|(i, d)| (*d, i)));
     let mut diff = vec![0i64; days.len()];
 
     let (mut carryover, mut current) = (0i64, 0i64);

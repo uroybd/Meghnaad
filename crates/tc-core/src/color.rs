@@ -218,11 +218,12 @@ fn effective_with(
     cfg: &crate::taskrc::Config,
     defaults: &[(&str, &str)],
 ) -> std::collections::BTreeMap<String, String> {
-    let mut colours: std::collections::BTreeMap<String, String> = defaults
-        .iter()
-        .filter(|(k, _)| k.starts_with("color."))
-        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-        .collect();
+    let mut colours: std::collections::BTreeMap<String, String> = crate::ordered::map_of(
+        defaults
+            .iter()
+            .filter(|(k, _)| k.starts_with("color."))
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
+    );
     for (k, v) in &cfg.settings {
         if k.starts_with("color.") {
             colours.insert(k.clone(), v.clone());
@@ -237,13 +238,10 @@ pub fn palette_for_page(cfg: &crate::taskrc::Config) -> std::collections::BTreeM
     if !cfg.color() {
         return Default::default();
     }
-    effective(cfg)
-        .into_iter()
-        .filter_map(|(k, v)| {
-            let s = parse_style(&v).ok().filter(|s| !s.is_empty())?;
-            Some((k.strip_prefix("color.")?.to_owned(), s.resolved()))
-        })
-        .collect()
+    crate::ordered::map_of(effective(cfg).into_iter().filter_map(|(k, v)| {
+        let s = parse_style(&v).ok().filter(|s| !s.is_empty())?;
+        Some((k.strip_prefix("color.")?.to_owned(), s.resolved()))
+    }))
 }
 
 /// One colour rule: when it applies, and the style it gives.
@@ -350,10 +348,8 @@ impl Rules {
             return None;
         }
         let colours = effective_with(cfg, defaults);
-        let styles: std::collections::BTreeMap<&String, Style> = colours
-            .iter()
-            .map(|(k, v)| (k, parse_style(v).unwrap_or_default()))
-            .collect();
+        let styles: std::collections::BTreeMap<&String, Style> =
+            crate::ordered::map_of(colours.iter().map(|(k, v)| (k, parse_style(v).unwrap_or_default())));
         let names: Vec<&String> = colours.keys().collect();
 
         let setting = |k: &str, default: &str| {
@@ -996,13 +992,15 @@ mod tests {
                 parse_style(v).unwrap_or_else(|e| panic!("{k}={v}: {e}"));
             }
         }
+        // The same order as Taskwarrior's, except that priority is no row rule: the page colours that cell itself.
+        let tw = crate::taskrc::COLOR_DEFAULTS
+            .iter()
+            .find(|(k, _)| *k == "rule.precedence.color")
+            .unwrap()
+            .1;
         assert_eq!(
             app["rule.precedence.color"],
-            crate::taskrc::COLOR_DEFAULTS
-                .iter()
-                .find(|(k, _)| *k == "rule.precedence.color")
-                .unwrap()
-                .1
+            tw.strip_suffix(",uda.").expect("it ends with uda.")
         );
     }
 

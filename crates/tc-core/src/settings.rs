@@ -30,10 +30,8 @@ pub enum Outcome {
 /// Taskwarrior's default value of every setting this app reads that has one: the plain settings,
 /// the urgency coefficients, the built-in reports, and the priority attribute.
 pub fn defaults() -> BTreeMap<String, String> {
-    let mut d: BTreeMap<String, String> = SETTING_DEFAULTS
-        .iter()
-        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
-        .collect();
+    let mut d: BTreeMap<String, String> =
+        crate::ordered::map_of(SETTING_DEFAULTS.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
     for (k, v) in crate::urgency::defaults() {
         d.insert(k, format!("{v:?}"));
     }
@@ -67,11 +65,12 @@ pub fn defaults() -> BTreeMap<String, String> {
 
 /// `key=value` lines, as the settings are written.
 fn lines_of(cfg: &Config) -> BTreeMap<String, String> {
-    render(cfg)
-        .lines()
-        .filter_map(|l| l.split_once('='))
-        .map(|(k, v)| (k.to_owned(), v.to_owned()))
-        .collect()
+    crate::ordered::map_of(
+        render(cfg)
+            .lines()
+            .filter_map(|l| l.split_once('='))
+            .map(|(k, v)| (k.to_owned(), v.to_owned())),
+    )
 }
 
 /// Whether two values are the same setting: textually, or as numbers (`15` is `15.0`).
@@ -87,7 +86,7 @@ pub fn show(cfg: &Config, words: &[String]) -> CliResult {
 
     let defaults = defaults();
     let held = lines_of(cfg);
-    let names: BTreeSet<&String> = defaults.keys().chain(held.keys()).collect();
+    let names: BTreeSet<&String> = crate::ordered::set_of(defaults.keys().chain(held.keys()));
 
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut highlight: Vec<usize> = Vec::new();

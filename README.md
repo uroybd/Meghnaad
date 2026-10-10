@@ -263,7 +263,9 @@ CPU limit. It is not common, and the app retries read-only requests once on its 
 ## Known limitations
 
 - **Single user:** one set of settings and one shared replica per Worker instance.
-- **Old versions** (older than about 180 days, covered by a snapshot) are not deleted by the app; the CLI does that.
+- **Old versions** (older than about 180 days, covered by a snapshot) are cleaned up by the app the way the CLI does,
+  after about one push in twenty. A device that has been offline for longer than that may need a fresh `task sync`
+  set-up.
 - **`undo`** is kept in the Worker instance's memory and forgotten when it is recycled.
 - **Dates you type** are read in your `dateformat` first, then as ISO or words (`friday`, `3d`). ISO week and ordinal
   dates (`2026-W52`) aren't understood.

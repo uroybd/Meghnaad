@@ -26,6 +26,7 @@ pub enum Kind {
     Add,
     Log,
     Duplicate,
+    Purge,
     Modify,
     Done,
     Delete,
@@ -86,6 +87,7 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("add", Add, true),
     ("log", Log, true),
     ("duplicate", Duplicate, true),
+    ("purge", Purge, false),
     ("modify", Modify, true),
     ("done", Done, true),
     ("delete", Delete, true),
@@ -276,6 +278,12 @@ const COMMAND_INFO: &[(&str, &str, &str, &str)] = &[
         "operation",
         "WCFM",
         "Prepends text to an existing task description",
+    ),
+    (
+        "purge",
+        "operation",
+        "WGCF",
+        "Removes the specified tasks from the data files. Causes permanent loss of data.",
     ),
     ("projects", "metadata", "GRCF", "Shows all project names used"),
     ("reports", "config", "", "Lists all supported reports"),
@@ -823,7 +831,7 @@ fn plural(n: usize, one: &str) -> String {
 /// because of the count). Everything else, a few tasks at a time, goes ahead. (Taskwarrior asks
 /// about each task in turn, with yes / no / all / quit; here one question covers the lot.)
 fn asks(kind: Kind, n: usize, cfg: &Config) -> bool {
-    let guarded = kind == Delete && cfg.confirmation();
+    let guarded = matches!(kind, Delete | Purge) && cfg.confirmation();
     if n == 1 {
         return guarded;
     }
@@ -850,6 +858,7 @@ fn verb_of(kind: Kind) -> &'static str {
         Annotate => "annotate",
         Denotate => "remove an annotation from",
         Duplicate => "duplicate",
+        Purge => "purge",
         _ => "modify",
     }
 }
@@ -874,6 +883,7 @@ fn permission_question(kind: Kind, f: &Facts, ctx: &EvalCtx, all: &[Facts]) -> S
         Append => "Append to task",
         Prepend => "Prepend to task",
         Duplicate => "Duplicate task",
+        Purge => "Permanently remove task",
         _ => "Modify task",
     };
     // A recurring template takes its pending instances with it.
@@ -904,6 +914,7 @@ fn declined_line(kind: Kind) -> &'static str {
         Append => "Task not appended.",
         Prepend => "Task not prepended.",
         Duplicate => "Task not duplicated.",
+        Purge => "Task not purged.",
         _ => "Task not modified.",
     }
 }
@@ -924,7 +935,7 @@ fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut dyn FnMut(&Facts)
     let open = |f: &Facts| !matches!(f.status.as_str(), "completed" | "deleted");
     // Each task as the command goes along: still open, and what it depends on.
     let mut state: BTreeMap<Uuid, (bool, Vec<Uuid>)> =
-        all.iter().map(|f| (f.uuid, (open(f), f.depends.clone()))).collect();
+        crate::ordered::map_of(all.iter().map(|f| (f.uuid, (open(f), f.depends.clone()))));
     for t in changing {
         let Some(me) = state.get_mut(&t.uuid) else { continue };
         me.0 = false;
@@ -974,7 +985,7 @@ pub async fn load_facts<S: Storage>(r: &mut Replica<S>) -> Result<Vec<Facts>, ta
     r.dependency_map(true).await?;
     let tasks = r.all_tasks().await?;
     let mut v: Vec<Facts> = tasks.values().map(Facts::from_task).collect();
-    v.sort_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
+    v.sort_unstable_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
     Ok(v)
 }
 
@@ -1249,7 +1260,7 @@ async fn maintain<S: Storage>(
             }
         }
     }
-    dirty.sort();
+    dirty.sort_unstable();
     dirty.dedup();
     for pu in dirty {
         if let Some(mask) = masks.get(&pu) {
@@ -1441,7 +1452,7 @@ async fn export<S: Storage>(
                 Err(e) => return e.into(),
             };
             let mut sel = sel;
-            sel.sort_by_key(|f| (ctx.ids.get(&f.uuid).copied().unwrap_or(0), f.uuid));
+            sel.sort_unstable_by_key(|f| (ctx.ids.get(&f.uuid).copied().unwrap_or(0), f.uuid));
             if let Limit::N(n) = limit {
                 sel.truncate(n);
             }
@@ -1457,7 +1468,8 @@ async fn export<S: Storage>(
             Ok(None) => continue,
             Err(e) => return error(e.to_string()),
         };
-        let mut raw: BTreeMap<String, String> = data.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut raw: BTreeMap<String, String> =
+            crate::ordered::map_of(data.iter().map(|(k, v)| (k.clone(), v.clone())));
         // TaskChampion keeps the uuid beside the properties; Taskwarrior writes it as one of them.
         raw.insert("uuid".into(), uuid.to_string());
         let Some(f) = all.iter().find(|f| f.uuid == *uuid) else {
@@ -1497,7 +1509,7 @@ fn select_from<'a>(
     let combined = conjoin(&[context, user_filter.to_vec()]);
     let f = Filter::parse(&combined, ctx)?;
     let mut v: Vec<&Facts> = pool.iter().copied().filter(|x| f.matches(x, ctx)).collect();
-    v.sort_by_key(|x| {
+    v.sort_unstable_by_key(|x| {
         (
             ctx.ids.get(&x.uuid).copied().unwrap_or(u32::MAX),
             x.entry.unwrap_or(0),
@@ -1735,7 +1747,7 @@ async fn builtin<S: Storage>(
                     .unwrap_or_default();
                 rows.push(command_row(&name, "report", "IGRCF", &description));
             }
-            rows.sort();
+            rows.sort_unstable();
             ok(CliResult::Table(TableOut {
                 title: None,
                 footer: vec![],
@@ -1932,7 +1944,7 @@ async fn builtin<S: Storage>(
                         lines: vec!["No projects.".into()],
                     });
                 }
-                let names: BTreeSet<String> = unique.keys().cloned().collect();
+                let names: BTreeSet<String> = crate::ordered::set_of(unique.keys().cloned());
                 let rows: Vec<Vec<String>> = crate::summary::sort_projects(&names)
                     .into_iter()
                     .map(|name| {
@@ -2220,7 +2232,7 @@ async fn builtin<S: Storage>(
             }
         }
         // Everything that writes to selected tasks.
-        Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend | Duplicate => {
+        Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend | Duplicate | Purge => {
             write_selected(replica, cfg, ctx, all, kind, p, opts, undo, hk).await
         }
         Add | Log => unreachable!("handled earlier"),
@@ -2315,6 +2327,8 @@ async fn write_selected<S: Storage>(
     let acts = |f: &Facts| match kind {
         Done => f.status == "pending",
         Delete => f.status != "deleted",
+        // Only a deleted task can be purged: it has to be marked deleted first.
+        Purge => f.status == "deleted",
         Start => f.status != "recurring" && f.start.is_none(),
         Stop => f.status != "recurring" && f.start.is_some(),
         _ => true,
@@ -2464,6 +2478,43 @@ async fn write_selected<S: Storage>(
         };
         repairs = chain_repairs(&changing, all, &mut ask);
     }
+    // `purge`: a recurring template can only go when all its instances are deleted already, and it takes them
+    // with it (asking first, as `recurrence.confirmation` says; "no" refuses).
+    let mut kids: Vec<&Facts> = Vec::new();
+    if kind == Purge {
+        for f in changing.iter().filter(|f| f.mask.is_some()) {
+            let children: Vec<&Facts> = all.iter().filter(|c| c.parent == Some(f.uuid)).collect();
+            if let Some(live) = children.iter().find(|c| c.status != "deleted") {
+                return error(format!(
+                    "Task '{}' is a recurrence template. Its child task {} must be deleted before it can be purged.",
+                    f.description,
+                    ident(ctx, live)
+                ));
+            }
+            if children.is_empty() {
+                continue;
+            }
+            let key = format!("rec:{}", f.uuid);
+            let go = match recur::confirmation(cfg) {
+                recur::Confirmation::Yes => true,
+                recur::Confirmation::No => false,
+                recur::Confirmation::Prompt if asking => {
+                    let question = format!(
+                        "Task '{}' is a recurrence template. All its {} deleted children tasks will be purged as well. Continue?",
+                        f.description,
+                        children.len()
+                    );
+                    items.push(confirm_item(key, f, ctx, question));
+                    true
+                }
+                recur::Confirmation::Prompt => said_yes(&key),
+            };
+            if !go {
+                return error("Purge operation aborted.");
+            }
+            kids.extend(children);
+        }
+    }
     if asking && !items.is_empty() {
         let message = if items.len() == 1 {
             items[0].question.clone()
@@ -2479,6 +2530,33 @@ async fn write_selected<S: Storage>(
 
     let mut ops = Operations::new();
     let mut touched = Vec::new();
+    if kind == Purge {
+        // Only the deleted tasks, and the instances of a template that goes.
+        targets.clear();
+        for f in changing.iter().copied().chain(kids) {
+            if !targets.iter().any(|t| t.uuid == f.uuid) {
+                targets.push(f);
+            }
+        }
+        // What waited on them no longer does, so nothing points at a task that is gone.
+        let gone: BTreeSet<Uuid> = crate::ordered::set_of(targets.iter().map(|f| f.uuid));
+        for d in all
+            .iter()
+            .filter(|d| !gone.contains(&d.uuid) && d.depends.iter().any(|u| gone.contains(u)))
+        {
+            match replica.get_task(d.uuid).await {
+                Ok(Some(mut t)) => {
+                    for u in d.depends.iter().filter(|u| gone.contains(u)) {
+                        if let Err(e) = t.remove_dependency(*u, &mut ops) {
+                            return error(e.to_string());
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => return error(e.to_string()),
+            }
+        }
+    }
     let journal = cfg.journal();
     // Parents' masks as they will be after this command; each is written once at the end.
     let mut masks: BTreeMap<Uuid, String> = BTreeMap::new();
@@ -2487,6 +2565,17 @@ async fn write_selected<S: Storage>(
     // What `duplicate` has to say about the copies it made.
     let mut notes: Vec<String> = Vec::new();
     for f in &targets {
+        if kind == Purge {
+            match replica.get_task_data(f.uuid).await {
+                Ok(Some(mut data)) => {
+                    data.delete(&mut ops);
+                    touched.push(f.uuid);
+                }
+                Ok(None) => {}
+                Err(e) => return error(e.to_string()),
+            }
+            continue;
+        }
         if kind == Duplicate {
             let (copy, note) = match duplicate(replica, f, extra.as_ref(), &text, ctx, all, hk, &mut ops).await {
                 Ok(c) => c,
@@ -2636,7 +2725,7 @@ async fn write_selected<S: Storage>(
         }
     }
 
-    mask_dirty.sort();
+    mask_dirty.sort_unstable();
     mask_dirty.dedup();
     for pu in mask_dirty {
         if let (Some(mask), Ok(Some(mut parent))) = (masks.get(&pu), replica.get_task(pu).await) {
@@ -2663,6 +2752,14 @@ async fn write_selected<S: Storage>(
     }
 
     if touched.is_empty() {
+        if kind == Purge {
+            return ok(CliResult::Text {
+                lines: vec![
+                    "Purged 0 tasks.".into(),
+                    "No deleted tasks specified. Maybe you forgot to delete tasks first?".into(),
+                ],
+            });
+        }
         let why = match kind {
             Start => "already active",
             Stop => "not active",
@@ -2691,6 +2788,7 @@ async fn write_selected<S: Storage>(
         Annotate => "Annotated",
         Denotate => "Updated",
         Duplicate => "Duplicated",
+        Purge => "Purged",
         _ => "Modified",
     };
     let mut message = format!("{past} {}.", plural(touched.len(), "task"));

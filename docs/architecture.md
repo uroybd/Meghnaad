@@ -118,7 +118,15 @@ bucket's salt). Because the Worker is a *replica*, it never needs the CLI's coop
   removes the ones it supersedes, so a cold start restores one snapshot plus a few versions instead of replaying
   history. A failed snapshot is ignored on purpose: failing the sync would make the replica send an already-sent
   version again.
-- **Left to the CLI:** deleting old versions (those a snapshot covers, older than about 180 days).
+- **Tidying up, like the CLI.** About one push in twenty is followed by a cleanup, as in TaskChampion's own server:
+  it deletes versions that lost a race (but not one a writer may be about to make `latest`), every snapshot but the
+  newest, and versions older than about 180 days that the newest snapshot covers. It uses each object's upload time from
+  R2's listing and deletes up to 1,000 objects per cleanup in a single request (R2 takes that many at once), so a
+  cleanup costs a handful of requests however much it removes; the next one carries on. The oldest versions go first,
+  so what is left is always one unbroken chain up to `latest` (a replica that is behind finds the next version or none,
+  never a gap). A failure is ignored, since the push it follows has already happened. A replica that was last synced
+  before the oldest surviving version can no longer catch up from the versions alone, which is the same for the CLI's
+  own server.
 
 ## Limits of the platform
 

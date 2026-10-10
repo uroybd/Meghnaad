@@ -29,7 +29,15 @@ impl ObjectStore for R2Store {
         self.0.delete(name).await.map_err(err)
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    async fn del_many(&self, names: &[String]) -> Result<()> {
+        // One request for up to a thousand objects, instead of one each.
+        for chunk in names.chunks(1000) {
+            self.0.delete_multiple(chunk.to_vec()).await.map_err(err)?;
+        }
+        Ok(())
+    }
+
+    async fn list_dated(&self, prefix: &str) -> Result<Vec<(String, i64)>> {
         let mut names = Vec::new();
         let mut cursor: Option<String> = None;
         loop {
@@ -38,7 +46,11 @@ impl ObjectStore for R2Store {
                 req = req.cursor(c);
             }
             let page = req.execute().await.map_err(err)?;
-            names.extend(page.objects().iter().map(|o| o.key()));
+            names.extend(
+                page.objects()
+                    .iter()
+                    .map(|o| (o.key(), (o.uploaded().as_millis() / 1000) as i64)),
+            );
             match (page.truncated(), page.cursor()) {
                 (true, Some(c)) => cursor = Some(c),
                 _ => return Ok(names),

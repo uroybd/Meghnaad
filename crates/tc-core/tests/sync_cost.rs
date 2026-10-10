@@ -38,9 +38,13 @@ impl ObjectStore for Counting {
         self.bump("del");
         self.inner.del(name).await
     }
-    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    async fn del_many(&self, names: &[String]) -> Result<()> {
+        self.bump("del_many");
+        self.inner.del_many(names).await
+    }
+    async fn list_dated(&self, prefix: &str) -> Result<Vec<(String, i64)>> {
         self.bump("list");
-        self.inner.list(prefix).await
+        self.inner.list_dated(prefix).await
     }
     async fn compare_and_swap(&self, name: &str, expected: Option<&[u8]>, new: &[u8]) -> Result<bool> {
         self.bump("cas");
@@ -358,4 +362,33 @@ async fn the_newest_snapshot_is_used_and_a_newer_one_is_never_deleted() {
         snapshots(&store).await.contains(&at10[0]),
         "the newer snapshot survived"
     );
+}
+
+/// A cleanup that deletes a lot is still a few requests, since the objects go in one.
+#[tokio::test]
+async fn a_cleanup_that_deletes_hundreds_of_objects_is_a_handful_of_requests() {
+    use taskchampion::server::AddVersionResult;
+    let store = Counting::default();
+    let c = cryptor(&store).await;
+    let mut s = CloudServer::with_cryptor(store.clone(), c.clone());
+    store.inner.set_now(1_000);
+    let mut parent = uuid::Uuid::nil();
+    let mut versions = Vec::new();
+    for _ in 0..400 {
+        let (res, _) = s.add_version(parent, b"[]".to_vec()).await.unwrap();
+        let AddVersionResult::Ok(v) = res else { panic!() };
+        versions.push(v);
+        parent = v;
+    }
+    s.add_snapshot(versions[398], b"state".to_vec()).await.unwrap();
+    store.take();
+
+    let deleted = s.cleanup(1_000 + 365 * 86_400).await.unwrap();
+    let calls = store.take();
+    println!("cleanup deleting {deleted}: {} calls {calls:?}", total(&calls));
+    assert_eq!(deleted, 399);
+    assert_eq!(calls.get("del_many"), Some(&1), "{calls:?}");
+    assert!(!calls.contains_key("del"), "no object is deleted by itself: {calls:?}");
+    // The head, the versions, the snapshots, and the one delete.
+    assert!(total(&calls) <= 5, "{calls:?}");
 }

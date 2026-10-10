@@ -244,15 +244,16 @@ impl Config {
     /// `rm` (delete) and `burndown` (burndown.weekly), `history` and `ghistory`; the taskrc can
     /// change or empty any of them.
     pub fn aliases(&self) -> BTreeMap<String, String> {
-        let mut out: BTreeMap<String, String> = [
-            ("rm", "delete"),
-            ("history", "history.monthly"),
-            ("ghistory", "ghistory.monthly"),
-            ("burndown", "burndown.weekly"),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_owned(), v.to_owned()))
-        .collect();
+        let mut out: BTreeMap<String, String> = crate::ordered::map_of(
+            [
+                ("rm", "delete"),
+                ("history", "history.monthly"),
+                ("ghistory", "ghistory.monthly"),
+                ("burndown", "burndown.weekly"),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.to_owned())),
+        );
         for (k, v) in &self.settings {
             if let Some(name) = k.strip_prefix("alias.") {
                 out.insert(name.to_owned(), v.clone());
@@ -1055,9 +1056,9 @@ pub fn parse(text: &str) -> Parsed {
         );
     }
 
-    p.blocked.sort();
+    p.blocked.sort_unstable();
     p.blocked.dedup();
-    p.ignored.sort();
+    p.ignored.sort_unstable();
     p.ignored.dedup();
     p
 }

@@ -550,7 +550,7 @@ mod tests {
                 .collect();
             // Those with an id come first, as the filter hands them over.
             let mut tasks = tasks;
-            tasks.sort_by_key(|f| (ids.get(&f.uuid).copied().unwrap_or(u32::MAX), f.entry, f.uuid));
+            tasks.sort_unstable_by_key(|f| (ids.get(&f.uuid).copied().unwrap_or(u32::MAX), f.entry, f.uuid));
             let t = timesheet(&tasks, &ids, &clock());
             assert_eq!(serde_json::to_value(text(&t)).unwrap(), want[key], "{key}");
         }

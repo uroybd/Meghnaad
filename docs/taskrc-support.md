@@ -55,7 +55,7 @@ Each row below counts once, even where a row covers several related options.
 | `rc.<key>:<value>` on a command line | Done | Typed in the console, for one command. Held to the same allowlist as the taskrc, so `rc.sync.*` and credential-like keys are refused. Harmless unknown ones (`rc.verbose`) are accepted and ignored, as the real `task` does |
 | `rc.report.<name>.<attr>:<value>` | Done | Changes one attribute of a report for one command. The header sort in the table uses this |
 | `include <file>` | Not done | A file can't be read from a browser. The line is skipped with a warning; paste the included file's contents too |
-| `purge.on-sync` | Not done | The app never purges deleted tasks. Leave that to your CLI |
+| `purge.on-sync` | Not done | The app only purges when you run `purge`; it never purges deleted tasks by itself on a sync. Leave that to your CLI |
 | `data.location`, `TASKDATA` | N/A | Data lives in the R2 bucket |
 | `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; settings are saved in the bucket |
 | `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A Worker can't run scripts, so the hooks are Rust functions in `crates/tc-core/src/my_hooks.rs`, compiled into the Worker: `on_launch`, `on_add`, `on_modify` and `on_exit`. See [Hooks](using.md#hooks) |
@@ -89,7 +89,7 @@ The questions Taskwarrior asks before it changes things. Taskwarrior asks yes / 
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `confirmation` | Done | On by default. `delete` asks ("Delete task 1 'x'?"), and so does `undo` when there is something to undo. Off: no question for those, though `bulk`, an empty filter and a recurring series still ask. Taskwarrior asks about each task in turn (yes / no / all / quit); here the same questions arrive together as a table with a tick per task (ticking all is "all", ticking none is "quit"), and only tasks the command would actually change are listed. The delete buttons in the app take the second click ("sure?") as the answer, or delete at once when the setting is off. Commands the app doesn't have (`purge`, `duplicate`, `edit`) have no question to ask |
+| `confirmation` | Done | On by default. `delete` and `purge` ask ("Delete task 1 'x'?", "Permanently remove task 1 'x'?"), and so does `undo` when there is something to undo. Off: no question for those, though `bulk`, an empty filter and a recurring series still ask. Taskwarrior asks about each task in turn (yes / no / all / quit); here the same questions arrive together as a table with a tick per task (ticking all is "all", ticking none is "quit"), and only tasks the command would actually change are listed. The delete buttons in the app take the second click ("sure?") as the answer, or delete at once when the setting is off. `duplicate` asks only at `bulk` tasks. `edit` is not in the app |
 | `bulk` | Done | Default 3: a change to that many tasks or more asks first, for any command that changes tasks, with `confirmation` on or off. `0` never asks because of the count. Text that isn't a number counts as 0, as in Taskwarrior |
 | `allow.empty.filter` | Done | On by default. A command that changes tasks, given no filter, asks first ("This command has no filter, and will modify all (including completed and deleted) tasks"), and after a yes the `bulk` question still follows, as in Taskwarrior. Off: refused with Taskwarrior's message. With `confirmation` off and this on it is still refused ("Command prevented from running."), as in Taskwarrior. An active context counts as a filter |
 
@@ -274,13 +274,14 @@ A UDA that exists on a task but isn't defined in the taskrc is shown but read-on
 
 The bucket side of sync is not configured from a taskrc, but it behaves like the CLI's. The Worker syncs before and
 after every command, writes a snapshot on about one push in ten (as `task sync` does, which never avoids snapshots),
-and picks the newest snapshot when it starts cold. Deleting old versions is left to the CLI.
+and picks the newest snapshot when it starts cold. It also tidies the bucket as the CLI does (after about one push in
+twenty it deletes versions that lost a race, older snapshots, and versions over 180 days old that a snapshot covers).
 
 ## What is left
 
 Two "Not done" rows remain, and neither can change in a browser:
 
 1. `include <file>`: a browser can't read a file, so this stays a paste-in step.
-2. `purge.on-sync`: the app never purges deleted tasks; that is left to the CLI.
+2. `purge.on-sync`: the app purges only when you run `purge`, never by itself on a sync; that is left to the CLI.
 
-Beyond the taskrc, the commands `edit`, `purge` and `colors` are not in the app.
+Beyond the taskrc, the commands `edit` and `import-v2` are not in the app.

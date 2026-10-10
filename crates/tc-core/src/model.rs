@@ -140,11 +140,11 @@ impl Facts {
             imask: t.get_value("imask").and_then(|v| v.parse().ok()),
             // taskchampion only knows a subset of Taskwarrior's attributes (it reports
             // `project`, `scheduled`, ... as "UDAs"), so filter those out ourselves.
-            extra: t
-                .get_user_defined_attributes()
-                .filter(|(k, _)| !is_core_key(k))
-                .map(|(k, v)| (k.to_owned(), v.to_owned()))
-                .collect(),
+            extra: crate::ordered::map_of(
+                t.get_user_defined_attributes()
+                    .filter(|(k, _)| !is_core_key(k))
+                    .map(|(k, v)| (k.to_owned(), v.to_owned())),
+            ),
         }
     }
 

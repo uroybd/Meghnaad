@@ -86,6 +86,11 @@ pub fn config_error() -> Option<String> {
     CONFIG_ERROR.with(|e| e.borrow().clone())
 }
 
+/// The time, in seconds since the epoch, for the bucket's cleanup to tell what is old.
+fn now_secs() -> i64 {
+    (js_sys::Date::now() / 1000.0) as i64
+}
+
 pub struct Session {
     pub state: OwnedMutexGuard<State>,
     pub server: Box<dyn Server>,
@@ -256,7 +261,7 @@ pub async fn open(env: &Env) -> worker::Result<Session> {
     };
     let config = config(env).await?;
     let state = lock_state(&cached.state).await?;
-    let server = Box::new(CloudServer::with_cryptor(R2Store(bucket), cached.cryptor));
+    let server = Box::new(CloudServer::with_cryptor(R2Store(bucket), cached.cryptor).with_cleanup(now_secs));
     Ok(Session { state, server, config })
 }
 

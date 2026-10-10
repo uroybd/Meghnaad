@@ -17,8 +17,27 @@ pub trait ObjectStore {
     /// Delete an object; a missing object is not an error.
     async fn del(&self, name: &str) -> Result<()>;
 
+    /// Delete several objects (R2 takes up to 1000 in one request); a missing one is not an error.
+    async fn del_many(&self, names: &[String]) -> Result<()> {
+        for name in names {
+            self.del(name).await?;
+        }
+        Ok(())
+    }
+
+    /// Names of all objects starting with `prefix`, across all pages, each with when it was uploaded
+    /// (seconds since the epoch).
+    async fn list_dated(&self, prefix: &str) -> Result<Vec<(String, i64)>>;
+
     /// Names of all objects starting with `prefix`, across all pages.
-    async fn list(&self, prefix: &str) -> Result<Vec<String>>;
+    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        Ok(self
+            .list_dated(prefix)
+            .await?
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect())
+    }
 
     /// Atomically replace `name` with `new` iff its current value equals `expected` (`None`
     /// meaning "does not exist"). Returns whether the swap happened.
@@ -36,7 +55,15 @@ pub trait ObjectStore {
 
 /// In-memory store for tests. Clones share the same underlying map, like handles to one bucket.
 #[derive(Clone, Default)]
-pub struct MemStore(Rc<RefCell<BTreeMap<String, Vec<u8>>>>);
+pub struct MemStore(Rc<RefCell<Inner>>);
+
+#[derive(Default)]
+struct Inner {
+    /// Each object's value and the time it was written.
+    objects: BTreeMap<String, (Vec<u8>, i64)>,
+    /// What an object written now is dated (a test moves it to make objects old).
+    now: i64,
+}
 
 impl MemStore {
     pub fn new() -> Self {
@@ -44,54 +71,64 @@ impl MemStore {
     }
 
     pub fn names(&self) -> Vec<String> {
-        self.0.borrow().keys().cloned().collect()
+        self.0.borrow().objects.keys().cloned().collect()
+    }
+
+    /// From now on, objects written are dated `secs` (seconds since the epoch).
+    pub fn set_now(&self, secs: i64) {
+        self.0.borrow_mut().now = secs;
     }
 }
 
 impl ObjectStore for MemStore {
     async fn get(&self, name: &str) -> Result<Option<Vec<u8>>> {
-        Ok(self.0.borrow().get(name).cloned())
+        Ok(self.0.borrow().objects.get(name).map(|(v, _)| v.clone()))
     }
 
     async fn put(&self, name: &str, value: &[u8]) -> Result<()> {
-        self.0.borrow_mut().insert(name.to_owned(), value.to_vec());
+        let mut s = self.0.borrow_mut();
+        let now = s.now;
+        s.objects.insert(name.to_owned(), (value.to_vec(), now));
         Ok(())
     }
 
     async fn del(&self, name: &str) -> Result<()> {
-        self.0.borrow_mut().remove(name);
+        self.0.borrow_mut().objects.remove(name);
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    async fn list_dated(&self, prefix: &str) -> Result<Vec<(String, i64)>> {
         Ok(self
             .0
             .borrow()
-            .keys()
-            .filter(|k| k.starts_with(prefix))
-            .cloned()
+            .objects
+            .iter()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .map(|(k, (_, at))| (k.clone(), *at))
             .collect())
     }
 
     async fn compare_and_swap(&self, name: &str, expected: Option<&[u8]>, new: &[u8]) -> Result<bool> {
-        let mut map = self.0.borrow_mut();
-        if map.get(name).map(Vec::as_slice) != expected {
+        let mut s = self.0.borrow_mut();
+        if s.objects.get(name).map(|(v, _)| v.as_slice()) != expected {
             return Ok(false);
         }
-        map.insert(name.to_owned(), new.to_vec());
+        let now = s.now;
+        s.objects.insert(name.to_owned(), (new.to_vec(), now));
         Ok(true)
     }
 
     async fn get_tagged(&self, name: &str) -> Result<Option<(Vec<u8>, String)>> {
-        Ok(self.0.borrow().get(name).map(|v| (v.clone(), tag_of(v))))
+        Ok(self.0.borrow().objects.get(name).map(|(v, _)| (v.clone(), tag_of(v))))
     }
 
     async fn swap_tagged(&self, name: &str, expected: Option<&str>, new: &[u8]) -> Result<bool> {
-        let mut map = self.0.borrow_mut();
-        if map.get(name).map(|v| tag_of(v)).as_deref() != expected {
+        let mut s = self.0.borrow_mut();
+        if s.objects.get(name).map(|(v, _)| tag_of(v)).as_deref() != expected {
             return Ok(false);
         }
-        map.insert(name.to_owned(), new.to_vec());
+        let now = s.now;
+        s.objects.insert(name.to_owned(), (new.to_vec(), now));
         Ok(true)
     }
 }

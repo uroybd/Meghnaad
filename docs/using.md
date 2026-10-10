@@ -59,7 +59,7 @@ help
 
 | | |
 | --- | --- |
-| **Write** | `add` `log` `duplicate` `import` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
+| **Write** | `add` `log` `duplicate` `import` `purge` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
 | **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `stats` `udas` `columns` `reports` `context` `show` `config` `export` `ids` `uuids` `calc` `commands` `_get` `_projects` `_tags` |
 | **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes; `and` `or` `not` and parentheses |
 | **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
@@ -80,6 +80,13 @@ changes, as in Taskwarrior: `3 done end:-2h` (finished two hours ago), `3 start 
 `3 annotate called her due:friday`. Attributes, tags and substitutions are applied to the task; the plain words left over
 are the annotation (or, for `annotate`, `append` and `prepend`, the text). The buttons send their text literally, so a
 note that starts with `due:` stays a note.
+
+**`purge`** removes deleted tasks for good: `purge status:deleted`, or `purge project:Old` (a task has to be deleted
+first; anything else is skipped with a hint). It always asks about each task ("Permanently remove task 3 'x'?"),
+like `delete`, and with no filter it asks as every other command does, or refuses under `allow.empty.filter=off`.
+Tasks that waited on a purged task stop waiting on it. A recurring template can only be purged once its instances are
+deleted, and it takes them with it, after a question that follows `recurrence.confirmation` (`no` refuses). `undo`
+brings a purged task back with all it had; the Console remembers only the last few commands, and not across a restart.
 
 **`log` and `duplicate`.** `log Paid the invoice project:Home` records a task that is already finished: its `end` is
 the moment you enter it, and it refuses `recur:` and `wait:`, which a finished task has no use for. `3 duplicate` makes
@@ -190,6 +197,10 @@ command would actually change are listed. A single task is a plain yes/no. The d
   snapshot are not in it. Buttons: done, start/stop, edit, delete.
 - **Add tasks** from the sidebar. *More fields…* opens the full form: project, priority, due/wait/scheduled/until, tags,
   dependencies, UDAs, "start now" and a first note. Every date field takes a date and an optional time.
+  The project and tags fields suggest names as you type (every project and tag you have, not only those on screen): ↑/↓
+  to pick, Enter or Tab to take it, Esc to put the list away, or a tap. A tag is suggested on its own, and not again if
+  it is already there. You can always type something else: a name nobody has used yet is how a new project or tag is
+  made, and the field says so.
 - **Annotations and string UDAs can span several lines.** In an annotation box Enter saves and Shift+Enter starts a
   new line; in a UDA field Enter starts a new line and Ctrl/Cmd+Enter saves. How a table shows annotations is up to
   the report's `description` column, as in Taskwarrior 3 (`description`, `description.oneline`, `description.count`,
@@ -231,7 +242,10 @@ list, with what each does, is [taskrc support](taskrc-support.md)).
 
 Rows are coloured by Taskwarrior's colour rules, and the same colours reach the calendar, the burndown and the summary
 bar, and the history graph. With nothing set you get **Meghnaad's own theme**: the active task on a soft green,
-overdue in coral, due soon in amber, blocked ones dimmed, priorities and `+next` marked, and no zebra. Colours do not
+overdue in coral, due **today** in bold amber (due later this week is plain white, so today's tasks are the ones that
+stand out), blocked ones dimmed, recurring ones in orchid, `+next` marked, and no zebra. **Priority** is coloured on its
+own cell (`color.uda.priority.H`, `.M`, `.L`: coral, amber, green), whatever colour the rest of the row has, and is not a row
+rule. (Taskwarrior's rules colour a whole row; colouring one field is the app's own addition, from the same settings.) Colours do not
 blend (`rule.color.merge=no`): a row takes the colour of the first rule in `rule.precedence.color` that applies to it,
 so its look follows its state, and a keyword or tag rule you add replaces that colour instead of mixing with it. Put
 `rule.color.merge=yes` in your taskrc to blend as Taskwarrior does. Everything is Taskwarrior's, so your `color.*` lines
@@ -423,6 +437,8 @@ can be tapped. You can install it to your home screen from the browser menu.
 - **`undo`** works on the last few commands made while this Worker instance lives; it is forgotten when it is recycled.
 - **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a Worker can't run local programs, so they are functions in
   `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
-- **`edit`, `purge` and `import-v2`** are not in the app (the detail view edits a task; deleting for good is left to your
-  CLI; Taskwarrior 2's data files can't be read in a browser).
+- **`edit` and `import-v2`** are not in the app (the detail view edits a task; Taskwarrior 2's data files can't be read
+  in a browser). `purge` is, with one difference: it removes a task from your current tasks, but the earlier versions in
+  your bucket still hold what it used to say until they are cleaned up, which the app does as the CLI does, after
+  about one push in twenty, once they are over 180 days old and a snapshot covers them.
 - **The first request after a quiet spell** is slower: the Worker rebuilds its state from the bucket's newest snapshot.

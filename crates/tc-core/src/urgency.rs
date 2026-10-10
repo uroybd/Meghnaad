@@ -10,26 +10,27 @@ const EPSILON: f64 = 0.000_001;
 
 /// Taskwarrior's built-in coefficients; `urgency.*` in the taskrc overrides any of them.
 pub fn defaults() -> BTreeMap<String, f64> {
-    [
-        ("urgency.project.coefficient", 1.0),
-        ("urgency.active.coefficient", 4.0),
-        ("urgency.scheduled.coefficient", 5.0),
-        ("urgency.waiting.coefficient", -3.0),
-        ("urgency.blocked.coefficient", -5.0),
-        ("urgency.annotations.coefficient", 1.0),
-        ("urgency.tags.coefficient", 1.0),
-        ("urgency.due.coefficient", 12.0),
-        ("urgency.blocking.coefficient", 8.0),
-        ("urgency.age.coefficient", 2.0),
-        ("urgency.age.max", 365.0),
-        ("urgency.user.tag.next.coefficient", 15.0),
-        ("urgency.uda.priority.H.coefficient", 6.0),
-        ("urgency.uda.priority.M.coefficient", 3.9),
-        ("urgency.uda.priority.L.coefficient", 1.8),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_owned(), v))
-    .collect()
+    crate::ordered::map_of(
+        [
+            ("urgency.project.coefficient", 1.0),
+            ("urgency.active.coefficient", 4.0),
+            ("urgency.scheduled.coefficient", 5.0),
+            ("urgency.waiting.coefficient", -3.0),
+            ("urgency.blocked.coefficient", -5.0),
+            ("urgency.annotations.coefficient", 1.0),
+            ("urgency.tags.coefficient", 1.0),
+            ("urgency.due.coefficient", 12.0),
+            ("urgency.blocking.coefficient", 8.0),
+            ("urgency.age.coefficient", 2.0),
+            ("urgency.age.max", 365.0),
+            ("urgency.user.tag.next.coefficient", 15.0),
+            ("urgency.uda.priority.H.coefficient", 6.0),
+            ("urgency.uda.priority.M.coefficient", 3.9),
+            ("urgency.uda.priority.L.coefficient", 1.8),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v)),
+    )
 }
 
 /// Defaults overlaid with the user's settings.
@@ -156,10 +157,8 @@ pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<Stri
 /// Mirrors `Task::urgency_c`/`urgency_inherit`: the 0.01 is added to every blocking task, even
 /// when nothing it blocks is more urgent. Tasks that are completed or deleted block nothing.
 pub fn inherited(all: &[Facts], cfg: &Config, clock: &Clock, coef: &BTreeMap<String, f64>) -> BTreeMap<Uuid, f64> {
-    let base: BTreeMap<Uuid, f64> = all
-        .iter()
-        .map(|f| (f.uuid, urgency_with(f, cfg, clock, coef)))
-        .collect();
+    let base: BTreeMap<Uuid, f64> =
+        crate::ordered::map_of(all.iter().map(|f| (f.uuid, urgency_with(f, cfg, clock, coef))));
     // blocker -> the live tasks that depend on it
     let mut blocked_by: BTreeMap<Uuid, Vec<Uuid>> = BTreeMap::new();
     for f in all.iter().filter(|f| f.status != "completed" && f.status != "deleted") {
@@ -167,7 +166,7 @@ pub fn inherited(all: &[Facts], cfg: &Config, clock: &Clock, coef: &BTreeMap<Str
             blocked_by.entry(*d).or_default().push(f.uuid);
         }
     }
-    let blocking: BTreeSet<Uuid> = all.iter().filter(|f| f.blocking).map(|f| f.uuid).collect();
+    let blocking: BTreeSet<Uuid> = crate::ordered::set_of(all.iter().filter(|f| f.blocking).map(|f| f.uuid));
 
     struct Walk<'a> {
         base: &'a BTreeMap<Uuid, f64>,

@@ -3820,6 +3820,32 @@ mod report_defaults {
     }
 
     #[tokio::test]
+    async fn due_soon_is_plain_white_and_only_due_today_stands_out_and_priority_colours_no_row() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add soon due:3d priority:H").await;
+        run(&mut r, &cfg, "add today due:eod").await;
+        run(&mut r, &cfg, "add urgent priority:H").await;
+        run(&mut r, &cfg, "add repeats due:40d recur:monthly priority:M").await;
+        let list = rows(run(&mut r, &cfg, "all").await.0);
+        // Due within the week: white (basic colour 7), not bold, whatever its priority is.
+        let s = style_of(&list, "soon").expect("due soon is coloured");
+        assert_eq!((s.fg, s.bold), (Some(7), false), "{s:?}");
+        // Due today: the one that stands out.
+        let t = style_of(&list, "today").expect("due today is coloured");
+        assert_eq!((t.fg, t.bold), (Some(3), true), "{t:?}");
+        // A priority no longer colours the row (the page colours the Priority cell, from the same setting).
+        assert_eq!(style_of(&list, "urgent"), None);
+        // Recurring still has its own colour when nothing about its date claims the row.
+        assert_eq!(style_of(&list, "repeats").map(|s| s.fg), Some(Some(5)));
+        // And the setting the page reads for that cell is still there.
+        let colours = tc_core::color::palette_for_page(&cfg);
+        for (v, fg) in [("H", 1), ("M", 3), ("L", 2)] {
+            assert_eq!(colours[&format!("uda.priority.{v}")].fg, Some(fg), "{v}");
+        }
+    }
+
+    #[tokio::test]
     async fn the_taskrc_overrides_the_theme_and_color_off_turns_it_all_off() {
         let mut r = replica();
         let cfg = parse("color.active=bold red\ncolor.overdue=\n").config;
@@ -4498,7 +4524,7 @@ mod commands_and_get {
         sorted.sort_unstable();
         assert_eq!(names, sorted);
         assert_eq!(names[0], "_get");
-        for gone in ["edit", "purge", "import-v2", "info", "_rows", "sync"] {
+        for gone in ["edit", "import-v2", "info", "_rows", "sync"] {
             assert!(!names.contains(&gone), "{gone}");
         }
         for new in [
@@ -4507,6 +4533,7 @@ mod commands_and_get {
             "duplicate",
             "import",
             "log",
+            "purge",
             "stats",
             "synchronize",
         ] {
@@ -4885,5 +4912,259 @@ mod import_command {
             run(&mut r, &Config::default(), "import").await.0,
             CliResult::Import
         ));
+    }
+}
+
+mod purge_command {
+    use super::*;
+    use tc_core::import::import;
+
+    async fn put(r: &mut R, cfg: &Config, json: &str) {
+        let mut undo = UndoStack::default();
+        import(r, cfg, clock(), json, true, &mut undo, None).await.unwrap();
+    }
+
+    fn quiet() -> Config {
+        parse("confirmation=off\n").config
+    }
+
+    async fn uuids_of(r: &mut R, description: &str) -> Vec<uuid::Uuid> {
+        load_facts(r)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.description == description)
+            .map(|f| f.uuid)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn only_a_deleted_task_can_be_purged() {
+        let mut r = replica();
+        let cfg = quiet();
+        run(&mut r, &cfg, "add alive").await;
+        run(&mut r, &cfg, "add gone").await;
+        run(&mut r, &cfg, "description:gone delete").await;
+        let (res, wrote) = run(&mut r, &cfg, "description:alive purge").await;
+        assert!(!wrote);
+        assert_eq!(
+            message(&res),
+            "Purged 0 tasks.\nNo deleted tasks specified. Maybe you forgot to delete tasks first?"
+        );
+        assert_eq!(descs(&mut r).await, ["alive", "gone"]);
+
+        let (res, wrote) = run(&mut r, &cfg, "description:gone purge").await;
+        assert!(wrote);
+        assert_eq!(message(&res), "Purged 1 task.");
+        assert_eq!(descs(&mut r).await, ["alive"], "it is gone, not just marked");
+        // The filter may come after the word, as in Taskwarrior.
+        run(&mut r, &cfg, "add also").await;
+        run(&mut r, &cfg, "description:also delete").await;
+        assert_eq!(
+            message(&run(&mut r, &cfg, "purge status:deleted").await.0),
+            "Purged 1 task."
+        );
+    }
+
+    #[tokio::test]
+    async fn it_asks_about_each_task_unless_confirmation_is_off() {
+        let mut r = replica();
+        let cfg = parse("confirmation=off\n").config;
+        for t in ["one", "two"] {
+            run(&mut r, &cfg, &format!("add {t}")).await;
+        }
+        run(&mut r, &cfg, "status:pending delete").await;
+        let asking = Config::default();
+        let (res, wrote) = run(&mut r, &asking, "status:deleted purge").await;
+        assert!(!wrote);
+        let (ask, items) = asked(&res);
+        assert_eq!(ask, Ask::Permission);
+        assert_eq!(items.len(), 2);
+        assert!(
+            items.iter().all(|i| i.question.starts_with("Permanently remove task ")),
+            "{items:?}"
+        );
+        // Declining all of them purges nothing.
+        let o = Options {
+            approved: Some(vec![]),
+            ..Options::default()
+        };
+        let (res, wrote) = run_opts(&mut r, &asking, "status:deleted purge", o).await;
+        assert!(!wrote, "{}", message(&res));
+        assert_eq!(descs(&mut r).await.len(), 2);
+        // Choosing one purges that one.
+        let o = Options {
+            approved: Some(vec![items[0].key.clone()]),
+            ..Options::default()
+        };
+        let (res, _) = run_opts(&mut r, &asking, "status:deleted purge", o).await;
+        assert_eq!(message(&res), "Purged 1 task. Skipped 1 task.");
+        assert_eq!(descs(&mut r).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn without_a_filter_it_is_stopped_or_asked_like_any_other_change() {
+        let mut r = replica();
+        run(&mut r, &quiet(), "add gone").await;
+        run(&mut r, &quiet(), "status:pending delete").await;
+        assert_eq!(
+            message(&run(&mut r, &quiet(), "purge").await.0),
+            "ERROR: Command prevented from running."
+        );
+        let (res, wrote) = run(&mut r, &Config::default(), "purge").await;
+        assert!(
+            !wrote && message(&res).starts_with("CONFIRM: This command has no filter"),
+            "{}",
+            message(&res)
+        );
+        assert_eq!(descs(&mut r).await, ["gone"]);
+    }
+
+    #[tokio::test]
+    async fn what_waited_on_a_purged_task_no_longer_does() {
+        let mut r = replica();
+        let cfg = quiet();
+        run(&mut r, &cfg, "add blocker").await;
+        run(&mut r, &cfg, "add keeps waiting").await;
+        run(&mut r, &cfg, "add other").await;
+        run(&mut r, &cfg, "description:keeps modify depends:1").await;
+        run(&mut r, &cfg, "description:other modify depends:1,2").await;
+        run(&mut r, &cfg, "description:blocker delete").await;
+        run(&mut r, &cfg, "description:blocker purge").await;
+        let all = load_facts(&mut r).await.unwrap();
+        let keeps = all.iter().find(|f| f.description == "keeps waiting").unwrap();
+        let other = all.iter().find(|f| f.description == "other").unwrap();
+        assert!(keeps.depends.is_empty(), "nothing points at a task that is gone");
+        assert_eq!(other.depends.len(), 1, "its other dependency stays");
+        assert_eq!(other.depends[0], keeps.uuid);
+    }
+
+    const TEMPLATE: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const CHILD: &str = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+    /// A recurring template (deleted) and one instance of it, in the given state.
+    async fn series(r: &mut R, cfg: &Config, child_status: &str) {
+        let json = format!(
+            r#"[{{"description":"Water","uuid":"{TEMPLATE}","status":"deleted","due":"20271001T000000Z","recur":"daily","mask":"-","rtype":"periodic","entry":"20261001T100000Z","end":"20261002T100000Z"}},
+               {{"description":"Water","uuid":"{CHILD}","status":"{child_status}","parent":"{TEMPLATE}","imask":0,"due":"20271001T000000Z","entry":"20261001T100000Z"{}}}]"#,
+            if child_status == "deleted" {
+                r#","end":"20261002T100000Z""#
+            } else {
+                ""
+            }
+        );
+        put(r, cfg, &json).await;
+    }
+
+    #[tokio::test]
+    async fn a_template_with_a_live_instance_cannot_be_purged() {
+        let mut r = replica();
+        let cfg = parse("confirmation=off\nrecurrence=off\n").config;
+        series(&mut r, &cfg, "pending").await;
+        let (res, wrote) = run(&mut r, &cfg, "status:deleted purge").await;
+        assert!(!wrote);
+        let m = message(&res);
+        assert!(
+            m.starts_with("ERROR: Task 'Water' is a recurrence template. Its child task ")
+                && m.ends_with(" must be deleted before it can be purged."),
+            "{m}"
+        );
+        assert_eq!(uuids_of(&mut r, "Water").await.len(), 2, "nothing was purged");
+    }
+
+    #[tokio::test]
+    async fn a_template_takes_its_deleted_instances_as_recurrence_confirmation_says() {
+        for (setting, expected) in [("yes", "Purged 2 tasks."), ("no", "ERROR: Purge operation aborted.")] {
+            let mut r = replica();
+            let cfg = parse(&format!(
+                "confirmation=off\nrecurrence=off\nrecurrence.confirmation={setting}\n"
+            ))
+            .config;
+            series(&mut r, &cfg, "deleted").await;
+            let (res, _) = run(&mut r, &cfg, "status:deleted purge").await;
+            assert_eq!(message(&res), expected, "recurrence.confirmation={setting}");
+            let left = uuids_of(&mut r, "Water").await.len();
+            assert_eq!(left, if setting == "yes" { 0 } else { 2 });
+        }
+        // Only the template selected: its instances still go with it.
+        let mut r = replica();
+        let cfg = parse("confirmation=off\nrecurrence=off\nrecurrence.confirmation=yes\n").config;
+        series(&mut r, &cfg, "deleted").await;
+        let (res, _) = run(&mut r, &cfg, &format!("{TEMPLATE} purge")).await;
+        assert_eq!(message(&res), "Purged 2 tasks.");
+        assert!(uuids_of(&mut r, "Water").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn by_default_it_asks_before_taking_the_instances() {
+        let mut r = replica();
+        let cfg = parse("confirmation=off\nrecurrence=off\n").config;
+        series(&mut r, &cfg, "deleted").await;
+        let (res, wrote) = run(&mut r, &cfg, &format!("{TEMPLATE} purge")).await;
+        assert!(!wrote);
+        let (ask, items) = asked(&res);
+        assert_eq!(ask, Ask::Extras);
+        assert_eq!(
+            items[0].question,
+            "Task 'Water' is a recurrence template. All its 1 deleted children tasks will be purged as well. Continue?"
+        );
+        // Not answered yes: aborted, nothing purged.
+        let o = Options {
+            extras: Some(vec![]),
+            ..Options::default()
+        };
+        let (res, _) = run_opts(&mut r, &cfg, &format!("{TEMPLATE} purge"), o).await;
+        assert_eq!(message(&res), "ERROR: Purge operation aborted.");
+        assert_eq!(uuids_of(&mut r, "Water").await.len(), 2);
+        // Answered yes.
+        let (res, wrote) = run_yes(&mut r, &cfg, &format!("{TEMPLATE} purge")).await;
+        assert!(wrote);
+        assert_eq!(message(&res), "Purged 2 tasks.");
+    }
+
+    #[tokio::test]
+    async fn a_purge_can_be_undone_with_everything_the_task_had() {
+        let mut r = replica();
+        let cfg = quiet();
+        run(&mut r, &cfg, "add Keep project:Home +a due:2026-12-25").await;
+        run(&mut r, &cfg, "1 annotate a note").await;
+        run(&mut r, &cfg, "description:Keep delete").await;
+        let before = load_facts(&mut r).await.unwrap().remove(0);
+        run(&mut r, &cfg, "description:Keep purge").await;
+        assert!(load_facts(&mut r).await.unwrap().is_empty());
+        let (res, wrote) = run(&mut r, &cfg, "undo").await;
+        assert!(wrote, "{}", message(&res));
+        let back = load_facts(&mut r).await.unwrap();
+        assert_eq!(back.len(), 1);
+        let t = &back[0];
+        assert_eq!((t.uuid, t.status.as_str()), (before.uuid, "deleted"));
+        assert_eq!(t.project.as_deref(), Some("Home"));
+        assert!(t.tags.contains("a"));
+        assert_eq!(t.annotations[0].text, "a note");
+        assert_eq!(t.due, before.due);
+    }
+
+    #[tokio::test]
+    async fn the_commands_table_lists_purge_as_taskwarrior_does() {
+        let mut r = replica();
+        let CliResult::Table(t) = run(&mut r, &Config::default(), "commands").await.0 else {
+            panic!()
+        };
+        let row = t.rows.iter().find(|row| row[0] == "purge").expect("purge is listed");
+        assert_eq!(
+            row[1..],
+            [
+                "operation",
+                "RW",
+                "",
+                "GC",
+                "",
+                "Ctxt",
+                "Filt",
+                "",
+                "",
+                "Removes the specified tasks from the data files. Causes permanent loss of data."
+            ]
+        );
     }
 }

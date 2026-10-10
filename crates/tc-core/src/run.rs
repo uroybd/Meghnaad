@@ -101,8 +101,8 @@ pub fn working_set_ids(all: &[Facts]) -> BTreeMap<Uuid, u32> {
         .iter()
         .filter(|f| f.status == "pending" || f.status == "recurring")
         .collect();
-    pending.sort_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
-    pending.iter().zip(1u32..).map(|(f, n)| (f.uuid, n)).collect()
+    pending.sort_unstable_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
+    crate::ordered::map_of(pending.iter().zip(1u32..).map(|(f, n)| (f.uuid, n)))
 }
 
 pub(crate) fn kind_of(name: &str, cfg: &Config) -> &'static str {
@@ -323,8 +323,8 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
         }
         "depends" => {
             let (mut x, mut y) = (a.facts.depends.clone(), b.facts.depends.clone());
-            x.sort();
-            y.sort();
+            x.sort_unstable();
+            y.sort_unstable();
             if x == y {
                 return Ordering::Equal;
             }

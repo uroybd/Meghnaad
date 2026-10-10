@@ -6,9 +6,12 @@
 //!
 //! Snapshots are made the way the CLI makes them: after a push, the server side draws a random
 //! "urgency" (about 1% high, 9% low) and the replica writes a snapshot when it is at least the
-//! threshold it syncs with. Writing one also removes the snapshots it supersedes. Unlike upstream
-//! we do not delete old *versions* (the CLI does that); the only other objects we delete are our
-//! own orphaned uploads.
+//! threshold it syncs with. Writing one also removes the snapshots it supersedes.
+//!
+//! Like TaskChampion's own server, one push in about twenty is followed by a cleanup (when the host
+//! says what time it is, see [`CloudServer::with_cleanup`]): versions that lost a race, all but the
+//! newest snapshot, and versions older than 180 days that a snapshot covers are deleted, so that a
+//! bucket the web app writes to does not keep its whole history forever.
 //!
 //! Every call here is a network round trip from the Worker to R2, so a sync is built to need few
 //! of them: an idle sync is one read of `latest`; catching up lists the versions once and fetches
@@ -32,12 +35,25 @@ type TcResult<T> = std::result::Result<T, taskchampion::Error>;
 /// runtime will run at once, so this only needs to be comfortably more than that.
 const PREFETCH: usize = 32;
 
+/// A version this old that a snapshot covers is of no use to anyone: TaskChampion deletes it.
+const MAX_VERSION_AGE_SECS: i64 = 3600 * 24 * 180;
+
+/// How many objects one cleanup deletes (R2 deletes this many in a single request). What is left waits for the
+/// next cleanup.
+const MAX_DELETES: usize = 1000;
+
+/// Out of 256: how likely a push is to be followed by a cleanup (13 is about 5%, as in TaskChampion).
+const CLEANUP_ODDS: u8 = 13;
+
 pub struct CloudServer<S> {
     store: S,
     cryptor: Cryptor,
     seen: Seen,
     /// Fixes the snapshot urgency instead of drawing it at random (tests and tools).
     urgency: Option<SnapshotUrgency>,
+    /// The time, in seconds since the epoch, when cleanups are wanted; `None` never cleans up.
+    clock: Option<fn() -> i64>,
+    cleanup_odds: u8,
 }
 
 /// What this server object has learned about the bucket during one sync. Built lazily, and
@@ -96,7 +112,22 @@ impl<S: ObjectStore> CloudServer<S> {
             cryptor,
             seen: Seen::default(),
             urgency: None,
+            clock: None,
+            cleanup_odds: CLEANUP_ODDS,
         }
+    }
+
+    /// Tidy the bucket now and then, after a push, as TaskChampion's own server does (see
+    /// [`CloudServer::cleanup`]). `now` is the time in seconds since the epoch. Without it, nothing is deleted.
+    pub fn with_cleanup(mut self, now: fn() -> i64) -> Self {
+        self.clock = Some(now);
+        self
+    }
+
+    /// How likely a push is to be followed by a cleanup, out of 256 (0 never, 255 nearly always). For tests.
+    pub fn with_cleanup_odds(mut self, odds: u8) -> Self {
+        self.cleanup_odds = odds;
+        self
     }
 
     /// Always report this snapshot urgency after a push, instead of drawing one at random.
@@ -142,8 +173,10 @@ impl<S: ObjectStore> CloudServer<S> {
         Ok(index)
     }
 
-    /// Where each version sits on the chain from the first version up to `latest` (0 for the
-    /// first). Versions that are not on it, such as leftovers from a lost race, are absent.
+    /// Where each version sits on the chain up to `latest`: a number that grows along it, so that a later
+    /// version has a bigger one. Versions that are not on it, such as leftovers from a lost race, are absent.
+    /// The chain is followed back from `latest`, since its start may be gone: versions that a snapshot
+    /// covers are deleted once they are old.
     async fn chain_positions(&mut self) -> Result<BTreeMap<VersionId, usize>> {
         let mut position = BTreeMap::new();
         let Some(head) = self.latest().await? else {
@@ -154,14 +187,103 @@ impl<S: ObjectStore> CloudServer<S> {
             self.seen.index = Some(self.load_index().await?);
         }
         let index = self.seen.index.as_ref().expect("index was just loaded");
-        let mut at = Uuid::nil();
-        while let Some(next) = next_on_chain(index, at, head) {
-            if position.insert(next, position.len()).is_some() {
+        // (Inserted one by one: collecting into a map sorts first, which is more code.)
+        let mut parent_of: BTreeMap<VersionId, VersionId> = BTreeMap::new();
+        for (parent, children) in index {
+            for child in children {
+                parent_of.insert(*child, *parent);
+            }
+        }
+        let mut back = vec![head];
+        while let Some(parent) = parent_of.get(back.last().expect("it starts with the head")) {
+            if back.len() > parent_of.len() {
                 break; // a cycle; not something a real bucket has
             }
-            at = next;
+            back.push(*parent);
+        }
+        for (steps, version) in back.iter().enumerate() {
+            position.insert(*version, back.len() - steps);
         }
         Ok(position)
+    }
+
+    /// Delete what no replica needs any more, as TaskChampion's own server does: versions that are not on the
+    /// chain to `latest` (leftovers of lost races, except one a writer may be about to make `latest`), every
+    /// snapshot but the newest on the chain, and versions older than 180 days that this snapshot covers.
+    /// At most [`MAX_DELETES`] objects go in one call, in one request to the store; the next call carries on. Of the
+    /// old versions the oldest go first, so that what is left is always one unbroken chain up to `latest`: a replica
+    /// that is behind then finds either the next version or none at all, never a gap with versions beyond it.
+    /// Returns how many were deleted.
+    pub async fn cleanup(&mut self, now: i64) -> Result<usize> {
+        let Some(head) = self.latest().await? else {
+            return Ok(0);
+        };
+        // (parent, child, uploaded) of every version object, and the chain back from `latest`.
+        let versions: Vec<(VersionId, VersionId, i64)> = self
+            .store
+            .list_dated(names::VERSION_PREFIX)
+            .await?
+            .into_iter()
+            .filter_map(|(name, at)| names::parse_version_name(&name).map(|(p, c)| (p, c, at)))
+            .collect();
+        let mut parent_of: BTreeMap<VersionId, VersionId> = BTreeMap::new();
+        let mut uploaded: BTreeMap<VersionId, i64> = BTreeMap::new();
+        for (parent, child, at) in &versions {
+            parent_of.insert(*child, *parent);
+            uploaded.insert(*child, *at);
+        }
+        let mut chain: BTreeMap<VersionId, VersionId> = BTreeMap::new();
+        let mut at = head;
+        while let Some(parent) = parent_of.get(&at) {
+            if chain.insert(at, *parent).is_some() {
+                return Err(Error::Corrupt("the versions form a cycle".into()));
+            }
+            at = *parent;
+        }
+
+        let mut doomed: Vec<String> = versions
+            .iter()
+            .filter(|(p, c, _)| chain.get(c) != Some(p) && *p != head)
+            .map(|(p, c, _)| names::version_name(*p, *c))
+            .collect();
+
+        // The newest snapshot is the first one found going back from `latest`; the others are not needed.
+        let snapshots = Self::snapshot_versions(&self.store.list(names::SNAPSHOT_PREFIX).await?);
+        let mut newest = None;
+        let mut at = head;
+        loop {
+            if snapshots.contains(&at) {
+                newest = Some(at);
+                break;
+            }
+            match chain.get(&at) {
+                Some(parent) => at = *parent,
+                None => break,
+            }
+        }
+        if let Some(newest) = newest {
+            doomed.extend(
+                snapshots
+                    .iter()
+                    .filter(|s| **s != newest)
+                    .map(|s| names::snapshot_name(*s)),
+            );
+            // Versions the snapshot covers (it and those before it) are old enough to go. Found newest first, so
+            // reversed: the oldest go first.
+            let mut old = Vec::new();
+            let mut at = newest;
+            while let Some(parent) = chain.get(&at) {
+                if uploaded.get(&at).is_some_and(|t| *t < now - MAX_VERSION_AGE_SECS) {
+                    old.push(names::version_name(*parent, at));
+                }
+                at = *parent;
+            }
+            doomed.extend(old.into_iter().rev());
+        }
+
+        doomed.truncate(MAX_DELETES);
+        self.store.del_many(&doomed).await?;
+        Ok(doomed.len())
     }
 
     fn snapshot_versions(names: &[String]) -> Vec<VersionId> {
@@ -334,6 +456,13 @@ impl<S: ObjectStore> Server for CloudServer<S> {
         history_segment: HistorySegment,
     ) -> TcResult<(AddVersionResult, SnapshotUrgency)> {
         let res = self.add_version_inner(parent_version_id, history_segment).await?;
+        if let (AddVersionResult::Ok(_), Some(now)) = (&res, self.clock) {
+            if random_bytes::<1>().is_ok_and(|b| b[0] < self.cleanup_odds) {
+                // Best effort: the push has happened, and a cleanup that fails is only tried again later.
+                let _ = self.cleanup(now()).await;
+                self.seen = Seen::default();
+            }
+        }
         let urgency = match res {
             AddVersionResult::Ok(_) => self.snapshot_urgency()?,
             AddVersionResult::ExpectedParentVersion(_) => SnapshotUrgency::None,

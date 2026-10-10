@@ -242,8 +242,8 @@ pub fn diff(before: &Facts, after: &Facts) -> Result<Vec<Change>, String> {
             });
         }
     }
-    let was: BTreeSet<_> = before.depends.iter().collect();
-    let is: BTreeSet<_> = after.depends.iter().collect();
+    let was: BTreeSet<_> = crate::ordered::set_of(before.depends.iter());
+    let is: BTreeSet<_> = crate::ordered::set_of(after.depends.iter());
     for u in was.difference(&is) {
         out.push(Change::RemoveDep(**u));
     }

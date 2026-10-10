@@ -18,6 +18,7 @@ pub mod model;
 pub mod modify;
 pub mod my_hooks;
 pub mod names;
+pub(crate) mod ordered;
 pub mod recur;
 pub mod report;
 pub mod run;
