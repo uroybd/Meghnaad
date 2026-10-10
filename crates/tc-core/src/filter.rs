@@ -475,18 +475,36 @@ impl Parser<'_, '_> {
     }
 
     fn and_expr(&mut self) -> Result<Expr, FilterError> {
-        let mut left = self.unary()?;
+        let mut parts = vec![self.unary()?];
+        let mut explicit = false;
         loop {
             match self.peek() {
                 None | Some(")") => break,
                 Some(t) if Self::is_or(t) => break,
-                Some("and" | "&&") => self.pos += 1,
+                Some("and" | "&&") => {
+                    self.pos += 1;
+                    explicit = true;
+                }
                 Some(_) => {} // implicit and
             }
-            let right = self.unary()?;
-            left = Expr::And(Box::new(left), Box::new(right));
+            parts.push(self.unary()?);
         }
-        Ok(left)
+        // Task numbers and uuids named side by side pick a group, as in Taskwarrior: `task 1 3 done` is task 1 or
+        // task 3, and anything else in the filter narrows that group (`1 3 +work`). With an explicit `and` they are
+        // taken as written.
+        if !explicit {
+            let (ids, mut rest): (Vec<Expr>, Vec<Expr>) = parts
+                .into_iter()
+                .partition(|e| matches!(e, Expr::Term(Term::Ids(_) | Term::Uuid(_))));
+            if let Some(group) = ids.into_iter().reduce(|a, b| Expr::Or(Box::new(a), Box::new(b))) {
+                rest.push(group);
+            }
+            parts = rest;
+        }
+        let first = parts.remove(0);
+        Ok(parts
+            .into_iter()
+            .fold(first, |left, right| Expr::And(Box::new(left), Box::new(right))))
     }
 
     fn unary(&mut self) -> Result<Expr, FilterError> {
@@ -1199,6 +1217,45 @@ mod tests {
         // A task with no working-set id is never selected by number.
         let other = task("y");
         assert!(!h.m("1-100", &other));
+    }
+
+    /// Checked against `task` 3.5.0: ids and uuids side by side are one "or" group, even with other terms between.
+    #[test]
+    fn several_ids_and_uuids_pick_a_group_and_the_rest_narrows_it() {
+        let mut h = H::new();
+        let mut ts = Vec::new();
+        for (i, d) in ["a", "b", "c"].into_iter().enumerate() {
+            let mut t = desc(d);
+            t.uuid = Uuid::parse_str(&format!("abcdef00-0000-0000-0000-00000000000{i}")).unwrap();
+            h.ids.insert(t.uuid, i as u32 + 1);
+            ts.push(t);
+        }
+        let hits = |h: &H, f: &str| -> String {
+            ts.iter()
+                .filter(|t| h.m(f, t))
+                .map(|t| t.description.as_str())
+                .collect::<Vec<_>>()
+                .join("")
+        };
+        assert_eq!(hits(&h, "1 2"), "ab");
+        assert_eq!(hits(&h, "1 3"), "ac");
+        assert_eq!(hits(&h, "1,2"), "ab");
+        assert_eq!(hits(&h, "1 2 description:a"), "a");
+        assert_eq!(hits(&h, "1 description:b 2"), "b");
+        assert_eq!(hits(&h, "3 +PENDING 1"), "ac");
+        assert_eq!(
+            hits(
+                &h,
+                "abcdef00-0000-0000-0000-000000000000 abcdef00-0000-0000-0000-000000000002"
+            ),
+            "ac"
+        );
+        assert_eq!(hits(&h, "1 abcdef00-0000-0000-0000-000000000002"), "ac");
+        // Kept: one id, a group in parentheses, an explicit `and`, `or`.
+        assert_eq!(hits(&h, "2"), "b");
+        assert_eq!(hits(&h, "( 1 2 ) description:a"), "a");
+        assert_eq!(hits(&h, "1 and 2"), "");
+        assert_eq!(hits(&h, "1 or 3"), "ac");
     }
 
     /// The app's links carry the first 8 characters of a uuid, which can be all digits; a bare `12345678` is a
