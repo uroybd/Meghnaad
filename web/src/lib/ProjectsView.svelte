@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import ExportFilter from './ExportFilter.svelte';
   import { ChevronDown, ChevronRight, Folder } from './icons';
   import { buildTree, expandable, type ProjectNode } from './projects';
@@ -14,14 +14,39 @@
   const error = $derived(res?.error ?? null);
   let open = $state<Set<string>>(new Set());
   let seeded = false;
+  /** The project whose entry was just asked for, highlighted for a moment. */
+  let flash = $state<string | null>(null);
+  let flashTimer: ReturnType<typeof setTimeout> | undefined;
+  let root: HTMLElement;
 
-  const tree = $derived(buildTree(rows, store.now));
+  // A project asked for from a chip can have no task the filter matches: it still gets its entry.
+  const tree = $derived(buildTree(rows, store.now, store.projectFocus?.project));
 
   // First load: open the main projects so their sub-projects show grouped underneath.
   $effect(() => {
     if (loading || seeded) return;
     seeded = true;
     untrack(() => (open = new Set(tree.filter((n) => n.children.length).map((n) => n.name))));
+  });
+
+  // A project clicked somewhere else: open its entry (and the projects above it), bring it into view and flash it.
+  $effect(() => {
+    const focus = store.projectFocus;
+    if (!focus || loading) return;
+    untrack(() => {
+      const parts = focus.project.split('.');
+      open = new Set([...open, ...parts.map((_, i) => parts.slice(0, i + 1).join('.'))]);
+      flash = focus.project;
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => (flash = null), 1800);
+      store.projectFocus = null; // handled: coming back to this page later should not repeat it
+    });
+    void tick().then(() => {
+      const el = [...root.querySelectorAll<HTMLElement>('[data-project]')].find(
+        (e) => e.dataset.project === focus.project,
+      );
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
   });
 
   function toggle(name: string) {
@@ -42,7 +67,7 @@
 
 {#snippet branch(n: ProjectNode, depth: number)}
   {@const isOpen = open.has(n.name)}
-  <li>
+  <li data-project={n.name} class:flash={flash === n.name}>
     <div class="head" style="--depth: {depth}">
       <button
         class="ghost toggle"
@@ -83,7 +108,7 @@
   label="Projects filters"
   placeholder="Add filters: project:Home +work due.before:eow  (Tab completes)"
 />
-<section aria-label="Projects">
+<section aria-label="Projects" bind:this={root}>
   <div class="bar">
     <h2>Projects</h2>
     <span class="grow"></span>
@@ -155,6 +180,23 @@
   }
   .empty {
     padding-left: calc(var(--depth) * 20px + 4px);
+  }
+  /* The entry a project chip asked for. A fading background, and a plain outline when motion is reduced. */
+  li.flash > .head {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-radius: 6px;
+    animation: flash 1.8s ease-out forwards;
+  }
+  @keyframes flash {
+    to {
+      background: transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    li.flash > .head {
+      animation: none;
+      outline: 2px solid var(--accent);
+    }
   }
   @media (max-width: 760px) {
     .link {

@@ -164,3 +164,18 @@ describe('opening a task from an address', () => {
     expect(store.detail).toBeNull();
   });
 });
+
+describe('showing a tag or a project on its page', () => {
+  it('goes to the Projects page, closes the drawer, and asks again each time', () => {
+    store.view = 'tasks';
+    store.detail = { uuid: 'x', from: null };
+    store.showProject('Home.Kitchen');
+    expect(store.view).toBe('projects');
+    expect(store.detail).toBeNull();
+    const first = store.projectFocus!;
+    expect(first.project).toBe('Home.Kitchen');
+    store.showProject('Home.Kitchen');
+    expect(store.projectFocus!.n).toBe(first.n + 1);
+    store.projectFocus = null;
+  });
+});

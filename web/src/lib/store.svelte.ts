@@ -66,6 +66,8 @@ class Store {
   view = $state<'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'console'>('tasks');
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
   tagFocus = $state<{ tag: string; n: number } | null>(null);
+  /** The same for a project on the Projects page. */
+  projectFocus = $state<{ project: string; n: number } | null>(null);
   /** The filter on each of the Summary, Calendar and Burndown pages (Taskwarrior filter syntax). */
   /** The filter on the Projects and Tags pages. They start as the pending tasks; taking that away brings in finished ones. */
   projectsFilter = $state('status:pending');
@@ -224,6 +226,13 @@ class Store {
     this.tagFocus = { tag, n: (this.tagFocus?.n ?? 0) + 1 };
     this.detail = null;
     this.view = 'tags';
+  }
+
+  /** Show a project's entry on the Projects page (a sub-project opens its parents too). */
+  showProject(project: string) {
+    this.projectFocus = { project, n: (this.projectFocus?.n ?? 0) + 1 };
+    this.detail = null;
+    this.view = 'projects';
   }
 
   notify(text: string, kind: Toast['kind'] = 'ok') {

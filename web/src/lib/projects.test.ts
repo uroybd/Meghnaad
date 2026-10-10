@@ -51,3 +51,16 @@ describe('buildTree', () => {
     expect(expandable([])).toEqual([]);
   });
 });
+
+describe('buildTree with a project asked for', () => {
+  it('adds the project and its parents even when no task is there', () => {
+    const t = buildTree([row('a', 'Work')], 100, 'Home.Kitchen');
+    expect(t.map((n) => n.name)).toEqual(['Home', 'Work']);
+    expect(t[0].children.map((n) => [n.name, n.total])).toEqual([['Home.Kitchen', 0]]);
+  });
+
+  it('leaves a project that is already there as it was', () => {
+    const t = buildTree([row('a', 'Home.Kitchen')], 100, 'Home.Kitchen');
+    expect(t[0].children[0].total).toBe(1);
+  });
+});

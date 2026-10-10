@@ -10,6 +10,7 @@
   import TagChip from './TagChip.svelte';
   import { describeRecur } from './recurrence';
   import StatusPill, { type Kind } from './StatusPill.svelte';
+  import DepItem from './DepItem.svelte';
   import DepLink from './DepLink.svelte';
   import UuidTip from './UuidTip.svelte';
   import { store } from './store.svelte';
@@ -99,8 +100,31 @@
     return () => (live = false);
   });
   const shownInstances = $derived([...instances].sort((a, b) => (b.due ?? 0) - (a.due ?? 0)).slice(0, 10));
+  // The tasks waiting on this one are looked for when asked, not with every task shown.
+  let blockers = $state<Row[] | null>(null);
+  let askingBlockers = $state(false);
+  let blockersError = $state<string | null>(null);
+  // Another task, or a change to the tasks: what was found no longer holds.
+  $effect(() => {
+    void task.uuid;
+    void store.rev;
+    blockers = null;
+    blockersError = null;
+  });
+  async function loadBlockers() {
+    askingBlockers = true;
+    blockersError = null;
+    try {
+      const { result } = await runCli({ args: ['status:pending', `depends.has:${task.uuid}`, 'all'] });
+      if (result.kind === 'report') blockers = result.rows;
+      else blockersError = result.kind === 'error' ? result.message : 'The tasks could not be read.';
+    } catch (e) {
+      blockersError = e instanceof Error ? e.message : String(e);
+    } finally {
+      askingBlockers = false;
+    }
+  }
   const parentTitle = $derived(task.parent ? store.tasks.find((t) => t.uuid === task.parent)?.description : undefined);
-  const depTitle = (uuid: string) => store.tasks.find((t) => t.uuid === uuid)?.description ?? uuid;
 </script>
 
 <article class:card={!embedded}>
@@ -144,7 +168,7 @@
       </dd>
     {/if}
     {#if task.project}<dt>Project</dt>
-      <dd><ProjectPath segments={projectSegments(task.project)} /></dd>{/if}
+      <dd><ProjectPath segments={projectSegments(task.project)} onpick={(p) => store.showProject(p)} /></dd>{/if}
     {#if task.priority}<dt>Priority</dt>
       <dd class="pri-{task.priority.toLowerCase()}">{task.priority}</dd>{/if}
     {#if task.tags.length}<dt>Tags</dt>
@@ -167,15 +191,22 @@
     {#if task.depends.length}
       <dt>Depends on</dt>
       <dd>
-        {#each task.depends as d (d)}
-          {#if onopen}
-            <button class="ghost dep" title={depTitle(d)} onclick={() => onopen(d)}
-              >{depTitle(d)} <span class="dim mono">{d.slice(0, 8)}</span></button
-            >
-          {:else}
-            <DepLink uuid={d} />
-          {/if}
-        {/each}
+        {#each task.depends as d (d)}<DepItem uuid={d} {onopen} />{/each}
+      </dd>
+    {/if}
+    {#if task.blocking}
+      <dt>Blocking</dt>
+      <dd>
+        {#if blockers === null}
+          <button class="ghost ask" disabled={askingBlockers} onclick={loadBlockers}
+            >{askingBlockers ? 'Loading…' : 'Show the tasks waiting on this'}</button
+          >
+          {#if blockersError}<span class="err" role="alert">{blockersError}</span>{/if}
+        {:else}
+          {#each blockers as b (b.uuid)}<DepItem uuid={b.uuid} row={b} {onopen} />{:else}<span class="dim"
+              >Nothing is waiting on it now.</span
+            >{/each}
+        {/if}
       </dd>
     {/if}
     {#each udaKeys as k (k)}
@@ -442,6 +473,11 @@
   .more {
     margin: 2px 0;
     font-size: 12px;
+  }
+  .ask {
+    padding: 0 4px;
+    margin-left: -4px;
+    color: var(--accent);
   }
   .dep.inline {
     display: inline-flex;

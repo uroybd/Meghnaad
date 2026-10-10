@@ -97,3 +97,62 @@ describe('a task’s history', () => {
     expect(details.textContent).toContain('Nothing is recorded');
   });
 });
+
+describe('the tasks around this one', () => {
+  const OTHER = '33333333-3333-3333-3333-333333333333';
+  const report = (rows: Row[]) =>
+    new Response(JSON.stringify({ wrote: false, result: { kind: 'report', rows }, command: null, feedback: [] }), {
+      status: 200,
+    });
+
+  it('lists what it depends on as lines to tap, asking for nothing until then', async () => {
+    store.config = { colors: {}, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    app = mount(TaskInfo, {
+      target: document.body,
+      props: { task: { ...task('44444444-4444-4444-4444-444444444444'), depends: [OTHER], blocked: true } },
+    });
+    await settle();
+    expect(document.querySelectorAll('button.line')).toHaveLength(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('finds the tasks waiting on it only when asked, and shows them without another request', async () => {
+    store.config = { colors: {}, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
+    const waiting = { ...task(OTHER), description: 'Send the invitations' };
+    const fetchMock = vi.fn().mockImplementation(async () => report([waiting]));
+    vi.stubGlobal('fetch', fetchMock);
+    const me = '55555555-5555-5555-5555-555555555555';
+    app = mount(TaskInfo, { target: document.body, props: { task: { ...task(me), blocking: true } } });
+    await settle();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    (document.querySelector('button.ask') as HTMLButtonElement).click();
+    await settle();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).args).toEqual(['status:pending', `depends.has:${me}`, 'all']);
+    const line = document.querySelector('button.line') as HTMLButtonElement;
+    expect(line.textContent).toContain('Send the invitations');
+    line.click();
+    await settle();
+    expect(document.querySelector('[data-testid="depitem-card"]')).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a click on the project, or one of its parts, to the Projects page', async () => {
+    store.config = { colors: {}, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
+    app = mount(TaskInfo, {
+      target: document.body,
+      props: { task: { ...task('66666666-6666-6666-6666-666666666666'), project: 'Home.Kitchen' } },
+    });
+    await settle();
+    const parts = [...document.querySelectorAll<HTMLButtonElement>('.path button')];
+    expect(parts.map((b) => b.textContent)).toEqual(['Home', 'Kitchen']);
+    parts[1].click();
+    flushSync();
+    expect(store.view).toBe('projects');
+    expect(store.projectFocus?.project).toBe('Home.Kitchen');
+    store.projectFocus = null;
+    store.view = 'tasks';
+  });
+});

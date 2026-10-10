@@ -209,6 +209,12 @@ command would actually change are listed. A single task is a plain yes/no. The d
   as its short id. Point at it, or focus it with the keyboard, and a small card shows its status, description, project,
   priority, due date and tags, with **Open task**. Where a pointer can hover, clicking the id opens the task at once;
   on a touch screen the first tap shows the card and **Open task** opens it.
+- **Around a task, in the detail view.** *Depends on* lists the tasks this one waits for, one line each. Tap a line to
+  open a card of that task, fetched then if the page does not already have it, with **Open task**. A task that others
+  wait on shows a *Blocking* line; **Show the tasks waiting on this** looks them up (`status:pending depends.has:<uuid>`)
+  when you ask, so the detail does not search for them every time. The project there is clickable too, each part of it
+  (`Home`, then `Kitchen`): it opens that project on the **Projects** page, with the projects above it expanded and the
+  entry highlighted, as a tag chip does on the Tags page.
 - **Every task has an address**, `/task/<first 8 characters of its uuid>`, which opens its drawer: the address bar
   follows the drawer, Back closes it, and a reload or a pasted link opens it again. The link button in the drawer
   copies it. Whoever you send it to needs to be able to sign in to the same deployment (it is one person's replica,

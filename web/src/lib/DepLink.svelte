@@ -1,9 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { runCli } from './api';
-  import { formatMoment } from './dates';
   import { shortUuid } from './format';
-  import StatusPill, { type Kind } from './StatusPill.svelte';
+  import { fetchTask } from './lookup';
+  import TaskCard from './TaskCard.svelte';
   import { taskPath } from './route';
   import { store } from './store.svelte';
   import type { Row } from './types';
@@ -20,25 +19,6 @@
   let missing = $state(false);
   let tip: HTMLElement | undefined = $state();
 
-  // What was fetched, kept until the tasks change, so moving along a row of ids asks once each.
-  const cache = new Map<string, Promise<Row | null>>();
-  let cachedRev = -1;
-
-  function fetchCard(u: string): Promise<Row | null> {
-    if (cachedRev !== store.rev) {
-      cache.clear();
-      cachedRev = store.rev;
-    }
-    let p = cache.get(u);
-    if (!p) {
-      p = runCli({ args: [u, 'info'] })
-        .then(({ result }) => (result.kind === 'info' ? (result.tasks[0] ?? null) : null))
-        .catch(() => null);
-      cache.set(u, p);
-    }
-    return p;
-  }
-
   // Until the card arrives, what the page already has of the task.
   const known = $derived(store.tasks.find((t) => t.uuid === uuid));
 
@@ -46,7 +26,7 @@
     shown = true;
     const anchor = e.currentTarget as HTMLElement;
     void place(anchor);
-    const row = await fetchCard(uuid);
+    const row = await fetchTask(uuid);
     card = row;
     missing = !row;
     void place(anchor); // the card has its content now, so its height is known
@@ -77,9 +57,6 @@
     hide();
     store.openDetail(uuid, null);
   }
-
-  const kind = (r: Row): Kind =>
-    r.status === 'pending' && r.virtual_tags?.includes('WAITING') ? 'waiting' : (r.status as Kind);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -- the group only passes the pointer and Escape on to its button and card -->
@@ -104,17 +81,7 @@
   {#if shown}
     <span class="tip" bind:this={tip} role="tooltip" data-testid="deplink-card">
       {#if card}
-        <span class="head">
-          {#if card.id != null}<span class="dim mono">#{card.id}</span>{/if}
-          <StatusPill kind={kind(card)} />
-        </span>
-        <strong class="desc">{card.description}</strong>
-        <span class="meta dim">
-          {#if card.project}{card.project}{/if}
-          {#if card.priority}· priority {card.priority}{/if}
-          {#if card.due != null}· due {formatMoment(card.due, undefined, undefined)}{/if}
-          {#if card.tags.length}· +{card.tags.join(' +')}{/if}
-        </span>
+        <TaskCard row={card} />
       {:else if known && !missing}
         <strong class="desc">{known.description}</strong>
       {:else if missing}
@@ -157,16 +124,7 @@
     border-radius: 8px;
     box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
   }
-  .head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
   .desc {
-    overflow-wrap: anywhere;
-  }
-  .meta {
-    font-size: 12.5px;
     overflow-wrap: anywhere;
   }
   .foot {

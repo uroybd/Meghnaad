@@ -22,9 +22,10 @@ const byUrgency = (a: Row, b: Row) => b.urgency - a.urgency;
 /**
  * Build the tree from the tasks given (the page asks for those its filter matches, finished ones included when the
  * filter allows them, so a project stays listed after its last task is done). Sub-projects with no tasks of their own
- * still get a node. Only pending tasks count as overdue.
+ * still get a node, and so does `ensure`: a project asked for from a chip that no task in `rows` has (its tasks are all
+ * done and the filter hides them). Only pending tasks count as overdue.
  */
-export function buildTree(rows: Row[], now: number): ProjectNode[] {
+export function buildTree(rows: Row[], now: number, ensure?: string): ProjectNode[] {
   const nodes = new Map<string, ProjectNode>();
   const node = (name: string): ProjectNode => {
     let n = nodes.get(name);
@@ -49,6 +50,8 @@ export function buildTree(rows: Row[], now: number): ProjectNode[] {
       if (!name.includes('.')) break;
     }
   }
+
+  if (ensure) node(ensure);
 
   const sort = (n: ProjectNode) => {
     n.own.sort(byUrgency);

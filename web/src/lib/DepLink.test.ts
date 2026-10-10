@@ -11,6 +11,7 @@ afterEach(() => {
   app = null;
   document.body.innerHTML = '';
   store.detail = null;
+  store.rev++; // what was fetched for a task is forgotten when the tasks change
   vi.unstubAllGlobals();
 });
 
