@@ -149,12 +149,11 @@ class Store {
   }
 
   /**
-   * The project and tag names offered for completion normally come from the tasks on screen. With
-   * `complete.all.tags` (or `list.all.projects`) Taskwarrior offers the names of finished tasks too,
-   * so ask for them (`_tags`, `_projects`) rather than guess.
+   * The project and tag names offered for completion (the prompt, the filter bar and the task form) come from
+   * the tasks on screen, which is only some of them. Ask for all of them (`_tags`, `_projects`), which follow
+   * `complete.all.tags` and `list.all.projects` as Taskwarrior's completion does.
    */
   async refreshNames() {
-    const on = (k: string) => /^(1|y|yes|on|true)$/i.test((this.config?.config.settings?.[k] ?? '').trim());
     const lines = async (cmd: string): Promise<string[]> => {
       try {
         const r = (await runCli({ args: [cmd] })).result;
@@ -163,10 +162,7 @@ class Store {
         return [];
       }
     };
-    const [tags, projects] = await Promise.all([
-      on('complete.all.tags') ? lines('_tags') : [],
-      on('list.all.projects') ? lines('_projects') : [],
-    ]);
+    const [tags, projects] = await Promise.all([lines('_tags'), lines('_projects')]);
     if (!tags.length && !projects.length) return;
     const virtual = new Set(VIRTUAL_TAGS);
     this.tags = [...new Set([...this.tags, ...tags.filter((t) => !virtual.has(t))])].sort();

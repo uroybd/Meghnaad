@@ -1,5 +1,6 @@
 <script lang="ts">
   import DateTimeInput from './DateTimeInput.svelte';
+  import SuggestInput from './SuggestInput.svelte';
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
   import { udaLabel } from './format';
@@ -186,10 +187,7 @@
     <input id="te-desc" bind:value={description} required />
 
     <label for="te-proj">Project</label>
-    <input id="te-proj" bind:value={project} list="te-projects" placeholder="none" />
-    <datalist id="te-projects"
-      >{#each store.projects as p (p)}<option value={p}></option>{/each}</datalist
-    >
+    <SuggestInput id="te-proj" bind:value={project} names={store.projects} noun="project" placeholder="none" />
 
     <label for="te-pri">Priority</label>
     <select id="te-pri" bind:value={priority}>
@@ -250,10 +248,7 @@
     {/if}
 
     <label for="te-tags">Tags</label>
-    <input id="te-tags" bind:value={tags} list="te-tag-list" placeholder="space separated" />
-    <datalist id="te-tag-list"
-      >{#each store.tags as t (t)}<option value={t}></option>{/each}</datalist
-    >
+    <SuggestInput id="te-tags" bind:value={tags} names={store.tags} noun="tag" list placeholder="space separated" />
 
     {#each defined as u (u.name)}
       <label for="te-uda-{u.name}">{udaLabel(u)}</label>

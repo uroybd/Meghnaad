@@ -2,7 +2,9 @@
 # as a background), few rules, no shading of alternate rows. Taskwarrior's own defaults are the "taskwarrior" theme.
 # Colours do not blend (`rule.color.merge=no`): a row takes the colour of the first rule below that applies to it,
 # so what a row looks like follows its state, and a keyword or tag rule you add replaces it instead of muddying it.
-rule.precedence.color=deleted,completed,active,keyword.,tag.,project.,overdue,scheduled,due.today,due,blocked,blocking,recurring,tagged,uda.
+# Priority is not a row rule here: the page colours the Priority cell itself from color.uda.priority.* (so the
+# colour stays on the field whatever state the row is in); `uda.` is left out of the list on purpose.
+rule.precedence.color=deleted,completed,active,keyword.,tag.,project.,overdue,scheduled,due.today,due,blocked,blocking,recurring,tagged
 rule.color.merge=no
 color.alternate=
 color.active=bold on sage
@@ -10,7 +12,7 @@ color.blocked=slate
 color.blocking=bold sky
 color.completed=
 color.deleted=
-color.due=amber
+color.due=snow
 color.due.today=bold amber
 color.overdue=bold coral
 color.project.none=

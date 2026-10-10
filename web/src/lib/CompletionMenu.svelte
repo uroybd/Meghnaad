@@ -5,9 +5,14 @@
   let {
     completer,
     placement = 'above',
+    id,
+    label = 'Completions',
     onpick,
   }: {
     completer: Completer;
+    /** For an input to point at with `aria-controls`. */
+    id?: string;
+    label?: string;
     placement?: 'above' | 'below';
     /** Tapped an option (touch has no Tab key): the parent applies it to its input. */
     onpick?: (index: number) => void;
@@ -16,7 +21,7 @@
 </script>
 
 {#if menu}
-  <ul class="menu {placement} mono" role="listbox" aria-label="Completions">
+  <ul {id} class="menu {placement} mono" role="listbox" aria-label={label}>
     {#each menu.options as o, i (o.value)}
       <!-- Act on click, not pointerdown: on touch the menu would vanish mid-tap and the click would land
            on whatever is underneath. mousedown's default is the focus change that would blur the input

@@ -40,6 +40,7 @@ export const COMMANDS: Record<string, string> = {
   add: 'create a task',
   log: 'record a task that is already done',
   duplicate: 'copy tasks, with changes: duplicate due:eow',
+  purge: 'remove deleted tasks for good (they must be deleted first)',
   modify: 'change tasks',
   done: 'complete tasks',
   delete: 'delete tasks',

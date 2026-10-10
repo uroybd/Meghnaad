@@ -1,6 +1,6 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
-  import { look, rowVars } from './colors';
+  import { css, look, rowVars } from './colors';
   import { cell, rowClass } from './format';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import ProjectPath from './ProjectPath.svelte';
@@ -199,7 +199,14 @@
           >
             {#each result.columns as col (col.spec)}
               {@const c = cell(col, row, ctx)}
-              <td class="{col.kind} {c.cls ?? ''}" class:blank={!c.text && !c.lines?.length} data-label={col.label}>
+              <td
+                class="{col.kind} {c.cls ?? ''}"
+                class:blank={!c.text && !c.lines?.length}
+                data-label={col.label}
+                style={col.name === 'priority' && row.priority
+                  ? css(look(store.config?.colors?.[`uda.priority.${row.priority}`], scheme.dark))
+                  : undefined}
+              >
                 {#if c.uuid}
                   <UuidTip text={c.text} uuid={c.uuid} />
                 {:else if c.segments}
