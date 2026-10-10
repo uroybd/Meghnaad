@@ -2,7 +2,8 @@
   import { submitOnEnter } from './multiline';
   import { runCli } from './api';
   import { formatSeconds } from './dates';
-  import { Check, Pencil, Play, RotateCcw, Square, Timer, Trash2, X } from './icons';
+  import { Check, Link, Pencil, Play, RotateCcw, Square, Timer, Trash2, X } from './icons';
+  import { taskLink } from './route';
   import TaskInfo from './TaskInfo.svelte';
   import { store } from './store.svelte';
   import type { Row } from './types';
@@ -63,6 +64,16 @@
       : task,
   );
 
+  // The address that opens this task, for sending to someone else who can sign in to the same deployment.
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(taskLink(uuid, location.origin));
+      store.notify('Link copied.');
+    } catch {
+      store.notify(`Could not copy: the address is ${taskLink(uuid, location.origin)}`, 'err');
+    }
+  }
+
   const act = (...args: string[]) => store.act(store.detail?.from ?? null, [uuid, ...args]);
 
   async function annotate(e: Event) {
@@ -97,6 +108,9 @@
 <aside class="drawer" bind:this={el} tabindex="-1" aria-label="Task details" data-testid="drawer">
   <header class="row">
     <strong class="grow title">{task?.description ?? 'Task'}</strong>
+    <button class="ghost" aria-label="Copy a link to this task" title="Copy a link to this task" onclick={copyLink}
+      ><Link size={17} /></button
+    >
     <button class="ghost" aria-label="Close details" onclick={() => (store.detail = null)}><X size={18} /></button>
   </header>
 

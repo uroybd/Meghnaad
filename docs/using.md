@@ -196,6 +196,16 @@ command would actually change are listed. A single task is a plain yes/no. The d
   default, worded like `task info`). History comes from the task's operation log, so changes made before the last
   snapshot are not in it. It is fetched when you open the section (the hidden `_history <uuid>`), not with the task,
   so `info`, the pages and exports never carry it. Buttons: done, start/stop, edit, delete.
+- **Links between tasks.** Another task named in a task's *Deps* (or as the parent of a recurring instance) is drawn
+  as its short id. Point at it, or focus it with the keyboard, and a small card shows its status, description, project,
+  priority, due date and tags, with **Open task**. Where a pointer can hover, clicking the id opens the task at once;
+  on a touch screen the first tap shows the card and **Open task** opens it.
+- **Every task has an address**, `/task/<first 8 characters of its uuid>`, which opens its drawer: the address bar
+  follows the drawer, Back closes it, and a reload or a pasted link opens it again. The link button in the drawer
+  copies it. Whoever you send it to needs to be able to sign in to the same deployment (it is one person's replica,
+  so this is for sharing between your own devices, or with people your Cloudflare Access policy lets in). The 8
+  characters are the uuid, not the task number `task 3` uses, because numbers differ between replicas and change as
+  tasks finish; a longer prefix works too, and one that matches no task, or several, says so.
 - **Add tasks** from the sidebar. *More fields…* opens the full form: project, priority, due/wait/scheduled/until, tags,
   dependencies, UDAs, "start now" and a first note. Every date field takes a date and an optional time.
   The project and tags fields suggest names as you type (every project and tag you have, not only those on screen): ↑/↓

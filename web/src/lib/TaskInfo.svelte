@@ -10,6 +10,7 @@
   import TagChip from './TagChip.svelte';
   import { describeRecur } from './recurrence';
   import StatusPill, { type Kind } from './StatusPill.svelte';
+  import DepLink from './DepLink.svelte';
   import UuidTip from './UuidTip.svelte';
   import { store } from './store.svelte';
   import type { HistoryEntry, Row } from './types';
@@ -137,7 +138,7 @@
               {parentTitle ?? task.parent.slice(0, 8)}
             </button>
           {:else}
-            <span class="dim mono">of {task.parent.slice(0, 8)}</span>
+            <span class="dim">of</span> <DepLink uuid={task.parent} />
           {/if}
         {/if}
       </dd>
@@ -172,7 +173,7 @@
               >{depTitle(d)} <span class="dim mono">{d.slice(0, 8)}</span></button
             >
           {:else}
-            <span class="mono">{d.slice(0, 8)}</span>
+            <DepLink uuid={d} />
           {/if}
         {/each}
       </dd>

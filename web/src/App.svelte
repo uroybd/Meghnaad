@@ -33,6 +33,7 @@
   import SettingsDialog from './lib/SettingsDialog.svelte';
   import SummaryPage from './lib/SummaryPage.svelte';
   import { chartProps } from './lib/colors';
+  import { prefixFromPath, taskPath } from './lib/route';
   import { scheme } from './lib/scheme.svelte';
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
@@ -43,11 +44,34 @@
   let setup = $state<SetupStatus | null>(null);
   let started = false;
 
+  // The address and the drawer say the same thing: `/task/<8 characters>` is a task's own address, so a link to it
+  // can be shared. It is followed only once the page has read the address (a link opened cold), then both ways.
+  let routed = $state(false);
+
+  async function followAddress() {
+    const canonical = await store.openFromAddress(location.pathname);
+    // A longer prefix, or a task that isn't there, is rewritten to the short address (or the front page).
+    if (canonical && canonical !== location.pathname) history.replaceState(null, '', canonical);
+    routed = true;
+  }
+
+  // The drawer opened or moved to another task: that is a new place to go back from. It closed: the front page.
+  $effect(() => {
+    if (!routed) return;
+    const want = store.detail ? taskPath(store.detail.uuid) : null;
+    if (want) {
+      if (location.pathname !== want) history.pushState(null, '', want);
+    } else if (prefixFromPath(location.pathname)) {
+      history.replaceState(null, '', '/');
+    }
+  });
+
   function start() {
     setup = null;
     if (started) return;
     started = true;
     store.loadConfig();
+    void followAddress();
     // Reminders can wait for the table. The Worker handles one request at a time, so a poll sent
     // first would make the first screen wait behind it. If the table never loads (another view,
     // or an error), start anyway.
@@ -98,7 +122,7 @@
   }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} onpopstate={() => void followAddress()} />
 
 {#if setup}
   <SetupGuide status={setup} onready={start} />

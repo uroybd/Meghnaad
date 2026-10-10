@@ -170,6 +170,7 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 - `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`, `BurndownView`,
   `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the console, ran the command). A report's cells are formatted in `format.ts`, the one place that knows `dateformat`,
   indicators and urgency colours.
+- **Task addresses**: `route.ts` maps a task to `/task/<8 characters of its uuid>` and back; `App.svelte` keeps the address bar and the drawer in step (opening pushes an address, closing or Back leaves it), and `store.openFromAddress` finds the task with `uuid.startswith:<prefix> uuids`. `DepLink` is the id of another task (a dependency, a parent) with a hover, focus or tap card.
 - The filter box (`FilterInput`, `FilterChips`) and the prompt share `completion.ts`; both feed the same engine.
 - The browser stores nothing but small conveniences (command history, reminder settings). Settings live in the bucket
   (`web/config.json`, with one backup).

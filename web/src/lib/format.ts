@@ -17,6 +17,8 @@ export interface Cell {
   chips?: string[];
   /** The task's uuid, for the copy tooltip on an ID cell. */
   uuid?: string;
+  /** Other tasks this cell names (their uuids), each drawn as a link to its card. */
+  links?: string[];
 }
 
 export type UrgencyLevel = 'low' | 'mid' | 'high' | 'crit';
@@ -169,7 +171,7 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
       const open = row.pending_deps ?? 0;
       if (f === 'indicator') return { text: open ? (ctx.indicators?.dependency ?? 'D') : '' };
       if (f === 'count') return { text: open ? `[${open}]` : '' };
-      return { text: row.depends.map(shortUuid).join(' ') };
+      return { text: row.depends.map(shortUuid).join(' '), links: row.depends.length ? row.depends : undefined };
     }
     case 'urgency':
       return {
@@ -179,7 +181,7 @@ export function cell(col: Column, row: Row, ctx: Ctx): Cell {
     case 'recur':
       return { text: f === 'indicator' ? (row.recur ? (ctx.recurIndicator ?? 'R') : '') : (row.recur ?? '') };
     case 'parent':
-      return { text: row.parent ? shortUuid(row.parent) : '' };
+      return { text: row.parent ? shortUuid(row.parent) : '', links: row.parent ? [row.parent] : undefined };
     case 'annotations':
       return {
         text: f === 'count' ? String(row.annotations.length || '') : row.annotations.map((a) => a.text).join('; '),

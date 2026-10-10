@@ -1201,6 +1201,20 @@ mod tests {
         assert!(!h.m("1-100", &other));
     }
 
+    /// The app's links carry the first 8 characters of a uuid, which can be all digits; a bare `12345678` is a
+    /// range of task numbers, so the app asks with `uuid.startswith:`.
+    #[test]
+    fn a_uuid_prefix_of_digits_only_is_found_with_startswith() {
+        let h = H::new();
+        let mut t = task("x");
+        t.uuid = Uuid::parse_str("12345678-9012-3456-7890-123456789012").unwrap();
+        let mut other = task("y");
+        other.uuid = Uuid::parse_str("12345699-9012-3456-7890-123456789012").unwrap();
+        assert!(h.m("uuid.startswith:12345678", &t) && !h.m("uuid.startswith:12345678", &other));
+        assert!(h.m("uuid.startswith:12345678-9012", &t));
+        assert!(!h.m("uuid.startswith:ffffffff", &t));
+    }
+
     fn desc(d: &str) -> Facts {
         Facts {
             description: d.into(),

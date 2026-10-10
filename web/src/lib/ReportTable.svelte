@@ -5,6 +5,7 @@
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import ProjectPath from './ProjectPath.svelte';
   import TagChip from './TagChip.svelte';
+  import DepLink from './DepLink.svelte';
   import UuidTip from './UuidTip.svelte';
   import { describeRecur } from './recurrence';
   import { groupHeads } from './groups';
@@ -209,6 +210,8 @@
               >
                 {#if c.uuid}
                   <UuidTip text={c.text} uuid={c.uuid} />
+                {:else if c.links}
+                  {#each c.links as u (u)}<DepLink uuid={u} />{/each}
                 {:else if c.segments}
                   <ProjectPath segments={c.segments} />
                 {:else if c.chips}

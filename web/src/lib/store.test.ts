@@ -124,3 +124,43 @@ describe('running a report', () => {
     expect(store.live?.result?.kind).toBe('report');
   });
 });
+
+describe('opening a task from an address', () => {
+  const UUID = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d';
+  const answer = (lines: string[]) => ({ wrote: false, result: { kind: 'text', lines }, command: null, feedback: [] });
+  beforeEach(() => {
+    store.detail = null;
+    store.toast = null;
+    vi.mocked(runCli).mockReset();
+  });
+
+  it('opens the drawer for the one task that starts so, asking with an attribute filter', async () => {
+    vi.mocked(runCli).mockResolvedValue(answer([UUID]) as never);
+    expect(await store.openFromAddress('/task/12345678')).toBe('/task/1a2b3c4d');
+    expect(vi.mocked(runCli).mock.calls[0][0]).toEqual({ args: ['uuid.startswith:12345678', 'uuids'] });
+    expect(store.detail?.uuid).toBe(UUID);
+  });
+
+  it('does not ask again for the task that is already open', async () => {
+    store.detail = { uuid: UUID, from: null };
+    expect(await store.openFromAddress('/task/1a2b3c4d')).toBe('/task/1a2b3c4d');
+    expect(runCli).not.toHaveBeenCalled();
+  });
+
+  it('closes the drawer for any other address', async () => {
+    store.detail = { uuid: UUID, from: null };
+    expect(await store.openFromAddress('/')).toBeUndefined();
+    expect(store.detail).toBeNull();
+    expect(runCli).not.toHaveBeenCalled();
+  });
+
+  it('says so, and goes to the front page, when no task or several start so', async () => {
+    vi.mocked(runCli).mockResolvedValue(answer([]) as never);
+    expect(await store.openFromAddress('/task/deadbeef')).toBe('/');
+    expect(store.toast?.text).toContain('No task starts with deadbeef');
+    vi.mocked(runCli).mockResolvedValue(answer([UUID, '1a2b3c4d-0000-0000-0000-000000000000']) as never);
+    expect(await store.openFromAddress('/task/1a2b3c4d')).toBe('/');
+    expect(store.toast?.text).toContain('More than one task');
+    expect(store.detail).toBeNull();
+  });
+});

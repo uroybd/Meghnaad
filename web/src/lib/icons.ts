@@ -22,6 +22,7 @@ export { default as Upload } from '@lucide/svelte/icons/upload';
 export { default as Eraser } from '@lucide/svelte/icons/eraser';
 export { default as FileText } from '@lucide/svelte/icons/file-text';
 export { default as Folder } from '@lucide/svelte/icons/folder';
+export { default as Link } from '@lucide/svelte/icons/link';
 export { default as ListChecks } from '@lucide/svelte/icons/list-checks';
 export { default as Lock } from '@lucide/svelte/icons/lock';
 export { default as Menu } from '@lucide/svelte/icons/menu';

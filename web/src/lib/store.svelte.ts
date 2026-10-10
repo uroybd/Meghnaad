@@ -1,4 +1,5 @@
 import { ApiError, getConfig, runCli, type Answers, type CliInput } from './api';
+import { prefixFilter, prefixFromPath, taskPath } from './route';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
 import type { CliResponse, CliResult, ConfigResponse, HookLine, ReportMeta, Row } from './types';
@@ -441,6 +442,39 @@ class Store {
 
   openDetail(uuid: string, from: Entry | null = null) {
     this.detail = { uuid, from };
+  }
+
+  /**
+   * Show what the address says: a task's address opens its drawer, any other closes it. Returns the address to
+   * put in the bar when the task was found by a longer or differently written prefix (`undefined` otherwise).
+   */
+  async openFromAddress(path: string): Promise<string | undefined> {
+    const prefix = prefixFromPath(path);
+    if (!prefix) {
+      this.detail = null;
+      return undefined;
+    }
+    // Already showing it (going back to a task that is open): nothing to look up.
+    if (
+      this.detail &&
+      (this.detail.uuid.startsWith(prefix) || this.detail.uuid.replaceAll('-', '').startsWith(prefix))
+    ) {
+      return taskPath(this.detail.uuid);
+    }
+    let found: string[] = [];
+    try {
+      const r = (await runCli({ args: [prefixFilter(prefix), 'uuids'] })).result;
+      found = r.kind === 'text' ? r.lines.join(' ').split(/\s+/).filter(Boolean) : [];
+    } catch (e) {
+      this.notify(e instanceof Error ? e.message : String(e), 'err');
+    }
+    if (found.length !== 1) {
+      this.detail = null;
+      this.notify(found.length ? `More than one task starts with ${prefix}.` : `No task starts with ${prefix}.`, 'err');
+      return '/';
+    }
+    this.detail = { uuid: found[0], from: null };
+    return taskPath(found[0]);
   }
 }
 
