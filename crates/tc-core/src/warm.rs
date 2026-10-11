@@ -85,7 +85,7 @@ impl Warm {
 pub fn patch(list: &mut Vec<Facts>, now: Vec<(Uuid, Option<Facts>)>) -> bool {
     let changed = |u: &Uuid| now.iter().any(|(c, _)| c == u);
     let involved = |f: &Facts| !f.depends.is_empty() || f.blocked || f.blocking;
-    if now.iter().any(|(_, f)| f.as_ref().is_some_and(&involved)) {
+    if now.iter().any(|(_, f)| f.as_ref().is_some_and(involved)) {
         return false;
     }
     if list
