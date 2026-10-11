@@ -53,8 +53,10 @@ flowchart TB
 
   subgraph edge["Cloudflare"]
     direction TB
-    access{{"Cloudflare Access<br/>token check"}}
+    access{{"Cloudflare Access<br/>sign-in and token check"}}
+    assets["Static assets<br/>the app and the engine (.wasm)"]
     wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>key in a Worker secret"]
+    access --> assets
     access --> wk
   end
 
@@ -64,6 +66,7 @@ flowchart TB
   tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
   spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
   wk <-- "R2 binding" --> bucket
+  assets -. "loaded once, then cached" .-> spa
 
   sh <-. "counterpart" .-> cmds
   tsh <-. "counterpart" .-> rev
