@@ -1,7 +1,3 @@
----
-created: 2026-10-11T20:47:46+06:00
-updated: 2026-10-12T00:56:34+06:00
----
 <p align="center">
   <img src="web/public/logo.png" alt="Meghnaad" width="140" />
 </p>
