@@ -9,6 +9,10 @@
   Cloudflare keeps the secret, your existing R2 bucket is the sync store, Cloudflare Access is the login.
 </p>
 
+<p align="center">
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" /></a>
+</p>
+
 ---
 
 Meghnaad is another **replica** of your Taskwarrior data. The `task` CLI keeps syncing to R2 as it does today; this app
@@ -220,9 +224,11 @@ are `--api-port` and `--web-port`.
 
 You need Workers, R2 and Access; each has a free plan.
 
-**No Rust needed:** CI publishes a prebuilt release. Use the
-[Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release)
-button, or from a terminal with only Node.js 20+:
+**No Rust needed:** CI publishes a prebuilt release. Use the button,
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release)
+
+or from a terminal with only Node.js 20+:
 
 ```bash
 git clone --branch release --depth 1 https://github.com/uroybd/Meghnaad.git meghnaad && cd meghnaad

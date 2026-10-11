@@ -22,12 +22,13 @@ Every release is built once by CI and published ready to deploy, to the `release
 `.tar.gz` on the [releases page](https://github.com/uroybd/Meghnaad/releases). Nothing about your hooks, secrets or
 settings is in the build (they live in your bucket), so everyone deploys the same files.
 
-**With the button** (nothing to install): open
-[Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release),
-choose your R2 bucket (your existing sync bucket, or a new one), and give the encryption secret (the same value as
+**With the button** (nothing to install):
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release)
+
+Choose your R2 bucket (your existing sync bucket, or a new one), and give the encryption secret (the same value as
 `sync.encryption_secret`). Then open the address it gives you and follow the setup page to connect Access
-([Connecting Access](#connecting-access)). *This button has not been tried end to end yet; if it stumbles, the terminal
-route below does the same thing.*
+([Connecting Access](#connecting-access)).
 
 **From a terminal** (Node.js 20+ only):
 
