@@ -11,6 +11,8 @@ description = "TaskChampion cloud-sync protocol (crypto, object layout, ops, rep
 # leaves this out and does not carry the code (about 14 KB compressed).
 default = ["save"]
 save = []
+# Hooks written in Lua (`lua_hooks`), run in a sandbox. The browser engine has them; the Worker does not (yet).
+lua = ["dep:omnilua"]
 
 [dependencies]
 async-trait = "0.1"
@@ -24,6 +26,8 @@ serde_json = "1"
 sha2 = "0.10"
 taskchampion = { version = "3.1", default-features = false }
 thiserror = "2"
+# A pure-Rust Lua with the whole standard library; lean, so no io/os/package/debug/coroutine/utf8.
+omnilua = { version = "0.7.1", default-features = false, optional = true }
 uuid = { version = "1", default-features = false, features = ["serde"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

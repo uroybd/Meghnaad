@@ -1,8 +1,8 @@
-//! Hooks: your own Rust, run at the same four moments Taskwarrior runs its scripts.
+//! Hooks: your own code, run at the same four moments Taskwarrior runs its scripts.
 //!
-//! A Worker can't run `~/.task/hooks/on-add.*`, so a hook here is a Rust function, compiled
-//! into the Worker. Fill in the placeholders in [`MyHooks`](crate::my_hooks::MyHooks), in `my_hooks.rs`, and redeploy.
-//! They all do nothing until you do.
+//! A browser can't run `~/.task/hooks/on-add.*`, so a hook here is a function in a script you keep in your settings
+//! (see [`lua_hooks`](crate::lua_hooks)); this module is what the engine does with whatever implements [`Hooks`].
+//! With none given, nothing runs.
 //!
 //! * [`Hooks::on_launch`]: before a command runs. `Err` stops it.
 //! * [`Hooks::on_add`]: for each new task, before it is saved, a recurring instance generated before a command
@@ -27,6 +27,7 @@
 
 use crate::model::Facts;
 use crate::modify::Change;
+use async_trait::async_trait;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
@@ -72,7 +73,7 @@ impl Hooked {
 /// A hook's refusal: the message becomes the command's error.
 pub type Reject = String;
 
-pub trait Hooks: std::fmt::Debug + Send + Sync {
+pub trait Hooks: std::fmt::Debug {
     /// Before the command `command` (as typed, without `task`) runs.
     fn on_launch(&self, _h: &mut Hooked, _command: &str) -> Result<(), Reject> {
         Ok(())
@@ -93,89 +94,247 @@ pub trait Hooks: std::fmt::Debug + Send + Sync {
     fn on_exit(&self, _h: &mut Hooked, _changed: &[Facts]) {}
 }
 
+/// No hooks: every hook point lets everything through.
+#[derive(Debug, Default)]
+pub struct NoHooks;
+
+impl Hooks for NoHooks {}
+
+/// The four hook points as the engine calls them. A hook may have to wait (one that lives on the Worker is a request),
+/// so these are `async`. Anything that implements the plain [`Hooks`] is one already.
+#[async_trait(?Send)]
+pub trait HookHost: std::fmt::Debug {
+    async fn on_launch(&self, h: &mut Hooked, command: &str) -> Result<(), Reject>;
+    async fn on_add(&self, h: &mut Hooked, task: Facts) -> Result<Facts, Reject>;
+    async fn on_modify(&self, h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, Reject>;
+    async fn on_exit(&self, h: &mut Hooked, changed: &[Facts]);
+}
+
+#[async_trait(?Send)]
+impl<T: Hooks> HookHost for T {
+    async fn on_launch(&self, h: &mut Hooked, command: &str) -> Result<(), Reject> {
+        Hooks::on_launch(self, h, command)
+    }
+
+    async fn on_add(&self, h: &mut Hooked, task: Facts) -> Result<Facts, Reject> {
+        Hooks::on_add(self, h, task)
+    }
+
+    async fn on_modify(&self, h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, Reject> {
+        Hooks::on_modify(self, h, old, new)
+    }
+
+    async fn on_exit(&self, h: &mut Hooked, changed: &[Facts]) {
+        Hooks::on_exit(self, h, changed)
+    }
+}
+
 /// What the engine does with the hooks for one command: calls them, keeps what they print and the
 /// tasks they let through, and works out what a hook changed.
 pub struct Runner {
-    hooks: Arc<dyn Hooks>,
+    hooks: Arc<dyn HookHost>,
     enabled: bool,
     state: Mutex<State>,
 }
 
 #[derive(Default)]
 struct State {
-    out: Hooked,
+    lines: Vec<Line>,
     changed: Vec<Facts>,
 }
 
 impl Runner {
-    /// `hooks` is what the caller supplied (tests do; the Worker doesn't), else [`MyHooks`](crate::my_hooks::MyHooks).
-    pub fn new(hooks: Option<Arc<dyn Hooks>>, enabled: bool) -> Runner {
+    /// `hooks` is what the caller supplied (the engine supplies the user's script; tests supply their own), else none.
+    pub fn new(hooks: Option<Arc<dyn HookHost>>, enabled: bool) -> Runner {
         Runner {
-            hooks: hooks.unwrap_or_else(|| Arc::new(crate::my_hooks::MyHooks)),
+            hooks: hooks.unwrap_or_else(|| Arc::new(NoHooks)),
             enabled,
             state: Mutex::default(),
         }
     }
 
-    fn with<T>(&self, f: impl FnOnce(&dyn Hooks, &mut Hooked, &mut Vec<Facts>) -> T) -> T {
-        let mut s = self.state.lock().unwrap_or_else(|p| p.into_inner());
-        let State { out, changed } = &mut *s;
-        f(&*self.hooks, out, changed)
+    fn state(&self) -> std::sync::MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    pub fn launch(&self, command: &str) -> Result<(), Reject> {
+    /// Keep what a hook printed (also when it refused: it may have said why).
+    fn keep(&self, out: Hooked) {
+        self.state().lines.extend(out.lines);
+    }
+
+    pub async fn launch(&self, command: &str) -> Result<(), Reject> {
         if !self.enabled {
             return Ok(());
         }
-        self.with(|hooks, out, _| hooks.on_launch(out, command))
+        let mut out = Hooked::default();
+        let result = self.hooks.on_launch(&mut out, command).await;
+        self.keep(out);
+        result
     }
 
     /// The changes to make to `task` (as the command built it) to give what `on_add` returned.
-    pub fn add(&self, task: Facts) -> Result<Vec<Change>, Reject> {
+    pub async fn add(&self, task: Facts) -> Result<Vec<Change>, Reject> {
         if !self.enabled {
             return Ok(Vec::new());
         }
-        self.with(|hooks, out, changed| {
-            let before = task.clone();
-            let after = hooks.on_add(out, task)?;
-            let changes = diff(&before, &after)?;
-            changed.push(after);
-            Ok(changes)
-        })
+        let before = task.clone();
+        let mut out = Hooked::default();
+        let result = self.hooks.on_add(&mut out, task).await;
+        self.keep(out);
+        let after = result?;
+        let changes = diff(&before, &after)?;
+        self.state().changed.push(after);
+        Ok(changes)
     }
 
     /// The changes to make to `new` to give what `on_modify` returned.
-    pub fn modify(&self, old: &Facts, new: Facts) -> Result<Vec<Change>, Reject> {
+    pub async fn modify(&self, old: &Facts, new: Facts) -> Result<Vec<Change>, Reject> {
         if !self.enabled {
             return Ok(Vec::new());
         }
-        self.with(|hooks, out, changed| {
-            let before = new.clone();
-            let after = hooks.on_modify(out, old, new)?;
-            let changes = diff(&before, &after)?;
-            changed.push(after);
-            Ok(changes)
-        })
+        let before = new.clone();
+        let mut out = Hooked::default();
+        let result = self.hooks.on_modify(&mut out, old, new).await;
+        self.keep(out);
+        let after = result?;
+        let changes = diff(&before, &after)?;
+        self.state().changed.push(after);
+        Ok(changes)
     }
 
     /// What was printed so far, without running `on_exit`: the command never started.
     pub fn abort(&self) -> Vec<Line> {
-        self.with(|_, out, _| std::mem::take(&mut out.lines))
+        std::mem::take(&mut self.state().lines)
     }
 
     /// Run `on_exit`, then hand over everything that was printed. `failed`: the command ended in an error,
     /// so what the hooks let through was not saved.
-    pub fn finish(&self, failed: bool) -> Vec<Line> {
+    pub async fn finish(&self, failed: bool) -> Vec<Line> {
         if self.enabled {
-            self.with(|hooks, out, changed| {
+            let changed = {
+                let mut state = self.state();
                 if failed {
-                    changed.clear();
+                    state.changed.clear();
                 }
-                hooks.on_exit(out, changed);
-            });
+                std::mem::take(&mut state.changed)
+            };
+            let mut out = Hooked::default();
+            self.hooks.on_exit(&mut out, &changed).await;
+            self.keep(out);
         }
-        self.with(|_, out, _| std::mem::take(&mut out.lines))
+        std::mem::take(&mut self.state().lines)
     }
+}
+
+/// A task as a hook script is given it, as JSON: the plain table `lua/prelude.lua` expects. Dates are seconds since the
+/// epoch; UDAs are in `uda`; `blocked` and `blocking` are there to read.
+pub fn task_to_json(f: &Facts) -> serde_json::Value {
+    serde_json::json!({
+        "uuid": f.uuid.to_string(),
+        "status": f.status,
+        "description": f.description,
+        "project": f.project,
+        "priority": f.priority,
+        "tags": f.tags,
+        "annotations": f.annotations.iter().map(|n| serde_json::json!({ "entry": n.entry, "text": n.text })).collect::<Vec<_>>(),
+        "entry": f.entry,
+        "modified": f.modified,
+        "start": f.start,
+        "end": f.end,
+        "due": f.due,
+        "wait": f.wait,
+        "scheduled": f.scheduled,
+        "until": f.until,
+        "depends": f.depends.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        "blocked": f.blocked,
+        "blocking": f.blocking,
+        "recur": f.recur,
+        "parent": f.parent.map(|u| u.to_string()),
+        "mask": f.mask,
+        "imask": f.imask,
+        "uda": f.extra,
+    })
+}
+
+/// The task a hook script gave back (the same table as [`task_to_json`] writes), as `Facts`. What the script may not
+/// change is read back as it came, so that [`diff`] can refuse the change. Empty lists and empty tables are
+/// the same thing to Lua, so either is accepted where a list or a map is meant.
+pub fn task_from_json(v: &serde_json::Value, before: &Facts) -> Result<Facts, String> {
+    use serde_json::Value as J;
+    let o = v
+        .as_object()
+        .ok_or_else(|| "A hook returned something that is not a task.".to_owned())?;
+    let items = |key: &str| -> Result<Vec<&J>, String> {
+        match o.get(key) {
+            None | Some(J::Null) => Ok(Vec::new()),
+            Some(J::Array(a)) => Ok(a.iter().collect()),
+            Some(J::Object(m)) if m.is_empty() => Ok(Vec::new()),
+            Some(_) => Err(format!("task.{key} has to be a list.")),
+        }
+    };
+    let text = |key: &str| -> Result<Option<String>, String> {
+        match o.get(key) {
+            None | Some(J::Null) => Ok(None),
+            Some(J::String(s)) => Ok(Some(s.clone())),
+            Some(_) => Err(format!("task.{key} has to be text.")),
+        }
+    };
+    let date = |key: &str| -> Result<Option<i64>, String> {
+        match o.get(key) {
+            None | Some(J::Null) => Ok(None),
+            Some(J::Number(n)) => Ok(Some(n.as_i64().unwrap_or_else(|| n.as_f64().unwrap_or(0.0) as i64))),
+            Some(_) => Err(format!("task.{key} has to be a date.")),
+        }
+    };
+    let uuid_of =
+        |s: &str, what: &str| uuid::Uuid::parse_str(s).map_err(|_| format!("task.{what}: {s} is not a task id."));
+
+    let mut f = before.clone();
+    f.uuid = uuid_of(&text("uuid")?.unwrap_or_default(), "uuid")?;
+    f.status = text("status")?.unwrap_or_default();
+    f.description = text("description")?.unwrap_or_default();
+    f.project = text("project")?;
+    f.priority = text("priority")?;
+    f.tags = crate::ordered::set_of(items("tags")?.into_iter().filter_map(|t| t.as_str().map(str::to_owned)));
+    f.annotations = items("annotations")?
+        .into_iter()
+        .map(|n| crate::model::Note {
+            entry: n.get("entry").and_then(J::as_i64).unwrap_or(0),
+            text: n.get("text").and_then(J::as_str).unwrap_or_default().to_owned(),
+        })
+        .collect();
+    f.entry = date("entry")?;
+    f.modified = date("modified")?;
+    f.start = date("start")?;
+    f.end = date("end")?;
+    f.due = date("due")?;
+    f.wait = date("wait")?;
+    f.scheduled = date("scheduled")?;
+    f.until = date("until")?;
+    f.depends = items("depends")?
+        .into_iter()
+        .filter_map(J::as_str)
+        .map(|s| uuid_of(s, "depends"))
+        .collect::<Result<_, _>>()?;
+    f.recur = text("recur")?;
+    f.parent = text("parent")?.map(|s| uuid_of(&s, "parent")).transpose()?;
+    f.mask = text("mask")?;
+    f.imask = match o.get("imask") {
+        None | Some(J::Null) => None,
+        Some(n) => n.as_u64().map(|n| n as usize),
+    };
+    f.extra = match o.get("uda") {
+        None | Some(J::Null) => Default::default(),
+        Some(J::Object(m)) => crate::ordered::map_of(m.iter().map(|(k, v)| {
+            (
+                k.clone(),
+                v.as_str().map(str::to_owned).unwrap_or_else(|| v.to_string()),
+            )
+        })),
+        Some(J::Array(a)) if a.is_empty() => Default::default(),
+        Some(_) => return Err("A hook returned user-defined attributes that are not a table.".into()),
+    };
+    Ok(f)
 }
 
 const DATES: [&str; 7] = ["entry", "start", "end", "due", "wait", "scheduled", "until"];
@@ -385,6 +544,92 @@ mod tests {
         assert_eq!(diff(&task(), &n), Ok(vec![]));
     }
 
+    fn full_task() -> Facts {
+        let mut t = task();
+        t.project = Some("Work.Mail".into());
+        t.priority = Some("H".into());
+        t.tags.insert("a".into());
+        t.tags.insert("b".into());
+        t.annotations.push(crate::model::Note {
+            entry: 7,
+            text: "note".into(),
+        });
+        t.entry = Some(1);
+        t.due = Some(2);
+        t.wait = Some(3);
+        t.depends = vec![Uuid::from_u128(9)];
+        t.blocked = true;
+        t.recur = Some("weekly".into());
+        t.parent = Some(Uuid::from_u128(5));
+        t.mask = Some("-+".into());
+        t.imask = Some(3);
+        t.extra.insert("jira".into(), "ABC-1".into());
+        t
+    }
+
+    #[test]
+    fn a_task_goes_to_a_script_and_comes_back_the_same() {
+        let t = full_task();
+        let json = task_to_json(&t);
+        assert_eq!(json["tags"], serde_json::json!(["a", "b"]));
+        assert_eq!(json["uda"]["jira"], "ABC-1");
+        assert_eq!(
+            json["depends"],
+            serde_json::json!(["00000000-0000-0000-0000-000000000009"])
+        );
+        assert_eq!(task_from_json(&json, &t), Ok(t));
+    }
+
+    #[test]
+    fn lua_cannot_tell_an_empty_list_from_an_empty_table_so_either_is_taken() {
+        let t = task();
+        let mut json = task_to_json(&t);
+        json["uda"] = serde_json::json!([]);
+        json["tags"] = serde_json::json!({});
+        json["depends"] = serde_json::json!({});
+        json["annotations"] = serde_json::json!({});
+        assert_eq!(task_from_json(&json, &t), Ok(t));
+    }
+
+    #[test]
+    fn what_a_script_changed_comes_out_as_changes_and_what_it_got_wrong_is_an_error() {
+        let t = full_task();
+        let mut json = task_to_json(&t);
+        json["tags"] = serde_json::json!(["a", "c"]);
+        json["due"] = serde_json::json!(99);
+        json["project"] = serde_json::Value::Null;
+        json["uda"] = serde_json::json!({ "jira": "ABC-2", "points": 5 });
+        let after = task_from_json(&json, &t).unwrap();
+        let changes = diff(&t, &after).unwrap();
+        assert!(changes.contains(&Change::AddTag("c".into())));
+        assert!(changes.contains(&Change::RemoveTag("b".into())));
+        assert!(changes.contains(&Change::Timestamp {
+            name: "due",
+            value: Some(99)
+        }));
+        assert!(changes.contains(&Change::Prop {
+            name: "project".into(),
+            value: None
+        }));
+        assert_eq!(after.extra.get("points").map(String::as_str), Some("5"));
+
+        for (field, value, message) in [
+            ("description", serde_json::json!(5), "task.description has to be text."),
+            ("tags", serde_json::json!("x"), "task.tags has to be a list."),
+            ("due", serde_json::json!("soon"), "task.due has to be a date."),
+            (
+                "depends",
+                serde_json::json!(["nope"]),
+                "task.depends: nope is not a task id.",
+            ),
+        ] {
+            let mut bad = task_to_json(&t);
+            bad[field] = value;
+            assert_eq!(task_from_json(&bad, &t), Err(message.to_owned()), "{field}");
+        }
+        assert!(task_from_json(&serde_json::json!(5), &t).is_err());
+    }
+
     #[derive(Debug)]
     struct Chatty;
     impl Hooks for Chatty {
@@ -402,12 +647,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_runner_keeps_what_was_printed_in_order() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn the_runner_keeps_what_was_printed_in_order() {
         let r = Runner::new(Some(Arc::new(Chatty)), true);
-        r.launch("add x").unwrap();
-        assert_eq!(r.add(task()).unwrap(), vec![Change::AddTag("hooked".into())]);
-        let lines = r.finish(false);
+        r.launch("add x").await.unwrap();
+        assert_eq!(r.add(task()).await.unwrap(), vec![Change::AddTag("hooked".into())]);
+        let lines = r.finish(false).await;
         let texts: Vec<_> = lines.iter().map(|l| (l.kind, l.text.as_str())).collect();
         assert_eq!(
             texts,
@@ -419,19 +664,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_failed_command_reports_no_changed_tasks() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_failed_command_reports_no_changed_tasks() {
         let r = Runner::new(Some(Arc::new(Chatty)), true);
-        r.add(task()).unwrap();
-        let lines = r.finish(true);
+        r.add(task()).await.unwrap();
+        let lines = r.finish(true).await;
         assert_eq!(lines.last().map(|l| l.text.as_str()), Some("0 changed"));
     }
 
-    #[test]
-    fn switched_off_nothing_runs() {
+    #[tokio::test(flavor = "current_thread")]
+    async fn switched_off_nothing_runs() {
         let r = Runner::new(Some(Arc::new(Chatty)), false);
-        r.launch("x").unwrap();
-        assert!(r.add(task()).unwrap().is_empty());
-        assert!(r.finish(false).is_empty());
+        r.launch("x").await.unwrap();
+        assert!(r.add(task()).await.unwrap().is_empty());
+        assert!(r.finish(false).await.is_empty());
     }
 }
