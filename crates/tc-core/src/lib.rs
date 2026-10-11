@@ -25,6 +25,7 @@ pub(crate) mod ordered;
 pub mod rc_url;
 pub mod recur;
 pub mod report;
+pub mod request;
 pub mod run;
 pub mod rx;
 pub mod settings;
@@ -34,6 +35,7 @@ pub mod summary;
 pub mod taskrc;
 pub mod urgency;
 pub mod warm;
+pub mod webapi;
 pub mod wire;
 
 pub use cloud::{load_cryptor, load_salt, CloudServer};

@@ -240,42 +240,12 @@ async fn health(ctx: RouteContext<()>) -> RouteResult {
 
 async fn get_config(ctx: RouteContext<()>) -> RouteResult {
     let cfg = session::config(&ctx.env).await?;
-    // What the app shows follows the active context's own settings; `config` below stays as saved,
-    // since that is what the settings dialogs edit.
-    let live = cfg.effective();
-    let reports: Vec<_> = tc_core::report::names(&live)
-        .into_iter()
-        .filter_map(|n| tc_core::report::resolve(&live, &n))
-        .map(|r| {
-            serde_json::json!({
-                "name": r.name,
-                "description": r.description,
-                "columns": tc_core::run::describe_columns(&r.columns, &r.labels, &live),
-                "filter": r.filter,
-                "sort": r.sort,
-            })
-        })
-        .collect();
-    // The journal.time marker texts, so the UI can hide those annotations and show sessions instead.
-    let journal = live
-        .journal()
-        .map(|(start, stop)| serde_json::json!({ "start": start, "stop": stop }));
     let has_previous = session::has_previous(&ctx.env).await?;
-    json(&serde_json::json!({
-        "config": &*cfg,
-        "reports": reports,
-        "journal": journal,
-        "has_previous": has_previous,
-        // Taskwarrior's built-in coefficients, so the UI can show what a setting falls back to.
-        "urgency_defaults": tc_core::urgency::defaults(),
-        "urgency_inherit": cfg.urgency_inherit(),
-        // Whether tasks are coloured, and every colour in force (`calendar.today`, `history.add`, ...) as
-        // palette indexes, for the charts and the like the page draws itself.
-        "color": cfg.color(),
-        "colors": tc_core::color::palette_for_page(&cfg),
-        // Set when the saved settings exist but couldn't be read (they are left untouched).
-        "config_error": session::config_error(),
-    }))
+    json(&tc_core::webapi::config_response(
+        &cfg,
+        has_previous,
+        session::config_error(),
+    ))
 }
 
 /// The saved settings rendered as a taskrc: what the UI actually holds, to edit and import again.
@@ -284,19 +254,6 @@ async fn get_taskrc(ctx: RouteContext<()>) -> RouteResult {
     let mut res = Response::ok(taskrc::render(&cfg))?;
     res.headers_mut().set("content-type", "text/plain; charset=utf-8")?;
     Ok(res)
-}
-
-fn summary(parsed: &taskrc::Parsed) -> serde_json::Value {
-    serde_json::json!({
-        "udas": parsed.config.udas.len(),
-        "reports": parsed.config.reports.len(),
-        "contexts": parsed.config.contexts.len(),
-        "blocked": parsed.blocked,
-        "ignored": parsed.ignored,
-        "warnings": parsed.warnings,
-        // What is now saved, so the editor shows the truth rather than what was pasted.
-        "text": taskrc::render(&parsed.config),
-    })
 }
 
 /// Accepts a taskrc, keeps only the allowlisted subset, and reports what was dropped by *name*.
@@ -313,7 +270,7 @@ async fn save_taskrc_text(ctx: &RouteContext<()>, text: String) -> RouteResult {
     let parsed = taskrc::parse(&text);
     drop(text);
     session::save_config(&ctx.env, parsed.config.clone()).await?;
-    json(&summary(&parsed))
+    json(&tc_core::webapi::taskrc_summary(&parsed))
 }
 
 /// Fetch a taskrc from a link (a dotfiles repository, a gist) and import it as a pasted one is. The Worker
@@ -616,7 +573,7 @@ async fn put_app_settings(mut req: Request, ctx: RouteContext<()>) -> RouteResul
 async fn restore_taskrc(ctx: RouteContext<()>) -> RouteResult {
     match session::restore_config(&ctx.env).await? {
         None => Err(ApiError::BadRequest("there are no earlier settings to restore".into())),
-        Some(config) => json(&summary(&taskrc::Parsed {
+        Some(config) => json(&tc_core::webapi::taskrc_summary(&taskrc::Parsed {
             config,
             ..Default::default()
         })),

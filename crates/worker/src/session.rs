@@ -5,7 +5,6 @@
 //! between it and the bucket.
 
 use js_sys::{Array, Object, Reflect, Uint8Array};
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -22,53 +21,14 @@ use worker::Env;
 use crate::hooknet::WorkerNet;
 use crate::store::R2Store;
 
-/// Where the allowlisted taskrc subset lives. Outside TaskChampion's own namespaces
-/// (`salt`, `latest`, `v-*`, `s-*`), so the `task` CLI never sees it. Because it is in the bucket
-/// (not in the Worker), it survives restarts, redeploys and moving between devices.
-pub const CONFIG_KEY: &str = "web/config.json";
-/// The app's own settings (`settings.json`): text the browser reads, which the Worker only stores.
-pub const APP_SETTINGS_KEY: &str = "web/settings.json";
-/// The settings as they were before the last import, for one-step restore.
-pub const PREV_KEY: &str = "web/config.prev.json";
-/// Unreadable settings found at `CONFIG_KEY` when saving over them: kept for hand recovery, and
-/// never offered as a restore point.
-pub const CORRUPT_KEY: &str = "web/config.corrupt.json";
-/// The hooks script (Lua): its own object, not part of `settings.json`, because the browser reads that in full and the
-/// script may hold secrets. Only the editor ever asks for its text.
-pub const HOOKS_KEY: &str = "web/hooks.lua";
-/// The script as it was before the last save, for one-step restore.
-pub const HOOKS_PREV_KEY: &str = "web/hooks.prev.lua";
+pub use tc_core::webapi::{decode, APP_SETTINGS_KEY, CONFIG_KEY, CORRUPT_KEY, HOOKS_KEY, HOOKS_PREV_KEY, PREV_KEY};
 /// How long one Worker instance trusts its copy of the script.
 const HOOKS_TTL_MS: f64 = 5_000.0;
-/// Bumped if the stored layout ever changes in a way old readers can't handle.
-const SCHEMA_VERSION: u32 = 1;
 /// How long one Worker instance trusts its copy; other instances see an import within this time.
 const CONFIG_TTL_MS: f64 = 5_000.0;
 
-#[derive(Serialize, Deserialize)]
-struct Stored {
-    version: u32,
-    config: Config,
-}
-
-/// Read stored settings: the versioned envelope, or the bare `Config` that earlier builds wrote.
-pub fn decode(bytes: &[u8]) -> Result<Config, String> {
-    let v: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
-    if v.get("version").is_some() && v.get("config").is_some() {
-        serde_json::from_value::<Stored>(v)
-            .map(|s| s.config)
-            .map_err(|e| e.to_string())
-    } else {
-        serde_json::from_value::<Config>(v).map_err(|e| e.to_string())
-    }
-}
-
 fn encode(cfg: &Config) -> worker::Result<Vec<u8>> {
-    serde_json::to_vec(&Stored {
-        version: SCHEMA_VERSION,
-        config: cfg.clone(),
-    })
-    .map_err(|e| worker::Error::RustError(e.to_string()))
+    tc_core::webapi::encode(cfg).map_err(worker::Error::RustError)
 }
 
 /// The hooks script this instance has loaded, and the VM it is loaded into (built once, used for every call).
