@@ -35,6 +35,8 @@
   import SummaryPage from './lib/SummaryPage.svelte';
   import { chartProps } from './lib/colors';
   import { prefixFromPath, taskPath } from './lib/route';
+  import ReviewCard from './lib/ReviewCard.svelte';
+  import { review } from './lib/review.svelte';
   import { scheme } from './lib/scheme.svelte';
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
@@ -271,7 +273,14 @@
 
   {#if store.editing}
     {#key store.editing.row.uuid}
-      <TaskEditor row={store.editing.row} from={store.editing.from} onclose={() => (store.editing = null)} />
+      <TaskEditor
+        row={store.editing.row}
+        from={store.editing.from}
+        onclose={() => {
+          store.editing = null;
+          void review.editClosed(); // a review that opened it carries on
+        }}
+      />
     {/key}
   {/if}
   {#if store.adding}
@@ -285,6 +294,7 @@
       />
     {/key}
   {/if}
+  {#if review.surface === 'card' && review.phase !== 'idle'}<ReviewCard />{/if}
   {#if store.detail}
     {#key store.detail.uuid}<DetailDrawer uuid={store.detail.uuid} />{/key}
   {/if}

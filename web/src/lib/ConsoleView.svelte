@@ -33,7 +33,7 @@
       </div>
       {#each store.entries as e (e.id)}
         <section class="entry">
-          <div class="cmd mono"><span class="dim">$</span> {e.title.replace(/^task /, 'task ')}</div>
+          {#if e.title}<div class="cmd mono"><span class="dim">$</span> {e.title}</div>{/if}
           <ResultView entry={e} onedit={(row, from) => (store.editing = { row, from })} />
         </section>
       {/each}

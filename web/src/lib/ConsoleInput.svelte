@@ -3,8 +3,10 @@
   import { Completer } from './completer.svelte';
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
+  import { review } from './review.svelte';
   import { store } from './store.svelte';
   import { expandTaskCommands } from './taskCommands';
+  import { parseReview } from './tasksh';
 
   /** Focus the prompt when it appears (not on a phone, where that would raise the keyboard). */
   let { autofocus = false }: { autofocus?: boolean } = $props();
@@ -55,6 +57,15 @@
   }
 
   function submit() {
+    // While a review is asking, whatever is typed is its answer, and an empty line is the usual one: reviewed.
+    if (review.captures) {
+      const answer = line;
+      line = '';
+      cursor = -1;
+      completer.close();
+      void review.respond(answer);
+      return;
+    }
     const l = line.trim();
     if (!l) return;
     line = ''; // the command moves to the "last command" line above the prompt
@@ -62,6 +73,13 @@
     completer.close();
     if (l === 'clear' || l === 'cls') {
       store.clear();
+      return;
+    }
+    // tasksh's `review` is the browser's own: it is not sent, it drives a session of ordinary commands.
+    const asked = parseReview(l);
+    if (asked) {
+      store.view = 'console';
+      void review.start({ limit: asked.limit, surface: 'console' });
       return;
     }
     // A task command from settings.json stands for the command line it names (what runs, and what the checks
@@ -142,6 +160,7 @@
       store.clear();
     } else if (e.key === 'Escape') {
       if (open) completer.close();
+      else if (review.captures) review.quit();
       else el.blur();
     }
   }
@@ -180,9 +199,10 @@
       </button>
     </div>
   {/if}
+  {#if review.captures}<div class="rhint mono dim" data-testid="review-hint">{review.hint}</div>{/if}
   <CompletionMenu {completer} placement="above" onpick={(i) => edit(completer.pick(i))} />
   <label class="row">
-    <span class="mono ps" aria-hidden="true">task&gt;</span>
+    <span class="mono ps" aria-hidden="true">{review.captures ? 'review>' : 'task>'}</span>
     <span class="sr-only">Command</span>
     <input
       bind:this={el}
@@ -194,7 +214,9 @@
         cursor = -1;
       }}
       class="grow mono"
-      placeholder="next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )"
+      placeholder={review.captures
+        ? 'Enter, s, e, m, c, d or q'
+        : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
       autocomplete="off"
       autocapitalize="off"
       spellcheck="false"
@@ -220,6 +242,13 @@
   }
   .prompt :global(.menu) {
     left: 24px;
+  }
+  .rhint {
+    font-size: 13px;
+    margin-bottom: 8px;
+    padding: 4px 12px;
+    background: var(--panel-2);
+    border-radius: 6px;
   }
   .last {
     font-size: 13px;

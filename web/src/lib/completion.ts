@@ -38,6 +38,7 @@ export interface Completion {
 
 export const COMMANDS: Record<string, string> = {
   add: 'create a task',
+  review: "go through the tasks that need review, tasksh's way: review 10 stops after ten",
   log: 'record a task that is already done',
   duplicate: 'copy tasks, with changes: duplicate due:eow',
   purge: 'remove deleted tasks for good (they must be deleted first)',

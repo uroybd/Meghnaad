@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { configArgs, REVIEW_FILTER, REVIEW_SORT, setupLines, taskshStatus } from './tasksh';
+import {
+  configArgs,
+  menuKey,
+  parseReview,
+  partLines,
+  REVIEW_FILTER,
+  REVIEW_SORT,
+  setupLines,
+  setupQuestion,
+  taskshStatus,
+} from './tasksh';
 import type { ConfigResponse } from './types';
 
 const WANT = { filter: REVIEW_FILTER, sort: REVIEW_SORT };
@@ -100,6 +110,80 @@ describe('configArgs', () => {
       'config',
       'report._reviewed.filter',
       'a and b',
+    ]);
+  });
+});
+
+describe('parseReview', () => {
+  it('reads the command as tasksh does: cut to three letters, with a count, after task', () => {
+    for (const line of ['review', 'task review', 'rev', 'revi', 'REVIEW', '  review  '])
+      expect(parseReview(line), line).toEqual({ limit: 0 });
+    expect(parseReview('review 10')).toEqual({ limit: 10 });
+    expect(parseReview('task rev 3')).toEqual({ limit: 3 });
+  });
+
+  it('leaves everything else to Taskwarrior', () => {
+    for (const line of [
+      '',
+      're',
+      'reviews',
+      'review foo',
+      'review 1 2',
+      'review 3x',
+      'revue',
+      'next',
+      'add review the code',
+      'project:Work review',
+    ])
+      expect(parseReview(line), line).toBeNull();
+  });
+});
+
+describe('menuKey', () => {
+  it('knows the choices of the review menu, and Enter is the usual one', () => {
+    expect(['', 'r', 's', 'e', 'm', 'c', 'd', 'q'].map(menuKey)).toEqual([
+      'reviewed',
+      'reviewed',
+      'skip',
+      'edit',
+      'modify',
+      'complete',
+      'delete',
+      'quit',
+    ]);
+    expect(menuKey('  S ')).toBe('skip');
+  });
+
+  it('does not know any other word', () => {
+    for (const w of ['x', 'review', 'yes', 'ss', '1']) expect(menuKey(w), w).toBeNull();
+  });
+});
+
+describe('the setup questions', () => {
+  it("are tasksh's own when something is missing", () => {
+    const s = taskshStatus(config());
+    expect(setupQuestion('uda', s)).toBe(
+      "Tasksh needs to define a 'reviewed' UDA of type 'date' for all tasks.  Ok to proceed?",
+    );
+    expect(setupQuestion('report', s)).toBe(
+      "Tasksh needs to define a '_reviewed' report to identify tasks needing review.  Ok to proceed?",
+    );
+  });
+
+  it('say what is there when it is not the way tasksh needs it', () => {
+    const s = taskshStatus(config({ uda: { type: 'string', label: null }, report: { columns: ['id', 'uuid'] } }));
+    expect(setupQuestion('uda', s)).toContain("of type 'string' now");
+    expect(setupQuestion('report', s)).toContain("columns 'id, uuid' now");
+  });
+
+  it('write each part on its own', () => {
+    const lines = setupLines(config(), WANT);
+    expect(partLines(lines, 'uda').map(([n]) => n)).toEqual(['uda.reviewed.type', 'uda.reviewed.label']);
+    expect(partLines(lines, 'report').map(([n]) => n)).toEqual([
+      'report._reviewed.columns',
+      'report._reviewed.description',
+      'report._reviewed.sort',
+      'report._reviewed.filter',
     ]);
   });
 });

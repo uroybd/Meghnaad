@@ -349,6 +349,24 @@ class Store {
   }
 
   /**
+   * Print something into the console that is not a command's answer (a review's banner and messages). An empty
+   * `title` prints no `$` line above it.
+   */
+  addEntry(title: string, result: CliResult): Entry {
+    const e = $state<Entry>({
+      id: nextId++,
+      input: { args: [] },
+      title,
+      result,
+      loading: false,
+      failure: null,
+      at: Date.now(),
+    });
+    this.entries.push(e);
+    return e;
+  }
+
+  /**
    * Run a command from the console. A report command focuses that report instead of scrolling. `typed` is what was
    * typed when `input` is that with a task command written out: the history keeps it.
    */

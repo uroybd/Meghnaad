@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { parseSettings } from './appsettings';
+import { review } from './review.svelte';
 import ConsoleInput from './ConsoleInput.svelte';
 import { store } from './store.svelte';
 
@@ -69,5 +70,70 @@ describe('task commands at the prompt', () => {
     store.appSettings = parseSettings('{ "taskCommands": [ { "name": "fail", "command": "done outcome:fail" } ] }');
     const run = submit('add fail the test');
     expect(run).toHaveBeenCalledWith({ line: 'add fail the test' }, 'add fail the test');
+  });
+});
+
+describe('tasksh review at the prompt', () => {
+  function type(text: string, key = 'Enter') {
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const input = document.querySelector('input') as HTMLInputElement;
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    flushSync();
+    return input;
+  }
+
+  afterEach(() => review.close());
+
+  it('starts a review in the console instead of sending the word to Taskwarrior', () => {
+    const start = vi.spyOn(review, 'start').mockResolvedValue();
+    const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
+    store.view = 'tasks';
+    type('review 5');
+    expect(start).toHaveBeenCalledWith({ limit: 5, surface: 'console' });
+    expect(run).not.toHaveBeenCalled();
+    expect(store.view).toBe('console');
+  });
+
+  it('leaves a line that is not the command alone', () => {
+    const start = vi.spyOn(review, 'start').mockResolvedValue();
+    const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
+    type('project:Work review');
+    expect(start).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalled();
+  });
+
+  it('takes the typed answers while a review asks, an empty Enter among them, and none go to the history', () => {
+    review.surface = 'console';
+    review.phase = 'running';
+    const respond = vi.spyOn(review, 'respond').mockResolvedValue();
+    const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
+    const input = type('s');
+    expect(respond).toHaveBeenLastCalledWith('s');
+    expect(input.value).toBe('');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    flushSync();
+    expect(respond).toHaveBeenLastCalledWith('');
+    expect(run).not.toHaveBeenCalled();
+    expect(store.history).not.toContain('s');
+  });
+
+  it('says it is a review: the prompt, and the menu', () => {
+    review.surface = 'console';
+    review.phase = 'running';
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    expect(document.querySelector('.ps')?.textContent).toBe('review>');
+    expect(document.querySelector('[data-testid=review-hint]')?.textContent).toContain('(Enter) Mark as reviewed');
+  });
+
+  it('quits on Escape', () => {
+    review.surface = 'console';
+    review.phase = 'running';
+    const quit = vi.spyOn(review, 'quit').mockReturnValue();
+    type('', 'Escape');
+    expect(quit).toHaveBeenCalled();
   });
 });
