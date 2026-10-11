@@ -10,9 +10,9 @@
 //! `InMemoryStorage` and compares everything either can show.
 
 use async_trait::async_trait;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use taskchampion::storage::{Storage, StorageTxn, TaskMap};
 use taskchampion::{Error, Operation};
 use uuid::Uuid;
@@ -26,16 +26,55 @@ const NO_VERSION: Uuid = Uuid::nil();
 /// engine reads them) be kept for as long as nothing has changed, and rebuilt the moment something has. It is bumped
 /// when a transaction that changed anything ends, whether it committed or was taken back, so a reader that saw the
 /// same number twice has seen the same data twice.
+///
+/// It also remembers which tasks each of the last few transactions touched, so a reader whose copy is a few changes
+/// behind can bring it up to date by looking at those tasks alone, when that is all that changed.
 #[derive(Clone, Debug, Default)]
-pub struct Generation(Arc<AtomicU64>);
+pub struct Generation(Arc<Counted>);
+
+#[derive(Debug, Default)]
+struct Counted {
+    number: AtomicU64,
+    /// The number each recent transaction made, and the tasks it touched (`None`: too many to say, or not known).
+    log: Mutex<VecDeque<(u64, Option<Vec<Uuid>>)>>,
+}
+
+/// How many transactions are remembered, and how many tasks one may touch and still be listed.
+const LOG_LEN: usize = 32;
+const MAX_TOUCHED: usize = 64;
 
 impl Generation {
     pub fn get(&self) -> u64 {
-        self.0.load(Ordering::Acquire)
+        self.0.number.load(Ordering::Acquire)
     }
 
-    fn bump(&self) {
-        self.0.fetch_add(1, Ordering::AcqRel);
+    /// The number now, and the tasks touched by every transaction after number `since`: `None` if that cannot be said
+    /// (it was too long ago, or a transaction touched too many to list).
+    pub fn touched_since(&self, since: u64) -> Option<(u64, Vec<Uuid>)> {
+        let log = self.0.log.lock().unwrap_or_else(|p| p.into_inner());
+        let now = self.get();
+        let mut touched = Vec::new();
+        if now != since {
+            // The log must reach back to the transaction right after `since`.
+            if log.front().is_none_or(|(n, _)| *n > since + 1) {
+                return None;
+            }
+            for (_, tasks) in log.iter().filter(|(n, _)| *n > since) {
+                touched.extend_from_slice(tasks.as_deref()?);
+            }
+            touched.sort_unstable();
+            touched.dedup();
+        }
+        Some((now, touched))
+    }
+
+    fn bump(&self, touched: Option<Vec<Uuid>>) {
+        let mut log = self.0.log.lock().unwrap_or_else(|p| p.into_inner());
+        let number = self.0.number.fetch_add(1, Ordering::AcqRel) + 1;
+        log.push_back((number, touched.filter(|t| t.len() <= MAX_TOUCHED)));
+        if log.len() > LOG_LEN {
+            log.pop_front();
+        }
     }
 }
 
@@ -108,7 +147,7 @@ impl Txn<'_> {
         // Something was changed, and now it is changed back: either way the data was different in between, and a
         // reader that looked then must not be taken for one that looks now.
         if !self.journal.is_empty() {
-            self.db.generation.bump();
+            self.db.generation.bump(self.touched());
         }
         while let Some(undo) = self.journal.pop() {
             let db = &mut *self.db;
@@ -143,6 +182,28 @@ impl Txn<'_> {
                 Undo::WorkingSetAll(old) => db.working_set = old,
             }
         }
+    }
+
+    /// The tasks this transaction changed, or whose place in the working set it changed (the working set is what the
+    /// dependency map is made from). `None` if it replaced the whole working set.
+    fn touched(&self) -> Option<Vec<Uuid>> {
+        let ws = &self.db.working_set;
+        let mut tasks = Vec::new();
+        for undo in &self.journal {
+            match undo {
+                Undo::Task(uuid, _) => tasks.push(*uuid),
+                Undo::WorkingSetItem(index, old) => {
+                    tasks.extend(old);
+                    tasks.extend(ws.get(*index).copied().flatten());
+                }
+                Undo::WorkingSetAdded(n) => tasks.extend(ws[ws.len().saturating_sub(*n)..].iter().flatten()),
+                Undo::WorkingSetAll(_) => return None,
+                _ => {}
+            }
+        }
+        tasks.sort_unstable();
+        tasks.dedup();
+        Some(tasks)
     }
 
     /// Remember a task's state before this transaction's first change to it.
@@ -349,7 +410,7 @@ impl StorageTxn for Txn<'_> {
     async fn commit(&mut self) -> Result<()> {
         // The changes are already in place; nothing to take back any more.
         if !self.journal.is_empty() {
-            self.db.generation.bump();
+            self.db.generation.bump(self.touched());
         }
         self.journal.clear();
         Ok(())

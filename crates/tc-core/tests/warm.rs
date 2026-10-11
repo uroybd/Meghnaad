@@ -116,7 +116,59 @@ async fn the_cache_is_never_stale_over_a_long_random_run() {
                 .await;
             }
         }
+        // Most writes touch no dependency, and for those the list is brought up to date, not built again.
+        assert!(warm.patched() > 100, "seed {seed}: only {} patches", warm.patched());
     }
+}
+
+/// A pending task made through the replica alone, as a sync would.
+async fn direct_add(r: &mut R, n: u128) {
+    let mut ops = Operations::new();
+    let mut t = r.create_task(Uuid::from_u128(n), &mut ops).await.unwrap();
+    t.set_status(Status::Pending, &mut ops).unwrap();
+    t.set_description(format!("direct {n}"), &mut ops).unwrap();
+    r.commit_operations(ops).await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_few_writes_between_reads_are_patched_and_many_are_built_again() {
+    let (mut r, warm) = replica();
+    for i in 0..20 {
+        run(&mut r, Some(&warm), &format!("add Task {i} project:P{}", i % 3), i).await;
+    }
+    assert_same(&mut r, &warm, "after the first adds").await;
+    let before = warm.patched();
+    // Each write reads its own result, so each is a patch.
+    for (i, line) in ["1 done", "2 modify +x", "add Another"].iter().enumerate() {
+        run(&mut r, Some(&warm), line, 100 + i as i64).await;
+    }
+    assert_same(&mut r, &warm, "after three writes").await;
+    assert_eq!(warm.patched(), before + 3);
+    // Writes that nothing reads (a sync does this): a few are one patch ...
+    let before = warm.patched();
+    for i in 0..5 {
+        direct_add(&mut r, 5_000 + i).await;
+    }
+    assert_same(&mut r, &warm, "after five direct writes").await;
+    assert_eq!(warm.patched(), before + 1);
+    // ... and more transactions than the generation remembers are built again, and still right.
+    let before = warm.patched();
+    for i in 0..80 {
+        direct_add(&mut r, 6_000 + i).await;
+    }
+    assert_same(&mut r, &warm, "after a long run of writes").await;
+    assert_eq!(warm.patched(), before, "too many changes to patch");
+    let before = warm.patched();
+    // A dependency is never patched around.
+    run(&mut r, Some(&warm), "3 modify depends:4", 400).await;
+    assert_same(&mut r, &warm, "after a dependency was added").await;
+    assert_eq!(warm.patched(), before);
+    run(&mut r, Some(&warm), "4 done", 401).await;
+    assert_same(&mut r, &warm, "after what 3 waited for was done").await;
+    assert_eq!(warm.patched(), before);
+    run(&mut r, Some(&warm), "5 done", 402).await;
+    assert_same(&mut r, &warm, "after an unrelated task").await;
+    assert_eq!(warm.patched(), before + 1);
 }
 
 #[tokio::test(flavor = "current_thread")]

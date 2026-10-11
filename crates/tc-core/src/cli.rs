@@ -1015,12 +1015,45 @@ pub async fn warm_facts<S: Storage>(
     if let Some(kept) = warm.get() {
         return Ok(kept);
     }
+    if let Some(brought_up) = bring_up_to_date(r, warm).await? {
+        return Ok(brought_up);
+    }
     // The generation is read before the list is built: a change in between can then only make it look older than it
     // is, and it is built again.
     let generation = warm.generation();
     let built = Arc::new(load_facts(r).await?);
     warm.put(generation, built.clone());
     Ok(built)
+}
+
+/// The list kept from before, changed to match the few tasks that have been written since, when that is all that
+/// happened and none of them has to do with a dependency (what [`crate::warm::patch`] checks). `None` when the list
+/// has to be built again. Costs a look at the changed tasks and a move within the list, not the 2 µs a task of
+/// building it.
+async fn bring_up_to_date<S: Storage>(
+    r: &mut Replica<S>,
+    warm: &Warm,
+) -> Result<Option<Arc<Vec<Facts>>>, taskchampion::Error> {
+    let Some((was, mut kept)) = warm.take() else {
+        return Ok(None);
+    };
+    let Some((generation, touched)) = warm.changes_since(was) else {
+        return Ok(None);
+    };
+    // The command that is writing still holds the list it read, so this is usually a copy: cheaper than building it
+    // again (no second pass over every stored task, no sort).
+    let list = Arc::make_mut(&mut kept);
+    let mut now = Vec::with_capacity(touched.len());
+    for uuid in touched {
+        let fresh = r.get_task(uuid).await?.map(|t| Facts::from_task(&t));
+        now.push((uuid, fresh));
+    }
+    if !crate::warm::patch(list, now) {
+        return Ok(None);
+    }
+    warm.count_patch();
+    warm.put(generation, kept.clone());
+    Ok(Some(kept))
 }
 
 /// The names `_projects` and `_tags` list: they look at the filter alone (no context), and `_projects` also lists the

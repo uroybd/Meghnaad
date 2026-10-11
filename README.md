@@ -241,7 +241,7 @@ appears in the Console. All four ship empty. Changing one means rebuilding (`npm
 deploy` for the real one). See [Hooks](docs/using.md#hooks) and
 [keeping them as a patch](docs/using.md#keeping-your-hooks-across-updates).
 
-**How much fits.** The Worker is about **770 KB compressed** (gzip). A 1 MB budget leaves about **280 KB**. Measured on
+**How much fits.** The Worker is about **775 KB compressed** (gzip). A 1 MB budget leaves about **275 KB**. Measured on
 a release build:
 
 | Hook code | Added (compressed) |

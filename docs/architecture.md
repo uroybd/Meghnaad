@@ -196,8 +196,14 @@ slower, but the proportions hold):
 | `next`, `list`, `count` | about 8 ms | about 2 ms |
 | the name lists (`_tags` and `_projects`) | 2 × 6.2 ms | one request, 0.5 ms |
 | the reminder poll | 13.3 ms (`_rows`) | 0.9 ms (`_remind`) |
+| a write (`modify` on one task) | about 8 ms | about 1.7 ms |
 
-The first read after a write still rebuilds the list (about 6 ms at 3,000 tasks).
+A write does not rebuild the list either. The storage keeps which tasks each of its last 32 transactions touched
+(`Generation::touched_since`), and a list that is a few changes behind is brought up to date by reading just those tasks
+and moving them into place (`warm::patch`). That is only done when no touched task depends on another, or has another
+depending on it, since a dependency changes whether tasks are blocked or blocking, which is worked out for the whole
+list; then the list is built again, as it is after a long pull from the bucket or an import. The same random run checks
+the patched list against a fresh read after every step, including the steps that add and remove dependencies.
 
 For scale, one personal deployment over its first nine days of a billing cycle used about 1,100 requests a day (1% of the
 free plan's 100,000), about 460 R2 writes and listings and 1,100 R2 reads a day (projecting to roughly 1.4% and 0.35% of
