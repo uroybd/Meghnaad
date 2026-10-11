@@ -516,10 +516,46 @@ a duration (`days(2)`, `hours(3)`, `minutes(30)`, `weeks(1)`, `duration("3d")`),
 result in the Console, or as a toast elsewhere. `refuse("why")`, or any error in the script, stops the command with that
 message; an error in `on_exit` is shown but cannot stop anything.
 
+**The network and secrets.** A script runs on the server, so it can reach other services, to hosts it declares at the top
+and over https only (`http://` is accepted only for `localhost`, for testing):
+
+```lua
+allow_hosts{"acme.atlassian.net"}
+
+function on_add(task)
+  local res, err = http.post("https://acme.atlassian.net/rest/api/3/issue", {
+    headers = { Authorization = "Basic " .. secret("jira") },
+    json = { fields = { summary = task.description } },
+  })
+  if res == nil then
+    warn("Jira unreachable: " .. err)   -- the network failed: carry on without it
+    return
+  end
+  task.jira = res.json.key              -- a UDA named jira
+  say("Created " .. res.json.key)
+end
+```
+
+`http.get`, `post`, `put`, `patch` and `delete` (or `http.request(method, url, opts)`) take `opts` of `headers = { Name =
+"value" }`, `json = <table>` (sent as JSON) or `body = "text"`, and `timeout = seconds` (up to 10). The answer is `{ status, ok,
+headers, body, json }` (`json` when the body is JSON; header names are lowercase), or `nil` and a reason when the request
+could not be made or answered, which is the one failure a script is expected to handle. A request to a host the script did
+not declare, to a plain `http://` address, or a sixth request in one call, is an error that ends the hook with a message.
+`http.urlencode(text)` makes text safe to put in an address. Only the hooks you define are called, and each request waits
+at most the timeout; a slow service slows the command, so give it a short one.
+
+`secret("name")` is a value kept apart from the script, so the script holds no token. Set secrets in **Settings → Hooks →
+Secrets**: a secret is sealed in your bucket with the same key as your tasks, can be replaced but never shown again, and is
+hidden from anything a hook prints, fails with or returns (it is replaced by `***`). Or set a Worker secret called
+`HOOK_SECRET_<NAME>` (`wrangler secret put HOOK_SECRET_JIRA`, the dashboard, or your deploy workflow); that is read the same
+way, wins over one kept in the app, and never touches the bucket. Each call is logged as `hook http METHOD host -> status`
+(never the path, which may hold a token). A script that needs more than five requests, or a secret that is missing, fails
+the hook with a message that says so.
+
 The editor highlights Lua and marks a mistake with its line as you type, using the same Lua that will run the script. A
 script that does not load cannot be saved, so a saved script always runs; the one before it is kept. The language is
-Lua 5.4 with `string`, `table` and `math` only: no files, no network, no clock but the command's, and a script that
-runs too long (a few million steps) or takes too much memory is stopped with a message.
+Lua 5.4 with `string`, `table` and `math` only: no files, no clock but the command's, and a script that runs too long (a
+few million steps) or takes too much memory is stopped with a message.
 
 Notes: `hooks=off` (or `rc.hooks:off` for one command, or `config hooks off`) turns them all off. `undo` doesn't run hooks,
 as in Taskwarrior. The housekeeping before a command does, as there: `on_add` for each recurring instance it generates, and
@@ -529,7 +565,8 @@ leave the instances made before the refusal. A command that asks a question firs
 
 Each hook that runs is a request to the server, so only the hooks your script defines are called, and a command with
 none of them is as fast as before. If the server can't be reached the hook is skipped with a warning that says so, and
-the command carries on (your own `refuse` or error still stops it).
+the command carries on (your own `refuse` or error still stops it). The time a hook spends waiting on the network is not
+CPU time, but it is time your command waits.
 
 ## Time tracking and reminders
 

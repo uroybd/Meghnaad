@@ -53,7 +53,7 @@ run `npm run format` after editing any code, not just at the end.
   credential-like names and never echo their values, and `PUT /api/config/engine` refuses them too; keep tests that
   prove it passing, and add one for any new path that handles settings.
 - **Mind the sizes.** Both are compressed WebAssembly. The engine is downloaded by every visitor (about 595 KB; measure
-  with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c` after `npm run build:engine`). The Worker (about 620 KB with the Lua;
+  with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c` after `npm run build:engine`). The Worker (about 660 KB with the Lua and its network;
   `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`) has Cloudflare's 1 MB limit. Every feature spends some: measure a release build before and after, and prefer reusing what
   is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config` line editing) over a
   new instantiation. `twiggy` on a build made in a scratch directory shows where bytes go. The builds drop the debug
@@ -63,7 +63,9 @@ run `npm run format` after editing any code, not just at the end.
   calls hooks through the async `HookHost`; `RemoteHooks` (`crates/browser`) is the one that asks the Worker. A hook is a
   task in and a task out as JSON, so change `task_to_json` / `task_from_json` and `lua/prelude.lua` together, and keep the
   tests in `crates/tc-core/tests/lua_hooks.rs` passing (run them with `cargo test -p tc-core --features lua`). The Lua
-  must stay a sandbox: nothing in the prelude or the host functions may reach a file, the network or a real clock.
+  must stay a sandbox: nothing in the prelude or the host functions may reach a file, or a real clock. The network and secrets
+  exist only through the `Net` a host passes in (the Worker's `hooknet.rs`); the runner, not the host, enforces the
+  allowlist, https, the request limits and the redaction of a secret's value, and the tests for that are `tests/lua_net.rs`.
 
 ## Running it
 

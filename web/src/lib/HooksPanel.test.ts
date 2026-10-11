@@ -6,6 +6,9 @@ const api = vi.hoisted(() => ({
   getHooks: vi.fn(),
   checkHooks: vi.fn(),
   putHooks: vi.fn(),
+  getSecretNames: vi.fn(),
+  putSecret: vi.fn(),
+  deleteSecret: vi.fn(),
 }));
 vi.mock('./api', async (original) => ({ ...(await original<typeof import('./api')>()), ...api }));
 
@@ -62,6 +65,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   editors.length = 0;
   for (const f of Object.values(api)) f.mockReset();
+  api.getSecretNames.mockResolvedValue([]);
   vi.spyOn(store, 'notify').mockImplementation(() => {});
 });
 
@@ -71,6 +75,58 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe('secrets', () => {
+  const field = (label: string) => document.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement;
+  const fill = (el: HTMLInputElement, value: string) => {
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  it('lists only the names, keeps a new one without ever showing its value, and can remove one', async () => {
+    api.getSecretNames.mockResolvedValue(['jira']);
+    api.putSecret.mockResolvedValue(undefined);
+    api.deleteSecret.mockResolvedValue(undefined);
+    await open('');
+    await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).toContain('jira'));
+    expect(field('Secret value').type).toBe('password');
+    expect(document.body.textContent).not.toContain('tok-123');
+
+    expect(button('Keep')?.disabled).toBe(true);
+    fill(field('Secret name'), '9bad');
+    fill(field('Secret value'), 'tok-123');
+    await tick();
+    expect(button('Keep')?.disabled).toBe(true);
+    fill(field('Secret name'), 'slack');
+    await tick();
+    api.getSecretNames.mockResolvedValue(['jira', 'slack']);
+    button('Keep')!.click();
+    await vi.waitFor(() => expect(api.putSecret).toHaveBeenCalledWith('slack', 'tok-123'));
+    await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).toContain('slack'));
+    // The value is cleared from the form once it is kept.
+    expect(field('Secret value').value).toBe('');
+    expect(document.body.textContent).not.toContain('tok-123');
+
+    api.getSecretNames.mockResolvedValue(['slack']);
+    (document.querySelector('button[aria-label="Remove jira"]') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(api.deleteSecret).toHaveBeenCalledWith('jira'));
+    await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).not.toContain('jira'));
+  });
+
+  it('offers to replace a secret that is already set, and says why a save failed', async () => {
+    api.getSecretNames.mockResolvedValue(['jira']);
+    const { ApiError } = await import('./api');
+    api.putSecret.mockRejectedValue(new ApiError('there can be at most 64 secrets', 400));
+    await open('');
+    await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).toContain('jira'));
+    fill(field('Secret name'), 'jira');
+    fill(field('Secret value'), 'new');
+    await tick();
+    expect(button('Replace')?.disabled).toBe(false);
+    button('Replace')!.click();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('there can be at most 64 secrets'));
+  });
 });
 
 describe('the Hooks tab', () => {
