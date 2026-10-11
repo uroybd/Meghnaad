@@ -63,6 +63,22 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
     <td align="center"><sub>The console. Taskwarrior's yes/no/all/quit becomes a table of ticks</sub></td>
     <td align="center"><sub>On a phone</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/settings-commands.png" alt="Settings, Commands: words that stand for a command line, each with a Lucide icon" /></td>
+    <td><img src="docs/screenshots/task-commands-menu.png" alt="The menu under the ellipsis on a task lists those commands" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Settings: your own commands, with any Lucide icon</sub></td>
+    <td align="center"><sub>They are on the ⋯ menu of a task, and of the selected tasks</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/settings-tasksh.png" alt="Settings, tasksh: what review needs in the taskrc, and the lines that would be written" /></td>
+    <td><img src="docs/screenshots/settings-urgency.png" alt="Settings, Urgency: every coefficient next to its default" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Settings: the tasksh setup, with the exact lines it writes</sub></td>
+    <td align="center"><sub>Settings: urgency coefficients next to their defaults</sub></td>
+  </tr>
 </table>
 
 ## Documentation
@@ -80,21 +96,29 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
 flowchart TB
   subgraph desktop["Desktop: Taskwarrior 3"]
     direction TB
+    sh["shell aliases<br/>alias fail='task done outcome:fail'"]
+    tsh["tasksh<br/>review"]
     cli["task CLI (C++)"]
     tcd["TaskChampion (Rust)"]
     db[("SQLite replica<br/>~/.task")]
     rc["~/.taskrc"]
+    sh -.-> cli
+    tsh -.-> cli
     cli --> tcd --> db
     rc -.-> cli
   end
 
   subgraph web["Cloudflare: Meghnaad"]
     direction TB
+    cmds["task commands<br/>(settings.json)"]
+    rev["tasksh review<br/>(planned)"]
     spa["Svelte app<br/>(draws results)"]
     access{{"Cloudflare Access<br/>token check"}}
     wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
     tcw["TaskChampion (Rust)"]
     mem[("In-memory replica<br/>per Worker instance")]
+    cmds -.-> spa
+    rev -.-> spa
     spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
   end
 
@@ -102,15 +126,25 @@ flowchart TB
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
   tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
-  wk -. "imported taskrc settings" .-> bucket
+  wk -. "taskrc settings, settings.json" .-> bucket
+
+  sh <-. "counterpart" .-> cmds
+  tsh <-. "counterpart" .-> rev
+
+  classDef ext fill:transparent,stroke:#999,color:#999,stroke-dasharray:4 3
+  class sh,tsh,cmds,rev ext
 ```
 
+- **Dashed grey boxes** are not Taskwarrior: your own words for command lines (shell aliases on the desktop, task commands
+  here) and tasksh's `review` (tasksh there; planned here, with its setup already in Settings). They only ever send ordinary
+  commands.
 - **The bucket** holds TaskChampion's standard cloud layout, encrypted client-side. The Worker speaks the same protocol,
   so it and the CLI are interchangeable replicas.
 - **The Worker** keeps an in-memory replica and syncs before and after every command (an idle sync is one read). After a
   quiet spell it rebuilds from the newest snapshot.
 - **One endpoint**, `POST /api/cli`, takes what you type or click, so Taskwarrior's rules live in one place, `tc-core`.
-  The browser only draws. (`POST /api/import` carries a file's text.)
+  The browser only draws. (`POST /api/import` carries a file's text; settings are read and saved on `/api/config` and
+  `/api/settings`.)
 - **Imported taskrc settings** are stored in the bucket, so they survive restarts and follow you between devices.
   The app's own `settings.json` (task commands, so far) is stored beside them; the Worker keeps its text as it is and
   only the browser reads it.
@@ -158,7 +192,8 @@ then the app shows a setup page and nothing is reachable. Pointing your `task` C
 
 ## Using it
 
-The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown** and **Console**. Anything you can click
+The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown** and **Console**, and **Settings**
+(the taskrc, tasksh, your own commands and urgency). Anything you can click
 you can type:
 
 ```
@@ -253,6 +288,8 @@ retries read-only requests once.
 
 ## Known limitations
 
+- **Icons beyond the bundled ones** are fetched from a CDN when first shown (see Security). Offline, the ones your
+  commands use are remembered by the browser and the rest show a terminal icon.
 - **Single user:** one set of settings and one shared replica per Worker instance.
 - **Old versions** (over 180 days old and covered by a snapshot) are cleaned up as the CLI does, after about one push in
   twenty. A device offline for longer may need a fresh `task sync` set-up.

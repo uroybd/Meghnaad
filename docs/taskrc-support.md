@@ -5,7 +5,8 @@ Which of Taskwarrior's `taskrc` options Meghnaad handles, and which it doesn't.
 The list of options comes from the `taskrc(5)` man page of Taskwarrior **3.5.0**; the status of each one comes from
 reading this repository's code. [Using Meghnaad](using.md#your-taskrc) explains how the taskrc is imported. In short: you paste or choose your
 `~/.taskrc`, only an allowlist of settings is kept, and the result is saved in your bucket (`web/config.json`), not in
-your desktop file.
+your desktop file. The app's own settings (task commands, so far) are not taskrc options: they are in a `settings.json`
+of their own, described in [Using Meghnaad](using.md#commands).
 
 **Scope.** This tracks Taskwarrior **3.5.0 and newer**, and only that. Settings that were removed or deprecated before
 3.5.0 are left out of this list and are not supported, even if an older taskrc still contains them.
@@ -195,7 +196,7 @@ Where the app differs from the desktop: with no `color.*` lines the rows follow 
 
 ## Urgency
 
-All of these can also be edited in the app (**urgency** in the header). See [Urgency](using.md#urgency) for the
+All of these can also be edited in the app (**Settings**, then **Urgency**, in the header). See [Urgency](using.md#urgency) for the
 inheritance rules, which follow Taskwarrior's source.
 
 | Option | Status | Remark |

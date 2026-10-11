@@ -20,21 +20,29 @@ bucket, and the clients agree on its layout. Meghnaad is one more client of that
 flowchart TB
   subgraph desktop["Desktop: Taskwarrior 3"]
     direction TB
+    sh["shell aliases<br/>alias fail='task done outcome:fail'"]
+    tsh["tasksh<br/>review"]
     cli["task CLI (C++)"]
     tcd["TaskChampion (Rust)"]
     db[("SQLite replica<br/>~/.task")]
     rc["~/.taskrc"]
+    sh -.-> cli
+    tsh -.-> cli
     cli --> tcd --> db
     rc -.-> cli
   end
 
   subgraph web["Cloudflare: Meghnaad"]
     direction TB
+    cmds["task commands<br/>(settings.json)"]
+    rev["tasksh review<br/>(planned)"]
     spa["Svelte app<br/>(draws results)"]
     access{{"Cloudflare Access<br/>token check"}}
     wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
     tcw["TaskChampion (Rust)"]
     mem[("In-memory replica<br/>per Worker instance")]
+    cmds -.-> spa
+    rev -.-> spa
     spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
   end
 
@@ -42,8 +50,19 @@ flowchart TB
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
   tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
-  wk -. "imported taskrc settings" .-> bucket
+  wk -. "taskrc settings, settings.json" .-> bucket
+
+  sh <-. "counterpart" .-> cmds
+  tsh <-. "counterpart" .-> rev
+
+  classDef ext fill:transparent,stroke:#999,color:#999,stroke-dasharray:4 3
+  class sh,tsh,cmds,rev ext
 ```
+
+The dashed grey boxes are not Taskwarrior itself. They are what people add around it: shell aliases and `tasksh` on the
+desktop, and their counterparts here, **task commands** (`settings.json`, expanded in the browser) and **tasksh's
+`review`** (planned; the Settings page already sets up the `reviewed` attribute and `_reviewed` report it needs). Both
+only ever send ordinary commands to the one endpoint, so the engine knows nothing about them.
 
 ## The request path
 
@@ -51,7 +70,9 @@ Every action goes through one endpoint, `POST /api/cli`, with `{ "line": "…" }
 `{ "args": […] }` (what a button sends). One endpoint means one place where Taskwarrior semantics live. The one
 exception is `POST /api/import`, which takes the *text of a file* (a command line can't carry one): the browser reads the
 file and sends it as it is, and `tc-core`'s `import` module parses and checks it, so the rules are still only in Rust.
-`?apply=1` writes it; without that it only reports what it would do.
+`?apply=1` writes it; without that it only reports what it would do. The settings are not commands, so they have routes
+of their own: `/api/config/*` for the taskrc and urgency, and `GET`/`PUT /api/settings` for `settings.json` (`config` and
+`show` still edit the taskrc through the one endpoint).
 
 1. **Static files** (the app shell) are served by Cloudflare without running the Worker. Only `/api/*` runs it.
 2. **`auth.rs`** checks the Cloudflare Access token on every `/api/*` request: RS256 signature against your team's
@@ -161,7 +182,7 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 
 - `store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the
   answers to questions in flight, and the toast.
-- **Pages** (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`) are thin. Each
+- **Pages** (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`, `SettingsPage`) are thin. Each
   asks the engine for a result and hands it to a shared component, so the console and the pages draw the same thing.
 - **Settings** is one page, `SettingsPage`, with a tab per panel: `TaskrcPanel` (the taskrc text, themes, import),
   `TaskshPanel`, `CommandsPanel` and `UrgencyPanel`. Each has its own Apply and tells the page when it has edits, and all three stay

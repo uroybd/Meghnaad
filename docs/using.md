@@ -151,9 +151,12 @@ bar under another page, they switch you to it). `show` lists every setting, defa
 changed highlighted and their default beneath; `show weekstart` narrows it to names containing that text. `config
 weekstart monday` sets one (several words become one value, `config name ""` blanks it), and `config weekstart` with no
 value removes it, putting the default back. With `confirmation` on it asks first, as Taskwarrior does. The change is saved
-in your bucket just like an imported taskrc, and is the same list the **taskrc** page shows. Both follow the
+in your bucket just like an imported taskrc, and is the same list the **taskrc** tab shows. Both follow the
 [same rules as an import](#your-taskrc): sync and credential-like names are refused, never echoed or shown, and a name the
 app doesn't read, or a value it can't accept (`weekstart someday`), is refused with the reason instead of being kept.
+
+**Your own commands.** A word you defined under Settings, then Commands (`fail` for `done outcome:fail`) works at this
+prompt too, with or without `task` and after a filter: see [Commands](#commands).
 
 ## Questions Taskwarrior asks
 
@@ -177,6 +180,10 @@ command would actually change are listed. A single task is a plain yes/no. The d
 
 - **Reports.** Pick any report, including your own, and add filters by typing (Tab completes) or from the helpers.
   Filters show as removable chips. A report's own filter and default sort are shown above the table.
+  Reports whose names start with `_` (such as `_reviewed`, which the tasksh tab defines) are Taskwarrior's hidden helpers,
+  so the sidebar and the report box leave them out. When there are any, an eye button beside **Reports** in the sidebar
+  shows them all, and your choice is remembered. A hidden report you opened by name stays in the lists while you are on
+  it, and typing its name at the prompt always works.
 - **Sorting.** Click a column header (again to reverse, a third time to reset, Shift-click to add a tie-breaker). It is
   applied as `rc.report.<name>.sort:…`, so it matches what you would type.
 - **Grouping.** A `/` on a sort key (`project+/`) puts a gap in the table wherever that column's value changes, as in
@@ -254,6 +261,8 @@ stops carrying finished tasks forward.
 its own **Apply**, and applying one does not touch the others. A tab with edits that are not applied yet has a dot, and
 the edits stay while you look at another tab or another page. If the saved settings change from somewhere else (the
 Console's `config`, another tab), a tab with no edits of its own follows them.
+
+![The Settings page, on its taskrc tab: the saved settings as text to edit, with a colour theme picker and import from a file or a link](screenshots/settings-taskrc.png)
 
 ## Your taskrc
 
@@ -341,12 +350,20 @@ one in the bar over selected tasks runs it on all of them (a batch at a time, li
 not there while you have no commands. Names are one word that can't be taken for a filter (no spaces, no `+` `-` `/`, no
 `:` or `=`, not a number).
 
+![The Commands tab: fail, later and urgent, each with a name, what it stands for and an icon](screenshots/settings-commands.png)
+
+![The icon picker, searching for "cancel": the circled cross is among the results](screenshots/icon-picker.png)
+
+![The menu under the ellipsis on a task: fail, later and urgent, each with its icon and what it runs](screenshots/task-commands-menu.png)
+
 The tab shows the `settings.json` it will save. Other keys in the file are kept, and entries it can't use are listed and
 dropped when you apply. The file is at most 64 KB.
 
 ## tasksh
 
-The **tasksh** tab is about what tasksh's `review` works from: a `reviewed` attribute (a date UDA that records when
+![The tasksh tab: the reviewed attribute and the _reviewed report are not defined, the review filter and order, and the six lines Apply would write](screenshots/settings-tasksh.png)
+
+The **tasksh** tab prepares what tasksh's `review` works from. (The `review` command itself is not in the app yet.) It is a `reviewed` attribute (a date UDA that records when
 you last looked at a task) and a `_reviewed` report (one `uuid` column) that lists the tasks due for review. It says
 whether each is defined, defined differently (with what is there now, since applying changes it), or missing, and lists
 the exact `config` lines **Apply** would write, which are the ones tasksh writes the first time it runs. Nothing else
@@ -354,6 +371,8 @@ in the taskrc is touched. You can adjust the report's **filter** (by default nev
 still pending or waiting) and **order**; **Use tasksh's defaults** puts them back.
 
 ## Urgency
+
+![The Urgency tab: the inherit switch, and each coefficient next to its default](screenshots/settings-urgency.png)
 
 A task's urgency is the sum of Taskwarrior's `urgency.*` terms, with its built-in coefficients unless your taskrc
 changes them. Open **Settings**, then its **Urgency** tab, to see every coefficient next to its default, edit it, add your
@@ -520,6 +539,10 @@ can be tapped. You can install it to your home screen from the browser menu.
 - **`undo`** works on the last few commands made while this Worker instance lives; it is forgotten when it is recycled.
 - **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a Worker can't run local programs, so they are functions in
   `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
+- **Task commands and `settings.json` are the app's own.** They are not in your taskrc, so a desktop `task` knows nothing
+  of them; the taskrc's `alias.*` still works there. See [Commands](#commands).
+- **tasksh's `review`** is not in the app yet. The tasksh tab only sets up the `reviewed` attribute and the `_reviewed`
+  report, with the lines tasksh itself adds to a desktop taskrc the first time it runs, so you can copy them there.
 - **`edit` and `import-v2`** are not in the app (the detail view edits a task; Taskwarrior 2's data files can't be read
   in a browser). `purge` is, with one difference: it removes a task from your current tasks, but the earlier versions in
   your bucket still hold what it used to say until they are cleaned up, which the app does as the CLI does, after
