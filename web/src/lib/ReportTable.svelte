@@ -65,6 +65,21 @@
   const grouped = $derived(groupColumn(keys));
   let pendingDelete = $state<string | null>(null);
 
+  // A table wider than the window scrolls sideways; its Actions column then stays at the right edge, so the buttons
+  // (and the ⋯ menu) are never out of reach. Only then: a table that fits is laid out as it always was.
+  let wrap = $state<HTMLElement>();
+  let pinned = $state(false);
+  $effect(() => {
+    const el = wrap;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const check = () => (pinned = el.scrollWidth > el.clientWidth + 1);
+    const watch = new ResizeObserver(check);
+    watch.observe(el);
+    if (el.firstElementChild) watch.observe(el.firstElementChild); // the table: its width follows what is in it
+    check();
+    return () => watch.disconnect();
+  });
+
   const sortable = (name: string) => !!onsort && (SORTABLE.has(baseColumn(name)) || baseColumn(name) in udas);
 
   function act(row: Row, ...rest: string[]) {
@@ -148,7 +163,7 @@
       {/if}
     </div>
   {/if}
-  <div class="wrap">
+  <div class="wrap" class:pinned bind:this={wrap}>
     <table>
       <thead>
         <tr>
@@ -483,6 +498,49 @@
   tr.picked,
   tr.picked:hover {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  /*
+   * The pinned Actions column covers what scrolls under it, so it paints the row's own colour over the page's: each
+   * state of a row says what tint it has (--act-tint), in the order the row's own backgrounds win.
+   */
+  @media (min-width: 761px) {
+    .pinned th.actions,
+    .pinned td.actions {
+      position: sticky;
+      right: 0;
+    }
+    .pinned th.actions {
+      z-index: 2;
+      background: var(--bg);
+    }
+    .pinned tbody tr td.actions {
+      z-index: 1;
+      padding-left: 10px;
+      background-color: var(--bg);
+      background-image: linear-gradient(var(--act-tint, transparent), var(--act-tint, transparent));
+      box-shadow: -8px 0 8px -8px rgb(0 0 0 / 0.2);
+    }
+    /* Every rule has the same weight, then the :hover form, so the later one wins: the order the row's cells win in. */
+    .pinned tbody tr:hover,
+    .pinned tbody tr.selected {
+      --act-tint: var(--panel-2);
+    }
+    .pinned tbody tr.picked,
+    .pinned tbody tr.picked:hover {
+      --act-tint: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+    .pinned tbody tr.completed,
+    .pinned tbody tr.completed:hover {
+      --act-tint: color-mix(in srgb, var(--ok) 9%, transparent);
+    }
+    .pinned tbody tr.deleted,
+    .pinned tbody tr.deleted:hover {
+      --act-tint: color-mix(in srgb, var(--err) 9%, transparent);
+    }
+    .pinned tbody tr.ruled,
+    .pinned tbody tr.ruled:hover {
+      --act-tint: var(--row-bg, transparent);
+    }
   }
   th.sel,
   td.sel {
