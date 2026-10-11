@@ -364,9 +364,10 @@ dropped when you apply. The file is at most 64 KB.
 ![The tasksh tab: the reviewed attribute and the _reviewed report are not defined, the review filter and order, and the six lines Apply would write](screenshots/settings-tasksh.png)
 
 **Review** is tasksh's `review`: it walks the tasks you have not looked at lately, one at a time, and you mark each as
-reviewed, skip it, edit it, change it, finish it or delete it. Start it with **Review** above the Tasks table (a card with
-buttons) or by typing `review` in the Console (tasksh's own way, typing a letter). `review 10` stops after ten, and
-`rev` is enough, as in tasksh.
+reviewed, skip it, edit it, change it, finish it or delete it. Start it with **Review** in the top bar (a card with
+buttons) or by typing `review` in the Console. `review 10` stops after ten (that, a limited review, is done from the
+Console), and `rev` is enough, as in tasksh. In tasksh the menu is keybindings, not a shell, and here too: a key is the
+answer, with no Enter after it, and the same choices are buttons.
 
 It works from two things in the taskrc, which the **tasksh** tab prepares: a `reviewed` attribute (a date UDA that
 records when you last looked at a task) and a `_reviewed` report (one `uuid` column) that lists the tasks due for review.
@@ -384,21 +385,26 @@ Each task is shown with `[3 of 12]` and everything `info` shows, then the menu:
 
 | Key | |
 | --- | --- |
-| Enter or `r` | Mark it reviewed (`modify reviewed:now`) |
+| Enter | Mark it reviewed (`modify reviewed:now`) |
 | `s` | Skip it: on to the next, and it is not counted as reviewed |
 | `e` | Edit it in the app's editor; closing the editor marks it reviewed and shows it again |
-| `m` | Type what to change (`+tag -tag /teh/the/ project:X`); the same task is shown again. Nothing typed changes nothing |
+| `m` | Type what to change (`+tag -tag /teh/the/ project:X`), then Enter; Escape cancels. The same task is shown again |
 | `c` / `d` | Complete or delete it; both count as reviewed |
 | `q` | Stop. What is done stays done, and you can start again where the list left off |
 
-Anything else says `Command 'x' is not recognized.` At the end: `End of review. 3 out of 12 tasks reviewed.` In the Console
-the prompt reads `review>` and shows the menu while it is asking, and Escape quits; in the card the **Reviewed** button has
-the focus (so Enter marks it, as in tasksh) and the same letters work as keys.
+At the end: `End of review. 3 out of 12 tasks reviewed.` In the Console the prompt is off while the review asks (it reads
+`review>`), a bar of buttons stands over it, and Escape quits; the one thing you type is the change after `m`. **Open as
+card** in that bar carries on in the card from the same place. In the card the **Reviewed** button has the focus, so Enter
+marks it, as in tasksh, and the same letters work as keys.
+
+Questions Taskwarrior asks in the middle of a step are asked here too, with Yes and No (or `y` and `n`): for a recurring
+task, "This is a recurring task. Do you want to modify all pending recurrences of this same task?" Yes marks the whole
+series, No only this one. (`rc.confirmation:no` does not silence that question, which `recurrence.confirmation` governs, so
+tasksh shows it as well.)
 
 Every step is an ordinary command (`task <uuid> modify reviewed:now`, `done`, `delete`) sent with
 `rc.confirmation:no`, so hooks run, `undo` works, and the Tasks table follows. Review steps are not added to the command
-history. Taskwarrior questions a review can't answer (a recurring series) are shown, and that task is left for the Tasks
-page.
+history.
 
 ## Urgency
 

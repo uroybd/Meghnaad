@@ -201,9 +201,12 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 - **Review** (tasksh's `review`) is the browser's too, and only a client of the one endpoint. `review.svelte.ts` is the
   session: it asks for the `_reviewed` report (the uuids), shows each task with `info`, and carries out the menu with
   ordinary commands (`modify reviewed:now`, `done`, `delete`, with `rc.confirmation:no`), so undo, hooks and the settings
-  work as for any other command. Two surfaces drive it: `ConsoleInput` (tasksh's own way: it takes the typed letters while
-  `review.captures`, and `store.addEntry` prints the banner, the `info` and the messages into the scrollback) and
-  `ReviewCard` (buttons and the same keys, opened from the Tasks page). `tasksh.ts` has what is pure: reading `review N`,
+  work as for any other command. A question Taskwarrior asks mid-step (the recurring series) comes back as a `confirm`
+  result and is put to the person (`asking`), then the same command is sent again with the answer. Two surfaces drive
+  it, with one `ReviewBar` of buttons between them: `ConsoleInput` (tasksh's menu is keybindings, so while
+  `review.captures` a key is the answer, the prompt is off, and only what to change is typed; `store.addEntry` prints the
+  banner, the `info` and the messages into the scrollback) and `ReviewCard` (buttons and the same keys, opened from the
+  top bar or by **Open as card**, which moves a console review there). `tasksh.ts` has what is pure: reading `review N`,
   the menu keys, tasksh's wording and the setup's questions (the setup is the tasksh tab's `config` lines, asked one part
   at a time). The editor the `e` choice opens reports its closing through `App.svelte` (`review.editClosed`).
 - **Task commands** are the browser's. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name,

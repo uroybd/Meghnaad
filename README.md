@@ -37,7 +37,8 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
 - **Your `taskrc`, safely.** Paste it, upload it or import it from a link (your dotfiles repository). UDAs, reports,
   contexts and settings are kept; sync settings and credentials are blocked ([what is read](docs/taskrc-support.md)).
 - **tasksh's `review`.** Walk the tasks you have not looked at lately and mark each reviewed, skip, edit, change, finish or
-  delete it, from the Console (`review`) or a card. It sets up the `reviewed` attribute and `_reviewed` report itself.
+  delete it, from the top bar's Review button (a card) or the Console (`review`), with keys as in tasksh. It sets up the
+  `reviewed` attribute and `_reviewed` report itself.
 - **Your own commands.** A word for a whole command line, such as `fail` for `done outcome:fail`, with an icon from
   Lucide. It works typed (`3 fail`, `project:Home fail`) and from a **⋯** menu on a task and on the selected tasks. Kept in
   the app's own `settings.json`.
@@ -99,7 +100,7 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
     <td><img src="docs/screenshots/review-card.png" alt="The review card: the task, and Reviewed, Skip, Edit, Modify, Complete, Delete and Quit" /></td>
   </tr>
   <tr>
-    <td align="center"><sub>tasksh's review in the console: type a letter, as in tasksh</sub></td>
+    <td align="center"><sub>tasksh's review in the console: press a key, as in tasksh</sub></td>
     <td align="center"><sub>The same review as a card, with the same keys</sub></td>
   </tr>
 </table>
