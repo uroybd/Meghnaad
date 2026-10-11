@@ -475,6 +475,41 @@ function warn(...) host.warn(text_of(...)) end
 function refuse(message) error(tostring(message), 0) end
 
 ------------------------------------------------------------------------------------------------------------------
+-- The network and secrets, where the host has them. Declare the hosts a script calls at the top of it:
+--   allow_hosts{"acme.atlassian.net"}
+-- then `http.get(url, opts)`, `http.post(url, opts)` (also `put`, `patch`, `delete`, and `http.request(method, ...)`).
+-- `opts`: `headers = { Name = "value" }`, `json = <table>` or `body = "text"`, `timeout = seconds`. The answer is
+-- `{ status, ok, headers, body, json }`, or `nil, reason` if the request could not be made or answered (the network,
+-- a timeout): `local res, err = http.get(url)`. `secret("name")` is a value kept apart from the script.
+------------------------------------------------------------------------------------------------------------------
+
+allow_hosts = host.allow_hosts
+
+http = {}
+
+function http.request(method, url, opts)
+  if type(url) ~= "string" then
+    error("http needs an address as text, not " .. type(url), 2)
+  end
+  return host.http(method, url, opts)
+end
+
+function http.get(url, opts) return http.request("GET", url, opts) end
+function http.post(url, opts) return http.request("POST", url, opts) end
+function http.put(url, opts) return http.request("PUT", url, opts) end
+function http.patch(url, opts) return http.request("PATCH", url, opts) end
+function http.delete(url, opts) return http.request("DELETE", url, opts) end
+
+--- Text made safe to put in an address: `"/search?q=" .. http.urlencode(task.description)`.
+function http.urlencode(text)
+  return (tostring(text):gsub("[^%w%-_%.~]", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
+end
+
+secret = host.secret
+
+------------------------------------------------------------------------------------------------------------------
 -- What the engine calls
 ------------------------------------------------------------------------------------------------------------------
 
