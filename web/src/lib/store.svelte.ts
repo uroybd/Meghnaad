@@ -78,7 +78,7 @@ class Store {
   live = $state<Entry | null>(null);
   view = $state<'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'console' | 'settings'>('tasks');
   /** The tab the Settings page shows. */
-  settingsTab = $state<'taskrc' | 'tasksh' | 'commands' | 'urgency'>('taskrc');
+  settingsTab = $state<'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency'>('taskrc');
   /** The app's own `settings.json`, read (null until it has been). */
   appSettings = $state<ParsedSettings | null>(null);
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
@@ -276,7 +276,7 @@ class Store {
   }
 
   /** Open the Settings page, on one of its tabs. */
-  openSettings(tab: 'taskrc' | 'tasksh' | 'commands' | 'urgency' = this.settingsTab) {
+  openSettings(tab: 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency' = this.settingsTab) {
     this.settingsTab = tab;
     this.view = 'settings';
   }

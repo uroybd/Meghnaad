@@ -53,14 +53,17 @@ run `npm run format` after editing any code, not just at the end.
   credential-like names and never echo their values, and `PUT /api/config/engine` refuses them too; keep tests that
   prove it passing, and add one for any new path that handles settings.
 - **Mind the sizes.** Both are compressed WebAssembly. The engine is downloaded by every visitor (about 595 KB; measure
-  with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c` after `npm run build:engine`). The Worker (about 355 KB;
-  `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`) has Cloudflare's 1 MB limit and, since it runs no commands,
-  almost no reason to grow. Every feature spends some: measure a release build before and after, and prefer reusing what
+  with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c` after `npm run build:engine`). The Worker (about 620 KB with the Lua;
+  `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`) has Cloudflare's 1 MB limit. Every feature spends some: measure a release build before and after, and prefer reusing what
   is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config` line editing) over a
   new instantiation. `twiggy` on a build made in a scratch directory shows where bytes go. The builds drop the debug
   names (`KEEP_WASM_NAMES=1` keeps them); measure with them left out, as the deploy does.
-- **Hooks** are user code. Users edit only `crates/tc-core/src/my_hooks.rs`, so keep engine changes in `hooks.rs` and
-  keep `my_hooks.rs` stable, so their patch keeps applying (see `docs/using.md`, "Keeping your hooks across updates").
+- **Hooks** are user code, and not Rust: a Lua script the user edits in Settings, kept in the bucket and run on the Worker
+  (`tc_core::lua_hooks`, behind the `lua` feature the Worker turns on; the browser engine does not carry it). The engine
+  calls hooks through the async `HookHost`; `RemoteHooks` (`crates/browser`) is the one that asks the Worker. A hook is a
+  task in and a task out as JSON, so change `task_to_json` / `task_from_json` and `lua/prelude.lua` together, and keep the
+  tests in `crates/tc-core/tests/lua_hooks.rs` passing (run them with `cargo test -p tc-core --features lua`). The Lua
+  must stay a sandbox: nothing in the prelude or the host functions may reach a file, the network or a real clock.
 
 ## Running it
 

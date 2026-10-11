@@ -149,6 +149,10 @@ export class EngineClient {
     }
   }
 
+  setHooks(defined: string[]): Promise<unknown> {
+    return this.send({ op: 'hooks', defined: JSON.stringify(defined) });
+  }
+
   setConfig(json: string): Promise<unknown> {
     return this.send({ op: 'config', config: json });
   }

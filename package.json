@@ -14,7 +14,7 @@
     "test:auth": "node scripts/auth-check.mjs",
     "check": "npm --prefix web run check",
     "lint": "npm run lint:rust && npm run lint:js",
-    "lint:rust": "cargo fmt --all -- --check && cargo clippy -p tc-core --all-targets -- -D warnings && cargo clippy -p tw-worker --target wasm32-unknown-unknown -- -D warnings && cargo clippy -p tc-browser --target wasm32-unknown-unknown -- -D warnings",
+    "lint:rust": "cargo fmt --all -- --check && cargo clippy -p tc-core --all-targets --features lua -- -D warnings && cargo clippy -p tw-worker --target wasm32-unknown-unknown -- -D warnings && cargo clippy -p tc-browser --target wasm32-unknown-unknown -- -D warnings",
     "lint:js": "prettier --check . && eslint .",
     "format": "cargo fmt --all && prettier --write .",
     "build": "node scripts/build.mjs"

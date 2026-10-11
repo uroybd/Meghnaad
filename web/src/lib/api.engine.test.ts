@@ -9,6 +9,7 @@ const engine = {
   run: vi.fn(),
   import: vi.fn(),
   setConfig: vi.fn(),
+  setHooks: vi.fn(),
   pushSoon: vi.fn(),
 };
 let available = true;
@@ -31,8 +32,15 @@ beforeEach(() => {
   for (const f of Object.values(engine)) f.mockReset();
   engine.start.mockResolvedValue(undefined);
   engine.setConfig.mockResolvedValue(null);
+  engine.setHooks.mockResolvedValue(null);
   fetchMock.mockReset();
-  fetchMock.mockImplementation((url: string) => (url === '/api/config' ? json(config) : json({ ok: true })));
+  fetchMock.mockImplementation((url: string) =>
+    url === '/api/config'
+      ? json(config)
+      : url === '/api/hooks/defined'
+        ? json({ defined: ['on_add'] })
+        : json({ ok: true }),
+  );
   vi.stubGlobal('fetch', fetchMock);
 });
 
@@ -49,7 +57,9 @@ describe('the engine in the page', () => {
     expect(engine.start).toHaveBeenCalledWith(JSON.stringify(config.config));
     const sent = engine.run.mock.calls[0][0];
     expect(sent).toMatchObject({ line: 'count', tz: expect.any(Number), now: expect.any(Number) });
-    expect(urls()).toEqual(['/api/config']);
+    expect(urls()).toEqual(['/api/config', '/api/hooks/defined']);
+    // The engine is told which hooks the saved script defines, so it only asks the server for those.
+    expect(engine.setHooks).toHaveBeenCalledWith(['on_add']);
     expect(engine.pushSoon).not.toHaveBeenCalled();
   });
 

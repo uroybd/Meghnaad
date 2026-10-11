@@ -88,9 +88,23 @@ async function bootEngine(config: ConfigResponse): Promise<void> {
   }
   try {
     await engine.start(JSON.stringify(config.config));
+    await refreshHooks();
   } catch (e) {
     engine.stop();
     throw new ApiError(`The engine could not start in this browser: ${e instanceof Error ? e.message : String(e)}`, 0);
+  }
+}
+
+/**
+ * Tell the engine which hooks the saved script defines (it only asks the Worker to run those). A failure leaves it as it
+ * was: with no hooks known, none run.
+ */
+export async function refreshHooks(): Promise<void> {
+  try {
+    const { defined } = await request<{ defined: string[] }>('/api/hooks/defined');
+    await engine.setHooks(defined);
+  } catch {
+    // The hooks are an extra: the engine works without them.
   }
 }
 
@@ -155,7 +169,7 @@ export async function getConfig(): Promise<ConfigResponse> {
     booted.catch(() => {});
   } else {
     // Read again (a setting changed): the engine takes the new ones, if it is running.
-    void booted.then(() => engine.setConfig(JSON.stringify(config.config))).catch(() => {});
+    await booted.then(() => engine.setConfig(JSON.stringify(config.config))).catch(() => {});
   }
   return config;
 }
@@ -215,6 +229,34 @@ export function putUrgency(urgency: Record<string, number>, inherit: boolean): P
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ urgency, inherit }),
   });
+}
+
+/** The hooks script as saved (the editor asks; nothing else does, since the script may hold secrets). */
+export async function getHooks(): Promise<string> {
+  return (await request<{ source: string }>('/api/hooks')).source;
+}
+
+/** What is wrong with a script, and where: `line` is a line of the script, when Lua says. */
+export type HookCheck = { ok: true; defined: string[] } | { ok: false; line: number | null; message: string };
+
+/** Is this script all right? Saves nothing. */
+export function checkHooks(text: string): Promise<HookCheck> {
+  return request<HookCheck>('/api/hooks/check', {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+    body: text,
+  });
+}
+
+/** Keep the script (an empty one removes the hooks), and tell the engine which hooks it defines. */
+export async function putHooks(text: string): Promise<string[]> {
+  const res = await request<{ ok: true; defined: string[] }>('/api/hooks', {
+    method: 'PUT',
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+    body: text,
+  });
+  await refreshHooks();
+  return res.defined;
 }
 
 export interface SetupStatus {

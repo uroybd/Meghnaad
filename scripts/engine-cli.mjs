@@ -21,7 +21,13 @@ const { values, positionals } = parseArgs({
 });
 const api = values.api.replace(/\/$/, '');
 
-if (stale('node')) buildEngine('node');
+if (stale('node')) {
+  // What the build says goes to stderr: stdout is the answers, one line of JSON each.
+  const say = console.log;
+  console.log = console.error;
+  buildEngine('node');
+  console.log = say;
+}
 const { Engine } = createRequire(import.meta.url)(join(NODE_OUT, 'tc_browser.js'));
 
 async function json(path, init) {

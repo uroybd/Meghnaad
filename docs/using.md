@@ -24,7 +24,7 @@ desktop](#different-from-the-desktop)
 
 Summary, Calendar, Burndown, Projects and Tags have the same filter box as Tasks (Tab completes, filters become chips, the filter
 helpers are below it) and it is focused when you open the page (not on a phone, where that would raise the keyboard).
-The header also has the running **timer**, the **bell** (reminders) and **Settings** (the taskrc, tasksh and urgency, below). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
+The header also has the running **timer**, the **bell** (reminders) and **Settings** (the taskrc, tasksh, commands, hooks and urgency, below). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
 
 **Projects and Tags start as your pending tasks** (a `status:pending` chip in their filter box). That is a filter like any
 other: take the chip away and finished tasks come in too, tinted green (completed) or red (deleted), so a project or tag stays listed after
@@ -257,8 +257,8 @@ stops carrying finished tasks forward.
 
 ## Settings
 
-**Settings** in the header opens one page with a tab each for the **taskrc**, **tasksh**, **Commands** and **Urgency**. Every tab has
-its own **Apply**, and applying one does not touch the others. A tab with edits that are not applied yet has a dot, and
+**Settings** in the header opens one page with a tab each for the **taskrc**, **tasksh**, **Commands**, **Hooks** and **Urgency**. Every tab has
+its own **Apply** (**Save**, on Hooks), and applying one does not touch the others. A tab with edits that are not applied yet has a dot, and
 the edits stay while you look at another tab or another page. If the saved settings change from somewhere else (the
 Console's `config`, another tab), a tab with no edits of its own follows them.
 
@@ -457,101 +457,79 @@ an instance links back to it. The recurring task itself is a template: you can e
 
 ## Hooks
 
-Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A page can't
-run scripts, so here a hook is a **Rust function you write in `crates/tc-core/src/my_hooks.rs`** and deploy with the
-app: it is compiled into the engine, which runs in your browser.
-A hook therefore runs on the device where you typed the command, not on the server. That file ships with four commented-out placeholders, so nothing happens until you fill one in. (The code that
-runs them, `hooks.rs`, is separate on purpose: see [Keeping your hooks across updates](#keeping-your-hooks-across-updates).)
+Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A browser can't
+run `~/.task/hooks/on-add.*`, so here a hook is a function in a **Lua script** that you write in **Settings → Hooks**.
+The script lives in your bucket (as `web/hooks.lua`, beside your settings), not in the app: change it and the next
+command uses it, with no rebuild or deploy. It runs on the server, behind your sign-in, so a script can later hold
+secrets that never reach the page. Your desktop's hooks are separate: they only fire for commands run there, and these
+only for commands run here.
+
+Define any of four functions, each at most once:
 
 | Hook | Runs | It can |
 | --- | --- | --- |
-| `on_launch(h, command)` | before a command does anything | refuse it (`Err("…")`) |
-| `on_add(h, task)` | for each new task, before it is saved | return the task changed, or refuse |
-| `on_modify(h, old, new)` | for each task `modify`, `done`, `delete`, `start`, `stop`, `annotate`… changes, before it is saved | return the new task changed, or refuse |
-| `on_exit(h, changed)` | after the command, with the tasks it changed | only talk |
+| `on_launch(command)` | before a command does anything; `command` is the line | refuse it |
+| `on_add(task)` | for each new task, before it is saved | change the task, or refuse |
+| `on_modify(old, new)` | for each task `modify`, `done`, `delete`, `start`, `stop`, `annotate`… changes, before it is saved | change `new`, or refuse |
+| `on_exit(changed)` | after the command, with the list of tasks it changed | only talk |
 
-A task is a `Facts`, the plain view reports use: `description`, `project`, `priority`, `tags`, the dates (`due`,
-`wait`, …), `depends`, `annotations`, UDAs in `extra`, and the read-only `status`, `blocked`, `blocking`. A hook gets
-the task and hands one back; whatever differs is applied, in the same undo step as the command. A hook may change what
-`modify` can (description, project, priority, tags, dates, `depends`, UDAs); `uuid`, `status`, annotations and the
-recurrence fields are read-only, and changing them is an error. A refused command saves nothing.
+```lua
+-- Anything in project Work (or below it) is also tagged +office.
+function on_add(task)
+  if task:in_project("Work") then
+    task.tags:add("office")
+    say("Tagged +office.")
+  end
+end
 
-`h.say("…")` and `h.warn("…")` print. The lines appear under the command's result in the Console (a toast elsewhere);
-`println!` goes nowhere in WebAssembly.
-
-```rust
-fn on_add(&self, h: &mut Hooked, mut task: Facts) -> Result<Facts, Reject> {
-    if task.project.as_deref() == Some("Work") {
-        task.tags.insert("office".into());
-        h.say("Tagged +office.");
-    }
-    Ok(task)
-}
-
-fn on_modify(&self, _h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, Reject> {
-    if old.status == "pending" && new.status == "completed" && old.blocked {
-        return Err("Finish what it depends on first.".into());
-    }
-    Ok(new)
-}
+-- A task can't be finished while it is blocked, and a due date is never left in the past.
+function on_modify(old, new)
+  if old.status == "pending" and new.status == "completed" and old.blocked then
+    refuse("Finish what it depends on first.")
+  end
+  if new.due ~= nil and new.due < today() then
+    new.due = tomorrow()
+  end
+end
 ```
 
-Locally, `npm run dev` rebuilds the Worker when you save `my_hooks.rs`; for the deployed one, run `npm run deploy`.
+**A task** is a table: `description`, `project`, `priority`, `status`, `uuid`, `blocked`, `blocking`, `recur`,
+`annotations` (a list of `{entry, text}`), the dates, and your UDAs as plain fields (`task.estimate = "big"`; set one to
+`nil` to remove it). Change the task you are given, or return one. What a hook may change is what `modify` may change;
+`uuid`, `status`, annotations and the recurrence fields can be read but not changed, and changing them is an error.
+The change is applied in the same undo step as the command, and a refused command saves nothing. (`old` in `on_modify` is
+for reading; changes to it are ignored.)
 
-Notes: hooks run inside the Worker with no network or files, and `hooks=off` (or `rc.hooks:off`) turns them all off.
-`undo` doesn't run hooks, as in Taskwarrior. The housekeeping before a command does, as there: `on_add` for each
-recurring instance it generates, and `on_modify` for the parent whose mask changed and for a task it expires (a series that
-has ended, a task past its `until`). A hook that refuses one of these stops the command with its message, as in
-Taskwarrior; here nothing is written, where Taskwarrior can leave the instances made before the refusal. If a hook
-keeps refusing, `rc.hooks:off` runs a command without hooks, and `config hooks off` turns them off. A command that asks a
-question first runs `on_launch` once per round. Each hook you add makes the Worker a little bigger; a few hundred lines
-cost a few KB compressed, while a new dependency can cost far more.
+**Tags** (and `task.depends`, a set of task ids as text) are a set: `task.tags:has("work")`, `:add("a", "b")`,
+`:remove("x")`, `:has_any("a", "b")`, `:has_all(…)`, `:list()`, `#task.tags`, and `for t in task.tags:each() do … end`.
 
-### Keeping your hooks across updates
+**Dates** (`entry`, `modified`, `start`, `due`, `wait`, `scheduled`, and `finished` and `expires` for `end` and `until`,
+which are keywords in Lua) are values you can calculate with. They are written and read as Taskwarrior does:
+`date("friday")`, `date("2026-12-25")`, `date("eom")`, `date("now+3d")`, `now()`, `today()`, `tomorrow()`. Add or take away
+a duration (`days(2)`, `hours(3)`, `minutes(30)`, `weeks(1)`, `duration("3d")`), compare (`d1 < d2`), take one from another
+(`d2 - d1` is a duration, with `:in_days()`, `:in_hours()` and so on), and read the parts (`d.year`, `.month`, `.day`,
+`.hour`, `.min`, `.sec`, `.weekday` from 0 for Sunday). `d:format("Y-M-D")` uses Taskwarrior's date-format letters, and
+`d:start_of("week")` takes `day`, `week`, `month` or `year`. They follow your time zone and `dateformat`.
 
-Your hooks are the only part of the code you change, and they live in one file, `my_hooks.rs`, apart from the engine
-that runs them (`hooks.rs`). Keep them as **one commit on a branch of their own**, and an update from upstream becomes a
-rebase that almost never has anything to resolve. This assumes you cloned or forked the project with git; `upstream`
-below is the project's repository.
+**Helpers**: `task:in_project("Work")` (also true for `Work.Mail`), `:is_pending()`, `:is_completed()`, `:is_deleted()`,
+`:is_recurring()`, `:is_waiting()`, `:is_overdue()`. `say("…")` and `warn("…")` (and `print`) show under the command's
+result in the Console, or as a toast elsewhere. `refuse("why")`, or any error in the script, stops the command with that
+message; an error in `on_exit` is shown but cannot stop anything.
 
-```bash
-# Once: keep `main` an untouched copy of upstream, and your hooks on a branch.
-git remote add upstream <the project's URL>        # skip if `origin` already is upstream
-git switch -c my-hooks
-#   …edit crates/tc-core/src/my_hooks.rs…
-git commit -am "My hooks"
-npm run deploy                                      # deploy from this branch
-```
+The editor highlights Lua and marks a mistake with its line as you type, using the same Lua that will run the script. A
+script that does not load cannot be saved, so a saved script always runs; the one before it is kept. The language is
+Lua 5.4 with `string`, `table` and `math` only: no files, no network, no clock but the command's, and a script that
+runs too long (a few million steps) or takes too much memory is stopped with a message.
 
-```bash
-# Each update:
-git fetch upstream
-git switch main && git merge --ff-only upstream/main   # main stays identical to upstream
-git switch my-hooks && git rebase main                 # your hooks, replayed on the new code
-npm run deploy
-```
+Notes: `hooks=off` (or `rc.hooks:off` for one command, or `config hooks off`) turns them all off. `undo` doesn't run hooks,
+as in Taskwarrior. The housekeeping before a command does, as there: `on_add` for each recurring instance it generates, and
+`on_modify` for the parent whose mask changed and for a task it expires (a series that has ended, a task past its
+`until`). A hook that refuses one of these stops the command with its message and writes nothing, where Taskwarrior can
+leave the instances made before the refusal. A command that asks a question first runs `on_launch` once per round.
 
-Because `main` is exactly upstream, `git diff main my-hooks` is always precisely your hooks, and a rebase only stops if
-upstream changed the *same lines* of `my_hooks.rs` (say, it reworded a placeholder or changed a hook's signature). Then
-git marks the file; fix it by hand, `git add crates/tc-core/src/my_hooks.rs`, `git rebase --continue`. Run
-`git config rerere.enabled true` once and git remembers how you resolved it. If upstream changes what a hook receives, the
-build fails in `my_hooks.rs` and the compiler says what to adjust.
-
-**As a patch file**, for keeping your hooks outside the clone, or moving them to a fresh checkout or another machine:
-
-```bash
-# Save: your commit as a patch (keeps its message), or just the file's changes.
-git format-patch main..my-hooks -o ~/my-hooks-patches
-git diff main my-hooks -- crates/tc-core/src/my_hooks.rs > ~/my-hooks.patch
-
-# Restore, on a clean, up-to-date checkout of upstream:
-git am -3 ~/my-hooks-patches/*.patch               # as a commit; -3 lets git merge if the file has moved on
-git apply --3way ~/my-hooks.patch                  # or as an uncommitted change (it is staged for you)
-```
-
-Either way a conflict is shown as ordinary `<<<<<<<` markers in `my_hooks.rs`. Keep the patch in your own repository or
-dotfiles next to your `.deploy.vars`; it is a few dozen lines, easy to read in review, and it is the whole of your
-customisation.
+Each hook that runs is a request to the server, so only the hooks your script defines are called, and a command with
+none of them is as fast as before. If the server can't be reached the hook is skipped with a warning that says so, and
+the command carries on (your own `refuse` or error still stops it).
 
 ## Time tracking and reminders
 
@@ -574,8 +552,8 @@ can be tapped. You can install it to your home screen from the browser menu.
 - **Numeric ids belong to this app** (pending tasks numbered by creation time), so they won't match your laptop's. Use
   uuid prefixes where it matters.
 - **`undo`** works on the last few commands made while this tab is open; it is forgotten when the tab is closed or reloaded.
-- **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a browser can't run local programs, so they are functions in
-  `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
+- **Hooks are Lua, not scripts** (`on-add`, `on-modify`, …): a browser can't run local programs, so they are functions in
+  a Lua script that you edit in Settings and that runs on the server. See [Hooks](#hooks).
 - **Task commands and `settings.json` are the app's own.** They are not in your taskrc, so a desktop `task` knows nothing
   of them; the taskrc's `alias.*` still works there. See [Commands](#commands).
 - **tasksh** is only its `review` here. The rest of the shell (`!` and `exec`, `diagnostics`, its own prompt and
