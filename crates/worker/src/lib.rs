@@ -112,8 +112,13 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .post_async("/api/config/taskrc/url", |req, ctx| wrap(import_taskrc_url(req, ctx)))
         .post_async("/api/config/taskrc/restore", |_, ctx| wrap(restore_taskrc(ctx)))
         .put_async("/api/config/urgency", |req, ctx| wrap(put_urgency(req, ctx)))
+        .put_async("/api/config/engine", |req, ctx| wrap(put_engine_config(req, ctx)))
         .get_async("/api/settings", |_, ctx| wrap(get_app_settings(ctx)))
         .put_async("/api/settings", |req, ctx| wrap(put_app_settings(req, ctx)))
+        .get_async("/api/tc/pull", |req, ctx| wrap(tc_pull(req, ctx)))
+        .get_async("/api/tc/snapshot", |_, ctx| wrap(tc_snapshot(ctx)))
+        .post_async("/api/tc/push", |req, ctx| wrap(tc_push(req, ctx)))
+        .post_async("/api/tc/snapshot", |req, ctx| wrap(tc_put_snapshot(req, ctx)))
         .post_async("/api/cli", |req, ctx| wrap(cli(req, ctx)))
         .post_async("/api/import", |req, ctx| wrap(import_tasks(req, ctx)))
         .run(req, env)
@@ -141,6 +146,85 @@ async fn open(env: &Env) -> Result<session::Session, ApiError> {
         return Err(e.into());
     }
     Ok(s)
+}
+
+// The browser keeps the replica and runs the engine; these four are all it needs of the bucket. Versions and snapshots
+// travel in plain form (over HTTPS, behind Access) and are sealed and opened here, so the secret stays in the Worker.
+// See `tc_core::wire` for the shapes.
+
+/// The most a pushed version or snapshot may be: a snapshot of 10,000 tasks is about 2.4 MB.
+const MAX_SYNC_BODY: usize = 16 * 1024 * 1024;
+
+fn query(url: &worker::Url, name: &str) -> Option<String> {
+    url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned())
+}
+
+fn version_id(url: &worker::Url, name: &str) -> Result<uuid::Uuid, ApiError> {
+    query(url, name)
+        .and_then(|v| uuid::Uuid::parse_str(&v).ok())
+        .ok_or_else(|| ApiError::BadRequest(format!("`{name}` is not a version id")))
+}
+
+fn bytes(body: Vec<u8>, type_: &str) -> RouteResult {
+    let mut res = Response::from_bytes(body)?;
+    res.headers_mut().set("content-type", type_)?;
+    Ok(res)
+}
+
+/// `GET /api/tc/pull?since=<version>`: the versions after `since` (the nil id for "from the start"), up to
+/// `PULL_MAX` of them, one after the other. `x-more: 1` says there may be more after the last.
+async fn tc_pull(req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let since = version_id(&req.url()?, "since")?;
+    let mut server = session::server(&ctx.env).await?;
+    let (versions, more) = tc_core::wire::pull(&mut *server, since).await?;
+    let mut res = bytes(tc_core::wire::encode_versions(&versions), "application/octet-stream")?;
+    res.headers_mut().set("x-more", if more { "1" } else { "0" })?;
+    Ok(res)
+}
+
+/// `GET /api/tc/snapshot`: the newest snapshot (its version in `x-version-id`), or 404 if there is none.
+async fn tc_snapshot(ctx: RouteContext<()>) -> RouteResult {
+    let mut server = session::server(&ctx.env).await?;
+    match server.get_snapshot().await? {
+        None => Ok(Response::empty()?.with_status(404)),
+        Some((version, snapshot)) => {
+            let mut res = bytes(snapshot, "application/octet-stream")?;
+            res.headers_mut().set("x-version-id", &version.to_string())?;
+            Ok(res)
+        }
+    }
+}
+
+async fn sync_body(req: &mut Request) -> Result<Vec<u8>, ApiError> {
+    let declared = req
+        .headers()
+        .get("content-length")?
+        .and_then(|l| l.parse::<usize>().ok());
+    if declared.is_some_and(|n| n > MAX_SYNC_BODY) {
+        return Err(ApiError::TooLarge);
+    }
+    let body = req.bytes().await?;
+    if body.len() > MAX_SYNC_BODY {
+        return Err(ApiError::TooLarge);
+    }
+    Ok(body)
+}
+
+/// `POST /api/tc/push?parent=<version>`: add a version (the body) after `parent`. Answers with `Pushed`.
+async fn tc_push(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let parent = version_id(&req.url()?, "parent")?;
+    let segment = sync_body(&mut req).await?;
+    let mut server = session::server(&ctx.env).await?;
+    json(&tc_core::wire::push(&mut *server, parent, segment).await?)
+}
+
+/// `POST /api/tc/snapshot?version=<version>`: keep a snapshot (the body) of the tasks as of that version.
+async fn tc_put_snapshot(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let version = version_id(&req.url()?, "version")?;
+    let snapshot = sync_body(&mut req).await?;
+    let mut server = session::server(&ctx.env).await?;
+    server.add_snapshot(version, snapshot).await?;
+    json(&serde_json::json!({ "ok": true }))
 }
 
 async fn health(ctx: RouteContext<()>) -> RouteResult {
@@ -479,6 +563,28 @@ async fn put_urgency(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     }
     let mut cfg = (*current).clone();
     taskrc::set_urgency(&mut cfg, body.urgency, body.inherit).map_err(ApiError::BadRequest)?;
+    session::save_config(&ctx.env, cfg).await?;
+    json(&serde_json::json!({ "ok": true }))
+}
+
+/// What a `config` command changed, as the engine in the page worked it out: the settings, saved as the taskrc dialog
+/// saves them (the previous version is kept for a restore). Nothing sync- or credential-like is ever stored.
+async fn put_engine_config(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    // Read the way the saved settings are (one deserialiser compiled in, not two: it is about 6 KB compressed).
+    let cfg =
+        session::decode(&req.bytes().await?).map_err(|e| ApiError::BadRequest(format!("invalid request body: {e}")))?;
+    if cfg.settings.keys().any(|name| taskrc::is_sensitive(name)) {
+        return Err(ApiError::BadRequest(
+            "sync settings and anything that looks like a credential can't be saved here".into(),
+        ));
+    }
+    // Reading them sets whether they are readable at all: saving over unreadable ones would bury them.
+    session::config(&ctx.env).await?;
+    if session::config_error().is_some() {
+        return Err(ApiError::BadRequest(
+            "the saved settings can't be read; fix them in the taskrc dialog first".into(),
+        ));
+    }
     session::save_config(&ctx.env, cfg).await?;
     json(&serde_json::json!({ "ok": true }))
 }
