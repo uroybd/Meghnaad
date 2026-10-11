@@ -4,9 +4,6 @@ mod store;
 
 use serde::Deserialize;
 use tc_core::appsettings;
-use tc_core::cli::{execute, CliResult, Options};
-use tc_core::dates::Clock;
-use tc_core::filter::split_words;
 use tc_core::taskrc::{self, MAX_TASKRC_BYTES};
 use worker::{event, Context, Env, Request, Response, RouteContext, Router};
 
@@ -119,8 +116,6 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .get_async("/api/tc/snapshot", |_, ctx| wrap(tc_snapshot(ctx)))
         .post_async("/api/tc/push", |req, ctx| wrap(tc_push(req, ctx)))
         .post_async("/api/tc/snapshot", |req, ctx| wrap(tc_put_snapshot(req, ctx)))
-        .post_async("/api/cli", |req, ctx| wrap(cli(req, ctx)))
-        .post_async("/api/import", |req, ctx| wrap(import_tasks(req, ctx)))
         .run(req, env)
         .await?;
     // Task data must never be cached by a browser or an intermediary, or sniffed as another type.
@@ -137,23 +132,19 @@ async fn wrap(fut: impl std::future::Future<Output = RouteResult>) -> worker::Re
     }
 }
 
-async fn open(env: &Env) -> Result<session::Session, ApiError> {
-    let mut s = session::open(env).await?;
-    if let Err(e) = s.sync().await {
-        // A wrong secret or replaced bucket poisons the cached replica; start clean next time.
-        drop(s);
-        session::reset();
-        return Err(e.into());
-    }
-    Ok(s)
-}
-
 // The browser keeps the replica and runs the engine; these four are all it needs of the bucket. Versions and snapshots
 // travel in plain form (over HTTPS, behind Access) and are sealed and opened here, so the secret stays in the Worker.
 // See `tc_core::wire` for the shapes.
 
 /// The most a pushed version or snapshot may be: a snapshot of 10,000 tasks is about 2.4 MB.
 const MAX_SYNC_BODY: usize = 16 * 1024 * 1024;
+
+/// A call to the bucket failed. A wrong secret or a replaced bucket makes the key this instance derived useless, so it is
+/// dropped and derived again by the next request.
+fn bucket_failed(e: taskchampion::Error) -> ApiError {
+    session::reset();
+    e.into()
+}
 
 fn query(url: &worker::Url, name: &str) -> Option<String> {
     url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned())
@@ -176,7 +167,7 @@ fn bytes(body: Vec<u8>, type_: &str) -> RouteResult {
 async fn tc_pull(req: Request, ctx: RouteContext<()>) -> RouteResult {
     let since = version_id(&req.url()?, "since")?;
     let mut server = session::server(&ctx.env).await?;
-    let (versions, more) = tc_core::wire::pull(&mut *server, since).await?;
+    let (versions, more) = tc_core::wire::pull(&mut *server, since).await.map_err(bucket_failed)?;
     let mut res = bytes(tc_core::wire::encode_versions(&versions), "application/octet-stream")?;
     res.headers_mut().set("x-more", if more { "1" } else { "0" })?;
     Ok(res)
@@ -185,7 +176,7 @@ async fn tc_pull(req: Request, ctx: RouteContext<()>) -> RouteResult {
 /// `GET /api/tc/snapshot`: the newest snapshot (its version in `x-version-id`), or 404 if there is none.
 async fn tc_snapshot(ctx: RouteContext<()>) -> RouteResult {
     let mut server = session::server(&ctx.env).await?;
-    match server.get_snapshot().await? {
+    match server.get_snapshot().await.map_err(bucket_failed)? {
         None => Ok(Response::empty()?.with_status(404)),
         Some((version, snapshot)) => {
             let mut res = bytes(snapshot, "application/octet-stream")?;
@@ -215,7 +206,11 @@ async fn tc_push(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let parent = version_id(&req.url()?, "parent")?;
     let segment = sync_body(&mut req).await?;
     let mut server = session::server(&ctx.env).await?;
-    json(&tc_core::wire::push(&mut *server, parent, segment).await?)
+    json(
+        &tc_core::wire::push(&mut *server, parent, segment)
+            .await
+            .map_err(bucket_failed)?,
+    )
 }
 
 /// `POST /api/tc/snapshot?version=<version>`: keep a snapshot (the body) of the tasks as of that version.
@@ -223,171 +218,15 @@ async fn tc_put_snapshot(mut req: Request, ctx: RouteContext<()>) -> RouteResult
     let version = version_id(&req.url()?, "version")?;
     let snapshot = sync_body(&mut req).await?;
     let mut server = session::server(&ctx.env).await?;
-    server.add_snapshot(version, snapshot).await?;
+    server.add_snapshot(version, snapshot).await.map_err(bucket_failed)?;
     json(&serde_json::json!({ "ok": true }))
 }
 
+/// `GET /api/health`: the Worker can reach the bucket and open it with the secret (deriving the key is the part that
+/// can go wrong), nothing more. It holds no tasks.
 async fn health(ctx: RouteContext<()>) -> RouteResult {
-    let mut s = open(&ctx.env).await?;
-    let warm = s.state.warm.clone();
-    let tasks = tc_core::cli::warm_facts(&mut s.state.replica, Some(&warm)).await?.len();
-    json(&serde_json::json!({ "ok": true, "tasks": tasks }))
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CliRequest {
-    /// A command line as typed in the console.
-    line: Option<String>,
-    /// Pre-split arguments from the GUI (no quoting concerns).
-    args: Option<Vec<String>>,
-    /// The browser's UTC offset in seconds east of UTC, so "today" is the user's today.
-    tz: Option<i32>,
-    /// The user answered yes to the plain questions (undo, a command with no filter).
-    #[serde(default)]
-    confirmed: bool,
-    /// The tasks the user approved, when asked which ones to go ahead with.
-    approved: Option<Vec<String>>,
-    /// The follow-up questions the user answered yes to (dependency repair, recurring series).
-    extras: Option<Vec<String>>,
-}
-
-const MAX_LINE: usize = 8 * 1024;
-const MAX_ARGS: usize = 200;
-
-async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
-    let body: CliRequest = req
-        .json()
-        .await
-        .map_err(|e| ApiError::BadRequest(format!("invalid request body: {e}")))?;
-    let typed = body.line.is_some();
-    let args = match (body.line, body.args) {
-        (Some(l), None) => {
-            if l.len() > MAX_LINE {
-                return Err(ApiError::TooLarge);
-            }
-            split_words(&l)
-        }
-        (None, Some(a)) => {
-            if a.len() > MAX_ARGS || a.iter().map(String::len).sum::<usize>() > MAX_LINE {
-                return Err(ApiError::TooLarge);
-            }
-            a
-        }
-        _ => return Err(ApiError::BadRequest("send exactly one of `line` or `args`".into())),
-    };
-    let tz = body.tz.unwrap_or(0).clamp(-14 * 3600, 14 * 3600);
-
-    let mut s = open(&ctx.env).await?;
-    let now = (js_sys::Date::now() / 1000.0) as i64;
-    // The active context's own settings count here too: it may choose its own week start.
-    let in_context = s.config.effective();
-    let clock = Clock {
-        now,
-        tz_offset: tz,
-        week_starts_monday: in_context.week_starts_monday(),
-        ..Clock::utc(0)
-    };
-    let cfg = s.config.clone();
-    let st = &mut *s.state;
-    let done = execute(
-        &mut st.replica,
-        &cfg,
-        clock,
-        &args,
-        Options {
-            confirmed: body.confirmed,
-            approved: body.approved,
-            extras: body.extras,
-            typed,
-            seed: now as u64,
-            // The hooks in tc-core's `my_hooks.rs`.
-            hooks: None,
-            warm: Some(st.warm.clone()),
-        },
-        &mut st.undo,
-    )
-    .await;
-
-    let mut result = done.result;
-    // `config` changed the settings: keep them, with the previous version as a restore point, just
-    // as saving the taskrc dialog does.
-    if let Some(new) = done.config {
-        if let Err(e) = session::save_config(&ctx.env, new).await {
-            worker::console_error!("saving settings failed: {e}");
-            result = CliResult::Error {
-                message: "The settings could not be saved. Nothing was changed.".into(),
-            };
-        }
-    }
-    if done.wrote {
-        // Push immediately: the replica lives in this isolate's memory, which can be recycled.
-        if let Err(e) = s.sync().await {
-            worker::console_error!("sync after write failed: {e}");
-            result = CliResult::Error {
-                message: "The change was applied but couldn't be synced yet; it will be retried on the next request."
-                    .into(),
-            };
-        }
-    }
-    json(&serde_json::json!({
-        "wrote": done.wrote,
-        "result": result,
-        "command": done.command,
-        "feedback": done.feedback,
-    }))
-}
-
-/// The most an import takes: a file of about this size holds a few thousand tasks, and the Worker has to hold
-/// the text, what it parses into and the operations it makes all at once.
-const MAX_IMPORT_BYTES: usize = 3 * 1024 * 1024;
-
-/// `POST /api/import`: the body is a file of tasks as `task export` writes it. Without `?apply=1` it only
-/// says what importing would do; with it the tasks are written (all of them or none). `?tz=` is the browser's
-/// UTC offset in seconds, for a date that gives no zone.
-async fn import_tasks(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
-    let url = req.url()?;
-    let query = |name: &str| url.query_pairs().find(|(k, _)| k == name).map(|(_, v)| v.into_owned());
-    let apply = query("apply").as_deref() == Some("1");
-    let tz = query("tz")
-        .and_then(|v| v.parse::<i32>().ok())
-        .unwrap_or(0)
-        .clamp(-14 * 3600, 14 * 3600);
-    let declared = req
-        .headers()
-        .get("content-length")?
-        .and_then(|l| l.parse::<usize>().ok());
-    if declared.is_some_and(|n| n > MAX_IMPORT_BYTES) {
-        return Err(ApiError::TooLarge);
-    }
-    let text = req.text().await?;
-    if text.len() > MAX_IMPORT_BYTES {
-        return Err(ApiError::TooLarge);
-    }
-
-    let mut s = open(&ctx.env).await?;
-    // `dateformat` and `date.iso` are left at their defaults on purpose: a file's dates are ISO, whatever you type.
-    let clock = Clock {
-        now: (js_sys::Date::now() / 1000.0) as i64,
-        tz_offset: tz,
-        week_starts_monday: s.config.effective().week_starts_monday(),
-        ..Clock::utc(0)
-    };
-    let cfg = s.config.clone();
-    let st = &mut *s.state;
-    let mut out = tc_core::import::import(&mut st.replica, &cfg, clock, &text, apply, &mut st.undo, None)
-        .await
-        .map_err(ApiError::BadRequest)?;
-    if out.applied {
-        // Push at once: the replica lives in this isolate's memory, which can be recycled.
-        if let Err(e) = s.sync().await {
-            worker::console_error!("sync after import failed: {e}");
-            out.warnings.push(
-                "The tasks were imported but couldn't be synced yet; it will be retried on the next request.".into(),
-            );
-        }
-    }
-    json(&out)
+    session::server(&ctx.env).await?;
+    json(&serde_json::json!({ "ok": true }))
 }
 
 async fn get_config(ctx: RouteContext<()>) -> RouteResult {

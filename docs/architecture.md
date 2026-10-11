@@ -19,7 +19,8 @@ bucket, and the clients agree on its layout. Meghnaad is one more client of that
   one Rust library, `tc-core`. The Svelte app draws what the engine returns; it has no logic of its own.
 - It started the other way round: the Worker held the replica and ran every command, so every request spent the free
   plan's 10 ms of CPU. Moving the engine to the page took that cost off the Worker, and made reads and writes
-  instantaneous. The Worker can still run the engine for a browser that cannot (see below).
+  instantaneous. Every current browser has the two things it needs (Web Workers and WebAssembly), so the Worker does not
+  run the engine any more.
 
 ```mermaid
 flowchart TB
@@ -80,7 +81,7 @@ only ever send ordinary commands to the engine, so it knows nothing about them.
 
 **In the page** (`web/src/engine/`, `crates/browser`): the engine, in a dedicated Web Worker so that a big report never
 blocks the page. The Svelte app sends it what you typed or clicked (`{ "line": "…" }` or `{ "args": […] }`, with your
-time zone and the time) and gets back the JSON that `POST /api/cli` used to return. One entry point means one place
+time zone and the time) and gets back the JSON the app reads. One entry point means one place
 where Taskwarrior semantics live. A file to import goes the same way, as its text; `tc-core`'s `import` module parses
 and checks it. The engine answers one message at a time, in the order they arrive.
 
@@ -97,13 +98,15 @@ and checks it. The engine answers one message at a time, in the order they arriv
    `/api/config/*` for the taskrc and urgency, `GET`/`PUT /api/settings` for `settings.json`, and
    `PUT /api/config/engine`, which saves what a `config` command changed (the engine worked it out in the page; the
    Worker refuses anything sync- or credential-like and keeps the previous version for a restore).
-5. **`POST /api/cli` and `POST /api/import`** still exist: they run the same engine on the Worker, with a replica of its
-   own, for a browser that cannot run it (no Web Workers or WebAssembly, `?engine=server`, or an engine that failed to
-   start). Nothing else uses them.
+5. **`GET /api/health`** says whether the Worker can reach the bucket and open it with the secret (it derives the key);
+   it holds no tasks and runs no engine.
+
+There is nothing on the Worker that runs a command: if the page cannot start the engine (it needs Web Workers and
+WebAssembly, and a Content-Security-Policy that allows `'wasm-unsafe-eval'`), it says so, instead of asking the server.
 
 ## `tc-core`: the engine
 
-Pure Rust, no I/O of its own, tested natively. The browser engine, the Worker (as a fallback) and the tests are three hosts for it.
+Pure Rust, no I/O of its own, tested natively. The browser engine, the Node harness (`scripts/engine-cli.mjs`) and the tests are its hosts; the Worker uses its settings, report and protocol code but runs no commands.
 
 | Area | Modules | What they do |
 | --- | --- | --- |
@@ -195,9 +198,10 @@ writes, snapshots, cleanup) happens there, and the page never holds the key.
 
 A Worker request has hard limits, and this app is shaped by them. Cloudflare's numbers (checked at their limits page):
 
-(They bind the Worker, and since the engine moved into the page the Worker does much less: it checks a token, opens or
-seals a few objects and, on a cold instance, derives the key. What follows measures the engine where it used to run, in
-the Worker, which still matters for a browser that falls back to it, and for the cold start, which is the same.)
+(They bind the Worker, and since the engine moved into the page the Worker does very little: it checks a token, opens or
+seals a few objects and, on a cold instance, derives the key. The measurements below are of the engine from when it ran
+in the Worker; they show what the engine costs, now in the browser, where there is no such limit, and what it took to
+keep it under 10 ms.)
 
 | | Workers Free | Workers Paid |
 | --- | --- | --- |
@@ -217,18 +221,18 @@ What this app costs, measured (`crates/tc-core/tests/memory.rs`, and a local `wo
   tasks, a 2 MB file) peaks near 51 MB, and its `undo` step keeps about 8 MB while the instance lives, which is why the
   request is capped. The test fails if a change makes any of these much worse.
 
-**It runs on Workers Free**, as does its author's own deployment, with R2 and Access on their free plans too. The first
-request after an idle spell does the most work (the key, then the snapshot): one on a real deployment used about 550 ms
-of CPU, far past the free plan's 10 ms, and still completed, because Cloudflare tolerates a Worker that only
-*infrequently* runs over and ends requests with error 1102 only when it keeps doing so. So cold starts must stay rare
-and cheap: a very large task list, or many cold starts in a row, can tip it. The app retries a read-only request once,
-because the retry meets a warm instance, and Workers Paid ($5/month) lifts the limit if that ever bothers you. R2 calls
-count toward the 50 subrequests per request, so a cold start that has to replay many versions (the Worker writes
-snapshots to keep that number small) is the other thing to watch.
+**It runs on Workers Free**, as does its author's own deployment, with R2 and Access on their free plans too. With the
+engine in the page, what is left for the Worker is small: a token check, a read or two from R2 and, on the first request
+after an idle spell, deriving the key (about 40 ms of native CPU; one such request on a real deployment, back when the
+Worker also restored the snapshot and ran the command, used about 550 ms and still completed, because Cloudflare
+tolerates a Worker that only *infrequently* runs over and ends requests with error 1102 only when it keeps doing so).
+The app retries a read-only request once, because the retry meets a warm instance, and Workers Paid ($5/month) lifts the
+limit if that ever bothers you. R2 calls count toward the 50 subrequests per request, which is why a pull carries at most
+24 versions (see [Sync](#sync)).
 
 **What is done about CPU.** Turning every stored task into the engine's form (`Facts`) took about 2 µs a task, and every
-command began with it, which at 3,000 tasks was most of a read. The Worker now keeps that list between
-requests (`tc_core::warm`, next to the replica) and rebuilds it only when the storage's change counter
+command began with it, which at 3,000 tasks was most of a read. The engine now keeps that list between
+commands (`tc_core::warm`, next to the replica) and rebuilds it only when the storage's change counter
 (`LiveStorage::generation`, bumped when a transaction that changed anything commits or is taken back) has moved. Most
 requests change nothing, so they skip it. `tests/warm.rs` checks, after every step of a long random run of commands,
 direct writes and pulls from the bucket, that the cached list equals a fresh read. The page's own requests were trimmed

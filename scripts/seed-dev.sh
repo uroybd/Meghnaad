@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Fill the LOCAL dev bucket with demo data so the UI has something to show.
-# Needs `npm run dev` (wrangler) running with DEV_AUTH_BYPASS. Safe: only talks to localhost.
+# Needs `npm run dev` (or the Worker alone) running with DEV_AUTH_BYPASS. Safe: only talks to localhost.
+# Commands run in the engine on this machine (scripts/engine-cli.mjs), as they do in the browser.
 set -euo pipefail
 API=${API:-http://127.0.0.1:8787}
-cli()  { curl -sf -X POST "$API/api/cli" -H 'content-type: application/json' -d "$1"; }
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cli()  { node "$ROOT/scripts/engine-cli.mjs" --api "$API" "$1"; }
 line() { cli "$(python3 -c 'import json,sys; print(json.dumps({"line": sys.argv[1]}))' "$1")"; }
 args() { cli "$(python3 -c 'import json,sys; print(json.dumps({"args": sys.argv[1:]}))' "$@")"; }
 uuid_of() { python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["tasks"][0]["uuid"])'; }
 
 curl -sf "$API/api/health" >/dev/null || { echo "API not reachable at $API" >&2; exit 1; }
-n=$(curl -sf "$API/api/health" | python3 -c 'import sys,json; print(json.load(sys.stdin)["tasks"])')
+n=$(cli '{"line":"count"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["lines"][0])')
 [ "$n" = 0 ] || { echo "bucket already has $n tasks; not seeding (reset: rm -rf .wrangler/state/v3/r2)" >&2; exit 1; }
 
 today=$(date +%F)

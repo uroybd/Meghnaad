@@ -49,7 +49,9 @@ beforeEach(() => {
   sent = [];
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockImplementation(async (_url: string, init: { body: string }) => {
+    vi.fn().mockImplementation(async (url: string, init: { body: string }) => {
+      // The settings are read once, before the first command (the engine starts with them).
+      if (url !== '/api/cli') return new Response(JSON.stringify({ config: {} }));
       const body = JSON.parse(init.body);
       sent.push(body);
       const wrote = ['done', 'delete', 'modify'].some((w) => body.args?.includes(w));

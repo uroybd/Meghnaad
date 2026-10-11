@@ -5,8 +5,8 @@
 //! syncs with the bucket through the Worker's `/api/tc/*` routes, where the secret stays. What the page keeps between
 //! visits is [`Engine::save`]'s bytes.
 //!
-//! `run` and `import` answer with the same JSON that `POST /api/cli` and `POST /api/import` answered with, so the page
-//! reads them as it always did.
+//! `run` and `import` answer in JSON: the result of the command (or `{ error }` if the request was not one), as the page
+//! reads it.
 
 mod server;
 
@@ -22,7 +22,7 @@ use tc_core::wire::RemoteServer;
 use tc_core::{save_replica, LiveStorage, Saver};
 use wasm_bindgen::prelude::*;
 
-/// What the page sends to run a command: the body `POST /api/cli` took, with the time.
+/// What the page sends to run a command, with the time.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Request {
@@ -118,7 +118,7 @@ impl Engine {
             .map_err(|e| js_error(root(&e)))
     }
 
-    /// One command, as `POST /api/cli` ran it: the answer as JSON text (`{ error }` if the request is not one).
+    /// One command: the answer as JSON text (`{ error }` if the request is not one).
     pub async fn run(&mut self, request: &str) -> String {
         let req: Request = match serde_json::from_str(request) {
             Ok(r) => r,
@@ -169,8 +169,8 @@ impl Engine {
         answer.to_string()
     }
 
-    /// A file of tasks as `task export` writes it, imported (or, without `apply`, only reported on): the answer
-    /// `POST /api/import` gave.
+    /// A file of tasks as `task export` writes it, imported (or, without `apply`, only reported on): the answer as
+    /// JSON text.
     pub async fn import(&mut self, text: &str, apply: bool, tz: i32, now: f64) -> String {
         // `dateformat` and `date.iso` are left at their defaults on purpose: a file's dates are ISO, whatever you type.
         let clock = Clock {

@@ -1,5 +1,5 @@
 // tasksh's `review`, in the browser: walk the tasks the `_reviewed` report lists, show each, and mark it reviewed,
-// skip it, edit it, change it, finish it or delete it. It is only a client of `POST /api/cli`: every step is an
+// skip it, edit it, change it, finish it or delete it. It is only a client of the engine: every step is an
 // ordinary command (`modify reviewed:now`, `done`, `delete`), so undo, hooks and the settings work as they do for
 // anything else. tasksh's menu is keybindings, not a shell: a key is the answer, with no Enter after it. Two places
 // show it: the console (the prompt is off while it asks, and a bar of buttons stands over it) and a card.

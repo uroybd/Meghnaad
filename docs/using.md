@@ -459,7 +459,7 @@ an instance links back to it. The recurring task itself is a template: you can e
 
 Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A page can't
 run scripts, so here a hook is a **Rust function you write in `crates/tc-core/src/my_hooks.rs`** and deploy with the
-app: it is compiled into the engine, which runs in your browser (and on the Worker for a browser that cannot run it).
+app: it is compiled into the engine, which runs in your browser.
 A hook therefore runs on the device where you typed the command, not on the server. That file ships with four commented-out placeholders, so nothing happens until you fill one in. (The code that
 runs them, `hooks.rs`, is separate on purpose: see [Keeping your hooks across updates](#keeping-your-hooks-across-updates).)
 
@@ -596,6 +596,5 @@ can be tapped. You can install it to your home screen from the browser menu.
   server, so you cannot open it with no connection. **Start over from the server**, in the same banner, throws this
   browser's copy away (including changes that never went up) and loads the tasks again, for when the copy and the
   bucket no longer agree (a replaced bucket, say).
-- **Whose engine.** If your browser cannot run the engine (no Web Workers or WebAssembly), or you add `?engine=server` to
-  the address, the Worker runs it instead, as it did before; the answers are the same, but each command is a request
-  and the Worker's free-plan CPU limit applies.
+- **What it needs.** Web Workers and WebAssembly, which every current browser has. If the page cannot start the engine
+  it says why and runs no command: nothing on the server can run one instead.

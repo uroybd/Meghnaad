@@ -13,9 +13,9 @@ declare module 'tc-engine' {
     changes(): number;
     /** Pull and push with the bucket behind the Worker at `base` ('' for this page's own). */
     sync(base: string): Promise<void>;
-    /** `POST /api/cli`'s answer (JSON text), for a request as JSON text. */
+    /** One command: the JSON text the page reads (`{ error }` if the request is not one), for a request as JSON text. */
     run(request: string): Promise<string>;
-    /** `POST /api/import`'s answer (JSON text). */
+    /** An import (or, without `apply`, what it would do): JSON text. */
     import(text: string, apply: boolean, tz: number, now: number): Promise<string>;
   }
 }

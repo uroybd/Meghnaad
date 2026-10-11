@@ -98,8 +98,9 @@ r2_to_s3() {
   done
 }
 
-# POST a command line to the console endpoint; prints the JSON response.
-webcli() { curl -sf -X POST "$WEB/api/cli" -H 'content-type: application/json' -d "$1"; }
+# Run a command the way the browser does (the engine, on this machine, syncing through the Worker): `$1` is the JSON
+# request (`{"line":…}` or `{"args":[…]}`); prints the JSON response.
+webcli() { node "$ROOT/scripts/engine-cli.mjs" --api "$WEB" "$1"; }
 # Report rows (JSON array) for a command line such as `list` or `all +x`.
 webrows() { webcli "{\"line\":\"$1\"}" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin)["result"]["rows"]))'; }
 

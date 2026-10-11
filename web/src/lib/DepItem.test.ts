@@ -56,8 +56,9 @@ describe('another task in the detail pane', () => {
 
     line.click();
     await settle();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).args).toEqual([UUID, 'info']);
+    const asked = fetchMock.mock.calls.filter((c) => c[0] === '/api/cli');
+    expect(asked).toHaveLength(1);
+    expect(JSON.parse(asked[0][1].body).args).toEqual([UUID, 'info']);
     const card = document.querySelector('[data-testid="depitem-card"]')!;
     expect(card.textContent).toContain('Work.Event');
 

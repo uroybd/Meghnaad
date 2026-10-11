@@ -1,3 +1,7 @@
+---
+created: 2026-10-11T20:47:46+06:00
+updated: 2026-10-12T00:56:34+06:00
+---
 <p align="center">
   <img src="web/public/logo.png" alt="Meghnaad" width="140" />
 </p>
@@ -182,17 +186,15 @@ flowchart TB
 - **Imported taskrc settings** are stored in the bucket, so they survive restarts and follow you between devices.
   The app's own `settings.json` (task commands, so far) is stored beside them; the Worker keeps its text as it is and
   only the browser reads it.
-- **A browser that cannot run the engine** (no Web Workers or WebAssembly, or `?engine=server` in the address) falls back
-  to the Worker running it, through `POST /api/cli` and `POST /api/import`.
 
-|  | Desktop Taskwarrior | Meghnaad |
-| --- | --- | --- |
-| Local state | Persistent SQLite | In the page, with a saved copy in the browser (IndexedDB) |
-| Sync | When you run `task sync` | After every write, when you return to the tab, every 30 s while you look at it |
-| Offline | Works | Changes work and are kept; they go up when the connection is back. The page itself needs a connection to load |
-| Encryption key | Only on your machine | In a Worker secret; the Worker opens and seals what passes through it |
-| Task ids | Local to that replica | Computed separately, so they differ |
-| Hooks | Scripts in `~/.task/hooks` | Rust functions in `my_hooks.rs`, compiled into the engine; change one and redeploy |
+|                | Desktop Taskwarrior        | Meghnaad                                                                                                      |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Local state    | Persistent SQLite          | In the page, with a saved copy in the browser (IndexedDB)                                                     |
+| Sync           | When you run `task sync`   | After every write, when you return to the tab, every 30 s while you look at it                                |
+| Offline        | Works                      | Changes work and are kept; they go up when the connection is back. The page itself needs a connection to load |
+| Encryption key | Only on your machine       | In a Worker secret; the Worker opens and seals what passes through it                                         |
+| Task ids       | Local to that replica      | Computed separately, so they differ                                                                           |
+| Hooks          | Scripts in `~/.task/hooks` | Rust functions in `my_hooks.rs`, compiled into the engine; change one and redeploy                            |
 
 More in [Architecture](docs/architecture.md).
 
@@ -250,13 +252,14 @@ ticks. More in **[Using Meghnaad](docs/using.md)**.
 ## Hooks
 
 Taskwarrior's four hooks are Rust functions in [`crates/tc-core/src/my_hooks.rs`](crates/tc-core/src/my_hooks.rs),
-built into the engine (which runs in your browser, and in the Worker for browsers that cannot run it). A hook gets the
+built into the engine, which runs in your browser. A hook gets the
 task, returns it (changed or not) or refuses the command, and what it prints appears in the Console. All four ship empty. Changing one means rebuilding (`npm run dev` does it on save, `npm run
 deploy` for the real one). See [Hooks](docs/using.md#hooks) and
 [keeping them as a patch](docs/using.md#keeping-your-hooks-across-updates).
 
-**How much fits.** The Worker is about **785 KB compressed** (gzip). A 1 MB budget leaves about **265 KB**. The engine in
-the browser is about **595 KB compressed**, downloaded once and cached; hooks add to both. Measured on a release build:
+**How much fits.** Hooks are compiled into the engine your browser downloads: about **595 KB compressed** (gzip), once, then
+cached. The Worker carries no hooks (it is about 355 KB compressed against Cloudflare's 1 MB limit), so the limit that
+matters is how long a first visit takes to download. Measured on a release build:
 
 | Hook code | Added (compressed) |
 | --- | --- |
@@ -264,11 +267,10 @@ the browser is about **595 KB compressed**, downloaded once and cached; hooks ad
 | ~1,400 lines | +10 KB |
 | ~5,700 lines | +19 KB |
 
-Generated code compresses unusually well. For planning, use about 12 bytes per line of ordinary code, roughly 20,000
-lines before the limit. What really spends the budget is a **dependency** (a regex engine can cost hundreds of KB), so
-measure before adding one:
-`npm run build && gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`. The build drops debug function names (about
-70 KB compressed); `KEEP_WASM_NAMES=1 npm run build` keeps them for readable stack traces.
+Generated code compresses unusually well. For planning, use about 12 bytes per line of ordinary code. What really spends
+the size is a **dependency** (a regex engine can cost hundreds of KB), so measure before adding one:
+`npm run build:engine && gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c`. The build drops debug function names
+(about 40% of the file); `KEEP_WASM_NAMES=1 npm run build:engine` keeps them for readable stack traces.
 
 ## Security
 
@@ -338,8 +340,8 @@ the browser and goes up when it works again.
 - **Single user:** one set of settings, shared by every browser that signs in.
 - **No offline start:** changes work offline and are kept, but the page itself is loaded from the Worker, so it needs a
   connection to open (there is no service worker yet).
-- **Browser support:** the engine needs Web Workers and WebAssembly (every current browser); the first visit downloads it
-  (about 600 KB compressed, then cached).
+- **Browser support:** the engine needs Web Workers and WebAssembly (every current browser has them); the first visit
+  downloads it (about 600 KB compressed, then cached). If the page cannot start it, it says why and runs no command.
 - **Old versions** (over 180 days old and covered by a snapshot) are cleaned up as the CLI does, after about one push in
   twenty. A device offline for longer may need a fresh `task sync` set-up.
 - **`undo`** lives in the page's memory and is lost when the tab is closed or reloaded.

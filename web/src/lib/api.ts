@@ -15,22 +15,9 @@ export function tzOffsetSeconds(d = new Date()): number {
   return -d.getTimezoneOffset() * 60;
 }
 
-/** Commands that change something: a request that carries one is never repeated on its own. */
-const WRITES = /\b(add|modify|done|delete|start|stop|annotate|denotate|append|prepend|undo|sync)\b/i;
-
-/** Could this request be sent a second time without doing anything twice? */
+/** Could this request be sent a second time without doing anything twice? Only a read is. */
 function safeToRepeat(init?: RequestInit): boolean {
-  const method = (init?.method ?? 'GET').toUpperCase();
-  if (method === 'GET') return true;
-  if (method !== 'POST' || typeof init?.body !== 'string') return false;
-  try {
-    const b = JSON.parse(init.body) as { line?: string; args?: string[] } | null;
-    // Only a command line is known to be repeatable; any other body (a file to import) is not.
-    if (!b || Array.isArray(b) || typeof b !== 'object' || (b.line === undefined && b.args === undefined)) return false;
-    return !WRITES.test(b.line ?? (b.args ?? []).join(' '));
-  } catch {
-    return false;
-  }
+  return (init?.method ?? 'GET').toUpperCase() === 'GET';
 }
 
 /**
@@ -89,33 +76,31 @@ export interface CliInput extends Answers {
 }
 
 // The engine (Taskwarrior's logic and the tasks) runs in this page, in a Web Worker (src/engine); the Worker on the
-// server keeps the secret and the bucket and only passes versions through. Where the browser cannot run it (no Web
-// Workers or WebAssembly, `?engine=server`, or it failed to start) the server runs the engine, as it used to, through
-// `POST /api/cli` and `POST /api/import`.
+// server keeps the secret and the bucket and only passes versions through. Commands and imports go to the engine, and
+// the settings (`getConfig` and the rest) to the server, where they are kept.
 
-/** Resolves to whether the engine in this page is in use; set by the first `getConfig`. */
-let booted: Promise<boolean> | undefined;
+/** Resolves when the engine is running, or rejects with why it could not. Set by the first `getConfig`. */
+let booted: Promise<void> | undefined;
 
-async function bootEngine(config: ConfigResponse): Promise<boolean> {
-  if (!engineAvailable()) return false;
+async function bootEngine(config: ConfigResponse): Promise<void> {
+  if (!engineAvailable()) {
+    throw new ApiError('This browser cannot run the engine: it needs Web Workers and WebAssembly.', 0);
+  }
   try {
     await engine.start(JSON.stringify(config.config));
-    return true;
   } catch (e) {
-    console.warn('The engine could not start in this browser; the server will run it.', e);
     engine.stop();
-    return false;
+    throw new ApiError(`The engine could not start in this browser: ${e instanceof Error ? e.message : String(e)}`, 0);
   }
 }
 
-async function useEngine(): Promise<boolean> {
-  // Where the browser cannot run it there is nothing to start, and nothing to ask the server first.
-  if (!engineAvailable()) return false;
+/** The engine, started (it needs the settings first). */
+async function ready(): Promise<void> {
   if (booted === undefined) await getConfig();
-  return (await booted) ?? false;
+  await booted;
 }
 
-/** What the engine answered, as the server's `/api/cli` and `/api/import` do: an `error` is a refused request. */
+/** What the engine answered, as JSON text: an `error` is a refused request. */
 function answer<T>(text: string): T {
   const body = JSON.parse(text) as T & { error?: string };
   if (typeof body.error === 'string') throw new ApiError(body.error, 400);
@@ -123,13 +108,7 @@ function answer<T>(text: string): T {
 }
 
 export async function runCli(input: CliInput): Promise<CliResponse> {
-  if (!(await useEngine())) {
-    return request<CliResponse>('/api/cli', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...input, tz: tzOffsetSeconds() }),
-    });
-  }
+  await ready();
   const res = answer<CliResponse & { config?: unknown }>(
     await engine.run({ ...input, tz: tzOffsetSeconds(), now: Date.now() / 1000 }),
   );
@@ -154,7 +133,7 @@ export async function runCli(input: CliInput): Promise<CliResponse> {
   return response;
 }
 
-/** The most the server takes in one import (it says so in the same words). */
+/** The most the page takes in one import. */
 export const MAX_IMPORT_BYTES = 3 * 1024 * 1024;
 
 /**
@@ -162,13 +141,7 @@ export const MAX_IMPORT_BYTES = 3 * 1024 * 1024;
  * are written, all of them or none.
  */
 export async function importTasks(text: string, apply: boolean): Promise<ImportReport> {
-  if (!(await useEngine())) {
-    return request<ImportReport>(`/api/import?apply=${apply ? 1 : 0}&tz=${tzOffsetSeconds()}`, {
-      method: 'POST',
-      headers: { 'content-type': 'text/plain; charset=utf-8' },
-      body: text,
-    });
-  }
+  await ready();
   const report = answer<ImportReport>(await engine.import(text, apply, tzOffsetSeconds()));
   if (apply) engine.pushSoon();
   return report;
@@ -176,8 +149,14 @@ export async function importTasks(text: string, apply: boolean): Promise<ImportR
 
 export async function getConfig(): Promise<ConfigResponse> {
   const config = await request<ConfigResponse>('/api/config');
-  if (booted === undefined) booted = bootEngine(config);
-  else if (await booted) void engine.setConfig(JSON.stringify(config.config)).catch(() => {});
+  if (booted === undefined) {
+    booted = bootEngine(config);
+    // The reason is given to whoever runs a command; here it only has to not go unnoticed by the runtime.
+    booted.catch(() => {});
+  } else {
+    // Read again (a setting changed): the engine takes the new ones, if it is running.
+    void booted.then(() => engine.setConfig(JSON.stringify(config.config))).catch(() => {});
+  }
   return config;
 }
 
