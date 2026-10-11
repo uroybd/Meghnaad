@@ -108,7 +108,11 @@ and checks it. The engine answers one message at a time, in the order they arriv
    or a failure); `GET /api/hooks/defined` says which of the four the script defines, so the engine asks only for those;
    `GET`/`PUT /api/hooks` read and save the script (for the editor alone; a script that does not load is refused);
    `POST /api/hooks/check` says what is wrong with a script and where, as you type. The VM is built once per Worker
-   instance and reused, and again when the script changes.
+   instance and reused, and again when the script changes (or is busy waiting on the network for another request, when a
+   call gets a VM of its own). The Worker is the host that gives a script the network and secrets (`hooknet.rs`: `fetch`
+   with a timeout, no automatic redirect, a 1 MB cap on the answer, a log line per call). Secrets are looked up as a Worker
+   secret `HOOK_SECRET_<NAME>` first, then in `web/hook-secrets.enc`, a map sealed with the key the Worker derives from
+   `TC_ENCRYPTION_SECRET`; `GET`/`PUT`/`DELETE /api/secrets[/<name>]` manage that one (names only ever come back).
 6. **`GET /api/health`** says whether the Worker can reach the bucket and open it with the secret (it derives the key);
    it holds no tasks.
 
@@ -124,6 +128,14 @@ last. A hook that cannot be reached is skipped with a warning that says so, and 
 script in-process, which is how a host with no Worker (the Android app, later) uses the same script and the same runner.
 A script's cold start is 3-10 ms and a warm call under a millisecond (measured under Node's V8, not on a Worker): that is
 why the VM is kept, and why a script is bounded by an instruction budget (5 million) and 32 MB.
+
+`http` and `secret` are `async` functions of the Lua runtime (omnilua's `async` feature: a script's coroutine is suspended
+while the Rust future runs), supplied by a `Net` the host passes to `LuaRunner::load_with`; a host with none (a test, a
+bare runner) gives a script an error. The runner enforces the rules, whichever host it is: the script declares the hosts
+it may call with `allow_hosts` while it loads (and cannot widen them later), only `https://` (or `http://` to this
+machine), at most five requests and 256 KB of body per call, a timeout of at most 10 seconds, and the value of every
+secret it read is replaced by `***` in what it printed, failed with or returned. A request that fails comes back to the
+script as `nil` and a reason, because an error from an async function ends the call and cannot be caught with `pcall`.
 
 
 ## `tc-core`: the engine
@@ -360,6 +372,7 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/cli_exec.rs` | Real command lines against a real replica: writes, reports, confirmations, recurrence, calc, `show`/`config`, hooks (injected through `Options.hooks`) |
 | `tests/sync_cost.rs`, `replica_sync.rs` | R2 call counts per sync; two replicas converging |
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
+| `tests/lua_net.rs` | `http` and `secret()` against a fake host: the allowlist (exact, wildcard, no user-info tricks), https only, request limits, a failed request as `nil` and a reason, a secret's value kept out of everything, and a second call while one waits on the network |
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |

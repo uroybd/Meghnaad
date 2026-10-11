@@ -271,8 +271,10 @@ function on_add(task)
 end
 ```
 
-The Lua runs in a sandbox (`string`, `table` and `math` only; no files, no network) and is stopped if it runs too long. It
-adds about 265 KB (compressed) to the Worker; the engine in the browser is unaffected.
+The Lua runs in a sandbox (`string`, `table` and `math` only; no files) and is stopped if it runs too long. Because it runs
+on the Worker, a script can call other services (`http.post(...)`, to hosts it declares, over https) and read named secrets
+(`secret("jira")`) that are kept apart from the script and never reach the page. The Lua adds about 305 KB (compressed) to
+the Worker; the engine in the browser is unaffected.
 
 ## Security
 

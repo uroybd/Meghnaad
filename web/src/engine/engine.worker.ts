@@ -58,7 +58,7 @@ async function handle(m: Call): Promise<unknown> {
       engine.set_config(m.config);
       return null;
     case 'hooks':
-      engine.set_hooks(m.defined);
+      engine.set_hooks(m.defined, '');
       return null;
     case 'run': {
       const before = engine.changes();

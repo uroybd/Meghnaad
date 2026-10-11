@@ -259,6 +259,24 @@ export async function putHooks(text: string): Promise<string[]> {
   return res.defined;
 }
 
+/** The names of the secrets kept from the app for hooks (never their values). */
+export async function getSecretNames(): Promise<string[]> {
+  return (await request<{ names: string[] }>('/api/secrets')).names;
+}
+
+/** Keep a secret for hooks, sealed in the bucket. It can be replaced, never read back; a script asks for it by name. */
+export async function putSecret(name: string, value: string): Promise<void> {
+  await request<{ ok: true }>(`/api/secrets/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
+    body: value,
+  });
+}
+
+export async function deleteSecret(name: string): Promise<void> {
+  await request<{ ok: true }>(`/api/secrets/${encodeURIComponent(name)}`, { method: 'DELETE' });
+}
+
 export interface SetupStatus {
   configured: boolean;
   /** Names of the Worker settings still to fill in (TEAM_DOMAIN, POLICY_AUD). */

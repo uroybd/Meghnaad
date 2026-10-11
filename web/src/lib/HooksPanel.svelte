@@ -1,6 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { ApiError, checkHooks, getHooks, putHooks, type HookCheck } from './api';
+  import {
+    ApiError,
+    checkHooks,
+    deleteSecret,
+    getHooks,
+    getSecretNames,
+    putHooks,
+    putSecret,
+    type HookCheck,
+  } from './api';
   import type { HookEditor } from './hookEditor';
   import { HOOKS_EXAMPLE } from './hooksExample';
   import { TriangleAlert } from './icons';
@@ -20,6 +29,49 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let done = $state(false);
+
+  // Secrets: kept from the app, sealed in the bucket. Only their names are ever shown.
+  let secrets = $state<string[]>([]);
+  let secretName = $state('');
+  let secretValue = $state('');
+  let secretBusy = $state(false);
+  let secretError = $state<string | null>(null);
+  const secretNameOk = $derived(/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(secretName));
+
+  async function loadSecrets() {
+    try {
+      secrets = await getSecretNames();
+    } catch {
+      // The editor works without them; setting one says why it could not.
+    }
+  }
+
+  async function keepSecret() {
+    if (!secretNameOk || !secretValue || secretBusy) return;
+    secretBusy = true;
+    secretError = null;
+    try {
+      await putSecret(secretName, secretValue);
+      store.notify(`Secret ${secretName} saved. Read it in a hook with secret("${secretName}").`, 'ok');
+      secretName = '';
+      secretValue = '';
+      await loadSecrets();
+    } catch (e) {
+      secretError = e instanceof ApiError ? e.message : 'The secret could not be saved.';
+    } finally {
+      secretBusy = false;
+    }
+  }
+
+  async function removeSecret(name: string) {
+    secretError = null;
+    try {
+      await deleteSecret(name);
+      await loadSecrets();
+    } catch (e) {
+      secretError = e instanceof ApiError ? e.message : 'The secret could not be removed.';
+    }
+  }
 
   const edited = $derived(text !== saved);
   $effect(() => {
@@ -45,6 +97,7 @@
 
   onMount(() => {
     let alive = true;
+    void loadSecrets();
     (async () => {
       try {
         saved = text = await getHooks();
@@ -148,6 +201,57 @@
       {#if done && !edited}<span class="ok" role="status">Saved.</span>{/if}
     </p>
 
+    <div class="secrets">
+      <h3>Secrets</h3>
+      <p class="dim">
+        A secret is a value a script reads with <code>secret("name")</code> instead of having it in the script: a token
+        for
+        <code>http.post(…)</code>, say. It is kept sealed in your bucket with the same key as your tasks, can be
+        replaced but never shown again, and is hidden from anything a hook prints or returns. (A Worker secret called
+        <code>HOOK_SECRET_NAME</code>, set with <code>wrangler secret put</code> or in the dashboard, is read the same way
+        and wins over one kept here.)
+      </p>
+      {#if secrets.length}
+        <ul class="names" aria-label="Secrets that are set">
+          {#each secrets as name (name)}
+            <li>
+              <code>{name}</code>
+              <button type="button" class="ghost" aria-label="Remove {name}" onclick={() => removeSecret(name)}
+                >Remove</button
+              >
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      <form
+        class="add-secret"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void keepSecret();
+        }}
+      >
+        <input
+          bind:value={secretName}
+          placeholder="name (jira)"
+          aria-label="Secret name"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <input
+          bind:value={secretValue}
+          type="password"
+          placeholder="value"
+          aria-label="Secret value"
+          autocomplete="off"
+        />
+        <button type="submit" disabled={!secretNameOk || !secretValue || secretBusy}
+          >{secrets.includes(secretName) ? 'Replace' : 'Keep'}</button
+        >
+      </form>
+      {#if secretError}<p class="err" role="alert">{secretError}</p>{/if}
+    </div>
+
     <details class="help">
       <summary>What a hook gets</summary>
       <ul>
@@ -176,6 +280,18 @@
           <code>d:start_of("week")</code>, <code>now()</code>, <code>today()</code>.
           <strong>Durations</strong>: <code>days(n)</code>, <code>hours(n)</code>, <code>minutes(n)</code>,
           <code>weeks(n)</code>, <code>duration("3d")</code>, <code>d:in_days()</code>.
+        </li>
+        <li>
+          <strong>The network</strong>, to hosts the script declares at the top (<code
+            >allow_hosts&#123;"acme.example.com"&#125;</code
+          >), over https:
+          <code
+            >local res, err = http.post(url, &#123; headers = &#123; Authorization = "Bearer " .. secret("jira") &#125;,
+            json = &#123; … &#125; &#125;)</code
+          >
+          (also <code>get</code>, <code>put</code>, <code>patch</code>, <code>delete</code>). <code>res</code> is
+          <code>&#123;status, ok, headers, body, json&#125;</code>, or <code>nil</code> and a reason if the network failed,
+          so a script can carry on. A few requests a call, 10 seconds at most each.
         </li>
         <li>
           <strong>Helpers</strong>: <code>task:in_project("Work")</code> (also true for <code>Work.Mail</code>),
@@ -230,6 +346,31 @@
     border: 1px solid var(--err);
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--err) 10%, var(--panel));
+  }
+  .secrets h3 {
+    margin: 4px 0;
+    font-size: 1rem;
+  }
+  .secrets .names {
+    list-style: none;
+    margin: 6px 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .secrets .names li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+  }
+  .add-secret {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .help {
     font-size: 13.5px;
