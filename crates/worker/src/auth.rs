@@ -72,13 +72,7 @@ const JWKS_MIN_REFETCH_MS: f64 = 60.0 * 1000.0;
 struct KeyCache {
     keys: HashMap<String, CryptoKey>,
     fetched_at: f64,
-    /// Whether the keys came through Cloudflare's cache, which may be up to `EDGE_TTL_S` behind the team's own copy.
-    from_edge_cache: bool,
 }
-
-/// How long Cloudflare's cache in this data centre keeps the key list for every Worker instance there. A cold
-/// instance would otherwise wait for the team's own endpoint (about 400 ms) before it could check its first token.
-const EDGE_TTL_S: u32 = 3600;
 
 thread_local! {
     static KEYS: RefCell<KeyCache> = RefCell::new(KeyCache::default());
@@ -103,46 +97,17 @@ fn algo(with_hash: bool) -> Object {
     a
 }
 
-/// One fetch of the team's key list. Normally through Cloudflare's cache, so only the first instance in a data
-/// centre each hour waits for the team's endpoint. `fresh` goes around the cache (a token named a key that was not in
-/// the list, so the list may have changed since it was cached).
-async fn fetch_certs(team_domain: &str, fresh: bool) -> Result<Jwks, AuthError> {
-    let mut url = Url::parse(&format!("{team_domain}/cdn-cgi/access/certs"))
+async fn refresh_keys(team_domain: &str) -> Result<(), AuthError> {
+    let url = Url::parse(&format!("{team_domain}/cdn-cgi/access/certs"))
         .map_err(|_| AuthError::Config("TEAM_DOMAIN is not a valid URL".into()))?;
-    let init = web_sys::RequestInit::new();
-    if fresh {
-        // A different address each time, so nothing cached answers it (and nothing is kept for it).
-        url.query_pairs_mut().append_pair("fresh", &Date::now().to_string());
-    } else {
-        // `{ cacheEverything: true, cacheTtlByStatus: { "200-299": 3600, "300-599": 0 } }`: only a good answer is
-        // kept, so an error from the endpoint is not served for an hour.
-        let by_status = Object::new();
-        let _ = Reflect::set(&by_status, &"200-299".into(), &EDGE_TTL_S.into());
-        let _ = Reflect::set(&by_status, &"300-599".into(), &0.into());
-        let cf = Object::new();
-        let _ = Reflect::set(&cf, &"cacheEverything".into(), &true.into());
-        let _ = Reflect::set(&cf, &"cacheTtlByStatus".into(), &by_status);
-        let _ = Reflect::set(&init, &"cf".into(), &cf);
-    }
-    let request = web_sys::Request::new_with_str_and_init(url.as_str(), &init)
-        .map(Request::from)
-        .map_err(|_| AuthError::Config("TEAM_DOMAIN is not a valid URL".into()))?;
-    let mut res = Fetch::Request(request)
+    let mut res = Fetch::Url(url)
         .send()
         .await
         .map_err(|_| AuthError::Rejected("could not fetch Access signing keys"))?;
-    res.json()
+    let jwks: Jwks = res
+        .json()
         .await
-        .map_err(|_| AuthError::Rejected("unreadable Access signing keys"))
-}
-
-async fn refresh_keys(team_domain: &str, fresh: bool) -> Result<(), AuthError> {
-    // Should the team's endpoint not take the extra address, the cached list is better than none.
-    let (jwks, fresh) = match fetch_certs(team_domain, fresh).await {
-        Ok(jwks) => (jwks, fresh),
-        Err(_) if fresh => (fetch_certs(team_domain, false).await?, false),
-        Err(e) => return Err(e),
-    };
+        .map_err(|_| AuthError::Rejected("unreadable Access signing keys"))?;
 
     let subtle = subtle()?;
     let mut keys = HashMap::new();
@@ -165,7 +130,6 @@ async fn refresh_keys(team_domain: &str, fresh: bool) -> Result<(), AuthError> {
         *c.borrow_mut() = KeyCache {
             keys,
             fetched_at: Date::now(),
-            from_edge_cache: !fresh,
         }
     });
     Ok(())
@@ -175,18 +139,14 @@ async fn key_for(kid: &str, team_domain: &str) -> Result<CryptoKey, AuthError> {
     let lookup = |kid: &str| KEYS.with(|c| c.borrow().keys.get(kid).cloned());
     let age = KEYS.with(|c| Date::now() - c.borrow().fetched_at);
     if age > JWKS_TTL_MS {
-        refresh_keys(team_domain, false).await?;
+        refresh_keys(team_domain).await?;
     }
     if let Some(k) = lookup(kid) {
         return Ok(k);
     }
-    // Unknown kid: Access rotates keys, so refetch once (rate-limited) before rejecting. Straight from the team, as
-    // the list from the cache may be the one from before the rotation; that list can be refetched at once, since it
-    // was not the team's own.
-    let age = KEYS.with(|c| Date::now() - c.borrow().fetched_at);
-    let cached = KEYS.with(|c| c.borrow().from_edge_cache);
-    if cached || age > JWKS_MIN_REFETCH_MS {
-        refresh_keys(team_domain, true).await?;
+    // Unknown kid: Access rotates keys, so refetch once (rate-limited) before rejecting.
+    if age > JWKS_MIN_REFETCH_MS {
+        refresh_keys(team_domain).await?;
     }
     lookup(kid).ok_or(AuthError::Rejected("unknown signing key"))
 }

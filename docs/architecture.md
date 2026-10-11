@@ -76,11 +76,7 @@ of their own: `/api/config/*` for the taskrc and urgency, and `GET`/`PUT /api/se
 
 1. **Static files** (the app shell) are served by Cloudflare without running the Worker. Only `/api/*` runs it.
 2. **`auth.rs`** checks the Cloudflare Access token on every `/api/*` request: RS256 signature against your team's
-   published keys, issuer, audience, expiry. Misconfiguration means `403`, never open. A cold instance would wait about
-   400 ms for the team's endpoint before it could check its first token, so the key list is fetched through
-   Cloudflare's cache (`cacheEverything`, an hour, good answers only), which every instance in a data centre shares. A
-   token signed with a key that is not in the list fetches it again past the cache (at most once a minute), so a
-   rotation is picked up at once.
+   published keys, issuer, audience, expiry. Misconfiguration means `403`, never open.
 3. **`session.rs`** holds what a Worker instance ("isolate") keeps between requests: the derived key, a long-lived
    replica, the undo stack and the imported taskrc. A cold instance builds these; a warm one reuses them.
 4. **Sync, run, sync.** The Worker pulls versions it hasn't seen, runs the command against the replica, and if
@@ -280,4 +276,4 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
 | `npm --prefix web test` | The browser-side logic: formatting, completion, the store, the API client |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |
-| `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused; a rotated key is picked up |
+| `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused |
