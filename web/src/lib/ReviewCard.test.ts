@@ -28,7 +28,7 @@ const tick = async () => {
   flushSync();
 };
 const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('dialog button')];
-const button = (text: string) => buttons().find((b) => b.textContent?.trim() === text)!;
+const button = (text: string) => buttons().find((b) => b.textContent?.trim().startsWith(text))!;
 const mountCard = async () => {
   app = mount(ReviewCard, { target: document.body });
   await tick();

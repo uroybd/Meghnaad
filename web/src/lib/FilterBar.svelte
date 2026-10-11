@@ -2,8 +2,6 @@
   import { reportArgs, shellQuote, splitWords } from './cmdline';
   import FilterChips from './FilterChips.svelte';
   import FilterInput from './FilterInput.svelte';
-  import { ClipboardCheck } from './icons';
-  import { review } from './review.svelte';
   import { store } from './store.svelte';
 
   const meta = $derived(store.reports.find((r) => r.name === store.report));
@@ -61,14 +59,6 @@
       {#if store.offeredReports.length === 0}<option value={store.report}>{store.report}</option>{/if}
     </select>
     <FilterInput bind:value={store.filter} id="fb-filter" />
-    <button
-      type="button"
-      class="reviewbtn"
-      disabled={review.phase !== 'idle'}
-      title="Go through the tasks that need review: mark each reviewed, skip it, edit it, change it, finish it or delete it"
-      onclick={() => review.start({ surface: 'card' })}
-      ><ClipboardCheck size={15} /> <span class="lbl">Review</span></button
-    >
   </div>
 
   <FilterChips bind:value={store.filter} />
@@ -93,12 +83,6 @@
   }
   .top select {
     max-width: 17em;
-  }
-  .reviewbtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
   }
   @media (max-width: 760px) {
     .top {

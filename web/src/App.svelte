@@ -4,6 +4,7 @@
   import {
     Bell,
     BellOff,
+    ClipboardCheck,
     CalendarDays,
     Eye,
     EyeOff,
@@ -179,6 +180,15 @@
         <span class="chip" title="Active context from your taskrc">context: {store.config.config.active_context}</span>
       {/if}
       <button
+        class="ghost btn review"
+        class:on={review.phase !== 'idle' && review.surface === 'card'}
+        aria-label="Review"
+        disabled={review.phase !== 'idle'}
+        onclick={() => review.start({ surface: 'card' })}
+        title="Go through the tasks that need review: mark each reviewed, skip it, edit it, change it, finish it or delete it"
+        ><ClipboardCheck size={15} /> <span class="lbl">Review</span></button
+      >
+      <button
         class="ghost"
         onclick={() => (store.notifyOpen = true)}
         aria-label="Reminders ({notifier.settings.enabled ? 'on' : 'off'})"
@@ -353,7 +363,8 @@
     line-height: inherit;
   }
   .tabs button.on,
-  .top button.settings.on {
+  .top button.settings.on,
+  .top button.review.on {
     background: var(--panel-2);
     border-color: var(--line);
     font-weight: 600;

@@ -84,6 +84,18 @@ describe('tasksh review at the prompt', () => {
     flushSync();
     return input;
   }
+  const press = (key: string, init: KeyboardEventInit = {}, on: EventTarget = window) => {
+    const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    on.dispatchEvent(e);
+    flushSync();
+    return e;
+  };
+  const reviewing = (phase: 'running' | 'asking' | 'modifying' = 'running') => {
+    review.surface = 'console';
+    review.phase = phase;
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+  };
 
   afterEach(() => review.close());
 
@@ -105,35 +117,103 @@ describe('tasksh review at the prompt', () => {
     expect(run).toHaveBeenCalled();
   });
 
-  it('takes the typed answers while a review asks, an empty Enter among them, and none go to the history', () => {
-    review.surface = 'console';
-    review.phase = 'running';
-    const respond = vi.spyOn(review, 'respond').mockResolvedValue();
+  it('takes a key as the answer at once, with no Enter after it, and Enter alone is the usual one', () => {
+    const pressed = vi.spyOn(review, 'press').mockResolvedValue();
     const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
-    const input = type('s');
-    expect(respond).toHaveBeenLastCalledWith('s');
-    expect(input.value).toBe('');
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    flushSync();
-    expect(respond).toHaveBeenLastCalledWith('');
+    reviewing();
+    const s = press('s');
+    expect(pressed).toHaveBeenLastCalledWith('s');
+    expect(s.defaultPrevented).toBe(true);
+    press('Enter');
+    expect(pressed).toHaveBeenLastCalledWith('Enter');
     expect(run).not.toHaveBeenCalled();
     expect(store.history).not.toContain('s');
+    expect((document.querySelector('input') as HTMLInputElement).value).toBe('');
   });
 
-  it('says it is a review: the prompt, and the menu', () => {
-    review.surface = 'console';
-    review.phase = 'running';
-    app = mount(ConsoleInput, { target: document.body });
-    flushSync();
+  it('leaves alone the keys that are not an answer: arrows, Tab, and anything with Ctrl or Cmd', () => {
+    const pressed = vi.spyOn(review, 'press').mockResolvedValue();
+    reviewing();
+    press('ArrowUp');
+    press('Tab');
+    press('r', { ctrlKey: true });
+    press('s', { metaKey: true });
+    expect(pressed).not.toHaveBeenCalled();
+  });
+
+  it('does not take the key of a button, which has its own Enter and Space', () => {
+    const pressed = vi.spyOn(review, 'press').mockResolvedValue();
+    reviewing();
+    const b = document.querySelector('button') as HTMLButtonElement;
+    press('Enter', {}, b);
+    expect(pressed).not.toHaveBeenCalled();
+  });
+
+  it('has the prompt off while a review asks, and a bar of buttons over it', () => {
+    reviewing();
+    const input = document.querySelector('input') as HTMLInputElement;
     expect(document.querySelector('.ps')?.textContent).toBe('review>');
-    expect(document.querySelector('[data-testid=review-hint]')?.textContent).toContain('(Enter) Mark as reviewed');
+    expect(input.disabled).toBe(true);
+    const bar = [...document.querySelectorAll('[role=toolbar] button')].map((b) =>
+      b.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+    expect(bar).toEqual([
+      'Reviewed Enter',
+      'Skip s',
+      'Edit e',
+      'Modify m',
+      'Complete c',
+      'Delete d',
+      'Open as card',
+      'Quit q',
+    ]);
+  });
+
+  it('shows Yes and No for a question, answered with y or n', () => {
+    review.question = 'Do you want to modify all pending recurrences of this same task?';
+    const pressed = vi.spyOn(review, 'press').mockResolvedValue();
+    reviewing('asking');
+    expect(document.querySelector('[data-testid=review-question]')?.textContent).toContain('recurrences');
+    expect(
+      [...document.querySelectorAll('[role=group] button')].map((b) => b.textContent?.replace(/\s+/g, ' ').trim()),
+    ).toEqual(['Yes y', 'No n']);
+    press('y');
+    expect(pressed).toHaveBeenLastCalledWith('y');
+  });
+
+  it('turns the prompt on to type what to change: Enter sends it, Escape cancels', async () => {
+    const respond = vi.spyOn(review, 'respond').mockResolvedValue();
+    const modify = vi.spyOn(review, 'modify').mockResolvedValue();
+    reviewing('modifying');
+    const input = document.querySelector('input') as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    input.value = '+tag project:X';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    flushSync();
+    expect(respond).toHaveBeenCalledWith('+tag project:X');
+    expect(input.value).toBe('');
+    // A letter is typed here, not taken as a choice.
+    const pressed = vi.spyOn(review, 'press').mockResolvedValue();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(pressed).not.toHaveBeenCalled();
+    press('Escape');
+    expect(modify).toHaveBeenCalledWith('');
+  });
+
+  it('moves the review to the card with the Open as card button', () => {
+    const toCard = vi.spyOn(review, 'toCard').mockReturnValue();
+    reviewing();
+    [...document.querySelectorAll<HTMLButtonElement>('[role=toolbar] button')]
+      .find((b) => b.textContent?.includes('Open as card'))!
+      .click();
+    expect(toCard).toHaveBeenCalled();
   });
 
   it('quits on Escape', () => {
-    review.surface = 'console';
-    review.phase = 'running';
     const quit = vi.spyOn(review, 'quit').mockReturnValue();
-    type('', 'Escape');
+    reviewing();
+    press('Escape');
     expect(quit).toHaveBeenCalled();
   });
 });

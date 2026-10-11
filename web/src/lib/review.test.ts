@@ -14,6 +14,7 @@ vi.mock('./api', async (original) => ({
 
 const QUIET = ['rc.confirmation:no', 'rc.verbose:nothing'];
 const REPORT = ['rc.color=off', 'rc.detection=off', 'rc._forcecolor=off', 'rc.verbose=nothing', '_reviewed'];
+const RECURRING = 'This is a recurring task.  Do you want to modify all pending recurrences of this same task?';
 
 function config(opts: { uda?: boolean; report?: boolean } = { uda: true, report: true }): ConfigResponse {
   const col = (spec: string) => ({ spec, name: spec, format: null, label: spec, kind: 'string' });
@@ -25,11 +26,14 @@ function config(opts: { uda?: boolean; report?: boolean } = { uda: true, report:
   } as unknown as ConfigResponse;
 }
 
-/** A pretend server: the `_reviewed` list, each task's `info`, and every write going through. */
-function server(uuids: string[], opts: { gone?: string[]; failOn?: string } = {}) {
-  const calls: string[][] = [];
-  vi.mocked(runCli).mockImplementation(async ({ args = [] }) => {
-    calls.push(args);
+type Ask = { ask: 'extras' | 'plain' | 'permission'; items?: { key: string; question: string }[]; message?: string };
+
+/** A pretend server: the `_reviewed` list, each task's `info`, and every write going through (or asking first). */
+function server(uuids: string[], opts: { gone?: string[]; failOn?: string; asks?: Ask } = {}) {
+  const calls: { args: string[]; extras?: string[]; confirmed?: boolean; approved?: string[] }[] = [];
+  vi.mocked(runCli).mockImplementation(async (input) => {
+    const { args = [] } = input;
+    calls.push({ args, extras: input.extras, confirmed: input.confirmed, approved: input.approved });
     const text = { result: { kind: 'text', lines: [] }, wrote: false, feedback: [] };
     if (args.includes('_reviewed'))
       return { result: { kind: 'report', rows: uuids.map((uuid) => ({ uuid })) }, wrote: false } as never;
@@ -43,14 +47,21 @@ function server(uuids: string[], opts: { gone?: string[]; failOn?: string } = {}
       return { result: { kind: 'text', lines: ['Config modified.'] }, wrote: false } as never;
     if (opts.failOn && args.includes(opts.failOn))
       return { result: { kind: 'error', message: 'Nope.' }, wrote: false } as never;
+    const a = opts.asks;
+    const answered =
+      a && (a.ask === 'extras' ? input.extras !== undefined : a.ask === 'plain' ? input.confirmed : input.approved);
+    if (a && !answered && args.some((w) => ['modify', 'done', 'delete'].includes(w))) {
+      return {
+        result: { kind: 'confirm', ask: a.ask, message: a.message ?? 'Sure?', items: a.items ?? [] },
+        wrote: false,
+      } as never;
+    }
     return { result: { kind: 'changed', message: 'Modified 1 task.', tasks: [] }, wrote: true } as never;
   });
-  /** The commands a review sent, without the housekeeping around them. */
+  /** The commands a review sent for a task, without the housekeeping around them. */
   return {
     sent: () =>
-      calls
-        .filter((a) => a[0] === QUIET[0] && a[2] !== 'config')
-        .map((a) => a.slice(3).join(' ').replace(/^/, `${a[2]} `)),
+      calls.filter((c) => c.args[0] === QUIET[0] && c.args[2] !== 'config').map((c) => c.args.slice(2).join(' ')),
     calls,
   };
 }
@@ -78,7 +89,7 @@ describe('a review in the console', () => {
     expect(review.phase).toBe('idle');
   });
 
-  it('goes through the list: Enter marks reviewed, s skips, c completes, and the end says how many', async () => {
+  it('goes through the list on key presses: Enter marks reviewed, s skips, c completes, and the end says how many', async () => {
     const s = server(['u1', 'u2', 'u3']);
     await review.start({ surface: 'console' });
     expect(vi.mocked(runCli).mock.calls[0][0].args).toEqual(REPORT);
@@ -86,10 +97,10 @@ describe('a review in the console', () => {
     expect(review.captures).toBe(true);
     expect(said().at(-1)).toBe('review [1 of 3] task u1');
 
-    await review.respond(''); // Enter
+    await review.press('Enter');
     expect(said().at(-1)).toBe('review [2 of 3] task u2');
-    await review.respond('s');
-    await review.respond('c');
+    await review.press('s');
+    await review.press('c');
     expect(s.sent()).toEqual(['u1 modify reviewed:now', 'u3 done']);
     expect(said().filter((x) => /^(Marked|Skipped|Completed|End)/.test(x))).toEqual([
       'Marked as reviewed.',
@@ -103,7 +114,7 @@ describe('a review in the console', () => {
   it('sends ordinary commands, quietly, for the task shown', async () => {
     server(['u1', 'u2']);
     await review.start({ surface: 'console' });
-    await review.respond('r');
+    await review.press('r');
     const write = vi
       .mocked(runCli)
       .mock.calls.map(([i]) => i.args)
@@ -114,9 +125,9 @@ describe('a review in the console', () => {
   it('counts a deleted task as reviewed, and q stops', async () => {
     const s = server(['u1', 'u2']);
     await review.start({ surface: 'console' });
-    await review.respond('d');
-    await review.respond('q');
-    expect(s.calls.some((a) => a.join(' ') === `${QUIET.join(' ')} u1 delete`)).toBe(true);
+    await review.press('d');
+    await review.press('q');
+    expect(s.sent()[0]).toBe('u1 delete');
     expect(said().at(-1)).toBe('End of review. 1 out of 2 tasks reviewed.');
     expect(review.phase).toBe('idle');
   });
@@ -125,24 +136,26 @@ describe('a review in the console', () => {
     server(['u1', 'u2', 'u3', 'u4', 'u5']);
     await review.start({ limit: 2, surface: 'console' });
     expect(said().at(-1)).toBe('review [1 of 2] task u1');
-    await review.respond('');
-    await review.respond('');
+    await review.press('Enter');
+    await review.press('Enter');
     expect(said().at(-1)).toBe('End of review. 2 out of 2 tasks reviewed.');
   });
 
-  it('changes a task with m, then shows the same one again', async () => {
+  it('changes a task with m (the changes are typed), then shows the same one again', async () => {
     const s = server(['u1', 'u2']);
     await review.start({ surface: 'console' });
-    await review.respond('m');
+    await review.press('m');
     expect(review.phase).toBe('modifying');
     expect(review.hint).toContain('Enter modification args');
+    await review.press('x'); // not a key here: what is typed goes to the field
+    expect(review.phase).toBe('modifying');
     await review.respond('+tag project:X');
-    expect(s.calls.some((a) => a.join(' ') === `${QUIET.join(' ')} u1 modify +tag project:X`)).toBe(true);
+    expect(s.sent()).toContain('u1 modify +tag project:X');
     expect(review.phase).toBe('running');
     expect(review.current).toBe(0);
     expect(said().filter((x) => x === 'review [1 of 2] task u1')).toHaveLength(2);
     // Nothing typed is no change.
-    await review.respond('m');
+    await review.press('m');
     await review.respond('  ');
     expect(said().at(-1)).toBe('No changes.');
   });
@@ -150,30 +163,32 @@ describe('a review in the console', () => {
   it('opens the editor for e, and when it is closed marks the task reviewed and shows it again', async () => {
     const s = server(['u1', 'u2']);
     await review.start({ surface: 'console' });
-    await review.respond('e');
+    await review.press('e');
     expect(review.phase).toBe('editing');
     expect(store.editing?.row.uuid).toBe('u1');
     expect(review.captures).toBe(false);
     await review.editClosed();
-    expect(s.calls.some((a) => a.join(' ') === `${QUIET.join(' ')} u1 modify reviewed:now`)).toBe(true);
+    expect(s.sent()).toContain('u1 modify reviewed:now');
     expect(review.phase).toBe('running');
     expect(review.current).toBe(0);
     expect(said().at(-1)).toBe('review [1 of 2] task u1');
   });
 
-  it('does not know a word it was not told', async () => {
+  it('ignores a key that means nothing, as keys are: no message, nothing sent', async () => {
     const s = server(['u1']);
     await review.start({ surface: 'console' });
     const before = s.calls.length;
-    await review.respond('zzz');
-    expect(said().at(-1)).toBe("Command 'zzz' is not recognized.");
+    const lines = said().length;
+    await review.press('z');
+    await review.press('Tab');
     expect(s.calls.length).toBe(before);
+    expect(said().length).toBe(lines);
   });
 
   it('stays on the task, and says why, when a command is refused', async () => {
     server(['u1', 'u2'], { failOn: 'reviewed:now' });
     await review.start({ surface: 'console' });
-    await review.respond('');
+    await review.press('Enter');
     expect(said().at(-1)).toBe('Nope.');
     expect(review.current).toBe(0);
     expect(review.reviewed).toBe(0);
@@ -194,23 +209,118 @@ describe('a review in the console', () => {
   });
 });
 
+describe('a recurring task', () => {
+  const recurring: Ask = { ask: 'extras', items: [{ key: 'rec:u1', question: RECURRING }] };
+
+  it('is asked about, as tasksh shows it, before it is changed: yes changes every pending recurrence', async () => {
+    const s = server(['u1', 'u2'], { asks: recurring });
+    await review.start({ surface: 'console' });
+    await review.press('Enter');
+    expect(review.phase).toBe('asking');
+    expect(review.captures).toBe(true);
+    expect(review.question).toBe(RECURRING);
+    expect(said().at(-1)).toBe(`${RECURRING} (y/n)`);
+    expect(review.current).toBe(0);
+
+    await review.press('y');
+    const resent = s.calls.filter((c) => c.args.includes('modify'));
+    expect(resent).toHaveLength(2);
+    expect(resent[1].extras).toEqual(['rec:u1']);
+    expect(said().at(-1)).toBe('review [2 of 2] task u2');
+    expect(review.reviewed).toBe(1);
+  });
+
+  it('with no, only this one is changed, and the review goes on', async () => {
+    const s = server(['u1', 'u2'], { asks: recurring });
+    await review.start({ surface: 'console' });
+    await review.press('Enter');
+    await review.press('n');
+    const resent = s.calls.filter((c) => c.args.includes('modify'));
+    expect(resent[1].extras).toEqual([]);
+    expect(review.phase).toBe('running');
+    expect(review.reviewed).toBe(1);
+    expect(review.current).toBe(1);
+  });
+
+  it('is asked for done and delete as well, and another key than y or n waits', async () => {
+    const s = server(['u1', 'u2'], { asks: recurring });
+    await review.start({ surface: 'console' });
+    await review.press('c');
+    expect(review.phase).toBe('asking');
+    await review.press('q'); // neither: still waiting
+    await review.press('Enter');
+    expect(review.phase).toBe('asking');
+    await review.press('y');
+    expect(s.calls.filter((c) => c.args.includes('done')).at(-1)!.extras).toEqual(['rec:u1']);
+    expect(review.reviewed).toBe(1);
+    await review.press('d');
+    expect(review.phase).toBe('asking');
+    await review.press('n');
+    expect(s.calls.filter((c) => c.args.includes('delete')).at(-1)!.extras).toEqual([]);
+  });
+
+  it('asks each question of the step in turn', async () => {
+    const two: Ask = {
+      ask: 'extras',
+      items: [
+        { key: 'rec:u1', question: 'First?' },
+        { key: 'dep:u9', question: 'Second?' },
+      ],
+    };
+    const s = server(['u1'], { asks: two });
+    await review.start({ surface: 'console' });
+    await review.press('Enter');
+    expect(review.question).toBe('First?');
+    await review.press('y');
+    expect(review.phase).toBe('asking');
+    expect(review.question).toBe('Second?');
+    await review.press('n');
+    const last = s.calls.filter((c) => c.args.includes('modify')).at(-1)!;
+    expect(last.extras).toEqual(['rec:u1']);
+  });
+
+  it('a plain question is answered with confirmed, and no leaves the task as it was', async () => {
+    const s = server(['u1'], { asks: { ask: 'plain', message: 'Really?' } });
+    await review.start({ surface: 'console' });
+    await review.press('Enter');
+    expect(review.question).toBe('Really?');
+    await review.press('n');
+    expect(said().at(-1)).toBe('Cancelled.');
+    expect(review.phase).toBe('running');
+    expect(review.reviewed).toBe(0);
+    await review.press('Enter');
+    await review.press('y');
+    expect(s.calls.filter((c) => c.args.includes('modify')).at(-1)!.confirmed).toBe(true);
+    expect(review.reviewed).toBe(1);
+  });
+
+  it('can be quit while it is being asked', async () => {
+    server(['u1', 'u2'], { asks: recurring });
+    await review.start({ surface: 'console' });
+    await review.press('Enter');
+    review.quit();
+    expect(review.phase).toBe('idle');
+  });
+});
+
 describe('the setup', () => {
   beforeEach(() => {
     store.config = config({ uda: false, report: false });
   });
 
-  it("asks first, in tasksh's words, and stops when the answer is no", async () => {
+  it("asks first, in tasksh's words, answered with y or n, and stops when the answer is no", async () => {
     const s = server(['u1']);
     await review.start({ surface: 'console' });
     expect(review.phase).toBe('setup');
     expect(said().at(-1)).toBe(
       "Tasksh needs to define a 'reviewed' UDA of type 'date' for all tasks.  Ok to proceed? (y/n)",
     );
-    await review.respond('maybe');
-    expect(said().at(-1)).toContain('(y/n)');
-    await review.respond('n');
+    const lines = said().length;
+    await review.press('x'); // neither
+    expect(said().length).toBe(lines);
+    await review.press('n');
     expect(said().at(-1)).toBe('Review needs the reviewed UDA and the _reviewed report.');
-    expect(s.calls.some((a) => a.includes('config'))).toBe(false);
+    expect(s.calls.some((c) => c.args.includes('config'))).toBe(false);
     expect(review.phase).toBe('idle');
   });
 
@@ -218,12 +328,12 @@ describe('the setup', () => {
     const s = server(['u1']);
     vi.mocked(getConfig).mockResolvedValue(config());
     await review.start({ surface: 'console' });
-    await review.respond('y');
+    await review.press('y');
     expect(said().at(-1)).toBe(
       "Tasksh needs to define a '_reviewed' report to identify tasks needing review.  Ok to proceed? (y/n)",
     );
-    await review.respond('yes');
-    const written = s.calls.filter((a) => a[2] === 'config').map((a) => a.slice(3));
+    await review.press('Y');
+    const written = s.calls.filter((c) => c.args[2] === 'config').map((c) => c.args.slice(3));
     expect(written.map((w) => w[0])).toEqual([
       'uda.reviewed.type',
       'uda.reviewed.label',
@@ -247,7 +357,7 @@ describe('the setup', () => {
     server(['u1']);
     await review.start({ surface: 'console' });
     expect(said().at(-1)).toContain("The 'reviewed' UDA is of type 'string' now");
-    await review.respond('n');
+    await review.press('n');
   });
 });
 
@@ -278,6 +388,17 @@ describe('a review in the card', () => {
     expect(review.phase).toBe('running');
   });
 
+  it("asks Taskwarrior's question with Yes and No", async () => {
+    server(['u1', 'u2'], { asks: { ask: 'extras', items: [{ key: 'rec:u1', question: RECURRING }] } });
+    await review.start({ surface: 'card' });
+    await review.act('reviewed');
+    expect(review.phase).toBe('asking');
+    expect(review.question).toBe(RECURRING);
+    await review.answer(true);
+    expect(review.phase).toBe('running');
+    expect(review.current).toBe(1);
+  });
+
   it('ignores a choice while another is being carried out', async () => {
     server(['u1', 'u2']);
     await review.start({ surface: 'card' });
@@ -285,5 +406,30 @@ describe('a review in the card', () => {
     await review.act('reviewed'); // refused: the first is still running
     await first;
     expect(review.reviewed).toBe(1);
+  });
+});
+
+describe('moving a review to the card', () => {
+  it('carries on in the card from the same place, and the console stops taking the keys', async () => {
+    server(['u1', 'u2', 'u3']);
+    await review.start({ surface: 'console' });
+    await review.press('Enter');
+    expect(review.captures).toBe(true);
+    review.toCard();
+    expect(review.surface).toBe('card');
+    expect(review.captures).toBe(false);
+    expect(review.phase).toBe('running');
+    expect(review.row?.uuid).toBe('u2');
+    expect([review.current, review.reviewed, review.total]).toEqual([1, 1, 3]);
+    const lines = store.entries.length;
+    await review.act('reviewed');
+    expect(review.row?.uuid).toBe('u3');
+    expect(store.entries.length).toBe(lines); // nothing more is printed in the console
+  });
+
+  it('does nothing when there is no review in the console to move', () => {
+    review.toCard();
+    expect(review.phase).toBe('idle');
+    expect(review.surface).toBe('card');
   });
 });

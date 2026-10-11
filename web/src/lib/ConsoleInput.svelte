@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { Completer } from './completer.svelte';
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
+  import ReviewBar from './ReviewBar.svelte';
   import { review } from './review.svelte';
   import { store } from './store.svelte';
   import { expandTaskCommands } from './taskCommands';
@@ -57,13 +58,15 @@
   }
 
   function submit() {
-    // While a review is asking, whatever is typed is its answer, and an empty line is the usual one: reviewed.
+    // While a review asks, the answers are keys (see `reviewKey`); only what to change is typed.
     if (review.captures) {
-      const answer = line;
-      line = '';
-      cursor = -1;
-      completer.close();
-      void review.respond(answer);
+      if (review.phase === 'modifying') {
+        const words = line;
+        line = '';
+        cursor = -1;
+        completer.close();
+        void review.respond(words);
+      }
       return;
     }
     const l = line.trim();
@@ -135,7 +138,41 @@
     el.focus();
   }
 
+  /**
+   * While a review asks, a key is the answer: tasksh's menu is keybindings, not a shell, so nothing is typed and no
+   * Enter follows. (What to change is typed, and Escape cancels that.) Keys of buttons and of other fields are theirs.
+   */
+  function reviewKey(e: KeyboardEvent): boolean {
+    if (!review.captures || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return false;
+    // The target is not always an element (a key can come to the document or the window).
+    const t = e.target instanceof Element ? e.target : null;
+    if (t?.closest('button')) return false;
+    if (t && t !== el && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return false;
+    if (review.phase === 'modifying') {
+      if (e.key !== 'Escape') return false;
+      e.preventDefault();
+      void review.modify('');
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      review.quit();
+      return true;
+    }
+    if (e.key !== 'Enter' && e.key.length !== 1) return false; // arrows, Tab, function keys: left alone
+    e.preventDefault();
+    void review.press(e.key);
+    return true;
+  }
+
+  // The prompt is off while a review asks, except to type the change: it has the focus then.
+  const keysOnly = $derived(review.captures && review.phase !== 'modifying');
+  $effect(() => {
+    if (review.captures && review.phase === 'modifying') void tick().then(() => el?.focus());
+  });
+
   function onkeydown(e: KeyboardEvent) {
+    if (reviewKey(e)) return;
     const open = !!completer.menu;
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -160,13 +197,13 @@
       store.clear();
     } else if (e.key === 'Escape') {
       if (open) completer.close();
-      else if (review.captures) review.quit();
       else el.blur();
     }
   }
 
   // `/` focuses the prompt from anywhere that isn't a text field.
   function globalKey(e: KeyboardEvent) {
+    if (reviewKey(e)) return;
     const t = e.target as HTMLElement | null;
     const typing =
       t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
@@ -199,7 +236,7 @@
       </button>
     </div>
   {/if}
-  {#if review.captures}<div class="rhint mono dim" data-testid="review-hint">{review.hint}</div>{/if}
+  {#if review.captures}<ReviewBar />{/if}
   <CompletionMenu {completer} placement="above" onpick={(i) => edit(completer.pick(i))} />
   <label class="row">
     <span class="mono ps" aria-hidden="true">{review.captures ? 'review>' : 'task>'}</span>
@@ -214,9 +251,12 @@
         cursor = -1;
       }}
       class="grow mono"
-      placeholder={review.captures
-        ? 'Enter, s, e, m, c, d or q'
-        : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
+      disabled={keysOnly}
+      placeholder={keysOnly
+        ? 'Reviewing: press a key, or use the buttons above'
+        : review.captures
+          ? '+tag -tag /teh/the/ project:X'
+          : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
       autocomplete="off"
       autocapitalize="off"
       spellcheck="false"
@@ -242,13 +282,6 @@
   }
   .prompt :global(.menu) {
     left: 24px;
-  }
-  .rhint {
-    font-size: 13px;
-    margin-bottom: 8px;
-    padding: 4px 12px;
-    background: var(--panel-2);
-    border-radius: 6px;
   }
   .last {
     font-size: 13px;

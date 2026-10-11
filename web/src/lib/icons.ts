@@ -30,6 +30,7 @@ export { default as Link } from '@lucide/svelte/icons/link';
 export { default as ListChecks } from '@lucide/svelte/icons/list-checks';
 export { default as Lock } from '@lucide/svelte/icons/lock';
 export { default as Menu } from '@lucide/svelte/icons/menu';
+export { default as PanelTop } from '@lucide/svelte/icons/panel-top';
 export { default as Pencil } from '@lucide/svelte/icons/pencil';
 export { default as Play } from '@lucide/svelte/icons/play';
 export { default as Plus } from '@lucide/svelte/icons/plus';

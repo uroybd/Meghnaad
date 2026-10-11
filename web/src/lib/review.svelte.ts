@@ -1,16 +1,16 @@
 // tasksh's `review`, in the browser: walk the tasks the `_reviewed` report lists, show each, and mark it reviewed,
 // skip it, edit it, change it, finish it or delete it. It is only a client of `POST /api/cli`: every step is an
 // ordinary command (`modify reviewed:now`, `done`, `delete`), so undo, hooks and the settings work as they do for
-// anything else. Two places drive one session: the console's prompt (tasksh's own way, typing a letter) and a card
-// with buttons. (src/review.cpp in https://github.com/GothenburgBitFactory/taskshell)
+// anything else. tasksh's menu is keybindings, not a shell: a key is the answer, with no Enter after it. Two places
+// show it: the console (the prompt is off while it asks, and a bar of buttons stands over it) and a card.
+// (src/review.cpp in https://github.com/GothenburgBitFactory/taskshell)
 
-import { runCli } from './api';
+import { runCli, type Answers } from './api';
 import { splitWords } from './cmdline';
 import { store } from './store.svelte';
 import {
   configArgs,
   menuKey,
-  notRecognized,
   partLines,
   REVIEW_FILTER,
   REVIEW_INTRO,
@@ -24,9 +24,9 @@ import {
   taskshStatus,
   type ReviewKey,
 } from './tasksh';
-import type { CliResponse, Row } from './types';
+import type { CliResponse, ConfirmResult, Row } from './types';
 
-export type ReviewPhase = 'idle' | 'setup' | 'running' | 'modifying' | 'editing' | 'done';
+export type ReviewPhase = 'idle' | 'setup' | 'running' | 'asking' | 'modifying' | 'editing' | 'done';
 export type ReviewSurface = 'console' | 'card';
 
 /** Taskwarrior is told these with every step, as tasksh does: no questions, and nothing but the answer. */
@@ -39,6 +39,23 @@ const WRITES: Record<'reviewed' | 'complete' | 'delete', { words: string[]; said
   delete: { words: ['delete'], said: 'Deleted.' },
 };
 
+/**
+ * A question Taskwarrior asked in the middle of a step, which the person answers before it goes ahead: the usual one
+ * is "This is a recurring task. Do you want to modify all pending recurrences of this same task?", which
+ * `rc.confirmation:no` does not silence (`recurrence.confirmation` governs it), so tasksh shows it too.
+ */
+interface Asking {
+  words: string[];
+  answers: Answers;
+  r: ConfirmResult;
+  /** Which of the question's items is being asked. */
+  index: number;
+  /** The keys answered yes so far. */
+  yes: string[];
+  /** What to do when the step has gone through. */
+  then: () => Promise<void>;
+}
+
 class ReviewSession {
   phase = $state<ReviewPhase>('idle');
   surface = $state<ReviewSurface>('card');
@@ -50,7 +67,7 @@ class ReviewSession {
   /** The latest thing said (the card shows it; the console prints each as it is said). */
   message = $state('');
   messageKind = $state<'ok' | 'err'>('ok');
-  /** The question being asked, in the setup. */
+  /** The question being asked: the setup's, or one of Taskwarrior's. */
   question = $state<string | null>(null);
   busy = $state(false);
 
@@ -59,18 +76,20 @@ class ReviewSession {
   /** What is still to be asked in the setup, and the `config` lines each answer writes. */
   #parts: ('uda' | 'report')[] = [];
   #lines: [string, string][] = [];
+  #asking: Asking | null = null;
 
-  /** The prompt is the way in: it takes the typed answers (and an empty Enter means "reviewed"). */
+  /** The console is taking the keys (and its prompt is off, except to type what to change). */
   get captures(): boolean {
     return (
-      this.surface === 'console' && (this.phase === 'setup' || this.phase === 'running' || this.phase === 'modifying')
+      this.surface === 'console' &&
+      (this.phase === 'setup' || this.phase === 'running' || this.phase === 'asking' || this.phase === 'modifying')
     );
   }
 
-  /** What the prompt says while it is taking answers. */
+  /** What the console says while it is waiting. */
   get hint(): string {
-    if (this.phase === 'setup') return `${this.question ?? ''} (y/n)`;
-    if (this.phase === 'modifying') return REVIEW_MODIFY_PROMPT;
+    if (this.phase === 'setup' || this.phase === 'asking') return `${this.question ?? ''} (y/n)`;
+    if (this.phase === 'modifying') return `${REVIEW_MODIFY_PROMPT} Enter to apply, Escape to cancel.`;
     return REVIEW_MENU;
   }
 
@@ -103,19 +122,24 @@ class ReviewSession {
     }
   }
 
-  /** An answer typed at the prompt. */
-  async respond(input: string): Promise<void> {
+  /**
+   * A key pressed (`Enter` is the usual answer): the menu's choice, or y or n to a question. A key that means
+   * nothing here is ignored, as keys are.
+   */
+  async press(key: string): Promise<void> {
     if (this.busy) return;
-    if (this.phase === 'setup') {
-      const a = input.trim().toLowerCase();
-      if (['y', 'yes'].includes(a)) return this.answerSetup(true);
-      if (['n', 'no'].includes(a)) return this.answerSetup(false);
-      return this.#say(`${this.question} (y/n)`);
+    const k = key.toLowerCase();
+    if (this.phase === 'setup' && (k === 'y' || k === 'n')) return this.answerSetup(k === 'y');
+    if (this.phase === 'asking' && (k === 'y' || k === 'n')) return this.answer(k === 'y');
+    if (this.phase === 'running') {
+      const choice = menuKey(key === 'Enter' ? '' : key);
+      if (choice) return this.act(choice);
     }
+  }
+
+  /** What was typed, when what is wanted is typed: the words after `modify`. */
+  async respond(input: string): Promise<void> {
     if (this.phase === 'modifying') return this.modify(input);
-    const key = menuKey(input);
-    if (key) return this.act(key);
-    this.#say(notRecognized(input.trim()), 'err');
   }
 
   /** Yes or no to the setup's question (the UDA, then the report). */
@@ -169,11 +193,12 @@ class ReviewSession {
         return;
       }
       const { words, said } = WRITES[key];
-      if (!(await this.#write(words))) return;
-      this.#say(said);
-      this.reviewed++;
-      this.current++;
-      await this.#show();
+      await this.#write(words, async () => {
+        this.#say(said);
+        this.reviewed++;
+        this.current++;
+        await this.#show();
+      });
     } finally {
       this.busy = false;
     }
@@ -187,10 +212,10 @@ class ReviewSession {
     if (!words.length) return this.#say('No changes.');
     this.busy = true;
     try {
-      if (await this.#write(['modify', ...words])) {
+      await this.#write(['modify', ...words], async () => {
         this.#say('Modified.');
         await this.#show();
-      }
+      });
     } finally {
       this.busy = false;
     }
@@ -202,13 +227,39 @@ class ReviewSession {
     this.phase = 'running';
     this.busy = true;
     try {
-      if (await this.#write(['modify', 'reviewed:now'])) {
+      await this.#write(['modify', 'reviewed:now'], async () => {
         this.#say('Modified.');
         await this.#show();
-      }
+      });
     } finally {
       this.busy = false;
     }
+  }
+
+  /** Yes or no to a question Taskwarrior asked in the middle of a step. */
+  async answer(yes: boolean): Promise<void> {
+    const a = this.#asking;
+    if (this.phase !== 'asking' || !a || this.busy) return;
+    if (a.r.ask === 'extras') {
+      // One question per item (the recurring series, a dependency to repair); no leaves that part undone and the
+      // step itself still goes ahead.
+      if (yes) a.yes.push(a.r.items[a.index].key);
+      a.index++;
+      if (a.index < a.r.items.length) return this.#askNext();
+      return this.#resend({ extras: a.yes });
+    }
+    if (!yes) {
+      this.#asking = null;
+      this.question = null;
+      this.phase = 'running';
+      return this.#say('Cancelled.');
+    }
+    return this.#resend(a.r.ask === 'plain' ? { confirmed: true } : { approved: a.r.items.map((i) => i.key) });
+  }
+
+  /** Move a review that is going in the console to the card: the same session and place, drawn with buttons. */
+  toCard(): void {
+    if (this.surface === 'console' && this.phase !== 'idle' && this.phase !== 'done') this.surface = 'card';
   }
 
   /** Stop, whatever is going on (the card closed, Escape at the prompt). */
@@ -224,11 +275,31 @@ class ReviewSession {
     this.row = null;
     this.question = null;
     this.message = '';
+    this.#asking = null;
   }
 
   #ask() {
     this.question = setupQuestion(this.#parts[0], taskshStatus(store.config));
     this.#say(this.surface === 'console' ? `${this.question} (y/n)` : this.question);
+  }
+
+  #askNext() {
+    const a = this.#asking!;
+    this.question = a.r.ask === 'extras' ? a.r.items[a.index].question : a.r.message;
+    this.#say(this.surface === 'console' ? `${this.question} (y/n)` : this.question);
+  }
+
+  async #resend(more: Answers) {
+    const a = this.#asking!;
+    this.#asking = null;
+    this.question = null;
+    this.phase = 'running';
+    this.busy = true;
+    try {
+      await this.#write(a.words, a.then, { ...a.answers, ...more });
+    } finally {
+      this.busy = false;
+    }
   }
 
   async #begin() {
@@ -275,31 +346,28 @@ class ReviewSession {
     this.#end();
   }
 
-  /** A command for the task being looked at; whether it went through. */
-  async #write(words: string[]): Promise<boolean> {
+  /**
+   * A command for the task being looked at. When it has gone through, `then` carries on; when Taskwarrior asks
+   * something first, the person is asked, and the same command is sent again with the answer.
+   */
+  async #write(words: string[], then: () => Promise<void>, answers: Answers = {}): Promise<void> {
     const uuid = this.row!.uuid;
     try {
-      const res = await this.#call([...QUIET, uuid, ...words]);
+      const res = await runCli({ args: [...QUIET, uuid, ...words], ...answers });
       const r = res.result;
-      if (r.kind === 'error') {
-        this.#say(r.message, 'err');
-        return false;
-      }
+      if (r.kind === 'error') return this.#say(r.message, 'err');
       if (r.kind === 'confirm') {
-        this.#say(
-          `${r.message} Taskwarrior asked something a review can't answer: do this one from the Tasks page.`,
-          'err',
-        );
-        return false;
+        this.#asking = { words, answers, r, index: 0, yes: [], then };
+        this.phase = 'asking';
+        return this.#askNext();
       }
       if (res.wrote) {
         store.written();
         if (store.live) void store.refresh(store.live);
       }
-      return true;
+      await then();
     } catch (e) {
       this.#say(e instanceof Error ? e.message : String(e), 'err');
-      return false;
     }
   }
 
@@ -309,6 +377,7 @@ class ReviewSession {
 
   #end(summary = true) {
     if (summary) this.#say(reviewEnd(this.reviewed, this.total));
+    this.#asking = null;
     // Said in the console, there is nothing left to show; the card keeps the summary until it is closed.
     if (this.surface === 'console') this.close();
     else this.phase = 'done';
