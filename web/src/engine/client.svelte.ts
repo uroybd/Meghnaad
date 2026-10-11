@@ -12,20 +12,10 @@ const PULL_EVERY_MS = 30_000;
 /** A pull that comes this soon after the last one is not worth a request. */
 const PULL_NOT_SOONER_MS = 4_000;
 const CHANNEL = 'meghnaad-engine';
-/** `localStorage` key that forces the engine on the server (the way the app worked before the engine moved here). */
-export const ENGINE_FLAG = 'meghnaad.engine';
-
 export type SyncStatus = 'idle' | 'syncing' | 'failed';
 
-/** Whether this browser can run the engine, and has not been told not to. */
+/** Whether this browser can run the engine: it needs Web Workers and WebAssembly. */
 export function engineAvailable(): boolean {
-  try {
-    const params = new URLSearchParams(location.search);
-    if (params.has('engine')) localStorage.setItem(ENGINE_FLAG, params.get('engine') ?? '');
-    if (localStorage.getItem(ENGINE_FLAG) === 'server') return false;
-  } catch {
-    // no storage: the default stands
-  }
   return typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 }
 

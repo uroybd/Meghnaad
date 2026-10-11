@@ -4,6 +4,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Call } from './protocol';
 
+// This tests the real client, not the stand-in that test-setup.ts gives every other test.
+vi.unmock('./client.svelte');
+
 let sent: Call[] = [];
 let replies: (c: Call) => unknown = () => null;
 let hold: { resolve: () => void } | undefined;

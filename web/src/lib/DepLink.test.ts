@@ -58,14 +58,15 @@ describe('a link to another task', () => {
     expect(card.textContent).toContain('Work.Event');
     expect(card.textContent).toContain('priority H');
     expect(card.textContent).toContain('+next');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).args).toEqual([UUID, 'info']);
+    const asked = () => fetchMock.mock.calls.filter((c) => c[0] === '/api/cli');
+    expect(JSON.parse(asked()[0][1].body).args).toEqual([UUID, 'info']);
 
     id.parentElement!.dispatchEvent(new MouseEvent('pointerleave'));
     await settle();
     expect(document.querySelector('[data-testid="deplink-card"]')).toBeNull();
     id.parentElement!.dispatchEvent(new MouseEvent('pointerenter'));
     await settle();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(asked()).toHaveLength(1);
   });
 
   it('opens the task in the drawer from the card’s button', async () => {

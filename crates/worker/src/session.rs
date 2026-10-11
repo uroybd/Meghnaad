@@ -1,28 +1,22 @@
-//! Per-isolate cache: the derived key, a long-lived replica, its undo stack and the taskrc config.
+//! Per-isolate cache: the derived key and the taskrc config.
 //!
-//! The first request in an isolate derives the key (slow PBKDF2) and bootstraps a replica from the
-//! bucket's snapshot. Later requests reuse them, so each `sync` only downloads versions added since.
+//! The first request in an isolate derives the key (PBKDF2, through the runtime's Web Crypto); later requests reuse it.
+//! The Worker holds no tasks: the engine and the replica live in the browser, and this only opens and seals what passes
+//! between it and the bucket.
 
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::Arc;
-use taskchampion::{Replica, Server};
-use tc_core::cli::UndoStack;
+use taskchampion::Server;
 use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::taskrc::Config;
-use tc_core::warm::Warm;
-use tc_core::LiveStorage;
 use tc_core::{load_salt, CloudServer, ObjectStore};
-use tokio::sync::{Mutex, OwnedMutexGuard};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use worker::Env;
 
 use crate::store::R2Store;
-
-pub type Db = Replica<LiveStorage>;
 
 /// Where the allowlisted taskrc subset lives. Outside TaskChampion's own namespaces
 /// (`salt`, `latest`, `v-*`, `s-*`), so the `task` CLI never sees it. Because it is in the bucket
@@ -66,21 +60,8 @@ fn encode(cfg: &Config) -> worker::Result<Vec<u8>> {
     .map_err(|e| worker::Error::RustError(e.to_string()))
 }
 
-pub struct State {
-    pub replica: Db,
-    pub undo: UndoStack,
-    /// The tasks as the engine last read them, kept while nothing changes (see `tc_core::warm`): most requests read.
-    pub warm: Warm,
-}
-
-#[derive(Clone)]
-struct Cached {
-    cryptor: Cryptor,
-    state: Arc<Mutex<State>>,
-}
-
 thread_local! {
-    static CACHE: RefCell<Option<Cached>> = const { RefCell::new(None) };
+    static CACHE: RefCell<Option<Cryptor>> = const { RefCell::new(None) };
     static CONFIG: RefCell<Option<(f64, Rc<Config>)>> = const { RefCell::new(None) };
     /// Set when the stored settings exist but can't be read; reported to the UI, never papered over.
     static CONFIG_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -94,21 +75,6 @@ pub fn config_error() -> Option<String> {
 /// The time, in seconds since the epoch, for the bucket's cleanup to tell what is old.
 fn now_secs() -> i64 {
     (js_sys::Date::now() / 1000.0) as i64
-}
-
-pub struct Session {
-    pub state: OwnedMutexGuard<State>,
-    pub server: Box<dyn Server>,
-    pub config: Rc<Config>,
-}
-
-impl Session {
-    /// Pull remote changes and push any local ones. Snapshots follow the CLI's own rule
-    /// (`avoid_snapshots` is false, as in `task sync`), so a bucket this app writes to does not
-    /// grow a long tail of versions that every idle Worker must replay.
-    pub async fn sync(&mut self) -> Result<(), taskchampion::Error> {
-        self.state.replica.sync(&mut self.server, false).await
-    }
 }
 
 fn rust_err(e: impl ToString) -> worker::Error {
@@ -245,8 +211,8 @@ async fn derive_key_natively(salt: &[u8], secret: &[u8]) -> Result<[u8; KEY_LEN]
         .map_err(|_| JsValue::from_str("PBKDF2 returned the wrong number of bytes"))
 }
 
-/// The key and the replica this instance keeps, made on the first request that needs them.
-async fn cached(env: &Env) -> worker::Result<Cached> {
+/// The key this instance keeps, derived on the first request that needs it.
+async fn cryptor(env: &Env) -> worker::Result<Cryptor> {
     if let Some(c) = CACHE.with(|c| c.borrow().clone()) {
         return Ok(c);
     }
@@ -264,66 +230,21 @@ async fn cached(env: &Env) -> worker::Result<Cached> {
             Cryptor::new(&salt, secret.as_bytes())
         }
     };
-    let c = Cached {
-        cryptor,
-        state: Arc::new(Mutex::new({
-            let storage = LiveStorage::new();
-            let warm = Warm::new(storage.generation());
-            State {
-                replica: Replica::new(storage),
-                undo: UndoStack::default(),
-                warm,
-            }
-        })),
-    };
-    CACHE.with(|slot| *slot.borrow_mut() = Some(c.clone()));
-    Ok(c)
-}
-
-pub async fn open(env: &Env) -> worker::Result<Session> {
-    let bucket = env.bucket("TASKS")?;
-    let cached = cached(env).await?;
-    let config = config(env).await?;
-    let state = lock_state(&cached.state).await?;
-    let server = Box::new(CloudServer::with_cryptor(R2Store(bucket), cached.cryptor).with_cleanup(now_secs));
-    Ok(Session { state, server, config })
+    CACHE.with(|slot| *slot.borrow_mut() = Some(cryptor.clone()));
+    Ok(cryptor)
 }
 
 /// The bucket as a TaskChampion server and nothing else: no replica, no tasks parsed. What a browser that keeps its
 /// own replica needs, since it asks for versions and sends versions and the Worker only opens and seals them.
 pub async fn server(env: &Env) -> worker::Result<Box<dyn Server>> {
     let bucket = env.bucket("TASKS")?;
-    let cached = cached(env).await?;
+    let cryptor = cryptor(env).await?;
     Ok(Box::new(
-        CloudServer::with_cryptor(R2Store(bucket), cached.cryptor).with_cleanup(now_secs),
+        CloudServer::with_cryptor(R2Store(bucket), cryptor).with_cleanup(now_secs),
     ))
 }
 
-/// Take the replica lock without parking this request on it.
-///
-/// Concurrent requests share one replica. Awaiting a plain async mutex held by *another*
-/// request makes the Workers runtime see a request with no I/O of its own and cancel it as
-/// "hung" within milliseconds. So poll with a short timer instead (a timer is this request's own
-/// pending work), and give up with an ordinary error rather than waiting forever.
-async fn lock_state(state: &Arc<Mutex<State>>) -> worker::Result<OwnedMutexGuard<State>> {
-    const STEP_MS: u64 = 10;
-    const MAX_WAIT_MS: u64 = 20_000;
-    let mut waited = 0;
-    loop {
-        match state.clone().try_lock_owned() {
-            Ok(guard) => return Ok(guard),
-            Err(_) if waited >= MAX_WAIT_MS => {
-                return Err(worker::Error::RustError("the server is busy; try again".into()));
-            }
-            Err(_) => {
-                worker::Delay::from(std::time::Duration::from_millis(STEP_MS)).await;
-                waited += STEP_MS;
-            }
-        }
-    }
-}
-
-/// Drop cached state, e.g. after the bucket's salt or secret turned out to be different.
+/// Drop the key, e.g. after the bucket's salt or secret turned out to be different.
 pub fn reset() {
     CACHE.with(|c| *c.borrow_mut() = None);
 }

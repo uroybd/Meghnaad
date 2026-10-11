@@ -17,5 +17,5 @@ export default defineConfig({
   build: { outDir: 'dist', sourcemap: false, target: 'es2022' },
   // The engine's Web Worker is a module (it imports the engine package).
   worker: { format: 'es' },
-  test: { environment: 'jsdom', include: ['src/**/*.test.ts'] },
+  test: { environment: 'jsdom', include: ['src/**/*.test.ts'], setupFiles: ['./src/test-setup.ts'] },
 });

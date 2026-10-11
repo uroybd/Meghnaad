@@ -252,7 +252,7 @@ export interface FileResult {
   /** How many tasks are in it. */
   count: number;
 }
-/** `import`: the page offers to pick a file; the file itself goes to `/api/import`. */
+/** `import`: the page offers to pick a file; the file's text goes to the engine. */
 export interface ImportResult {
   kind: 'import';
 }

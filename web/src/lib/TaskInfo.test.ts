@@ -76,8 +76,9 @@ describe('a task’s history', () => {
     details.open = true;
     details.dispatchEvent(new Event('toggle'));
     await settle();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const asked = fetchMock.mock.calls.filter((c) => c[0] === '/api/cli');
+    expect(asked).toHaveLength(1);
+    const body = JSON.parse(asked[0][1].body);
     expect(body.args).toEqual(['_history', '11111111-1111-1111-1111-111111111111']);
     expect(document.querySelector('[data-testid="history"]')).not.toBeNull();
     expect(details.textContent).toContain('1 moment');

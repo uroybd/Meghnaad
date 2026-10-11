@@ -224,7 +224,11 @@ expect(
   'every write route is protected too',
   (
     await Promise.all([
-      s({ method: 'POST', url: '/api/cli', body: { line: 'count' } }),
+      s({ method: 'POST', url: '/api/tc/push?parent=00000000-0000-0000-0000-000000000000', body: {} }),
+      s({ url: '/api/tc/pull?since=00000000-0000-0000-0000-000000000000' }),
+      s({ url: '/api/tc/snapshot' }),
+      s({ method: 'PUT', url: '/api/settings', body: {} }),
+      s({ method: 'PUT', url: '/api/config/engine', body: {} }),
       s({ method: 'PUT', url: '/api/config/taskrc', body: {} }),
       s({ method: 'POST', url: '/api/config/taskrc/restore' }),
       s({ url: '/api/config' }),
@@ -237,7 +241,7 @@ expect(
 );
 expect(
   'a valid token reaches a write route',
-  await s({ method: 'POST', url: '/api/cli', token: mint(), body: { line: 'count' } }),
+  await s({ method: 'PUT', url: '/api/settings', token: mint(), body: {} }),
   200,
 );
 
@@ -252,42 +256,42 @@ if (hostHonoured === 403) {
   expect(
     'non-loopback host: cross-site write refused',
     await b({
-      method: 'POST',
-      url: '/api/cli',
+      method: 'PUT',
+      url: '/api/settings',
       host: 'tasks.example.com',
       token: mint(),
       origin: 'https://evil.example',
-      body: { line: 'count' },
+      body: {},
     }),
     403,
   );
   expect(
     'non-loopback host: opaque "null" origin refused',
     await b({
-      method: 'POST',
-      url: '/api/cli',
+      method: 'PUT',
+      url: '/api/settings',
       host: 'tasks.example.com',
       token: mint(),
       origin: 'null',
-      body: { line: 'count' },
+      body: {},
     }),
     403,
   );
   expect(
     'non-loopback host: same-origin write allowed',
     await b({
-      method: 'POST',
-      url: '/api/cli',
+      method: 'PUT',
+      url: '/api/settings',
       host: 'tasks.example.com',
       token: mint(),
       origin: 'http://tasks.example.com',
-      body: { line: 'count' },
+      body: {},
     }),
     200,
   );
   expect(
     'non-loopback host: a script with no Origin is allowed',
-    await b({ method: 'POST', url: '/api/cli', host: 'tasks.example.com', token: mint(), body: { line: 'count' } }),
+    await b({ method: 'PUT', url: '/api/settings', host: 'tasks.example.com', token: mint(), body: {} }),
     200,
   );
 } else {

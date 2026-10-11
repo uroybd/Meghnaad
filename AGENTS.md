@@ -44,20 +44,21 @@ run `npm run format` after editing any code, not just at the end.
 - **Docs move with the code.** A new or changed feature updates `docs/using.md`, and `docs/taskrc-support.md` for a
   setting, `docs/architecture.md` for a module, and the README if it is user-visible. Keep the Mermaid diagram identical
   in the README and `docs/architecture.md`.
-- **Taskwarrior logic lives in `tc-core`**; the page only draws. The engine answers what `POST /api/cli` and
-  `POST /api/import` used to (they remain on the Worker as the fallback for a browser that cannot run it, and must keep
-  giving the same answers). The page talks to the bucket only through the Worker's `/api/tc/*` (`tc_core::wire`).
+- **Taskwarrior logic lives in `tc-core`**; the page only draws. The engine runs in the page (`crates/browser`); the
+  Worker runs no commands and holds no tasks. The page talks to the bucket only through the Worker's `/api/tc/*`
+  (`tc_core::wire`). To run commands from a shell (seeding, interop, poking a deployment) use
+  `node scripts/engine-cli.mjs --api URL '<command>'`, which runs the same engine under Node.
 - **Secrets never leave the Worker.** The encryption secret is only ever in the Worker (it derives the key and opens
   and seals versions; the page gets plain versions over HTTPS). The taskrc importer, `show` and `config` refuse sync and
   credential-like names and never echo their values, and `PUT /api/config/engine` refuses them too; keep tests that
   prove it passing, and add one for any new path that handles settings.
-- **Mind the Worker's size.** The compressed Wasm has a budget (the README says how much is left for hooks), and every
-  feature spends some. Measure a release build before and after (`gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`),
-  and prefer reusing what is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config`
-  line editing) over a new instantiation. `twiggy` on a build made in a scratch directory shows where bytes go. The build
-  drops the debug names (`KEEP_WASM_NAMES=1` keeps them); measure with them left out, as the deploy does. The engine in the browser is downloaded by every visitor (about 595 KB
-  compressed; measure it with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c`), so a feature spends from that
-  budget too.
+- **Mind the sizes.** Both are compressed WebAssembly. The engine is downloaded by every visitor (about 595 KB; measure
+  with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c` after `npm run build:engine`). The Worker (about 355 KB;
+  `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`) has Cloudflare's 1 MB limit and, since it runs no commands,
+  almost no reason to grow. Every feature spends some: measure a release build before and after, and prefer reusing what
+  is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config` line editing) over a
+  new instantiation. `twiggy` on a build made in a scratch directory shows where bytes go. The builds drop the debug
+  names (`KEEP_WASM_NAMES=1` keeps them); measure with them left out, as the deploy does.
 - **Hooks** are user code. Users edit only `crates/tc-core/src/my_hooks.rs`, so keep engine changes in `hooks.rs` and
   keep `my_hooks.rs` stable, so their patch keeps applying (see `docs/using.md`, "Keeping your hooks across updates").
 

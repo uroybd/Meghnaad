@@ -1,5 +1,5 @@
 // `runCli` and `importTasks` when the engine runs in the page: the answers are the server's, the server is not asked,
-// settings that a command changed are saved on the server, and a browser that cannot start the engine uses the server.
+// settings that a command changed are saved on the server, and a browser that cannot start the engine says why.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -150,28 +150,26 @@ describe('the engine in the page', () => {
 });
 
 describe('where the engine cannot run', () => {
-  it('uses the server, without asking it anything first, when the browser cannot run the engine', async () => {
+  it('says so, and why, instead of asking the server to run commands', async () => {
     available = false;
-    const { runCli } = await api();
-    fetchMock.mockImplementation(() => json({ wrote: false, result: { kind: 'text', lines: ['3'] }, command: null }));
-    await runCli({ line: 'count' });
-    expect(urls()).toEqual(['/api/cli']);
+    const { runCli, importTasks } = await api();
+    const err = await runCli({ line: 'count' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ message: expect.stringContaining('Web Workers and WebAssembly') });
+    await expect(importTasks('[]', true)).rejects.toThrow('Web Workers and WebAssembly');
     expect(engine.start).not.toHaveBeenCalled();
+    expect(urls()).toEqual(['/api/config']);
   });
 
-  it('uses the server when the engine fails to start, and stops what it started', async () => {
-    const { runCli } = await api();
+  it('gives the reason it could not start to every command, and stops what it started', async () => {
+    const { runCli, getConfig } = await api();
     engine.start.mockRejectedValue(new Error('the module could not be compiled'));
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    fetchMock.mockImplementation((url: string) =>
-      url === '/api/config'
-        ? json(config)
-        : json({ wrote: false, result: { kind: 'text', lines: ['3'] }, command: null }),
+    await expect(runCli({ line: 'count' })).rejects.toThrow(
+      'The engine could not start in this browser: the module could not be compiled',
     );
-    const res = await runCli({ line: 'count' });
-    expect(res.result).toEqual({ kind: 'text', lines: ['3'] });
-    expect(engine.stop).toHaveBeenCalled();
-    expect(urls()).toContain('/api/cli');
+    await expect(runCli({ line: 'next' })).rejects.toThrow('could not be compiled');
+    expect(engine.stop).toHaveBeenCalledTimes(1);
     expect(engine.run).not.toHaveBeenCalled();
+    // The settings are still read: the page works around the engine's failure to start, it does not crash on it.
+    await expect(getConfig()).resolves.toBeTruthy();
   });
 });
