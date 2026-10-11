@@ -7,8 +7,6 @@
     BellOff,
     ClipboardCheck,
     CalendarDays,
-    Eye,
-    EyeOff,
     ChartColumn,
     Folder,
     Tag,
@@ -21,6 +19,7 @@
     TriangleAlert,
     X,
   } from './lib/icons';
+  import NavMenu from './lib/NavMenu.svelte';
   import BurndownPage from './lib/BurndownPage.svelte';
   import CalendarPage from './lib/CalendarPage.svelte';
   import ConsoleView from './lib/ConsoleView.svelte';
@@ -133,14 +132,8 @@
     if (store.view === 'settings') seenSettings = true;
   });
 
-  // On a phone the report list is a slide-over panel behind the menu button.
+  // On a phone the top bar's pages, and the reports under Tasks, are a slide-over menu behind the menu button.
   let navOpen = $state(false);
-
-  function pick(name: string) {
-    store.report = name;
-    store.view = 'tasks';
-    navOpen = false;
-  }
 
   function onkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && navOpen) navOpen = false;
@@ -160,7 +153,7 @@
     <header class="top">
       <button
         class="ghost burger"
-        aria-label="Reports and quick add"
+        aria-label="Menu"
         aria-expanded={navOpen}
         aria-controls="side"
         onclick={() => (navOpen = !navOpen)}
@@ -209,7 +202,7 @@
         ><ClipboardCheck size={15} /> <span class="lbl">Review</span></button
       >
       <button
-        class="ghost"
+        class="ghost bell"
         onclick={() => (store.notifyOpen = true)}
         aria-label="Reminders ({notifier.settings.enabled ? 'on' : 'off'})"
         title={notifier.settings.enabled ? 'Reminders are on (while this tab is open)' : 'Reminders are off'}
@@ -257,42 +250,13 @@
 
     {#if navOpen}<button class="scrim" aria-label="Close menu" tabindex="-1" onclick={() => (navOpen = false)}
       ></button>{/if}
-    <aside class="side" class:open={navOpen} id="side" aria-label="Reports">
+    <aside class="side" class:open={navOpen} id="side" aria-label="Menu">
       <div class="side-head row">
         <strong class="grow">Meghnaad</strong>
         <button class="ghost" aria-label="Close menu" onclick={() => (navOpen = false)}><X size={18} /></button>
       </div>
       <QuickAdd />
-      <div class="reports-head">
-        <h2>Reports</h2>
-        {#if store.hasHiddenReports}
-          <button
-            class="ghost eye"
-            aria-pressed={store.showHiddenReports}
-            aria-label={store.showHiddenReports
-              ? 'Hide the reports named _something'
-              : 'Show the reports named _something'}
-            title={store.showHiddenReports
-              ? 'Hide the reports whose names start with _ (helpers for other commands)'
-              : 'Show the reports whose names start with _ (helpers for other commands)'}
-            onclick={() => store.setShowHiddenReports(!store.showHiddenReports)}
-            >{#if store.showHiddenReports}<Eye size={14} />{:else}<EyeOff size={14} />{/if}</button
-          >
-        {/if}
-      </div>
-      <ul>
-        {#each store.offeredReports as r (r.name)}
-          <li>
-            <button
-              class="ghost report"
-              class:on={store.view === 'tasks' && store.report === r.name}
-              title={r.description ?? ''}
-              onclick={() => pick(r.name)}>{r.name}</button
-            >
-          </li>
-        {/each}
-      </ul>
-      {#if store.configError}<p class="err">{store.configError}</p>{/if}
+      <NavMenu onnavigate={() => (navOpen = false)} />
     </aside>
 
     <main class="main" class:console={store.view === 'console'}>
@@ -416,41 +380,6 @@
     overflow: auto;
     background: var(--panel);
   }
-  .reports-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 26px 0 8px;
-  }
-  .side h2 {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--dim);
-    margin: 0;
-  }
-  .eye {
-    line-height: 0;
-    padding: 4px 6px;
-    color: var(--dim);
-  }
-  .side ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .report {
-    width: 100%;
-    text-align: left;
-    padding: 7px 12px;
-  }
-  .side li + li {
-    margin-top: 2px;
-  }
-  .report.on {
-    background: var(--panel-2);
-    font-weight: 600;
-  }
   .main {
     grid-area: main;
     overflow: auto;
@@ -520,8 +449,15 @@
       align-items: center;
       justify-content: center;
     }
-    .name {
+    /* The pages and their buttons are in the drawer; the bar keeps what is live (the running task, the context). */
+    .top .tabs,
+    .top .review,
+    .top .bell,
+    .top .settings {
       display: none;
+    }
+    .top {
+      flex-wrap: nowrap;
     }
     .top :global(.timer) {
       order: 10;
@@ -569,9 +505,6 @@
     .side-head {
       display: flex;
       margin-bottom: 10px;
-    }
-    .report {
-      padding: 10px 8px;
     }
     /* Room under the last card so the floating + never covers its buttons. */
     .main {
