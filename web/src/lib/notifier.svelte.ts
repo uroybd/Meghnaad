@@ -1,7 +1,6 @@
 import { runCli, tzOffsetSeconds } from './api';
-import { DEFAULT_SETTINGS, dueNotices, prune, type Notice, type NotifySettings } from './notify';
+import { DEFAULT_SETTINGS, dueNotices, prune, type Notice, type NotifySettings, type Reminder } from './notify';
 import { store } from './store.svelte';
-import type { Row } from './types';
 
 const SETTINGS_KEY = 'tw-notify';
 const SEEN_KEY = 'tw-notified';
@@ -34,13 +33,13 @@ class Notifier {
   settings = $state<NotifySettings>(read(SETTINGS_KEY, DEFAULT_SETTINGS));
   permission = $state<Permission>(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
   /** Tasks that are running right now. */
-  active = $state<Row[]>([]);
+  active = $state<Reminder[]>([]);
   /** When `active` was fetched (epoch seconds), to extend tracked time between polls. */
   polledAt = $state(Math.floor(Date.now() / 1000));
   /** Set when the last poll failed (shown in the settings dialog, never as a popup). */
   lastError = $state<string | null>(null);
 
-  #rows: Row[] = [];
+  #rows: Reminder[] = [];
   #seen: Record<string, number> = read<Record<string, number>>(SEEN_KEY, {});
   #started = false;
 
@@ -65,12 +64,13 @@ class Notifier {
 
   async poll() {
     try {
-      // Tasks with a due or wait date, plus anything running; `export` returns full rows.
+      // Tasks with a due or wait date, plus anything running. `_remind` sends only what is read here: a full row for
+      // every task (`_rows`) was the dearest request the page made.
       const res = await runCli({
-        args: ['(', 'due.any:', 'or', 'wait.any:', 'or', '+ACTIVE', ')', 'status:pending', '_rows'],
+        args: ['(', 'due.any:', 'or', 'wait.any:', 'or', '+ACTIVE', ')', 'status:pending', '_remind'],
       });
       if (res.result.kind === 'json' && Array.isArray(res.result.value)) {
-        this.#rows = res.result.value as Row[];
+        this.#rows = res.result.value as Reminder[];
         this.active = this.#rows.filter((r) => r.start != null);
         this.polledAt = Math.floor(Date.now() / 1000);
         this.lastError = null;

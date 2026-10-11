@@ -32,8 +32,9 @@ pub mod store;
 pub mod summary;
 pub mod taskrc;
 pub mod urgency;
+pub mod warm;
 
 pub use cloud::{load_cryptor, load_salt, CloudServer};
 pub use error::{Error, Result};
-pub use live::LiveStorage;
+pub use live::{Generation, LiveStorage};
 pub use store::{MemStore, ObjectStore};

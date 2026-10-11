@@ -11,6 +11,8 @@
 
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use taskchampion::storage::{Storage, StorageTxn, TaskMap};
 use taskchampion::{Error, Operation};
 use uuid::Uuid;
@@ -20,7 +22,25 @@ type Result<T> = std::result::Result<T, Error>;
 /// The nil version: what a replica that has never synced is based on.
 const NO_VERSION: Uuid = Uuid::nil();
 
+/// A number that changes whenever the stored data does: what lets something derived from the data (the tasks as the
+/// engine reads them) be kept for as long as nothing has changed, and rebuilt the moment something has. It is bumped
+/// when a transaction that changed anything ends, whether it committed or was taken back, so a reader that saw the
+/// same number twice has seen the same data twice.
+#[derive(Clone, Debug, Default)]
+pub struct Generation(Arc<AtomicU64>);
+
+impl Generation {
+    pub fn get(&self) -> u64 {
+        self.0.load(Ordering::Acquire)
+    }
+
+    fn bump(&self) {
+        self.0.fetch_add(1, Ordering::AcqRel);
+    }
+}
+
 pub struct LiveStorage {
+    generation: Generation,
     tasks: HashMap<Uuid, TaskMap>,
     base_version: Uuid,
     /// Every operation, oldest first, with whether the server has it.
@@ -38,11 +58,17 @@ impl Default for LiveStorage {
 impl LiveStorage {
     pub fn new() -> Self {
         LiveStorage {
+            generation: Generation::default(),
             tasks: HashMap::new(),
             base_version: NO_VERSION,
             operations: Vec::new(),
             working_set: vec![None],
         }
+    }
+
+    /// A handle on the change counter, to keep after the storage has moved into a replica.
+    pub fn generation(&self) -> Generation {
+        self.generation.clone()
     }
 }
 
@@ -79,6 +105,11 @@ struct Txn<'a> {
 impl Txn<'_> {
     /// Take back everything done in this transaction, latest first.
     fn roll_back(&mut self) {
+        // Something was changed, and now it is changed back: either way the data was different in between, and a
+        // reader that looked then must not be taken for one that looks now.
+        if !self.journal.is_empty() {
+            self.db.generation.bump();
+        }
         while let Some(undo) = self.journal.pop() {
             let db = &mut *self.db;
             match undo {
@@ -317,6 +348,9 @@ impl StorageTxn for Txn<'_> {
 
     async fn commit(&mut self) -> Result<()> {
         // The changes are already in place; nothing to take back any more.
+        if !self.journal.is_empty() {
+            self.db.generation.bump();
+        }
         self.journal.clear();
         Ok(())
     }

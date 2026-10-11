@@ -37,7 +37,7 @@ function server(uuids: string[], opts: { gone?: string[]; failOn?: string; asks?
     const text = { result: { kind: 'text', lines: [] }, wrote: false, feedback: [] };
     if (args.includes('_reviewed'))
       return { result: { kind: 'report', rows: uuids.map((uuid) => ({ uuid })) }, wrote: false } as never;
-    if (args.includes('_tags') || args.includes('_projects')) return text as never;
+    if (args.includes('_names')) return text as never;
     if (args[1] === 'info') {
       const uuid = args[0];
       const tasks = opts.gone?.includes(uuid) ? [] : [{ uuid, id: 1, description: `task ${uuid}` }];

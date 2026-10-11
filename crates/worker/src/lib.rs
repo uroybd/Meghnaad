@@ -145,7 +145,8 @@ async fn open(env: &Env) -> Result<session::Session, ApiError> {
 
 async fn health(ctx: RouteContext<()>) -> RouteResult {
     let mut s = open(&ctx.env).await?;
-    let tasks = tc_core::cli::load_facts(&mut s.state.replica).await?.len();
+    let warm = s.state.warm.clone();
+    let tasks = tc_core::cli::warm_facts(&mut s.state.replica, Some(&warm)).await?.len();
     json(&serde_json::json!({ "ok": true, "tasks": tasks }))
 }
 
@@ -218,6 +219,7 @@ async fn cli(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
             seed: now as u64,
             // The hooks in tc-core's `my_hooks.rs`.
             hooks: None,
+            warm: Some(st.warm.clone()),
         },
         &mut st.undo,
     )

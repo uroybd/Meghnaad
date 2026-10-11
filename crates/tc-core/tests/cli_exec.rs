@@ -5450,3 +5450,156 @@ mod tasksh_review {
         assert!(needing_review(&mut r, &mut cfg).await.is_empty());
     }
 }
+
+// The app's own `_names` and `_remind`: the same answers as `_tags`, `_projects` and `_rows`, in less.
+mod names_and_reminders {
+    use super::*;
+
+    fn json(res: CliResult) -> serde_json::Value {
+        match res {
+            CliResult::Json { value } => value,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn lines(res: CliResult) -> Vec<String> {
+        match res {
+            CliResult::Text { lines } => lines,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    async fn world(cfg: &Config) -> R {
+        let mut r = replica();
+        for line in [
+            "add Plan the trip project:Home.Travel +planning +fun due:tomorrow",
+            "add Pay rent project:Home +bills priority:H wait:2d",
+            "add Write report project:Work +writing",
+            "add Old thing project:Archive +gone",
+            "add Done thing project:Done.Pile +fin",
+            "add No project at all",
+        ] {
+            run(&mut r, cfg, line).await;
+        }
+        run(&mut r, cfg, "4 delete").await;
+        run(&mut r, cfg, "4 done").await;
+        r
+    }
+
+    #[tokio::test]
+    async fn names_are_what_tags_and_projects_say_under_every_setting() {
+        for rc in [
+            "",
+            "list.all.projects=1\n",
+            "complete.all.tags=1\n",
+            "list.all.projects=1\ncomplete.all.tags=1\n",
+            "default.command=list\n",
+        ] {
+            let cfg = parse(rc).config;
+            let mut r = world(&cfg).await;
+            for filter in [
+                "",
+                "project:Home",
+                "+planning",
+                "status:completed",
+                "priority:H or +writing",
+            ] {
+                let line = |cmd: &str| format!("{filter} {cmd}");
+                let names = json(run(&mut r, &cfg, &line("_names")).await.0);
+                let tags = lines(run(&mut r, &cfg, &line("_tags")).await.0);
+                let projects = lines(run(&mut r, &cfg, &line("_projects")).await.0);
+                let as_lines = |v: &serde_json::Value| -> Vec<String> {
+                    v.as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.as_str().unwrap().to_owned())
+                        .collect()
+                };
+                assert_eq!(as_lines(&names["tags"]), tags, "tags with `{rc}` and `{filter}`");
+                assert_eq!(
+                    as_lines(&names["projects"]),
+                    projects,
+                    "projects with `{rc}` and `{filter}`"
+                );
+            }
+        }
+    }
+
+    /// A command run at a given moment, its answer as JSON.
+    async fn run_at(r: &mut R, cfg: &Config, at: i64, line: &str) -> serde_json::Value {
+        let mut undo = UNDO.with(|u| u.borrow().clone());
+        let d = execute(
+            r,
+            cfg,
+            Clock::utc(at),
+            &split_words(line),
+            Options::default(),
+            &mut undo,
+        )
+        .await;
+        json(d.result)
+    }
+
+    #[tokio::test]
+    async fn reminders_have_what_rows_have_for_what_they_read() {
+        let cfg = parse("journal.time=on\n").config;
+        let mut r = world(&cfg).await;
+        run(&mut r, &cfg, "1 start").await;
+        run(&mut r, &cfg, "1 annotate a note").await;
+        let filter = "( due.any: or wait.any: or +ACTIVE ) status:pending";
+        // Both are asked at one moment, so the tracked time is the same to the second.
+        let at = taskchampion::chrono::Utc::now().timestamp() + 3600;
+        let rows = run_at(&mut r, &cfg, at, &format!("{filter} _rows")).await;
+        let reminders = run_at(&mut r, &cfg, at, &format!("{filter} _remind")).await;
+        let (rows, reminders) = (rows.as_array().unwrap(), reminders.as_array().unwrap());
+        assert!(reminders.len() >= 2, "{reminders:?}");
+        assert_eq!(rows.len(), reminders.len());
+        for (row, rem) in rows.iter().zip(reminders) {
+            for field in ["uuid", "status", "description", "due", "wait", "start"] {
+                // A date that is not there is `null` in one and left out of the other.
+                assert_eq!(
+                    row.get(field).unwrap_or(&serde_json::Value::Null),
+                    rem.get(field).unwrap_or(&serde_json::Value::Null),
+                    "{field} of {row}"
+                );
+            }
+            if row.get("start").is_some_and(|s| !s.is_null()) {
+                assert!(
+                    rem["active_seconds"].is_number(),
+                    "a running task has its tracked time: {rem}"
+                );
+                assert_eq!(row["active_seconds"], rem["active_seconds"]);
+            } else {
+                assert!(rem["active_seconds"].is_null());
+            }
+            // And nothing else: it is the slim one.
+            let keys: Vec<&String> = rem.as_object().unwrap().keys().collect();
+            assert_eq!(keys.len(), 7, "{keys:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn reminders_follow_the_filter_like_rows_do() {
+        let cfg = Config::default();
+        let mut r = world(&cfg).await;
+        let all = json(run(&mut r, &cfg, "_remind").await.0);
+        let rows = json(run(&mut r, &cfg, "_rows").await.0);
+        assert_eq!(
+            all.as_array().unwrap().len(),
+            6,
+            "every task, finished and deleted ones too"
+        );
+        assert_eq!(
+            all.as_array().unwrap().len(),
+            rows.as_array().unwrap().len(),
+            "as _rows does"
+        );
+        let waiting = json(run(&mut r, &cfg, "+WAITING _remind").await.0);
+        assert_eq!(waiting.as_array().unwrap().len(), 1);
+        assert_eq!(waiting[0]["description"], "Pay rent");
+        assert!(json(run(&mut r, &cfg, "project:Nope _remind").await.0)
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+}

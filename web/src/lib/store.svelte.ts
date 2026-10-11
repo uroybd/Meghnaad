@@ -201,19 +201,21 @@ class Store {
 
   /**
    * The project and tag names offered for completion (the prompt, the filter bar and the task form) come from
-   * the tasks on screen, which is only some of them. Ask for all of them (`_tags`, `_projects`), which follow
-   * `complete.all.tags` and `list.all.projects` as Taskwarrior's completion does.
+   * the tasks on screen, which is only some of them. Ask for all of them: `_names` is `_tags` and `_projects` in
+   * one request (the lists follow `complete.all.tags` and `list.all.projects` as Taskwarrior's completion does).
    */
   async refreshNames() {
-    const lines = async (cmd: string): Promise<string[]> => {
-      try {
-        const r = (await runCli({ args: [cmd] })).result;
-        return r.kind === 'text' ? r.lines : [];
-      } catch {
-        return [];
-      }
-    };
-    const [tags, projects] = await Promise.all([lines('_tags'), lines('_projects')]);
+    let tags: string[];
+    let projects: string[];
+    try {
+      const r = (await runCli({ args: ['_names'] })).result;
+      const v = r.kind === 'json' ? (r.value as { tags?: unknown; projects?: unknown }) : null;
+      const names = (x: unknown) => (Array.isArray(x) ? x.filter((n): n is string => typeof n === 'string') : []);
+      tags = names(v?.tags);
+      projects = names(v?.projects);
+    } catch {
+      return;
+    }
     if (!tags.length && !projects.length) return;
     const virtual = new Set(VIRTUAL_TAGS);
     this.tags = [...new Set([...this.tags, ...tags.filter((t) => !virtual.has(t))])].sort();

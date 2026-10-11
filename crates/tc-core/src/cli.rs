@@ -13,9 +13,11 @@ use crate::recur::{self, Action as Plan};
 use crate::report;
 use crate::run::{self, Output, Row};
 use crate::taskrc::Config;
+use crate::warm::Warm;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
+use std::sync::Arc;
 use taskchampion::chrono::{DateTime, TimeZone, Utc};
 use taskchampion::storage::Storage;
 use taskchampion::{Annotation, Operation, Operations, Replica, Status, Tag, Task};
@@ -42,6 +44,8 @@ pub enum Kind {
     Tags,
     CompleteProjects,
     CompleteTags,
+    Names,
+    Remind,
     Summary,
     Calendar,
     BurndownDaily,
@@ -112,6 +116,10 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("tags", Tags, false),
     ("_projects", CompleteProjects, false),
     ("_tags", CompleteTags, false),
+    // The app's own: both lists in one answer, and the few fields the reminders need, so a page does not ask for the
+    // tasks twice or build a full row for each (`_rows` lists every virtual tag of every task).
+    ("_names", Names, false),
+    ("_remind", Remind, false),
     ("udas", Udas, false),
     ("columns", Columns, false),
     ("reports", Reports, false),
@@ -656,6 +664,8 @@ pub struct Options {
     pub seed: u64,
     /// The hooks to run. `None` runs the ones in `my_hooks.rs`; tests supply their own.
     pub hooks: Option<std::sync::Arc<dyn crate::hooks::Hooks>>,
+    /// The tasks as last read, kept while nothing has changed (see `warm.rs`). `None` reads them every time.
+    pub warm: Option<Warm>,
 }
 
 /// Operations of the most recent write commands, newest last.
@@ -993,6 +1003,57 @@ pub async fn load_facts<S: Storage>(r: &mut Replica<S>) -> Result<Vec<Facts>, ta
     Ok(v)
 }
 
+/// [`load_facts`], but the list that was built the last time is used again if nothing has changed since (`warm`).
+/// What it builds is kept for next time, so a write that reads its own result leaves a list the next read can use.
+pub async fn warm_facts<S: Storage>(
+    r: &mut Replica<S>,
+    warm: Option<&Warm>,
+) -> Result<Arc<Vec<Facts>>, taskchampion::Error> {
+    let Some(warm) = warm else {
+        return load_facts(r).await.map(Arc::new);
+    };
+    if let Some(kept) = warm.get() {
+        return Ok(kept);
+    }
+    // The generation is read before the list is built: a change in between can then only make it look older than it
+    // is, and it is built again.
+    let generation = warm.generation();
+    let built = Arc::new(load_facts(r).await?);
+    warm.put(generation, built.clone());
+    Ok(built)
+}
+
+/// The names `_projects` and `_tags` list: they look at the filter alone (no context), and `_projects` also lists the
+/// projects of deleted tasks (`list.all.projects`; `complete.all.tags` for tags).
+fn completion_names(
+    projects: bool,
+    all: &[Facts],
+    ctx: &EvalCtx,
+    cfg: &Config,
+    filter: &[String],
+) -> Result<BTreeSet<String>, FilterError> {
+    let everything = if projects {
+        cfg.list_all_projects()
+    } else {
+        cfg.complete_all_tags()
+    };
+    let pool: Vec<&Facts> = all
+        .iter()
+        .filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring"))
+        .collect();
+    let (sel, _) = select_from(&pool, ctx, cfg, filter, false)?;
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    if projects {
+        names.extend(sel.iter().filter_map(|f| f.project.clone()).filter(|p| !p.is_empty()));
+    } else {
+        for f in &sel {
+            names.extend(f.tags.iter().cloned());
+        }
+        names.extend(SPECIAL_TAGS.iter().chain(VIRTUAL_TAG_NAMES).map(|t| (*t).to_owned()));
+    }
+    Ok(names)
+}
+
 fn context_read(cfg: &Config) -> Vec<String> {
     cfg.active_context
         .as_ref()
@@ -1152,7 +1213,7 @@ pub async fn execute<S: Storage>(
     let (maintained, tasks) = if skip || !recur::enabled(cfg) {
         (false, None)
     } else {
-        match maintain(replica, cfg, clock, &hk).await {
+        match maintain(replica, cfg, clock, &hk, opts.warm.as_ref()).await {
             Ok(m) => m,
             Err(m) => {
                 return Done {
@@ -1197,9 +1258,10 @@ async fn maintain<S: Storage>(
     cfg: &Config,
     clock: Clock,
     hk: &crate::hooks::Runner,
-) -> Result<(bool, Option<Vec<Facts>>), String> {
+    warm: Option<&Warm>,
+) -> Result<(bool, Option<Arc<Vec<Facts>>>), String> {
     let e = |e: taskchampion::Error| e.to_string();
-    let all = load_facts(replica).await.map_err(e)?;
+    let all = warm_facts(replica, warm).await.map_err(e)?;
     let plan = recur::plan(&all, cfg, &clock);
     if plan.is_empty() {
         return Ok((false, Some(all)));
@@ -1417,7 +1479,7 @@ async fn execute_inner<S: Storage>(
     args: &[String],
     opts: Options,
     undo: &mut UndoStack,
-    tasks: Option<Vec<Facts>>,
+    tasks: Option<Arc<Vec<Facts>>>,
     hk: &crate::hooks::Runner,
 ) -> Done {
     // `cfg` already has this command's `rc.` overrides and the active context's settings in it.
@@ -1428,7 +1490,7 @@ async fn execute_inner<S: Storage>(
 
     let all = match tasks {
         Some(a) => a,
-        None => match load_facts(replica).await {
+        None => match warm_facts(replica, opts.warm.as_ref()).await {
             Ok(a) => a,
             Err(e) => return error(e.to_string()),
         },
@@ -1450,7 +1512,20 @@ async fn execute_inner<S: Storage>(
                 Err(e) => e.into(),
             }
         }
-        Cmd::Builtin(k @ (Add | Log)) => add(replica, cfg, &ctx, &all, &parsed, k == Log, undo, hk).await,
+        Cmd::Builtin(k @ (Add | Log)) => {
+            add(
+                replica,
+                cfg,
+                &ctx,
+                &all,
+                &parsed,
+                k == Log,
+                undo,
+                hk,
+                opts.warm.as_ref(),
+            )
+            .await
+        }
         Cmd::Builtin(k) => builtin(replica, cfg, &ctx, &all, k, &parsed, args, opts, undo, hk).await,
     }
 }
@@ -1628,6 +1703,7 @@ async fn add<S: Storage>(
     log: bool,
     undo: &mut UndoStack,
     hk: &crate::hooks::Runner,
+    warm: Option<&Warm>,
 ) -> Done {
     // `task rc.x:y add ...` is fine: overrides were applied before this point and aren't filters.
     if p.filter.iter().any(|w| !w.starts_with("rc.") && !w.starts_with("rc:")) {
@@ -1697,7 +1773,7 @@ async fn add<S: Storage>(
     if let Err(e) = replica.commit_operations(ops).await {
         return error(e.to_string());
     }
-    let after = load_facts(replica).await.unwrap_or_default();
+    let after = warm_facts(replica, warm).await.unwrap_or_default();
     let id = run::working_set_ids(&after).get(&uuid).copied();
     let msg = match id {
         _ if log => format!("Logged task {uuid}."),
@@ -2036,31 +2112,23 @@ async fn builtin<S: Storage>(
         }
         // The lists shell completion asks for: just the names, one a line. They look at the filter
         // alone (no context), and `_projects` also lists the projects of deleted tasks.
-        CompleteProjects | CompleteTags => {
-            let everything = if kind == CompleteProjects {
-                cfg.list_all_projects()
-            } else {
-                cfg.complete_all_tags()
-            };
-            let pool: Vec<&Facts> = all
-                .iter()
-                .filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring"))
-                .collect();
-            let sel = match select_from(&pool, ctx, cfg, &p.filter, false) {
-                Ok((s, _)) => s,
-                Err(e) => return e.into(),
-            };
-            let mut names: BTreeSet<String> = BTreeSet::new();
-            if kind == CompleteProjects {
-                names.extend(sel.iter().filter_map(|f| f.project.clone()).filter(|p| !p.is_empty()));
-            } else {
-                for f in &sel {
-                    names.extend(f.tags.iter().cloned());
-                }
-                names.extend(SPECIAL_TAGS.iter().chain(VIRTUAL_TAG_NAMES).map(|t| (*t).to_owned()));
-            }
-            ok(CliResult::Text {
+        CompleteProjects | CompleteTags => match completion_names(kind == CompleteProjects, all, ctx, cfg, &p.filter) {
+            Ok(names) => ok(CliResult::Text {
                 lines: names.into_iter().collect(),
+            }),
+            Err(e) => e.into(),
+        },
+        // Both lists in one request.
+        Names => {
+            let (projects, tags) = match (
+                completion_names(true, all, ctx, cfg, &p.filter),
+                completion_names(false, all, ctx, cfg, &p.filter),
+            ) {
+                (Ok(p), Ok(t)) => (p, t),
+                (Err(e), _) | (_, Err(e)) => return e.into(),
+            };
+            ok(CliResult::Json {
+                value: serde_json::json!({ "tags": tags, "projects": projects }),
             })
         }
         // `calc 1 + 2`: Taskwarrior's calculator. `expressions=postfix` reads `1 2 +` instead.
@@ -2186,7 +2254,7 @@ async fn builtin<S: Storage>(
                 lines: vec!["No tasks.".into()],
             }))
         }
-        Info | Count | Rows | Ids | Uuids => {
+        Info | Count | Rows | Ids | Uuids | Remind => {
             let (sel, limit) = match selected(all, ctx, cfg, &p.filter) {
                 Ok(s) => s,
                 Err(e) => return e.into(),
@@ -2213,6 +2281,32 @@ async fn builtin<S: Storage>(
                 Rows => ok(CliResult::Json {
                     value: serde_json::to_value(sel.iter().map(|f| row(f)).collect::<Vec<_>>()).unwrap_or_default(),
                 }),
+                // What the reminders and the timer read, and nothing else: no urgency, colours, annotations or virtual
+                // tags. Only a running task has tracked time worth working out.
+                Remind => {
+                    let journal = cfg.journal();
+                    let items: Vec<serde_json::Value> = sel
+                        .iter()
+                        .map(|f| {
+                            let tracked = f
+                                .start
+                                .and(journal.as_ref())
+                                .and_then(|(s, e)| f.active_seconds(s, e, ctx.clock.now));
+                            serde_json::json!({
+                                "uuid": f.uuid,
+                                "status": f.status,
+                                "description": f.description,
+                                "due": f.due,
+                                "wait": f.wait,
+                                "start": f.start,
+                                "active_seconds": tracked,
+                            })
+                        })
+                        .collect();
+                    ok(CliResult::Json {
+                        value: serde_json::Value::Array(items),
+                    })
+                }
                 Ids => ok(CliResult::Text {
                     lines: vec![sel
                         .iter()
@@ -2813,7 +2907,7 @@ async fn write_selected<S: Storage>(
     if let Err(e) = replica.commit_operations(ops).await {
         return error(e.to_string());
     }
-    let after = load_facts(replica).await.unwrap_or_default();
+    let after = warm_facts(replica, opts.warm.as_ref()).await.unwrap_or_default();
     let past = match kind {
         Done => "Completed",
         Delete => "Deleted",

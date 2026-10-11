@@ -210,3 +210,29 @@ describe('hidden reports', () => {
     expect(store.hasHiddenReports).toBe(false);
   });
 });
+
+describe('the names offered for completion', () => {
+  it('come from one request for both lists, with the parents of a project and without virtual tags', async () => {
+    vi.mocked(runCli).mockResolvedValue({
+      result: { kind: 'json', value: { tags: ['next', 'work', 'OVERDUE'], projects: ['Home.Kitchen', 'Work'] } },
+      wrote: false,
+    } as never);
+    store.tags = ['mine'];
+    store.projects = [];
+    await store.refreshNames();
+    expect(vi.mocked(runCli)).toHaveBeenLastCalledWith({ args: ['_names'] });
+    expect(store.tags).toEqual(['mine', 'next', 'work']);
+    expect(store.projects).toEqual(['Home', 'Home.Kitchen', 'Work']);
+  });
+
+  it('leave what is known alone when the answer is not a list, or the request fails', async () => {
+    store.tags = ['keep'];
+    store.projects = ['Keep'];
+    vi.mocked(runCli).mockResolvedValue({ result: { kind: 'text', lines: ['x'] }, wrote: false } as never);
+    await store.refreshNames();
+    vi.mocked(runCli).mockRejectedValue(new Error('offline'));
+    await store.refreshNames();
+    expect(store.tags).toEqual(['keep']);
+    expect(store.projects).toEqual(['Keep']);
+  });
+});

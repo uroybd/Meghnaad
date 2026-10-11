@@ -165,8 +165,8 @@ What this app costs, measured (`crates/tc-core/tests/memory.rs`, and a local `wo
 - **The key.** Deriving it (PBKDF2, 600,000 rounds) is the heaviest thing a *cold* instance does. The Worker asks the
   runtime's native Web Crypto for it, which takes about 40 ms; the same in WebAssembly took about 250 ms. A warm
   instance reuses it.
-- **A warm request** is a few milliseconds of CPU for a hundred tasks and tens for thousands (filtering, sorting,
-  urgency, serialising).
+- **A warm request** is a few milliseconds of CPU for a hundred tasks and, before the cache below, tens for thousands
+  (filtering, sorting, urgency, serialising).
 - **Memory** is small: restoring a snapshot of 3,000 tasks peaks near 6 MB, replaying 1,200 versions from nothing near
   6 MB, and a request over 3,000 tasks 8 MB (19 MB for a full `export`). An `import` of the most one takes (5,000
   tasks, a 2 MB file) peaks near 51 MB, and its `undo` step keeps about 8 MB while the instance lives, which is why the
@@ -180,6 +180,24 @@ and cheap: a very large task list, or many cold starts in a row, can tip it. The
 because the retry meets a warm instance, and Workers Paid ($5/month) lifts the limit if that ever bothers you. R2 calls
 count toward the 50 subrequests per request, so a cold start that has to replay many versions (the Worker writes
 snapshots to keep that number small) is the other thing to watch.
+
+**What is done about CPU.** Turning every stored task into the engine's form (`Facts`) took about 2 µs a task, and every
+command began with it, which at 3,000 tasks was most of a read. The Worker now keeps that list between
+requests (`tc_core::warm`, next to the replica) and rebuilds it only when the storage's change counter
+(`LiveStorage::generation`, bumped when a transaction that changed anything commits or is taken back) has moved. Most
+requests change nothing, so they skip it. `tests/warm.rs` checks, after every step of a long random run of commands,
+direct writes and pulls from the bucket, that the cached list equals a fresh read. The page's own requests were trimmed
+to match: `_names` is `_tags` and `_projects` in one request, and the reminder poll asks `_remind` (seven fields) instead
+of `_rows` (a full row, with every virtual tag, for each task). Measured natively at 3,000 tasks (WebAssembly is somewhat
+slower, but the proportions hold):
+
+| Request | Before | After |
+| --- | --- | --- |
+| `next`, `list`, `count` | about 8 ms | about 2 ms |
+| the name lists (`_tags` and `_projects`) | 2 × 6.2 ms | one request, 0.5 ms |
+| the reminder poll | 13.3 ms (`_rows`) | 0.9 ms (`_remind`) |
+
+The first read after a write still rebuilds the list (about 6 ms at 3,000 tasks).
 
 For scale, one personal deployment over its first nine days of a billing cycle used about 1,100 requests a day (1% of the
 free plan's 100,000), about 460 R2 writes and listings and 1,100 R2 reads a day (projecting to roughly 1.4% and 0.35% of

@@ -12,6 +12,7 @@ use taskchampion::{Replica, Server};
 use tc_core::cli::UndoStack;
 use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::taskrc::Config;
+use tc_core::warm::Warm;
 use tc_core::LiveStorage;
 use tc_core::{load_salt, CloudServer, ObjectStore};
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -68,6 +69,8 @@ fn encode(cfg: &Config) -> worker::Result<Vec<u8>> {
 pub struct State {
     pub replica: Db,
     pub undo: UndoStack,
+    /// The tasks as the engine last read them, kept while nothing changes (see `tc_core::warm`): most requests read.
+    pub warm: Warm,
 }
 
 #[derive(Clone)]
@@ -263,9 +266,14 @@ pub async fn open(env: &Env) -> worker::Result<Session> {
             };
             let c = Cached {
                 cryptor,
-                state: Arc::new(Mutex::new(State {
-                    replica: Replica::new(LiveStorage::new()),
-                    undo: UndoStack::default(),
+                state: Arc::new(Mutex::new({
+                    let storage = LiveStorage::new();
+                    let warm = Warm::new(storage.generation());
+                    State {
+                        replica: Replica::new(storage),
+                        undo: UndoStack::default(),
+                        warm,
+                    }
                 })),
             };
             CACHE.with(|slot| *slot.borrow_mut() = Some(c.clone()));

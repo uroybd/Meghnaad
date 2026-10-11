@@ -6,6 +6,12 @@
 
 import type { Row } from './types';
 
+/**
+ * What the reminders and the timer read of a task, which is all that `_remind` sends (a full `Row` costs the Worker a
+ * list of virtual tags, a urgency and a colour for every task).
+ */
+export type Reminder = Pick<Row, 'uuid' | 'status' | 'description' | 'due' | 'wait' | 'start' | 'active_seconds'>;
+
 export interface NotifySettings {
   enabled: boolean;
   /** Minutes before a timed due date to give a heads-up (0 = none). */
@@ -50,7 +56,7 @@ function until(seconds: number): string {
  * @param tz viewer's UTC offset in seconds
  */
 export function dueNotices(
-  rows: Row[],
+  rows: Reminder[],
   now: number,
   s: NotifySettings,
   seen: ReadonlySet<string>,

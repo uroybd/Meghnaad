@@ -166,7 +166,7 @@ describe('the tasksh tab', () => {
     // Two `config` lines went out (the second was refused); the others are the names refreshed with the settings.
     const sent = vi.mocked(runCli).mock.calls.map(([input]) => input.args ?? []);
     expect(sent.filter((a) => a.includes('config'))).toHaveLength(2);
-    expect(sent.filter((a) => !a.includes('config'))).toEqual([['_tags'], ['_projects']]);
+    expect(sent.filter((a) => !a.includes('config'))).toEqual([['_names']]);
     expect(panel('tasksh').querySelector('[role=alert]')?.textContent).toBe('Nope.');
   });
 });
