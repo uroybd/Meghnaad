@@ -138,6 +138,11 @@ secret it read is replaced by `***` in what it printed, failed with or returned.
 script as `nil` and a reason, because an error from an async function ends the call and cannot be caught with `pcall`.
 
 
+**On Android** (`crates/android`, `android/`) there is no Worker: the engine is `tc-core` as a native library, called
+from Kotlin over JNI, and it syncs straight with the bucket, signing S3 requests itself (`CloudServer` over an
+`S3Store`, the same server code the Worker runs over R2). The same Svelte app runs in a WebView and talks to a Capacitor
+plugin in place of the Web Worker, and a widget reads the same engine. See [the Android app](android.md).
+
 ## `tc-core`: the engine
 
 Pure Rust, no I/O of its own, tested natively. The browser engine, the Node harness (`scripts/engine-cli.mjs`) and the tests are its hosts; the Worker uses its settings, report and protocol code but runs no commands.

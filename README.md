@@ -115,6 +115,7 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
 | --- | --- |
 | **[Using Meghnaad](docs/using.md)** | Pages, console, confirmations, hooks, recurrence, urgency, time tracking |
 | **[Deploying](docs/deploy.md)** | Setup, GitHub Actions deploy, Access, connecting `task`, troubleshooting |
+| **[The Android app](docs/android.md)** | An app with a home-screen widget, the engine on the phone, syncing straight with S3 |
 | **[Architecture](docs/architecture.md)** | The engine, sync, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
 
@@ -312,6 +313,8 @@ the Worker; the engine in the browser is unaffected.
 crates/tc-core/   the engine: protocol, crypto, filters, reports, commands, taskrc  (pure Rust)
 crates/browser/   the engine as WebAssembly for the browser (tc-core + sync through the Worker)
 crates/worker/    the Cloudflare Worker: Access check, R2 store, opens and seals versions, settings
+crates/android/   the engine for the Android app: tc-core natively, S3 sync, JNI
+android/          the Android app (Capacitor shell, Kotlin plugin, home-screen widget)
 web/              the Svelte 5 app (Vite)
 scripts/          setup / deploy / build / dev server · seed-dev.sh (demo data) · interop-local.sh (real-CLI regression)
 docs/             the guides above
@@ -320,6 +323,7 @@ docs/             the guides above
 ```bash
 npm run dev                   # the dev server: engine build and rebuild, Worker, app with hot reload
 npm run build:engine          # the engine for the browser alone (web/src/engine/pkg)
+npm run build:android         # the Android app (SDK, NDK and cargo-ndk needed): docs/android.md
 npm test                      # cargo test + the web unit tests + the deploy-script tests
 npm run check                 # svelte-check (types, accessibility)
 npm run lint                  # rustfmt + clippy (warnings are errors) + Prettier + ESLint; `lint:rust`, `lint:js` for one half

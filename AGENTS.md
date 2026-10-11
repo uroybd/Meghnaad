@@ -75,6 +75,15 @@ clone use, with no Rust. Nothing user-specific may be compiled into the build (h
 bucket), and `setup.mjs`, `deploy.mjs` and `deploy-lib.mjs` must keep working in a release, which has no `crates/`
 (`isSourceCheckout`). A new file the deploy needs at run time has to be added to `assemble`, with a test.
 
+## The Android app
+
+`crates/android` is `tc-core` natively (S3 sync with its own SigV4, the settings routes over a folder, hooks on the
+phone) behind a JNI layer; `android/` is the Capacitor shell, the Kotlin plugin and the widget; see `docs/android.md`.
+`node scripts/build-android.mjs` builds the APK. Anything the page needs from a server must also be answered by the app
+(`installNativeApi` sends `/api/…` to the phone), so a new settings route goes in `tc_core::webapi` where the Worker and
+the app share it. A request's meaning is in `tc_core::request`, shared with the browser engine: change it there, not in
+one host. Nothing may put the bucket keys or the encryption secret anywhere the page can read them.
+
 ## Running it
 
 `npm run dev` is the dev server: it builds the engine (`scripts/build-engine.mjs`, which needs the `wasm-bindgen` tool at

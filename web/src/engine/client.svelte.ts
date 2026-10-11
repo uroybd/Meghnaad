@@ -5,6 +5,7 @@
 // browser has pushed (they tell each other over a BroadcastChannel). A write is already applied and saved here, so a
 // push that fails (offline, a signed-out session) is only tried again later; what is waiting is pushed with it.
 
+import { isNative, NativePort, type Port } from './native';
 import type { Call, EngineReply, EngineRequest } from './protocol';
 
 /** How often a visible tab pulls what other devices have done. */
@@ -14,9 +15,9 @@ const PULL_NOT_SOONER_MS = 4_000;
 const CHANNEL = 'meghnaad-engine';
 export type SyncStatus = 'idle' | 'syncing' | 'failed';
 
-/** Whether this browser can run the engine: it needs Web Workers and WebAssembly. */
+/** Whether this browser can run the engine: it needs Web Workers and WebAssembly (the Android app has its own). */
 export function engineAvailable(): boolean {
-  return typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
+  return isNative() || (typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined');
 }
 
 export class EngineClient {
@@ -27,7 +28,7 @@ export class EngineClient {
   /** When the last sync succeeded (ms since the epoch). */
   lastSync = $state<number | null>(null);
 
-  private worker: Worker | undefined;
+  private worker: Port | undefined;
   private next = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private starting: Promise<void> | undefined;
@@ -64,7 +65,9 @@ export class EngineClient {
 
   private async boot(config: string): Promise<void> {
     performance.mark('engine-boot');
-    const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' });
+    const worker: Port = isNative()
+      ? new NativePort()
+      : (new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' }) as Port);
     this.worker = worker;
     worker.onmessage = (e: MessageEvent<EngineReply>) => {
       const p = this.pending.get(e.data.id);

@@ -30,6 +30,8 @@
   import NotifyDialog from './lib/NotifyDialog.svelte';
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
+  import ConnectView from './lib/ConnectView.svelte';
+  import { isNative } from './engine/native';
   import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAdd from './lib/QuickAdd.svelte';
@@ -46,6 +48,8 @@
 
   // A fresh deployment has no sign-in settings yet; say what is left instead of showing errors.
   let setup = $state<SetupStatus | null>(null);
+  // In the Android app the engine starts with the first request, so nothing is drawn until we know the phone is connected.
+  let checked = $state(!isNative());
   let started = false;
 
   // The address and the drawer say the same thing: `/task/<8 characters>` is a task's own address, so a link to it
@@ -101,6 +105,7 @@
     const s = await getSetup();
     if (s && !s.configured) setup = s;
     else start();
+    checked = true;
   });
 
   // The colours the charts use (`color.calendar.*`, `color.burndown.*`, ...), as custom properties on the page.
@@ -144,7 +149,11 @@
 
 <svelte:window {onkeydown} onpopstate={() => void followAddress()} />
 
-{#if setup}
+{#if !checked}
+  <!-- waiting to hear whether this phone is connected -->
+{:else if setup && isNative()}
+  <ConnectView onready={start} />
+{:else if setup}
   <SetupGuide status={setup} onready={start} />
 {:else}
   <div class="app">

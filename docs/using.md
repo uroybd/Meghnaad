@@ -582,7 +582,8 @@ CPU time, but it is time your command waits.
 The layout adapts below about 760 px: the report list moves into a menu (☰), tasks become cards with big buttons, the
 header sort becomes a **Sort** picker, forms and the detail view go full screen, and a **+** button adds a task. The
 prompt gets **Complete** (⇥) and **Previous command** (⌃) buttons since there's no Tab or arrow key, and completions
-can be tapped. You can install it to your home screen from the browser menu.
+can be tapped. You can install it to your home screen from the browser menu, or use [the Android app](android.md), which
+keeps the tasks on the phone and has a widget.
 
 ## Different from the desktop
 

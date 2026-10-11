@@ -12,6 +12,7 @@ export default ts.config(
       'node_modules/**',
       'target/**',
       'crates/**',
+      'android/**',
       'docs/**',
       'web/dist/**',
       'web/src/engine/pkg/**',

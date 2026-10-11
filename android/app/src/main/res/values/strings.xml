@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Meghnaad</string>
+    <string name="title_activity_main">Meghnaad</string>
+    <string name="package_name">me.utsob.meghnaad</string>
+    <string name="custom_url_scheme">me.utsob.meghnaad</string>
+    <string name="widget_title">Next</string>
+    <string name="widget_description">Your next tasks: tick one off, or add one</string>
+    <string name="widget_refresh">Sync</string>
+    <string name="widget_add">Add a task</string>
+    <string name="widget_done">Done</string>
+    <string name="widget_empty">Nothing to do. Add a task with +, or open Meghnaad to connect.</string>
+    <string name="quick_add_hint">Buy milk due:tomorrow +home</string>
+    <string name="quick_add_save">Add</string>
+</resources>
