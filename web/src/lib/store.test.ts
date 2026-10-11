@@ -179,3 +179,34 @@ describe('showing a tag or a project on its page', () => {
     store.projectFocus = null;
   });
 });
+
+describe('hidden reports', () => {
+  const report = (name: string) => ({ name, description: null, columns: [], filter: null, sort: null });
+  const names = () => store.offeredReports.map((r) => r.name);
+
+  beforeEach(() => {
+    store.config = { reports: [report('next'), report('_reviewed'), report('list')] } as never;
+    store.report = 'next';
+    store.setShowHiddenReports(false);
+  });
+
+  it('are left out of what is offered until they are shown, and the choice is remembered', () => {
+    expect(store.hasHiddenReports).toBe(true);
+    expect(names()).toEqual(['next', 'list']);
+    store.setShowHiddenReports(true);
+    expect(names()).toEqual(['next', '_reviewed', 'list']);
+    expect(localStorage.getItem('tw-web-show-hidden-reports')).toBe('1');
+    store.setShowHiddenReports(false);
+    expect(localStorage.getItem('tw-web-show-hidden-reports')).toBe('0');
+  });
+
+  it('stay offered while one of them is in use', () => {
+    store.report = '_reviewed';
+    expect(names()).toEqual(['next', '_reviewed', 'list']);
+  });
+
+  it('give the switch nothing to do when there are none', () => {
+    store.config = { reports: [report('next'), report('list')] } as never;
+    expect(store.hasHiddenReports).toBe(false);
+  });
+});

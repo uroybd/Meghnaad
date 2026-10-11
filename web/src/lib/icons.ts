@@ -20,6 +20,8 @@ export { default as Copy } from '@lucide/svelte/icons/copy';
 export { default as Download } from '@lucide/svelte/icons/download';
 export { default as Upload } from '@lucide/svelte/icons/upload';
 export { default as Ellipsis } from '@lucide/svelte/icons/ellipsis';
+export { default as Eye } from '@lucide/svelte/icons/eye';
+export { default as EyeOff } from '@lucide/svelte/icons/eye-off';
 export { default as Eraser } from '@lucide/svelte/icons/eraser';
 export { default as FileText } from '@lucide/svelte/icons/file-text';
 export { default as Folder } from '@lucide/svelte/icons/folder';

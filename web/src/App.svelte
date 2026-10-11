@@ -5,6 +5,8 @@
     Bell,
     BellOff,
     CalendarDays,
+    Eye,
+    EyeOff,
     ChartColumn,
     Folder,
     Tag,
@@ -209,9 +211,25 @@
         <button class="ghost" aria-label="Close menu" onclick={() => (navOpen = false)}><X size={18} /></button>
       </div>
       <QuickAdd />
-      <h2>Reports</h2>
+      <div class="reports-head">
+        <h2>Reports</h2>
+        {#if store.hasHiddenReports}
+          <button
+            class="ghost eye"
+            aria-pressed={store.showHiddenReports}
+            aria-label={store.showHiddenReports
+              ? 'Hide the reports named _something'
+              : 'Show the reports named _something'}
+            title={store.showHiddenReports
+              ? 'Hide the reports whose names start with _ (helpers for other commands)'
+              : 'Show the reports whose names start with _ (helpers for other commands)'}
+            onclick={() => store.setShowHiddenReports(!store.showHiddenReports)}
+            >{#if store.showHiddenReports}<Eye size={14} />{:else}<EyeOff size={14} />{/if}</button
+          >
+        {/if}
+      </div>
       <ul>
-        {#each store.reports as r (r.name)}
+        {#each store.offeredReports as r (r.name)}
           <li>
             <button
               class="ghost report"
@@ -337,12 +355,23 @@
     overflow: auto;
     background: var(--panel);
   }
+  .reports-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 26px 0 8px;
+  }
   .side h2 {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--dim);
-    margin: 26px 0 8px;
+    margin: 0;
+  }
+  .eye {
+    line-height: 0;
+    padding: 4px 6px;
+    color: var(--dim);
   }
   .side ul {
     list-style: none;

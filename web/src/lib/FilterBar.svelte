@@ -53,10 +53,10 @@
       onchange={(e) => pickReport(e.currentTarget.value)}
       title={meta?.description ?? ''}
     >
-      {#each store.reports as r (r.name)}
+      {#each store.offeredReports as r (r.name)}
         <option value={r.name}>{r.name}{r.description ? ` — ${r.description}` : ''}</option>
       {/each}
-      {#if store.reports.length === 0}<option value={store.report}>{store.report}</option>{/if}
+      {#if store.offeredReports.length === 0}<option value={store.report}>{store.report}</option>{/if}
     </select>
     <FilterInput bind:value={store.filter} id="fb-filter" />
   </div>

@@ -1,6 +1,7 @@
 import { ApiError, getAppSettings, getConfig, runCli, type Answers, type CliInput } from './api';
 import { parseSettings, type ParsedSettings, type TaskCommand } from './appsettings';
 import { lucide } from './lucideLib.svelte';
+import { isHiddenReport, offeredReports as pickable } from './reportList';
 import { prefixFilter, prefixFromPath, taskPath } from './route';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
@@ -30,7 +31,16 @@ export interface Toast {
 let nextId = 1;
 
 const HISTORY_KEY = 'tw-web-history';
+const SHOW_HIDDEN_KEY = 'tw-web-show-hidden-reports';
 export const HISTORY_MAX = 20;
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function loadHistory(): string[] {
   try {
@@ -122,6 +132,21 @@ class Store {
   /** The task commands in `settings.json`: words that stand for a command line, and buttons that run it. */
   taskCommands = $derived<TaskCommand[]>(this.appSettings?.commands ?? []);
   reports = $derived<ReportMeta[]>(this.config?.reports ?? []);
+  /** Reports named `_something` are hidden helpers: left out of the lists to pick from unless this is on. */
+  showHiddenReports = $state(readFlag(SHOW_HIDDEN_KEY));
+  /** The reports to pick from (the sidebar, the Tasks page's report box). */
+  offeredReports = $derived(pickable(this.reports, this.showHiddenReports, this.report));
+  /** Whether there are any to show or hide, so the switch is only there when it does something. */
+  hasHiddenReports = $derived(this.reports.some((r) => isHiddenReport(r.name)));
+
+  setShowHiddenReports(on: boolean) {
+    this.showHiddenReports = on;
+    try {
+      localStorage.setItem(SHOW_HIDDEN_KEY, on ? '1' : '0');
+    } catch {
+      /* private mode: the choice lasts until the page is closed */
+    }
+  }
   udas = $derived(Object.values(this.config?.config.udas ?? {}));
   vocab = $derived<Vocab>({
     reports: this.reports.map((r) => ({ name: r.name, description: r.description })),
