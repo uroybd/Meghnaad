@@ -553,6 +553,73 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "lua-code"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d801bee0093eed51092376fa5670de4515d80125f3c518034da7130308877ca"
+dependencies = [
+ "lua-types",
+ "lua-vm",
+]
+
+[[package]]
+name = "lua-gc"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84a67bb3c18be1960ebd3b803d9770c05f0ed2cd3e596430bfc8fa5fe83d8585"
+
+[[package]]
+name = "lua-lex"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5d072a4af03d16fe2bb86f729054c91bd251037aa13adf76ff8def69a37001"
+dependencies = [
+ "lua-types",
+ "lua-vm",
+]
+
+[[package]]
+name = "lua-parse"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "147a98678f0cafedb1985cf7b0e4fb8950b9211b8e5f1f4c81ef0cc0b9a103a8"
+dependencies = [
+ "lua-code",
+ "lua-lex",
+ "lua-types",
+ "lua-vm",
+]
+
+[[package]]
+name = "lua-stdlib"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f9ed447877d41d67a0eb5323409c965e3549c62cadcf6ada6f57a636dbf7c2c"
+dependencies = [
+ "lua-types",
+ "lua-vm",
+]
+
+[[package]]
+name = "lua-types"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a21169cad6b537954443d97d55bc5ee594d7fb57862905e85ab9e19c4c381f3"
+dependencies = [
+ "lua-gc",
+]
+
+[[package]]
+name = "lua-vm"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "127ade4ee0a8273ccec12c0a9e08e95f6170664d19e9237ef17bb56c11c2abda"
+dependencies = [
+ "lua-gc",
+ "lua-types",
+]
+
+[[package]]
 name = "matchit"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -581,6 +648,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "omnilua"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1160e01597a0e31492c5c6d33821b9d715b9b3da15f4a2337b6c8f828b419760"
+dependencies = [
+ "lua-gc",
+ "lua-parse",
+ "lua-stdlib",
+ "lua-types",
+ "lua-vm",
 ]
 
 [[package]]
@@ -937,6 +1017,7 @@ dependencies = [
  "chacha20poly1305",
  "futures-util",
  "getrandom 0.2.17",
+ "omnilua",
  "pbkdf2",
  "regex",
  "serde",

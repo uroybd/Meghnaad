@@ -662,8 +662,8 @@ pub struct Options {
     /// that happens to be `rm`, or to start with `due:`, stays a note.
     pub typed: bool,
     pub seed: u64,
-    /// The hooks to run. `None` runs the ones in `my_hooks.rs`; tests supply their own.
-    pub hooks: Option<std::sync::Arc<dyn crate::hooks::Hooks>>,
+    /// The hooks to run. `None` runs none; the engine in the browser supplies the user's Lua, tests supply their own.
+    pub hooks: Option<std::sync::Arc<dyn crate::hooks::HookHost>>,
     /// The tasks as last read, kept while nothing has changed (see `warm.rs`). `None` reads them every time.
     pub warm: Option<Warm>,
 }
@@ -1231,7 +1231,7 @@ pub async fn execute<S: Storage>(
     }
     // Hooks: `on-launch` comes first, before anything is read or written.
     let hk = crate::hooks::Runner::new(opts.hooks.clone(), cfg.hooks());
-    if let Err(m) = hk.launch(&args.join(" ")) {
+    if let Err(m) = hk.launch(&args.join(" ")).await {
         let mut d = error(m);
         d.command = command;
         d.feedback = hk.abort();
@@ -1254,7 +1254,7 @@ pub async fn execute<S: Storage>(
                     wrote: false,
                     command,
                     config: None,
-                    feedback: hk.finish(true),
+                    feedback: hk.finish(true).await,
                 }
             }
         }
@@ -1262,7 +1262,7 @@ pub async fn execute<S: Storage>(
     let mut done = execute_inner(replica, cfg, clock, args, opts, undo, tasks, &hk).await;
     done.command = command;
     done.wrote |= maintained;
-    done.feedback = hk.finish(matches!(done.result, CliResult::Error { .. }));
+    done.feedback = hk.finish(matches!(done.result, CliResult::Error { .. })).await;
     done
 }
 
@@ -1339,7 +1339,7 @@ async fn maintain<S: Storage>(
                 // `on-add`: Taskwarrior fires it for a generated instance as for any new task (it is in
                 // `TDB2::add`), and the hook may change it. A refusal ends the command with the hook's message,
                 // as there (`throw 0`); nothing has been written yet, so nothing is left half done.
-                let hooked = hk.add(Facts::from_task(&t))?;
+                let hooked = hk.add(Facts::from_task(&t)).await?;
                 apply_changes(&mut t, &hooked, &mut ops)?;
             }
             Plan::SetMask { parent, mask } => {
@@ -1355,7 +1355,7 @@ async fn maintain<S: Storage>(
                 t.set_status(Status::Deleted, &mut ops).map_err(e)?;
                 // `on-modify` for the expired task (a finished series' parent, or a task past its `until`).
                 if let Some(was) = all.iter().find(|f| f.uuid == parent) {
-                    let hooked = hk.modify(was, Facts::from_task(&t))?;
+                    let hooked = hk.modify(was, Facts::from_task(&t)).await?;
                     apply_changes(&mut t, &hooked, &mut ops)?;
                 }
                 // An expired instance frees its slot in the parent's mask.
@@ -1382,7 +1382,7 @@ async fn maintain<S: Storage>(
                 p.set_value("mask", Some(mask.clone()), &mut ops).map_err(e)?;
                 // `on-modify` for the parent, whose mask changed (Taskwarrior's `tdb2.modify(t)` fires it).
                 if let Some(was) = all.iter().find(|f| f.uuid == pu) {
-                    let hooked = hk.modify(was, Facts::from_task(&p))?;
+                    let hooked = hk.modify(was, Facts::from_task(&p)).await?;
                     apply_changes(&mut p, &hooked, &mut ops)?;
                 }
             }
@@ -1795,7 +1795,7 @@ async fn add<S: Storage>(
         task.set_status(status, &mut ops).map_err(|e| e.to_string())?;
         apply_changes(&mut task, &changes, &mut ops)?;
         // `on-add`: the hook sees the task as the command built it and may change it or refuse.
-        let hooked = hk.add(Facts::from_task(&task))?;
+        let hooked = hk.add(Facts::from_task(&task)).await?;
         apply_changes(&mut task, &hooked, &mut ops)
     }
     .await;
@@ -2856,7 +2856,7 @@ async fn write_selected<S: Storage>(
             // `on-modify`: the hook sees the task as it was and as the command leaves it, and may
             // change it or refuse.
             if changed {
-                let hooked = hk.modify(f, Facts::from_task(&task))?;
+                let hooked = hk.modify(f, Facts::from_task(&task)).await?;
                 apply_changes(&mut task, &hooked, &mut ops)?;
             }
             // An instance's state is mirrored in its parent's mask (`+` done, `X` deleted, ...).
@@ -3023,7 +3023,7 @@ async fn duplicate<S: Storage>(
     if !text.trim().is_empty() {
         add_note(&mut task, text, ctx.clock.now, ops)?;
     }
-    let hooked = hk.add(Facts::from_task(&task))?;
+    let hooked = hk.add(Facts::from_task(&task)).await?;
     apply_changes(&mut task, &hooked, ops)?;
     let note = match (instance, template) {
         (true, _) => Some("was a recurring task.  The duplicated task is not."),

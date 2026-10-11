@@ -13,7 +13,7 @@
 use crate::cli::{apply_changes, load_facts, UndoStack};
 use crate::dates::{parse_date, Clock};
 use crate::filter::EvalCtx;
-use crate::hooks::{Hooks, Runner};
+use crate::hooks::{HookHost, Runner};
 use crate::model::Facts;
 use crate::modify::{self, Change, Mode};
 use crate::taskrc::Config;
@@ -282,19 +282,19 @@ pub async fn import<S: Storage>(
     text: &str,
     apply: bool,
     undo: &mut UndoStack,
-    hooks: Option<Arc<dyn Hooks>>,
+    hooks: Option<Arc<dyn HookHost>>,
 ) -> Result<ImportOut, String> {
     let hk = Runner::new(hooks, cfg.hooks());
     let said = |m: String, lines: Vec<crate::hooks::Line>| lines.iter().fold(m, |m, l| format!("{m}\n{}", l.text));
-    if let Err(m) = hk.launch("import") {
+    if let Err(m) = hk.launch("import").await {
         return Err(said(m, hk.abort()));
     }
     match run(replica, cfg, clock, text, apply, undo, &hk).await {
         Ok(mut out) => {
-            out.feedback = hk.finish(false);
+            out.feedback = hk.finish(false).await;
             Ok(out)
         }
-        Err(m) => Err(said(m, hk.finish(true))),
+        Err(m) => Err(said(m, hk.finish(true).await)),
     }
 }
 
@@ -457,9 +457,9 @@ async fn run<S: Storage>(
         // `on-add` or `on-modify`: the hook sees the task as it will be and may change it or refuse.
         let after = Facts::from_task(&task);
         let hooked = if old.is_some() {
-            hk.modify(&before, after)?
+            hk.modify(&before, after).await?
         } else {
-            hk.add(after)?
+            hk.add(after).await?
         };
         apply_changes(&mut task, &hooked, &mut ops)?;
     }
