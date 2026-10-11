@@ -8,3 +8,4 @@ web/.svelte-kit
 *.log
 .deploy.vars
 wrangler.deploy.jsonc
+web/src/engine/pkg

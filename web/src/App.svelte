@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
+  import { engine } from './engine/client.svelte';
   import {
     Bell,
     BellOff,
@@ -85,6 +86,16 @@
   $effect(() => {
     if (!setup && store.live && !store.live.loading) notifier.start();
   });
+
+  /** This browser's copy of the tasks is thrown away (changes that never reached the server with it) and fetched again. */
+  async function discardLocalCopy() {
+    const sure = confirm(
+      "This throws away this browser's copy of your tasks, including any change that has not reached the server yet, and loads them again from the server. Continue?",
+    );
+    if (!sure) return;
+    await engine.forget();
+    location.reload();
+  }
 
   onMount(async () => {
     const s = await getSetup();
@@ -205,13 +216,33 @@
       >
     </header>
 
-    {#if store.config?.config_error}
-      <div class="banner" role="alert">
-        <TriangleAlert size={15} />
-        <span
-          >Your saved taskrc settings couldn't be read, so UDAs and custom reports are off for now. Nothing was deleted.</span
-        >
-        <button class="ghost" onclick={() => store.openSettings('taskrc')}>Fix it</button>
+    {#if store.config?.config_error || engine.status === 'failed'}
+      <div class="banners">
+        {#if store.config?.config_error}
+          <div class="banner" role="alert">
+            <TriangleAlert size={15} />
+            <span
+              >Your saved taskrc settings couldn't be read, so UDAs and custom reports are off for now. Nothing was
+              deleted.</span
+            >
+            <button class="ghost" onclick={() => store.openSettings('taskrc')}>Fix it</button>
+          </div>
+        {/if}
+        {#if engine.status === 'failed'}
+          <div class="banner" role="alert">
+            <TriangleAlert size={15} />
+            <span
+              >Couldn't sync with the server ({engine.error}). What you change is kept in this browser and goes up when
+              it works again.</span
+            >
+            <button class="ghost" onclick={() => void engine.sync()}>Retry</button>
+            <button
+              class="ghost"
+              onclick={discardLocalCopy}
+              title="Throw away this browser's copy and load the tasks again">Start over from the server</button
+            >
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -427,8 +458,10 @@
   .dock {
     grid-area: dock;
   }
-  .banner {
+  .banners {
     grid-area: banner;
+  }
+  .banner {
     display: flex;
     align-items: center;
     gap: 10px;

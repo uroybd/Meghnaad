@@ -1,3 +1,4 @@
+import { engine } from '../engine/client.svelte';
 import { ApiError, getAppSettings, getConfig, runCli, type Answers, type CliInput } from './api';
 import { parseSettings, type ParsedSettings, type TaskCommand } from './appsettings';
 import { lucide } from './lucideLib.svelte';
@@ -161,6 +162,11 @@ class Store {
     // Keep relative dates ("due in 2d") fresh without re-fetching.
     if (typeof window !== 'undefined') {
       setInterval(() => (this.now = Math.floor(Date.now() / 1000)), 30_000);
+      // What another device or tab did arrives with a sync; draw again what is on screen.
+      engine.onChanged(() => {
+        this.written();
+        if (this.live) void this.refresh(this.live);
+      });
     }
   }
 

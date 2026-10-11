@@ -44,6 +44,10 @@ jobs:
       - name: Clippy (Worker, WebAssembly)
         run: cargo clippy -p tw-worker --target wasm32-unknown-unknown -- -D warnings
 
+      # The engine that runs in the browser is built for WebAssembly too.
+      - name: Clippy (engine for the browser, WebAssembly)
+        run: cargo clippy -p tc-browser --target wasm32-unknown-unknown -- -D warnings
+
   web:
     name: Web app and scripts (format, lint, tests, type check)
     runs-on: ubuntu-latest
@@ -71,6 +75,13 @@ jobs:
       - name: Deploy-script tests
         run: node --test scripts/*.test.mjs
 
-      # The app has to build, not just pass its tests.
+      # The app has to build, not just pass its tests. That includes the engine that runs in the browser (Rust compiled to
+      # WebAssembly, then wasm-bindgen), which `build:web` builds first; wasm-bindgen's tool is installed if missing.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Build
         run: npm run build:web
