@@ -13,6 +13,7 @@
   import type { HookEditor } from './hookEditor';
   import { HOOKS_EXAMPLE } from './hooksExample';
   import { TriangleAlert } from './icons';
+  import SecretInput from './SecretInput.svelte';
   import { store } from './store.svelte';
 
   /** There are edits not yet saved (the tab shows a dot). */
@@ -238,13 +239,7 @@
           autocapitalize="off"
           spellcheck="false"
         />
-        <input
-          bind:value={secretValue}
-          type="password"
-          placeholder="value"
-          aria-label="Secret value"
-          autocomplete="off"
-        />
+        <SecretInput bind:value={secretValue} placeholder="value" label="Secret value" />
         <button type="submit" disabled={!secretNameOk || !secretValue || secretBusy}
           >{secrets.includes(secretName) ? 'Replace' : 'Keep'}</button
         >

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { plugin } from '../engine/native';
+  import SecretInput from './SecretInput.svelte';
 
   /** Called once the bucket has been tried with a first sync and works. */
   let { onconnected }: { onconnected: () => void } = $props();
@@ -63,16 +64,16 @@
     <input bind:value={accessKey} autocomplete="off" autocapitalize="off" spellcheck="false" />
     <small>The client ID of the key: "Access Key ID" in R2 and AWS, "keyID" in Backblaze.</small>
   </label>
-  <label>
-    Secret access key
-    <input bind:value={secretKey} type="password" autocomplete="off" />
+  <div class="field">
+    <label for="connect-secret-key">Secret access key</label>
+    <SecretInput id="connect-secret-key" bind:value={secretKey} />
     <small>The client secret: shown once when the key is made.</small>
-  </label>
-  <label>
-    Encryption secret
-    <input bind:value={encryptionSecret} type="password" autocomplete="off" />
+  </div>
+  <div class="field">
+    <label for="connect-encryption-secret">Encryption secret</label>
+    <SecretInput id="connect-encryption-secret" bind:value={encryptionSecret} />
     <small>The same value as <code>sync.encryption_secret</code> in your taskrc.</small>
-  </label>
+  </div>
 
   {#if problem}
     <p class="problem" role="alert">{problem}</p>
@@ -85,7 +86,8 @@
     display: grid;
     gap: 14px;
   }
-  label {
+  label,
+  .field {
     display: grid;
     gap: 4px;
     font-size: 14px;

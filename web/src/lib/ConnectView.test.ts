@@ -21,10 +21,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const field = (label: string) =>
-  [...document.querySelectorAll('label')]
-    .find((l) => l.textContent?.trim().startsWith(label))!
-    .querySelector('input') as HTMLInputElement;
+const field = (label: string) => {
+  const l = [...document.querySelectorAll('label')].find((l) => l.textContent?.trim().startsWith(label))!;
+  return (l.querySelector('input') ?? document.getElementById(l.htmlFor)) as HTMLInputElement;
+};
 const fill = (label: string, value: string) => {
   const el = field(label);
   el.value = value;
@@ -88,6 +88,26 @@ describe('ConnectView', () => {
     expect(ready).not.toHaveBeenCalled();
     // The form is still filled in, so it can be corrected.
     expect(field('Bucket').value).toBe('tasks');
+  });
+});
+
+describe('showing a secret', () => {
+  it('keeps the keys as dots until asked, and hides them again', async () => {
+    app = mount(ConnectView, { target: document.body, props: { onready: () => {} } });
+    fill('Secret access key', 'SK-123');
+    await tick();
+    expect(field('Secret access key').type).toBe('password');
+    const show = (name: string) => field(name).parentElement!.querySelector('button') as HTMLButtonElement;
+    show('Secret access key').click();
+    await tick();
+    expect(field('Secret access key').type).toBe('text');
+    expect(field('Secret access key').value).toBe('SK-123');
+    expect(show('Secret access key').getAttribute('aria-pressed')).toBe('true');
+    // The other secret is its own: it stays hidden.
+    expect(field('Encryption secret').type).toBe('password');
+    show('Secret access key').click();
+    await tick();
+    expect(field('Secret access key').type).toBe('password');
   });
 });
 
