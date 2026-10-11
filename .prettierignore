@@ -7,6 +7,7 @@ docs
 *.md
 package-lock.json
 web/dist
+web/src/engine/pkg
 web/.svelte-kit
 web/public
 wrangler.jsonc

@@ -14,6 +14,7 @@ export default ts.config(
       'crates/**',
       'docs/**',
       'web/dist/**',
+      'web/src/engine/pkg/**',
       'web/.svelte-kit/**',
       '.wrangler/**',
     ],

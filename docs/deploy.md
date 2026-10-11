@@ -4,12 +4,13 @@
 
 | | Plan | Why |
 | --- | --- | --- |
-| **Workers** | Free is fine | Workers Free allows 10 ms of CPU per request. The first request after an idle spell does the most work (it derives the encryption key), so with a very large task list, or many cold starts in a row, it can be cut off with error 1102 (Cloudflare tolerates an occasional overrun, so a rare one is fine); the app retries it once. Workers Paid ($5/month) lifts the limit if that ever bothers you. See [Limits of the platform](architecture.md#limits-of-the-platform) |
+| **Workers** | Free is fine | Workers Free allows 10 ms of CPU per request. The Worker only checks Access and opens and seals versions (the engine runs in your browser), but the first request after an idle spell derives the encryption key, which can be cut off with error 1102 (Cloudflare tolerates an occasional overrun, so a rare one is fine); the app retries it. Workers Paid ($5/month) lifts the limit if that ever bothers you. See [Limits of the platform](architecture.md#limits-of-the-platform) |
 | **R2** | Free is fine | The bucket your `task` CLI syncs to |
 | **Access** | Free is fine | Sign-in (one-time PIN works with no setup) |
 
-On your machine: Node.js 20+ and [Rust](https://rustup.rs) for routes A and C (the build compiles the Worker to WASM; the
-`wasm32-unknown-unknown` target and `worker-build` are installed for you if missing). Route B builds on Cloudflare, and
+On your machine: Node.js 20+ and [Rust](https://rustup.rs) for routes A and C (the build compiles the Worker and the
+engine that runs in the browser to WASM; the `wasm32-unknown-unknown` target, `worker-build` and, for the engine, the
+`wasm-bindgen` tool at the version in `Cargo.lock` are installed for you if missing; the first build takes a few minutes). Route B builds on Cloudflare, and
 route D on GitHub.
 
 Pick one route to start with. Route D is for updating after A or C has done the first deploy.
@@ -179,6 +180,8 @@ Released versions of Taskwarrior have no config key for a custom S3 endpoint, bu
 | A stack trace in `wrangler tail` shows only `wasm-function[1234]`, no names | The build leaves the debug function names out to save about 70 KB of the upload. Build and deploy once with `KEEP_WASM_NAMES=1` (`KEEP_WASM_NAMES=1 npm run deploy`) when you need to read one |
 | "task storage error" (502) | Wrong `TC_ENCRYPTION_SECRET` or the wrong bucket. The cached state resets on the next request |
 | Task command icons show as a terminal, and the icon picker says the list could not be fetched | The browser can't reach `cdn.jsdelivr.net`: it is offline or blocked, or a proxy in front of the app sets a Content-Security-Policy without it (`web/public/_headers` allows it with `connect-src 'self' https://cdn.jsdelivr.net`). Typing an icon's name in the picker still works |
+| Everything works but each command is a request to the server (the browser console says "The engine could not start in this browser") | The engine, which runs in the page as WebAssembly, was blocked or failed: a proxy in front of the app sets a Content-Security-Policy without `'wasm-unsafe-eval'` (`web/public/_headers` has `script-src 'self' 'wasm-unsafe-eval'`), or the browser has no Web Workers or WebAssembly. The Worker runs the engine instead, as a fallback, so nothing is lost, but the free plan's CPU limit applies again |
+| A banner says "Couldn't sync with the server" | The page could not reach `/api/tc/*`: offline, Cloudflare Access has signed you out (reload to sign in again), or the Worker failed. Your changes are kept in the browser and go up with the next sync that works. **Start over from the server** discards the browser's copy, which is for a replaced bucket or a secret that changed |
 | `wrangler dev` says the assets directory is missing | Run `npm --prefix web run build` once |
 | `wrangler dev` exits with "register a workers.dev subdomain" | `wrangler.jsonc` has an extra `"remote": true` R2 binding (added when you ran `wrangler r2 bucket create`). Delete it, keeping only `TASKS` |
 | `task sync` fails with `PermanentRedirect` | `AWS_ENDPOINT_URL` isn't set in that environment, so it's talking to AWS |

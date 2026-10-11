@@ -1,3 +1,4 @@
+import { engine, engineAvailable } from '../engine/client.svelte';
 import type { CliResponse, ConfigResponse, ImportReport, TaskrcResponse } from './types';
 
 export class ApiError extends Error {
@@ -87,31 +88,97 @@ export interface CliInput extends Answers {
   args?: string[];
 }
 
-export function runCli(input: CliInput): Promise<CliResponse> {
-  return request<CliResponse>('/api/cli', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...input, tz: tzOffsetSeconds() }),
-  });
+// The engine (Taskwarrior's logic and the tasks) runs in this page, in a Web Worker (src/engine); the Worker on the
+// server keeps the secret and the bucket and only passes versions through. Where the browser cannot run it (no Web
+// Workers or WebAssembly, `?engine=server`, or it failed to start) the server runs the engine, as it used to, through
+// `POST /api/cli` and `POST /api/import`.
+
+/** Resolves to whether the engine in this page is in use; set by the first `getConfig`. */
+let booted: Promise<boolean> | undefined;
+
+async function bootEngine(config: ConfigResponse): Promise<boolean> {
+  if (!engineAvailable()) return false;
+  try {
+    await engine.start(JSON.stringify(config.config));
+    return true;
+  } catch (e) {
+    console.warn('The engine could not start in this browser; the server will run it.', e);
+    engine.stop();
+    return false;
+  }
+}
+
+async function useEngine(): Promise<boolean> {
+  // Where the browser cannot run it there is nothing to start, and nothing to ask the server first.
+  if (!engineAvailable()) return false;
+  if (booted === undefined) await getConfig();
+  return (await booted) ?? false;
+}
+
+/** What the engine answered, as the server's `/api/cli` and `/api/import` do: an `error` is a refused request. */
+function answer<T>(text: string): T {
+  const body = JSON.parse(text) as T & { error?: string };
+  if (typeof body.error === 'string') throw new ApiError(body.error, 400);
+  return body;
+}
+
+export async function runCli(input: CliInput): Promise<CliResponse> {
+  if (!(await useEngine())) {
+    return request<CliResponse>('/api/cli', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...input, tz: tzOffsetSeconds() }),
+    });
+  }
+  const res = answer<CliResponse & { config?: unknown }>(
+    await engine.run({ ...input, tz: tzOffsetSeconds(), now: Date.now() / 1000 }),
+  );
+  // `config` changed the settings: they are saved on the server, where they live, and the engine takes them up.
+  const { config, ...response } = res;
+  if (config) {
+    try {
+      await request('/api/config/engine', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      await engine.setConfig(JSON.stringify(config));
+    } catch {
+      return {
+        ...response,
+        result: { kind: 'error', message: 'The settings could not be saved. Nothing was changed.' },
+      };
+    }
+  }
+  if (response.wrote) engine.pushSoon();
+  return response;
 }
 
 /** The most the server takes in one import (it says so in the same words). */
 export const MAX_IMPORT_BYTES = 3 * 1024 * 1024;
 
 /**
- * Send a file of tasks (what `export` writes) to be imported. Without `apply` it only reports what would
- * happen; with it the tasks are written, all of them or none.
+ * Import a file of tasks (what `export` writes). Without `apply` it only reports what would happen; with it the tasks
+ * are written, all of them or none.
  */
-export function importTasks(text: string, apply: boolean): Promise<ImportReport> {
-  return request<ImportReport>(`/api/import?apply=${apply ? 1 : 0}&tz=${tzOffsetSeconds()}`, {
-    method: 'POST',
-    headers: { 'content-type': 'text/plain; charset=utf-8' },
-    body: text,
-  });
+export async function importTasks(text: string, apply: boolean): Promise<ImportReport> {
+  if (!(await useEngine())) {
+    return request<ImportReport>(`/api/import?apply=${apply ? 1 : 0}&tz=${tzOffsetSeconds()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+      body: text,
+    });
+  }
+  const report = answer<ImportReport>(await engine.import(text, apply, tzOffsetSeconds()));
+  if (apply) engine.pushSoon();
+  return report;
 }
 
-export function getConfig(): Promise<ConfigResponse> {
-  return request<ConfigResponse>('/api/config');
+export async function getConfig(): Promise<ConfigResponse> {
+  const config = await request<ConfigResponse>('/api/config');
+  if (booted === undefined) booted = bootEngine(config);
+  else if (await booted) void engine.setConfig(JSON.stringify(config.config)).catch(() => {});
+  return config;
 }
 
 /** The saved settings, rendered as a taskrc to edit and import again. */

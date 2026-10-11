@@ -113,7 +113,7 @@ hooks (`on_add`, `on_modify`) run for each task. `import-v2` (Taskwarrior 2's da
 
 **`stats`** counts the tasks that match a filter (all of them, with none): by status, annotations, tags, projects,
 blocked and blocking, how old the oldest is and how often tasks are added and finished. The two rows about undo and the
-sync backlog describe this Worker: `undo` is what it remembers, and the backlog is normally 0, since every write syncs.
+sync backlog describe this page: `undo` is what it remembers, and the backlog is normally 0, since every write is pushed at once (it is more while you are offline).
 
 **Contexts.** `context define work +work or project:Work` saves a context, `context work` makes it the active one,
 `context none` turns it off, `context delete work` removes it, and `context` (or `context list`) lists them and
@@ -457,9 +457,10 @@ an instance links back to it. The recurring task itself is a template: you can e
 
 ## Hooks
 
-Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A Worker can't
+Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A page can't
 run scripts, so here a hook is a **Rust function you write in `crates/tc-core/src/my_hooks.rs`** and deploy with the
-Worker. That file ships with four commented-out placeholders, so nothing happens until you fill one in. (The code that
+app: it is compiled into the engine, which runs in your browser (and on the Worker for a browser that cannot run it).
+A hook therefore runs on the device where you typed the command, not on the server. That file ships with four commented-out placeholders, so nothing happens until you fill one in. (The code that
 runs them, `hooks.rs`, is separate on purpose: see [Keeping your hooks across updates](#keeping-your-hooks-across-updates).)
 
 | Hook | Runs | It can |
@@ -572,8 +573,8 @@ can be tapped. You can install it to your home screen from the browser menu.
 
 - **Numeric ids belong to this app** (pending tasks numbered by creation time), so they won't match your laptop's. Use
   uuid prefixes where it matters.
-- **`undo`** works on the last few commands made while this Worker instance lives; it is forgotten when it is recycled.
-- **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a Worker can't run local programs, so they are functions in
+- **`undo`** works on the last few commands made while this tab is open; it is forgotten when the tab is closed or reloaded.
+- **Hooks are Rust, not scripts** (`on-add`, `on-modify`, …): a browser can't run local programs, so they are functions in
   `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
 - **Task commands and `settings.json` are the app's own.** They are not in your taskrc, so a desktop `task` knows nothing
   of them; the taskrc's `alias.*` still works there. See [Commands](#commands).
@@ -584,4 +585,17 @@ can be tapped. You can install it to your home screen from the browser menu.
   in a browser). `purge` is, with one difference: it removes a task from your current tasks, but the earlier versions in
   your bucket still hold what it used to say until they are cleaned up, which the app does as the CLI does, after
   about one push in twenty, once they are over 180 days old and a snapshot covers them.
-- **The first request after a quiet spell** is slower: the Worker rebuilds its state from the bucket's newest snapshot.
+- **Where your tasks live.** The engine runs in this page and keeps your tasks in memory, with a copy saved in the
+  browser (IndexedDB) so that the next visit starts from it and only pulls what changed. The first visit on a device,
+  or after the saved copy is thrown away, downloads the newest snapshot, which takes a moment for a long history.
+- **Syncing.** A change is applied at once and pushed to the bucket in the background. The page pulls what other devices
+  (your laptop's `task sync`) have done when you come back to the tab and every 30 seconds while you look at it, so a
+  change from the desktop can take up to that long to appear. Several tabs of the same browser tell each other.
+- **Offline.** If the server cannot be reached, a banner says so; your changes still work and are kept in the browser, and
+  they go up with the next sync that works (**Retry** tries now). The page itself still has to be loaded from the
+  server, so you cannot open it with no connection. **Start over from the server**, in the same banner, throws this
+  browser's copy away (including changes that never went up) and loads the tasks again, for when the copy and the
+  bucket no longer agree (a replaced bucket, say).
+- **Whose engine.** If your browser cannot run the engine (no Web Workers or WebAssembly), or you add `?engine=server` to
+  the address, the Worker runs it instead, as it did before; the answers are the same, but each command is a request
+  and the Worker's free-plan CPU limit applies.

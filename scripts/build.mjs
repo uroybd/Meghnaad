@@ -25,8 +25,14 @@ for (const m of missingTools()) {
   must(run(...m.fix), `installing ${m.what}`);
 }
 
-step('web app');
-must(run('npm', ['--prefix', 'web', 'run', 'build']), 'the web build');
+// `npm run dev` builds and serves the app and the engine itself (scripts/dev.mjs); it only needs the Worker from here.
+if (!process.env.MEGHNAAD_DEV) {
+  step('engine (Rust -> WASM, for the browser)');
+  must(run('node', ['scripts/build-engine.mjs', '--if-stale']), 'the engine build');
+
+  step('web app');
+  must(run('npm', ['--prefix', 'web', 'run', 'build']), 'the web build');
+}
 
 step('Worker (Rust -> WASM)');
 if (!has('worker-build')) {

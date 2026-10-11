@@ -1,8 +1,10 @@
 # Working on Meghnaad
 
-Taskwarrior 3.5.0 in the browser: a Rust → WASM Cloudflare Worker (`crates/worker`) around a pure engine
-(`crates/tc-core`), a Svelte 5 app (`web/`), and an R2 bucket as the TaskChampion store. The README and
-`docs/architecture.md` explain the design; this file is how to change it.
+Taskwarrior 3.5.0 in the browser: a pure engine (`crates/tc-core`) that runs **in the page** as WebAssembly
+(`crates/browser`, in a Web Worker, with its replica saved in IndexedDB), a Svelte 5 app (`web/`) that draws what it
+returns, a small Rust → WASM Cloudflare Worker (`crates/worker`) that checks Access, holds the secret and opens and seals
+versions, and an R2 bucket as the TaskChampion store. The README and `docs/architecture.md` explain the design; this
+file is how to change it.
 
 ## Before you say a change is done
 
@@ -10,13 +12,14 @@ Format, lint and test, in that order. CI runs the same checks and fails on any o
 
 ```bash
 npm run format                # cargo fmt (rustfmt.toml, 120 columns) and Prettier (.prettierrc.json): fixes in place
-npm run lint                  # Rust: rustfmt check + clippy -D warnings (engine, and the Worker for wasm32)
+npm run lint                  # Rust: rustfmt check + clippy -D warnings (engine, and the Worker and browser engine for wasm32)
                               # JS/TS/Svelte: Prettier check + ESLint (eslint.config.js)
 cargo test                    # engine, end-to-end command tests, sync cost, memory budgets
 npm --prefix web test         # web unit tests
 npm run check                 # svelte-check (types, accessibility)
 node --test scripts/*.test.mjs  # the build and deploy scripts
 cargo check -p tw-worker --target wasm32-unknown-unknown
+cargo check -p tc-browser --target wasm32-unknown-unknown
 ```
 
 `npm run lint:rust` and `npm run lint:js` run each half alone. Everything is formatted and linted, Rust and web alike:
@@ -41,16 +44,32 @@ run `npm run format` after editing any code, not just at the end.
 - **Docs move with the code.** A new or changed feature updates `docs/using.md`, and `docs/taskrc-support.md` for a
   setting, `docs/architecture.md` for a module, and the README if it is user-visible. Keep the Mermaid diagram identical
   in the README and `docs/architecture.md`.
-- **Taskwarrior logic lives in `tc-core`**; the browser only draws. One endpoint, `POST /api/cli` (and `POST /api/import` for the text of a file; the browser only reads it).
-- **Secrets never leave the Worker.** The taskrc importer, `show` and `config` refuse sync and credential-like names and
-  never echo their values; keep tests that prove it passing, and add one for any new path that handles settings.
+- **Taskwarrior logic lives in `tc-core`**; the page only draws. The engine answers what `POST /api/cli` and
+  `POST /api/import` used to (they remain on the Worker as the fallback for a browser that cannot run it, and must keep
+  giving the same answers). The page talks to the bucket only through the Worker's `/api/tc/*` (`tc_core::wire`).
+- **Secrets never leave the Worker.** The encryption secret is only ever in the Worker (it derives the key and opens
+  and seals versions; the page gets plain versions over HTTPS). The taskrc importer, `show` and `config` refuse sync and
+  credential-like names and never echo their values, and `PUT /api/config/engine` refuses them too; keep tests that
+  prove it passing, and add one for any new path that handles settings.
 - **Mind the Worker's size.** The compressed Wasm has a budget (the README says how much is left for hooks), and every
   feature spends some. Measure a release build before and after (`gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`),
   and prefer reusing what is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config`
   line editing) over a new instantiation. `twiggy` on a build made in a scratch directory shows where bytes go. The build
-  drops the debug names (`KEEP_WASM_NAMES=1` keeps them); measure with them left out, as the deploy does.
+  drops the debug names (`KEEP_WASM_NAMES=1` keeps them); measure with them left out, as the deploy does. The engine in the browser is downloaded by every visitor (about 595 KB
+  compressed; measure it with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c`), so a feature spends from that
+  budget too.
 - **Hooks** are user code. Users edit only `crates/tc-core/src/my_hooks.rs`, so keep engine changes in `hooks.rs` and
   keep `my_hooks.rs` stable, so their patch keeps applying (see `docs/using.md`, "Keeping your hooks across updates").
+
+## Running it
+
+`npm run dev` is the dev server: it builds the engine (`scripts/build-engine.mjs`, which needs the `wasm-bindgen` tool at
+the version in `Cargo.lock` and installs it once), rebuilds it when Rust under `crates/tc-core` or `crates/browser`
+changes, runs `wrangler dev --local` (8787) and Vite (5273, hot reload, `/api` proxied). `--api-port`, `--web-port` and
+`--persist-to` move it. The generated engine package (`web/src/engine/pkg`) is git-ignored, formatted and linted by
+nobody; `web/src/engine/tc-engine.d.ts` types it by hand, so keep it in step with `crates/browser/src/lib.rs`.
+`npm run build:web` and `npm run build` build the engine first. The engine in the page does not exist under Vitest
+(jsdom has no Web Worker), so `api.ts` takes the server path there unless a test mocks `../engine/client.svelte`.
 
 ## Running things without disturbing the person using the app
 

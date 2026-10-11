@@ -5,8 +5,8 @@
 <h1 align="center">Meghnaad</h1>
 
 <p align="center">
-  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser. A Rust Worker on Cloudflare, your existing R2
-  bucket as the sync store, Cloudflare Access for login.
+  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser. The Rust engine runs in the page, a small Worker on
+  Cloudflare keeps the secret, your existing R2 bucket is the sync store, Cloudflare Access is the login.
 </p>
 
 ---
@@ -132,25 +132,32 @@ flowchart TB
     rc -.-> cli
   end
 
-  subgraph web["Cloudflare: Meghnaad"]
+  subgraph web["Your browser: Meghnaad"]
     direction TB
     cmds["task commands<br/>(settings.json)"]
     rev["tasksh review"]
     spa["Svelte app<br/>(draws results)"]
-    access{{"Cloudflare Access<br/>token check"}}
-    wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
+    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
     tcw["TaskChampion (Rust)"]
-    mem[("In-memory replica<br/>per Worker instance")]
+    mem[("Replica in memory<br/>saved copy in IndexedDB")]
     cmds -.-> spa
     rev -.-> spa
-    spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
+    spa -- "what you type or click" --> eng --> tcw --> mem
+  end
+
+  subgraph edge["Cloudflare"]
+    direction TB
+    access{{"Cloudflare Access<br/>token check"}}
+    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>key in a Worker secret"]
+    access --> wk
   end
 
   bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
-  tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
-  wk -. "taskrc settings, settings.json" .-> bucket
+  tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
+  spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
+  wk <-- "R2 binding" --> bucket
 
   sh <-. "counterpart" .-> cmds
   tsh <-. "counterpart" .-> rev
@@ -162,25 +169,30 @@ flowchart TB
 - **Dashed grey boxes** are not Taskwarrior: your own words for command lines (shell aliases on the desktop, task commands
   here) and tasksh's `review` (tasksh there, built in here). They only ever send ordinary
   commands.
-- **The bucket** holds TaskChampion's standard cloud layout, encrypted client-side. The Worker speaks the same protocol,
-  so it and the CLI are interchangeable replicas.
-- **The Worker** keeps an in-memory replica and syncs before and after every command (an idle sync is one read). After a
-  quiet spell it rebuilds from the newest snapshot.
-- **One endpoint**, `POST /api/cli`, takes what you type or click, so Taskwarrior's rules live in one place, `tc-core`.
-  The browser only draws. (`POST /api/import` carries a file's text; settings are read and saved on `/api/config` and
-  `/api/settings`.)
+- **The engine runs in your browser.** Taskwarrior's rules live in one place, `tc-core`, compiled to WebAssembly and run
+  in a Web Worker in the page. It holds your tasks in memory, so a command costs no round trip and uses none of the
+  Worker's CPU. Your hooks run there too. The Svelte app only draws.
+- **The bucket** holds TaskChampion's standard cloud layout, encrypted client-side. The browser's replica and your CLI
+  are interchangeable replicas of it.
+- **The Worker keeps the secret.** It checks Cloudflare Access, and opens and seals the versions that pass between the
+  bucket and your browser (`/api/tc/*`), so the encryption secret never leaves it. It parses no tasks.
+- **The browser keeps a copy** in IndexedDB, so a visit starts from where the last one ended and only pulls what is new.
+  It syncs after every write, when you come back to the tab, and every 30 seconds while you look at it; other tabs are
+  told when one pushes.
 - **Imported taskrc settings** are stored in the bucket, so they survive restarts and follow you between devices.
   The app's own `settings.json` (task commands, so far) is stored beside them; the Worker keeps its text as it is and
   only the browser reads it.
+- **A browser that cannot run the engine** (no Web Workers or WebAssembly, or `?engine=server` in the address) falls back
+  to the Worker running it, through `POST /api/cli` and `POST /api/import`.
 
 |  | Desktop Taskwarrior | Meghnaad |
 | --- | --- | --- |
-| Local state | Persistent SQLite | In memory, rebuilt from the bucket when the instance is recycled |
-| Sync | When you run `task sync` | Before and after every command |
-| Offline | Works | Needs a connection |
-| Encryption key | Only on your machine | In a Worker secret; the Worker decrypts |
+| Local state | Persistent SQLite | In the page, with a saved copy in the browser (IndexedDB) |
+| Sync | When you run `task sync` | After every write, when you return to the tab, every 30 s while you look at it |
+| Offline | Works | Changes work and are kept; they go up when the connection is back. The page itself needs a connection to load |
+| Encryption key | Only on your machine | In a Worker secret; the Worker opens and seals what passes through it |
 | Task ids | Local to that replica | Computed separately, so they differ |
-| Hooks | Scripts in `~/.task/hooks` | Rust functions in `my_hooks.rs`, compiled into the Worker; change one and redeploy |
+| Hooks | Scripts in `~/.task/hooks` | Rust functions in `my_hooks.rs`, compiled into the engine; change one and redeploy |
 
 More in [Architecture](docs/architecture.md).
 
@@ -192,12 +204,14 @@ Runs without a Cloudflare account; wrangler simulates R2. You need [Rust](https:
 git clone <this repo> && cd Meghnaad
 npm install
 cp .dev.vars.example .dev.vars   # local-only secret + Access bypass
-npm run dev                      # builds the app and the Worker, then serves both
+npm run dev                      # builds the engine, then serves the app (hot reload) and the Worker
 ```
 
-The first build takes about a minute. Open **http://127.0.0.1:8787**. For a hot-reloading UI run
-`npm --prefix web run dev` in a second terminal; for demo data run `./scripts/seed-dev.sh`. Local R2 data lives in
-`.wrangler/state` (delete it to start over).
+The first build takes a few minutes (it installs the `wasm-bindgen` tool once). Open **http://127.0.0.1:5273**: the
+app with hot reload, and the Worker behind it on 8787. The engine is rebuilt when the Rust under `crates/tc-core` or
+`crates/browser` changes, and the Worker when its own does. For demo data run `./scripts/seed-dev.sh`. Local R2 data lives
+in `.wrangler/state` (delete it to start over), or somewhere else with `npm run dev -- --persist-to DIR`; the ports
+are `--api-port` and `--web-port`.
 
 ## Deploy to Cloudflare
 
@@ -236,13 +250,13 @@ ticks. More in **[Using Meghnaad](docs/using.md)**.
 ## Hooks
 
 Taskwarrior's four hooks are Rust functions in [`crates/tc-core/src/my_hooks.rs`](crates/tc-core/src/my_hooks.rs),
-deployed with the Worker. A hook gets the task, returns it (changed or not) or refuses the command, and what it prints
-appears in the Console. All four ship empty. Changing one means rebuilding (`npm run dev` does it on save, `npm run
+built into the engine (which runs in your browser, and in the Worker for browsers that cannot run it). A hook gets the
+task, returns it (changed or not) or refuses the command, and what it prints appears in the Console. All four ship empty. Changing one means rebuilding (`npm run dev` does it on save, `npm run
 deploy` for the real one). See [Hooks](docs/using.md#hooks) and
 [keeping them as a patch](docs/using.md#keeping-your-hooks-across-updates).
 
-**How much fits.** The Worker is about **775 KB compressed** (gzip). A 1 MB budget leaves about **275 KB**. Measured on
-a release build:
+**How much fits.** The Worker is about **785 KB compressed** (gzip). A 1 MB budget leaves about **265 KB**. The engine in
+the browser is about **595 KB compressed**, downloaded once and cached; hooks add to both. Measured on a release build:
 
 | Hook code | Added (compressed) |
 | --- | --- |
@@ -269,9 +283,11 @@ measure before adding one:
   is kept from it, so what arrives is drawn and never run. Fetching one tells that host your IP address and the icon's
   name, nothing else. Without the network those you have used are remembered by the browser, and the rest show a
   terminal icon.
-- **Encryption** is TaskChampion's (PBKDF2-HMAC-SHA256, then ChaCha20-Poly1305). The Worker holds the secret to decrypt
-  for you, so whoever can read Worker secrets in your Cloudflare account can read your tasks. It is not end-to-end
-  encrypted from Cloudflare. The Worker uses an R2 binding and holds no R2 token.
+- **Encryption** is TaskChampion's (PBKDF2-HMAC-SHA256, then ChaCha20-Poly1305). The Worker holds the secret and opens
+  and seals what passes between the bucket and your browser, so whoever can read Worker secrets in your Cloudflare
+  account can read your tasks. It is not end-to-end encrypted from Cloudflare. The Worker uses an R2 binding and holds
+  no R2 token. Your browser keeps a copy of your tasks in plain form in its own storage (IndexedDB), like any app
+  that works offline: whoever can read your browser profile can read it.
 - **The taskrc importer** never stores, logs or returns sync or credential values; tests feed it a file full of secrets
   and check none appear.
 
@@ -279,13 +295,16 @@ measure before adding one:
 
 ```
 crates/tc-core/   the engine: protocol, crypto, filters, reports, commands, taskrc  (pure Rust)
-crates/worker/    the Cloudflare Worker: routes, Access check, R2 store, per-instance session
+crates/browser/   the engine as WebAssembly for the browser (tc-core + sync through the Worker)
+crates/worker/    the Cloudflare Worker: Access check, R2 store, opens and seals versions, settings
 web/              the Svelte 5 app (Vite)
-scripts/          setup / deploy / build · seed-dev.sh (demo data) · interop-local.sh (real-CLI regression)
+scripts/          setup / deploy / build / dev server · seed-dev.sh (demo data) · interop-local.sh (real-CLI regression)
 docs/             the guides above
 ```
 
 ```bash
+npm run dev                   # the dev server: engine build and rebuild, Worker, app with hot reload
+npm run build:engine          # the engine for the browser alone (web/src/engine/pkg)
 npm test                      # cargo test + the web unit tests + the deploy-script tests
 npm run check                 # svelte-check (types, accessibility)
 npm run lint                  # rustfmt + clippy (warnings are errors) + Prettier + ESLint; `lint:rust`, `lint:js` for one half
@@ -307,17 +326,23 @@ urgency, dates or confirmations, read the C++ first and compare ([method](docs/a
 ## Troubleshooting
 
 See [Deploying](docs/deploy.md#troubleshooting-a-deployment). One to know: **Cloudflare error 1102** ("Worker exceeded
-resource limits"), usually on the first request after a quiet spell, is the CPU limit of the free plan. It is uncommon
-and the app retries read-only requests once; Workers Paid lifts the limit if it ever bothers you.
+resource limits"), usually on the first request after a quiet spell, is the CPU limit of the free plan. It is uncommon,
+since the engine runs in your browser and the Worker only passes versions through; the app retries and Workers Paid
+lifts the limit if it ever bothers you. If the page shows *Couldn't sync with the server*, what you changed is kept in
+the browser and goes up when it works again.
 
 ## Known limitations
 
 - **Icons beyond the bundled ones** are fetched from a CDN when first shown (see Security). Offline, the ones your
   commands use are remembered by the browser and the rest show a terminal icon.
-- **Single user:** one set of settings and one shared replica per Worker instance.
+- **Single user:** one set of settings, shared by every browser that signs in.
+- **No offline start:** changes work offline and are kept, but the page itself is loaded from the Worker, so it needs a
+  connection to open (there is no service worker yet).
+- **Browser support:** the engine needs Web Workers and WebAssembly (every current browser); the first visit downloads it
+  (about 600 KB compressed, then cached).
 - **Old versions** (over 180 days old and covered by a snapshot) are cleaned up as the CLI does, after about one push in
   twenty. A device offline for longer may need a fresh `task sync` set-up.
-- **`undo`** lives in the Worker instance's memory and is lost when it is recycled.
+- **`undo`** lives in the page's memory and is lost when the tab is closed or reloaded.
 - **Dates you type** are read in your `dateformat`, then as ISO or words (`friday`, `3d`). ISO week and ordinal dates
   (`2026-W52`) aren't understood.
 - **Hooks are compiled in**: no network or files. `undo` doesn't run them

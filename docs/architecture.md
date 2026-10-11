@@ -11,10 +11,15 @@ bucket, and the clients agree on its layout. Meghnaad is one more client of that
 
 - It is a **replica** like your laptop's, not a copy of the database. It reads and writes the same bucket, speaking
   TaskChampion's own format and encryption, so `task sync` and the web app see each other's changes.
-- The browser holds no tasks. A Cloudflare **Worker** holds an in-memory replica, and the browser asks it to run
-  Taskwarrior commands and shows what comes back.
+- The **replica lives in your browser**. The engine (Rust compiled to WebAssembly, in a Web Worker in the page) holds
+  your tasks in memory, runs Taskwarrior commands against them, and keeps a saved copy in IndexedDB. A small
+  Cloudflare **Worker** sits between the page and the bucket: it checks Cloudflare Access, holds the encryption secret,
+  and opens and seals the versions that pass through. It never parses a task.
 - Everything that is *Taskwarrior behaviour* (filters, reports, urgency, recurrence, confirmations, dates) lives in
-  one Rust library, `tc-core`. The browser does layout, not logic.
+  one Rust library, `tc-core`. The Svelte app draws what the engine returns; it has no logic of its own.
+- It started the other way round: the Worker held the replica and ran every command, so every request spent the free
+  plan's 10 ms of CPU. Moving the engine to the page took that cost off the Worker, and made reads and writes
+  instantaneous. The Worker can still run the engine for a browser that cannot (see below).
 
 ```mermaid
 flowchart TB
@@ -32,25 +37,32 @@ flowchart TB
     rc -.-> cli
   end
 
-  subgraph web["Cloudflare: Meghnaad"]
+  subgraph web["Your browser: Meghnaad"]
     direction TB
     cmds["task commands<br/>(settings.json)"]
     rev["tasksh review"]
     spa["Svelte app<br/>(draws results)"]
-    access{{"Cloudflare Access<br/>token check"}}
-    wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
+    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
     tcw["TaskChampion (Rust)"]
-    mem[("In-memory replica<br/>per Worker instance")]
+    mem[("Replica in memory<br/>saved copy in IndexedDB")]
     cmds -.-> spa
     rev -.-> spa
-    spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
+    spa -- "what you type or click" --> eng --> tcw --> mem
+  end
+
+  subgraph edge["Cloudflare"]
+    direction TB
+    access{{"Cloudflare Access<br/>token check"}}
+    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>key in a Worker secret"]
+    access --> wk
   end
 
   bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
-  tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
-  wk -. "taskrc settings, settings.json" .-> bucket
+  tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
+  spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
+  wk <-- "R2 binding" --> bucket
 
   sh <-. "counterpart" .-> cmds
   tsh <-. "counterpart" .-> rev
@@ -62,42 +74,47 @@ flowchart TB
 The dashed grey boxes are not Taskwarrior itself. They are what people add around it: shell aliases and `tasksh` on the
 desktop, and their counterparts here, **task commands** (`settings.json`, expanded in the browser) and **tasksh's
 `review`** (see below; the Settings page sets up the `reviewed` attribute and `_reviewed` report it needs). Both
-only ever send ordinary commands to the one endpoint, so the engine knows nothing about them.
+only ever send ordinary commands to the engine, so it knows nothing about them.
 
-## The request path
+## Where things run
 
-Every action goes through one endpoint, `POST /api/cli`, with `{ "line": "…" }` (what you typed in the console) or
-`{ "args": […] }` (what a button sends). One endpoint means one place where Taskwarrior semantics live. The one
-exception is `POST /api/import`, which takes the *text of a file* (a command line can't carry one): the browser reads the
-file and sends it as it is, and `tc-core`'s `import` module parses and checks it, so the rules are still only in Rust.
-`?apply=1` writes it; without that it only reports what it would do. The settings are not commands, so they have routes
-of their own: `/api/config/*` for the taskrc and urgency, and `GET`/`PUT /api/settings` for `settings.json` (`config` and
-`show` still edit the taskrc through the one endpoint).
+**In the page** (`web/src/engine/`, `crates/browser`): the engine, in a dedicated Web Worker so that a big report never
+blocks the page. The Svelte app sends it what you typed or clicked (`{ "line": "…" }` or `{ "args": […] }`, with your
+time zone and the time) and gets back the JSON that `POST /api/cli` used to return. One entry point means one place
+where Taskwarrior semantics live. A file to import goes the same way, as its text; `tc-core`'s `import` module parses
+and checks it. The engine answers one message at a time, in the order they arrive.
 
-1. **Static files** (the app shell) are served by Cloudflare without running the Worker. Only `/api/*` runs it.
+**On the Worker** (`crates/worker`), behind Cloudflare Access:
+
+1. **Static files** (the app shell and the engine's `.wasm`) are served by Cloudflare without running the Worker. Only
+   `/api/*` runs it.
 2. **`auth.rs`** checks the Cloudflare Access token on every `/api/*` request: RS256 signature against your team's
    published keys, issuer, audience, expiry. Misconfiguration means `403`, never open.
-3. **`session.rs`** holds what a Worker instance ("isolate") keeps between requests: the derived key, a long-lived
-   replica, the undo stack and the imported taskrc. A cold instance builds these; a warm one reuses them.
-4. **Sync, run, sync.** The Worker pulls versions it hasn't seen, runs the command against the replica, and if
-   anything changed pushes it before answering. With nothing new, a sync is one read of `latest`.
-5. **`tc-core::cli::execute`** parses and runs the command and returns a `CliResult` (a report, a table, a calendar,
-   a question, an error…), which is serialised as JSON.
+3. **`/api/tc/*`** is the sync protocol between the page's replica and the bucket, in plain form over HTTPS (see
+   [Sync](#sync)): `GET pull`, `POST push`, `GET`/`POST snapshot`. The Worker opens and seals each version with the
+   key it derives from the secret (`session.rs` keeps that key between requests), so the secret never leaves it.
+4. **Settings** have routes of their own, because they live in the bucket and not in a replica: `/api/config` and
+   `/api/config/*` for the taskrc and urgency, `GET`/`PUT /api/settings` for `settings.json`, and
+   `PUT /api/config/engine`, which saves what a `config` command changed (the engine worked it out in the page; the
+   Worker refuses anything sync- or credential-like and keeps the previous version for a restore).
+5. **`POST /api/cli` and `POST /api/import`** still exist: they run the same engine on the Worker, with a replica of its
+   own, for a browser that cannot run it (no Web Workers or WebAssembly, `?engine=server`, or an engine that failed to
+   start). Nothing else uses them.
 
 ## `tc-core`: the engine
 
-Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two hosts for it.
+Pure Rust, no I/O of its own, tested natively. The browser engine, the Worker (as a fallback) and the tests are three hosts for it.
 
 | Area | Modules | What they do |
 | --- | --- | --- |
-| **Protocol** | `cloud`, `crypto`, `names`, `store` | TaskChampion's cloud server over an object store; PBKDF2 → ChaCha20-Poly1305; object names; the storage trait the Worker implements over R2 |
-| **Replica storage** | `live` | The replica's in-memory database. TaskChampion's own copies every task on the first write of each transaction, so every sync and every write cost a full copy (and twice the memory for a moment); this one changes its data in place and keeps a short journal to undo a transaction that is dropped without commit. A test runs random transactions against both and compares them |
+| **Protocol** | `cloud`, `crypto`, `names`, `store`, `wire` | TaskChampion's cloud server over an object store; PBKDF2 → ChaCha20-Poly1305; object names; the storage trait the Worker implements over R2; and `wire`, the plain protocol between the page's replica and the Worker (a batched pull, a push, snapshots), with both halves, so a test can run a whole sync through them |
+| **Replica storage** | `live` | The replica's in-memory database. TaskChampion's own copies every task on the first write of each transaction, so every sync and every write cost a full copy (and twice the memory for a moment); this one changes its data in place and keeps a short journal to undo a transaction that is dropped without commit. A test runs random transactions against both and compares them. It can also be saved to bytes and loaded again (`save`, `load`, `save_replica`), which is what the browser keeps in IndexedDB; a test saves and restores a replica during random runs and checks it carries on and syncs the same |
 | **Tasks** | `model`, `filter`, `modify`, `dates`, `rx`, `recur` | A plain view of a task; filter expressions; planning `modify`/`add`; Taskwarrior's date and duration parsing; Taskwarrior's regular expressions; recurring tasks |
 | **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations (`add`, `log`, `duplicate`, `modify`, …), undo, the `commands` listing, and dispatch to everything below |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Colour** | `color` | Taskwarrior's colour specifications and how they blend, the rules that colour a task (with precedence and merge), the `colors` command and the history graph's colours; checked against the escape codes of the real `task` |
 | **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` (and `_get`, which reads the same DOM) and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; `import` reads it back (a port of `CmdImport`, checking the whole file before it writes anything); the app's pages use a separate, hidden `_rows`, and the detail view's History a hidden `_history <uuid>` that reads one task's operations without loading the rest |
-| **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
+| **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the engine, wherever it runs, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
 | **Settings** | `taskrc`, `rc_url`, `settings`, `appsettings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; `rc_url` is which links the Worker may fetch a taskrc from (HTTPS to a public host name only, redirects included) and the GitHub/GitLab page-to-raw rewrite; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`); `appsettings` checks that the app's own `settings.json` is a JSON object of a sensible size before the Worker stores it |
 
 ### How a command runs
@@ -123,14 +140,14 @@ Writes go through one path (`write_selected`) so the safety rules are in one pla
   re-sends the command with the answers (`Options { confirmed, approved, extras }`).
 - **Hooks** run inside this path, before the commit: `on_add` and `on_modify` see the task as the command leaves it, and what they hand back is diffed and applied into the same batch, or the command is refused and nothing is saved.
 - Everything the command changes is built as one batch of operations and committed once, so it is one undo step.
-- Undo can't use TaskChampion's own (it only covers unsynced changes, and the Worker syncs after every write), so
-  the inverse operations are committed as new changes. The stack lives in the isolate's memory.
+- Undo can't use TaskChampion's own (it only covers unsynced changes, and the page syncs after every write), so
+  the inverse operations are committed as new changes. The stack lives in the page's memory.
 
 ### Sync
 
 `CloudServer` is TaskChampion's server interface over the bucket, wire-compatible with the CLI's own AWS/GCP
 backends (`salt`, `latest`, `v-<parent>-<child>`, `s-<version>`; encrypted with a key from your secret and the
-bucket's salt). Because the Worker is a *replica*, it never needs the CLI's cooperation.
+bucket's salt). The Worker runs it. Because the page's engine is a *replica*, it never needs the CLI's cooperation.
 
 - **Cheap when idle.** One `GET latest`. Catching up lists the versions once and fetches them in batches of 32,
   rather than one at a time.
@@ -150,9 +167,37 @@ bucket's salt). Because the Worker is a *replica*, it never needs the CLI's coop
   before the oldest surviving version can no longer catch up from the versions alone, which is the same for the CLI's
   own server.
 
+### Between the browser and the Worker
+
+The page's replica syncs through `RemoteServer`, a TaskChampion `Server` that speaks `tc_core::wire` to the Worker
+instead of touching the bucket: the Worker runs `CloudServer` and answers from it, so everything above (conditional
+writes, snapshots, cleanup) happens there, and the page never holds the key.
+
+- **Pull in batches.** TaskChampion asks for the version after the one it has, one at a time. `GET /api/tc/pull?since=`
+  answers with a run of up to 24 versions in one body (each 16 bytes of id, 16 of parent, a length and the version), and
+  `RemoteServer` hands them out as they are asked for, so a replica 80 versions behind costs about four requests. The
+  limit is the 50 subrequests a request may make on the free plan: each version is a read from R2.
+- **Push** is `POST /api/tc/push?parent=`, answered with the new version and how much the server would like a snapshot,
+  or with `behind` and the newest version when somebody else got there first, which makes TaskChampion pull and push
+  again. Snapshots go the same way (`GET`/`POST /api/tc/snapshot`) and are what a new device starts from.
+- **When.** The page syncs after every write (to push it), when you come back to the tab, every 30 seconds while it is
+  visible, and when another tab of the same browser says it pushed (over a `BroadcastChannel`; only a write is
+  announced, so tabs do not answer each other for ever). Before the first command there is nothing to answer from
+  unless a saved copy was found, so the first pull is waited for.
+- **Failing.** A sync that cannot reach the Worker (offline, or Access has signed you out) changes nothing: the writes
+  are in the replica and in the saved copy, and go up with the next sync that works. The page says so and offers a
+  retry, and, as a last resort, to throw the saved copy away and start from the bucket.
+- **The saved copy** is `LiveStorage::save`: the tasks, the working set, the version it is based on and the changes that
+  have not been pushed, as JSON, in one IndexedDB record, written soon after a change and after every sync. A copy that
+  cannot be read (another format) is dropped and fetched again.
+
 ## Limits of the platform
 
 A Worker request has hard limits, and this app is shaped by them. Cloudflare's numbers (checked at their limits page):
+
+(They bind the Worker, and since the engine moved into the page the Worker does much less: it checks a token, opens or
+seals a few objects and, on a cold instance, derives the key. What follows measures the engine where it used to run, in
+the Worker, which still matters for a browser that falls back to it, and for the cold start, which is the same.)
 
 | | Workers Free | Workers Paid |
 | --- | --- | --- |
@@ -213,6 +258,16 @@ R2's free 1 million and 10 million a month) and next to no storage, and was bill
 
 A Svelte 5 single-page app (`web/`), built with Vite and served as static assets.
 
+- **The engine in the page** (`web/src/engine/`). `engine.worker.ts` is the Web Worker that loads the engine's `.wasm`
+  (`crates/browser`, built by `scripts/build-engine.mjs` into `src/engine/pkg`, typed by hand in `tc-engine.d.ts` so that
+  type-checking and the tests do not need it built), restores the saved replica from IndexedDB (`persist.ts`), and answers
+  `protocol.ts` messages one at a time. `client.svelte.ts` is the page's side: it starts the worker once, sends commands,
+  runs the syncs described above, and exposes `status` / `error` for the banner that appears when a sync fails.
+  `api.ts` is where the choice is made: `runCli` and `importTasks` go to the engine in the page when it is available
+  and to the Worker's endpoints when it is not; `getConfig` starts it (the engine needs the settings first) and gives it
+  the settings again whenever they are read again; and a `config` command's new settings are saved on the Worker
+  (`PUT /api/config/engine`) before the engine takes them up. The engine's CSP allowance is `'wasm-unsafe-eval'`, which
+  lets the page compile WebAssembly and nothing else.
 - `store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the
   answers to questions in flight, and the toast.
 - **Pages** (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`, `SettingsPage`) are thin. Each
@@ -220,9 +275,9 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 - **Settings** is one page, `SettingsPage`, with a tab per panel: `TaskrcPanel` (the taskrc text, themes, import),
   `TaskshPanel`, `CommandsPanel` and `UrgencyPanel`. Each has its own Apply and tells the page when it has edits, and all three stay
   mounted so edits survive a change of tab. `tasksh.ts` decides what the `reviewed` UDA and the `_reviewed` report need
-  and which `config` lines write them; the panel sends those through `POST /api/cli` like any other command, so nothing
+  and which `config` lines write them; the panel sends those to the engine like any other command, so nothing
   about tasksh is in the Worker.
-- **Review** (tasksh's `review`) is the browser's too, and only a client of the one endpoint. `review.svelte.ts` is the
+- **Review** (tasksh's `review`) is the browser's too, and only a client of the engine. `review.svelte.ts` is the
   session: it asks for the `_reviewed` report (the uuids), shows each task with `info`, and carries out the menu with
   ordinary commands (`modify reviewed:now`, `done`, `delete`, with `rc.confirmation:no`), so undo, hooks and the settings
   work as for any other command. A question Taskwarrior asks mid-step (the recurring series) comes back as a `confirm`
@@ -258,8 +313,9 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 - **Bulk actions** (`BulkBar`, `BulkModify`, `selection.svelte.ts`, `bulk.ts`): the table's checkboxes feed one selection; the bar sends ordinary commands (the whole uuids of the ticked tasks side by side, which Taskwarrior reads as one group, then `done`, `delete` or `modify` with the words the editor made), so the engine needs nothing of its own. **Command** hands the prompt a line through `store.requestPrompt`.
 - **Task addresses**: `route.ts` maps a task to `/task/<8 characters of its uuid>` and back; `App.svelte` keeps the address bar and the drawer in step (opening pushes an address, closing or Back leaves it), and `store.openFromAddress` finds the task with `uuid.startswith:<prefix> uuids`. `DepLink` is the id of another task (a dependency, a parent) with a hover, focus or tap card; in the drawer `DepItem` is a line that expands to the same `TaskCard`, and the tasks that wait on this one are looked up with `depends.has:<uuid>` only when asked. A project part or a tag chip jumps to its entry on the Projects or Tags page (`store.showProject` / `showTag`).
 - The filter box (`FilterInput`, `FilterChips`) and the prompt share `completion.ts`; both feed the same engine.
-- The browser stores nothing but small conveniences (command history, reminder settings). Settings live in the bucket
-  (`web/config.json`, with one backup; the app's own `web/settings.json`, which has none).
+- The browser stores the replica (one IndexedDB record, see [Sync](#sync)) and small conveniences (command history,
+  reminder settings). Settings live in the bucket (`web/config.json`, with one backup; the app's own
+  `web/settings.json`, which has none).
 
 ## How correctness is kept
 
@@ -274,6 +330,8 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/cli_exec.rs` | Real command lines against a real replica: writes, reports, confirmations, recurrence, calc, `show`/`config`, hooks (injected through `Options.hooks`) |
 | `tests/sync_cost.rs`, `replica_sync.rs` | R2 call counts per sync; two replicas converging |
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
-| `npm --prefix web test` | The browser-side logic: formatting, completion, the store, the API client |
+| `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
+| `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
+| `npm --prefix web test` | The browser-side logic: formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |
 | `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused |
