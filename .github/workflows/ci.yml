@@ -105,8 +105,12 @@ jobs:
           node-version: 22
           cache: npm
 
-      # The Android project builds Capacitor from node_modules.
+      # The Android project builds Capacitor from node_modules, and needs the files `cap update` generates (git-ignored).
       - run: npm ci
+
+      - name: Generate the Capacitor files
+        working-directory: web
+        run: npx cap update android
 
       - uses: actions/setup-java@v4
         with:

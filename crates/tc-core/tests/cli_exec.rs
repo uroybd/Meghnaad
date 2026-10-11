@@ -22,9 +22,14 @@ thread_local! {
 fn clock() -> Clock {
     // Real time (taskchampion stamps `modified`/`end` with the wall clock), advancing one
     // second per command so tasks added back to back get distinct, ordered `entry` times.
-    use std::sync::atomic::{AtomicI64, Ordering};
-    static TICK: AtomicI64 = AtomicI64::new(0);
-    Clock::utc(taskchampion::chrono::Utc::now().timestamp() + TICK.fetch_add(1, Ordering::SeqCst))
+    // The count is per test (each runs on its own thread, with its own replica): one for the whole run would put the
+    // clock minutes ahead of the wall clock by the end, and a test that finishes a task and then looks at "today" would
+    // fail when that carried it over midnight UTC.
+    thread_local! {
+        static TICK: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+    }
+    let tick = TICK.with(|t| t.replace(t.get() + 1));
+    Clock::utc(taskchampion::chrono::Utc::now().timestamp() + tick)
 }
 
 async fn run(r: &mut R, cfg: &Config, line: &str) -> (CliResult, bool) {
