@@ -10,6 +10,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use taskchampion::Server;
 use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
+use tc_core::dates::Clock;
+use tc_core::lua_hooks::{LuaRunner, Problem};
 use tc_core::taskrc::Config;
 use tc_core::{load_salt, CloudServer, ObjectStore};
 use wasm_bindgen::{JsCast, JsValue};
@@ -29,6 +31,13 @@ pub const PREV_KEY: &str = "web/config.prev.json";
 /// Unreadable settings found at `CONFIG_KEY` when saving over them: kept for hand recovery, and
 /// never offered as a restore point.
 pub const CORRUPT_KEY: &str = "web/config.corrupt.json";
+/// The hooks script (Lua): its own object, not part of `settings.json`, because the browser reads that in full and the
+/// script may hold secrets. Only the editor ever asks for its text.
+pub const HOOKS_KEY: &str = "web/hooks.lua";
+/// The script as it was before the last save, for one-step restore.
+pub const HOOKS_PREV_KEY: &str = "web/hooks.prev.lua";
+/// How long one Worker instance trusts its copy of the script.
+const HOOKS_TTL_MS: f64 = 5_000.0;
 /// Bumped if the stored layout ever changes in a way old readers can't handle.
 const SCHEMA_VERSION: u32 = 1;
 /// How long one Worker instance trusts its copy; other instances see an import within this time.
@@ -60,7 +69,15 @@ fn encode(cfg: &Config) -> worker::Result<Vec<u8>> {
     .map_err(|e| worker::Error::RustError(e.to_string()))
 }
 
+/// The hooks script this instance has loaded, and the VM it is loaded into (built once, used for every call).
+struct LoadedHooks {
+    fetched: f64,
+    source: Rc<str>,
+    runner: Result<Rc<LuaRunner>, Problem>,
+}
+
 thread_local! {
+    static HOOKS: RefCell<Option<LoadedHooks>> = const { RefCell::new(None) };
     static CACHE: RefCell<Option<Cryptor>> = const { RefCell::new(None) };
     static CONFIG: RefCell<Option<(f64, Rc<Config>)>> = const { RefCell::new(None) };
     /// Set when the stored settings exist but can't be read; reported to the UI, never papered over.
@@ -116,6 +133,80 @@ pub async fn config(env: &Env) -> worker::Result<Rc<Config>> {
     let cfg = Rc::new(cfg);
     CONFIG.with(|c| *c.borrow_mut() = Some((now, cfg.clone())));
     Ok(cfg)
+}
+
+/// The hooks script as saved (empty before anything was saved).
+pub async fn hooks_source(env: &Env) -> worker::Result<String> {
+    let store = R2Store(env.bucket("TASKS")?);
+    Ok(store
+        .get(HOOKS_KEY)
+        .await
+        .map_err(rust_err)?
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
+        .unwrap_or_default())
+}
+
+/// Save the script, keeping what was there as the previous version. It has to have been checked: a script that does
+/// not load is never kept.
+pub async fn save_hooks(env: &Env, text: &str) -> worker::Result<()> {
+    let store = R2Store(env.bucket("TASKS")?);
+    if let Some(old) = store.get(HOOKS_KEY).await.map_err(rust_err)? {
+        store.put(HOOKS_PREV_KEY, &old).await.map_err(rust_err)?;
+    }
+    store.put(HOOKS_KEY, text.as_bytes()).await.map_err(rust_err)?;
+    // The next call loads it.
+    HOOKS.with(|h| *h.borrow_mut() = None);
+    Ok(())
+}
+
+/// The VM for the saved script: `None` if there is no script, the problem if it does not load. Built once per
+/// instance, and again when the script changes (looked at every few seconds).
+pub async fn hook_runner(env: &Env) -> worker::Result<Option<Result<Rc<LuaRunner>, Problem>>> {
+    let now = js_sys::Date::now();
+    let fresh = HOOKS.with(|h| {
+        h.borrow()
+            .as_ref()
+            .filter(|l| now - l.fetched < HOOKS_TTL_MS)
+            .map(|l| l.runner.clone())
+    });
+    let runner = match fresh {
+        Some(r) => r,
+        None => {
+            let text = hooks_source(env).await?;
+            let loaded = HOOKS.with(|h| {
+                let mut slot = h.borrow_mut();
+                match slot.as_mut() {
+                    // The same script: keep the VM, and only note that it was looked at.
+                    Some(l) if *l.source == *text => {
+                        l.fetched = now;
+                        l.runner.clone()
+                    }
+                    _ => {
+                        let runner = if text.trim().is_empty() {
+                            Err(Problem {
+                                line: None,
+                                message: String::new(),
+                            })
+                        } else {
+                            LuaRunner::load(&text, Clock::utc(0)).map(Rc::new)
+                        };
+                        *slot = Some(LoadedHooks {
+                            fetched: now,
+                            source: Rc::from(text.as_str()),
+                            runner: runner.clone(),
+                        });
+                        runner
+                    }
+                }
+            });
+            loaded
+        }
+    };
+    // No script at all (an empty one) is not a problem: there is nothing to run.
+    Ok(match runner {
+        Err(p) if p.message.is_empty() && p.line.is_none() => None,
+        other => Some(other),
+    })
 }
 
 /// The saved `settings.json`, or `None` before anything was saved.

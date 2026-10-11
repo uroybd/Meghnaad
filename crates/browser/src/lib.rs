@@ -8,17 +8,22 @@
 //! `run` and `import` answer in JSON: the result of the command (or `{ error }` if the request was not one), as the page
 //! reads it.
 
+mod hooks;
 mod server;
 
 use serde::Deserialize;
+use std::sync::Arc;
 use taskchampion::server::Server;
 use taskchampion::Replica;
 use tc_core::cli::{execute, Options, UndoStack};
 use tc_core::dates::Clock;
 use tc_core::filter::split_words;
+use tc_core::hooks::HookHost;
 use tc_core::taskrc::Config;
 use tc_core::warm::Warm;
 use tc_core::wire::RemoteServer;
+
+use crate::hooks::RemoteHooks;
 use tc_core::{save_replica, LiveStorage, Saver};
 use wasm_bindgen::prelude::*;
 
@@ -55,6 +60,8 @@ pub struct Engine {
     warm: Warm,
     undo: UndoStack,
     cfg: Config,
+    /// The hooks the Worker's script defines (`on_add`, …): only these are ever called.
+    hooks: Vec<String>,
 }
 
 fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm) {
@@ -81,7 +88,29 @@ impl Engine {
             warm,
             undo: UndoStack::default(),
             cfg: Config::default(),
+            hooks: Vec::new(),
         }
+    }
+
+    /// Which hooks the saved script defines, as JSON (`["on_add"]`): `GET /api/hooks/defined`'s `defined`. Until it
+    /// is set, or when it is empty, no hook is called.
+    pub fn set_hooks(&mut self, defined: &str) -> Result<(), JsValue> {
+        self.hooks = serde_json::from_str(defined).map_err(js_error)?;
+        Ok(())
+    }
+
+    /// The hooks for a command run at `clock`, if the script defines any.
+    fn hook_host(&self, clock: Clock) -> Option<Arc<dyn HookHost>> {
+        if self.hooks.is_empty() {
+            return None;
+        }
+        let dateformat = self.cfg.effective().settings.get("dateformat").cloned();
+        Some(Arc::new(RemoteHooks::new(
+            String::new(),
+            self.hooks.iter().cloned().collect(),
+            clock,
+            dateformat,
+        )))
     }
 
     /// The settings (the `config` of `GET /api/config`).
@@ -138,6 +167,7 @@ impl Engine {
             week_starts_monday: self.cfg.effective().week_starts_monday(),
             ..Clock::utc(0)
         };
+        let hooks = self.hook_host(clock);
         let done = execute(
             &mut self.replica,
             &self.cfg,
@@ -149,8 +179,8 @@ impl Engine {
                 extras: req.extras,
                 typed,
                 seed: now as u64,
-                // The hooks in tc-core's `my_hooks.rs`.
-                hooks: None,
+                // The hooks of the script on the Worker (none if it defines none).
+                hooks,
                 warm: Some(self.warm.clone()),
             },
             &mut self.undo,
@@ -179,7 +209,8 @@ impl Engine {
             week_starts_monday: self.cfg.effective().week_starts_monday(),
             ..Clock::utc(0)
         };
-        match tc_core::import::import(&mut self.replica, &self.cfg, clock, text, apply, &mut self.undo, None).await {
+        let hooks = self.hook_host(clock);
+        match tc_core::import::import(&mut self.replica, &self.cfg, clock, text, apply, &mut self.undo, hooks).await {
             Ok(out) => serde_json::to_string(&out).unwrap_or_else(failure),
             Err(m) => failure(m),
         }

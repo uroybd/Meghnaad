@@ -14,15 +14,15 @@ fn js(e: JsValue) -> Error {
 }
 
 /// What came back from one request.
-struct Reply {
-    status: u32,
-    body: Vec<u8>,
+pub struct Reply {
+    pub status: u32,
+    pub body: Vec<u8>,
     version: Option<String>,
     more: bool,
 }
 
 /// `fetch(url, { method, body })`, with the answer read through. A 404 is an answer, not an error.
-async fn fetch(method: &str, url: &str, body: Option<&[u8]>) -> Result<Reply, Error> {
+pub async fn fetch(method: &str, url: &str, body: Option<&[u8]>) -> Result<Reply, Error> {
     let global = js_sys::global();
     let fetch: Function = Reflect::get(&global, &"fetch".into()).map_err(js)?.unchecked_into();
     let init = Object::new();

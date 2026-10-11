@@ -115,6 +115,11 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .get_async("/api/tc/pull", |req, ctx| wrap(tc_pull(req, ctx)))
         .get_async("/api/tc/snapshot", |_, ctx| wrap(tc_snapshot(ctx)))
         .post_async("/api/tc/push", |req, ctx| wrap(tc_push(req, ctx)))
+        .post_async("/api/run", |req, ctx| wrap(run_hook(req, ctx)))
+        .get_async("/api/hooks", |_, ctx| wrap(get_hooks(ctx)))
+        .put_async("/api/hooks", |req, ctx| wrap(put_hooks(req, ctx)))
+        .get_async("/api/hooks/defined", |_, ctx| wrap(hooks_defined(ctx)))
+        .post_async("/api/hooks/check", |req, _| wrap(check_hooks(req)))
         .post_async("/api/tc/snapshot", |req, ctx| wrap(tc_put_snapshot(req, ctx)))
         .run(req, env)
         .await?;
@@ -404,6 +409,116 @@ async fn put_urgency(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     taskrc::set_urgency(&mut cfg, body.urgency, body.inherit).map_err(ApiError::BadRequest)?;
     session::save_config(&ctx.env, cfg).await?;
     json(&serde_json::json!({ "ok": true }))
+}
+
+// Hooks: a Lua script kept here (`web/hooks.lua`), run for the browser's engine one hook call at a time.
+
+/// The most a hooks script may be, and the most one call's arguments may be (a bulk command's changed tasks).
+const MAX_SCRIPT: usize = 256 * 1024;
+const MAX_RUN_BODY: usize = 4 * 1024 * 1024;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunRequest {
+    /// The hook: `on_launch`, `on_add`, `on_modify` or `on_exit`.
+    #[serde(rename = "fn")]
+    function: String,
+    #[serde(default)]
+    args: Vec<serde_json::Value>,
+    /// What the script sees as the time (seconds since the epoch, the browser's UTC offset, its week start and
+    /// `dateformat`), so `today()` and `date("friday")` mean the user's.
+    now: f64,
+    #[serde(default)]
+    tz: i32,
+    #[serde(default)]
+    week_starts_monday: bool,
+    dateformat: Option<String>,
+}
+
+/// `POST /api/run`: call one hook of the saved script. Always answers 200 with `{ ok, value, say }`, or
+/// `{ ok: false, error, say }` when the script refused or failed (`error` is what to show). With no script, nothing
+/// happens and `value` is null.
+async fn run_hook(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let body = req.bytes().await?;
+    if body.len() > MAX_RUN_BODY {
+        return Err(ApiError::TooLarge);
+    }
+    let call: RunRequest =
+        serde_json::from_slice(&body).map_err(|e| ApiError::BadRequest(format!("invalid request body: {e}")))?;
+    let refused = |error: String| json(&serde_json::json!({ "ok": false, "error": error, "say": [] }));
+    let runner = match session::hook_runner(&ctx.env).await? {
+        None => return json(&serde_json::json!({ "ok": true, "value": null, "say": [] })),
+        Some(Err(p)) => {
+            let at = p.line.map(|l| format!(" (line {l})")).unwrap_or_default();
+            return refused(format!(
+                "Your hooks script could not be loaded{at}: {}. Fix it in Settings, or run the command with rc.hooks:off.",
+                p.message
+            ));
+        }
+        Some(Ok(r)) => r,
+    };
+    let mut clock = tc_core::dates::Clock {
+        now: call.now as i64,
+        tz_offset: call.tz.clamp(-14 * 3600, 14 * 3600),
+        week_starts_monday: call.week_starts_monday,
+        ..tc_core::dates::Clock::utc(0)
+    };
+    if let Some(pattern) = &call.dateformat {
+        clock.format = tc_core::dates::DateFormat::new(pattern);
+    }
+    runner.set_clock(clock);
+    match runner.call(&call.function, &call.args).await {
+        Ok(done) => json(&serde_json::json!({ "ok": true, "value": done.value, "say": done.lines })),
+        Err(failed) => json(&serde_json::json!({ "ok": false, "error": failed.message, "say": failed.lines })),
+    }
+}
+
+/// `GET /api/hooks`: the script as saved, for the editor (and only the editor: it may hold secrets).
+async fn get_hooks(ctx: RouteContext<()>) -> RouteResult {
+    json(&serde_json::json!({ "source": session::hooks_source(&ctx.env).await? }))
+}
+
+/// `GET /api/hooks/defined`: which hooks the saved script defines, so the engine only calls the Worker for those.
+async fn hooks_defined(ctx: RouteContext<()>) -> RouteResult {
+    match session::hook_runner(&ctx.env).await? {
+        None => json(&serde_json::json!({ "defined": [] })),
+        Some(Ok(r)) => json(&serde_json::json!({ "defined": r.defined() })),
+        Some(Err(p)) => {
+            json(&serde_json::json!({ "defined": [], "problem": { "line": p.line, "message": p.message } }))
+        }
+    }
+}
+
+/// `POST /api/hooks/check`: is this script all right? `{ ok: true, defined }`, or `{ ok: false, line, message }`.
+/// Saves nothing (the editor asks as you type).
+async fn check_hooks(mut req: Request) -> RouteResult {
+    let text = req.text().await?;
+    if text.len() > MAX_SCRIPT {
+        return Err(ApiError::TooLarge);
+    }
+    match tc_core::lua_hooks::check(&text) {
+        Ok(defined) => json(&serde_json::json!({ "ok": true, "defined": defined })),
+        Err(p) => json(&serde_json::json!({ "ok": false, "line": p.line, "message": p.message })),
+    }
+}
+
+/// `PUT /api/hooks`: keep a script (the body, as text). One that does not load is refused, so a saved script always
+/// runs; the one before it is kept for a restore. An empty body removes the hooks.
+async fn put_hooks(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let text = req.text().await?;
+    if text.len() > MAX_SCRIPT {
+        return Err(ApiError::TooLarge);
+    }
+    let defined = if text.trim().is_empty() {
+        Vec::new()
+    } else {
+        tc_core::lua_hooks::check(&text).map_err(|p| {
+            let at = p.line.map(|l| format!("line {l}: ")).unwrap_or_default();
+            ApiError::BadRequest(format!("The script was not saved. {at}{}", p.message))
+        })?
+    };
+    session::save_hooks(&ctx.env, &text).await?;
+    json(&serde_json::json!({ "ok": true, "defined": defined }))
 }
 
 /// What a `config` command changed, as the engine in the page worked it out: the settings, saved as the taskrc dialog
