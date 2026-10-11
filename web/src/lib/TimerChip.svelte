@@ -73,7 +73,10 @@
     min-width: 0;
     padding: 0 4px;
   }
+  /* When there is not room for everything, the task's name is what gives way: the time stays on one line. */
   .what {
+    flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -81,8 +84,14 @@
   }
   .dot {
     display: inline-flex;
+    flex: none;
     color: var(--ok);
     animation: pulse 2s ease-in-out infinite;
+  }
+  .t,
+  .chip {
+    flex: none;
+    white-space: nowrap;
   }
   .t {
     font-variant-numeric: tabular-nums;
