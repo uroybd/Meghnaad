@@ -82,8 +82,11 @@ export class EngineClient {
       this.pending.clear();
     };
     const restored = (await this.send({ op: 'start', config, persist: true })) as boolean;
-    // With nothing saved the tasks have to come from the bucket before the first command is answered.
+    // With nothing saved the tasks have to come from the bucket before the first command is answered. On the phone an
+    // unreachable bucket is no reason to stop: the app starts empty, works as it is, and syncs when it can (the banner says
+    // why it has not).
     if (restored) void this.sync();
+    else if (isNative()) await this.sync();
     else await this.sync(true);
     // How long it took to be ready to answer, and from what (shown in the browser's performance tools).
     performance.measure(

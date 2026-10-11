@@ -255,3 +255,23 @@ describe('commands', () => {
     e.stop();
   });
 });
+
+describe('on the phone', () => {
+  afterEach(() => vi.doUnmock('./native'));
+
+  it('starts with no saved copy even when the bucket cannot be reached, and says why it is not syncing', async () => {
+    vi.resetModules();
+    vi.doMock('./native', () => ({ isNative: () => true, NativePort: FakeWorker }));
+    replies = (c) => {
+      if (c.op === 'start') return false;
+      if (c.op === 'sync') throw new Error('could not reach the bucket');
+      return null;
+    };
+    const { EngineClient } = await import('./client.svelte');
+    const client = new EngineClient();
+    await expect(client.start('{}')).resolves.toBeUndefined();
+    expect(client.status).toBe('failed');
+    expect(client.error).toContain('could not reach the bucket');
+    client.stop();
+  });
+});
