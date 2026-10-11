@@ -5,7 +5,9 @@
   import { store } from './store.svelte';
   import type { TaskrcResponse } from './types';
 
-  let dialog: HTMLDialogElement;
+  /** There are edits not yet applied (the tab shows a dot). */
+  let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
+
   let text = $state('');
   /** What is saved right now, to detect edits and to revert to. */
   let saved = $state('');
@@ -15,10 +17,6 @@
   let error = $state<string | null>(null);
   let confirmRestore = $state(false);
   let link = $state('');
-
-  $effect(() => {
-    dialog.showModal();
-  });
 
   // Start from what is saved, so an import edits it rather than replacing it with a blank page.
   async function load() {
@@ -33,6 +31,16 @@
   }
   $effect(() => {
     void load();
+  });
+
+  // The saved settings changed somewhere else (the console's `config`, another tab of this page): follow them,
+  // unless there are edits here, which are not thrown away.
+  let seen = store.config;
+  $effect(() => {
+    const c = store.config;
+    if (c === seen) return;
+    seen = c;
+    if (!edited && !busy) void load();
   });
 
   async function onfile(e: Event) {
@@ -50,7 +58,7 @@
     saved = text = r.text;
   }
 
-  // A theme: its colour lines replace the box's colour lines (Save keeps them). Taskwarrior's are static files.
+  // A theme: its colour lines replace the box's colour lines (Apply keeps them). Taskwarrior's are static files.
   async function pickTheme(e: Event) {
     const el = e.currentTarget as HTMLSelectElement;
     const id = el.value;
@@ -116,16 +124,18 @@
     }
   }
 
-  const dirty = $derived(text !== saved);
-  const close = () => (store.settingsOpen = false);
+  const edited = $derived(text !== saved);
+  $effect(() => {
+    ondirty?.(edited);
+  });
 </script>
 
-<dialog bind:this={dialog} onclose={close} aria-label="taskrc settings">
-  <h3>taskrc settings</h3>
+<section aria-label="taskrc settings">
+  <h2>taskrc</h2>
   <p class="dim">
     UDAs, custom reports, contexts and journal settings live in your <code>~/.taskrc</code>, not in your synced data, so
     this app keeps a copy. <strong>They are saved with your tasks and stay until you change them.</strong>
-    Edit below, or paste or choose your taskrc. Only those settings are kept:
+    Edit below, or paste or choose your taskrc, then Apply. Only those settings are kept:
     <strong>sync settings and anything that looks like a credential are blocked</strong>; they're never stored, logged
     or shown.
   </p>
@@ -154,7 +164,8 @@
       Colours</label
     >
     <span class="dim"
-      >A theme replaces the colour lines below; Save to keep it. The Meghnaad theme is what applies when there are none.</span
+      >A theme replaces the colour lines below; Apply to keep it. The Meghnaad theme is what applies when there are
+      none.</span
     >
   </div>
   <label class="file">Choose a file <input type="file" onchange={onfile} /></label>
@@ -226,31 +237,18 @@
         {confirmRestore ? 'Click again to restore' : 'Restore previous'}
       </button>
     {/if}
-    {#if dirty}
+    {#if edited}
       <button class="ghost" onclick={() => (text = saved)}>Revert edits</button>
     {/if}
     <span class="grow"></span>
-    <button onclick={close}>Close</button>
-    <button class="primary" onclick={save} disabled={busy || loading || !dirty}>Save</button>
+    <button class="primary" onclick={save} disabled={busy || loading || !edited}>Apply</button>
   </footer>
-</dialog>
+</section>
 
 <style>
-  dialog {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--panel);
-    color: var(--text);
-    padding: 24px 28px;
-    width: min(760px, 96vw);
-    max-height: 94vh;
-    overflow: auto;
-  }
-  dialog::backdrop {
-    background: rgb(0 0 0 / 0.4);
-  }
-  h3 {
+  h2 {
     margin: 0 0 4px;
+    font-size: 18px;
   }
   textarea {
     width: 100%;

@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod appsettings;
 pub mod burndown;
 pub mod calc;
 pub mod calendar;

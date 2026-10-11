@@ -3,6 +3,7 @@ mod session;
 mod store;
 
 use serde::Deserialize;
+use tc_core::appsettings;
 use tc_core::cli::{execute, CliResult, Options};
 use tc_core::dates::Clock;
 use tc_core::filter::split_words;
@@ -111,6 +112,8 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .post_async("/api/config/taskrc/url", |req, ctx| wrap(import_taskrc_url(req, ctx)))
         .post_async("/api/config/taskrc/restore", |_, ctx| wrap(restore_taskrc(ctx)))
         .put_async("/api/config/urgency", |req, ctx| wrap(put_urgency(req, ctx)))
+        .get_async("/api/settings", |_, ctx| wrap(get_app_settings(ctx)))
+        .put_async("/api/settings", |req, ctx| wrap(put_app_settings(req, ctx)))
         .post_async("/api/cli", |req, ctx| wrap(cli(req, ctx)))
         .post_async("/api/import", |req, ctx| wrap(import_tasks(req, ctx)))
         .run(req, env)
@@ -475,6 +478,25 @@ async fn put_urgency(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let mut cfg = (*current).clone();
     taskrc::set_urgency(&mut cfg, body.urgency, body.inherit).map_err(ApiError::BadRequest)?;
     session::save_config(&ctx.env, cfg).await?;
+    json(&serde_json::json!({ "ok": true }))
+}
+
+/// The app's own `settings.json`: stored as written and returned as is (`{}` before the first save).
+async fn get_app_settings(ctx: RouteContext<()>) -> RouteResult {
+    let bytes = session::app_settings(&ctx.env).await?.unwrap_or_else(|| b"{}".to_vec());
+    let mut res = Response::from_bytes(bytes)?;
+    res.headers_mut()
+        .set("content-type", "application/json; charset=utf-8")?;
+    Ok(res)
+}
+
+async fn put_app_settings(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let text = req.text().await?;
+    if text.len() > appsettings::MAX_APP_SETTINGS_BYTES {
+        return Err(ApiError::TooLarge);
+    }
+    appsettings::check(&text).map_err(ApiError::BadRequest)?;
+    session::save_app_settings(&ctx.env, text.as_bytes()).await?;
     json(&serde_json::json!({ "ok": true }))
 }
 

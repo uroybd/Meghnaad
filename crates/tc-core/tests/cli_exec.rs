@@ -5341,3 +5341,112 @@ mod purge_command {
         );
     }
 }
+
+// What the web app's `review` leans on (it only sends ordinary commands): the lines tasksh offers to add to the
+// taskrc, the `_reviewed` report they define, and `modify reviewed:now` taking a task out of it. The expected
+// answers are what `task` 3.5.0 printed for the same data.
+mod tasksh_review {
+    use super::*;
+    use tc_core::cli::Done;
+
+    /// Run with `rc.confirmation:no rc.verbose:nothing`, as tasksh does, and keep the settings a `config` returns.
+    /// `line` is split on spaces; use `quietly_args` for words that must stay together.
+    async fn quietly(r: &mut R, cfg: &mut Config, line: &str) -> Done {
+        quietly_args(r, cfg, &split_words(line)).await
+    }
+
+    async fn quietly_args(r: &mut R, cfg: &mut Config, args: &[String]) -> Done {
+        let mut words: Vec<String> = ["rc.confirmation:no", "rc.verbose:nothing"].map(String::from).to_vec();
+        words.extend_from_slice(args);
+        let mut undo = UndoStack::default();
+        let d = execute(r, cfg, clock(), &words, Options::default(), &mut undo).await;
+        if let Some(c) = &d.config {
+            *cfg = c.clone();
+        }
+        d
+    }
+
+    async fn needing_review(r: &mut R, cfg: &mut Config) -> Vec<String> {
+        let d = quietly(r, cfg, "_reviewed").await;
+        let CliResult::Report(o) = d.result else {
+            panic!("{:?}", d.result)
+        };
+        o.rows.iter().map(|row| row.facts.description.clone()).collect()
+    }
+
+    async fn setup() -> (R, Config) {
+        let mut r = replica();
+        let mut cfg = Config::default();
+        // The lines tasksh writes, with `columns` first: a report without columns is not kept (it is skipped as
+        // incomplete), so the description sent before them would be lost.
+        let lines: [&[&str]; 6] = [
+            &["uda.reviewed.type", "date"],
+            &["uda.reviewed.label", "Reviewed"],
+            &["report._reviewed.columns", "uuid"],
+            &[
+                "report._reviewed.description",
+                "Tasksh review report.  Adjust the filter to your needs.",
+            ],
+            &["report._reviewed.sort", "reviewed+,modified+"],
+            &[
+                "report._reviewed.filter",
+                "( reviewed.none: or reviewed.before:now-6days ) and ( +PENDING or +WAITING )",
+            ],
+        ];
+        for line in lines {
+            let args: Vec<String> = std::iter::once("config")
+                .chain(line.iter().copied())
+                .map(String::from)
+                .collect();
+            let d = quietly_args(&mut r, &mut cfg, &args).await;
+            assert_eq!(message(&d.result), "Config modified.", "{line:?}");
+            assert!(d.config.is_some(), "{line:?}");
+        }
+        (r, cfg)
+    }
+
+    #[tokio::test]
+    async fn the_offered_lines_define_the_uda_and_the_report() {
+        let (_, cfg) = setup().await;
+        assert_eq!(cfg.udas["reviewed"].label.as_deref(), Some("Reviewed"));
+        let report = &cfg.reports["_reviewed"];
+        assert_eq!(report.columns, ["uuid"]);
+        assert_eq!(report.sort.as_deref(), Some("reviewed+,modified+"));
+        assert!(report
+            .description
+            .as_deref()
+            .unwrap()
+            .starts_with("Tasksh review report."));
+        assert!(report.filter.as_deref().unwrap().contains("reviewed.before:now-6days"));
+    }
+
+    #[tokio::test]
+    async fn the_report_lists_what_has_not_been_looked_at_lately_oldest_first() {
+        let (mut r, mut cfg) = setup().await;
+        for line in [
+            "add never",
+            "add fresh",
+            "add old",
+            "add finished",
+            "add waiting wait:2030-01-01",
+            "add recent",
+            "2 modify reviewed:now",
+            "3 modify reviewed:now-10days",
+            "6 modify reviewed:now-2days",
+            "4 done",
+        ] {
+            quietly(&mut r, &mut cfg, line).await;
+        }
+        // A reviewed date sorts before none; ties go by `modified`. Today's and last week's reviews and the
+        // finished task are left out.
+        assert_eq!(needing_review(&mut r, &mut cfg).await, ["old", "never", "waiting"]);
+
+        // Reviewing one takes it out of the list.
+        quietly(&mut r, &mut cfg, "/never/ modify reviewed:now").await;
+        assert_eq!(needing_review(&mut r, &mut cfg).await, ["old", "waiting"]);
+        // Completing or deleting one does too.
+        quietly(&mut r, &mut cfg, "/old/ done").await;
+        quietly(&mut r, &mut cfg, "/waiting/ delete").await;
+        assert!(needing_review(&mut r, &mut cfg).await.is_empty());
+    }
+}

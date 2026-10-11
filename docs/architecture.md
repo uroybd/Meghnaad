@@ -38,7 +38,7 @@ flowchart TB
     spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
   end
 
-  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json")]
+  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
   tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
@@ -77,7 +77,7 @@ Pure Rust, no I/O of its own, tested natively. The Worker and the tests are two 
 | **Colour** | `color` | Taskwarrior's colour specifications and how they blend, the rules that colour a task (with precedence and merge), the `colors` command and the history graph's colours; checked against the escape codes of the real `task` |
 | **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` (and `_get`, which reads the same DOM) and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; `import` reads it back (a port of `CmdImport`, checking the whole file before it writes anything); the app's pages use a separate, hidden `_rows`, and the detail view's History a hidden `_history <uuid>` that reads one task's operations without loading the rest |
 | **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the Worker, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
-| **Settings** | `taskrc`, `rc_url`, `settings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; `rc_url` is which links the Worker may fetch a taskrc from (HTTPS to a public host name only, redirects included) and the GitHub/GitLab page-to-raw rewrite; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`) |
+| **Settings** | `taskrc`, `rc_url`, `settings`, `appsettings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; `rc_url` is which links the Worker may fetch a taskrc from (HTTPS to a public host name only, redirects included) and the GitHub/GitLab page-to-raw rewrite; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`); `appsettings` checks that the app's own `settings.json` is a JSON object of a sensible size before the Worker stores it |
 
 ### How a command runs
 
@@ -163,9 +163,29 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   answers to questions in flight, and the toast.
 - **Pages** (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`) are thin. Each
   asks the engine for a result and hands it to a shared component, so the console and the pages draw the same thing.
+- **Settings** is one page, `SettingsPage`, with a tab per panel: `TaskrcPanel` (the taskrc text, themes, import),
+  `TaskshPanel`, `CommandsPanel` and `UrgencyPanel`. Each has its own Apply and tells the page when it has edits, and all three stay
+  mounted so edits survive a change of tab. `tasksh.ts` decides what the `reviewed` UDA and the `_reviewed` report need
+  and which `config` lines write them; the panel sends those through `POST /api/cli` like any other command, so nothing
+  about tasksh is in the Worker.
+- **Task commands** are the browser's. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name,
+  command, icon? }] }`, other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s
+  `appsettings` checks that it is a JSON object under 64 KB and nothing more). `taskCommands.ts` writes a command out on
+  the line you typed: the first word that is not part of the filter, as the engine reads a line, is the command word,
+  and only that word can be one, so `add fail the test` is untouched. A name is written out once per line, so a command
+  can extend the Taskwarrior command of the same name. `ConsoleInput` expands before it decides where the result goes and
+  hands `store.run` what was typed for the history. The same commands are the **⋯** menu (`MoreMenu`) in a table row,
+  the task drawer and the bulk bar, which send `<tasks> <the command's words>` like any other button. Icons are
+  Lucide's, picked in `IconPicker`. The app's own are bundled and found by name (`bundledIcons` in `lucide.ts`); any other
+  is fetched as one SVG file from jsdelivr at the Lucide version pinned there (`LUCIDE_VERSION`), then read into a short
+  list of plain shapes (`svgToShapes`: only `path`, `circle`, `rect`, `line`, `polyline`, `polygon` and `ellipse`, with
+  numeric or path attributes; anything else refuses the whole file) and drawn inline by `NodeIcon` in the page's colour.
+  So the CDN supplies data and never code, and the CSP needs only `connect-src` for that one host. `lucideLib.svelte.ts`
+  keeps what was fetched (in memory, and the last 150 in `localStorage`) and the picker's list of names and search words
+  (`tags.json`, about 50 KB compressed, fetched when the picker opens).
 - Colours: the engine sends each row's colour as palette indexes (`Row.style`) and the chart colours with the config;
   `colors.ts` draws them (the soft basic sixteen per light/dark page, exact xterm colours otherwise, a contrast guard),
-  `scheme.svelte.ts` says which page it is, and `themes.ts` and the taskrc dialog's picker put a bundled theme's lines
+  `scheme.svelte.ts` says which page it is, and `themes.ts` and the taskrc tab's picker put a bundled theme's lines
   into the taskrc (the theme files are static assets).
 - `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`, `BurndownView`,
   `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the console, ran the command). A report's cells are formatted in `format.ts`, the one place that knows `dateformat`,
@@ -174,7 +194,7 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 - **Task addresses**: `route.ts` maps a task to `/task/<8 characters of its uuid>` and back; `App.svelte` keeps the address bar and the drawer in step (opening pushes an address, closing or Back leaves it), and `store.openFromAddress` finds the task with `uuid.startswith:<prefix> uuids`. `DepLink` is the id of another task (a dependency, a parent) with a hover, focus or tap card; in the drawer `DepItem` is a line that expands to the same `TaskCard`, and the tasks that wait on this one are looked up with `depends.has:<uuid>` only when asked. A project part or a tag chip jumps to its entry on the Projects or Tags page (`store.showProject` / `showTag`).
 - The filter box (`FilterInput`, `FilterChips`) and the prompt share `completion.ts`; both feed the same engine.
 - The browser stores nothing but small conveniences (command history, reminder settings). Settings live in the bucket
-  (`web/config.json`, with one backup).
+  (`web/config.json`, with one backup; the app's own `web/settings.json`, which has none).
 
 ## How correctness is kept
 

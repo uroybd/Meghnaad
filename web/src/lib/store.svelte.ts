@@ -1,4 +1,6 @@
-import { ApiError, getConfig, runCli, type Answers, type CliInput } from './api';
+import { ApiError, getAppSettings, getConfig, runCli, type Answers, type CliInput } from './api';
+import { parseSettings, type ParsedSettings, type TaskCommand } from './appsettings';
+import { lucide } from './lucideLib.svelte';
 import { prefixFilter, prefixFromPath, taskPath } from './route';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
@@ -63,7 +65,11 @@ class Store {
   entries = $state<Entry[]>([]);
   /** The live table in the Tasks view: the report currently in focus. */
   live = $state<Entry | null>(null);
-  view = $state<'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'console'>('tasks');
+  view = $state<'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'console' | 'settings'>('tasks');
+  /** The tab the Settings page shows. */
+  settingsTab = $state<'taskrc' | 'tasksh' | 'commands' | 'urgency'>('taskrc');
+  /** The app's own `settings.json`, read (null until it has been). */
+  appSettings = $state<ParsedSettings | null>(null);
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
   tagFocus = $state<{ tag: string; n: number } | null>(null);
   /** The same for a project on the Projects page. */
@@ -108,13 +114,13 @@ class Store {
   promptRequest = $state<{ text: string; n: number } | null>(null);
   /** The task detail drawer. */
   detail = $state<{ uuid: string; from: Entry | null } | null>(null);
-  settingsOpen = $state(false);
-  urgencyOpen = $state(false);
   notifyOpen = $state(false);
 
   #toastTimer: ReturnType<typeof setTimeout> | undefined;
   #lastWasLive = false;
 
+  /** The task commands in `settings.json`: words that stand for a command line, and buttons that run it. */
+  taskCommands = $derived<TaskCommand[]>(this.appSettings?.commands ?? []);
   reports = $derived<ReportMeta[]>(this.config?.reports ?? []);
   udas = $derived(Object.values(this.config?.config.udas ?? {}));
   vocab = $derived<Vocab>({
@@ -141,6 +147,21 @@ class Store {
     await this.loadConfig();
     if (this.live) void this.refresh(this.live);
     this.rev++;
+  }
+
+  /** The icons the task commands use are kept in the browser, and only those. */
+  rememberIcons() {
+    lucide.keep(this.taskCommands.flatMap((c) => (c.icon ? [c.icon] : [])));
+  }
+
+  /** Read `settings.json`. A failure leaves what was there: the commands are a convenience, not needed to work. */
+  async loadAppSettings() {
+    try {
+      this.appSettings = parseSettings(JSON.stringify(await getAppSettings()));
+      this.rememberIcons();
+    } catch {
+      this.appSettings ??= parseSettings('');
+    }
   }
 
   async loadConfig() {
@@ -221,6 +242,12 @@ class Store {
     }
   }
 
+  /** Open the Settings page, on one of its tabs. */
+  openSettings(tab: 'taskrc' | 'tasksh' | 'commands' | 'urgency' = this.settingsTab) {
+    this.settingsTab = tab;
+    this.view = 'settings';
+  }
+
   /** Show a tag's entry on the Tags page: what a tag chip does wherever it is not toggling a report's filter. */
   showTag(tag: string) {
     this.tagFocus = { tag, n: (this.tagFocus?.n ?? 0) + 1 };
@@ -296,8 +323,11 @@ class Store {
     }
   }
 
-  /** Run a command from the console. A report command focuses that report instead of scrolling. */
-  async run(input: CliInput): Promise<Entry> {
+  /**
+   * Run a command from the console. A report command focuses that report instead of scrolling. `typed` is what was
+   * typed when `input` is that with a task command written out: the history keeps it.
+   */
+  async run(input: CliInput, typed?: string): Promise<Entry> {
     // Typed in the Console, a report prints right there. From the bar under the other pages it opens
     // in the Tasks view instead, where it can be sorted and filtered.
     const inConsole = this.view === 'console';
@@ -311,7 +341,7 @@ class Store {
       at: Date.now(),
     });
     this.entries.push(e);
-    this.remember(input.line ?? previewLine(input.args ?? []));
+    this.remember(typed ?? input.line ?? previewLine(input.args ?? []));
     const res = await this.#exec(e);
     // `config` and `context` rewrite the saved settings: pick them up so the pages follow.
     const name = res?.command?.name;

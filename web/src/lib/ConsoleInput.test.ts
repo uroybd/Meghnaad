@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
+import { parseSettings } from './appsettings';
 import ConsoleInput from './ConsoleInput.svelte';
 import { store } from './store.svelte';
 
@@ -11,6 +12,8 @@ afterEach(() => {
   document.body.innerHTML = '';
   store.promptRequest = null;
   store.promptLine = '';
+  store.appSettings = null;
+  vi.restoreAllMocks();
 });
 
 describe('the prompt', () => {
@@ -40,5 +43,31 @@ describe('the prompt', () => {
     app = mount(ConsoleInput, { target: document.body });
     flushSync();
     expect((document.querySelector('input') as HTMLInputElement).value).toBe('');
+  });
+});
+
+describe('task commands at the prompt', () => {
+  function submit(text: string) {
+    const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const input = document.querySelector('input') as HTMLInputElement;
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    flushSync();
+    return run;
+  }
+
+  it('sends what the command stands for, and keeps what was typed for the history', () => {
+    store.appSettings = parseSettings('{ "taskCommands": [ { "name": "fail", "command": "done outcome:fail" } ] }');
+    const run = submit('task project:Home fail');
+    expect(run).toHaveBeenCalledWith({ line: 'project:Home done outcome:fail' }, 'task project:Home fail');
+  });
+
+  it('sends any other line as it was typed', () => {
+    store.appSettings = parseSettings('{ "taskCommands": [ { "name": "fail", "command": "done outcome:fail" } ] }');
+    const run = submit('add fail the test');
+    expect(run).toHaveBeenCalledWith({ line: 'add fail the test' }, 'add fail the test');
   });
 });

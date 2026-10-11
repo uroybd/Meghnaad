@@ -1,0 +1,91 @@
+// The app's own settings (`settings.json`), kept in the bucket beside the taskrc settings. The Worker only stores the
+// text; this page reads it. So far it holds one thing: `taskCommands`, words you type (or click) that stand for a
+// whole command line.
+//
+//   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ] }
+
+/** The most the Worker saves (it says so in the same words). */
+export const MAX_SETTINGS_BYTES = 64 * 1024;
+
+export interface TaskCommand {
+  /** The word that stands for `command`. */
+  name: string;
+  /** What it stands for: a command line, with or without a filter of its own. */
+  command: string;
+  /** A Lucide icon, by its name (`circle-x`), for the buttons that run it. */
+  icon?: string;
+}
+
+export interface ParsedSettings {
+  /** Every top-level key as it was, so what this page does not know about is kept when it saves. */
+  raw: Record<string, unknown>;
+  /** The valid task commands, in order. */
+  commands: TaskCommand[];
+  /** What is wrong, one line each; a command with a problem is left out. */
+  errors: string[];
+}
+
+/** A Lucide icon's name: lower case words joined by dashes (`circle-x`, `arrow-up-0-1`). */
+export const ICON_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * Why `name` can't be a task command, or null. It has to be one word that can't be taken for part of a filter (a
+ * number, `+tag`, `attribute:value`), because the line is read word by word.
+ */
+export function nameProblem(name: string): string | null {
+  if (!name) return 'needs a name';
+  if (/\s/.test(name)) return 'a name is one word (no spaces)';
+  if (/^[+\-/(]/.test(name) || /[:='"]/.test(name)) return 'a name can’t start with + - / ( or contain : = or quotes';
+  if (/^[\d,.]+$/.test(name)) return 'a name can’t be a number';
+  if (name === 'task' || name === '--') return `‘${name}’ can’t be a name`;
+  return null;
+}
+
+export function parseSettings(text: string): ParsedSettings {
+  const out: ParsedSettings = { raw: {}, commands: [], errors: [] };
+  if (!text.trim()) return out;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (e) {
+    out.errors.push(`Not valid JSON: ${e instanceof Error ? e.message : String(e)}`);
+    return out;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    out.errors.push('The settings must be a JSON object: { "taskCommands": [ … ] }');
+    return out;
+  }
+  out.raw = value as Record<string, unknown>;
+  const list = out.raw.taskCommands;
+  if (list === undefined) return out;
+  if (!Array.isArray(list)) {
+    out.errors.push('taskCommands must be a list');
+    return out;
+  }
+  const seen = new Set<string>();
+  list.forEach((c: unknown, i) => {
+    const at = `taskCommands[${i}]`;
+    if (!c || typeof c !== 'object' || Array.isArray(c))
+      return void out.errors.push(`${at}: must be { "name": …, "command": … }`);
+    const { name, command, icon } = c as Record<string, unknown>;
+    if (typeof name !== 'string') return void out.errors.push(`${at}: name must be text`);
+    const bad = nameProblem(name);
+    if (bad) return void out.errors.push(`${at} (${name || 'no name'}): ${bad}`);
+    if (typeof command !== 'string' || !command.trim()) return void out.errors.push(`${at} (${name}): needs a command`);
+    if (icon !== undefined && (typeof icon !== 'string' || !ICON_NAME.test(icon)))
+      return void out.errors.push(`${at} (${name}): icon must be a Lucide icon name such as "circle-x"`);
+    if (seen.has(name)) return void out.errors.push(`${at}: there is already a command named ${name}`);
+    seen.add(name);
+    out.commands.push(icon ? { name, command: command.trim(), icon } : { name, command: command.trim() });
+  });
+  return out;
+}
+
+/** The text to save: the other top-level keys as they were, and `taskCommands` as given. */
+export function serializeSettings(raw: Record<string, unknown>, commands: TaskCommand[]): string {
+  const { taskCommands: _old, ...rest } = raw;
+  const next: Record<string, unknown> = { ...rest };
+  if (commands.length)
+    next.taskCommands = commands.map(({ name, command, icon }) => (icon ? { name, command, icon } : { name, command }));
+  return JSON.stringify(next, null, 2) + '\n';
+}

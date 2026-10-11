@@ -23,6 +23,9 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
   before 3.5.0 are not supported.
 - **Your `taskrc`, safely.** Paste it, upload it or import it from a link (your dotfiles repository). UDAs, reports,
   contexts and settings are kept; sync settings and credentials are blocked ([what is read](docs/taskrc-support.md)).
+- **Your own commands.** A word for a whole command line, such as `fail` for `done outcome:fail`, with an icon from
+  Lucide. It works typed (`3 fail`, `project:Home fail`) and from a **⋯** menu on a task and on the selected tasks. Kept in
+  the app's own `settings.json`.
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
 - **Hooks, as Rust.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions you deploy with the Worker
   ([Hooks](#hooks)).
@@ -95,7 +98,7 @@ flowchart TB
     spa -- "POST /api/cli" --> access --> wk --> tcw --> mem
   end
 
-  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json")]
+  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
   tcw <-- "before and after every command<br/>R2 binding, key in a Worker secret" --> bucket
@@ -109,6 +112,8 @@ flowchart TB
 - **One endpoint**, `POST /api/cli`, takes what you type or click, so Taskwarrior's rules live in one place, `tc-core`.
   The browser only draws. (`POST /api/import` carries a file's text.)
 - **Imported taskrc settings** are stored in the bucket, so they survive restarts and follow you between devices.
+  The app's own `settings.json` (task commands, so far) is stored beside them; the Worker keeps its text as it is and
+  only the browser reads it.
 
 |  | Desktop Taskwarrior | Meghnaad |
 | --- | --- | --- |
@@ -198,7 +203,13 @@ measure before adding one:
   (RS256 signature, issuer, audience, expiry, not-before) and refuses forged, `alg: none` and cookie-only tokens.
   Misconfiguration means `403`, never open. `npm run test:auth` proves it against a mock Access.
 - **Cross-site requests:** writes from another `Origin` are refused, responses are `no-store`, and the app has a strict
-  Content-Security-Policy.
+  Content-Security-Policy. It lets the page connect to one other host, `cdn.jsdelivr.net`, and only to read icon files
+  (below); scripts, images and styles still come from the app alone.
+- **Icons from a CDN:** a task command can use any [Lucide](https://lucide.dev) icon. The few the app uses are bundled; any
+  other is fetched as a small SVG file from jsdelivr at a pinned Lucide version, and only a short list of plain shapes
+  is kept from it, so what arrives is drawn and never run. Fetching one tells that host your IP address and the icon's
+  name, nothing else. Without the network those you have used are remembered by the browser, and the rest show a
+  terminal icon.
 - **Encryption** is TaskChampion's (PBKDF2-HMAC-SHA256, then ChaCha20-Poly1305). The Worker holds the secret to decrypt
   for you, so whoever can read Worker secrets in your Cloudflare account can read your tasks. It is not end-to-end
   encrypted from Cloudflare. The Worker uses an R2 binding and holds no R2 token.

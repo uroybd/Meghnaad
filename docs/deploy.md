@@ -134,7 +134,7 @@ is the quickest way to check your variables, and builds and deploys nothing. It 
 green. Run it from the branch you want to deploy: for your own hooks that is your `my-hooks` branch ([keeping hooks across updates](using.md#keeping-your-hooks-across-updates)).
 Runs are serialised, so two clicks never deploy at once.
 
-**Last step, whichever way:** open the URL, sign in, and import your `taskrc` (the **taskrc** button) to get your UDAs
+**Last step, whichever way:** open the URL, sign in, and import your `taskrc` (**Settings**, then the **taskrc** tab) to get your UDAs
 and custom reports.
 
 ## Connect your `task` CLI

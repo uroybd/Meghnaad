@@ -24,8 +24,7 @@ desktop](#different-from-the-desktop)
 
 Summary, Calendar, Burndown, Projects and Tags have the same filter box as Tasks (Tab completes, filters become chips, the filter
 helpers are below it) and it is focused when you open the page (not on a phone, where that would raise the keyboard).
-The header also has the running **timer**, the **bell** (reminders), **urgency** (coefficients) and **taskrc**
-(settings). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
+The header also has the running **timer**, the **bell** (reminders) and **Settings** (the taskrc, tasksh and urgency, below). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
 
 **Projects and Tags start as your pending tasks** (a `status:pending` chip in their filter box). That is a filter like any
 other: take the chip away and finished tasks come in too, tinted green (completed) or red (deleted), so a project or tag stays listed after
@@ -119,7 +118,7 @@ sync backlog describe this Worker: `undo` is what it remembers, and the backlog 
 **Contexts.** `context define work +work or project:Work` saves a context, `context work` makes it the active one,
 `context none` turns it off, `context delete work` removes it, and `context` (or `context list`) lists them and
 `context show` says which one is in force (the filter bar above a table names it too). They edit the saved settings,
-the same ones the taskrc dialog and `config` do, so the pages follow at once. Defining asks first, as in Taskwarrior, when its filter
+the same ones the taskrc tab and `config` do, so the pages follow at once. Defining asks first, as in Taskwarrior, when its filter
 matches no pending task, and deleting asks when `confirmation` is on. A filter that can't also be what new tasks get
 (one with `or`, a `-tag` or a modifier such as `.before`) makes a read-only context, and says so.
 
@@ -249,10 +248,17 @@ and `.end`).
 week, month or year. It counts as Taskwarrior does, quirks included (checked bar by bar). `burndown.cumulative=0`
 stops carrying finished tasks forward.
 
+## Settings
+
+**Settings** in the header opens one page with a tab each for the **taskrc**, **tasksh**, **Commands** and **Urgency**. Every tab has
+its own **Apply**, and applying one does not touch the others. A tab with edits that are not applied yet has a dot, and
+the edits stay while you look at another tab or another page. If the saved settings change from somewhere else (the
+Console's `config`, another tab), a tab with no edits of its own follows them.
+
 ## Your taskrc
 
 UDAs, custom reports, contexts and your other settings live in `~/.taskrc`, not in your synced data, so the app keeps
-its own copy. Open **taskrc**, paste or choose your file, and save. Only an allowlist of settings is kept (the full
+its own copy. Open **Settings**, then its **taskrc** tab, paste or choose your file, and **Apply**. Only an allowlist of settings is kept (the full
 list, with what each does, is [taskrc support](taskrc-support.md)).
 
 - **Sync settings and anything credential-like are blocked** (`sync.*`, `taskd.*`, names containing `secret`,
@@ -292,9 +298,9 @@ rule.precedence.color=overdue,active,tag.  # which rule wins first; with `rule.c
 color.alternate=on gray2                   # shade every other row
 ```
 
-The **taskrc** dialog has a **Colour theme** picker (Meghnaad's own, Taskwarrior's default, and the 16 standard
+The **taskrc** tab has a **Colour theme** picker (Meghnaad's own, Taskwarrior's default, and the 16 standard
 themes such as `dark-256` and `solarized-light-256`) and a **Colours** switch; choosing a theme replaces the colour lines
-in the box, and Save keeps them. A pasted `include dark-256.theme` line is read as that theme. `color=off` (or `rc.color:off`)
+in the box, and Apply keeps them. A pasted `include dark-256.theme` line is read as that theme. `color=off` (or `rc.color:off`)
 turns every colour off, and a task tagged `nocolor` is never coloured.
 
 `colors` (Console) draws the palette, `colors bold coral on sky` a sample, and `colors legend` every colour in force, each
@@ -303,11 +309,55 @@ drawn softly for the page, and a colour that would not show on it is nudged towa
 `ink`, `coral`/`rose`, `sage`/`moss`, `amber`/`sand`, `sky`/`ocean`, `orchid`/`plum`, `teal`/`aqua`, `snow`/`pearl`,
 `slate`. [taskrc support](taskrc-support.md#colour) lists every colour setting.
 
+## Commands
+
+A command is a word that stands for a whole command line. Define it in **Settings**, then **Commands**: a name, what it
+stands for, and optionally an icon (any [Lucide](https://lucide.dev/icons) icon, picked by looking at it, by its name or by what it is
+for: "cancel" finds the circled cross).
+The app carries only the few icons it uses itself; any other is fetched from the jsdelivr CDN when it is first shown and
+remembered by your browser (see *Icons from a CDN* in the README's security notes). With no network, an icon you have not
+used before shows as a terminal, and the picker lets you type an icon's name instead of choosing it.
+`fail` for `done outcome:fail` works as
+
+```
+fail                      → done outcome:fail
+task fail                 → the same: the leading `task` is optional
+3 fail                    → 3 done outcome:fail
+project:Home +work fail   → project:Home +work done outcome:fail
+```
+
+What comes before the command word selects the tasks, as it always does (and so does the active context); what comes
+after is added to what the command stands for. A command may carry a filter of its own: `late` for `+OVERDUE list`
+makes `project:Home late` read `project:Home +OVERDUE list`. Only the command word can be one, so `add fail the test`
+still adds a task called "fail the test", and a command used inside another is written out too. A name is written out
+once on a line, which lets `done` stand for `done outcome:ok` and still reach Taskwarrior's `done`.
+
+**A command wins over a Taskwarrior command, a report or a taskrc `alias.*` with the same name.** It is unlike a taskrc
+alias in two ways: it is yours alone (it is kept in this app's `settings.json`, not in the taskrc that mirrors your
+desktop one), and it reads the line the way Taskwarrior does, so it only applies where the command goes.
+
+Every command is also a button: the **⋯** menu on a task (in the table, and in the drawer) runs it on that task, and the
+one in the bar over selected tasks runs it on all of them (a batch at a time, like the other bulk actions). The menu is
+not there while you have no commands. Names are one word that can't be taken for a filter (no spaces, no `+` `-` `/`, no
+`:` or `=`, not a number).
+
+The tab shows the `settings.json` it will save. Other keys in the file are kept, and entries it can't use are listed and
+dropped when you apply. The file is at most 64 KB.
+
+## tasksh
+
+The **tasksh** tab is about what tasksh's `review` works from: a `reviewed` attribute (a date UDA that records when
+you last looked at a task) and a `_reviewed` report (one `uuid` column) that lists the tasks due for review. It says
+whether each is defined, defined differently (with what is there now, since applying changes it), or missing, and lists
+the exact `config` lines **Apply** would write, which are the ones tasksh writes the first time it runs. Nothing else
+in the taskrc is touched. You can adjust the report's **filter** (by default never reviewed, or not for 6 days, and
+still pending or waiting) and **order**; **Use tasksh's defaults** puts them back.
+
 ## Urgency
 
 A task's urgency is the sum of Taskwarrior's `urgency.*` terms, with its built-in coefficients unless your taskrc
-changes them. Open **urgency** to see every coefficient next to its default, edit it, add your own, or send one back to
-its default. Edits are saved with your imported settings (as `urgency.*` lines in the taskrc dialog). Your desktop
+changes them. Open **Settings**, then its **Urgency** tab, to see every coefficient next to its default, edit it, add your
+own, or send one back to its default, then **Apply**. Edits are saved with your imported settings (as `urgency.*` lines in the taskrc tab). Your desktop
 `~/.taskrc` is not touched, so copy any change you want there. It follows Taskwarrior's rules, so nothing is inherited
 that Taskwarrior doesn't inherit:
 

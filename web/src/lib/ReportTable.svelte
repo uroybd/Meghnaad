@@ -3,6 +3,7 @@
   import { css, look, rowVars } from './colors';
   import { cell, rowClass } from './format';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
+  import MoreMenu from './MoreMenu.svelte';
   import ProjectPath from './ProjectPath.svelte';
   import TagChip from './TagChip.svelte';
   import DepLink from './DepLink.svelte';
@@ -13,6 +14,7 @@
   import { baseColumn, groupColumn, parseSort, SORTABLE, sortState } from './sortSpec';
   import { selection } from './selection.svelte';
   import { store, type Entry } from './store.svelte';
+  import { commandWords } from './taskCommands';
   import type { ReportResult, Row } from './types';
 
   let {
@@ -313,6 +315,7 @@
                   {#if pendingDelete === row.uuid}sure?{:else}<Trash2 size={14} />{/if}
                 </button>
               {/if}
+              <MoreMenu commands={store.taskCommands} onrun={(c) => act(row, ...commandWords(c))} />
             </td>
           </tr>
         {/each}

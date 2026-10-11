@@ -19,6 +19,7 @@ export { default as CornerDownLeft } from '@lucide/svelte/icons/corner-down-left
 export { default as Copy } from '@lucide/svelte/icons/copy';
 export { default as Download } from '@lucide/svelte/icons/download';
 export { default as Upload } from '@lucide/svelte/icons/upload';
+export { default as Ellipsis } from '@lucide/svelte/icons/ellipsis';
 export { default as Eraser } from '@lucide/svelte/icons/eraser';
 export { default as FileText } from '@lucide/svelte/icons/file-text';
 export { default as Folder } from '@lucide/svelte/icons/folder';
@@ -32,6 +33,8 @@ export { default as Plus } from '@lucide/svelte/icons/plus';
 export { default as Repeat } from '@lucide/svelte/icons/repeat';
 export { default as Rows3 } from '@lucide/svelte/icons/rows-3';
 export { default as RotateCcw } from '@lucide/svelte/icons/rotate-ccw';
+export { default as Search } from '@lucide/svelte/icons/search';
+export { default as Settings } from '@lucide/svelte/icons/settings';
 export { default as SlidersHorizontal } from '@lucide/svelte/icons/sliders-horizontal';
 export { default as Square } from '@lucide/svelte/icons/square';
 export { default as Tag } from '@lucide/svelte/icons/tag';

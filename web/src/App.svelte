@@ -6,13 +6,12 @@
     BellOff,
     CalendarDays,
     ChartColumn,
-    FileText,
     Folder,
     Tag,
     ListChecks,
     Menu,
     Plus,
-    SlidersHorizontal,
+    Settings,
     Terminal,
     TrendingDown,
     TriangleAlert,
@@ -30,7 +29,7 @@
   import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAdd from './lib/QuickAdd.svelte';
-  import SettingsDialog from './lib/SettingsDialog.svelte';
+  import SettingsPage from './lib/SettingsPage.svelte';
   import SummaryPage from './lib/SummaryPage.svelte';
   import { chartProps } from './lib/colors';
   import { prefixFromPath, taskPath } from './lib/route';
@@ -38,7 +37,6 @@
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
-  import UrgencyDialog from './lib/UrgencyDialog.svelte';
 
   // A fresh deployment has no sign-in settings yet; say what is left instead of showing errors.
   let setup = $state<SetupStatus | null>(null);
@@ -70,7 +68,8 @@
     setup = null;
     if (started) return;
     started = true;
-    store.loadConfig();
+    // `settings.json` after the settings, so the first screen doesn't wait behind it.
+    void store.loadConfig().then(() => store.loadAppSettings());
     void followAddress();
     // Reminders can wait for the table. The Worker handles one request at a time, so a poll sent
     // first would make the first screen wait behind it. If the table never loads (another view,
@@ -106,6 +105,11 @@
       // After the table has been asked for its refresh, not alongside it.
       setTimeout(() => void notifier.poll(), 300);
     }
+  });
+
+  let seenSettings = $state(false);
+  $effect(() => {
+    if (store.view === 'settings') seenSettings = true;
   });
 
   // On a phone the report list is a slide-over panel behind the menu button.
@@ -178,18 +182,12 @@
         >{#if notifier.settings.enabled}<Bell size={17} />{:else}<BellOff size={17} />{/if}</button
       >
       <button
-        class="ghost btn"
-        aria-label="urgency settings"
-        onclick={() => (store.urgencyOpen = true)}
-        title="Urgency coefficients and inheritance"
-        ><SlidersHorizontal size={15} /> <span class="lbl">urgency</span></button
-      >
-      <button
-        class="ghost btn"
-        aria-label="taskrc settings"
-        onclick={() => (store.settingsOpen = true)}
-        title="Import UDAs, reports and contexts from your taskrc"
-        ><FileText size={15} /> <span class="lbl">taskrc</span></button
+        class="ghost btn settings"
+        class:on={store.view === 'settings'}
+        aria-label="Settings"
+        aria-current={store.view === 'settings' ? 'page' : undefined}
+        onclick={() => store.openSettings()}
+        title="taskrc, tasksh and urgency settings"><Settings size={15} /> <span class="lbl">Settings</span></button
       >
     </header>
 
@@ -199,7 +197,7 @@
         <span
           >Your saved taskrc settings couldn't be read, so UDAs and custom reports are off for now. Nothing was deleted.</span
         >
-        <button class="ghost" onclick={() => (store.settingsOpen = true)}>Fix it</button>
+        <button class="ghost" onclick={() => store.openSettings('taskrc')}>Fix it</button>
       </div>
     {/if}
 
@@ -231,7 +229,9 @@
       {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView
         />{:else if store.view === 'tags'}<TagsView />{:else if store.view === 'summary'}<SummaryPage
         />{:else if store.view === 'calendar'}<CalendarPage />{:else if store.view === 'burndown'}<BurndownPage
-        />{:else}<ConsoleView />{/if}
+        />{:else if store.view === 'console'}<ConsoleView />{/if}
+      <!-- Once opened it stays, hidden, so what was typed in a tab is still there when you come back. -->
+      {#if seenSettings}<div hidden={store.view !== 'settings'}><SettingsPage /></div>{/if}
     </main>
 
     <button
@@ -270,8 +270,6 @@
   {#if store.detail}
     {#key store.detail.uuid}<DetailDrawer uuid={store.detail.uuid} />{/key}
   {/if}
-  {#if store.settingsOpen}<SettingsDialog />{/if}
-  {#if store.urgencyOpen}<UrgencyDialog />{/if}
   {#if store.notifyOpen}<NotifyDialog />{/if}
 {/if}
 
@@ -326,7 +324,8 @@
   .top button.btn {
     line-height: inherit;
   }
-  .tabs button.on {
+  .tabs button.on,
+  .top button.settings.on {
     background: var(--panel-2);
     border-color: var(--line);
     font-weight: 600;

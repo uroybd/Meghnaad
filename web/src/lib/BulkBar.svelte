@@ -1,9 +1,12 @@
 <script lang="ts">
   import { batches, filterWords, promptFor, type Pick } from './bulk';
   import BulkModify from './BulkModify.svelte';
+  import type { TaskCommand } from './appsettings';
   import { Check, Pencil, Terminal, Trash2, X } from './icons';
+  import MoreMenu from './MoreMenu.svelte';
   import { selection } from './selection.svelte';
   import { store } from './store.svelte';
+  import { commandWords } from './taskCommands';
 
   // The ticked tasks, as the table shows them (their numbers come from the rows), in the order they were ticked.
   const picks = $derived.by((): Pick[] => {
@@ -63,6 +66,11 @@
     return ok;
   }
 
+  // A task command from settings.json, run on the ticked tasks.
+  async function runCommand(c: TaskCommand) {
+    if (await run(commandWords(c))) selection.clear();
+  }
+
   // Name the tasks at the prompt and leave the rest to the user.
   function command() {
     store.requestPrompt(promptFor(picks));
@@ -84,6 +92,12 @@
       onclick={command}
       title="Put these tasks at the prompt and type the rest of the command"><Terminal size={15} /> Command</button
     >
+    <MoreMenu
+      commands={store.taskCommands}
+      disabled={busy}
+      onrun={runCommand}
+      label="More actions for the selected tasks"
+    />
     <span class="grow"></span>
     <button class="ghost btn" onclick={() => selection.clear()} aria-label="Clear the selection"
       ><X size={15} /> Clear</button

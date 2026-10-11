@@ -148,6 +148,20 @@ export function importTaskrcUrl(url: string): Promise<TaskrcResponse> {
   });
 }
 
+/** The app's own `settings.json`, as saved (`{}` before the first save). */
+export function getAppSettings(): Promise<unknown> {
+  return request<unknown>('/api/settings');
+}
+
+/** Save `settings.json`; the Worker keeps the text as it is, once it is a JSON object of a sensible size. */
+export function putAppSettings(text: string): Promise<{ ok: true }> {
+  return request<{ ok: true }>('/api/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+    body: text,
+  });
+}
+
 /** Save the urgency settings: every one that differs from the built-in value, and `urgency.inherit`. */
 export function putUrgency(urgency: Record<string, number>, inherit: boolean): Promise<{ ok: true }> {
   return request<{ ok: true }>('/api/config/urgency', {

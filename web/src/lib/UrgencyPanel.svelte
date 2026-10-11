@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { putUrgency } from './api';
   import { Plus, RotateCcw, TriangleAlert, X } from './icons';
   import { store } from './store.svelte';
@@ -14,17 +15,15 @@
     withValue,
   } from './urgency';
 
-  let dialog: HTMLDialogElement;
-  $effect(() => {
-    dialog.showModal();
-  });
+  /** There are edits not yet applied (the tab shows a dot). */
+  let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
 
   const defaults = $derived(store.config?.urgency_defaults ?? {});
   /** What is saved right now, to detect edits and to revert to. */
   const savedOverrides = $derived({ ...(store.config?.config.urgency ?? {}) });
   const savedInherit = $derived(store.config?.urgency_inherit ?? false);
 
-  // Start from what is saved; the dialog is only mounted when it opens.
+  // Start from what is saved.
   let overrides = $state<Record<string, number>>({ ...(store.config?.config.urgency ?? {}) });
   let inherit = $state(store.config?.urgency_inherit ?? false);
   let busy = $state(false);
@@ -32,7 +31,23 @@
   let savedNote = $state(false);
 
   const keys = $derived(sortKeys(new Set([...Object.keys(defaults), ...Object.keys(overrides)])));
-  const dirty = $derived(!sameOverrides(overrides, savedOverrides) || inherit !== savedInherit);
+  const edited = $derived(!sameOverrides(overrides, savedOverrides) || inherit !== savedInherit);
+  $effect(() => {
+    ondirty?.(edited);
+  });
+
+  // The saved values changed somewhere else (the taskrc tab, the console): follow them, unless there are edits here.
+  let before = untrack(() => ({ overrides: savedOverrides, inherit: savedInherit }));
+  $effect(() => {
+    const now = { overrides: savedOverrides, inherit: savedInherit };
+    const untouched = sameOverrides(overrides, before.overrides) && inherit === before.inherit;
+    const changed = !sameOverrides(now.overrides, before.overrides) || now.inherit !== before.inherit;
+    before = now;
+    if (changed && untouched) {
+      overrides = { ...now.overrides };
+      inherit = now.inherit;
+    }
+  });
   const blocked = $derived(!!store.config?.config_error);
 
   function set(key: string, raw: string) {
@@ -102,16 +117,15 @@
     savedNote = false;
   }
 
-  const close = () => (store.urgencyOpen = false);
   const isCustom = (key: string) => !(key in defaults);
   const fmt = (n: number | undefined) => (n === undefined ? '' : String(n));
 </script>
 
-<dialog bind:this={dialog} onclose={close} aria-label="Urgency settings">
-  <h3>Urgency</h3>
+<section aria-label="Urgency settings">
+  <h2>Urgency</h2>
   <p class="dim">
     A task's urgency is the sum of these terms, as in Taskwarrior's <code>urgency.*</code> settings. Changes are saved
-    with your other imported settings, so they appear in the taskrc dialog and <em>Restore previous</em> covers them.
+    with your other imported settings, so they appear in the taskrc tab and <em>Restore previous</em> covers them.
   </p>
   <ul class="rules dim">
     <li>
@@ -128,7 +142,7 @@
   {#if blocked}
     <p class="bad" role="alert">
       <TriangleAlert size={15} /> The saved settings couldn't be read, so urgency can't be saved until that is fixed in the
-      taskrc dialog.
+      taskrc tab.
     </p>
   {/if}
 
@@ -220,32 +234,19 @@
   {/if}
 
   {#if error}<p class="err" role="alert">{error}</p>{/if}
-  {#if savedNote && !dirty}<p class="ok" role="status">Saved. Task scores are updated.</p>{/if}
+  {#if savedNote && !edited}<p class="ok" role="status">Saved. Task scores are updated.</p>{/if}
 
   <footer class="row-actions">
-    {#if dirty}<button class="ghost" onclick={revert}>Revert edits</button>{/if}
+    {#if edited}<button class="ghost" onclick={revert}>Revert edits</button>{/if}
     <span class="grow"></span>
-    <button onclick={close}>Close</button>
-    <button class="primary" onclick={save} disabled={busy || blocked || !dirty}>Save</button>
+    <button class="primary" onclick={save} disabled={busy || blocked || !edited}>Apply</button>
   </footer>
-</dialog>
+</section>
 
 <style>
-  dialog {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    background: var(--panel);
-    color: var(--text);
-    padding: 24px 28px;
-    width: min(760px, 96vw);
-    max-height: 94vh;
-    overflow: auto;
-  }
-  dialog::backdrop {
-    background: rgb(0 0 0 / 0.4);
-  }
-  h3 {
+  h2 {
     margin: 0 0 4px;
+    font-size: 18px;
   }
   code {
     font-family: var(--mono);
@@ -372,9 +373,6 @@
     flex: 1;
   }
   @media (max-width: 760px) {
-    dialog {
-      padding: 18px 14px;
-    }
     .head,
     .row {
       grid-template-columns: 1fr 60px 90px 32px;

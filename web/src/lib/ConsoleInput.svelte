@@ -4,6 +4,7 @@
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
   import { store } from './store.svelte';
+  import { expandTaskCommands } from './taskCommands';
 
   /** Focus the prompt when it appears (not on a phone, where that would raise the keyboard). */
   let { autofocus = false }: { autofocus?: boolean } = $props();
@@ -63,10 +64,13 @@
       store.clear();
       return;
     }
+    // A task command from settings.json stands for the command line it names (what runs, and what the checks
+    // below look at, is that); the history keeps what was typed.
+    const cmd = expandTaskCommands(l, store.taskCommands);
     // Reports focus the Tasks view; everything else lands in the console scrollback.
     // Show the console first so a write or an error is visible; `run` switches back for reports.
-    if (store.view !== 'console' && (consoleOnly(l) || !looksLikeReport(l))) store.view = 'console';
-    store.run({ line: l });
+    if (store.view !== 'console' && (consoleOnly(cmd) || !looksLikeReport(cmd))) store.view = 'console';
+    store.run({ line: cmd }, l);
   }
 
   /** Commands with no page of their own: they only ever answer in the Console. */

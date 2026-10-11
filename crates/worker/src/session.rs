@@ -27,6 +27,8 @@ pub type Db = Replica<LiveStorage>;
 /// (`salt`, `latest`, `v-*`, `s-*`), so the `task` CLI never sees it. Because it is in the bucket
 /// (not in the Worker), it survives restarts, redeploys and moving between devices.
 pub const CONFIG_KEY: &str = "web/config.json";
+/// The app's own settings (`settings.json`): text the browser reads, which the Worker only stores.
+pub const APP_SETTINGS_KEY: &str = "web/settings.json";
 /// The settings as they were before the last import, for one-step restore.
 pub const PREV_KEY: &str = "web/config.prev.json";
 /// Unreadable settings found at `CONFIG_KEY` when saving over them: kept for hand recovery, and
@@ -145,6 +147,17 @@ pub async fn config(env: &Env) -> worker::Result<Rc<Config>> {
     let cfg = Rc::new(cfg);
     CONFIG.with(|c| *c.borrow_mut() = Some((now, cfg.clone())));
     Ok(cfg)
+}
+
+/// The saved `settings.json`, or `None` before anything was saved.
+pub async fn app_settings(env: &Env) -> worker::Result<Option<Vec<u8>>> {
+    let store = R2Store(env.bucket("TASKS")?);
+    store.get(APP_SETTINGS_KEY).await.map_err(rust_err)
+}
+
+pub async fn save_app_settings(env: &Env, text: &[u8]) -> worker::Result<()> {
+    let store = R2Store(env.bucket("TASKS")?);
+    store.put(APP_SETTINGS_KEY, text).await.map_err(rust_err)
 }
 
 /// Whether there are earlier (readable) settings to restore.
