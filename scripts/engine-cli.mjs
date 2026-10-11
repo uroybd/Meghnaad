@@ -48,6 +48,8 @@ try {
   const engine = new Engine();
   engine.set_config(JSON.stringify((await json('/api/config')).config));
   await engine.sync(api);
+  // The hooks the Worker's script defines: they run for these commands as they do in the page.
+  engine.set_hooks(JSON.stringify((await json('/api/hooks/defined')).defined), api);
   for (const command of commands) {
     const request = command.trim().startsWith('{') ? JSON.parse(command) : { line: command };
     const text = await engine.run(JSON.stringify({ tz: Number(values.tz), ...request, now: Date.now() / 1000 }));

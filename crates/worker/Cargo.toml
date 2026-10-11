@@ -10,6 +10,7 @@ description = "Cloudflare Worker exposing a TaskChampion replica (backed by R2) 
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+async-trait = "0.1"
 base64 = "0.22"
 console_error_panic_hook = "0.1"
 js-sys = "0.3"
