@@ -57,12 +57,22 @@
     }
   }
 
+  /**
+   * Empty the prompt, and the copy of it that the next prompt starts from. The copy is kept in step by an effect, which
+   * has not run yet when a command switches the page (a command from the Tasks page opens the Console, which builds a
+   * new prompt), so that one would start with the text that was just sent.
+   */
+  function clearLine() {
+    line = '';
+    store.promptLine = '';
+  }
+
   function submit() {
     // While a review asks, the answers are keys (see `reviewKey`); only what to change is typed.
     if (review.captures) {
       if (review.phase === 'modifying') {
         const words = line;
-        line = '';
+        clearLine();
         cursor = -1;
         completer.close();
         void review.respond(words);
@@ -71,7 +81,7 @@
     }
     const l = line.trim();
     if (!l) return;
-    line = ''; // the command moves to the "last command" line above the prompt
+    clearLine(); // the command moves to the "last command" line above the prompt
     cursor = -1;
     completer.close();
     if (l === 'clear' || l === 'cls') {

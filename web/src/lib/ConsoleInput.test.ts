@@ -73,6 +73,31 @@ describe('task commands at the prompt', () => {
   });
 });
 
+describe('after Enter', () => {
+  it('empties the prompt, and the line the next prompt starts from, before the page can change', () => {
+    // A command typed on the Tasks page opens the Console, which builds a new prompt that starts from the shared line.
+    // That line is kept by an effect that has not run yet at that moment, so it has to be emptied with the field.
+    vi.spyOn(store, 'run').mockImplementation(async () => {
+      store.view = 'console';
+      return {} as never;
+    });
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const input = document.querySelector('input') as HTMLInputElement;
+    input.value = 'count';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    expect(store.promptLine).toBe('count');
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    // No flush: the shared line is already empty, as a prompt built right now would read it.
+    expect(store.promptLine).toBe('');
+    flushSync();
+    expect(input.value).toBe('');
+    store.view = 'tasks';
+  });
+});
+
 describe('tasksh review at the prompt', () => {
   function type(text: string, key = 'Enter') {
     app = mount(ConsoleInput, { target: document.body });
