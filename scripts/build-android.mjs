@@ -8,6 +8,7 @@ import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ROOT, capture, has, run } from './deploy-lib.mjs';
+import { currentVersion } from './version.mjs';
 
 const release = process.argv.includes('--release');
 const step = (m) => console.log(`\n[android] ${m}`);
@@ -40,7 +41,15 @@ const javaHome = (() => {
 })();
 if (!javaHome) die('a JDK 21 is needed: set JAVA_HOME, or install Android Studio');
 
-const env = { ...process.env, ANDROID_HOME: sdk, ANDROID_NDK_HOME: join(sdk, 'ndk', ndks.at(-1)), JAVA_HOME: javaHome };
+const version = currentVersion();
+const env = {
+  ANDROID_VERSION_NAME: version.name,
+  ANDROID_VERSION_CODE: String(version.code),
+  ...process.env,
+  ANDROID_HOME: sdk,
+  ANDROID_NDK_HOME: join(sdk, 'ndk', ndks.at(-1)),
+  JAVA_HOME: javaHome,
+};
 
 step('web app');
 must(run('node', ['scripts/build-engine.mjs', '--if-stale']), 'the engine build');

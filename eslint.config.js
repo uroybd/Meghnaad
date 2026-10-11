@@ -26,7 +26,8 @@ export default ts.config(
   {
     // The Svelte 5 app runs in a browser.
     files: ['web/**/*.{ts,js,svelte}'],
-    languageOptions: { globals: globals.browser },
+    // `__APP_VERSION__` is defined by Vite (web/vite.config.ts) and typed in web/src/env.d.ts.
+    languageOptions: { globals: { ...globals.browser, __APP_VERSION__: 'readonly' } },
   },
   {
     // The deploy and build scripts run in Node.

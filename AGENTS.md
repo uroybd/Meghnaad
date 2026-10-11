@@ -75,6 +75,12 @@ clone use, with no Rust. Nothing user-specific may be compiled into the build (h
 bucket), and `setup.mjs`, `deploy.mjs` and `deploy-lib.mjs` must keep working in a release, which has no `crates/`
 (`isSourceCheckout`). A new file the deploy needs at run time has to be added to `assemble`, with a test.
 
+## Versions
+
+One version, the root `package.json`'s: the web app's label in Settings (`__APP_VERSION__`), the Android versionName and
+versionCode (`scripts/version.mjs`), and the prebuilt package. Release by changing it, committing, and pushing the tag
+`v<version>` (the Release workflow refuses a tag that does not match). Don't hard-code a version anywhere else.
+
 ## The Android app
 
 `crates/android` is `tc-core` natively (S3 sync with its own SigV4, the settings routes over a folder, hooks on the

@@ -35,8 +35,9 @@ adds the Rust targets it needs, and builds for `arm64-v8a` (phones) and `x86_64`
 
 ### Releases and signing
 
-The **Release** workflow (Actions → Release → Run workflow, or a `v*` tag) also builds the APK: attached to the GitHub
-release for a tag, or kept as the run's artifact (`android-apk`) otherwise. An installed app can only be updated by an
+The **Release** workflow (a `v*` tag, or Actions → Release → Run workflow) also builds the APK, with the same version as
+the web app ([Making a release](deploy.md#making-a-release-for-maintainers)): attached to the GitHub release for a tag, or
+kept as the run's artifact (`android-apk`) otherwise. An installed app can only be updated by an
 APK signed with the **same key**, so make one key and keep it:
 
 ```bash

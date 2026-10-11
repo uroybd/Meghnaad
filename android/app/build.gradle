@@ -8,8 +8,9 @@ android {
         applicationId "me.utsob.meghnaad"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // From the release (scripts/build-android.mjs passes them; the Release workflow sets them from the tag).
+        versionCode Integer.parseInt(System.getenv("ANDROID_VERSION_CODE") ?: "1000")
+        versionName System.getenv("ANDROID_VERSION_NAME") ?: "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // The engine is Rust (crates/android), built for these by scripts/build-android.mjs.
         ndk {

@@ -166,12 +166,24 @@ and custom reports.
 
 ## Making a release (for maintainers)
 
-**Actions → Release → Run workflow** (or push a tag such as `v0.2.0`) builds the app once and publishes it: a new commit on
-the `release` branch holding the built Worker (`worker/`), the web app and engine (`app/`), the scripts and a
-`wrangler.jsonc` without a build step; a tag also attaches the same files to a GitHub release. The branch only gains
-commits; nothing is force-pushed. `scripts/package-release.mjs` makes the package from a finished build, so
-`node scripts/build.mjs && node scripts/package-release.mjs` produces the same thing in `release/` on your machine.
-Release a commit CI has passed; the workflow does not run the tests.
+The version is the one in the root `package.json`; the web app shows it at the bottom of **Settings**, the Android app
+takes it as its version name (and a code that rises with it), and the prebuilt package carries it. To release:
+
+```bash
+# 1. set "version" in package.json (for example 0.2.0), commit it, push, and let CI pass
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Pushing the tag runs the **Release** workflow, which refuses a tag that is not `v` plus the version in `package.json`.
+It builds once and publishes: a new commit on the `release` branch holding the built Worker (`worker/`), the web app and
+engine (`app/`), the scripts and a `wrangler.jsonc` without a build step; a GitHub release titled with the version,
+holding the same files as `meghnaad-<version>.tar.gz`; and the Android APK, added to that release when its build
+finishes ([signing it](android.md#releases-and-signing)). The branch only gains commits; nothing is force-pushed.
+
+**Actions → Release → Run workflow** builds the same things as `<version>-dev.<commit>` and only updates the `release`
+branch (and keeps the APK as the run's artifact), which is how to try a build before tagging. `scripts/package-release.mjs`
+makes the web package from a finished build, so `node scripts/build.mjs && node scripts/package-release.mjs` produces
+the same thing in `release/` on your machine. The workflow does not run the tests: release a commit CI has passed.
 
 ## Connect your `task` CLI
 

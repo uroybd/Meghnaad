@@ -1,12 +1,15 @@
-# Builds the app once and publishes it ready to deploy: no Rust or build needed by whoever installs it.
-#   - the `release` branch holds the built files (it is what the Deploy to Cloudflare button points at),
-#   - a tag `v*` also attaches them to a GitHub release as a .tar.gz, and
-#   - the Android app is built as an APK: attached to the release for a tag, or kept as the run's artifact.
+# Builds the app once and publishes it, versioned, for both ways of using it:
+#   - the web app, ready to deploy with no Rust or build needed: the `release` branch holds the built files (it is what the
+#     Deploy to Cloudflare button points at), and a tag also attaches them to a GitHub release as a .tar.gz;
+#   - the Android app, as an APK: attached to the release for a tag, or kept as the run's artifact.
+# The version is the one in package.json. To release: change it there, commit, then tag that commit `v<version>` and push
+# the tag (git tag v0.2.0 && git push origin v0.2.0). A tag that does not match package.json is refused. A run by hand
+# (Actions > "Release" > Run workflow) builds the same things as `<version>-dev.<commit>` and publishes only the branch.
 # The APK is signed when the repository has the secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
 # ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD (docs/android.md says how to make them); without them it is a debug build,
 # which installs but cannot be updated in place by a later release.
-# Run by hand (Actions > "Release" > Run workflow) or by pushing a tag. It does not run the tests: CI does that on every
-# push, so release a commit CI has passed. How the package is made is scripts/package-release.mjs.
+# It does not run the tests: CI does that on every push, so release a commit CI has passed. How the web package is made
+# is scripts/package-release.mjs.
 name: Release
 
 on:
@@ -34,6 +37,25 @@ jobs:
           node-version: 22
           cache: npm
 
+      # A tag has to be the version in package.json; anything else is `<version>-dev.<commit>`.
+      - name: Version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          declared="$(node scripts/version.mjs)"
+          if [ "$REF_TYPE" = tag ]; then
+            if [ "$REF_NAME" != "v$declared" ]; then
+              echo "::error::The tag $REF_NAME does not match the version in package.json (v$declared). Change it there, commit, and tag again."
+              exit 1
+            fi
+            version="$declared"
+          else
+            version="$declared-dev.${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Releasing $version"
+
       - run: npm ci
 
       - uses: dtolnay/rust-toolchain@stable
@@ -45,21 +67,17 @@ jobs:
       - name: Install worker-build
         run: command -v worker-build >/dev/null || cargo install worker-build --locked
 
-      # The web app, the engine that runs in the browser, and the Worker.
+      # The web app, the engine that runs in the browser, and the Worker. The web app shows the version in Settings.
       - name: Build
+        env:
+          APP_VERSION: ${{ env.VERSION }}
         run: node scripts/build.mjs
 
-      # A tag names the version; a run by hand is named after the commit.
       - name: Package
-        env:
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "$REF_TYPE" = tag ]; then version="$REF_NAME"; else version="main-${GITHUB_SHA::7}"; fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          node scripts/package-release.mjs --out "$RUNNER_TEMP/release" --version "$version"
+          node scripts/package-release.mjs --out "$RUNNER_TEMP/release" --version "$VERSION"
           echo "Worker: $(gzip -9 -c "$RUNNER_TEMP/release/worker/index_bg.wasm" | wc -c) bytes compressed"
-          tar -czf "$RUNNER_TEMP/meghnaad-$version.tar.gz" -C "$RUNNER_TEMP/release" .
+          tar -czf "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" -C "$RUNNER_TEMP/release" .
 
       # The branch only ever gains commits (nothing is force-pushed), each one the whole built tree.
       - name: Publish to the release branch
@@ -88,11 +106,21 @@ jobs:
             git push --quiet origin release
           fi
 
-      - name: Attach to a GitHub release
+      - name: Create the GitHub release
         if: ${{ github.ref_type == 'tag' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$VERSION" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "$VERSION" --generate-notes --verify-tag
+          TAG: ${{ github.ref_name }}
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" <<NOTES
+          **Web app**: deploy it with the [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/${GITHUB_REPOSITORY}/tree/release) button, or with \`npm run setup\` from the \`release\` branch ([Deploying](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deploy.md)). \`meghnaad-$VERSION.tar.gz\` is the same built package.
+
+          **Android app**: install \`meghnaad-$VERSION.apk\` ([the Android app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/android.md)); it is added to this release when its build finishes.
+
+          NOTES
+          sed -i 's/^          //' "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "Meghnaad $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
 
   # After the release exists, so that a tag's APK can be added to it.
   android:
@@ -123,9 +151,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-ndk
-        run: |
-          command -v cargo-ndk >/dev/null || cargo install cargo-ndk --locked
+        run: command -v cargo-ndk >/dev/null || cargo install cargo-ndk --locked
 
+      # The same version as the web app's (the `release` job has already refused a tag that is not package.json's).
       - name: Build the APK
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -133,9 +161,11 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "$REF_TYPE" = tag ]; then version="$REF_NAME"; else version="main-${GITHUB_SHA::7}"; fi
+          declared="$(node scripts/version.mjs)"
+          if [ "$REF_TYPE" = tag ]; then version="$declared"; else version="$declared-dev.${GITHUB_SHA::7}"; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          export APP_VERSION="$version" ANDROID_VERSION_NAME="$version" ANDROID_VERSION_CODE="$(node scripts/version.mjs code)"
           if [ "$HAS_KEYSTORE" = true ]; then
             printf %s "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
             export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
@@ -146,7 +176,6 @@ jobs:
             node scripts/build-android.mjs
             cp android/app/build/outputs/apk/debug/app-debug.apk "meghnaad-$version-debug.apk"
           fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -157,4 +186,5 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$VERSION" meghnaad-*.apk --clobber
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" meghnaad-*.apk --clobber

@@ -110,6 +110,7 @@
   >
     <UrgencyPanel ondirty={(v) => (dirty.urgency = v)} />
   </div>
+  <p class="version">Meghnaad {__APP_VERSION__}</p>
 </div>
 
 <style>
@@ -120,6 +121,11 @@
   h1 {
     font-size: 22px;
     margin: 0 0 14px;
+  }
+  .version {
+    margin: 28px 0 0;
+    color: var(--dim);
+    font-size: 12px;
   }
   .tabs {
     display: flex;

@@ -1,9 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
+// The release this build is: the Release workflow says (APP_VERSION), otherwise the version in the root package.json.
+const version =
+  process.env.APP_VERSION ??
+  (JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version as string);
+
 export default defineConfig({
   plugins: [svelte()],
+  define: { __APP_VERSION__: JSON.stringify(version) },
   // Tests mount components, which needs Svelte's browser build rather than its server one.
   resolve: {
     // The engine, built by `node scripts/build-engine.mjs` (typed by src/engine/tc-engine.d.ts).
