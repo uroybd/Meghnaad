@@ -49,11 +49,18 @@ function mint({ key = good.privateKey, kid = 'k1', header = {}, payload = claims
 
 // ---- mock Access --------------------------------------------------------------------------
 let jwksHits = 0;
+const fetches = [];
+const rotated = rsa();
+let rotatedPublished = false;
 const jwks = createServer((req, res) => {
-  if (req.url === '/cdn-cgi/access/certs') {
+  const { pathname, search } = new URL(req.url, 'http://mock');
+  if (pathname === '/cdn-cgi/access/certs') {
     jwksHits++;
+    fetches.push(search ? 'fresh' : 'plain');
+    const keys = [jwk(good.publicKey, 'k1')];
+    if (rotatedPublished) keys.push(jwk(rotated.publicKey, 'k2'));
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ keys: [jwk(good.publicKey, 'k1')], public_cert: {} }));
+    res.end(JSON.stringify({ keys, public_cert: {} }));
   } else {
     res.statusCode = 404;
     res.end();
@@ -163,6 +170,24 @@ console.log('== token checks (dev bypass OFF)');
 const s = (o) => send(API_PORT, o);
 expect('valid token is accepted', await s({ token: mint() }), 200);
 expect('valid token, audience as a plain string', await s({ token: mint({ payload: claims({ aud: AUD }) }) }), 200);
+expect(
+  'the first fetch of the keys is the plain one, which Cloudflare may cache',
+  { status: fetches.join() === 'plain' ? 200 : 0, data: fetches.join() },
+  200,
+);
+// Access rotates its keys: one published after the list was fetched is picked up, by fetching the list again past any
+// cache. (This must come before the unknown-key test below: that one uses up the one refetch a minute.)
+rotatedPublished = true;
+expect(
+  'a key published after the list was fetched is accepted',
+  await s({ token: mint({ key: rotated.privateKey, kid: 'k2' }) }),
+  200,
+);
+expect(
+  '... which took one more fetch, past the cache',
+  { status: fetches.join() === 'plain,fresh' ? 200 : 0, data: fetches.join() },
+  200,
+);
 expect('no token at all', await s({}), 403);
 expect('empty token', await s({ token: '' }), 403);
 expect('garbage token', await s({ token: 'not.a.jwt' }), 403);
