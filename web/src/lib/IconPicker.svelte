@@ -19,9 +19,9 @@
   const matches = $derived(lucide.search(query));
   const shown = $derived(matches.slice(0, SHOWN));
   const total = $derived(Object.keys(lucide.catalog ?? {}).length);
-  /** What was typed, when it is an icon's name: it can be used even when the list could not be had. */
+  /** What was typed, when it is an icon's name and the list of icons could not be had to check it against. */
   const typed = $derived(query.trim().toLowerCase());
-  const usable = $derived(ICON_NAME.test(typed) && !matches.includes(typed));
+  const usable = $derived(ICON_NAME.test(typed) && !lucide.catalog);
 
   async function toggle() {
     open = !open;
