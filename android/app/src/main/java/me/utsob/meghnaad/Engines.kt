@@ -83,10 +83,13 @@ class Engine(private val context: Context) {
         return answer
     }
 
-    /** Pull and push with the bucket. Whether anything of the tasks changed; throws [SyncFailed] with why not. */
+    /**
+     * Pull and push with the bucket. Whether anything of the tasks changed; throws [SyncFailed] with why not. A phone that
+     * is not connected has nothing to sync with, which is a way of using it and not a failure.
+     */
     fun sync(): Boolean {
         // Read before the engine is taken: the Keystore can be slow, and nothing else should wait on it.
-        val connection = vault.connection() ?: throw SyncFailed("This phone is not connected to a bucket yet.")
+        val connection = vault.connection() ?: return false
         val news = synchronized(this) {
             val before = changes()
             val started = System.currentTimeMillis()

@@ -1,89 +1,39 @@
 <script lang="ts">
   import { plugin } from '../engine/native';
+  import ConnectForm from './ConnectForm.svelte';
 
   let { onready }: { onready: () => void } = $props();
 
-  let endpoint = $state('');
-  let bucket = $state('');
-  let region = $state('auto');
-  let accessKey = $state('');
-  let secretKey = $state('');
-  let encryptionSecret = $state('');
-  let working = $state(false);
-  let problem = $state('');
+  let failed = $state('');
 
-  const complete = $derived(
-    [endpoint, bucket, accessKey, secretKey, encryptionSecret].every((v) => v.trim() !== '') && !working,
-  );
-
-  /** Keep the connection, and try it: a first sync fetches the tasks, and a wrong key or secret says so here. */
-  async function connect(e: SubmitEvent) {
-    e.preventDefault();
-    working = true;
-    problem = '';
+  /** Go on without a bucket: the tasks stay on this phone, and a connection can be made later in Settings. */
+  async function skip() {
+    failed = '';
     try {
-      await plugin.setConnection({ endpoint, bucket, region, accessKey, secretKey, encryptionSecret });
-      await plugin.send({ op: 'sync' });
-      secretKey = encryptionSecret = '';
+      await plugin.useLocally();
       onready();
     } catch (err) {
-      await plugin.clearConnection().catch(() => {});
-      problem = (err instanceof Error ? err.message : String(err)).replace(/^Server Error: /, '');
-    } finally {
-      working = false;
+      failed = err instanceof Error ? err.message : String(err);
     }
   }
 </script>
 
 <main class="guide">
   <img src="/logo-64.png" width="48" height="48" alt="" />
-  <h1>Connect to your tasks</h1>
+  <h1>Your tasks</h1>
   <p class="lead">
-    Meghnaad keeps your tasks on this phone and syncs them with the S3 bucket your <code>task</code> CLI uses (Cloudflare
-    R2, AWS S3, MinIO, anything that speaks S3). The keys stay on this phone, in its secure storage.
+    Meghnaad keeps your tasks on this phone. To have them on your other devices too, connect the S3 bucket your
+    <code>task</code> CLI syncs with (Cloudflare R2, AWS S3, MinIO, anything that speaks S3). The keys stay on this phone,
+    in its secure storage.
   </p>
 
-  <form onsubmit={connect}>
-    <label>
-      S3 endpoint
-      <input
-        bind:value={endpoint}
-        type="url"
-        inputmode="url"
-        autocomplete="off"
-        autocapitalize="off"
-        spellcheck="false"
-        placeholder="https://<account>.r2.cloudflarestorage.com"
-      />
-    </label>
-    <label>
-      Bucket
-      <input bind:value={bucket} autocomplete="off" autocapitalize="off" spellcheck="false" />
-    </label>
-    <label>
-      Region
-      <input bind:value={region} autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <small>"auto" for R2; the bucket's region (such as eu-west-1) for AWS.</small>
-    </label>
-    <label>
-      Access key ID
-      <input bind:value={accessKey} autocomplete="off" autocapitalize="off" spellcheck="false" />
-    </label>
-    <label>
-      Secret access key
-      <input bind:value={secretKey} type="password" autocomplete="off" />
-    </label>
-    <label>
-      Encryption secret
-      <input bind:value={encryptionSecret} type="password" autocomplete="off" />
-      <small>The same value as <code>sync.encryption_secret</code> in your taskrc.</small>
-    </label>
+  <ConnectForm onconnected={onready} />
 
-    {#if problem}
-      <p class="problem" role="alert">{problem}</p>
-    {/if}
-    <button class="primary" type="submit" disabled={!complete}>{working ? 'Connecting…' : 'Connect'}</button>
-  </form>
+  <div class="skip">
+    <p>Or start without syncing: everything works, and you can connect later in <strong>Settings → Sync</strong>.</p>
+    {#if failed}<p class="problem" role="alert">{failed}</p>{/if}
+    <button class="ghost" onclick={skip}>Use on this phone only</button>
+  </div>
 </main>
 
 <style>
@@ -106,23 +56,6 @@
     color: var(--dim);
     margin: 0 0 18px;
   }
-  form {
-    display: grid;
-    gap: 14px;
-  }
-  label {
-    display: grid;
-    gap: 4px;
-    font-size: 14px;
-  }
-  small {
-    color: var(--dim);
-  }
-  input {
-    font: inherit;
-    padding: 10px 12px;
-    min-height: 44px;
-  }
   code {
     font-family: var(--mono);
     background: var(--panel-2);
@@ -130,12 +63,21 @@
     padding: 0 5px;
     overflow-wrap: anywhere;
   }
-  .problem {
-    color: var(--err, #c0392b);
-    margin: 0;
-    overflow-wrap: anywhere;
+  .skip {
+    margin-top: 28px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    gap: 10px;
   }
-  button {
+  .skip p {
+    margin: 0;
+    color: var(--dim);
+  }
+  .skip .problem {
+    color: var(--err);
+  }
+  .skip button {
     min-height: 44px;
   }
 </style>

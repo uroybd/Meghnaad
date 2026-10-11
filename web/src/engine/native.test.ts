@@ -22,7 +22,8 @@ function fakePlugin(): TcEnginePlugin & { calls: unknown[][] } {
       return { status: 200, type: 'application/json; charset=utf-8', body: '{"ok":true}' };
     }) as TcEnginePlugin['api'],
     forget: log('forget', undefined),
-    getConnection: vi.fn(async () => ({ configured: false })),
+    getConnection: vi.fn(async () => ({ configured: false, localOnly: false })),
+    useLocally: log('useLocally', undefined),
     setConnection: log('setConnection', undefined),
     clearConnection: log('clearConnection', undefined),
   };
@@ -86,11 +87,13 @@ describe('installNativeApi', () => {
     return { fetch: win.fetch, real };
   }
 
-  it('answers /api/setup by whether the phone is connected', async () => {
+  it('answers /api/setup by whether the phone is connected, or was told to go without a bucket', async () => {
     const api = fakePlugin();
     const { fetch } = install(api);
     expect(await (await fetch('/api/setup')).json()).toEqual({ configured: false, missing: [], host: '' });
-    api.getConnection = vi.fn(async () => ({ configured: true }));
+    api.getConnection = vi.fn(async () => ({ configured: true, localOnly: false }));
+    expect((await (await fetch('/api/setup')).json()).configured).toBe(true);
+    api.getConnection = vi.fn(async () => ({ configured: false, localOnly: true }));
     expect((await (await fetch('/api/setup')).json()).configured).toBe(true);
   });
 

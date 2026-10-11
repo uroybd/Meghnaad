@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mount, tick, unmount } from 'svelte';
 
 const plugin = vi.hoisted(() => ({
+  useLocally: vi.fn(),
   setConnection: vi.fn(),
   send: vi.fn(),
   clearConnection: vi.fn(),
@@ -87,5 +88,32 @@ describe('ConnectView', () => {
     expect(ready).not.toHaveBeenCalled();
     // The form is still filled in, so it can be corrected.
     expect(field('Bucket').value).toBe('tasks');
+  });
+});
+
+describe('ConnectView without a bucket', () => {
+  const skip = () =>
+    [...document.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Use on this phone only',
+    ) as HTMLButtonElement;
+
+  it('can be skipped: the phone is told to keep the tasks, and the app goes on', async () => {
+    plugin.useLocally.mockResolvedValue(undefined);
+    const ready = vi.fn();
+    app = mount(ConnectView, { target: document.body, props: { onready: ready } });
+    expect(document.body.textContent).toContain('Settings → Sync');
+    skip().click();
+    await vi.waitFor(() => expect(ready).toHaveBeenCalled());
+    expect(plugin.useLocally).toHaveBeenCalled();
+    expect(plugin.setConnection).not.toHaveBeenCalled();
+  });
+
+  it('says so if the choice could not be kept', async () => {
+    plugin.useLocally.mockRejectedValue(new Error('the phone could not keep that'));
+    const ready = vi.fn();
+    app = mount(ConnectView, { target: document.body, props: { onready: ready } });
+    skip().click();
+    await vi.waitFor(() => expect(document.querySelector('[role=alert]')?.textContent).toContain('could not keep'));
+    expect(ready).not.toHaveBeenCalled();
   });
 });

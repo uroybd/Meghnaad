@@ -110,6 +110,15 @@ class Vault(context: Context) {
         return key
     }
 
+    /** The phone was told to keep the tasks here only: not being connected to a bucket is then not a problem. */
+    @Synchronized
+    fun localOnly(): Boolean = prefs.getBoolean(LOCAL_ONLY, false)
+
+    @Synchronized
+    fun setLocalOnly(value: Boolean) {
+        prefs.edit().putBoolean(LOCAL_ONLY, value).apply()
+    }
+
     @Synchronized
     fun connection(): Connection? {
         if (!connectionRead) {
@@ -137,6 +146,7 @@ class Vault(context: Context) {
         const val ALIAS = "meghnaad-vault"
         const val ENGINE_KEY = "engine_key"
         const val CONNECTION = "connection"
+        const val LOCAL_ONLY = "local_only"
         const val IV_BYTES = 12
     }
 }

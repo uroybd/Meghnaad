@@ -61,6 +61,24 @@ Write**, scoped to the bucket.
 The keys are kept encrypted with a key that lives in the Android Keystore. The page never sees them: it asks the app to
 sync, and the app does.
 
+### An example
+
+| Field | Cloudflare R2 | AWS S3 | MinIO behind HTTPS |
+| --- | --- | --- | --- |
+| S3 endpoint | `https://0123456789abcdef.r2.cloudflarestorage.com` | `https://s3.eu-west-1.amazonaws.com` | `https://minio.example.com` |
+| Bucket | `taskwarrior-sync` | `my-task-sync` | `tasks` |
+| Region | `auto` | `eu-west-1` | `us-east-1` |
+| Access key ID (the client ID) | `4f1c…` (32 characters) | `AKIA…` | your MinIO user |
+| Secret access key (the client secret) | shown once when the token is made | shown once | your MinIO password |
+| Encryption secret | the same as `sync.encryption_secret` in your taskrc | same | same |
+
+These are the values your `task` CLI already has: `sync.aws.region`, `sync.aws.bucket`, `sync.aws.access_key_id`,
+`sync.aws.secret_access_key` and `sync.encryption_secret`, plus the endpoint in `AWS_ENDPOINT_URL`. For R2 the endpoint
+is `https://<account id>.r2.cloudflarestorage.com` (the account id is in the dashboard's right-hand column), and the key
+pair is an R2 API token with **Object Read & Write** on the bucket.
+
+The endpoint has to be `https://`; plain `http://` is only accepted for `localhost` and `127.0.0.1` (for trying it out).
+
 ## Different from the web app
 
 - **Settings are on the phone.** The taskrc subset, the app's settings, the hooks script and the secrets for hooks live in

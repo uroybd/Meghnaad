@@ -82,7 +82,7 @@ class TcEnginePlugin : Plugin() {
     @PluginMethod
     fun getConnection(call: PluginCall) {
         val c = engine().vault.connection()
-        val out = JSObject().put("configured", c != null)
+        val out = JSObject().put("configured", c != null).put("localOnly", engine().vault.localOnly())
         if (c != null) {
             out.put("endpoint", c.endpoint).put("bucket", c.bucket).put("region", c.region).put("accessKey", c.accessKey)
         }
@@ -104,12 +104,22 @@ class TcEnginePlugin : Plugin() {
             return call.reject("Every field but the region is needed.")
         }
         engine().vault.save(c)
+        engine().vault.setLocalOnly(false)
         call.resolve()
     }
 
+    /** Use the phone without a bucket: the tasks stay here until a connection is made, if ever. */
+    @PluginMethod
+    fun useLocally(call: PluginCall) {
+        engine().vault.setLocalOnly(true)
+        call.resolve()
+    }
+
+    /** Stop syncing. The tasks stay on the phone. */
     @PluginMethod
     fun clearConnection(call: PluginCall) {
         engine().vault.clearConnection()
+        engine().vault.setLocalOnly(true)
         call.resolve()
     }
 }

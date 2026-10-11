@@ -154,20 +154,36 @@ impl S3Store {
         Ok(Reply { status, etag, body })
     }
 
-    /// The answer if it is a success; otherwise the bucket's own words about why not.
+    /// The answer if it is a success; otherwise why not, in words that say what to change.
     fn ok(&self, what: &str, r: Reply) -> Result<Reply> {
         if (200..300).contains(&r.status) {
             return Ok(r);
         }
-        let said = String::from_utf8_lossy(&r.body);
-        let code = between(&said, "<Code>", "</Code>").unwrap_or_default();
-        let message = between(&said, "<Message>", "</Message>").unwrap_or_default();
-        Err(Error::Store(
-            format!("{what}: status {} {code} {message}", r.status)
-                .trim()
-                .to_owned(),
-        ))
+        Err(Error::Store(refusal(what, r.status, &String::from_utf8_lossy(&r.body))))
     }
+}
+
+/// What a refused request means for whoever typed the connection in. S3 stores answer with an XML error (`<Code>`), so a
+/// 403 with a web page behind it is not an S3 store at all: most often the app's own address, behind a sign-in.
+fn refusal(what: &str, status: u16, body: &str) -> String {
+    let code = between(body, "<Code>", "</Code>").unwrap_or_default();
+    let message = between(body, "<Message>", "</Message>").unwrap_or_default();
+    let hint = match (status, code) {
+        (_, "SignatureDoesNotMatch") => " The secret access key is wrong (or the region: R2 wants \"auto\").",
+        (_, "InvalidAccessKeyId") => " This store does not know that access key ID: check it and the endpoint.",
+        (_, "AccessDenied") => {
+            " The key is not allowed to do that: it needs Object Read & Write on this bucket (an R2 token is scoped to buckets)."
+        }
+        (_, "NoSuchBucket") => " There is no bucket with that name at this endpoint.",
+        (401 | 403, "") => {
+            " That address is not answering as an S3 store. The endpoint is the store's own address, such as https://<account id>.r2.cloudflarestorage.com, not the address of your app (which is behind Cloudflare Access)."
+        }
+        (_, "RequestTimeTooSkewed") => " The phone's clock is wrong: set the date and time automatically.",
+        _ => "",
+    };
+    format!("{what}: status {status} {code} {message}.{hint}")
+        .replace("  ", " ")
+        .replace(" .", ".")
 }
 
 /// The text between two markers, the first time they appear.
@@ -304,6 +320,37 @@ mod tests {
         assert_eq!(next.as_deref(), Some("1ueGcxLPRx1Tr/XYExHnhbYLgveDs2J/wm36Hy4vbOwM="));
         let (none, last) = parse_listing("<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>");
         assert!(none.is_empty() && last.is_none());
+    }
+
+    #[test]
+    fn a_refusal_says_what_to_change() {
+        let xml = |code: &str, message: &str| format!("<Error><Code>{code}</Code><Message>{message}</Message></Error>");
+        let bad_secret = refusal(
+            "listing the bucket",
+            403,
+            &xml(
+                "SignatureDoesNotMatch",
+                "The request signature we calculated does not match",
+            ),
+        );
+        assert!(bad_secret.contains("status 403 SignatureDoesNotMatch"), "{bad_secret}");
+        assert!(bad_secret.contains("secret access key is wrong"), "{bad_secret}");
+        assert!(refusal("x", 403, &xml("InvalidAccessKeyId", "no")).contains("does not know that access key ID"));
+        assert!(refusal("x", 403, &xml("AccessDenied", "Access Denied")).contains("Object Read & Write"));
+        assert!(refusal("x", 404, &xml("NoSuchBucket", "gone")).contains("no bucket with that name"));
+        // A 403 that is a sign-in page, not an S3 error: the app's own address.
+        let page = refusal(
+            "reading an object",
+            403,
+            "<html><body>Sign in with Cloudflare Access</body></html>",
+        );
+        assert!(page.starts_with("reading an object: status 403."), "{page}");
+        assert!(page.contains("not answering as an S3 store"), "{page}");
+        // An answer it has no advice for is still reported plainly.
+        assert_eq!(
+            refusal("x", 500, &xml("InternalError", "oops")),
+            "x: status 500 InternalError oops."
+        );
     }
 
     #[test]

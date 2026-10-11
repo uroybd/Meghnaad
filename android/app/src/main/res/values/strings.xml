@@ -9,7 +9,7 @@
     <string name="widget_refresh">Sync</string>
     <string name="widget_add">Add a task</string>
     <string name="widget_done">Done</string>
-    <string name="widget_empty">Nothing to do. Add a task with +, or open Meghnaad to connect.</string>
+    <string name="widget_empty">Nothing to do. Add a task with +.</string>
     <string name="quick_add_hint">Buy milk due:tomorrow +home</string>
     <string name="quick_add_save">Add</string>
 </resources>

@@ -17,12 +17,16 @@ export interface TcEnginePlugin {
   forget(): Promise<void>;
   /** Whether the phone is connected and to what; never the secrets. */
   getConnection(): Promise<Connection>;
+  /** Use the phone without a bucket: tasks stay here until a connection is made. */
+  useLocally(): Promise<void>;
   setConnection(o: ConnectionInput): Promise<void>;
   clearConnection(): Promise<void>;
 }
 
 export interface Connection {
   configured: boolean;
+  /** The phone was told to keep the tasks here only. */
+  localOnly: boolean;
   endpoint?: string;
   bucket?: string;
   region?: string;
@@ -104,7 +108,7 @@ export class NativePort implements Port {
 }
 
 /**
- * Answer the page's requests to its server from the phone: `/api/setup` says whether the phone is connected, and every
+ * Answer the page's requests to its server from the phone: `/api/setup` says whether the phone is set up, and every
  * other `/api/…` goes to the app, which keeps the settings in a folder. Other addresses are fetched as usual.
  */
 export function installNativeApi(api: TcEnginePlugin = plugin, win: Pick<Window, 'fetch' | 'location'> = window): void {
@@ -116,8 +120,9 @@ export function installNativeApi(api: TcEnginePlugin = plugin, win: Pick<Window,
     if (url.origin !== win.location.origin || !url.pathname.startsWith('/api/')) return real(input, init);
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase();
     if (method === 'GET' && url.pathname === '/api/setup') {
-      const { configured } = await api.getConnection();
-      return Response.json({ configured, missing: [], host: '' });
+      // Set up means connected, or told to go without: either way the app can start.
+      const { configured, localOnly } = await api.getConnection();
+      return Response.json({ configured: configured || localOnly, missing: [], host: '' });
     }
     const body = typeof init?.body === 'string' ? init.body : request ? await request.text() : '';
     const answer = await api.api({ method, path: url.pathname + url.search, body });
