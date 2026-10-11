@@ -62,6 +62,8 @@ pub struct Engine {
     cfg: Config,
     /// The hooks the Worker's script defines (`on_add`, …): only these are ever called.
     hooks: Vec<String>,
+    /// Where the Worker is (empty in the page, which uses its own address).
+    base: String,
 }
 
 fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm) {
@@ -89,13 +91,15 @@ impl Engine {
             undo: UndoStack::default(),
             cfg: Config::default(),
             hooks: Vec::new(),
+            base: String::new(),
         }
     }
 
-    /// Which hooks the saved script defines, as JSON (`["on_add"]`): `GET /api/hooks/defined`'s `defined`. Until it
-    /// is set, or when it is empty, no hook is called.
-    pub fn set_hooks(&mut self, defined: &str) -> Result<(), JsValue> {
+    /// Which hooks the saved script defines, as JSON (`["on_add"]`): `GET /api/hooks/defined`'s `defined`, and the
+    /// Worker's address (empty for the page's own). Until it is set, or when it is empty, no hook is called.
+    pub fn set_hooks(&mut self, defined: &str, base: &str) -> Result<(), JsValue> {
         self.hooks = serde_json::from_str(defined).map_err(js_error)?;
+        self.base = base.to_owned();
         Ok(())
     }
 
@@ -106,7 +110,7 @@ impl Engine {
         }
         let dateformat = self.cfg.effective().settings.get("dateformat").cloned();
         Some(Arc::new(RemoteHooks::new(
-            String::new(),
+            self.base.clone(),
             self.hooks.iter().cloned().collect(),
             clock,
             dateformat,

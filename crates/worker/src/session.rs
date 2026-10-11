@@ -7,17 +7,19 @@
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use taskchampion::Server;
 use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::dates::Clock;
-use tc_core::lua_hooks::{LuaRunner, Problem};
+use tc_core::lua_hooks::{LuaRunner, Net, Problem};
 use tc_core::taskrc::Config;
 use tc_core::{load_salt, CloudServer, ObjectStore};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use worker::Env;
 
+use crate::hooknet::WorkerNet;
 use crate::store::R2Store;
 
 /// Where the allowlisted taskrc subset lives. Outside TaskChampion's own namespaces
@@ -159,6 +161,19 @@ pub async fn save_hooks(env: &Env, text: &str) -> worker::Result<()> {
     Ok(())
 }
 
+/// What a script may reach beyond computing: the network, and the secrets (see [`hook_secret`]).
+fn net_for(env: &Env) -> Rc<dyn Net> {
+    Rc::new(WorkerNet { env: env.clone() })
+}
+
+/// A VM of its own for the saved script, when the cached one is busy waiting on the network for another call.
+pub async fn fresh_hook_runner(env: &Env) -> worker::Result<Rc<LuaRunner>> {
+    let text = hooks_source(env).await?;
+    LuaRunner::load_with(&text, Clock::utc(0), Some(net_for(env)))
+        .map(Rc::new)
+        .map_err(|p| rust_err(p.message))
+}
+
 /// The VM for the saved script: `None` if there is no script, the problem if it does not load. Built once per
 /// instance, and again when the script changes (looked at every few seconds).
 pub async fn hook_runner(env: &Env) -> worker::Result<Option<Result<Rc<LuaRunner>, Problem>>> {
@@ -188,7 +203,7 @@ pub async fn hook_runner(env: &Env) -> worker::Result<Option<Result<Rc<LuaRunner
                                 message: String::new(),
                             })
                         } else {
-                            LuaRunner::load(&text, Clock::utc(0)).map(Rc::new)
+                            LuaRunner::load_with(&text, Clock::utc(0), Some(net_for(env))).map(Rc::new)
                         };
                         *slot = Some(LoadedHooks {
                             fetched: now,
@@ -207,6 +222,96 @@ pub async fn hook_runner(env: &Env) -> worker::Result<Option<Result<Rc<LuaRunner
         Err(p) if p.message.is_empty() && p.line.is_none() => None,
         other => Some(other),
     })
+}
+
+/// The secrets a hooks script may read, kept apart from the script: sealed with the same key as your tasks, in their own
+/// object, so that the bucket never holds one in the clear. Names can be listed and values replaced, never read back
+/// out by the app; only a running script gets a value.
+pub const SECRETS_KEY: &str = "web/hook-secrets.enc";
+/// What the sealed secrets are bound to (as a version id is for a task version), so one can't stand in for the other.
+const SECRETS_SEAL: uuid::Uuid = uuid::Uuid::from_u128(0x4d65_6768_6e61_6164_686f_6f6b_7365_6372);
+const SECRETS_TTL_MS: f64 = 5_000.0;
+pub const MAX_SECRETS: usize = 64;
+
+/// The secrets as last read, and when.
+type Secrets = Option<(f64, Rc<BTreeMap<String, String>>)>;
+
+thread_local! {
+    static SECRETS: RefCell<Secrets> = const { RefCell::new(None) };
+}
+
+async fn load_secrets(env: &Env) -> worker::Result<Rc<BTreeMap<String, String>>> {
+    let now = js_sys::Date::now();
+    if let Some(m) = SECRETS.with(|s| {
+        s.borrow()
+            .as_ref()
+            .filter(|(at, _)| now - at < SECRETS_TTL_MS)
+            .map(|(_, m)| m.clone())
+    }) {
+        return Ok(m);
+    }
+    let store = R2Store(env.bucket("TASKS")?);
+    let map: BTreeMap<String, String> = match store.get(SECRETS_KEY).await.map_err(rust_err)? {
+        None => BTreeMap::new(),
+        Some(sealed) => {
+            let plain = cryptor(env).await?.unseal(SECRETS_SEAL, &sealed).map_err(rust_err)?;
+            serde_json::from_slice(&plain).map_err(rust_err)?
+        }
+    };
+    let map = Rc::new(map);
+    SECRETS.with(|s| *s.borrow_mut() = Some((now, map.clone())));
+    Ok(map)
+}
+
+async fn save_secrets(env: &Env, map: &BTreeMap<String, String>) -> worker::Result<()> {
+    let store = R2Store(env.bucket("TASKS")?);
+    let plain = serde_json::to_vec(map).map_err(rust_err)?;
+    let sealed = cryptor(env).await?.seal(SECRETS_SEAL, &plain).map_err(rust_err)?;
+    store.put(SECRETS_KEY, &sealed).await.map_err(rust_err)?;
+    SECRETS.with(|s| *s.borrow_mut() = None);
+    Ok(())
+}
+
+/// The names of the secrets that are set (not their values).
+pub async fn secret_names(env: &Env) -> worker::Result<Vec<String>> {
+    Ok(load_secrets(env).await?.keys().cloned().collect())
+}
+
+pub async fn set_secret(env: &Env, name: &str, value: &str) -> worker::Result<bool> {
+    let mut map = (*load_secrets(env).await?).clone();
+    if !map.contains_key(name) && map.len() >= MAX_SECRETS {
+        return Ok(false);
+    }
+    map.insert(name.to_owned(), value.to_owned());
+    save_secrets(env, &map).await?;
+    Ok(true)
+}
+
+pub async fn delete_secret(env: &Env, name: &str) -> worker::Result<()> {
+    let mut map = (*load_secrets(env).await?).clone();
+    if map.remove(name).is_some() {
+        save_secrets(env, &map).await?;
+    }
+    Ok(())
+}
+
+/// The value of `secret("name")` for a script: a Worker secret called `HOOK_SECRET_<NAME>` if there is one (set with
+/// `wrangler secret put`, in the dashboard, or by the deploy workflow), else one stored from the app.
+pub async fn hook_secret(env: &Env, name: &str) -> worker::Result<Option<String>> {
+    let key = format!(
+        "HOOK_SECRET_{}",
+        name.chars()
+            .map(|c| if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            })
+            .collect::<String>()
+    );
+    if let Ok(v) = env.secret(&key) {
+        return Ok(Some(v.to_string()));
+    }
+    Ok(load_secrets(env).await?.get(name).cloned())
 }
 
 /// The saved `settings.json`, or `None` before anything was saved.

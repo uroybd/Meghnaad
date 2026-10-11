@@ -1,4 +1,5 @@
 mod auth;
+mod hooknet;
 mod session;
 mod store;
 
@@ -120,6 +121,9 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .put_async("/api/hooks", |req, ctx| wrap(put_hooks(req, ctx)))
         .get_async("/api/hooks/defined", |_, ctx| wrap(hooks_defined(ctx)))
         .post_async("/api/hooks/check", |req, _| wrap(check_hooks(req)))
+        .get_async("/api/secrets", |_, ctx| wrap(list_secrets(ctx)))
+        .put_async("/api/secrets/:name", |req, ctx| wrap(put_secret(req, ctx)))
+        .delete_async("/api/secrets/:name", |_, ctx| wrap(delete_secret(ctx)))
         .post_async("/api/tc/snapshot", |req, ctx| wrap(tc_put_snapshot(req, ctx)))
         .run(req, env)
         .await?;
@@ -467,10 +471,56 @@ async fn run_hook(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
         clock.format = tc_core::dates::DateFormat::new(pattern);
     }
     runner.set_clock(clock);
-    match runner.call(&call.function, &call.args).await {
+    let mut result = runner.call(&call.function, &call.args).await;
+    // The cached VM is waiting on the network for another request: this one gets a VM of its own.
+    if matches!(&result, Err(f) if f.message == tc_core::lua_hooks::BUSY) {
+        let own = session::fresh_hook_runner(&ctx.env).await?;
+        own.set_clock(clock);
+        result = own.call(&call.function, &call.args).await;
+    }
+    match result {
         Ok(done) => json(&serde_json::json!({ "ok": true, "value": done.value, "say": done.lines })),
         Err(failed) => json(&serde_json::json!({ "ok": false, "error": failed.message, "say": failed.lines })),
     }
+}
+
+/// A secret's name: letters, digits and underscores, starting with a letter.
+fn secret_name(ctx: &RouteContext<()>) -> Result<String, ApiError> {
+    let name = ctx.param("name").cloned().unwrap_or_default();
+    let ok = !name.is_empty()
+        && name.len() <= 64
+        && name.starts_with(|c: char| c.is_ascii_alphabetic())
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    ok.then_some(name).ok_or_else(|| {
+        ApiError::BadRequest("a secret's name is letters, digits and underscores, starting with a letter".into())
+    })
+}
+
+/// `GET /api/secrets`: the names of the secrets set from the app. Never the values.
+async fn list_secrets(ctx: RouteContext<()>) -> RouteResult {
+    json(&serde_json::json!({ "names": session::secret_names(&ctx.env).await? }))
+}
+
+/// `PUT /api/secrets/<name>`: keep a secret (the body, as text), sealed in the bucket. It can be replaced, never read
+/// back; a script reads it with `secret("<name>")`.
+async fn put_secret(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let name = secret_name(&ctx)?;
+    let value = req.text().await?;
+    if value.is_empty() || value.len() > 16 * 1024 {
+        return Err(ApiError::BadRequest("a secret is between 1 character and 16 KB".into()));
+    }
+    if !session::set_secret(&ctx.env, &name, &value).await? {
+        return Err(ApiError::BadRequest(format!(
+            "there can be at most {} secrets",
+            session::MAX_SECRETS
+        )));
+    }
+    json(&serde_json::json!({ "ok": true }))
+}
+
+async fn delete_secret(ctx: RouteContext<()>) -> RouteResult {
+    session::delete_secret(&ctx.env, &secret_name(&ctx)?).await?;
+    json(&serde_json::json!({ "ok": true }))
 }
 
 /// `GET /api/hooks`: the script as saved, for the editor (and only the editor: it may hold secrets).
