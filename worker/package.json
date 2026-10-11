@@ -1,0 +1,16 @@
+{
+  "description": "Cloudflare Worker exposing a TaskChampion replica (backed by R2) as a JSON API",
+  "files": [
+    "index_bg.wasm",
+    "index.js",
+    "index.d.ts"
+  ],
+  "license": "MIT",
+  "main": "index.js",
+  "name": "tw-worker",
+  "sideEffects": [
+    "./index.js"
+  ],
+  "type": "module",
+  "version": "0.1.0"
+}

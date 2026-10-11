@@ -1,0 +1,35 @@
+{
+  "name": "taskwarrior-web",
+  "version": "main-e28d71d",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  },
+  "cloudflare": {
+    "label": "Meghnaad",
+    "products": [
+      "Workers",
+      "R2"
+    ],
+    "bindings": {
+      "TASKS": {
+        "description": "The R2 bucket your Taskwarrior syncs to. Pick your existing sync bucket, or a new one."
+      },
+      "TC_ENCRYPTION_SECRET": {
+        "description": "The same value as sync.encryption_secret in your taskrc."
+      },
+      "TEAM_DOMAIN": {
+        "description": "Set after deploying (the app shows how): https://<team>.cloudflareaccess.com"
+      },
+      "POLICY_AUD": {
+        "description": "Set after deploying (the app shows how): the Cloudflare Access application's AUD tag."
+      }
+    }
+  }
+}
