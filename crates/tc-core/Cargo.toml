@@ -6,6 +6,12 @@ license.workspace = true
 rust-version.workspace = true
 description = "TaskChampion cloud-sync protocol (crypto, object layout, ops, replica) with no platform dependencies"
 
+[features]
+# Saving a replica to bytes and loading it again (what the browser keeps in IndexedDB). The Worker never does, so it
+# leaves this out and does not carry the code (about 14 KB compressed).
+default = ["save"]
+save = []
+
 [dependencies]
 async-trait = "0.1"
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }

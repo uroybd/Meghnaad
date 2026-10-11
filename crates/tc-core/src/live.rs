@@ -17,6 +17,11 @@ use taskchampion::storage::{Storage, StorageTxn, TaskMap};
 use taskchampion::{Error, Operation};
 use uuid::Uuid;
 
+#[cfg(feature = "save")]
+mod saved;
+#[cfg(feature = "save")]
+pub use saved::{save_replica, Saver};
+
 type Result<T> = std::result::Result<T, Error>;
 
 /// The nil version: what a replica that has never synced is based on.
@@ -80,6 +85,8 @@ impl Generation {
 
 pub struct LiveStorage {
     generation: Generation,
+    #[cfg(feature = "save")]
+    saver: Saver,
     tasks: HashMap<Uuid, TaskMap>,
     base_version: Uuid,
     /// Every operation, oldest first, with whether the server has it.
@@ -98,6 +105,8 @@ impl LiveStorage {
     pub fn new() -> Self {
         LiveStorage {
             generation: Generation::default(),
+            #[cfg(feature = "save")]
+            saver: Saver::default(),
             tasks: HashMap::new(),
             base_version: NO_VERSION,
             operations: Vec::new(),
@@ -236,6 +245,8 @@ impl Drop for Txn<'_> {
 #[async_trait]
 impl Storage for LiveStorage {
     async fn txn<'a>(&'a mut self) -> Result<Box<dyn StorageTxn + Send + 'a>> {
+        #[cfg(feature = "save")]
+        self.save_if_asked();
         Ok(Box::new(Txn {
             db: self,
             journal: Vec::new(),

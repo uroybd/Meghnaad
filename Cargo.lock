@@ -915,6 +915,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tc-browser"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "taskchampion",
+ "tc-core",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "tc-core"
 version = "0.1.0"
 dependencies = [

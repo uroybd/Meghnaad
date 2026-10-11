@@ -33,8 +33,11 @@ pub mod summary;
 pub mod taskrc;
 pub mod urgency;
 pub mod warm;
+pub mod wire;
 
 pub use cloud::{load_cryptor, load_salt, CloudServer};
 pub use error::{Error, Result};
+#[cfg(feature = "save")]
+pub use live::{save_replica, Saver};
 pub use live::{Generation, LiveStorage};
 pub use store::{MemStore, ObjectStore};

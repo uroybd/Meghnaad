@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tc-core", "crates/worker"]
+members = ["crates/tc-core", "crates/worker", "crates/browser"]
 
 [workspace.package]
 edition = "2021"
