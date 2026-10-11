@@ -47,7 +47,7 @@ struct Stored {
 }
 
 /// Read stored settings: the versioned envelope, or the bare `Config` that earlier builds wrote.
-fn decode(bytes: &[u8]) -> Result<Config, String> {
+pub fn decode(bytes: &[u8]) -> Result<Config, String> {
     let v: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     if v.get("version").is_some() && v.get("config").is_some() {
         serde_json::from_value::<Stored>(v)
@@ -245,45 +245,58 @@ async fn derive_key_natively(salt: &[u8], secret: &[u8]) -> Result<[u8; KEY_LEN]
         .map_err(|_| JsValue::from_str("PBKDF2 returned the wrong number of bytes"))
 }
 
-pub async fn open(env: &Env) -> worker::Result<Session> {
+/// The key and the replica this instance keeps, made on the first request that needs them.
+async fn cached(env: &Env) -> worker::Result<Cached> {
+    if let Some(c) = CACHE.with(|c| c.borrow().clone()) {
+        return Ok(c);
+    }
     let bucket = env.bucket("TASKS")?;
-    let cached = CACHE.with(|c| c.borrow().clone());
-    let cached = match cached {
-        Some(c) => c,
-        None => {
-            let secret = env.secret("TC_ENCRYPTION_SECRET")?.to_string();
-            let salt = load_salt(&R2Store(bucket.clone()))
-                .await
-                .map_err(|e| worker::Error::RustError(e.to_string()))?;
-            // Deriving the key is the most expensive thing a cold instance does. The runtime's own
-            // PBKDF2 does it in about 40 ms of CPU; ours, in WebAssembly, in about 250.
-            let cryptor = match derive_key_natively(&salt, secret.as_bytes()).await {
-                Ok(key) => Cryptor::from_key(&key),
-                Err(e) => {
-                    worker::console_error!("native PBKDF2 failed ({e:?}); deriving the key in WebAssembly");
-                    Cryptor::new(&salt, secret.as_bytes())
-                }
-            };
-            let c = Cached {
-                cryptor,
-                state: Arc::new(Mutex::new({
-                    let storage = LiveStorage::new();
-                    let warm = Warm::new(storage.generation());
-                    State {
-                        replica: Replica::new(storage),
-                        undo: UndoStack::default(),
-                        warm,
-                    }
-                })),
-            };
-            CACHE.with(|slot| *slot.borrow_mut() = Some(c.clone()));
-            c
+    let secret = env.secret("TC_ENCRYPTION_SECRET")?.to_string();
+    let salt = load_salt(&R2Store(bucket))
+        .await
+        .map_err(|e| worker::Error::RustError(e.to_string()))?;
+    // Deriving the key is the most expensive thing a cold instance does. The runtime's own
+    // PBKDF2 does it in about 40 ms of CPU; ours, in WebAssembly, in about 250.
+    let cryptor = match derive_key_natively(&salt, secret.as_bytes()).await {
+        Ok(key) => Cryptor::from_key(&key),
+        Err(e) => {
+            worker::console_error!("native PBKDF2 failed ({e:?}); deriving the key in WebAssembly");
+            Cryptor::new(&salt, secret.as_bytes())
         }
     };
+    let c = Cached {
+        cryptor,
+        state: Arc::new(Mutex::new({
+            let storage = LiveStorage::new();
+            let warm = Warm::new(storage.generation());
+            State {
+                replica: Replica::new(storage),
+                undo: UndoStack::default(),
+                warm,
+            }
+        })),
+    };
+    CACHE.with(|slot| *slot.borrow_mut() = Some(c.clone()));
+    Ok(c)
+}
+
+pub async fn open(env: &Env) -> worker::Result<Session> {
+    let bucket = env.bucket("TASKS")?;
+    let cached = cached(env).await?;
     let config = config(env).await?;
     let state = lock_state(&cached.state).await?;
     let server = Box::new(CloudServer::with_cryptor(R2Store(bucket), cached.cryptor).with_cleanup(now_secs));
     Ok(Session { state, server, config })
+}
+
+/// The bucket as a TaskChampion server and nothing else: no replica, no tasks parsed. What a browser that keeps its
+/// own replica needs, since it asks for versions and sends versions and the Worker only opens and seals them.
+pub async fn server(env: &Env) -> worker::Result<Box<dyn Server>> {
+    let bucket = env.bucket("TASKS")?;
+    let cached = cached(env).await?;
+    Ok(Box::new(
+        CloudServer::with_cryptor(R2Store(bucket), cached.cryptor).with_cleanup(now_secs),
+    ))
 }
 
 /// Take the replica lock without parking this request on it.
