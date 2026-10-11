@@ -31,7 +31,8 @@ adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 
 The script finds the SDK in `ANDROID_HOME` or `~/Library/Android/sdk`, uses the JDK 21 that comes with Android Studio,
 adds the Rust targets it needs, and builds for `arm64-v8a` (phones) and `x86_64` (the emulator). It does not build for
-32-bit ARM. Open `android/` in Android Studio to run it from there.
+32-bit ARM. Open `android/` in Android Studio to run it from there. The launcher icon and the splash screens are the web app's logo:
+`node scripts/android-icons.mjs` makes them again from `web/public/logo.png` (it needs ImageMagick).
 
 ### Releases and signing
 
