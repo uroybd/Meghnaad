@@ -172,9 +172,18 @@ What this app costs, measured (`crates/tc-core/tests/memory.rs`, and a local `wo
   tasks, a 2 MB file) peaks near 51 MB, and its `undo` step keeps about 8 MB while the instance lives, which is why the
   request is capped. The test fails if a change makes any of these much worse.
 
-So the free plan's 10 ms CPU limit is below what the first request after an idle spell needs, and **the Worker needs
-the Workers Paid plan** (R2 and Access are fine on free). The app retries a read-only request once if Cloudflare cuts
-it off with error 1102, because the retry meets a warm instance.
+**It runs on Workers Free**, as does its author's own deployment, with R2 and Access on their free plans too. The first
+request after an idle spell does the most work (the key, then the snapshot): one on a real deployment used about 550 ms
+of CPU, far past the free plan's 10 ms, and still completed, because Cloudflare tolerates a Worker that only
+*infrequently* runs over and ends requests with error 1102 only when it keeps doing so. So cold starts must stay rare
+and cheap: a very large task list, or many cold starts in a row, can tip it. The app retries a read-only request once,
+because the retry meets a warm instance, and Workers Paid ($5/month) lifts the limit if that ever bothers you. R2 calls
+count toward the 50 subrequests per request, so a cold start that has to replay many versions (the Worker writes
+snapshots to keep that number small) is the other thing to watch.
+
+For scale, one personal deployment over its first nine days of a billing cycle used about 1,100 requests a day (1% of the
+free plan's 100,000), about 460 R2 writes and listings and 1,100 R2 reads a day (projecting to roughly 1.4% and 0.35% of
+R2's free 1 million and 10 million a month) and next to no storage, and was billed $0.00.
 
 ## The web app
 

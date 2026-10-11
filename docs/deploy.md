@@ -4,7 +4,7 @@
 
 | | Plan | Why |
 | --- | --- | --- |
-| **Workers** | **Paid** ($5/month) | The first request after an idle spell derives the encryption key, which takes tens of milliseconds of CPU. Workers Free allows 10 ms per request and ends longer ones with error 1102. See [Limits of the platform](architecture.md#limits-of-the-platform) |
+| **Workers** | Free is fine | Workers Free allows 10 ms of CPU per request. The first request after an idle spell does the most work (it derives the encryption key), so with a very large task list, or many cold starts in a row, it can be cut off with error 1102 (Cloudflare tolerates an occasional overrun, so a rare one is fine); the app retries it once. Workers Paid ($5/month) lifts the limit if that ever bothers you. See [Limits of the platform](architecture.md#limits-of-the-platform) |
 | **R2** | Free is fine | The bucket your `task` CLI syncs to |
 | **Access** | Free is fine | Sign-in (one-time PIN works with no setup) |
 
@@ -175,7 +175,7 @@ Released versions of Taskwarrior have no config key for a custom S3 endpoint, bu
 | --- | --- |
 | The app shows an "Almost there" page | Access isn't connected yet: follow the page, or `npm run setup` |
 | `403` from `/api/*` after deploying | `TEAM_DOMAIN` / `POLICY_AUD` not set or wrong (the `iss`/`aud` of the token must match them exactly), or you're not signed in through Access. The Worker log says why (`auth rejected: …`) |
-| **Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a while | The CPU limit. On Workers Free it is 10 ms, less than a cold start needs: use Workers Paid. The app retries read-only requests once on its own, and the retry meets a warm instance. In the dashboard, "Exceeded CPU Time Limits" vs "Exceeded Memory" says which limit; `npx wrangler tail` shows it live |
+| **Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a while | The CPU limit (10 ms on Workers Free), passed by the one request that does the most work. The app retries read-only requests once on its own, and the retry meets a warm instance. If it keeps happening, for example with a very large task list, Workers Paid lifts the limit. In the dashboard, "Exceeded CPU Time Limits" vs "Exceeded Memory" says which limit; `npx wrangler tail` shows it live |
 | A stack trace in `wrangler tail` shows only `wasm-function[1234]`, no names | The build leaves the debug function names out to save about 70 KB of the upload. Build and deploy once with `KEEP_WASM_NAMES=1` (`KEEP_WASM_NAMES=1 npm run deploy`) when you need to read one |
 | "task storage error" (502) | Wrong `TC_ENCRYPTION_SECRET` or the wrong bucket. The cached state resets on the next request |
 | Task command icons show as a terminal, and the icon picker says the list could not be fetched | The browser can't reach `cdn.jsdelivr.net`: it is offline or blocked, or a proxy in front of the app sets a Content-Security-Policy without it (`web/public/_headers` allows it with `connect-src 'self' https://cdn.jsdelivr.net`). Typing an icon's name in the picker still works |

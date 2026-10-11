@@ -15,6 +15,19 @@ Meghnaad is another **replica** of your Taskwarrior data. The `task` CLI keeps s
 reads and writes the same bucket. A task added here shows up on your laptop after `task sync`, and the other way round.
 It is **console-first** (type `task` commands) with tables, forms and charts beside it. Both use the same command engine.
 
+## Philosophy
+
+- **It complements Taskwarrior, it does not replace it.** Same bucket, same data, same rules: your `task` CLI keeps
+  working beside it.
+- **It behaves exactly like `task`.** Where it doesn't, that is a bug: please
+  [file an issue](https://github.com/uroybd/Meghnaad/issues).
+- **Power tools for advanced users, usable by everyone.** A console as capable as the CLI, with tables, forms and buttons
+  for anyone who would rather click.
+- **Basic features run on Cloudflare's free tier.** Workers, R2 and Access each have a free plan that is enough
+  ([limits](docs/architecture.md#limits-of-the-platform)).
+
+## What you get
+
 - **Uses your existing bucket.** Same R2 bucket, same encryption secret. No migration, no new server, nothing changes
   for the CLI.
 - **Taskwarrior's behaviour, not an imitation.** Filters, virtual tags, urgency, reports, recurrence, regexes, the
@@ -293,8 +306,8 @@ urgency, dates or confirmations, read the C++ first and compare ([method](docs/a
 ## Troubleshooting
 
 See [Deploying](docs/deploy.md#troubleshooting-a-deployment). One to know: **Cloudflare error 1102** ("Worker exceeded
-resource limits"), usually on the first request after a quiet spell, is the CPU limit. It is uncommon and the app
-retries read-only requests once.
+resource limits"), usually on the first request after a quiet spell, is the CPU limit of the free plan. It is uncommon
+and the app retries read-only requests once; Workers Paid lifts the limit if it ever bothers you.
 
 ## Known limitations
 
