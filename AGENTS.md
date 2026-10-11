@@ -67,6 +67,14 @@ run `npm run format` after editing any code, not just at the end.
   exist only through the `Net` a host passes in (the Worker's `hooknet.rs`); the runner, not the host, enforces the
   allowlist, https, the request limits and the redaction of a secret's value, and the tests for that are `tests/lua_net.rs`.
 
+## Releases
+
+The Release workflow builds once and publishes a prebuilt package (`scripts/package-release.mjs`) to the `release`
+branch and, for a tag, a GitHub release: that is what the Deploy to Cloudflare button and `npm run setup` in a release
+clone use, with no Rust. Nothing user-specific may be compiled into the build (hooks, secrets and config live in the
+bucket), and `setup.mjs`, `deploy.mjs` and `deploy-lib.mjs` must keep working in a release, which has no `crates/`
+(`isSourceCheckout`). A new file the deploy needs at run time has to be added to `assemble`, with a test.
+
 ## Running it
 
 `npm run dev` is the dev server: it builds the engine (`scripts/build-engine.mjs`, which needs the `wasm-bindgen` tool at

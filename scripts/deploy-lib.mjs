@@ -133,8 +133,12 @@ export function capture(cmd, args) {
 
 export const has = (cmd, args = ['--version']) => capture(cmd, args).ok;
 
+/** A prebuilt release has no Rust sources: there is nothing to build, so nothing to install. */
+export const isSourceCheckout = () => existsSync(join(ROOT, 'crates'));
+
 /** What is missing before the Worker can be built. Entries with `fix` can be installed for the user. */
 export function missingTools() {
+  if (!isSourceCheckout()) return [];
   if (!has('cargo'))
     return [{ what: 'Rust (cargo)', fix: null, hint: 'install it from https://rustup.rs, then run this again' }];
   const missing = [];

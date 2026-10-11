@@ -9,6 +9,7 @@ import {
   capture,
   DEPLOY_CONFIG,
   deploy,
+  isSourceCheckout,
   missingTools,
   problem,
   readBaseConfig,
@@ -51,7 +52,9 @@ for (const m of missingTools()) {
     die('Cannot continue without it.');
   if (run(...m.fix).status !== 0) die(`Installing ${m.what} failed.`);
 }
-done('Rust, the wasm32 target and worker-build are ready');
+done(
+  isSourceCheckout() ? 'Rust, the wasm32 target and worker-build are ready' : 'a prebuilt release: nothing to build',
+);
 
 // ---- 2
 step(2, 'Cloudflare account');

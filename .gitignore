@@ -9,3 +9,4 @@ web/.svelte-kit
 .deploy.vars
 wrangler.deploy.jsonc
 web/src/engine/pkg
+/release

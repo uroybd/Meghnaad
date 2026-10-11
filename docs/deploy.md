@@ -8,12 +8,38 @@
 | **R2** | Free is fine | The bucket your `task` CLI syncs to |
 | **Access** | Free is fine | Sign-in (one-time PIN works with no setup) |
 
-On your machine: Node.js 20+ and [Rust](https://rustup.rs) for routes A and C (the build compiles the Worker and the
-engine that runs in the browser to WASM; the `wasm32-unknown-unknown` target, `worker-build` and, for the engine, the
-`wasm-bindgen` tool at the version in `Cargo.lock` are installed for you if missing; the first build takes a few minutes). Route B builds on Cloudflare, and
-route D on GitHub.
+On your machine: Node.js 20+ for every route. Routes A and C also need [Rust](https://rustup.rs) when you deploy from a
+clone of the source (the build compiles the Worker and the engine that runs in the browser to WASM; the
+`wasm32-unknown-unknown` target, `worker-build` and, for the engine, the `wasm-bindgen` tool at the version in
+`Cargo.lock` are installed for you if missing; the first build takes a few minutes). **Route 0 needs no Rust at all**:
+it deploys a prebuilt release. Route B builds on Cloudflare, and route D on GitHub.
 
-Pick one route to start with. Route D is for updating after A or C has done the first deploy.
+Pick one route to start with. Route D is for updating after A, C or 0 has done the first deploy.
+
+## 0. Prebuilt: no Rust, no build
+
+Every release is built once by CI and published ready to deploy, to the `release` branch and (for a tagged version) as a
+`.tar.gz` on the [releases page](https://github.com/uroybd/Meghnaad/releases). Nothing about your hooks, secrets or
+settings is in the build (they live in your bucket), so everyone deploys the same files.
+
+**With the button** (nothing to install): open
+[Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release),
+choose your R2 bucket (your existing sync bucket, or a new one), and give the encryption secret (the same value as
+`sync.encryption_secret`). Then open the address it gives you and follow the setup page to connect Access
+([Connecting Access](#connecting-access)). *This button has not been tried end to end yet; if it stumbles, the terminal
+route below does the same thing.*
+
+**From a terminal** (Node.js 20+ only):
+
+```bash
+git clone --branch release --depth 1 https://github.com/uroybd/Meghnaad.git meghnaad
+cd meghnaad
+npm install
+npm run setup        # the same guided questions as route A, without the build
+```
+
+To update, pull the `release` branch (or download the new release) and run `npm run deploy`; your answers are kept in
+`.deploy.vars`, which `git pull` never touches because it is not tracked.
 
 ## A. Guided: `npm run setup` (recommended)
 
@@ -63,9 +89,8 @@ repository**. Set the build command to `node scripts/build.mjs` (the Rust and we
 and the two **Text variables** (`TEAM_DOMAIN`, `POLICY_AUD`) to add under *Settings → Variables and Secrets*; add
 `TC_ENCRYPTION_SECRET` there as a **Secret**. (`keep_vars` is on, so redeploys don't remove what you added.)
 
-A **Deploy to Cloudflare** button (`https://deploy.workers.cloudflare.com/?url=<your public repo URL>`) should also
-work, and `package.json` carries the descriptions it shows, but it hasn't been tried with this repo, mainly because the
-build needs the Rust toolchain. Treat route B as the supported dashboard path.
+The **Deploy to Cloudflare** button is route 0, which uses the prebuilt `release` branch, so it needs no Rust. This
+route is for building on Cloudflare from your own fork, for example to carry your own changes.
 
 ## C. By hand
 
@@ -91,7 +116,7 @@ values into a git-ignored `wrangler.deploy.jsonc`.
 ## D. From GitHub Actions (manual)
 
 The repository has a workflow, [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml), that builds and
-deploys the Worker when you start it: **Actions → Deploy → Run workflow**. It never runs on a push. Do route A or C
+deploys the Worker when you start it: **Actions → Deploy → Run workflow**. It never runs on a push. Do route 0, A or C
 **once** first (the bucket and Access have to exist, and the first deploy is where you find out they work); after that,
 updating is one click. In your fork:
 
@@ -106,7 +131,7 @@ updating is one click. In your fork:
 | --- | --- | --- |
 | Secret | `CLOUDFLARE_API_TOKEN` | the token from step 1 |
 | Secret | `CLOUDFLARE_ACCOUNT_ID` | your account id |
-| Secret, *optional* | `TC_ENCRYPTION_SECRET` | the same value as `sync.encryption_secret`. If it is not set here, the Worker keeps the secret it already has from route A or C. Set it only if you want the workflow to be the one source of truth |
+| Secret, *optional* | `TC_ENCRYPTION_SECRET` | the same value as `sync.encryption_secret`. If it is not set here, the Worker keeps the secret it already has from route 0, A or C. Set it only if you want the workflow to be the one source of truth |
 | Variable | `DEPLOY_VARS` | your deployment choices, **the contents of your `.deploy.vars`**, one `KEY=value` per line (see below). Optional: without it the defaults apply |
 
 `DEPLOY_VARS` is a multi-line variable. Paste what `.deploy.vars` holds, for example:
@@ -137,6 +162,15 @@ Runs are serialised, so two clicks never deploy at once.
 
 **Last step, whichever way:** open the URL, sign in, and import your `taskrc` (**Settings**, then the **taskrc** tab) to get your UDAs
 and custom reports.
+
+## Making a release (for maintainers)
+
+**Actions → Release → Run workflow** (or push a tag such as `v0.2.0`) builds the app once and publishes it: a new commit on
+the `release` branch holding the built Worker (`worker/`), the web app and engine (`app/`), the scripts and a
+`wrangler.jsonc` without a build step; a tag also attaches the same files to a GitHub release. The branch only gains
+commits; nothing is force-pushed. `scripts/package-release.mjs` makes the package from a finished build, so
+`node scripts/build.mjs && node scripts/package-release.mjs` produces the same thing in `release/` on your machine.
+Release a commit CI has passed; the workflow does not run the tests.
 
 ## Connect your `task` CLI
 

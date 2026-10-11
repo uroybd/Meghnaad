@@ -224,11 +224,18 @@ are `--api-port` and `--web-port`.
 
 You need Workers, R2 and Access; each has a free plan.
 
+**No Rust needed:** CI publishes a prebuilt release. Use the
+[Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release)
+button, or from a terminal with only Node.js 20+:
+
 ```bash
+git clone --branch release --depth 1 https://github.com/uroybd/Meghnaad.git meghnaad && cd meghnaad
 npm install
 npm run setup        # guided: bucket, domain, secret, Access; safe to repeat
-npm run deploy       # whenever you update the code
+npm run deploy       # whenever you update (after pulling the release branch)
 ```
+
+From a clone of the source (Rust needed), the same two commands build it first.
 
 Setup asks for your sync bucket and encryption secret, deploys, and tells you what to click to connect Access. Until
 then the app shows a setup page and nothing is reachable. Pointing your `task` CLI at R2 is in

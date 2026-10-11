@@ -1,0 +1,91 @@
+# Builds the app once and publishes it ready to deploy: no Rust or build needed by whoever installs it.
+#   - the `release` branch holds the built files (it is what the Deploy to Cloudflare button points at), and
+#   - a tag `v*` also attaches them to a GitHub release as a .tar.gz.
+# Run by hand (Actions > "Release" > Run workflow) or by pushing a tag. It does not run the tests: CI does that on every
+# push, so release a commit CI has passed. How the package is made is scripts/package-release.mjs.
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+# One release at a time; a second run waits instead of racing the first to the branch.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install worker-build
+        run: command -v worker-build >/dev/null || cargo install worker-build --locked
+
+      # The web app, the engine that runs in the browser, and the Worker.
+      - name: Build
+        run: node scripts/build.mjs
+
+      # A tag names the version; a run by hand is named after the commit.
+      - name: Package
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then version="$REF_NAME"; else version="main-${GITHUB_SHA::7}"; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          node scripts/package-release.mjs --out "$RUNNER_TEMP/release" --version "$version"
+          echo "Worker: $(gzip -9 -c "$RUNNER_TEMP/release/worker/index_bg.wasm" | wc -c) bytes compressed"
+          tar -czf "$RUNNER_TEMP/meghnaad-$version.tar.gz" -C "$RUNNER_TEMP/release" .
+
+      # The branch only ever gains commits (nothing is force-pushed), each one the whole built tree.
+      - name: Publish to the release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          repo="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads "$repo" release >/dev/null; then
+            git clone --quiet --branch release --single-branch "$repo" "$RUNNER_TEMP/branch"
+          else
+            git init --quiet -b release "$RUNNER_TEMP/branch"
+            git -C "$RUNNER_TEMP/branch" remote add origin "$repo"
+          fi
+          find "$RUNNER_TEMP/branch" -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp -R "$RUNNER_TEMP/release/." "$RUNNER_TEMP/branch/"
+          cd "$RUNNER_TEMP/branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          if git diff --cached --quiet; then
+            echo "The release branch already has exactly this build."
+          else
+            git commit --quiet -m "Release $VERSION (from ${GITHUB_SHA::7})"
+            git push --quiet origin release
+          fi
+
+      - name: Attach to a GitHub release
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$VERSION" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "$VERSION" --generate-notes --verify-tag
