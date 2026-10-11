@@ -1,6 +1,10 @@
 # Builds the app once and publishes it ready to deploy: no Rust or build needed by whoever installs it.
-#   - the `release` branch holds the built files (it is what the Deploy to Cloudflare button points at), and
-#   - a tag `v*` also attaches them to a GitHub release as a .tar.gz.
+#   - the `release` branch holds the built files (it is what the Deploy to Cloudflare button points at),
+#   - a tag `v*` also attaches them to a GitHub release as a .tar.gz, and
+#   - the Android app is built as an APK: attached to the release for a tag, or kept as the run's artifact.
+# The APK is signed when the repository has the secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD (docs/android.md says how to make them); without them it is a debug build,
+# which installs but cannot be updated in place by a later release.
 # Run by hand (Actions > "Release" > Run workflow) or by pushing a tag. It does not run the tests: CI does that on every
 # push, so release a commit CI has passed. How the package is made is scripts/package-release.mjs.
 name: Release
@@ -89,3 +93,68 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$VERSION" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "$VERSION" --generate-notes --verify-tag
+
+  # After the release exists, so that a tag's APK can be added to it.
+  android:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,aarch64-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-ndk
+        run: |
+          command -v cargo-ndk >/dev/null || cargo install cargo-ndk --locked
+
+      - name: Build the APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then version="$REF_NAME"; else version="main-${GITHUB_SHA::7}"; fi
+          if [ "$HAS_KEYSTORE" = true ]; then
+            printf %s "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
+            node scripts/build-android.mjs --release
+            cp android/app/build/outputs/apk/release/app-release.apk "meghnaad-$version.apk"
+          else
+            echo "::warning::No Android keystore secrets: building a debug-signed APK"
+            node scripts/build-android.mjs
+            cp android/app/build/outputs/apk/debug/app-debug.apk "meghnaad-$version-debug.apk"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: meghnaad-*.apk
+
+      - name: Attach to the GitHub release
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$VERSION" meghnaad-*.apk --clobber

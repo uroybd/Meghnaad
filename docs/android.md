@@ -33,6 +33,22 @@ The script finds the SDK in `ANDROID_HOME` or `~/Library/Android/sdk`, uses the 
 adds the Rust targets it needs, and builds for `arm64-v8a` (phones) and `x86_64` (the emulator). It does not build for
 32-bit ARM. Open `android/` in Android Studio to run it from there.
 
+### Releases and signing
+
+The **Release** workflow (Actions → Release → Run workflow, or a `v*` tag) also builds the APK: attached to the GitHub
+release for a tag, or kept as the run's artifact (`android-apk`) otherwise. An installed app can only be updated by an
+APK signed with the **same key**, so make one key and keep it:
+
+```bash
+keytool -genkeypair -keystore meghnaad.keystore -alias meghnaad -keyalg RSA -keysize 2048 -validity 10000
+base64 < meghnaad.keystore | tr -d '\n'        # the value of the first secret below
+```
+
+Add these as repository secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`meghnaad`)
+and `ANDROID_KEY_PASSWORD`. Without them the workflow still builds, but a debug-signed APK that installs and cannot be
+updated in place by the next one. Do not commit the keystore. Locally, `npm run build:android -- --release` signs with
+the same variables set in the environment (`ANDROID_KEYSTORE_FILE` is the path).
+
 ## First run
 
 The app asks for the bucket: the S3 endpoint (`https://<account>.r2.cloudflarestorage.com` for R2), the bucket, the
