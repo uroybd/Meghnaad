@@ -23,6 +23,8 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
   before 3.5.0 are not supported.
 - **Your `taskrc`, safely.** Paste it, upload it or import it from a link (your dotfiles repository). UDAs, reports,
   contexts and settings are kept; sync settings and credentials are blocked ([what is read](docs/taskrc-support.md)).
+- **tasksh's `review`.** Walk the tasks you have not looked at lately and mark each reviewed, skip, edit, change, finish or
+  delete it, from the Console (`review`) or a card. It sets up the `reviewed` attribute and `_reviewed` report itself.
 - **Your own commands.** A word for a whole command line, such as `fail` for `done outcome:fail`, with an icon from
   Lucide. It works typed (`3 fail`, `project:Home fail`) and from a **⋯** menu on a task and on the selected tasks. Kept in
   the app's own `settings.json`.
@@ -79,6 +81,14 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
     <td align="center"><sub>Settings: the tasksh setup, with the exact lines it writes</sub></td>
     <td align="center"><sub>Settings: urgency coefficients next to their defaults</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/screenshots/review-console.png" alt="tasksh's review in the console: the question to define what it needs, then the first task and the review prompt" /></td>
+    <td><img src="docs/screenshots/review-card.png" alt="The review card: the task, and Reviewed, Skip, Edit, Modify, Complete, Delete and Quit" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>tasksh's review in the console: type a letter, as in tasksh</sub></td>
+    <td align="center"><sub>The same review as a card, with the same keys</sub></td>
+  </tr>
 </table>
 
 ## Documentation
@@ -111,7 +121,7 @@ flowchart TB
   subgraph web["Cloudflare: Meghnaad"]
     direction TB
     cmds["task commands<br/>(settings.json)"]
-    rev["tasksh review<br/>(planned)"]
+    rev["tasksh review"]
     spa["Svelte app<br/>(draws results)"]
     access{{"Cloudflare Access<br/>token check"}}
     wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
@@ -136,7 +146,7 @@ flowchart TB
 ```
 
 - **Dashed grey boxes** are not Taskwarrior: your own words for command lines (shell aliases on the desktop, task commands
-  here) and tasksh's `review` (tasksh there; planned here, with its setup already in Settings). They only ever send ordinary
+  here) and tasksh's `review` (tasksh there, built in here). They only ever send ordinary
   commands.
 - **The bucket** holds TaskChampion's standard cloud layout, encrypted client-side. The Worker speaks the same protocol,
   so it and the CLI are interchangeable replicas.

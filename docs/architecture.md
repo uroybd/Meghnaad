@@ -35,7 +35,7 @@ flowchart TB
   subgraph web["Cloudflare: Meghnaad"]
     direction TB
     cmds["task commands<br/>(settings.json)"]
-    rev["tasksh review<br/>(planned)"]
+    rev["tasksh review"]
     spa["Svelte app<br/>(draws results)"]
     access{{"Cloudflare Access<br/>token check"}}
     wk["Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
@@ -61,7 +61,7 @@ flowchart TB
 
 The dashed grey boxes are not Taskwarrior itself. They are what people add around it: shell aliases and `tasksh` on the
 desktop, and their counterparts here, **task commands** (`settings.json`, expanded in the browser) and **tasksh's
-`review`** (planned; the Settings page already sets up the `reviewed` attribute and `_reviewed` report it needs). Both
+`review`** (see below; the Settings page sets up the `reviewed` attribute and `_reviewed` report it needs). Both
 only ever send ordinary commands to the one endpoint, so the engine knows nothing about them.
 
 ## The request path
@@ -189,6 +189,14 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   mounted so edits survive a change of tab. `tasksh.ts` decides what the `reviewed` UDA and the `_reviewed` report need
   and which `config` lines write them; the panel sends those through `POST /api/cli` like any other command, so nothing
   about tasksh is in the Worker.
+- **Review** (tasksh's `review`) is the browser's too, and only a client of the one endpoint. `review.svelte.ts` is the
+  session: it asks for the `_reviewed` report (the uuids), shows each task with `info`, and carries out the menu with
+  ordinary commands (`modify reviewed:now`, `done`, `delete`, with `rc.confirmation:no`), so undo, hooks and the settings
+  work as for any other command. Two surfaces drive it: `ConsoleInput` (tasksh's own way: it takes the typed letters while
+  `review.captures`, and `store.addEntry` prints the banner, the `info` and the messages into the scrollback) and
+  `ReviewCard` (buttons and the same keys, opened from the Tasks page). `tasksh.ts` has what is pure: reading `review N`,
+  the menu keys, tasksh's wording and the setup's questions (the setup is the tasksh tab's `config` lines, asked one part
+  at a time). The editor the `e` choice opens reports its closing through `App.svelte` (`review.editClosed`).
 - **Task commands** are the browser's. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name,
   command, icon? }] }`, other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s
   `appsettings` checks that it is a JSON object under 64 KB and nothing more). `taskCommands.ts` writes a command out on

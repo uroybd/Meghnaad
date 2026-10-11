@@ -363,12 +363,42 @@ dropped when you apply. The file is at most 64 KB.
 
 ![The tasksh tab: the reviewed attribute and the _reviewed report are not defined, the review filter and order, and the six lines Apply would write](screenshots/settings-tasksh.png)
 
-The **tasksh** tab prepares what tasksh's `review` works from. (The `review` command itself is not in the app yet.) It is a `reviewed` attribute (a date UDA that records when
-you last looked at a task) and a `_reviewed` report (one `uuid` column) that lists the tasks due for review. It says
+**Review** is tasksh's `review`: it walks the tasks you have not looked at lately, one at a time, and you mark each as
+reviewed, skip it, edit it, change it, finish it or delete it. Start it with **Review** above the Tasks table (a card with
+buttons) or by typing `review` in the Console (tasksh's own way, typing a letter). `review 10` stops after ten, and
+`rev` is enough, as in tasksh.
+
+It works from two things in the taskrc, which the **tasksh** tab prepares: a `reviewed` attribute (a date UDA that
+records when you last looked at a task) and a `_reviewed` report (one `uuid` column) that lists the tasks due for review.
+If they are not there, the first review asks, in tasksh's words, whether to define them, then does so with the lines below. It says
 whether each is defined, defined differently (with what is there now, since applying changes it), or missing, and lists
 the exact `config` lines **Apply** would write, which are the ones tasksh writes the first time it runs. Nothing else
 in the taskrc is touched. You can adjust the report's **filter** (by default never reviewed, or not for 6 days, and
 still pending or waiting) and **order**; **Use tasksh's defaults** puts them back.
+
+![A review in the Console: the task, its details, and the prompt asking what to do with it](screenshots/review-console.png)
+
+![The review card: the task's details and its choices](screenshots/review-card.png)
+
+Each task is shown with `[3 of 12]` and everything `info` shows, then the menu:
+
+| Key | |
+| --- | --- |
+| Enter or `r` | Mark it reviewed (`modify reviewed:now`) |
+| `s` | Skip it: on to the next, and it is not counted as reviewed |
+| `e` | Edit it in the app's editor; closing the editor marks it reviewed and shows it again |
+| `m` | Type what to change (`+tag -tag /teh/the/ project:X`); the same task is shown again. Nothing typed changes nothing |
+| `c` / `d` | Complete or delete it; both count as reviewed |
+| `q` | Stop. What is done stays done, and you can start again where the list left off |
+
+Anything else says `Command 'x' is not recognized.` At the end: `End of review. 3 out of 12 tasks reviewed.` In the Console
+the prompt reads `review>` and shows the menu while it is asking, and Escape quits; in the card the **Reviewed** button has
+the focus (so Enter marks it, as in tasksh) and the same letters work as keys.
+
+Every step is an ordinary command (`task <uuid> modify reviewed:now`, `done`, `delete`) sent with
+`rc.confirmation:no`, so hooks run, `undo` works, and the Tasks table follows. Review steps are not added to the command
+history. Taskwarrior questions a review can't answer (a recurring series) are shown, and that task is left for the Tasks
+page.
 
 ## Urgency
 
@@ -541,8 +571,9 @@ can be tapped. You can install it to your home screen from the browser menu.
   `my_hooks.rs` that you edit and redeploy. See [Hooks](#hooks).
 - **Task commands and `settings.json` are the app's own.** They are not in your taskrc, so a desktop `task` knows nothing
   of them; the taskrc's `alias.*` still works there. See [Commands](#commands).
-- **tasksh's `review`** is not in the app yet. The tasksh tab only sets up the `reviewed` attribute and the `_reviewed`
-  report, with the lines tasksh itself adds to a desktop taskrc the first time it runs, so you can copy them there.
+- **tasksh** is only its `review` here. The rest of the shell (`!` and `exec`, `diagnostics`, its own prompt and
+  history) has no meaning in a browser. `e` opens the app's editor, not `$EDITOR`. The `reviewed` attribute and
+  `_reviewed` report the tasksh tab defines are the same lines tasksh adds to a desktop taskrc, so you can copy them there.
 - **`edit` and `import-v2`** are not in the app (the detail view edits a task; Taskwarrior 2's data files can't be read
   in a browser). `purge` is, with one difference: it removes a task from your current tasks, but the earlier versions in
   your bucket still hold what it used to say until they are cleaned up, which the app does as the CLI does, after
