@@ -79,7 +79,7 @@ class Engine(private val context: Context) {
             }
             answer
         }
-        if (wrote) TasksWidget.refresh(context)
+        if (wrote) Widgets.refreshAll(context)
         return answer
     }
 
@@ -102,7 +102,7 @@ class Engine(private val context: Context) {
             reported = changes()
             news
         }
-        TasksWidget.refresh(context)
+        Widgets.refreshAll(context)
         return news
     }
 

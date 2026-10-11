@@ -90,3 +90,29 @@ jobs:
 
       - name: Build
         run: npm run build:web
+
+  # The Android app's own logic that runs without a phone (what the widgets show of a task, their settings). The app is
+  # built by the Release workflow, which is where the Rust half for the phone is compiled.
+  android:
+    name: Android unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The Android project builds Capacitor from node_modules.
+      - run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Unit tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest

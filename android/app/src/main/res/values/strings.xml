@@ -10,6 +10,16 @@
     <string name="widget_add">Add a task</string>
     <string name="widget_done">Done</string>
     <string name="widget_empty">Nothing to do. Add a task with +.</string>
+    <string name="widget_save">Save</string>
+    <string name="widget_tasks_label">Tasks</string>
+    <string name="widget_burndown_label">Burndown</string>
+    <string name="widget_calendar_label">Calendar</string>
+    <string name="widget_burndown_description">How the pending, started and finished tasks add up over time</string>
+    <string name="widget_calendar_description">A month, with the days that have something due marked</string>
+    <string name="widget_previous">Previous month</string>
+    <string name="widget_next">Next month</string>
+    <string name="widget_nothing_to_show">Nothing to show yet.</string>
+    <string name="widget_not_ready">Open Meghnaad once, then this will fill in.</string>
     <string name="quick_add_hint">Buy milk due:tomorrow +home</string>
     <string name="quick_add_save">Add</string>
 </resources>

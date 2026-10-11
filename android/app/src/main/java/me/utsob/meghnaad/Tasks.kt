@@ -3,8 +3,6 @@ package me.utsob.meghnaad
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
-import java.text.DateFormat
-import java.util.Date
 import java.util.TimeZone
 
 /** One task as the widget shows it. */
@@ -33,27 +31,51 @@ object Tasks {
         }
     }
 
-    /** The first [limit] tasks of [report]. */
-    fun report(context: Context, report: String, limit: Int): List<WidgetTask> {
-        val answer = run(context, "args" to JSONArray(listOf(report, "limit:$limit")))
+    /** The tasks a list widget shows: its report, narrowed by its filter, as many as it was set up to show. */
+    fun report(context: Context, config: ListConfig): List<WidgetTask> {
+        val line = listOf(config.report, config.filter.trim(), "limit:${config.limit}").filter { it.isNotEmpty() }.joinToString(" ")
+        val answer = run(context, "line" to line)
         val result = answer.optJSONObject("result") ?: return emptyList()
         if (result.optString("kind") != "report") {
             android.util.Log.w("TasksWidget", "the engine answered ${answer.toString().take(300)}")
             return emptyList()
         }
         val rows = result.optJSONArray("rows") ?: return emptyList()
-        val soon = System.currentTimeMillis() / 1000
+        val now = System.currentTimeMillis() / 1000
         return (0 until rows.length()).map { i ->
             val row = rows.getJSONObject(i)
             val due = if (row.isNull("due")) null else row.getLong("due")
-            val parts = mutableListOf<String>()
-            if (!row.isNull("project")) parts += row.getString("project")
-            if (due != null) parts += DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(due * 1000))
-            row.optJSONArray("tags")?.let { tags ->
-                if (tags.length() > 0) parts += (0 until tags.length()).joinToString(" ") { "+" + tags.getString(it) }
-            }
-            WidgetTask(row.getString("uuid"), row.getString("description"), parts.joinToString(" · "), due != null && due < soon)
+            WidgetTask(
+                row.getString("uuid"),
+                row.getString("description"),
+                Fields.line(row, config.fields, now),
+                due != null && due < now,
+            )
         }
+    }
+
+    /** The names of the reports there are (the built-in ones and the user's), for choosing one. */
+    fun reportNames(context: Context): List<String> = try {
+        val answer = JSONObject(Engines.get(context).call("api", JSONObject().put("method", "GET").put("path", "/api/config").toString()))
+        val body = JSONObject(answer.getString("body"))
+        val reports = body.getJSONArray("reports")
+        (0 until reports.length()).map { reports.getJSONObject(it).getString("name") }.filter { !it.startsWith("_") }
+    } catch (e: Exception) {
+        listOf("next")
+    }
+
+    /** A burndown (`burndown.daily|weekly|monthly`) of the tasks the filter picks; null when the engine had none to give. */
+    fun burndown(context: Context, config: BurndownConfig): JSONObject? {
+        val line = listOf("burndown.${config.period}", config.filter.trim()).filter { it.isNotEmpty() }.joinToString(" ")
+        val result = run(context, "line" to line).optJSONObject("result") ?: return null
+        return result.takeIf { it.optString("kind") == "burndown" }
+    }
+
+    /** One month of the calendar with what is due marked, for the tasks the filter picks. */
+    fun calendar(context: Context, config: CalendarConfig, year: Int, month: Int): JSONObject? {
+        val args = JSONArray(listOf("rc.calendar.monthsperline:1", "calendar", month.toString(), year.toString()) + config.filter.trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
+        val result = run(context, "args" to args).optJSONObject("result") ?: return null
+        return result.takeIf { it.optString("kind") == "calendar" }
     }
 
     /** Mark a task done. Null when it worked, the reason when it did not. */

@@ -57,6 +57,8 @@ dependencies {
     implementation project(':capacitor-android')
     implementation 'androidx.work:work-runtime:2.10.5'
     testImplementation "junit:junit:$junitVersion"
+    // Android's own org.json is only a stub on the JVM that runs the unit tests.
+    testImplementation 'org.json:json:20240303'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

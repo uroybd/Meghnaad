@@ -19,7 +19,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : Worker(context, p
         if (engine.vault.connection() == null) return Result.success()
         return try {
             engine.sync()
-            TasksWidget.refresh(applicationContext)
+            Widgets.refreshAll(applicationContext)
             Result.success()
         } catch (e: SyncFailed) {
             // Offline, or the bucket is unreachable: try again later, with the system's backoff.

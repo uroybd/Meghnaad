@@ -18,7 +18,7 @@ class WidgetActionActivity : Activity() {
                     e.message ?: "The task could not be finished."
                 }
                 if (problem != null) Toast.makeText(this, problem, Toast.LENGTH_LONG).show()
-                TasksWidget.refresh(this)
+                Widgets.refreshAll(this)
                 SyncWorker.runNow(this)
             }
             else -> startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

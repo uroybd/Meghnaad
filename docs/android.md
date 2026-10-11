@@ -12,9 +12,19 @@ keys stay on the phone.
 
 - Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings.
 - **Works offline.** The engine and the tasks are on the phone; changes sync when there is a network.
-- **A home-screen widget** that lists your `next` report: tap a circle to mark a task done, tap the text to open the
-  app, **+** to add a task by typing it as in the console (`Buy milk due:tomorrow +home`), and the sync button to pull
-  now. It syncs by itself about every half hour, and after a change made from the widget.
+- **Home-screen widgets**, three of them, each with its own settings (long-press the widget, then its pencil; the same
+  screen opens when you add it):
+  - **Tasks**: the tasks of any report, the built-in ones and your own, narrowed by a filter (`project:Home +work`), as
+    many as you choose, with a title of your own. Tap a circle to mark a task done, the text to open the app, **+** to
+    add a task by typing it as in the console (`Buy milk due:tomorrow +home`), and the sync button to pull now. Under
+    each task it shows the fields you tick: project, due date, priority, tags, urgency, age, scheduled, wait, recurrence,
+    task number, notes.
+  - **Burndown**: daily, weekly or monthly bars of the tasks a filter picks: finished at the bottom, then started, then
+    pending, with how long it would take to clear them at this pace.
+  - **Calendar**: a month with today circled and a dot on the days with something due (red when overdue, amber today,
+    blue after), for the tasks a filter picks. The arrows go to other months, and the month's name back to this one.
+
+  They redraw after any change, from the app or the widget, and sync by themselves about every half hour.
 - **Any S3-compatible store**: Cloudflare R2, AWS S3, MinIO, Backblaze B2. The store has to accept conditional writes
   (`If-Match` and `If-None-Match` on upload), which R2, MinIO and current AWS S3 do.
 
@@ -113,4 +123,5 @@ your bucket
 - The replica is kept in a file in the app's storage after every change; the widget and the page share one engine, so
   what the widget changes shows in the app and the other way round.
 
-Tests: `cargo test -p tc-android` (an in-process bucket stands in for S3), and `web/src/engine/native.test.ts`.
+Tests: `cargo test -p tc-android` (an in-process bucket stands in for S3), `web/src/engine/native.test.ts`, and the
+widgets' field formatting and settings with `cd android && ./gradlew testDebugUnitTest`.

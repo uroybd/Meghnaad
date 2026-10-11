@@ -1,0 +1,171 @@
+package me.utsob.meghnaad
+
+import android.app.Activity
+import android.appwidget.AppWidgetManager
+import android.content.Intent
+import android.os.Bundle
+import android.text.InputType
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Spinner
+import android.widget.TextView
+
+/**
+ * Asked for by the system when a widget is added to the home screen (and again from the widget's own settings): which
+ * report a list shows and how, which period a burndown covers, and a filter to narrow what any of them look at.
+ * Backing out leaves the widget unplaced.
+ */
+class WidgetConfigActivity : Activity() {
+    private var id = AppWidgetManager.INVALID_APPWIDGET_ID
+    private lateinit var form: LinearLayout
+
+    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setResult(RESULT_CANCELED)
+        id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+        val kind = Widgets.kindOf(this, id)
+        if (id == AppWidgetManager.INVALID_APPWIDGET_ID || kind == null) return finish()
+
+        form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(8))
+        }
+        setContentView(ScrollView(this).apply { addView(form) })
+        when (kind) {
+            "list" -> listForm()
+            "burndown" -> burndownForm()
+            else -> calendarForm()
+        }
+    }
+
+    private fun heading(text: String) = form.addView(TextView(this).apply {
+        this.text = text
+        textSize = 20f
+        setPadding(0, 0, 0, dp(8))
+    })
+
+    private fun label(text: String) = form.addView(TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        alpha = 0.7f
+        setPadding(0, dp(14), 0, dp(2))
+    })
+
+    private fun field(hint: String, value: String, number: Boolean = false): EditText {
+        val edit = EditText(this).apply {
+            this.hint = hint
+            setText(value)
+            setSingleLine()
+            inputType = if (number) InputType.TYPE_CLASS_NUMBER else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            minHeight = dp(48)
+        }
+        form.addView(edit, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        return edit
+    }
+
+    private fun choice(items: List<String>, selected: String): Spinner {
+        val spinner = Spinner(this)
+        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items.toMutableList())
+        spinner.setSelection(items.indexOf(selected).coerceAtLeast(0))
+        form.addView(spinner, ViewGroup.LayoutParams.MATCH_PARENT, dp(48))
+        return spinner
+    }
+
+    private fun buttons(onSave: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.END
+            setPadding(0, dp(20), 0, dp(8))
+        }
+        row.addView(Button(this, null, android.R.attr.buttonBarButtonStyle).apply {
+            text = getString(android.R.string.cancel)
+            setOnClickListener { finish() }
+        })
+        row.addView(Button(this, null, android.R.attr.buttonBarButtonStyle).apply {
+            text = getString(R.string.widget_save)
+            setOnClickListener {
+                onSave()
+                Widgets.update(this@WidgetConfigActivity, id)
+                setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id))
+                finish()
+            }
+        })
+        form.addView(row)
+    }
+
+    private fun listForm() {
+        val current = WidgetPrefs.list(this, id)
+        heading(getString(R.string.widget_tasks_label))
+        label("Report")
+        val report = choice(listOf(current.report), current.report)
+        // The report names come from the engine, which may take a moment the first time.
+        Thread {
+            val names = Tasks.reportNames(this).let { if (current.report in it) it else listOf(current.report) + it }
+            runOnUiThread {
+                report.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
+                report.setSelection(names.indexOf(current.report).coerceAtLeast(0))
+            }
+        }.start()
+        label("Filter (optional)")
+        val filter = field("project:Home +work due.before:eow", current.filter)
+        label("Title (optional)")
+        val title = field(current.report, current.title)
+        label("Most tasks to show")
+        val limit = field("12", current.limit.toString(), number = true)
+        label("Show under each task")
+        val boxes = ListFields.ALL.map { (key, name) ->
+            CheckBox(this).apply {
+                text = name
+                isChecked = key in current.fields
+                minHeight = dp(44)
+            }.also { form.addView(it) }
+        }
+        buttons {
+            WidgetPrefs.saveList(
+                this,
+                id,
+                ListConfig(
+                    report.selectedItem?.toString() ?: current.report,
+                    filter.text.toString().trim(),
+                    limit.text.toString().toIntOrNull()?.coerceIn(1, 50) ?: 12,
+                    ListFields.ALL.filterIndexed { i, _ -> boxes[i].isChecked }.map { it.first },
+                    title.text.toString().trim(),
+                ),
+            )
+        }
+    }
+
+    private fun burndownForm() {
+        val current = WidgetPrefs.burndown(this, id)
+        heading(getString(R.string.widget_burndown_label))
+        label("Bars are")
+        val period = choice(BurndownConfig.PERIODS, current.period)
+        label("Only the tasks that match (optional)")
+        val filter = field("project:Home", current.filter)
+        buttons {
+            WidgetPrefs.saveBurndown(this, id, BurndownConfig(period.selectedItem.toString(), filter.text.toString().trim()))
+        }
+    }
+
+    private fun calendarForm() {
+        val current = WidgetPrefs.calendar(this, id)
+        heading(getString(R.string.widget_calendar_label))
+        label("Only the tasks that match (optional)")
+        val filter = field("project:Work", current.filter)
+        form.addView(TextView(this).apply {
+            text = "Days with something due get a dot: red when overdue, amber today, blue otherwise."
+            textSize = 13f
+            alpha = 0.7f
+            setPadding(0, dp(12), 0, 0)
+        })
+        buttons { WidgetPrefs.saveCalendar(this, id, CalendarConfig(filter.text.toString().trim())) }
+    }
+}

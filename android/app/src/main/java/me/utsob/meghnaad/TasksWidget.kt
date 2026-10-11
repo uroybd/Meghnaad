@@ -21,7 +21,11 @@ class TasksWidget : AppWidgetProvider() {
         SyncWorker.runNow(context)
     }
 
-    override fun onDisabled(context: Context) = SyncWorker.cancel(context)
+    override fun onDisabled(context: Context) {
+        if (!Widgets.anyPlaced(context)) SyncWorker.cancel(context)
+    }
+
+    override fun onDeleted(context: Context, ids: IntArray) = WidgetPrefs.forget(context, ids)
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
@@ -36,9 +40,11 @@ class TasksWidget : AppWidgetProvider() {
 
         private fun views(context: Context, id: Int): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_tasks)
+            views.setTextViewText(R.id.title, WidgetPrefs.list(context, id).heading())
+            // The id is in the address, which the system keeps (and which makes each widget's adapter its own); extras of an
+            // adapter's intent are not reliably handed to the service.
             val adapter = Intent(context, TasksWidgetService::class.java).apply {
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
-                data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+                data = Uri.parse("meghnaad://widget/$id")
             }
             views.setRemoteAdapter(R.id.list, adapter)
             views.setEmptyView(R.id.list, R.id.empty)
@@ -57,6 +63,13 @@ class TasksWidget : AppWidgetProvider() {
         private fun activity(context: Context, target: Class<*>, code: Int, mutable: Boolean = false): PendingIntent {
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
             return PendingIntent.getActivity(context, code, Intent(context, target), flags)
+        }
+
+        /** Draw one widget again, after its settings changed. */
+        fun update(context: Context, id: Int) {
+            val manager = AppWidgetManager.getInstance(context)
+            manager.updateAppWidget(id, views(context, id))
+            manager.notifyAppWidgetViewDataChanged(id, R.id.list)
         }
 
         /** Redraw the list from the engine, wherever the widget is placed. */

@@ -9,9 +9,10 @@ import android.widget.RemoteViewsService
 
 /** Feeds the widget's list from the engine. */
 class TasksWidgetService : RemoteViewsService() {
-    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = Factory(applicationContext)
+    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory =
+        Factory(applicationContext, intent.data?.lastPathSegment?.toIntOrNull() ?: 0)
 
-    private class Factory(private val context: Context) : RemoteViewsFactory {
+    private class Factory(private val context: Context, private val widgetId: Int) : RemoteViewsFactory {
         private var tasks: List<WidgetTask> = emptyList()
 
         override fun onCreate() {}
@@ -19,7 +20,7 @@ class TasksWidgetService : RemoteViewsService() {
         /** Called off the main thread whenever the widget asks to be redrawn: read the engine again. */
         override fun onDataSetChanged() {
             tasks = try {
-                Tasks.report(context, "next", LIMIT)
+                Tasks.report(context, WidgetPrefs.list(context, widgetId))
             } catch (e: Exception) {
                 Log.e("TasksWidget", "could not read the tasks", e)
                 emptyList()
@@ -54,7 +55,4 @@ class TasksWidgetService : RemoteViewsService() {
         override fun hasStableIds() = true
     }
 
-    private companion object {
-        const val LIMIT = 12
-    }
 }

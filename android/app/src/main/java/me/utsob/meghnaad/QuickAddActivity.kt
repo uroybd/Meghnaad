@@ -38,7 +38,7 @@ class QuickAddActivity : Activity() {
                     problem.text = failed
                     problem.visibility = android.view.View.VISIBLE
                 } else {
-                    TasksWidget.refresh(this)
+                    Widgets.refreshAll(this)
                     SyncWorker.runNow(this)
                     finish()
                 }
