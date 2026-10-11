@@ -14,7 +14,8 @@ describe("a request cut off by Cloudflare's resource limit (1102)", () => {
       .mockResolvedValueOnce(ok({ config: {} }));
     vi.stubGlobal('fetch', fetchMock);
     await expect(getConfig()).resolves.toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // (The engine starting after it asks which hooks there are; that is not what is counted here.)
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/config')).toHaveLength(2);
   });
 
   it('gives up after one more try, saying what happened', async () => {

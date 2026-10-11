@@ -13,6 +13,7 @@ vi.mock('./engine/client.svelte', () => ({
     start: async () => undefined,
     stop: () => undefined,
     setConfig: async () => null,
+    setHooks: async () => null,
     pushSoon: () => undefined,
     sync: async () => undefined,
     forget: async () => undefined,

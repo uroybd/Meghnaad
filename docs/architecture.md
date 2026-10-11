@@ -43,7 +43,7 @@ flowchart TB
     cmds["task commands<br/>(settings.json)"]
     rev["tasksh review"]
     spa["Svelte app<br/>(draws results)"]
-    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
+    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core"]
     tcw["TaskChampion (Rust)"]
     mem[("Replica in memory<br/>saved copy in IndexedDB")]
     cmds -.-> spa
@@ -55,7 +55,7 @@ flowchart TB
     direction TB
     access{{"Cloudflare Access<br/>sign-in and token check"}}
     assets["Static assets<br/>the app and the engine (.wasm)"]
-    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>key in a Worker secret"]
+    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>runs your hooks (Lua)<br/>key in a Worker secret"]
     access --> assets
     access --> wk
   end
@@ -65,6 +65,7 @@ flowchart TB
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
   tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
   spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
+  eng -. "a hook call: /api/run" .-> access
   wk <-- "R2 binding" --> bucket
   assets -. "loaded once, then cached" .-> spa
 
@@ -101,11 +102,29 @@ and checks it. The engine answers one message at a time, in the order they arriv
    `/api/config/*` for the taskrc and urgency, `GET`/`PUT /api/settings` for `settings.json`, and
    `PUT /api/config/engine`, which saves what a `config` command changed (the engine worked it out in the page; the
    Worker refuses anything sync- or credential-like and keeps the previous version for a restore).
-5. **`GET /api/health`** says whether the Worker can reach the bucket and open it with the secret (it derives the key);
-   it holds no tasks and runs no engine.
+5. **Hooks.** The user's Lua script is its own object in the bucket (`web/hooks.lua`, with the previous one beside it),
+   not part of `settings.json`, since the page reads that in full and a script may hold secrets. `POST /api/run` calls
+   one hook (`{ fn, args, now, tz, … }`; the answer is `{ ok, value, say }`, or `{ ok: false, error, say }` for a refusal
+   or a failure); `GET /api/hooks/defined` says which of the four the script defines, so the engine asks only for those;
+   `GET`/`PUT /api/hooks` read and save the script (for the editor alone; a script that does not load is refused);
+   `POST /api/hooks/check` says what is wrong with a script and where, as you type. The VM is built once per Worker
+   instance and reused, and again when the script changes.
+6. **`GET /api/health`** says whether the Worker can reach the bucket and open it with the secret (it derives the key);
+   it holds no tasks.
 
-There is nothing on the Worker that runs a command: if the page cannot start the engine (it needs Web Workers and
-WebAssembly, and a Content-Security-Policy that allows `'wasm-unsafe-eval'`), it says so, instead of asking the server.
+There is no engine on the Worker, so nothing there runs a command; only your hooks run there (a hook call is a task in and a task
+out, never the replica). If the page cannot start the engine (it needs Web Workers and WebAssembly, and a
+Content-Security-Policy that allows `'wasm-unsafe-eval'`), it says so, instead of asking the server.
+
+**Hooks, in order.** For a command the engine runs `on_launch` (if the script defines it) before anything; `on_add` and
+`on_modify` for each task as the command builds the change, just before it is committed, each a request that returns the
+task, which `diff` turns into changes in the same batch (a refusal ends the command and writes nothing); and `on_exit`
+last. A hook that cannot be reached is skipped with a warning that says so, and the command goes on. The engine's
+`HookHost` is `async` for this; `RemoteHooks` (`crates/browser`) is the one that calls the Worker, and `LuaHooks` runs a
+script in-process, which is how a host with no Worker (the Android app, later) uses the same script and the same runner.
+A script's cold start is 3-10 ms and a warm call under a millisecond (measured under Node's V8, not on a Worker): that is
+why the VM is kept, and why a script is bounded by an instruction budget (5 million) and 32 MB.
+
 
 ## `tc-core`: the engine
 
@@ -120,7 +139,7 @@ Pure Rust, no I/O of its own, tested natively. The browser engine, the Node harn
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and the change history of a task |
 | **Colour** | `color` | Taskwarrior's colour specifications and how they blend, the rules that colour a task (with precedence and merge), the `colors` command and the history graph's colours; checked against the escape codes of the real `task` |
 | **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` (and `_get`, which reads the same DOM) and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; `import` reads it back (a port of `CmdImport`, checking the whole file before it writes anything); the app's pages use a separate, hidden `_rows`, and the detail view's History a hidden `_history <uuid>` that reads one task's operations without loading the rest |
-| **Hooks** | `hooks`, `my_hooks` | `hooks` runs your own Rust at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): compiled into the engine, wherever it runs, fed a task and handing one back, with what they print returned to the Console; `my_hooks` is the one file you edit, kept apart so upstream updates rarely touch it |
+| **Hooks** | `hooks`, `lua_hooks` (+ `lua/prelude.lua`) | `hooks` runs a user's code at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): any `HookHost` (async, so a hook may be a request) or plain `Hooks`, with what they print returned to the Console, the task as JSON (`task_to_json` / `task_from_json`) and `diff` turning what came back into changes. `lua_hooks` (the `lua` feature) runs a Lua script in a sandbox (`LuaRunner`: JSON in, JSON out) and as in-process hooks (`LuaHooks`); the prelude is the Lua library a script gets: a task, tags as a set, dates and durations with arithmetic |
 | **Settings** | `taskrc`, `rc_url`, `settings`, `appsettings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; `rc_url` is which links the Worker may fetch a taskrc from (HTTPS to a public host name only, redirects included) and the GitHub/GitLab page-to-raw rewrite; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`); `appsettings` checks that the app's own `settings.json` is a JSON object of a sensible size before the Worker stores it |
 
 ### How a command runs
@@ -280,7 +299,7 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 - **Pages** (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`, `SettingsPage`) are thin. Each
   asks the engine for a result and hands it to a shared component, so the console and the pages draw the same thing.
 - **Settings** is one page, `SettingsPage`, with a tab per panel: `TaskrcPanel` (the taskrc text, themes, import),
-  `TaskshPanel`, `CommandsPanel` and `UrgencyPanel`. Each has its own Apply and tells the page when it has edits, and all three stay
+  `TaskshPanel`, `CommandsPanel`, `HooksPanel` and `UrgencyPanel`. Each has its own Apply and tells the page when it has edits, and all three stay
   mounted so edits survive a change of tab. `tasksh.ts` decides what the `reviewed` UDA and the `_reviewed` report need
   and which `config` lines write them; the panel sends those to the engine like any other command, so nothing
   about tasksh is in the Worker.
@@ -295,6 +314,10 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   top bar or by **Open as card**, which moves a console review there). `tasksh.ts` has what is pure: reading `review N`,
   the menu keys, tasksh's wording and the setup's questions (the setup is the tasksh tab's `config` lines, asked one part
   at a time). The editor the `e` choice opens reports its closing through `App.svelte` (`review.editClosed`).
+- **The hooks editor** (`HooksPanel`, `hookEditor.ts`) is CodeMirror with Lua highlighting, loaded only when the tab opens (about
+  107 KB compressed, its own chunk). The panel asks the Worker whether the script is all right a moment after typing
+  (`POST /api/hooks/check`, the same Lua that will run it) and marks the line; a script that does not load cannot be
+  saved, an empty one removes the hooks. `api.ts` tells the engine which hooks the saved script defines (`refreshHooks`).
 - **Task commands** are the browser's. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name,
   command, icon? }] }`, other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s
   `appsettings` checks that it is a JSON object under 64 KB and nothing more). `taskCommands.ts` writes a command out on
@@ -337,6 +360,7 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/cli_exec.rs` | Real command lines against a real replica: writes, reports, confirmations, recurrence, calc, `show`/`config`, hooks (injected through `Options.hooks`) |
 | `tests/sync_cost.rs`, `replica_sync.rs` | R2 call counts per sync; two replicas converging |
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
+| `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
 | `npm --prefix web test` | The browser-side logic: formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |

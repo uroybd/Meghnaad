@@ -6,6 +6,8 @@ declare module 'tc-engine' {
     constructor();
     /** The settings (the `config` of `GET /api/config`), as JSON text. */
     set_config(json: string): void;
+    /** Which hooks the saved script defines, as JSON text: only these are called. */
+    set_hooks(defined: string): void;
     /** Go on from what `save` returned; throws if that is unusable. */
     restore(bytes: Uint8Array): void;
     save(): Promise<Uint8Array>;

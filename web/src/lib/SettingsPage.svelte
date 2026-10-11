@@ -1,20 +1,32 @@
 <script lang="ts">
   import CommandsPanel from './CommandsPanel.svelte';
+  import HooksPanel from './HooksPanel.svelte';
   import { store } from './store.svelte';
   import TaskrcPanel from './TaskrcPanel.svelte';
   import TaskshPanel from './TaskshPanel.svelte';
   import UrgencyPanel from './UrgencyPanel.svelte';
 
-  type Tab = 'taskrc' | 'tasksh' | 'commands' | 'urgency';
+  type Tab = 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
     { id: 'taskrc', label: 'taskrc', hint: 'UDAs, reports, contexts, colours and the rest of your taskrc' },
     { id: 'tasksh', label: 'tasksh', hint: 'What tasksh review needs: the reviewed UDA and the _reviewed report' },
     { id: 'commands', label: 'Commands', hint: 'Words that stand for a command line, and show under ⋯ on a task' },
+    {
+      id: 'hooks',
+      label: 'Hooks',
+      hint: 'Lua scripts that run when a command starts, adds or changes a task, and ends',
+    },
     { id: 'urgency', label: 'Urgency', hint: 'Urgency coefficients and inheritance' },
   ];
 
   // Each tab keeps its own edits while another is shown, and says so with a dot.
-  let dirty = $state<Record<Tab, boolean>>({ taskrc: false, tasksh: false, commands: false, urgency: false });
+  let dirty = $state<Record<Tab, boolean>>({
+    taskrc: false,
+    tasksh: false,
+    commands: false,
+    hooks: false,
+    urgency: false,
+  });
 
   function onkeydown(e: KeyboardEvent) {
     const at = TABS.findIndex((t) => t.id === store.settingsTab);
@@ -81,6 +93,14 @@
     hidden={store.settingsTab !== 'commands'}
   >
     <CommandsPanel ondirty={(v) => (dirty.commands = v)} />
+  </div>
+  <div
+    role="tabpanel"
+    id="settings-panel-hooks"
+    aria-labelledby="settings-tab-hooks"
+    hidden={store.settingsTab !== 'hooks'}
+  >
+    <HooksPanel ondirty={(v) => (dirty.hooks = v)} />
   </div>
   <div
     role="tabpanel"

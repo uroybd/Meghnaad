@@ -39,7 +39,7 @@ jobs:
       # `-D warnings`: the code is clippy-clean, keep it that way. The Worker is built for WebAssembly,
       # so it is linted for that target.
       - name: Clippy (engine)
-        run: cargo clippy -p tc-core --all-targets -- -D warnings
+        run: cargo clippy -p tc-core --all-targets --features lua -- -D warnings
 
       - name: Clippy (Worker, WebAssembly)
         run: cargo clippy -p tw-worker --target wasm32-unknown-unknown -- -D warnings

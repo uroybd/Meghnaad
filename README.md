@@ -47,8 +47,8 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
   Lucide. It works typed (`3 fail`, `project:Home fail`) and from a **⋯** menu on a task and on the selected tasks. Kept in
   the app's own `settings.json`.
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
-- **Hooks, as Rust.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions you deploy with the Worker
-  ([Hooks](#hooks)).
+- **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions in a script you edit in Settings,
+  kept in your bucket and run on the Worker ([Hooks](#hooks)).
 - **Works on a phone**, with time tracking, reminders and a console with completion.
 
 > **Status.** Verified against the released `task` 3.5.0 on a local S3-compatible server, in both directions (tasks,
@@ -141,7 +141,7 @@ flowchart TB
     cmds["task commands<br/>(settings.json)"]
     rev["tasksh review"]
     spa["Svelte app<br/>(draws results)"]
-    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core<br/>+ your hooks"]
+    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core"]
     tcw["TaskChampion (Rust)"]
     mem[("Replica in memory<br/>saved copy in IndexedDB")]
     cmds -.-> spa
@@ -153,7 +153,7 @@ flowchart TB
     direction TB
     access{{"Cloudflare Access<br/>sign-in and token check"}}
     assets["Static assets<br/>the app and the engine (.wasm)"]
-    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>key in a Worker secret"]
+    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>runs your hooks (Lua)<br/>key in a Worker secret"]
     access --> assets
     access --> wk
   end
@@ -163,6 +163,7 @@ flowchart TB
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
   tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
   spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
+  eng -. "a hook call: /api/run" .-> access
   wk <-- "R2 binding" --> bucket
   assets -. "loaded once, then cached" .-> spa
 
@@ -178,11 +179,12 @@ flowchart TB
   commands.
 - **The engine runs in your browser.** Taskwarrior's rules live in one place, `tc-core`, compiled to WebAssembly and run
   in a Web Worker in the page. It holds your tasks in memory, so a command costs no round trip and uses none of the
-  Worker's CPU. Your hooks run there too. The Svelte app only draws.
+  Worker's CPU. Only your hooks run elsewhere, on the Worker (below). The Svelte app only draws.
 - **The bucket** holds TaskChampion's standard cloud layout, encrypted client-side. The browser's replica and your CLI
   are interchangeable replicas of it.
 - **The Worker keeps the secret.** It checks Cloudflare Access, and opens and seals the versions that pass between the
-  bucket and your browser (`/api/tc/*`), so the encryption secret never leaves it. It parses no tasks.
+  bucket and your browser (`/api/tc/*`), so the encryption secret never leaves it. It parses no tasks. It also runs your
+  hooks: the engine sends it a task and gets the task back (`/api/run`).
 - **The browser keeps a copy** in IndexedDB, so a visit starts from where the last one ended and only pulls what is new.
   It syncs after every write, when you come back to the tab, and every 30 seconds while you look at it; other tabs are
   told when one pushes.
@@ -197,7 +199,7 @@ flowchart TB
 | Offline        | Works                      | Changes work and are kept; they go up when the connection is back. The page itself needs a connection to load |
 | Encryption key | Only on your machine       | In a Worker secret; the Worker opens and seals what passes through it                                         |
 | Task ids       | Local to that replica      | Computed separately, so they differ                                                                           |
-| Hooks          | Scripts in `~/.task/hooks` | Rust functions in `my_hooks.rs`, compiled into the engine; change one and redeploy                            |
+| Hooks | Scripts in `~/.task/hooks` | Lua functions in a script kept in the bucket, edited in Settings; they run on the Worker |
 
 More in [Architecture](docs/architecture.md).
 
@@ -236,7 +238,7 @@ then the app shows a setup page and nothing is reachable. Pointing your `task` C
 ## Using it
 
 The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown** and **Console**, and **Settings**
-(the taskrc, tasksh, your own commands and urgency). Anything you can click
+(the taskrc, tasksh, your own commands, hooks and urgency). Anything you can click
 you can type:
 
 ```
@@ -254,26 +256,23 @@ ticks. More in **[Using Meghnaad](docs/using.md)**.
 
 ## Hooks
 
-Taskwarrior's four hooks are Rust functions in [`crates/tc-core/src/my_hooks.rs`](crates/tc-core/src/my_hooks.rs),
-built into the engine, which runs in your browser. A hook gets the
-task, returns it (changed or not) or refuses the command, and what it prints appears in the Console. All four ship empty. Changing one means rebuilding (`npm run dev` does it on save, `npm run
-deploy` for the real one). See [Hooks](docs/using.md#hooks) and
-[keeping them as a patch](docs/using.md#keeping-your-hooks-across-updates).
+Taskwarrior's four hooks are functions in a **Lua script** you edit in **Settings → Hooks**, with highlighting and errors
+marked as you type. A hook gets the task (tags as a set, dates you can calculate with), returns it changed or refuses the
+command, and what it prints appears in the Console. The script is kept in your bucket and runs on the Worker, so changing
+it needs no rebuild or deploy and a script can hold secrets that never reach the page. See
+[Hooks](docs/using.md#hooks).
 
-**How much fits.** Hooks are compiled into the engine your browser downloads: about **595 KB compressed** (gzip), once, then
-cached. The Worker carries no hooks (it is about 355 KB compressed against Cloudflare's 1 MB limit), so the limit that
-matters is how long a first visit takes to download. Measured on a release build:
+```lua
+function on_add(task)
+  if task:in_project("Work") then
+    task.tags:add("office")
+    say("Tagged +office.")
+  end
+end
+```
 
-| Hook code | Added (compressed) |
-| --- | --- |
-| ~300 lines | +4 KB |
-| ~1,400 lines | +10 KB |
-| ~5,700 lines | +19 KB |
-
-Generated code compresses unusually well. For planning, use about 12 bytes per line of ordinary code. What really spends
-the size is a **dependency** (a regex engine can cost hundreds of KB), so measure before adding one:
-`npm run build:engine && gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c`. The build drops debug function names
-(about 40% of the file); `KEEP_WASM_NAMES=1 npm run build:engine` keeps them for readable stack traces.
+The Lua runs in a sandbox (`string`, `table` and `math` only; no files, no network) and is stopped if it runs too long. It
+adds about 265 KB (compressed) to the Worker; the engine in the browser is unaffected.
 
 ## Security
 
@@ -350,7 +349,7 @@ the browser and goes up when it works again.
 - **`undo`** lives in the page's memory and is lost when the tab is closed or reloaded.
 - **Dates you type** are read in your `dateformat`, then as ISO or words (`friday`, `3d`). ISO week and ordinal dates
   (`2026-W52`) aren't understood.
-- **Hooks are compiled in**: no network or files. `undo` doesn't run them
+- **Hooks** are Lua with no network or files, and each is a request to the server. `undo` doesn't run them
   ([Hooks](docs/using.md#hooks)).
 - **Not every `taskrc` option applies:** terminal, colour and local-file options don't make sense here, and `include`
   and `purge.on-sync` aren't supported ([taskrc support](docs/taskrc-support.md)).
