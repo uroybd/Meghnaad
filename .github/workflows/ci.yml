@@ -48,6 +48,11 @@ jobs:
       - name: Clippy (engine for the browser, WebAssembly)
         run: cargo clippy -p tc-browser --target wasm32-unknown-unknown -- -D warnings
 
+      # The engine in the Android app (native, with the S3 client and the JNI layer); linted for this machine, which
+      # checks the same code.
+      - name: Clippy (engine for Android)
+        run: cargo clippy -p tc-android --all-targets -- -D warnings
+
   web:
     name: Web app and scripts (format, lint, tests, type check)
     runs-on: ubuntu-latest

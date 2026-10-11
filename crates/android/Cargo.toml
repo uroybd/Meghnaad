@@ -1,0 +1,24 @@
+[package]
+name = "tc-android"
+version = "0.1.0"
+description = "The Taskwarrior engine for the Android app: tc-core as a native library, syncing straight with R2 over S3"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+async-trait = "0.1"
+hmac = "0.12"
+jni = "0.21"
+pollster = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+taskchampion = { version = "3.1", default-features = false }
+# `lua`: hooks are a Lua script here too, run on the phone.
+tc-core = { path = "../tc-core", features = ["lua"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+uuid = { version = "1", default-features = false }
