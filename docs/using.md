@@ -579,11 +579,22 @@ CPU time, but it is time your command waits.
 
 ## On a phone
 
-The layout adapts below about 760 px: the report list moves into a menu (☰), tasks become cards with big buttons, the
-header sort becomes a **Sort** picker, forms and the detail view go full screen, and a **+** button adds a task. The
-prompt gets **Complete** (⇥) and **Previous command** (⌃) buttons since there's no Tab or arrow key, and completions
-can be tapped. You can install it to your home screen from the browser menu, or use [the Android app](android.md), which
-keeps the tasks on the phone and has a widget.
+The layout adapts below about 760 px (a phone, or a narrow window):
+
+- **The menu (☰)** holds everything the top bar has on a desktop: **Tasks** (which opens into the list of reports, naming the
+  one you are on), Projects, Tags, Summary, Calendar, Burndown, Console, Review, Reminders and Settings, with the quick-add
+  field above them. The bar itself keeps what is live: the running task and the active context.
+- **Tasks are cards.** The description comes first with a tick box and the task's number; then small marks: priority (a
+  pill, and a stripe down the card's edge), project, tags (small pills you can tap to filter), due date (red once it has
+  passed), urgency, and the other columns of the report by name. A started task is tinted. The buttons (done, start or stop,
+  edit, delete, **⋯**) share the marks' line when there is room.
+- **Sorting** is a **Sort** picker (there are no column headers to tap), forms and the detail view go full screen, and a
+  **+** button adds a task.
+- The prompt gets **Complete** (⇥) and **Previous command** (⌃) buttons since there's no Tab or arrow key, and completions
+  can be tapped.
+
+You can install the web app to your home screen from the browser menu, or use [the Android app](android.md), which keeps
+the tasks on the phone, works offline, syncs straight with your bucket and has home-screen widgets.
 
 ## Different from the desktop
 

@@ -5,12 +5,15 @@
 <h1 align="center">Meghnaad</h1>
 
 <p align="center">
-  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser. The Rust engine runs in the page, a small Worker on
-  Cloudflare keeps the secret, your existing R2 bucket is the sync store, Cloudflare Access is the login.
+  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser and on your phone. The Rust engine runs in the page
+  (and natively in the Android app), a small Worker on Cloudflare keeps the secret, your existing S3 or R2 bucket is the
+  sync store, Cloudflare Access is the login.
 </p>
 
 <p align="center">
   <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" /></a>
+  &nbsp;
+  <a href="https://github.com/uroybd/Meghnaad/releases/latest"><b>Get the Android app (APK)</b></a>
 </p>
 
 ---
@@ -18,6 +21,8 @@
 Meghnaad is another **replica** of your Taskwarrior data. The `task` CLI keeps syncing to R2 as it does today; this app
 reads and writes the same bucket. A task added here shows up on your laptop after `task sync`, and the other way round.
 It is **console-first** (type `task` commands) with tables, forms and charts beside it. Both use the same command engine.
+It comes as a **web app** you deploy to Cloudflare and as an **Android app** with home-screen widgets that keeps the
+tasks on the phone and syncs straight with your bucket.
 
 ## Philosophy
 
@@ -48,11 +53,20 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
   the app's own `settings.json`.
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
 - **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions in a script you edit in Settings,
-  kept in your bucket and run on the Worker ([Hooks](#hooks)).
-- **Works on a phone**, with time tracking, reminders and a console with completion.
+  kept in your bucket and run on the Worker, or on the phone in the Android app ([Hooks](#hooks)).
+- **Works on a phone.** The layout adapts (a menu for the pages, tasks as cards with their marks, time tracking, reminders,
+  a console with completion), and there is a native **[Android app](#android-app)**.
+- **An Android app and widgets.** The engine runs on the phone, so it works offline, syncs straight with any
+  S3-compatible bucket (no Worker, no Cloudflare Access), and has three home-screen widgets: a task list for any report,
+  a burndown and a calendar ([the Android app](docs/android.md)).
 
 > **Status.** Verified against the released `task` 3.5.0 on a local S3-compatible server, in both directions (tasks,
 > UDAs, reports, recurring series, snapshots, purge, import), and in use on a real R2 bucket.
+
+<p align="center">
+  <img src="docs/screenshots/android-widgets.png" alt="The Android app's three widgets: a task list, a burndown and a calendar" width="900" />
+  <br /><sub>The Android app's widgets: tasks (any report, the fields you choose), a burndown and a calendar</sub>
+</p>
 
 <p align="center">
   <img src="docs/screenshots/tasks.png" alt="The Tasks view: the next report as a table, with the prompt underneath" width="900" />
@@ -115,7 +129,7 @@ It is **console-first** (type `task` commands) with tables, forms and charts bes
 | --- | --- |
 | **[Using Meghnaad](docs/using.md)** | Pages, console, confirmations, hooks, recurrence, urgency, time tracking |
 | **[Deploying](docs/deploy.md)** | Setup, GitHub Actions deploy, Access, connecting `task`, troubleshooting |
-| **[The Android app](docs/android.md)** | An app with a home-screen widget, the engine on the phone, syncing straight with S3 |
+| **[The Android app](docs/android.md)** | Install, connect (or use without a bucket), the three widgets, sharing settings and hooks, building it |
 | **[Architecture](docs/architecture.md)** | The engine, sync, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
 
@@ -150,6 +164,16 @@ flowchart TB
     spa -- "what you type or click" --> eng --> tcw --> mem
   end
 
+  subgraph phone["Your phone: Meghnaad for Android"]
+    direction TB
+    wg["Widgets<br/>tasks · burndown · calendar"]
+    app["The same Svelte app<br/>in a WebView"]
+    nat["Engine (Rust, native)<br/>tc-core, hooks (Lua)"]
+    rep[("Replica in a file<br/>settings and keys on the phone")]
+    wg --> nat
+    app --> nat --> rep
+  end
+
   subgraph edge["Cloudflare"]
     direction TB
     access{{"Cloudflare Access<br/>sign-in and token check"}}
@@ -162,6 +186,7 @@ flowchart TB
   bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
+  nat <-- "S3 API, signed on the phone<br/>any S3-compatible store" --> bucket
   tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
   spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
   eng -. "a hook call: /api/run" .-> access
@@ -244,6 +269,24 @@ Setup asks for your sync bucket and encryption secret, deploys, and tells you wh
 then the app shows a setup page and nothing is reachable. Pointing your `task` CLI at R2 is in
 **[Deploying](docs/deploy.md)**. To deploy from GitHub instead, run the manual **Deploy** workflow
 ([setup](docs/deploy.md#d-from-github-actions-manual)).
+
+## Android app
+
+The same app on your phone, with the engine on the phone. It works offline, keeps your keys in the Android Keystore, and
+syncs straight with your bucket over S3 (R2, AWS S3, MinIO, ...), so it needs no Worker and no Cloudflare Access.
+
+1. Download `meghnaad-<version>.apk` from the [latest release](https://github.com/uroybd/Meghnaad/releases/latest) and
+   open it (allow installing from your browser or files app when asked). It is about 4.5 MB, for 64-bit ARM phones, and
+   later releases update it in place.
+2. Enter your bucket's S3 endpoint, bucket, region, access key and secret, and the encryption secret (the same as your
+   taskrc's `sync.encryption_secret`), or press **Use on this phone only** to start without syncing and connect later in
+   **Settings → Sync**.
+3. Long-press the home screen, **Widgets → Meghnaad**: **Tasks** (any report, a filter, the fields you tick; tick a task
+   done, tap one to open it, **+** to add), **Burndown** and **Calendar**.
+
+Settings and hooks can be kept in step with the web app's through the bucket (two switches under **Settings → Sync**);
+the secrets for hooks never are. Everything about it, including building it yourself, is in
+**[the Android app](docs/android.md)**.
 
 ## Using it
 
@@ -336,8 +379,10 @@ npm run test:auth             # Cloudflare Access: forged, expired, wrong-audien
 conditional writes, for example `docker run -d --name tw-s3 -p 18333:8333 chrislusf/seaweedfs server -s3 -dir=/data`.
 It does not touch a running dev server.
 
-CI (`.github/workflows/ci.yml`) runs tests, formatting, linting and the type check on every push and pull request.
-Deploying is the separate manual workflow.
+CI (`.github/workflows/ci.yml`) runs tests, formatting, linting and the type check on every push and pull request (and the
+Android app's unit tests). Deploying is the separate manual workflow. A release is a version in `package.json` and a tag
+`v<version>`: the Release workflow publishes the web package and the signed Android APK together
+([Making a release](docs/deploy.md#making-a-release-for-maintainers)).
 
 Taskwarrior's behaviour is ported from its source and checked against the real `task`: when changing filters, sorting,
 urgency, dates or confirmations, read the C++ first and compare ([method](docs/architecture.md)).
@@ -355,8 +400,8 @@ the browser and goes up when it works again.
 - **Icons beyond the bundled ones** are fetched from a CDN when first shown (see Security). Offline, the ones your
   commands use are remembered by the browser and the rest show a terminal icon.
 - **Single user:** one set of settings, shared by every browser that signs in.
-- **No offline start:** changes work offline and are kept, but the page itself is loaded from the Worker, so it needs a
-  connection to open (there is no service worker yet).
+- **No offline start (web):** changes work offline and are kept, but the page itself is loaded from the Worker, so it
+  needs a connection to open (there is no service worker yet). The Android app has no such limit: it opens offline.
 - **Browser support:** the engine needs Web Workers and WebAssembly (every current browser has them); the first visit
   downloads it (about 600 KB compressed, then cached). If the page cannot start it, it says why and runs no command.
 - **Old versions** (over 180 days old and covered by a snapshot) are cleaned up as the CLI does, after about one push in
@@ -368,7 +413,9 @@ the browser and goes up when it works again.
   ([Hooks](docs/using.md#hooks)).
 - **Not every `taskrc` option applies:** terminal, colour and local-file options don't make sense here, and `include`
   and `purge.on-sync` aren't supported ([taskrc support](docs/taskrc-support.md)).
-- **Phone layout** was checked in an emulated browser; try it on your device.
+- **The Android app** is for 64-bit ARM phones (not 32-bit ones), importing a taskrc from a link is not there yet, and
+  it has been tried on an Android 16 emulator more than on real phones: please
+  [file an issue](https://github.com/uroybd/Meghnaad/issues) about what you find.
 
 ## About the name
 

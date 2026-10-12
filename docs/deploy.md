@@ -185,6 +185,13 @@ branch (and keeps the APK as the run's artifact), which is how to try a build be
 makes the web package from a finished build, so `node scripts/build.mjs && node scripts/package-release.mjs` produces
 the same thing in `release/` on your machine. The workflow does not run the tests: release a commit CI has passed.
 
+## The Android app
+
+It does not use the Worker or Access: it syncs straight with the bucket, so deploying the web app is not a step toward it.
+Install the APK from the [latest release](https://github.com/uroybd/Meghnaad/releases/latest) and give it the same bucket
+and encryption secret ([the Android app](android.md)). With the web app deployed, the two can also share their settings
+and hooks through the bucket (**Settings → Sync** on the phone).
+
 ## Connect your `task` CLI
 
 Skip this if your CLI already syncs to the bucket. Otherwise create an **R2 API token** (R2 → *Manage R2 API Tokens* →

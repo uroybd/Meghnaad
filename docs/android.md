@@ -10,15 +10,16 @@ keys stay on the phone.
 
 ## What you get
 
-- Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings.
+- Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings, with a layout made
+  for a phone: a menu for the pages, and tasks as cards ([On a phone](using.md#on-a-phone)).
 - **Works offline.** The engine and the tasks are on the phone; changes sync when there is a network.
 - **Home-screen widgets**, three of them, each with its own settings (long-press the widget, then its pencil; the same
   screen opens when you add it):
   - **Tasks**: the tasks of any report, the built-in ones and your own, narrowed by a filter (`project:Home +work`), as
-    many as you choose, with a title of your own. Tap a circle to mark a task done, the text to open the app, **+** to
-    add a task by typing it as in the console (`Buy milk due:tomorrow +home`), and the sync button to pull now. Under
-    each task it shows the fields you tick: project, due date, priority, tags, urgency, age, scheduled, wait, recurrence,
-    task number, notes.
+    many as you choose, with a title of your own. Tap a circle to mark a task done, the text to open **that task** in
+    the app (open or not), **+** to add a task by typing it as in the console (`Buy milk due:tomorrow +home`), and the
+    sync button to pull now. Under each task it shows the fields you tick: project, due date, priority, tags, urgency,
+    age, scheduled, wait, recurrence, task number, notes.
   - **Burndown**: daily, weekly or monthly bars of the tasks a filter picks: finished at the bottom, then started, then
     pending, with how long it would take to clear them at this pace.
   - **Calendar**: a month with today circled and a dot on the days with something due (red when overdue, amber today,

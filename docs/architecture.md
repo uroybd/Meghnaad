@@ -51,6 +51,16 @@ flowchart TB
     spa -- "what you type or click" --> eng --> tcw --> mem
   end
 
+  subgraph phone["Your phone: Meghnaad for Android"]
+    direction TB
+    wg["Widgets<br/>tasks · burndown · calendar"]
+    app["The same Svelte app<br/>in a WebView"]
+    nat["Engine (Rust, native)<br/>tc-core, hooks (Lua)"]
+    rep[("Replica in a file<br/>settings and keys on the phone")]
+    wg --> nat
+    app --> nat --> rep
+  end
+
   subgraph edge["Cloudflare"]
     direction TB
     access{{"Cloudflare Access<br/>sign-in and token check"}}
@@ -63,6 +73,7 @@ flowchart TB
   bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
 
   tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
+  nat <-- "S3 API, signed on the phone<br/>any S3-compatible store" --> bucket
   tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
   spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
   eng -. "a hook call: /api/run" .-> access
