@@ -110,7 +110,10 @@ jobs:
 
       - name: Generate the Capacitor files
         working-directory: web
-        run: npx cap update android
+        # It wants the web app's folder to exist, though nothing from it is used here.
+        run: |
+          mkdir -p dist && touch dist/index.html
+          npx cap update android
 
       - uses: actions/setup-java@v4
         with:
