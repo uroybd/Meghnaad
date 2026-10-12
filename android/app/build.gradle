@@ -14,7 +14,7 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // The engine is Rust (crates/android), built for these by scripts/build-android.mjs.
         ndk {
-            abiFilters "arm64-v8a", "x86_64"
+            abiFilters(*(System.getenv("ANDROID_ABIS") ?: "arm64-v8a,x86_64").split(","))
         }
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -34,10 +34,19 @@ android {
             }
         }
     }
+    // Libraries are packed compressed, not stored whole for mapping: the download is smaller (a phone unpacks them on install).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
     buildTypes {
         release {
             if (System.getenv("ANDROID_KEYSTORE_FILE")) signingConfig = signingConfigs.release
-            minifyEnabled false
+            // Unused code and resources are cut (R8): about half of what the app would otherwise carry of Android's and
+            // Capacitor's libraries. What is looked up by name is kept in proguard-rules.pro.
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }

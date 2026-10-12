@@ -11,6 +11,9 @@ import { ROOT, capture, has, run } from './deploy-lib.mjs';
 import { currentVersion } from './version.mjs';
 
 const release = process.argv.includes('--release');
+// A release is for phones (arm64); a debug build also runs in the emulator on an Intel machine (x86_64).
+const abis = (process.env.ANDROID_ABIS ?? (release ? 'arm64-v8a' : 'arm64-v8a,x86_64')).split(',');
+const targetOf = { 'arm64-v8a': 'aarch64-linux-android', x86_64: 'x86_64-linux-android' };
 const step = (m) => console.log(`\n[android] ${m}`);
 const must = (r, what) => {
   if (r.status !== 0) {
@@ -28,7 +31,7 @@ if (!existsSync(sdk)) die(`the Android SDK is not at ${sdk}: install Android Stu
 const ndks = existsSync(join(sdk, 'ndk')) ? readdirSync(join(sdk, 'ndk')).sort() : [];
 if (!ndks.length) die('the Android NDK is missing: install it from Android Studio (SDK Manager > SDK Tools > NDK)');
 if (!has('cargo', ['ndk', '--version'])) die('cargo-ndk is missing: cargo install cargo-ndk');
-const targets = ['aarch64-linux-android', 'x86_64-linux-android'];
+const targets = abis.map((a) => targetOf[a]);
 const installed = capture('rustup', ['target', 'list', '--installed']).out;
 const missing = targets.filter((t) => !installed.includes(t));
 if (missing.length) must(run('rustup', ['target', 'add', ...missing]), 'installing the Rust targets');
@@ -43,6 +46,7 @@ if (!javaHome) die('a JDK 21 is needed: set JAVA_HOME, or install Android Studio
 
 const version = currentVersion();
 const env = {
+  ANDROID_ABIS: abis.join(','),
   ANDROID_VERSION_NAME: version.name,
   ANDROID_VERSION_CODE: String(version.code),
   ...process.env,
@@ -59,9 +63,13 @@ step('engine for the phone (Rust)');
 const libs = join(ROOT, 'android', 'app', 'src', 'main', 'jniLibs');
 rmSync(libs, { recursive: true, force: true });
 must(
-  run('cargo', ['ndk', '-t', 'arm64-v8a', '-t', 'x86_64', '-o', libs, 'build', '-p', 'tc-android', '--release'], {
-    env,
-  }),
+  run(
+    'cargo',
+    ['ndk', ...abis.flatMap((a) => ['-t', a]), '-o', libs, 'build', '-p', 'tc-android', '--profile', 'android'],
+    {
+      env,
+    },
+  ),
   'cargo ndk',
 );
 // cargo-ndk also copies every other dynamic library of the build (taskchampion's own); the app loads only ours.
@@ -70,6 +78,13 @@ for (const abi of readdirSync(libs))
 
 step('copying the web app into the project');
 must(run('npx', ['cap', 'sync', 'android'], { cwd: join(ROOT, 'web'), env }), 'cap sync');
+
+// What only the browser needs: its copy of the engine (the phone's is native), the Web Worker that runs it, and the
+// pictures for installing the web app.
+const assets = join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
+for (const f of readdirSync(join(assets, 'assets')))
+  if (/^tc_browser_bg-.*\.wasm$/.test(f) || /^engine\.worker-.*\.js$/.test(f)) rmSync(join(assets, 'assets', f));
+for (const f of ['logo.png', 'apple-touch-icon.png', 'site.webmanifest']) rmSync(join(assets, f), { force: true });
 
 step(release ? 'APK (release)' : 'APK (debug)');
 must(run('./gradlew', [release ? 'assembleRelease' : 'assembleDebug'], { cwd: join(ROOT, 'android'), env }), 'gradle');
