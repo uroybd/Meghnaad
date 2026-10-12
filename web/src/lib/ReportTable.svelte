@@ -237,6 +237,9 @@
             class:selected={store.detail?.uuid === row.uuid}
             class:picked={selectable && selection.has(row.uuid)}
             class:selectable
+            class:overdue={isOpen(row) && row.due != null && row.due < store.now}
+            class:started={row.start != null && row.end == null}
+            data-pri={row.priority ?? undefined}
             tabindex="0"
             aria-label="Open details: {row.description}"
             onclick={(e) => open(e, row)}
@@ -257,7 +260,7 @@
             {#each result.columns as col (col.spec)}
               {@const c = cell(col, row, ctx)}
               <td
-                class="{col.kind} {c.cls ?? ''}"
+                class="{col.kind} {c.cls ?? ''} col-{col.name.replace(/\W+/g, '-')}"
                 class:blank={!c.text && !c.lines?.length}
                 data-label={col.label}
                 style={col.name === 'priority' && row.priority
@@ -617,8 +620,12 @@
     margin-left: 6px;
   }
 
-  /* Phones: each task is a card. The first line is the description; the other columns follow as
-     small "label value" pairs, and the buttons get their own row. */
+  /*
+   * Phones: each task is a card. The description comes first, with the tick box beside it and the task's number in the
+   * corner; what is known of the task follows as a row of small marks (a few with an icon in place of their name); the
+   * buttons share that row when there is room, and take their own when there is not. A stripe down the left edge shows the
+   * priority, and a started task is tinted.
+   */
   @media (max-width: 760px) {
     .sortbar {
       display: flex;
@@ -637,16 +644,37 @@
       display: none;
     }
     tbody tr {
+      /* The little pictures, as masks, so they take the colour of the text. */
+      --i-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+      --i-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolyline points='12 6 12 12 16 14'/%3E%3C/svg%3E");
+      --i-flag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'/%3E%3Cline x1='4' x2='4' y1='22' y2='15'/%3E%3C/svg%3E");
+      --i-zap: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'/%3E%3C/svg%3E");
+      --i-calendar: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='18' x='3' y='4' rx='2'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");
       position: relative;
       display: flex;
       flex-wrap: wrap;
-      align-items: baseline;
-      gap: 2px 14px;
-      padding: 10px 12px 6px;
-      margin-bottom: 8px;
+      align-items: center;
+      gap: 6px 12px;
+      padding: 12px 12px 8px 15px;
+      margin-bottom: 10px;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: 14px;
       background: var(--panel);
+      /* The priority, as a stripe down the left edge. */
+      box-shadow: inset 4px 0 0 var(--stripe, transparent);
+    }
+    tbody tr[data-pri='H'] {
+      --stripe: var(--pri-h);
+    }
+    tbody tr[data-pri='M'] {
+      --stripe: var(--pri-m);
+    }
+    tbody tr[data-pri='L'] {
+      --stripe: var(--pri-l);
+    }
+    tbody tr.started {
+      --stripe: var(--accent);
+      background: color-mix(in srgb, var(--accent) 7%, var(--panel));
     }
     tr.gap {
       margin-top: 18px;
@@ -656,6 +684,8 @@
       margin: 14px 0 6px;
       padding: 0;
       border: 0;
+      border-radius: 0;
+      box-shadow: none;
       background: transparent;
     }
     tr.grouphead th {
@@ -665,32 +695,104 @@
     tr.gap td {
       border-top: 0;
     }
-    td {
+    /* No rule under each mark: the table's, which would underline every piece of the card. */
+    tbody td {
       display: inline-flex;
+      align-items: center;
       flex-wrap: wrap;
-      gap: 4px;
+      gap: 5px;
       padding: 0;
+      border: 0;
       font-size: 13px;
+      line-height: 1.3;
       white-space: normal;
       color: var(--dim);
     }
+    /* A mark's name, small, for the columns that have no picture. */
     td::before {
       content: attr(data-label);
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      opacity: 0.8;
-      align-self: center;
+      letter-spacing: 0.05em;
+      opacity: 0.75;
     }
     td.blank {
       display: none;
     }
+    /* The marks that matter first, in this order; the rest (age, recurrence, ...) after them. */
+    td:not(.description, .sel, .id, .actions) {
+      order: 6;
+    }
+    td.col-priority {
+      order: 1;
+    }
+    td.col-project {
+      order: 2;
+    }
+    td.tags {
+      order: 3;
+    }
+    td.col-due {
+      order: 4;
+    }
+    td.col-urgency {
+      order: 5;
+    }
+    td.col-project::before,
+    td.col-due::before,
+    td.col-priority::before,
+    td.col-urgency::before,
+    td.col-scheduled::before {
+      content: '';
+      flex: none;
+      width: 13px;
+      height: 13px;
+      opacity: 0.85;
+      background: currentColor;
+      -webkit-mask: var(--mask) center / contain no-repeat;
+      mask: var(--mask) center / contain no-repeat;
+    }
+    td.col-project::before {
+      --mask: var(--i-folder);
+    }
+    td.col-due::before {
+      --mask: var(--i-clock);
+    }
+    td.col-priority::before {
+      --mask: var(--i-flag);
+    }
+    td.col-urgency::before {
+      --mask: var(--i-zap);
+    }
+    td.col-scheduled::before {
+      --mask: var(--i-calendar);
+    }
+    td.col-tags::before {
+      display: none;
+    }
+    /* A due date that has passed says so; so does a task due today. */
+    tr.overdue td.col-due {
+      color: var(--err);
+      font-weight: 600;
+    }
+    /* The priority as a small pill of its own colour. */
+    td.col-priority {
+      padding: 1px 8px 1px 6px;
+      border-radius: 999px;
+      font-weight: 700;
+      background: color-mix(in srgb, currentColor 13%, transparent);
+    }
+    td.col-urgency {
+      font-variant-numeric: tabular-nums;
+    }
     td.description {
       order: -1;
       flex-basis: 100%;
-      font-size: 15px;
+      font-size: 15.5px;
+      font-weight: 500;
+      line-height: 1.35;
       color: var(--text);
-      padding-right: 2.4em;
+      padding-right: 3.2em;
       min-width: 0;
     }
     /* The tick box sits in the card's top left corner, with the description beside it. */
@@ -700,7 +802,7 @@
     td.sel {
       position: absolute;
       top: 6px;
-      left: 4px;
+      left: 7px;
       width: auto;
       padding: 0;
     }
@@ -708,7 +810,7 @@
       display: none;
     }
     tr.selectable td.description {
-      padding-left: 34px;
+      padding-left: 33px;
     }
     .selbox {
       min-width: 36px;
@@ -718,18 +820,34 @@
     td.actions::before {
       display: none;
     }
+    /* The task's number, a small badge in the corner. */
     td.id {
       position: absolute;
-      top: 10px;
-      right: 12px;
-      font-size: 12px;
+      top: 11px;
+      right: 11px;
+      padding: 0 7px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      background: var(--panel-2);
     }
     td.id::before {
       content: '#';
+      font-size: inherit;
+      text-transform: none;
+      letter-spacing: 0;
       opacity: 0.6;
     }
-    td.priority.pri-h {
-      color: var(--pri-h);
+    /* The tags: small pills, close together (the button's own height for a thumb is for the buttons below). */
+    td.tags {
+      gap: 4px;
+    }
+    td.tags :global(.tagpill) {
+      min-height: 0;
+      height: 21px;
+      margin: 0;
+      padding: 0 9px;
+      font-size: 12px;
+      line-height: 19px;
     }
     tr.done td.description,
     tr.done td {
@@ -752,22 +870,29 @@
     tr.ruled {
       background: var(--row-bg, var(--panel));
     }
+    /* The buttons: quiet, on the same line as the marks when there is room, with the tick in green. */
     td.actions {
       order: 99;
-      flex-basis: 100%;
       display: flex;
-      justify-content: flex-end;
-      gap: 4px;
-      margin-top: 6px;
-      padding-top: 4px;
-      border-top: 1px solid var(--line);
+      flex: none;
+      margin-left: auto;
+      gap: 2px;
     }
     td.actions button {
-      min-width: 44px;
-      min-height: 40px;
+      min-width: 40px;
+      min-height: 36px;
+      border-color: transparent;
+      background: transparent;
+      color: var(--dim);
       display: inline-flex;
       align-items: center;
       justify-content: center;
+    }
+    td.actions button[aria-label='Done'] {
+      color: var(--ok);
+    }
+    td.actions button.danger {
+      color: color-mix(in srgb, var(--err) 70%, var(--dim));
     }
     .note {
       margin-left: 0;

@@ -136,3 +136,28 @@ describe('selecting tasks', () => {
     expect(selection.count).toBe(0);
   });
 });
+
+describe('what a card on a phone is made from', () => {
+  const now = 1_791_799_200;
+
+  it('names the state of each row and the column of each cell, so the card can be styled by them', () => {
+    store.now = now;
+    const rows = [row('overdue one', 'H'), row('later one', 'M'), row('started one', null), row('finished one', 'L')];
+    rows[0].due = now - 86_400;
+    rows[1].due = now + 86_400;
+    rows[2].start = now - 60;
+    rows[3].due = now - 86_400;
+    rows[3].status = 'completed';
+    draw(rows);
+    const tr = (name: string) => [...document.querySelectorAll('tbody tr')].find((r) => r.textContent?.includes(name))!;
+    expect(tr('overdue one').classList.contains('overdue')).toBe(true);
+    expect(tr('overdue one').getAttribute('data-pri')).toBe('H');
+    expect(tr('later one').classList.contains('overdue')).toBe(false);
+    expect(tr('later one').getAttribute('data-pri')).toBe('M');
+    expect(tr('started one').classList.contains('started')).toBe(true);
+    expect(tr('started one').hasAttribute('data-pri')).toBe(false);
+    // Finished tasks are not "overdue", whatever their due date was.
+    expect(tr('finished one').classList.contains('overdue')).toBe(false);
+    expect(document.querySelector('td.description')!.classList.contains('col-description')).toBe(true);
+  });
+});
