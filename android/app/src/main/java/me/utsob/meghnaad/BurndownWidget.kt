@@ -10,6 +10,6 @@ class BurndownWidget : ImageWidget() {
         val result = Tasks.burndown(context, config)
             ?: return Rendered(title, message = context.getString(R.string.widget_not_ready))
         if (result.getJSONArray("bars").length() == 0) return Rendered(title)
-        return Rendered(title, BurndownRenderer.draw(result, width, height, Palette(context)), BurndownRenderer.caption(result))
+        return Rendered(title, BurndownRenderer.draw(result, width, height, Palette(context, WidgetPrefs.look(context, id))), BurndownRenderer.caption(result))
     }
 }

@@ -13,6 +13,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 
@@ -79,6 +80,39 @@ class WidgetConfigActivity : Activity() {
         return spinner
     }
 
+    /** Which theme, and how see-through the background is: for every kind of widget. Returns what the form now says. */
+    private fun lookForm(): () -> WidgetLook {
+        val current = WidgetPrefs.look(this, id)
+        label("Theme")
+        val names = listOf("Follow the phone", "Light", "Dark")
+        val theme = Spinner(this)
+        theme.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
+        theme.setSelection(WidgetLook.THEMES.indexOf(current.theme).coerceAtLeast(0))
+        form.addView(theme, ViewGroup.LayoutParams.MATCH_PARENT, dp(48))
+        val opacityLabel = TextView(this).apply {
+            textSize = 13f
+            alpha = 0.7f
+            setPadding(0, dp(14), 0, dp(2))
+        }
+        form.addView(opacityLabel)
+        val opacity = SeekBar(this).apply {
+            max = 100
+            progress = current.opacity
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                    opacityLabel.text = if (value == 0) "Background: see-through" else "Background opacity: $value%"
+                }
+
+                override fun onStartTrackingTouch(bar: SeekBar) {}
+
+                override fun onStopTrackingTouch(bar: SeekBar) {}
+            })
+        }
+        opacityLabel.text = if (current.opacity == 0) "Background: see-through" else "Background opacity: ${current.opacity}%"
+        form.addView(opacity, ViewGroup.LayoutParams.MATCH_PARENT, dp(40))
+        return { WidgetLook(WidgetLook.THEMES[theme.selectedItemPosition], opacity.progress) }
+    }
+
     private fun buttons(onSave: () -> Unit) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -128,7 +162,9 @@ class WidgetConfigActivity : Activity() {
                 minHeight = dp(44)
             }.also { form.addView(it) }
         }
+        val look = lookForm()
         buttons {
+            WidgetPrefs.saveLook(this, id, look())
             WidgetPrefs.saveList(
                 this,
                 id,
@@ -150,7 +186,9 @@ class WidgetConfigActivity : Activity() {
         val period = choice(BurndownConfig.PERIODS, current.period)
         label("Only the tasks that match (optional)")
         val filter = field("project:Home", current.filter)
+        val look = lookForm()
         buttons {
+            WidgetPrefs.saveLook(this, id, look())
             WidgetPrefs.saveBurndown(this, id, BurndownConfig(period.selectedItem.toString(), filter.text.toString().trim()))
         }
     }
@@ -161,11 +199,15 @@ class WidgetConfigActivity : Activity() {
         label("Only the tasks that match (optional)")
         val filter = field("project:Work", current.filter)
         form.addView(TextView(this).apply {
-            text = "Days with something due get a dot: red when overdue, amber today, blue otherwise."
+            text = "Days with something due get a dot: red when overdue, amber today, blue otherwise. Tap a day to see its tasks."
             textSize = 13f
             alpha = 0.7f
             setPadding(0, dp(12), 0, 0)
         })
-        buttons { WidgetPrefs.saveCalendar(this, id, CalendarConfig(filter.text.toString().trim())) }
+        val look = lookForm()
+        buttons {
+            WidgetPrefs.saveLook(this, id, look())
+            WidgetPrefs.saveCalendar(this, id, CalendarConfig(filter.text.toString().trim()))
+        }
     }
 }

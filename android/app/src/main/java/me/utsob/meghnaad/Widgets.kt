@@ -12,6 +12,7 @@ object Widgets {
     fun refreshAll(context: Context) {
         TasksWidget.refresh(context)
         ImageWidget.refreshAll(context)
+        CalendarWidget.refresh(context)
     }
 
     /** Whether any widget of ours is on a home screen: the background sync is only needed while there is. */
@@ -35,7 +36,8 @@ object Widgets {
     fun update(context: Context, id: Int) {
         when (kindOf(context, id)) {
             "list" -> TasksWidget.update(context, id)
-            "burndown", "calendar" -> ImageWidget.refresh(context, intArrayOf(id))
+            "burndown" -> ImageWidget.refresh(context, intArrayOf(id))
+            "calendar" -> CalendarWidget.update(context, id)
         }
     }
 }

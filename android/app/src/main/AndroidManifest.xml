@@ -71,6 +71,11 @@
         </activity>
 
         <service
+            android:name=".CalendarWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <service
             android:name=".TasksWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />

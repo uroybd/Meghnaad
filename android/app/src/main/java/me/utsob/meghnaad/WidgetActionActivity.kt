@@ -22,6 +22,16 @@ class WidgetActionActivity : Activity() {
                 SyncWorker.runNow(this)
             }
             // The task that was tapped opens in the app, not just the app.
+            // A day of the calendar opens that day's tasks: the `list` report, narrowed to what is due or scheduled on it.
+            "day" -> {
+                val date = intent.getStringExtra("date").orEmpty()
+                startActivity(
+                    Intent(this, MainActivity::class.java)
+                        .putExtra(MainActivity.EXTRA_REPORT, "list")
+                        .putExtra(MainActivity.EXTRA_FILTER, "( due:$date or scheduled:$date )")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
             else -> startActivity(
                 Intent(this, MainActivity::class.java)
                     .putExtra(MainActivity.EXTRA_TASK, intent.getStringExtra("uuid"))

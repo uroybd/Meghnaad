@@ -104,17 +104,22 @@ class TcEnginePlugin : Plugin() {
         call.resolve()
     }
 
-    /** The task a widget was tapped on, if one is waiting to be opened (it is given once). */
+    /** What a widget was tapped for, if something is waiting: a task, or a report with a filter (given once). */
     @PluginMethod
-    fun getLaunchTask(call: PluginCall) {
-        val task = Launch.task
+    fun getLaunch(call: PluginCall) {
+        val out = JSObject()
+            .put("task", Launch.task ?: JSObject.NULL)
+            .put("report", Launch.report ?: JSObject.NULL)
+            .put("filter", Launch.filter ?: JSObject.NULL)
         Launch.task = null
-        call.resolve(JSObject().put("uuid", task ?: JSObject.NULL))
+        Launch.report = null
+        Launch.filter = null
+        call.resolve(out)
     }
 
-    /** A widget was tapped while the app was open: the page asks [getLaunchTask] for which task. */
-    fun taskRequested() {
-        notifyListeners("openTask", JSObject())
+    /** A widget was tapped while the app was open: the page asks [getLaunch] for what. */
+    fun launchRequested() {
+        notifyListeners("launch", JSObject())
     }
 
     /** Which of the settings and the hooks are kept in step with the bucket. */

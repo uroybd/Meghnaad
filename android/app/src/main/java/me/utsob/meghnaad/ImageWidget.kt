@@ -16,8 +16,6 @@ class Rendered(
     val bitmap: Bitmap? = null,
     val caption: String = "",
     val message: String? = null,
-    /** Show the buttons that move to the month before and after. */
-    val months: Boolean = false,
 )
 
 /**
@@ -51,22 +49,16 @@ abstract class ImageWidget : AppWidgetProvider() {
                 SyncWorker.runNow(context)
                 refreshAll(context)
             }
-            ACTION_MONTH -> {
-                WidgetPrefs.setMonthOffset(context, id, if (intent.getIntExtra("delta", 0) == 0) 0 else WidgetPrefs.monthOffset(context, id) + intent.getIntExtra("delta", 0))
-                refresh(context, intArrayOf(id))
-            }
         }
     }
 
     companion object {
         const val ACTION_SYNC = "me.utsob.meghnaad.IMAGE_SYNC"
-        const val ACTION_MONTH = "me.utsob.meghnaad.IMAGE_MONTH"
 
         /** Draw every chart-like widget again. */
         fun refreshAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
-            val ids = listOf(BurndownWidget::class.java, CalendarWidget::class.java)
-                .flatMap { manager.getAppWidgetIds(ComponentName(context, it)).toList() }
+            val ids = manager.getAppWidgetIds(ComponentName(context, BurndownWidget::class.java)).toList()
             if (ids.isNotEmpty()) refresh(context, ids.toIntArray())
         }
 
@@ -89,11 +81,7 @@ abstract class ImageWidget : AppWidgetProvider() {
         }
 
         private fun draw(context: Context, id: Int) {
-            val provider: ImageWidget = when (Widgets.kindOf(context, id)) {
-                "burndown" -> BurndownWidget()
-                "calendar" -> CalendarWidget()
-                else -> return
-            }
+            val provider: ImageWidget = if (Widgets.kindOf(context, id) == "burndown") BurndownWidget() else return
             val manager = AppWidgetManager.getInstance(context)
             val (width, height) = chartSize(context, manager, id)
             val rendered = provider.render(context, id, width, height)
@@ -120,8 +108,11 @@ abstract class ImageWidget : AppWidgetProvider() {
 
         private fun views(context: Context, id: Int, provider: Class<*>, r: Rendered): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_image)
+            val palette = Looks.apply(context, views, id)
             views.setTextViewText(R.id.title, r.title)
             views.setTextViewText(R.id.caption, r.caption)
+            views.setTextColor(R.id.caption, palette.dim)
+            views.setTextColor(R.id.message, palette.dim)
             if (r.bitmap != null) {
                 views.setImageViewBitmap(R.id.chart, r.bitmap)
                 views.setViewVisibility(R.id.chart, View.VISIBLE)
@@ -131,9 +122,6 @@ abstract class ImageWidget : AppWidgetProvider() {
                 views.setTextViewText(R.id.message, r.message ?: context.getString(R.string.widget_nothing_to_show))
                 views.setViewVisibility(R.id.message, View.VISIBLE)
             }
-            val nav = if (r.months) View.VISIBLE else View.GONE
-            views.setViewVisibility(R.id.previous, nav)
-            views.setViewVisibility(R.id.next, nav)
             val open = PendingIntent.getActivity(
                 context,
                 id * 10,
@@ -143,14 +131,10 @@ abstract class ImageWidget : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.chart, open)
             views.setOnClickPendingIntent(R.id.title, open)
             views.setOnClickPendingIntent(R.id.refresh, broadcast(context, id, provider, 1, ACTION_SYNC))
-            views.setOnClickPendingIntent(R.id.previous, broadcast(context, id, provider, 2, ACTION_MONTH, -1))
-            views.setOnClickPendingIntent(R.id.next, broadcast(context, id, provider, 3, ACTION_MONTH, 1))
-            // A tap on the month's name goes back to this month.
-            if (r.months) views.setOnClickPendingIntent(R.id.title, broadcast(context, id, provider, 4, ACTION_MONTH, 0))
             return views
         }
 
-        private fun broadcast(context: Context, id: Int, provider: Class<*>, n: Int, action: String, delta: Int = 0): PendingIntent {
+        fun broadcast(context: Context, id: Int, provider: Class<*>, n: Int, action: String, delta: Int = 0): PendingIntent {
             val intent = Intent(context, provider)
                 .setAction(action)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)

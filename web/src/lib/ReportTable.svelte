@@ -260,7 +260,9 @@
             {#each result.columns as col (col.spec)}
               {@const c = cell(col, row, ctx)}
               <td
-                class="{col.kind} {c.cls ?? ''} col-{col.name.replace(/\W+/g, '-')}"
+                class="{col.kind} {c.cls ?? ''} col-{col.name.replace(/\W+/g, '-')}{col.format
+                  ? ` fmt-${col.format}`
+                  : ''}"
                 class:blank={!c.text && !c.lines?.length}
                 data-label={col.label}
                 style={col.name === 'priority' && row.priority
@@ -649,6 +651,10 @@
       --i-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolyline points='12 6 12 12 16 14'/%3E%3C/svg%3E");
       --i-flag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'/%3E%3Cline x1='4' x2='4' y1='22' y2='15'/%3E%3C/svg%3E");
       --i-zap: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'/%3E%3C/svg%3E");
+      --i-repeat: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m17 2 4 4-4 4'/%3E%3Cpath d='M3 11v-1a4 4 0 0 1 4-4h14'/%3E%3Cpath d='m7 22-4-4 4-4'/%3E%3Cpath d='M21 13v1a4 4 0 0 1-4 4H3'/%3E%3C/svg%3E");
+      --i-link: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E");
+      --i-tag: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z'/%3E%3C/svg%3E");
+      --i-play: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='6 3 20 12 6 21 6 3'/%3E%3C/svg%3E");
       --i-calendar: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='18' x='3' y='4' rx='2'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");
       position: relative;
       display: flex;
@@ -769,6 +775,38 @@
     }
     td.col-tags::before {
       display: none;
+    }
+    /*
+     * A column that shows only an indicator letter (the recurrence's R, the dependency's D, the tag's +, the active *): its
+     * name and its letter would read "R R", so it is a small picture of what it means instead.
+     */
+    td.fmt-indicator,
+    td.fmt-active {
+      font-size: 0;
+      gap: 0;
+    }
+    td.fmt-indicator::before,
+    td.fmt-active::before {
+      display: inline-block;
+      content: '';
+      width: 14px;
+      height: 14px;
+      background: currentColor;
+      opacity: 0.8;
+      -webkit-mask: var(--mask) center / contain no-repeat;
+      mask: var(--mask) center / contain no-repeat;
+    }
+    td.col-recur::before {
+      --mask: var(--i-repeat);
+    }
+    td.col-depends::before {
+      --mask: var(--i-link);
+    }
+    td.col-tags.fmt-indicator::before {
+      --mask: var(--i-tag);
+    }
+    td.col-start.fmt-active::before {
+      --mask: var(--i-play);
     }
     /* A due date that has passed says so; so does a task due today. */
     tr.overdue td.col-due {

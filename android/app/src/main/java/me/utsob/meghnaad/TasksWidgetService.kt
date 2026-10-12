@@ -2,7 +2,6 @@ package me.utsob.meghnaad
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.util.Log
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
@@ -35,10 +34,13 @@ class TasksWidgetService : RemoteViewsService() {
         override fun getViewAt(position: Int): RemoteViews {
             val task = tasks[position]
             val row = RemoteViews(context.packageName, R.layout.widget_task_item)
+            val palette = Palette(context, WidgetPrefs.look(context, widgetId))
             row.setTextViewText(R.id.description, task.description)
             row.setTextViewText(R.id.detail, task.detail)
+            row.setTextColor(R.id.description, palette.text)
+            row.setTextColor(R.id.detail, if (task.overdue) palette.overdue else palette.dim)
+            row.setInt(R.id.done, "setColorFilter", palette.dim)
             row.setViewVisibility(R.id.detail, if (task.detail.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
-            if (task.overdue) row.setTextColor(R.id.detail, Color.parseColor("#CF222E"))
             row.setOnClickFillInIntent(R.id.done, fill("done", task.uuid))
             row.setOnClickFillInIntent(R.id.text, fill("open", task.uuid))
             return row

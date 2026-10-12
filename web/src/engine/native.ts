@@ -19,10 +19,10 @@ export interface TcEnginePlugin {
   getConnection(): Promise<Connection>;
   /** Use the phone without a bucket: tasks stay here until a connection is made. */
   useLocally(): Promise<void>;
-  /** The task a widget was tapped on, if one is waiting to be opened. Given once. */
-  getLaunchTask(): Promise<{ uuid: string | null }>;
-  /** Called when a widget is tapped while the app is open (then ask for the task). */
-  addListener(event: 'openTask', fn: () => void): Promise<{ remove: () => Promise<void> }>;
+  /** What a widget was tapped for, if anything is waiting: a task, or a report with a filter. Given once. */
+  getLaunch(): Promise<Launch>;
+  /** Called when a widget is tapped while the app is open (then ask what for). */
+  addListener(event: 'launch', fn: () => void): Promise<{ remove: () => Promise<void> }>;
   /** Which of the settings and the hooks are kept in step with the bucket's. */
   getSyncOptions(): Promise<SyncOptions>;
   setSyncOptions(o: SyncOptions): Promise<void>;
@@ -34,6 +34,14 @@ export interface Connection {
   configured: boolean;
   /** The phone was told to keep the tasks here only. */
   localOnly: boolean;
+}
+
+/** What a widget asked the app to open. */
+export interface Launch {
+  task: string | null;
+  report: string | null;
+  /** The filter, as one string of words (`( due:2026-10-17 or scheduled:2026-10-17 )`). */
+  filter: string | null;
 }
 
 /** What the phone keeps in step with the bucket besides the tasks (the secrets of hooks never are). */
@@ -145,18 +153,19 @@ export function installNativeApi(api: TcEnginePlugin = plugin, win: Pick<Window,
 }
 
 /**
- * Open the task a widget was tapped on: the one that started the app, and any tapped while it is open. Returns a function
- * that stops listening.
+ * Open what a widget was tapped for: the one that started the app, and any tapped while it is open. Returns a function that
+ * stops listening.
  */
-export async function watchLaunchTasks(
-  open: (uuid: string) => void,
+export async function watchLaunch(
+  open: (what: { task?: string; report?: string; filter?: string }) => void,
   api: TcEnginePlugin = plugin,
 ): Promise<() => void> {
   const take = async () => {
-    const { uuid } = await api.getLaunchTask().catch(() => ({ uuid: null }));
-    if (uuid) open(uuid);
+    const got = await api.getLaunch().catch(() => null);
+    if (got?.task) open({ task: got.task });
+    else if (got?.report) open({ report: got.report, filter: got.filter ?? '' });
   };
   await take();
-  const handle = await api.addListener('openTask', () => void take());
+  const handle = await api.addListener('launch', () => void take());
   return () => void handle.remove();
 }

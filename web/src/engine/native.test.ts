@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { installNativeApi, NativePort, watchLaunchTasks, type TcEnginePlugin } from './native';
+import { installNativeApi, NativePort, watchLaunch, type TcEnginePlugin } from './native';
 import type { Call, EngineReply } from './protocol';
 
 function fakePlugin(): TcEnginePlugin & { calls: unknown[][] } {
@@ -26,7 +26,11 @@ function fakePlugin(): TcEnginePlugin & { calls: unknown[][] } {
     forget: log('forget', undefined),
     getConnection: vi.fn(async () => ({ configured: false, localOnly: false })),
     useLocally: log('useLocally', undefined),
-    getLaunchTask: vi.fn(async () => ({ uuid: null as string | null })),
+    getLaunch: vi.fn(async () => ({
+      task: null as string | null,
+      report: null as string | null,
+      filter: null as string | null,
+    })),
     addListener: vi.fn(async () => ({ remove: async () => {} })),
     getSyncOptions: vi.fn(async () => ({ settings: false, hooks: false })),
     setSyncOptions: log('setSyncOptions', undefined),
@@ -102,25 +106,29 @@ describe('NativePort syncing', () => {
   });
 });
 
-describe('watchLaunchTasks', () => {
-  it('opens the task the app was started for, and each one tapped later, and stops when told to', async () => {
+describe('watchLaunch', () => {
+  const none = { task: null, report: null, filter: null };
+
+  it('opens what the app was started for, and each thing tapped later, and stops when told to', async () => {
     const api = fakePlugin();
-    api.getLaunchTask = vi
+    api.getLaunch = vi
       .fn()
-      .mockResolvedValueOnce({ uuid: 'aaaa' })
-      .mockResolvedValueOnce({ uuid: 'bbbb' })
-      .mockResolvedValue({ uuid: null });
+      .mockResolvedValueOnce({ ...none, task: 'aaaa' })
+      .mockResolvedValueOnce({ ...none, report: 'list', filter: '( due:2026-10-17 or scheduled:2026-10-17 )' })
+      .mockResolvedValue(none);
     const remove = vi.fn(async () => {});
     let tapped: () => void = () => {};
-    api.addListener = vi.fn(async (_event: 'openTask', fn: () => void) => {
+    api.addListener = vi.fn(async (_event: 'launch', fn: () => void) => {
       tapped = fn;
       return { remove };
     });
     const open = vi.fn();
-    const stop = await watchLaunchTasks(open, api);
-    expect(open).toHaveBeenCalledWith('aaaa');
+    const stop = await watchLaunch(open, api);
+    expect(open).toHaveBeenCalledWith({ task: 'aaaa' });
     tapped();
-    await vi.waitFor(() => expect(open).toHaveBeenCalledWith('bbbb'));
+    await vi.waitFor(() =>
+      expect(open).toHaveBeenCalledWith({ report: 'list', filter: '( due:2026-10-17 or scheduled:2026-10-17 )' }),
+    );
     tapped();
     await new Promise((r) => setTimeout(r, 0));
     expect(open).toHaveBeenCalledTimes(2);

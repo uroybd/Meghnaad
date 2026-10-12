@@ -102,6 +102,10 @@ object WidgetPrefs {
 
     fun saveCalendar(context: Context, id: Int, config: CalendarConfig) = write(context, "calendar", id, config.toJson())
 
+    fun look(context: Context, id: Int): WidgetLook = read(context, "look", id)?.let(WidgetLook::fromJson) ?: WidgetLook()
+
+    fun saveLook(context: Context, id: Int, look: WidgetLook) = write(context, "look", id, look.toJson())
+
     /** How many months a calendar widget has been moved from this one (the buttons in its header). */
     fun monthOffset(context: Context, id: Int): Int = prefs(context).getInt("offset:$id", 0)
 
@@ -112,7 +116,7 @@ object WidgetPrefs {
     /** A widget was removed from the home screen. */
     fun forget(context: Context, ids: IntArray) {
         val edit = prefs(context).edit()
-        for (id in ids) for (kind in listOf("list", "burndown", "calendar", "offset")) edit.remove("$kind:$id")
+        for (id in ids) for (kind in listOf("list", "burndown", "calendar", "look", "offset")) edit.remove("$kind:$id")
         edit.apply()
     }
 }
