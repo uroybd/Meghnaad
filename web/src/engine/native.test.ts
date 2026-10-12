@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { installNativeApi, NativePort, type TcEnginePlugin } from './native';
+import { installNativeApi, NativePort, watchLaunchTasks, type TcEnginePlugin } from './native';
 import type { Call, EngineReply } from './protocol';
 
 function fakePlugin(): TcEnginePlugin & { calls: unknown[][] } {
@@ -26,6 +26,8 @@ function fakePlugin(): TcEnginePlugin & { calls: unknown[][] } {
     forget: log('forget', undefined),
     getConnection: vi.fn(async () => ({ configured: false, localOnly: false })),
     useLocally: log('useLocally', undefined),
+    getLaunchTask: vi.fn(async () => ({ uuid: null as string | null })),
+    addListener: vi.fn(async () => ({ remove: async () => {} })),
     getSyncOptions: vi.fn(async () => ({ settings: false, hooks: false })),
     setSyncOptions: log('setSyncOptions', undefined),
     setConnection: log('setConnection', undefined),
@@ -97,6 +99,33 @@ describe('NativePort syncing', () => {
     expect(replies[0]).toMatchObject({ ok: true, value: false });
     expect(replies[1]).toMatchObject({ ok: true, value: true });
     expect(told).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('watchLaunchTasks', () => {
+  it('opens the task the app was started for, and each one tapped later, and stops when told to', async () => {
+    const api = fakePlugin();
+    api.getLaunchTask = vi
+      .fn()
+      .mockResolvedValueOnce({ uuid: 'aaaa' })
+      .mockResolvedValueOnce({ uuid: 'bbbb' })
+      .mockResolvedValue({ uuid: null });
+    const remove = vi.fn(async () => {});
+    let tapped: () => void = () => {};
+    api.addListener = vi.fn(async (_event: 'openTask', fn: () => void) => {
+      tapped = fn;
+      return { remove };
+    });
+    const open = vi.fn();
+    const stop = await watchLaunchTasks(open, api);
+    expect(open).toHaveBeenCalledWith('aaaa');
+    tapped();
+    await vi.waitFor(() => expect(open).toHaveBeenCalledWith('bbbb'));
+    tapped();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(open).toHaveBeenCalledTimes(2);
+    stop();
+    expect(remove).toHaveBeenCalled();
   });
 });
 

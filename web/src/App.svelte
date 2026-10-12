@@ -30,7 +30,7 @@
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
   import ConnectView from './lib/ConnectView.svelte';
-  import { isNative } from './engine/native';
+  import { isNative, watchLaunchTasks } from './engine/native';
   import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAdd from './lib/QuickAdd.svelte';
@@ -80,6 +80,8 @@
     // `settings.json` after the settings, so the first screen doesn't wait behind it.
     void store.loadConfig().then(() => store.loadAppSettings());
     void followAddress();
+    // In the Android app, a task tapped in a widget opens here.
+    if (isNative()) void watchLaunchTasks((uuid) => void store.openFromAddress(taskPath(uuid)));
     // Reminders can wait for the table. The Worker handles one request at a time, so a poll sent
     // first would make the first screen wait behind it. If the table never loads (another view,
     // or an error), start anyway.

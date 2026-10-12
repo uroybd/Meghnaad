@@ -19,6 +19,10 @@ export interface TcEnginePlugin {
   getConnection(): Promise<Connection>;
   /** Use the phone without a bucket: tasks stay here until a connection is made. */
   useLocally(): Promise<void>;
+  /** The task a widget was tapped on, if one is waiting to be opened. Given once. */
+  getLaunchTask(): Promise<{ uuid: string | null }>;
+  /** Called when a widget is tapped while the app is open (then ask for the task). */
+  addListener(event: 'openTask', fn: () => void): Promise<{ remove: () => Promise<void> }>;
   /** Which of the settings and the hooks are kept in step with the bucket's. */
   getSyncOptions(): Promise<SyncOptions>;
   setSyncOptions(o: SyncOptions): Promise<void>;
@@ -138,4 +142,21 @@ export function installNativeApi(api: TcEnginePlugin = plugin, win: Pick<Window,
     const answer = await api.api({ method, path: url.pathname + url.search, body });
     return new Response(answer.body, { status: answer.status, headers: { 'content-type': answer.type } });
   };
+}
+
+/**
+ * Open the task a widget was tapped on: the one that started the app, and any tapped while it is open. Returns a function
+ * that stops listening.
+ */
+export async function watchLaunchTasks(
+  open: (uuid: string) => void,
+  api: TcEnginePlugin = plugin,
+): Promise<() => void> {
+  const take = async () => {
+    const { uuid } = await api.getLaunchTask().catch(() => ({ uuid: null }));
+    if (uuid) open(uuid);
+  };
+  await take();
+  const handle = await api.addListener('openTask', () => void take());
+  return () => void handle.remove();
 }
