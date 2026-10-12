@@ -40,11 +40,18 @@ export class EngineClient {
   private channel: BroadcastChannel | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private changedListeners = new Set<() => void>();
+  private settingsListeners = new Set<() => void>();
 
   /** Called when a sync brought in changes (from another device or tab), so views can reload. */
   onChanged(fn: () => void): () => void {
     this.changedListeners.add(fn);
     return () => this.changedListeners.delete(fn);
+  }
+
+  /** Called when a sync replaced the settings or the hooks with the bucket's (the phone can keep them in step). */
+  onSettingsChanged(fn: () => void): () => void {
+    this.settingsListeners.add(fn);
+    return () => this.settingsListeners.delete(fn);
   }
 
   private send(m: EngineRequest): Promise<unknown> {
@@ -69,6 +76,7 @@ export class EngineClient {
       ? new NativePort()
       : (new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' }) as Port);
     this.worker = worker;
+    if (worker instanceof NativePort) worker.onsettings = () => this.settingsListeners.forEach((fn) => fn());
     worker.onmessage = (e: MessageEvent<EngineReply>) => {
       const p = this.pending.get(e.data.id);
       if (!p) return;

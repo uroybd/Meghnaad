@@ -10,7 +10,7 @@ import type { Call, EngineReply } from './protocol';
 export interface TcEnginePlugin {
   /** Start with these settings (JSON text). Whether a copy of the tasks was found on the phone. */
   start(o: { config: string }): Promise<{ restored: boolean }>;
-  /** `config`, `run`, `import` or `sync`; the engine's own JSON text (`sync`: whether tasks changed, as JSON). */
+  /** `config`, `run`, `import` or `sync`; the engine's own JSON text (`sync`: `{ changed, settings }`: whether the tasks, and whether the shared settings or hooks, were replaced from the bucket). */
   send(o: { op: 'config' | 'run' | 'import' | 'sync'; arg?: string }): Promise<{ value: string }>;
   /** A request to one of the settings routes. */
   api(o: { method: string; path: string; body: string }): Promise<{ status: number; type: string; body: string }>;
@@ -19,6 +19,9 @@ export interface TcEnginePlugin {
   getConnection(): Promise<Connection>;
   /** Use the phone without a bucket: tasks stay here until a connection is made. */
   useLocally(): Promise<void>;
+  /** Which of the settings and the hooks are kept in step with the bucket's. */
+  getSyncOptions(): Promise<SyncOptions>;
+  setSyncOptions(o: SyncOptions): Promise<void>;
   setConnection(o: ConnectionInput): Promise<void>;
   clearConnection(): Promise<void>;
 }
@@ -27,6 +30,12 @@ export interface Connection {
   configured: boolean;
   /** The phone was told to keep the tasks here only. */
   localOnly: boolean;
+}
+
+/** What the phone keeps in step with the bucket besides the tasks (the secrets of hooks never are). */
+export interface SyncOptions {
+  settings: boolean;
+  hooks: boolean;
 }
 
 export interface ConnectionInput {
@@ -57,6 +66,8 @@ export interface Port {
 export class NativePort implements Port {
   onmessage: ((e: MessageEvent<EngineReply>) => void) | null = null;
   onerror: ((e: { message?: string }) => void) | null = null;
+  /** Called when a sync replaced the settings or the hooks here with the bucket's, so the page reads them again. */
+  onsettings: (() => void) | null = null;
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly api: TcEnginePlugin = plugin) {}
@@ -94,8 +105,11 @@ export class NativePort implements Port {
             arg: JSON.stringify({ text: m.text, apply: m.apply, tz: m.tz, now: m.now }),
           })
         ).value;
-      case 'sync':
-        return JSON.parse((await this.api.send({ op: 'sync' })).value) as boolean;
+      case 'sync': {
+        const done = JSON.parse((await this.api.send({ op: 'sync' })).value) as { changed: boolean; settings: boolean };
+        if (done.settings) this.onsettings?.();
+        return done.changed;
+      }
       case 'forget':
         await this.api.forget();
         return null;

@@ -40,7 +40,10 @@ pub fn call(engine: &mut Engine, op: &str, arg: &str) -> String {
     let done = |r: Result<(), String>| r.map_or_else(error, |()| "{}".into());
     match op {
         "config" => done(engine.set_config(arg)),
-        "sync" => done(engine.sync(arg)),
+        // Which of the shared files the bucket replaced here, so the app can read them again.
+        "sync" => engine
+            .sync(arg)
+            .map_or_else(error, |pulled| json!({ "settings": pulled }).to_string()),
         "run" => engine.run(arg),
         "import" => match serde_json::from_str::<Value>(arg) {
             Ok(v) => engine.import(

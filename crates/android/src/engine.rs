@@ -3,6 +3,7 @@
 //! [`tc_core::request`] for what a request means.
 
 use crate::files::FileStore;
+use crate::filesync::{self, State};
 use crate::net::PhoneNet;
 use crate::s3::{Bucket, S3Store};
 use crate::secrets::{valid_name, Secrets};
@@ -30,6 +31,10 @@ struct SyncSettings {
     bucket: Bucket,
     /// `sync.encryption_secret` of the taskrc.
     encryption_secret: String,
+    /// Files to keep the same as the bucket's (`web/config.json`, `web/settings.json`, `web/hooks.lua`): the ones the user
+    /// turned on. Anything else named here is ignored.
+    #[serde(default)]
+    files: Vec<String>,
 }
 
 pub struct Engine {
@@ -40,6 +45,8 @@ pub struct Engine {
     cfg: Config,
     /// The app's settings, kept in a folder: what the Worker keeps in the bucket for the web app.
     web: WebSettings<FileStore>,
+    /// The same folder, for the files that are kept in step with the bucket.
+    folder: FileStore,
     secrets: Rc<Secrets>,
     /// The hooks script, read when first needed and again when it is saved.
     script: Option<String>,
@@ -71,7 +78,8 @@ impl Engine {
             warm,
             undo: UndoStack::default(),
             cfg: Config::default(),
-            web: WebSettings::new(FileStore::new(dir)),
+            web: WebSettings::new(FileStore::new(dir.clone())),
+            folder: FileStore::new(dir),
             secrets,
             script: None,
             key: None,
@@ -102,11 +110,19 @@ impl Engine {
     }
 
     /// Pull what others have done and push what is waiting. `settings` is JSON: `endpoint`, `bucket`, `region`
-    /// (optional), `access_key`, `secret_key` and `encryption_secret`.
-    pub fn sync(&mut self, settings: &str) -> Result<(), String> {
+    /// (optional), `access_key`, `secret_key`, `encryption_secret`, and `files` (optional: which of the settings, the app's
+    /// settings and the hooks to keep in step with the bucket's). Answers which of those files were replaced here.
+    pub fn sync(&mut self, settings: &str) -> Result<Vec<String>, String> {
         let s: SyncSettings = serde_json::from_str(settings).map_err(|e| format!("invalid sync settings: {e}"))?;
         let fingerprint =
             sha256_hex(format!("{}\n{}\n{}", s.bucket.endpoint, s.bucket.bucket, s.encryption_secret).as_bytes());
+        let files: Vec<&str> = filesync::SETTINGS
+            .iter()
+            .chain(filesync::HOOKS)
+            .copied()
+            .filter(|k| s.files.iter().any(|f| f == k))
+            .collect();
+        let for_files = S3Store::new(s.bucket.clone()).map_err(|e| e.to_string())?;
         let store = S3Store::new(s.bucket).map_err(|e| e.to_string())?;
         let cryptor = match self.key.take() {
             Some((f, c)) if f == fingerprint => c,
@@ -115,14 +131,27 @@ impl Engine {
         let mut server: Box<dyn Server> =
             Box::new(CloudServer::with_cryptor(store, cryptor.clone()).with_cleanup(now_secs));
         let synced = pollster::block_on(self.replica.sync(&mut server, false));
-        match synced {
-            Ok(()) => {
-                self.key = Some((fingerprint, cryptor));
-                Ok(())
-            }
-            // A wrong secret or a replaced bucket makes the key useless: derive it again next time.
-            Err(e) => Err(request::root_cause(&e)),
+        // A wrong secret or a replaced bucket makes the key useless: derive it again next time.
+        synced.map_err(|e| request::root_cause(&e))?;
+        self.key = Some((fingerprint, cryptor));
+        if files.is_empty() {
+            return Ok(Vec::new());
         }
+        let state_key = "web/.sync-state.json";
+        let mut state = State::load(
+            pollster::block_on(tc_core::ObjectStore::get(&self.folder, state_key))
+                .map_err(|e| e.to_string())?
+                .as_deref(),
+        );
+        let report = pollster::block_on(filesync::sync_files(&self.folder, &for_files, &files, &mut state))
+            .map_err(|e| e.to_string())?;
+        pollster::block_on(tc_core::ObjectStore::put(&self.folder, state_key, &state.to_bytes()))
+            .map_err(|e| e.to_string())?;
+        if report.pulled.iter().any(|k| k == tc_core::webapi::HOOKS_KEY) {
+            // The next command runs the script that came.
+            self.script = None;
+        }
+        Ok(report.pulled)
     }
 
     /// A request to one of the settings routes the web app makes of its server (`/api/config`, `/api/settings`, …):

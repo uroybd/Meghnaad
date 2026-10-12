@@ -88,7 +88,9 @@ phone) behind a JNI layer; `android/` is the Capacitor shell, the Kotlin plugin 
 `node scripts/build-android.mjs` builds the APK. Anything the page needs from a server must also be answered by the app
 (`installNativeApi` sends `/api/…` to the phone), so a new settings route goes in `tc_core::webapi` where the Worker and
 the app share it. A request's meaning is in `tc_core::request`, shared with the browser engine: change it there, not in
-one host. Nothing may put the bucket keys or the encryption secret anywhere the page can read them.
+one host. Nothing may put the bucket keys or the encryption secret anywhere the page can read them. The few files a phone may keep
+in step with the bucket (settings, hooks; never secrets) are listed in `crates/android/src/filesync.rs`, which checks what it
+takes from the bucket the way the app checks what a person enters.
 
 ## Running it
 

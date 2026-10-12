@@ -98,9 +98,15 @@ The endpoint has to be `https://`; plain `http://` is only accepted for `localho
 
 ## Different from the web app
 
-- **Settings are on the phone.** The taskrc subset, the app's settings, the hooks script and the secrets for hooks live in
-  the app's private storage, not in the bucket, so they are not shared with the web app. Import your taskrc again in
-  **Settings** (pasting it works; importing from a link does not yet).
+- **Settings are on the phone**, unless you turn sharing on. The taskrc subset, the app's settings, the hooks script and
+  the secrets for hooks live in the app's private storage. Under **Settings → Sync** (when connected) you can keep **the
+  settings** (`web/config.json`, `web/settings.json`) and/or **the hooks** (`web/hooks.lua`) in step with the bucket: they
+  are the files the web app keeps there, so an edit on either side reaches the other at the next sync. What changed since
+  the last sync wins; when both did, the newer one does and the other is kept as the web app's restore point
+  (`config.prev.json`, `hooks.prev.lua`). A file that would not load, or a settings file holding a credential, is not taken
+  from the bucket. **The secrets for hooks are never synced.** The two switches are this phone's own choice, kept on the
+  phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (pasting it works;
+  importing from a link does not yet).
 - **Hooks run on the phone**, in the same Lua sandbox, with the same `http` and `secret()`, from the script you edit in
   **Settings → Hooks**. Their network calls are made by the phone, and the secrets are sealed with the Keystore key.
 - **No Cloudflare Access, no Worker.** Anyone who has the phone unlocked has the app: lock the phone.

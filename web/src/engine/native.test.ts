@@ -15,7 +15,9 @@ function fakePlugin(): TcEnginePlugin & { calls: unknown[][] } {
     start: log('start', { restored: true }),
     send: vi.fn(async (o: { op: string; arg?: string }) => {
       calls.push(['send', o]);
-      return { value: o.op === 'sync' ? 'true' : `{"echo":${JSON.stringify(o.arg ?? null)}}` };
+      return {
+        value: o.op === 'sync' ? '{"changed":true,"settings":false}' : `{"echo":${JSON.stringify(o.arg ?? null)}}`,
+      };
     }) as TcEnginePlugin['send'],
     api: vi.fn(async (o: { method: string; path: string; body: string }) => {
       calls.push(['api', o]);
@@ -24,6 +26,8 @@ function fakePlugin(): TcEnginePlugin & { calls: unknown[][] } {
     forget: log('forget', undefined),
     getConnection: vi.fn(async () => ({ configured: false, localOnly: false })),
     useLocally: log('useLocally', undefined),
+    getSyncOptions: vi.fn(async () => ({ settings: false, hooks: false })),
+    setSyncOptions: log('setSyncOptions', undefined),
     setConnection: log('setConnection', undefined),
     clearConnection: log('clearConnection', undefined),
   };
@@ -66,13 +70,33 @@ describe('NativePort', () => {
     api.send = vi
       .fn()
       .mockRejectedValueOnce(new Error('could not reach the bucket'))
-      .mockResolvedValueOnce({ value: 'true' });
+      .mockResolvedValueOnce({ value: '{"changed":false,"settings":false}' });
     const replies = await ask(new NativePort(api), [
       { id: 1, op: 'sync' },
       { id: 2, op: 'sync' },
     ]);
     expect(replies[0]).toEqual({ id: 1, ok: false, error: 'could not reach the bucket' });
-    expect(replies[1]).toMatchObject({ id: 2, ok: true, value: true });
+    expect(replies[1]).toMatchObject({ id: 2, ok: true, value: false });
+  });
+});
+
+describe('NativePort syncing', () => {
+  it('tells the page when the bucket replaced the settings or hooks, and answers whether tasks changed', async () => {
+    const api = fakePlugin();
+    api.send = vi
+      .fn()
+      .mockResolvedValueOnce({ value: '{"changed":false,"settings":true}' })
+      .mockResolvedValueOnce({ value: '{"changed":true,"settings":false}' });
+    const port = new NativePort(api);
+    const told = vi.fn();
+    port.onsettings = told;
+    const replies = await ask(port, [
+      { id: 1, op: 'sync' },
+      { id: 2, op: 'sync' },
+    ]);
+    expect(replies[0]).toMatchObject({ ok: true, value: false });
+    expect(replies[1]).toMatchObject({ ok: true, value: true });
+    expect(told).toHaveBeenCalledTimes(1);
   });
 });
 

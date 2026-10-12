@@ -37,7 +37,7 @@ class TcEnginePlugin : Plugin() {
             val engine = engine()
             val op = call.getString("op") ?: return call.reject("no operation")
             val value = when (op) {
-                "sync" -> engine.sync().toString()
+                "sync" -> engine.sync().let { JSONObject().put("changed", it.changed).put("settings", it.settings.isNotEmpty()).toString() }
                 "config" -> {
                     val answer = JSONObject(engine.call(op, call.getString("arg") ?: "{}"))
                     if (answer.has("error")) return call.reject(answer.getString("error"))
@@ -101,6 +101,19 @@ class TcEnginePlugin : Plugin() {
         }
         engine().vault.save(c)
         engine().vault.setLocalOnly(false)
+        call.resolve()
+    }
+
+    /** Which of the settings and the hooks are kept in step with the bucket. */
+    @PluginMethod
+    fun getSyncOptions(call: PluginCall) {
+        val vault = engine().vault
+        call.resolve(JSObject().put("settings", vault.syncSettings()).put("hooks", vault.syncHooks()))
+    }
+
+    @PluginMethod
+    fun setSyncOptions(call: PluginCall) {
+        engine().vault.setSyncOptions(call.getBoolean("settings", false) == true, call.getBoolean("hooks", false) == true)
         call.resolve()
     }
 

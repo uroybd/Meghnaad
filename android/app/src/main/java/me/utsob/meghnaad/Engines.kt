@@ -83,19 +83,31 @@ class Engine(private val context: Context) {
         return answer
     }
 
+    /** What a sync found: whether the tasks changed, and which of the shared files came from the bucket. */
+    class Synced(val changed: Boolean, val settings: List<String>)
+
+    private fun sharedFiles(): List<String> = buildList {
+        if (vault.syncSettings()) addAll(listOf("web/config.json", "web/settings.json"))
+        if (vault.syncHooks()) add("web/hooks.lua")
+    }
+
     /**
-     * Pull and push with the bucket. Whether anything of the tasks changed; throws [SyncFailed] with why not. A phone that
-     * is not connected has nothing to sync with, which is a way of using it and not a failure.
+     * Pull and push with the bucket, and keep the settings and hooks in step with it when the user turned that on. Throws
+     * [SyncFailed] with why not. A phone that is not connected has nothing to sync with, which is a way of using it and not
+     * a failure.
      */
-    fun sync(): Boolean {
+    fun sync(): Synced {
         // Read before the engine is taken: the Keystore can be slow, and nothing else should wait on it.
-        val connection = vault.connection() ?: return false
+        val connection = vault.connection() ?: return Synced(false, emptyList())
+        val files = sharedFiles()
+        var pulled = emptyList<String>()
         val news = synchronized(this) {
             val before = changes()
             val started = System.currentTimeMillis()
-            val answer = JSONObject(NativeEngine.nativeCall(handle, "sync", connection.toSyncJson()))
+            val answer = JSONObject(NativeEngine.nativeCall(handle, "sync", connection.toSyncJson(files)))
             Log.d("Engine", "sync took ${System.currentTimeMillis() - started} ms: ${answer.optString("error", "ok")}")
             if (answer.has("error")) throw SyncFailed(answer.getString("error"))
+            pulled = answer.optJSONArray("settings")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
             save()
             // Changed since the page last heard: by the sync, or by the widget while the page was not looking.
             val news = changes() != reported || changes() != before
@@ -103,7 +115,7 @@ class Engine(private val context: Context) {
             news
         }
         Widgets.refreshAll(context)
-        return news
+        return Synced(news, pulled)
     }
 
     /** Throw away the copy kept on the phone; the next start fetches the tasks again from the bucket. */

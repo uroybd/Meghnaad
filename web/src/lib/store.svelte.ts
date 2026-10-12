@@ -163,6 +163,10 @@ class Store {
     if (typeof window !== 'undefined') {
       setInterval(() => (this.now = Math.floor(Date.now() / 1000)), 30_000);
       // What another device or tab did arrives with a sync; draw again what is on screen.
+      // The phone took settings or hooks from the bucket (it keeps them in step when asked to): read them again.
+      engine.onSettingsChanged(() => {
+        void this.settingsChanged().then(() => this.loadAppSettings());
+      });
       engine.onChanged(() => {
         this.written();
         if (this.live) void this.refresh(this.live);

@@ -21,8 +21,9 @@ data class Connection(
     val secretKey: String,
     val encryptionSecret: String,
 ) {
-    /** What the engine's `sync` takes. */
-    fun toSyncJson(): String = JSONObject()
+    /** What the engine's `sync` takes, with the files to keep in step with the bucket's. */
+    fun toSyncJson(files: List<String> = emptyList()): String = JSONObject()
+        .put("files", org.json.JSONArray(files))
         .put("endpoint", endpoint)
         .put("bucket", bucket)
         .put("region", region)
@@ -110,6 +111,19 @@ class Vault(context: Context) {
         return key
     }
 
+    /** Whether the settings (the taskrc subset and the app's own) are kept in step with the bucket's, as the web app keeps them. */
+    @Synchronized
+    fun syncSettings(): Boolean = prefs.getBoolean(SYNC_SETTINGS, false)
+
+    /** Whether the hooks script is kept in step with the bucket's. */
+    @Synchronized
+    fun syncHooks(): Boolean = prefs.getBoolean(SYNC_HOOKS, false)
+
+    @Synchronized
+    fun setSyncOptions(settings: Boolean, hooks: Boolean) {
+        prefs.edit().putBoolean(SYNC_SETTINGS, settings).putBoolean(SYNC_HOOKS, hooks).apply()
+    }
+
     /** The phone was told to keep the tasks here only: not being connected to a bucket is then not a problem. */
     @Synchronized
     fun localOnly(): Boolean = prefs.getBoolean(LOCAL_ONLY, false)
@@ -147,6 +161,8 @@ class Vault(context: Context) {
         const val ENGINE_KEY = "engine_key"
         const val CONNECTION = "connection"
         const val LOCAL_ONLY = "local_only"
+        const val SYNC_SETTINGS = "sync_settings"
+        const val SYNC_HOOKS = "sync_hooks"
         const val IV_BYTES = 12
     }
 }

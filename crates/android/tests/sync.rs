@@ -368,3 +368,63 @@ fn hooks_run_on_the_phone_and_secrets_are_listed_by_name_only() {
     assert_eq!(api(&mut engine, "DELETE", "/api/secrets/jira", "").0, 200);
     assert_eq!(api(&mut engine, "GET", "/api/secrets", "").1["names"], json!([]));
 }
+
+fn with_files(endpoint: &str, files: &[&str]) -> String {
+    let mut v: Value = serde_json::from_str(&settings(endpoint, "a passphrase")).unwrap();
+    v["files"] = json!(files);
+    v.to_string()
+}
+
+#[test]
+fn settings_and_hooks_follow_the_bucket_only_for_the_phones_that_turned_them_on() {
+    let (endpoint, bucket) = serve();
+    let both = with_files(&endpoint, &["web/config.json", "web/settings.json", "web/hooks.lua"]);
+    let (mut a, mut b, mut c) = (engine(), engine(), engine());
+
+    // The first phone has a taskrc, app settings and a hook, and sends them.
+    api(
+        &mut a,
+        "PUT",
+        "/api/config/taskrc",
+        "uda.estimate.type=numeric\nuda.estimate.label=Est\n",
+    );
+    api(&mut a, "PUT", "/api/settings", "{\"theme\":\"dark\"}");
+    api(
+        &mut a,
+        "PUT",
+        "/api/hooks",
+        "function on_add(task) task.tags:add(\"shared\") end",
+    );
+    assert!(a.sync(&both).unwrap().is_empty(), "nothing came to the first phone");
+    assert!(bucket.lock().unwrap().objects.contains_key("web/hooks.lua"));
+
+    // The second one takes them, and its hook runs.
+    let pulled = b.sync(&both).unwrap();
+    assert_eq!(pulled.len(), 3, "{pulled:?}");
+    assert_eq!(api(&mut b, "GET", "/api/settings", "").1["theme"], "dark");
+    assert_eq!(
+        api(&mut b, "GET", "/api/config", "").1["config"]["udas"]["estimate"]["label"],
+        "Est"
+    );
+    let added = run(&mut b, "add Shared hook at work");
+    assert!(
+        added.to_string().contains("shared") || run(&mut b, "+shared count").to_string().contains('1'),
+        "{added}"
+    );
+
+    // One with the options off gets only the tasks.
+    c.sync(&settings(&endpoint, "a passphrase")).unwrap();
+    assert_eq!(api(&mut c, "GET", "/api/settings", "").1, json!({}));
+    assert_eq!(api(&mut c, "GET", "/api/hooks", "").1["source"], "");
+
+    // An edit on the second reaches the first at its next sync, and only what changed is reported.
+    api(&mut b, "PUT", "/api/settings", "{\"theme\":\"light\"}");
+    assert!(b.sync(&both).unwrap().is_empty());
+    assert_eq!(a.sync(&both).unwrap(), ["web/settings.json"]);
+    assert_eq!(api(&mut a, "GET", "/api/settings", "").1["theme"], "light");
+
+    // The secrets of hooks are never among the shared files.
+    api(&mut a, "PUT", "/api/secrets/jira", "tok-123");
+    a.sync(&both).unwrap();
+    assert!(!bucket.lock().unwrap().objects.keys().any(|k| k.contains("secret")));
+}
