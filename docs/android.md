@@ -12,6 +12,7 @@ keys stay on the phone.
 
 - Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings, with a layout made
   for a phone: a menu for the pages, and tasks as cards ([On a phone](using.md#on-a-phone)).
+- **Pull down to sync.** At the top of any page, a pull down (as in a browser) syncs with the bucket and redraws the page.
 - **Works offline.** The engine and the tasks are on the phone; changes sync when there is a network.
 - **Home-screen widgets**, three of them, each with its own settings (long-press the widget, then its pencil; the same
   screen opens when you add it):

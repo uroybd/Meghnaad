@@ -588,6 +588,7 @@ The layout adapts below about 760 px (a phone, or a narrow window):
   pill, and a stripe down the card's edge), project, tags (small pills you can tap to filter), due date (red once it has
   passed), urgency, and the other columns of the report by name. A started task is tinted. The buttons (done, start or stop,
   edit, delete, **⋯**) share the marks' line when there is room.
+- **Pull down** at the top of a page, as in a browser on a phone, to sync and draw the page again.
 - **Sorting** is a **Sort** picker (there are no column headers to tap), forms and the detail view go full screen, and a
   **+** button adds a task.
 - The prompt gets **Complete** (⇥) and **Previous command** (⌃) buttons since there's no Tab or arrow key, and completions

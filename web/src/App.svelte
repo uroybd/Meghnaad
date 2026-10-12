@@ -13,6 +13,7 @@
     ListChecks,
     Menu,
     Plus,
+    RefreshCw,
     Settings,
     Terminal,
     TrendingDown,
@@ -20,6 +21,7 @@
     X,
   } from './lib/icons';
   import NavMenu from './lib/NavMenu.svelte';
+  import { pullToRefresh, PULL_THRESHOLD } from './lib/pullRefresh';
   import BurndownPage from './lib/BurndownPage.svelte';
   import CalendarPage from './lib/CalendarPage.svelte';
   import ConsoleView from './lib/ConsoleView.svelte';
@@ -133,6 +135,30 @@
   $effect(() => {
     if (store.view === 'settings') seenSettings = true;
   });
+
+  // Pulling down at the top of a page, as in a browser on a phone: sync, then draw what is on screen again.
+  let pulled = $state({ distance: 0, ready: false, top: 0 });
+  let refreshing = $state(false);
+
+  async function refreshPage() {
+    refreshing = true;
+    try {
+      await engine.sync(true);
+    } catch (e) {
+      // The banner under the header says why too; this is the answer to the pull.
+      store.notify(`Couldn't sync: ${e instanceof Error ? e.message : String(e)}`, 'err');
+    }
+    store.written();
+    if (store.live) await store.refresh(store.live);
+    refreshing = false;
+  }
+
+  const pullOptions = {
+    onpull: (distance: number, ready: boolean, top: number) => (pulled = { distance, ready, top }),
+    onrefresh: refreshPage,
+    // A finger, not on the console (which scrolls on its own) and not while the menu is open.
+    enabled: () => matchMedia('(pointer: coarse)').matches && store.view !== 'console' && !navOpen,
+  };
 
   // On a phone the top bar's pages, and the reports under Tasks, are a slide-over menu behind the menu button.
   let navOpen = $state(false);
@@ -261,7 +287,7 @@
       <NavMenu onnavigate={() => (navOpen = false)} />
     </aside>
 
-    <main class="main" class:console={store.view === 'console'}>
+    <main class="main" class:console={store.view === 'console'} use:pullToRefresh={pullOptions}>
       {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView
         />{:else if store.view === 'tags'}<TagsView />{:else if store.view === 'summary'}<SummaryPage
         />{:else if store.view === 'calendar'}<CalendarPage />{:else if store.view === 'burndown'}<BurndownPage
@@ -269,6 +295,18 @@
       <!-- Once opened it stays, hidden, so what was typed in a tab is still there when you come back. -->
       {#if seenSettings}<div hidden={store.view !== 'settings'}><SettingsPage /></div>{/if}
     </main>
+
+    {#if pulled.distance > 0 || refreshing}
+      <div
+        class="ptr"
+        class:ready={pulled.ready}
+        class:spin={refreshing}
+        style="top: {pulled.top}px; --pull: {refreshing ? PULL_THRESHOLD : pulled.distance}px"
+        aria-hidden="true"
+      >
+        <RefreshCw size={18} />
+      </div>
+    {/if}
 
     <button
       class="fab primary"
@@ -427,6 +465,45 @@
     border-color: var(--err);
   }
 
+  /* The round mark that follows a pull down; it sits just under the top bar. */
+  .ptr {
+    position: fixed;
+    left: 50%;
+    z-index: 15;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.2);
+    color: var(--dim);
+    transform: translate(-50%, calc(var(--pull) - 46px));
+    opacity: min(1, calc(var(--pull) / 36px));
+    pointer-events: none;
+  }
+  .ptr :global(svg) {
+    transform: rotate(calc(var(--pull) * 4deg));
+  }
+  .ptr.ready {
+    color: var(--accent);
+  }
+  .ptr.spin :global(svg) {
+    animation: ptr-spin 0.8s linear infinite;
+  }
+  @keyframes ptr-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ptr.spin :global(svg) {
+      animation: none;
+    }
+  }
+
   /* Phone-only chrome stays out of the desktop layout. */
   .burger,
   .fab,
@@ -508,8 +585,10 @@
       display: flex;
       margin-bottom: 10px;
     }
-    /* Room under the last card so the floating + never covers its buttons. */
+    /* Room under the last card so the floating + never covers its buttons. A pull at the top is ours (see pullRefresh.ts):
+       the page does not chain it to the browser's own. */
     .main {
+      overscroll-behavior-y: contain;
       padding: 8px max(10px, env(safe-area-inset-right)) 72px max(10px, env(safe-area-inset-left));
     }
 

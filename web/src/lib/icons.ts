@@ -34,6 +34,7 @@ export { default as PanelTop } from '@lucide/svelte/icons/panel-top';
 export { default as Pencil } from '@lucide/svelte/icons/pencil';
 export { default as Play } from '@lucide/svelte/icons/play';
 export { default as Plus } from '@lucide/svelte/icons/plus';
+export { default as RefreshCw } from '@lucide/svelte/icons/refresh-cw';
 export { default as Repeat } from '@lucide/svelte/icons/repeat';
 export { default as Rows3 } from '@lucide/svelte/icons/rows-3';
 export { default as RotateCcw } from '@lucide/svelte/icons/rotate-ccw';
