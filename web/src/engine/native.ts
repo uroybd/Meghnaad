@@ -15,7 +15,7 @@ export interface TcEnginePlugin {
   /** A request to one of the settings routes. */
   api(o: { method: string; path: string; body: string }): Promise<{ status: number; type: string; body: string }>;
   forget(): Promise<void>;
-  /** Whether the phone is connected and to what; never the secrets. */
+  /** Whether the phone is connected. Nothing about the bucket is given back: not its address, not a key. */
   getConnection(): Promise<Connection>;
   /** Use the phone without a bucket: tasks stay here until a connection is made. */
   useLocally(): Promise<void>;
@@ -27,10 +27,6 @@ export interface Connection {
   configured: boolean;
   /** The phone was told to keep the tasks here only. */
   localOnly: boolean;
-  endpoint?: string;
-  bucket?: string;
-  region?: string;
-  accessKey?: string;
 }
 
 export interface ConnectionInput {

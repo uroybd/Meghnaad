@@ -43,10 +43,7 @@
   {#if connection === null}
     <p class="dim">Looking…</p>
   {:else if connection.configured}
-    <p>
-      Syncing with <code>{connection.bucket}</code> at <code>{connection.endpoint}</code> (access key
-      <code>{connection.accessKey}</code>).
-    </p>
+    <p>Syncing is on: this phone's tasks go to your S3 bucket, and what other devices add comes here.</p>
     {#if engine.lastSync}<p class="dim">Last synced {new Date(engine.lastSync).toLocaleTimeString()}.</p>{/if}
     <div class="row">
       <button class="primary" onclick={syncNow} disabled={busy}>{busy ? 'Syncing…' : 'Sync now'}</button>

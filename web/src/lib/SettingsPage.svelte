@@ -33,6 +33,13 @@
     sync: false,
   });
 
+  // A tab chosen from the keyboard, a link or the code may be off the edge of a narrow bar: bring it into view.
+  $effect(() => {
+    document
+      .getElementById(`settings-tab-${store.settingsTab}`)
+      ?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+  });
+
   function onkeydown(e: KeyboardEvent) {
     const at = TABS.findIndex((t) => t.id === store.settingsTab);
     const to =
@@ -150,6 +157,8 @@
     overflow-x: auto;
   }
   .tabs button {
+    /* Never narrower than the word: a bar too wide for the screen scrolls instead of running the names together. */
+    flex: none;
     border-color: transparent;
     border-bottom: 2px solid transparent;
     border-radius: 6px 6px 0 0;

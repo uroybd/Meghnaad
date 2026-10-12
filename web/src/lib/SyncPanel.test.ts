@@ -43,19 +43,11 @@ describe('SyncPanel', () => {
     expect(button('Sync now')).toBeUndefined();
   });
 
-  it('shows where it syncs, never the secrets, and syncs on request', async () => {
-    plugin.getConnection.mockResolvedValue({
-      configured: true,
-      localOnly: false,
-      endpoint: 'https://acct.r2.cloudflarestorage.com',
-      bucket: 'tasks',
-      region: 'auto',
-      accessKey: 'AK123',
-    });
+  it('says syncing is on without showing anything of the bucket, and syncs on request', async () => {
+    plugin.getConnection.mockResolvedValue({ configured: true, localOnly: false });
     app = mount(SyncPanel, { target: document.body });
-    await vi.waitFor(() => expect(document.body.textContent).toContain('tasks'));
-    expect(document.body.textContent).toContain('acct.r2.cloudflarestorage.com');
-    expect(document.body.textContent).toContain('AK123');
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Syncing is on'));
+    expect(document.body.textContent).not.toMatch(/https?:|\.com|AK|bucket:/);
     expect(document.querySelector('form')).toBeNull();
     button('Sync now')!.click();
     await vi.waitFor(() => expect(engine.sync).toHaveBeenCalledWith(true));

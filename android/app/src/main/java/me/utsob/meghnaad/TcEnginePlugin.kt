@@ -78,15 +78,11 @@ class TcEnginePlugin : Plugin() {
         }
     }
 
-    /** Whether the phone is connected, and to what. Never the secret key or the encryption secret. */
+    /** Whether the phone is connected, or was told to go without. Nothing of the connection is given to the page. */
     @PluginMethod
     fun getConnection(call: PluginCall) {
-        val c = engine().vault.connection()
-        val out = JSObject().put("configured", c != null).put("localOnly", engine().vault.localOnly())
-        if (c != null) {
-            out.put("endpoint", c.endpoint).put("bucket", c.bucket).put("region", c.region).put("accessKey", c.accessKey)
-        }
-        call.resolve(out)
+        val vault = engine().vault
+        call.resolve(JSObject().put("configured", vault.connection() != null).put("localOnly", vault.localOnly()))
     }
 
     @PluginMethod
