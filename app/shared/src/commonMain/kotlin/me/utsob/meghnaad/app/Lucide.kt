@@ -108,6 +108,18 @@ object LucideLib {
     fun names(): List<String> = icons.keys.sorted()
 }
 
+/**
+ * Names matching every word of the query, in the name or in the words it is found by; the name's own first (the icon picker's
+ * search, from lucideLib.svelte.ts).
+ */
+fun searchIcons(catalog: Map<String, List<String>>, query: String): List<String> {
+    val words = query.lowercase().split(Regex("[\\s-]+")).filter { it.isNotEmpty() }
+    val names = catalog.keys.sorted()
+    val hits = names.filter { n -> words.all { w -> n.contains(w) || catalog.getValue(n).any { it.lowercase().contains(w) } } }
+    fun own(n: String) = words.all { n.contains(it) }
+    return hits.filter(::own) + hits.filter { !own(it) }
+}
+
 /** An icon from the set, in the colour of the text around it unless told otherwise. */
 @Composable
 fun LucideIcon(

@@ -15,6 +15,8 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** Where the app is in getting started. */
 enum class Setup {
@@ -297,7 +299,9 @@ class Store(
             vault.clearConnection()
             return sync.error ?: "Could not connect."
         }
-        boot()
+        connectionVersion++
+        // Connecting from Settings (the engine is running): keep going. From the first screen: start.
+        if (setup == Setup.Ready) written() else boot()
         return null
     }
 
@@ -779,6 +783,45 @@ class Store(
     // What was fetched, kept until the tasks change, so moving along a row of ids asks once each (lookup.ts).
     private val taskCache = mutableMapOf<String, CompletableDeferred<Row?>>()
     private var cachedRev = -1
+
+    /** One of the settings routes (`/api/settings`, `/api/config/taskrc`, …): status and body; a failure's own words are thrown. */
+    suspend fun request(method: String, path: String, body: String = ""): String {
+        val (status, text) = tw.request(method, path, body)
+        if (status !in 200..299) {
+            val why = try {
+                engineJson.parseToJsonElement(text).jsonObject["error"]?.jsonPrimitive?.content
+            } catch (e: Exception) {
+                null
+            }
+            throw EngineError(why ?: "Server error ($status).", status)
+        }
+        return text
+    }
+
+    // ---- The connection, for Settings
+
+    /** Whether this device is connected to a bucket. */
+    val connected: Boolean get() = connectionVersion >= 0 && vault.connection() != null
+
+    private var connectionVersion by mutableStateOf(0)
+
+    /** Which of the settings and the hooks are kept in step with the bucket's. */
+    var syncOptions: SyncOptions
+        get() {
+            connectionVersion
+            return vault.syncOptions
+        }
+        set(value) {
+            vault.syncOptions = value
+            connectionVersion++
+        }
+
+    /** Stop syncing: the tasks stay on this device, and the bucket keeps what it has. */
+    fun disconnect() {
+        vault.clearConnection()
+        vault.localOnly = true
+        connectionVersion++
+    }
 
     /** One task by uuid, or null when it is gone or the request failed. Asked for only when someone wants to see it. */
     suspend fun fetchTask(uuid: String): Row? {
