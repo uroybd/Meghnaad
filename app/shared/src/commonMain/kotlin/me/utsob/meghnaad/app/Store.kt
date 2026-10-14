@@ -526,6 +526,12 @@ class Store(
         view = View.Projects
     }
 
+    /** The page took what a chip asked for: coming back to it later should not repeat it. */
+    fun focusHandled() {
+        tagFocus = null
+        projectFocus = null
+    }
+
     fun openDetail(uuid: String, from: Entry? = null) {
         detail = DetailRef(uuid, from)
     }
