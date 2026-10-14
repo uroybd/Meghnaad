@@ -157,6 +157,8 @@ private fun MainView(store: Store) {
     when (store.view) {
         View.Tasks -> TasksView(store)
         View.Console -> ConsoleView(store)
+        View.Projects -> ProjectsView(store)
+        View.Tags -> TagsView(store)
         else -> ComingSoon(store.view.name)
     }
 }

@@ -232,7 +232,7 @@ private fun FilterBar(store: Store) {
             )
             IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, modifier = Modifier.padding(top = 8.dp), size = 18.dp)
         }
-        FilterChips(store, words)
+        FilterChips(store.filter) { store.filter = it }
         FilterHelpers(store, words)
         if (meta?.filter != null || meta?.sort != null || context != null) {
             val text = buildString {
@@ -247,9 +247,11 @@ private fun FilterBar(store: Store) {
 
 private val SORT_TOKEN = Regex("^rc\\.report\\.[^.]+\\.sort[:=]")
 
+/** The words of a filter as removable chips, and "clear all" (FilterChips.svelte). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterChips(store: Store, words: List<String>) {
+fun FilterChips(filter: String, onChange: (String) -> Unit) {
+    val words = splitWords(filter)
     if (words.isEmpty()) return
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         words.forEachIndexed { i, w ->
@@ -259,10 +261,20 @@ private fun FilterChips(store: Store, words: List<String>) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(label, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 9.dp))
-                IconAction("x", "Remove $label", { store.filter = joinWords(words.filterIndexed { j, _ -> j != i }) }, size = 11.dp, modifier = Modifier.padding(0.dp))
+                IconAction("x", "Remove $label", { onChange(joinWords(words.filterIndexed { j, _ -> j != i })) }, size = 11.dp, modifier = Modifier.padding(0.dp))
             }
         }
-        TextButton(onClick = { store.filter = "" }) { Text("clear all", fontSize = 12.sp) }
+        TextButton(onClick = { onChange("") }) { Text("clear all", fontSize = 12.sp) }
+    }
+}
+
+/** The filter box shared by the pages: Taskwarrior's filter syntax, with completion of projects, tags and attributes. */
+@Composable
+fun FilterField(store: Store, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "Filters: +work due:eow") {
+    var completeSignal by remember { mutableStateOf(0) }
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CompletingField(value, onChange, store.vocab, Modifier.weight(1f), placeholder = placeholder, completeSignal = completeSignal)
+        IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, modifier = Modifier.padding(top = 8.dp), size = 18.dp)
     }
 }
 
