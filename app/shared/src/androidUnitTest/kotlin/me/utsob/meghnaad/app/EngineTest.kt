@@ -10,8 +10,18 @@ import kotlin.test.assertTrue
 
 /** The real engine, through the real JNI library (a host build of it): skipped when `cargo build --profile android -p tc-android` has not run. */
 class EngineTest {
-    private val secrets = object : SecretStore {
+    /** A vault with nothing in it: local use, and a fixed key. */
+    private val secrets = object : Vault {
         override fun engineKey() = ByteArray(32) { 7 }
+
+        override fun connection(): Connection? = null
+
+        override fun saveConnection(connection: Connection) {}
+
+        override fun clearConnection() {}
+
+        override var localOnly = true
+        override var syncOptions = SyncOptions()
     }
 
     private fun library(): Boolean {
