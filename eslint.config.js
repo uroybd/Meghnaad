@@ -13,6 +13,8 @@ export default ts.config(
       'target/**',
       'crates/**',
       'android/**',
+      // The Kotlin app: Gradle writes JavaScript reports under its build folders.
+      'app/**',
       'docs/**',
       'web/dist/**',
       'web/src/engine/pkg/**',
