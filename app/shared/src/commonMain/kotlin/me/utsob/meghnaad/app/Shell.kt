@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -193,15 +194,18 @@ private fun Dialogs(store: Store) {
             dismissButton = { TextButton(onClick = { store.answerAsk(false) }) { Text(a.no) } },
         )
     }
-    store.adding?.let { AddTaskLite(store, it) }
-    store.detail?.let { d ->
-        AlertDialog(
-            onDismissRequest = { store.detail = null },
-            title = { Text("Task") },
-            text = { Dim("The detail view is not in this build yet. (${d.uuid.take(8)})", size = 14) },
-            confirmButton = { TextButton(onClick = { store.detail = null }) { Text("Close") } },
-        )
+    store.editing?.let { e -> key(e.row.uuid) { TaskEditor(store, e.row, e.from, onClose = { store.editing = null }) } }
+    store.adding?.let { a ->
+        key(a.n) {
+            TaskEditor(
+                store, null, store.live, a.description,
+                onClose = { store.adding = null },
+                onAdded = { again -> store.adding = if (again) AddRef("", a.n + 1) else null },
+            )
+        }
     }
+    // The detail of a task is the whole screen (a phone's drawer); the editor opens over it.
+    store.detail?.let { d -> key(d.uuid) { DetailScreen(store, d) } }
     if (store.notifyOpen) {
         AlertDialog(
             onDismissRequest = { store.notifyOpen = false },

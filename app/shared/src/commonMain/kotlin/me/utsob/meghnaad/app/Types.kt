@@ -193,6 +193,25 @@ fun parseResponse(text: String): CliResponse {
     )
 }
 
+/** One change to a task, from its operation log (`_history`): what `task info` words as a sentence. */
+@Serializable
+data class HistoryChange(
+    /** set | changed | deleted | note_added | note_changed | note_deleted | tag_added | tag_deleted | dep_added | dep_deleted */
+    val kind: String,
+    /** The property; for the tag and dependency kinds, the tag or the uuid. */
+    val prop: String,
+    val old: String? = null,
+    val value: String? = null,
+    /** The values are epoch seconds to show in the date format. */
+    val date: Boolean = false,
+    /** For a deleted `start`: how long the task ran, already formatted. */
+    val duration: String? = null,
+)
+
+/** The changes made at one moment. */
+@Serializable
+data class HistoryEntry(val at: Long, val changes: List<HistoryChange> = emptyList())
+
 /** The report names the settings define, for choosing one. */
 @Serializable
 data class ReportMeta(

@@ -270,6 +270,9 @@ class Store(
      */
     fun go(block: suspend Store.() -> Unit): Job = scope.launch { block() }
 
+    /** Now in seconds, fresh (not the half-minute value of [now]): for a timer. */
+    fun clockNow(): Long = clock.nowSeconds().toLong()
+
     fun tick() {
         now = clock.nowSeconds().toLong()
     }
@@ -765,6 +768,39 @@ class Store(
     /** The first screen of the Tasks view needs the live table: run it again after a settings or sync change. */
     fun redrawLive() {
         live?.let { e -> scope.launch { exec(e) } }
+    }
+
+    // What was fetched, kept until the tasks change, so moving along a row of ids asks once each (lookup.ts).
+    private val taskCache = mutableMapOf<String, CompletableDeferred<Row?>>()
+    private var cachedRev = -1
+
+    /** One task by uuid, or null when it is gone or the request failed. Asked for only when someone wants to see it. */
+    suspend fun fetchTask(uuid: String): Row? {
+        if (cachedRev != rev) {
+            taskCache.clear()
+            cachedRev = rev
+        }
+        val pending = taskCache.getOrPut(uuid) {
+            CompletableDeferred<Row?>().also { d ->
+                scope.launch {
+                    d.complete(
+                        try {
+                            (tw.run(args = listOf(uuid, "info")).result as? CliResult.Info)?.value?.tasks?.firstOrNull()
+                        } catch (e: Exception) {
+                            null
+                        },
+                    )
+                }
+            }
+        }
+        return pending.await()
+    }
+
+    /** What a command answers, for a screen that asks and reads (a task's history, its instances): errors are thrown. */
+    suspend fun query(args: List<String>): CliResult {
+        val result = tw.run(args = args).result
+        if (result is CliResult.Error) throw EngineError(result.value.message)
+        return result
     }
 
     /** The task, by its uuid prefix of at least 8 characters (what a widget tap or a link carries). */
