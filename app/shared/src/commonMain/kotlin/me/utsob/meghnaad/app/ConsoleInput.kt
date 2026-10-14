@@ -87,6 +87,12 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
             store.clearEntries()
             return
         }
+        // tasksh's `review` is the app's own: it is not sent, it drives a session of ordinary commands, drawn as a card.
+        val asked = parseReview(l)
+        if (asked != null) {
+            store.go { store.review.start(asked) }
+            return
+        }
         // A task command from settings.json stands for the command line it names (what runs, and what the checks below look
         // at, is that); the history keeps what was typed.
         val cmd = expandTaskCommands(l, store.taskCommands)

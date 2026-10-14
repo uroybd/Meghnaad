@@ -203,7 +203,9 @@ private fun Dialogs(store: Store) {
             dismissButton = { TextButton(onClick = { store.answerAsk(false) }) { Text(a.no) } },
         )
     }
-    store.editing?.let { e -> key(e.row.uuid) { TaskEditor(store, e.row, e.from, onClose = { store.editing = null }) } }
+    // A review is a card over the page; the editor and a task's details open over it.
+    if (store.review.phase != ReviewPhase.Idle) ReviewCard(store)
+    store.editing?.let { e -> key(e.row.uuid) { TaskEditor(store, e.row, e.from, onClose = { store.closeEditor() }) } }
     store.adding?.let { a ->
         key(a.n) {
             TaskEditor(
