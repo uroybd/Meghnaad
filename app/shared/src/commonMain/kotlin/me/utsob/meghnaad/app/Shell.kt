@@ -95,6 +95,7 @@ private fun TopBar(store: Store, onMenu: () -> Unit) {
         IconAction("menu", "Menu", onMenu, size = 22.dp)
         Text("Meghnaad", Modifier.padding(horizontal = 4.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
         Box(Modifier.weight(1f))
+        TimerChip(store, Modifier.weight(3f, fill = false))
         store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(end = 8.dp)) }
     }
 }
@@ -217,12 +218,5 @@ private fun Dialogs(store: Store) {
     }
     // The detail of a task is the whole screen (a phone's drawer); the editor opens over it.
     store.detail?.let { d -> key(d.uuid) { DetailScreen(store, d) } }
-    if (store.notifyOpen) {
-        AlertDialog(
-            onDismissRequest = { store.notifyOpen = false },
-            title = { Text("Reminders") },
-            text = { Dim("Reminders are not in this build yet.", size = 14) },
-            confirmButton = { TextButton(onClick = { store.notifyOpen = false }) { Text("Close") } },
-        )
-    }
+    if (store.notifyOpen) NotifyDialog(store)
 }

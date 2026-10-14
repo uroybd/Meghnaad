@@ -122,7 +122,11 @@ class Store(
     private val scope: CoroutineScope,
     private val clock: Clock,
     private val prefs: Prefs = MemoryPrefs(),
+    reminders: ReminderHost? = null,
 ) {
+    /** Reminders: the options, the running task, and what is due while the app is open (the phone's alarm does the rest). */
+    val notifier = Notifier(this, tw, prefs, scope, clock, reminders)
+
     // ---- Getting started
     var setup by mutableStateOf(Setup.Checking)
         private set
@@ -349,6 +353,8 @@ class Store(
                 if (port.restored) sync.request() else sync.request().await()
                 setup = Setup.Ready
                 loadAppSettings()
+                notifier.start()
+                launchTask?.let { launchTask = null; openDetail(it) }
             } catch (e: Exception) {
                 error = e.message ?: e.toString()
                 setup = Setup.Failed
@@ -538,6 +544,14 @@ class Store(
         projectFocus = null
     }
 
+    /** A task to open once the app has started (a notification was tapped while it was not running). */
+    private var launchTask: String? = null
+
+    /** Open a task from outside (a notification): at once, or when the app is ready. */
+    fun openFromOutside(uuid: String) {
+        if (setup == Setup.Ready) openDetail(uuid) else launchTask = uuid
+    }
+
     fun openDetail(uuid: String, from: Entry? = null) {
         detail = DetailRef(uuid, from)
     }
@@ -720,6 +734,7 @@ class Store(
     fun written() {
         rev++
         scope.launch { refreshNames() }
+        if (setup == Setup.Ready) notifier.pollSoon()
     }
 
     /** A screen's action (done, start, add, …): run it, say how it went, and draw again what is on screen. */

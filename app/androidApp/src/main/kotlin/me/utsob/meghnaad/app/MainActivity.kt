@@ -1,9 +1,11 @@
 package me.utsob.meghnaad.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -19,17 +21,30 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var engine: LocalEngine
+    private lateinit var store: Store
+
+    /** Who is waiting to hear whether the phone allowed notifications. */
+    private var permissionAnswer: ((Boolean) -> Unit)? = null
+    private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionAnswer?.invoke(granted)
+        permissionAnswer = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Draw under the system bars (the app pads for them), as a phone's apps do.
         enableEdgeToEdge()
         APP_VERSION = packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-        val vault = AndroidVault(this)
-        engine = LocalEngine(filesDir, vault)
+        val vault = AppEngine.vault(this)
+        engine = AppEngine.get(this)
         val sync = SyncController(engine, lifecycleScope, SystemClock)
-        val store = Store(Tw(engine, SystemClock), engine, vault, sync, lifecycleScope, SystemClock, AndroidPrefs(this))
+        val reminders = AndroidReminders(this) { done ->
+            permissionAnswer = done
+            if (android.os.Build.VERSION.SDK_INT >= 33) askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS) else done(true)
+        }
+        store = Store(Tw(engine, SystemClock), engine, vault, sync, lifecycleScope, SystemClock, AndroidPrefs(this), reminders)
         store.begin()
+        openWhatWasTapped(intent)
         // The back button closes what is on top (a question, a form, the menu), then goes back to the Tasks page, and only
         // then leaves the app.
         onBackPressedDispatcher.addCallback(
@@ -55,6 +70,20 @@ class MainActivity : ComponentActivity() {
         }
         // Clear of the status bar, the gesture bar and the keyboard, so the prompt is never under one of them.
         setContent { Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) { App(store) } }
+    }
+
+    /** A notification was tapped while the app was open. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openWhatWasTapped(intent)
+    }
+
+    private fun openWhatWasTapped(intent: Intent?) {
+        intent?.getStringExtra(AndroidReminders.EXTRA_TASK)?.let {
+            intent.removeExtra(AndroidReminders.EXTRA_TASK)
+            store.openFromOutside(it)
+        }
     }
 
     override fun onStop() {
