@@ -29,6 +29,13 @@ class AppModel(private val tw: Tw, private val scope: CoroutineScope, private va
     var pending by mutableStateOf<Pending?>(null)
         private set
 
+    /** What the last command that changed tasks said ("Created task 2."), shown over the report that is kept up to date. */
+    var notice by mutableStateOf<String?>(null)
+        private set
+
+    /** The report on show, which a command that changes tasks draws again. */
+    private var reportName = "next"
+
     /** The offset of the user's own time zone, for dates. */
     val utcOffset get() = clock.utcOffsetSeconds()
 
@@ -89,13 +96,20 @@ class AppModel(private val tw: Tw, private val scope: CoroutineScope, private va
 
     private suspend fun execute(line: String?, args: List<String>?, answers: Answers) {
         error = null
+        notice = null
         val got = tw.run(line, args, answers)
-        val result = got.result
-        if (result is CliResult.Confirm) {
-            pending = Pending(result.value, line, args)
-            return
+        when (val result = got.result) {
+            is CliResult.Confirm -> pending = Pending(result.value, line, args)
+            is CliResult.Report -> {
+                reportName = result.value.report
+                response = got
+            }
+            is CliResult.Changed -> {
+                notice = (listOf(result.value.message) + got.feedback.map { it.text }).joinToString(" ")
+                // The tasks changed: draw the report again, so the list is as the engine now has it.
+                if (got.wrote) response = tw.run(args = listOf(reportName)) else response = got
+            }
+            else -> response = got
         }
-        // A command that is not a report leaves the last report where it is; only what is new is shown over it.
-        response = got
     }
 }

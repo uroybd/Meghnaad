@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -28,6 +30,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
 /** The whole app, the same on every platform. */
@@ -36,6 +39,7 @@ fun App(model: AppModel) {
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
             TopBar(model)
+            model.notice?.let { Text(it, modifier = Modifier.padding(vertical = 4.dp)) }
             model.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 4.dp)) }
             model.response?.let { Body(model, it) }
         }
@@ -47,6 +51,12 @@ fun App(model: AppModel) {
 private fun TopBar(model: AppModel) {
     var line by remember { mutableStateOf("") }
     var open by remember { mutableStateOf(false) }
+    // The on-screen keyboard sends an action, a hardware keyboard an Enter key: both run the line.
+    fun submit() {
+        if (line.isBlank()) return
+        model.run(line.trim())
+        line = ""
+    }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box {
             TextButton(onClick = { open = true }) { Text("Reports") }
@@ -64,10 +74,11 @@ private fun TopBar(model: AppModel) {
             onValueChange = { line = it },
             singleLine = true,
             label = { Text("task …") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { submit() }),
             modifier = Modifier.weight(1f).onKeyEvent {
-                if (it.key == Key.Enter && it.type == KeyEventType.KeyDown && line.isNotBlank()) {
-                    model.run(line.trim())
-                    line = ""
+                if (it.key == Key.Enter && it.type == KeyEventType.KeyDown) {
+                    submit()
                     true
                 } else {
                     false
