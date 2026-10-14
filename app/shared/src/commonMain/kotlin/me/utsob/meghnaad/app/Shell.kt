@@ -28,6 +28,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -154,12 +155,15 @@ private fun Dock(store: Store) {
 /** The page the menu is on. */
 @Composable
 private fun MainView(store: Store) {
+    // Once opened, Settings keeps its edits while another page is shown.
+    val settingsState = remember(store) { SettingsState(store) }
     when (store.view) {
         View.Tasks -> TasksView(store)
         View.Console -> ConsoleView(store)
         View.Projects -> ProjectsView(store)
         View.Tags -> TagsView(store)
         View.Summary -> SummaryPage(store)
+        View.Settings -> SettingsPage(store, settingsState)
         View.Calendar -> CalendarPage(store)
         View.Burndown -> BurndownPage(store)
         else -> ComingSoon(store.view.name)

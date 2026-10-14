@@ -300,6 +300,20 @@ data class HistoryChange(
 @Serializable
 data class HistoryEntry(val at: Long, val changes: List<HistoryChange> = emptyList())
 
+/** What saving a taskrc kept, as the engine reports it: counts, what was refused (names only), and the settings as now saved. */
+@Serializable
+data class TaskrcResponse(
+    val udas: Int = 0,
+    val reports: Int = 0,
+    val contexts: Int = 0,
+    /** Setting *names* refused for safety (sync.*, credentials). Values are never sent back. */
+    val blocked: List<String> = emptyList(),
+    val ignored: List<String> = emptyList(),
+    val warnings: List<String> = emptyList(),
+    /** The settings as now saved, rendered as a taskrc (nothing blocked is ever in it). */
+    val text: String = "",
+)
+
 /** The report names the settings define, for choosing one. */
 @Serializable
 data class ReportMeta(
