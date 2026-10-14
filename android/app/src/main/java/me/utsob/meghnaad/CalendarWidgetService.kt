@@ -77,20 +77,20 @@ class CalendarWidgetService : RemoteViewsService() {
                 return row
             }
             row.setTextViewText(R.id.day, cell.day.toString())
-            row.setTextColor(R.id.day, if (cell.today) 0xFFFFFFFF.toInt() else if (cell.dim) palette.dim else palette.text)
+            palette.setTextColor(row, R.id.day, if (cell.today) Palette.WHITE else if (cell.dim) Palette.DIM else Palette.TEXT)
             if (cell.today) {
                 row.setViewVisibility(R.id.today, android.view.View.VISIBLE)
-                row.setInt(R.id.today, "setColorFilter", palette.accent)
+                palette.setTint(row, R.id.today, Palette.ACCENT)
             }
             val dot = when (cell.due) {
-                "overdue" -> palette.overdue
-                "due-today" -> palette.dueToday
-                "due" -> palette.due
-                else -> if (cell.scheduled) palette.dim else null
+                "overdue" -> Palette.OVERDUE
+                "due-today" -> Palette.DUE_TODAY
+                "due" -> Palette.DUE
+                else -> if (cell.scheduled) Palette.DIM else null
             }
             if (dot != null) {
                 row.setViewVisibility(R.id.dot, android.view.View.VISIBLE)
-                row.setInt(R.id.dot, "setColorFilter", if (cell.today) 0xFFFFFFFF.toInt() else dot)
+                palette.setTint(row, R.id.dot, if (cell.today) Palette.WHITE else dot)
             }
             row.setOnClickFillInIntent(R.id.cell, Intent().putExtra("kind", "day").putExtra("date", cell.date))
             return row

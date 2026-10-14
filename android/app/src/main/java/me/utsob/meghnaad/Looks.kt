@@ -8,10 +8,10 @@ object Looks {
     fun apply(context: Context, views: RemoteViews, id: Int, extraButtons: List<Int> = emptyList()): Palette {
         val palette = Palette(context, WidgetPrefs.look(context, id))
         // The background is a white shape, tinted to the theme's colour and made as see-through as asked.
-        views.setInt(R.id.bg, "setColorFilter", palette.background)
+        palette.setTint(views, R.id.bg, Palette.BACKGROUND)
         views.setInt(R.id.bg, "setImageAlpha", palette.alpha)
-        views.setTextColor(R.id.title, palette.text)
-        for (button in listOf(R.id.refresh) + extraButtons) views.setInt(button, "setColorFilter", palette.text)
+        palette.setTextColor(views, R.id.title, Palette.TEXT)
+        for (button in listOf(R.id.refresh) + extraButtons) palette.setTint(views, button, Palette.TEXT)
         return palette
     }
 }

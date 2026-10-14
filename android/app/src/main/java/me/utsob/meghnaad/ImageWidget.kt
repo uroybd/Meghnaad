@@ -14,6 +14,8 @@ import android.widget.RemoteViews
 class Rendered(
     val title: String,
     val bitmap: Bitmap? = null,
+    /** The picture for the phone's dark theme, when the widget follows the phone and so carries one for each. */
+    val darkBitmap: Bitmap? = null,
     val caption: String = "",
     val message: String? = null,
 )
@@ -111,14 +113,23 @@ abstract class ImageWidget : AppWidgetProvider() {
             val palette = Looks.apply(context, views, id)
             views.setTextViewText(R.id.title, r.title)
             views.setTextViewText(R.id.caption, r.caption)
-            views.setTextColor(R.id.caption, palette.dim)
-            views.setTextColor(R.id.message, palette.dim)
+            palette.setTextColor(views, R.id.caption, Palette.DIM)
+            palette.setTextColor(views, R.id.message, Palette.DIM)
             if (r.bitmap != null) {
                 views.setImageViewBitmap(R.id.chart, r.bitmap)
                 views.setViewVisibility(R.id.chart, View.VISIBLE)
                 views.setViewVisibility(R.id.message, View.GONE)
+                if (r.darkBitmap != null) {
+                    views.setImageViewBitmap(R.id.chart_dark, r.darkBitmap)
+                    views.setViewVisibility(R.id.chart_dark, View.VISIBLE)
+                } else {
+                    // One picture, whatever the phone's theme: the layout's per-theme alpha would hide it in the dark.
+                    views.setFloat(R.id.chart, "setAlpha", 1f)
+                    views.setViewVisibility(R.id.chart_dark, View.GONE)
+                }
             } else {
                 views.setViewVisibility(R.id.chart, View.GONE)
+                views.setViewVisibility(R.id.chart_dark, View.GONE)
                 views.setTextViewText(R.id.message, r.message ?: context.getString(R.string.widget_nothing_to_show))
                 views.setViewVisibility(R.id.message, View.VISIBLE)
             }

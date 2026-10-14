@@ -94,10 +94,10 @@ class CalendarWidget : AppWidgetProvider() {
             val ids = listOf(R.id.wd0, R.id.wd1, R.id.wd2, R.id.wd3, R.id.wd4, R.id.wd5, R.id.wd6)
             for ((i, view) in ids.withIndex()) {
                 views.setTextViewText(view, names?.optString(i) ?: listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")[i])
-                views.setTextColor(view, palette.dim)
+                palette.setTextColor(views, view, Palette.DIM)
             }
             views.setTextViewText(R.id.caption, shown?.let(::caption) ?: "")
-            views.setTextColor(R.id.caption, palette.dim)
+            palette.setTextColor(views, R.id.caption, Palette.DIM)
 
             // The days are the service's: one cell each, and a tap on one comes back as this template filled in with the day.
             val adapter = Intent(context, CalendarWidgetService::class.java).apply { data = Uri.parse("meghnaad://calendar/$id") }
