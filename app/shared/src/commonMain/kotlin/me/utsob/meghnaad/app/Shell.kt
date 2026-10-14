@@ -26,6 +26,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -158,17 +162,33 @@ private fun Dock(store: Store) {
 private fun MainView(store: Store) {
     // Once opened, Settings keeps its edits while another page is shown.
     val settingsState = remember(store) { SettingsState(store) }
-    when (store.view) {
-        View.Tasks -> TasksView(store)
-        View.Console -> ConsoleView(store)
-        View.Projects -> ProjectsView(store)
-        View.Tags -> TagsView(store)
-        View.Summary -> SummaryPage(store)
-        View.Settings -> SettingsPage(store, settingsState)
-        View.Calendar -> CalendarPage(store)
-        View.Burndown -> BurndownPage(store)
-        else -> ComingSoon(store.view.name)
+    // Pull down on a page to sync and draw it again; not on the console, which scrolls on its own.
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
+    val page: @Composable () -> Unit = {
+        when (store.view) {
+            View.Tasks -> TasksView(store)
+            View.Console -> ConsoleView(store)
+            View.Projects -> ProjectsView(store)
+            View.Tags -> TagsView(store)
+            View.Summary -> SummaryPage(store)
+            View.Settings -> SettingsPage(store, settingsState)
+            View.Calendar -> CalendarPage(store)
+            View.Burndown -> BurndownPage(store)
+            else -> ComingSoon(store.view.name)
+        }
     }
+    if (store.view == View.Console) page() else PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            refreshing = true
+            scope.launch {
+                store.go { pullRefresh() }.join()
+                refreshing = false
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) { page() }
 }
 
 @Composable
