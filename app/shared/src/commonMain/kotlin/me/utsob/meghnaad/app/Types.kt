@@ -194,8 +194,52 @@ data class ReportMeta(
 )
 
 @Serializable
+data class UdaDef(
+    val name: String,
+    /** string | numeric | date | duration | uuid */
+    val type: String = "string",
+    val label: String? = null,
+    val values: List<String> = emptyList(),
+    val default: String? = null,
+    val indicator: String? = null,
+)
+
+@Serializable
+data class ContextDef(
+    val name: String,
+    val read: String? = null,
+    val write: String? = null,
+    val rc: Map<String, String> = emptyMap(),
+)
+
+/** The `config` of a [ConfigResponse]: what the taskrc settings come to. */
+@Serializable
+data class ConfigBody(
+    val udas: Map<String, UdaDef> = emptyMap(),
+    val contexts: Map<String, ContextDef> = emptyMap(),
+    @SerialName("active_context") val activeContext: String? = null,
+    val urgency: Map<String, Double> = emptyMap(),
+    val settings: Map<String, String> = emptyMap(),
+)
+
+/** The annotation texts `journal.time` writes on start and stop. */
+@Serializable
+data class Journal(val start: String, val stop: String)
+
+@Serializable
 data class ConfigResponse(
+    val config: ConfigBody = ConfigBody(),
     val reports: List<ReportMeta> = emptyList(),
+    /** Null when journalling is off. */
+    val journal: Journal? = null,
+    /** There are earlier saved settings to restore. */
+    @SerialName("has_previous") val hasPrevious: Boolean = false,
+    /** Whether tasks are coloured (`color`). */
     val color: Boolean = false,
+    /** Every colour in force, by name without `color.` (`calendar.today`): palette indexes, for the charts. */
+    val colors: Map<String, Resolved> = emptyMap(),
+    @SerialName("urgency_defaults") val urgencyDefaults: Map<String, Double> = emptyMap(),
+    @SerialName("urgency_inherit") val urgencyInherit: Boolean = false,
+    /** Saved settings exist but could not be read (they are left untouched). */
     @SerialName("config_error") val configError: String? = null,
 )

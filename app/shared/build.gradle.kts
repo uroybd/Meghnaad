@@ -11,9 +11,16 @@ plugins {
 // Where `cargo build --profile android -p tc-android` puts the engine for this machine: the unit tests load it from there.
 val engineDir = rootDir.resolve("../target/android")
 
-// Android only for now; the screens, state and engine API are in `commonMain` so that another target can share them later.
+// Android is the app. The desktop target is only a preview for looking at the screens live with hot reload (`desktopApp`):
+// it is not shipped, and keeps no secrets. The screens, state and engine API are in `commonMain`; what both read from the
+// engine's library is in `jvmCommonMain`.
 kotlin {
     androidTarget { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
+    jvm("desktop")
+
+    applyDefaultHierarchyTemplate {
+        common { group("jvmCommon") { withAndroidTarget(); withJvm() } }
+    }
 
     sourceSets {
         commonMain.dependencies {
@@ -25,6 +32,13 @@ kotlin {
             implementation(libs.serialization.json)
         }
         commonTest.dependencies { implementation(kotlin("test")) }
+        val desktopMain by getting
+        desktopMain.dependencies { implementation(libs.coroutines.swing) }
+    }
+
+    tasks.named<Test>("desktopTest") {
+        systemProperty("java.library.path", engineDir.absolutePath)
+        systemProperty("tc.engine.dir", engineDir.absolutePath)
     }
 }
 

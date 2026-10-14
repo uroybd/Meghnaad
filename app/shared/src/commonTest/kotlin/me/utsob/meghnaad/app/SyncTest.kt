@@ -14,6 +14,8 @@ class SyncTest {
     private class FixedClock(var now: Double = 1000.0) : Clock {
         override fun utcOffsetSeconds() = 0
 
+        override fun offsetAt(epochSeconds: Long) = 0
+
         override fun nowSeconds() = now
     }
 

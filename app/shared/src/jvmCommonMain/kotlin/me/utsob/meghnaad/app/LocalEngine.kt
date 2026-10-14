@@ -13,6 +13,8 @@ import java.io.File
 object SystemClock : Clock {
     override fun utcOffsetSeconds(): Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000
 
+    override fun offsetAt(epochSeconds: Long): Int = java.util.TimeZone.getDefault().getOffset(epochSeconds * 1000) / 1000
+
     override fun nowSeconds(): Double = System.currentTimeMillis() / 1000.0
 }
 

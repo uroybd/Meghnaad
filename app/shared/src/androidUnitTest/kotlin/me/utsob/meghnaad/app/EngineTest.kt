@@ -39,6 +39,8 @@ class EngineTest {
         val clock = object : Clock {
             override fun utcOffsetSeconds() = 21_600
 
+            override fun offsetAt(epochSeconds: Long) = 21_600
+
             override fun nowSeconds() = System.currentTimeMillis() / 1000.0
         }
         val first = LocalEngine(dir, secrets)
@@ -67,6 +69,8 @@ class EngineTest {
         val dir = Files.createTempDirectory("meghnaad-test").toFile()
         val clock = object : Clock {
             override fun utcOffsetSeconds() = 0
+
+            override fun offsetAt(epochSeconds: Long) = 0
 
             override fun nowSeconds() = System.currentTimeMillis() / 1000.0
         }

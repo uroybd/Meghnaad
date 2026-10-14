@@ -91,7 +91,7 @@ private fun TopBar(model: Store) {
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box {
-            TextButton(onClick = { open = true }) { Text("Reports") }
+            TextButton(onClick = { open = true }) { Text("Reports ▾") }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 for (report in model.reports) {
                     DropdownMenuItem(text = { Text(report.name) }, onClick = {
