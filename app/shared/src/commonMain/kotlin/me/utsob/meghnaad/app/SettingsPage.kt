@@ -67,7 +67,7 @@ fun SettingsPage(store: Store, state: SettingsState) {
                 SettingsTab.Urgency -> UrgencyPanel(store, state.urgency)
                 SettingsTab.Sync -> SyncPanel(store)
             }
-            Dim("Meghnaad ${APP_VERSION}", Modifier.padding(vertical = 16.dp), 12)
+            if (APP_VERSION.isNotEmpty()) Dim("Meghnaad $APP_VERSION", Modifier.padding(vertical = 16.dp), 12)
         }
     }
 }

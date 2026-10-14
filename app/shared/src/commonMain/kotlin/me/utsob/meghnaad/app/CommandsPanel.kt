@@ -118,7 +118,7 @@ fun CommandsPanel(store: Store, st: CommandsState) {
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Commands", fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         Dim(
-            "A command is a word that stands for a whole command line. fail for done outcome:fail, and you can type fail, task fail, 3 fail or project:Home fail: " +
+            "A command is a word that stands for a whole command line: fail for done outcome:fail, and you can type fail, task fail, 3 fail or project:Home fail: " +
                 "what comes before it selects the tasks. They also appear under the ⋯ menu on a task, and on the tasks you have selected. They are kept in this " +
                 "app's own settings.json, not in your taskrc. A command wins over a Taskwarrior command or report with the same name.",
             size = 13,

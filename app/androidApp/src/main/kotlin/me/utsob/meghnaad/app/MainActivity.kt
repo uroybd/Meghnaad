@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Draw under the system bars (the app pads for them), as a phone's apps do.
         enableEdgeToEdge()
+        APP_VERSION = packageManager.getPackageInfo(packageName, 0).versionName ?: ""
         val vault = AndroidVault(this)
         engine = LocalEngine(filesDir, vault)
         val sync = SyncController(engine, lifecycleScope, SystemClock)
