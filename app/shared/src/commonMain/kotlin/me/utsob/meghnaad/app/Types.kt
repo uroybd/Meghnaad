@@ -212,7 +212,46 @@ data class BurndownResult(
 @Serializable
 data class InfoResult(val tasks: List<Row> = emptyList())
 
+/** A run of coloured text (`colors`, the history graph). */
+@Serializable
+data class Span(val text: String, val style: Resolved? = null)
+
+@Serializable
+data class StyledResult(
+    val lines: List<List<Span>> = emptyList(),
+    /** Draw the colours as they are (a palette), not softened to suit the page. */
+    val swatch: Boolean = false,
+)
+
+/** A file to offer to keep (`export`). */
+@Serializable
+data class FileResult(val name: String, val mime: String, val text: String, val count: Int = 0)
+
+@Serializable
+data class ImportLine(val action: String, val uuid: String, val description: String)
+
+/** What importing a file did (or, for a check, would do). */
+@Serializable
+data class ImportReport(
+    /** Whether the tasks were written. */
+    val applied: Boolean,
+    val added: Int = 0,
+    val modified: Int = 0,
+    val skipped: Int = 0,
+    val lines: List<ImportLine> = emptyList(),
+    /** How many tasks there were beyond [lines]. */
+    val more: Int = 0,
+    val warnings: List<String> = emptyList(),
+    val feedback: List<HookLine> = emptyList(),
+)
+
 sealed interface CliResult {
+    data class Styled(val value: StyledResult) : CliResult
+    data class File(val value: FileResult) : CliResult
+
+    /** `import`: the screen offers to pick a file. */
+    data object Import : CliResult
+
     data class Report(val value: ReportResult) : CliResult
     data class Table(val value: TableResult) : CliResult
     data class Text(val value: TextResult) : CliResult
@@ -227,7 +266,7 @@ sealed interface CliResult {
     /** Anything a command answers with as plain JSON (`_names`, `_remind`, `_uuids`): the value as it is. */
     data class Json(val value: JsonElement) : CliResult
 
-    /** A kind no screen draws yet (info, summary, calendar, burndown, styled, file, import, json). */
+    /** A kind no screen draws yet. */
     data class Unsupported(val kind: String, val json: JsonObject) : CliResult
 }
 
@@ -269,6 +308,9 @@ fun parseResponse(text: String): CliResponse {
         "calendar" -> CliResult.Calendar(engineJson.decodeFromJsonElement(result))
         "burndown" -> CliResult.Burndown(engineJson.decodeFromJsonElement(result))
         "json" -> CliResult.Json(result["value"] ?: kotlinx.serialization.json.JsonNull)
+        "styled" -> CliResult.Styled(engineJson.decodeFromJsonElement(result))
+        "file" -> CliResult.File(engineJson.decodeFromJsonElement(result))
+        "import" -> CliResult.Import
         else -> CliResult.Unsupported(kind, result)
     }
     return CliResponse(

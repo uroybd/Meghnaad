@@ -145,6 +145,9 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
         }
         Dim("A theme replaces the colour lines below; Apply to keep it. The Meghnaad theme is what applies when there are none.", size = 12)
 
+        if (store.files != null) {
+            OutlinedButton(onClick = { store.go { files?.pick()?.text?.let { st.text = it; st.result = null } } }) { Text("Choose a file") }
+        }
         Dim("Or import from a link")
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(

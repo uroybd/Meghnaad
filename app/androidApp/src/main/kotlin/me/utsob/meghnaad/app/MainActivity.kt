@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
             permissionAnswer = done
             if (android.os.Build.VERSION.SDK_INT >= 33) askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS) else done(true)
         }
-        store = Store(Tw(engine, SystemClock), engine, vault, sync, lifecycleScope, SystemClock, AndroidPrefs(this), reminders)
+        store = Store(Tw(engine, SystemClock), engine, vault, sync, lifecycleScope, SystemClock, AndroidPrefs(this), reminders, ActivityFiles(this))
         // What is written here is news to the widgets on the home screen.
         store.onWritten = { Widgets.refreshAll(applicationContext) }
         store.begin()

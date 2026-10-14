@@ -59,6 +59,9 @@ fun ResultBlock(store: Store, e: Entry, modifier: Modifier = Modifier) {
             is CliResult.Summary -> SummaryView(store, result.value)
             is CliResult.Calendar -> CalendarView(store, e, result.value)
             is CliResult.Burndown -> BurndownView(store, result.value)
+            is CliResult.Styled -> StyledView(result.value)
+            is CliResult.File -> FileView(store, result.value)
+            is CliResult.Import -> ImportView(store)
             is CliResult.Unsupported -> Dim("“${result.kind}” has no screen yet.")
         }
     }

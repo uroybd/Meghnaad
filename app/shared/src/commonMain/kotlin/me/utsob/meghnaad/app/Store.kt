@@ -123,6 +123,8 @@ class Store(
     private val clock: Clock,
     private val prefs: Prefs = MemoryPrefs(),
     reminders: ReminderHost? = null,
+    /** What the phone does with files, when it can: pick one to read, keep one. */
+    val files: FileHost? = null,
 ) {
     /** Reminders: the options, the running task, and what is due while the app is open (the phone's alarm does the rest). */
     val notifier = Notifier(this, tw, prefs, scope, clock, reminders)
