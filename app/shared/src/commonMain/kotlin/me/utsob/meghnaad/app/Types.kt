@@ -1,0 +1,201 @@
+package me.utsob.meghnaad.app
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+// What the engine answers, in Kotlin: mirrors web/src/lib/types.ts (itself a mirror of tc-core's run, cli and model).
+// Only the kinds a screen draws so far have a class; the rest arrive as [Unsupported] with their JSON.
+
+val engineJson = Json { ignoreUnknownKeys = true }
+
+@Serializable
+data class Note(val entry: Long, val text: String)
+
+/** A colour style from the engine: palette indexes (0-15 basic and bright, 16-231 cube, 232-255 grays). */
+@Serializable
+data class Resolved(
+    val bold: Boolean = false,
+    val underline: Boolean = false,
+    val inverse: Boolean = false,
+    val fg: Int? = null,
+    val bg: Int? = null,
+)
+
+@Serializable
+data class Session(val start: Long, val end: Long? = null, val seconds: Long = 0)
+
+@Serializable
+data class Row(
+    val uuid: String,
+    /** pending | completed | deleted | recurring */
+    val status: String,
+    val description: String,
+    val project: String? = null,
+    val priority: String? = null,
+    val tags: List<String> = emptyList(),
+    val annotations: List<Note> = emptyList(),
+    val entry: Long? = null,
+    val modified: Long? = null,
+    val start: Long? = null,
+    val end: Long? = null,
+    val due: Long? = null,
+    val wait: Long? = null,
+    val scheduled: Long? = null,
+    val until: Long? = null,
+    val depends: List<String> = emptyList(),
+    val blocked: Boolean = false,
+    val blocking: Boolean = false,
+    val recur: String? = null,
+    val parent: String? = null,
+    val mask: String? = null,
+    val imask: Int? = null,
+    val extra: Map<String, String> = emptyMap(),
+    val style: Resolved? = null,
+    val urgency: Double = 0.0,
+    /** Working-set number: specific to this client, and usually differs from a desktop's. */
+    val id: Int? = null,
+    @SerialName("virtual_tags") val virtualTags: List<String> = emptyList(),
+    val waiting: Boolean = false,
+    val orphans: List<String> = emptyList(),
+    @SerialName("active_seconds") val activeSeconds: Long? = null,
+    val sessions: List<Session> = emptyList(),
+    @SerialName("pending_deps") val pendingDeps: Int = 0,
+)
+
+@Serializable
+data class Column(
+    val spec: String,
+    val name: String,
+    val format: String? = null,
+    val label: String,
+    /** id | string | description | project | priority | status | tags | date | number | duration | uuids | notes */
+    val kind: String,
+)
+
+@Serializable
+data class ReportResult(
+    val report: String,
+    val description: String? = null,
+    val columns: List<Column> = emptyList(),
+    val rows: List<Row> = emptyList(),
+    val breaks: List<Boolean> = emptyList(),
+    val matched: Int = 0,
+    val sort: String? = null,
+)
+
+@Serializable
+data class TableResult(
+    val title: String? = null,
+    val footer: List<String> = emptyList(),
+    val highlight: List<Int> = emptyList(),
+    val right: List<Int> = emptyList(),
+    val headers: List<String> = emptyList(),
+    val rows: List<List<String>> = emptyList(),
+)
+
+@Serializable
+data class TextResult(val lines: List<String> = emptyList())
+
+@Serializable
+data class ChangedTask(val uuid: String, val id: Int? = null, val description: String)
+
+@Serializable
+data class ChangedResult(val message: String, val tasks: List<ChangedTask> = emptyList())
+
+/** One question about one task. */
+@Serializable
+data class ConfirmItem(
+    /** What to send back to say yes. */
+    val key: String,
+    val uuid: String,
+    val id: Int? = null,
+    val description: String,
+    val question: String,
+)
+
+/** `plain` is one yes/no; `permission` has a question per task; `extras` are follow-ups that come once those are answered. */
+@Serializable
+data class ConfirmResult(val message: String, val ask: String, val items: List<ConfirmItem> = emptyList())
+
+@Serializable
+data class ErrorResult(val message: String)
+
+sealed interface CliResult {
+    data class Report(val value: ReportResult) : CliResult
+    data class Table(val value: TableResult) : CliResult
+    data class Text(val value: TextResult) : CliResult
+    data class Changed(val value: ChangedResult) : CliResult
+    data class Confirm(val value: ConfirmResult) : CliResult
+    data class Error(val value: ErrorResult) : CliResult
+
+    /** A kind no screen draws yet (info, summary, calendar, burndown, styled, file, import, json). */
+    data class Unsupported(val kind: String, val json: JsonObject) : CliResult
+}
+
+/** How the engine understood the command line. */
+@Serializable
+data class CommandInfo(val name: String, val report: Boolean = false, val filter: List<String> = emptyList())
+
+/** A line a hook printed. */
+@Serializable
+data class HookLine(val kind: String, val text: String)
+
+class CliResponse(
+    val wrote: Boolean,
+    val feedback: List<HookLine>,
+    val result: CliResult,
+    val command: CommandInfo?,
+    /** Present when `config` changed the settings: the new ones, to save and give back to the engine. */
+    val config: JsonElement?,
+)
+
+/** The engine refused the request (it answered `{ "error": … }`). */
+class EngineError(message: String, val status: Int = 400) : Exception(message)
+
+/** Read what the engine answered to a command. */
+fun parseResponse(text: String): CliResponse {
+    val root = engineJson.parseToJsonElement(text).jsonObject
+    root["error"]?.let { throw EngineError(it.jsonPrimitive.content) }
+    val result = root.getValue("result").jsonObject
+    val kind = result.getValue("kind").jsonPrimitive.content
+    val parsed: CliResult = when (kind) {
+        "report" -> CliResult.Report(engineJson.decodeFromJsonElement(result))
+        "table" -> CliResult.Table(engineJson.decodeFromJsonElement(result))
+        "text" -> CliResult.Text(engineJson.decodeFromJsonElement(result))
+        "changed" -> CliResult.Changed(engineJson.decodeFromJsonElement(result))
+        "confirm" -> CliResult.Confirm(engineJson.decodeFromJsonElement(result))
+        "error" -> CliResult.Error(engineJson.decodeFromJsonElement(result))
+        else -> CliResult.Unsupported(kind, result)
+    }
+    return CliResponse(
+        wrote = root["wrote"]?.jsonPrimitive?.content == "true",
+        feedback = root["feedback"]?.let { engineJson.decodeFromJsonElement<List<HookLine>>(it) } ?: emptyList(),
+        result = parsed,
+        command = root["command"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }
+            ?.let { engineJson.decodeFromJsonElement<CommandInfo>(it) },
+        config = root["config"],
+    )
+}
+
+/** The report names the settings define, for choosing one. */
+@Serializable
+data class ReportMeta(
+    val name: String,
+    val description: String? = null,
+    val columns: List<Column> = emptyList(),
+    val filter: String? = null,
+    val sort: String? = null,
+)
+
+@Serializable
+data class ConfigResponse(
+    val reports: List<ReportMeta> = emptyList(),
+    val color: Boolean = false,
+    @SerialName("config_error") val configError: String? = null,
+)
