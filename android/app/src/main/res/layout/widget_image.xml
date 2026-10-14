@@ -54,8 +54,19 @@
             android:id="@+id/chart"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:alpha="@dimen/chart_light_alpha"
             android:contentDescription="@null"
             android:scaleType="fitCenter" />
+
+        <!-- The same chart in the dark theme: only there when the widget follows the phone. -->
+        <ImageView
+            android:id="@+id/chart_dark"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="@dimen/chart_dark_alpha"
+            android:contentDescription="@null"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/message"

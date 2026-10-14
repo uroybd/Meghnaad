@@ -42,7 +42,7 @@ class TasksWidget : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.widget_tasks)
             views.setTextViewText(R.id.title, WidgetPrefs.list(context, id).heading())
             val palette = Looks.apply(context, views, id, listOf(R.id.add))
-            views.setTextColor(R.id.empty, palette.dim)
+            palette.setTextColor(views, R.id.empty, Palette.DIM)
             // The id is in the address, which the system keeps (and which makes each widget's adapter its own); extras of an
             // adapter's intent are not reliably handed to the service.
             val adapter = Intent(context, TasksWidgetService::class.java).apply {

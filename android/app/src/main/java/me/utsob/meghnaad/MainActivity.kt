@@ -1,6 +1,7 @@
 package me.utsob.meghnaad
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import com.getcapacitor.BridgeActivity
 
@@ -32,6 +33,12 @@ class MainActivity : BridgeActivity() {
         registerPlugin(TcEnginePlugin::class.java)
         super.onCreate(savedInstanceState)
         Launch.from(intent)
+    }
+
+    /** The phone changed between light and dark while the app is open: widgets that follow it are drawn in its new colours. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Widgets.redrawAll(applicationContext)
     }
 
     /** The app is already open and a widget was tapped: tell the page, which asks what for. */

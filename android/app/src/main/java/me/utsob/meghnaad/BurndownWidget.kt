@@ -10,6 +10,14 @@ class BurndownWidget : ImageWidget() {
         val result = Tasks.burndown(context, config)
             ?: return Rendered(title, message = context.getString(R.string.widget_not_ready))
         if (result.getJSONArray("bars").length() == 0) return Rendered(title)
-        return Rendered(title, BurndownRenderer.draw(result, width, height, Palette(context, WidgetPrefs.look(context, id))), BurndownRenderer.caption(result))
+        val look = WidgetPrefs.look(context, id)
+        val caption = BurndownRenderer.caption(result)
+        // A look that follows the phone is drawn in both themes, and the home screen shows the one the phone is in.
+        if (look.theme == "auto") {
+            val light = BurndownRenderer.draw(result, width, height, Palette(context, look.copy(theme = "light")))
+            val dark = BurndownRenderer.draw(result, width, height, Palette(context, look.copy(theme = "dark")))
+            return Rendered(title, light, dark, caption)
+        }
+        return Rendered(title, BurndownRenderer.draw(result, width, height, Palette(context, look)), caption = caption)
     }
 }

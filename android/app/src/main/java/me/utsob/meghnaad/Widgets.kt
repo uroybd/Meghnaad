@@ -15,6 +15,17 @@ object Widgets {
         CalendarWidget.refresh(context)
     }
 
+    /**
+     * Draw every widget again, header and colours included, not just its list: for when the phone changed theme. A widget
+     * that follows the phone is right without this on Android 14 and newer; on older phones it is the only way.
+     */
+    fun redrawAll(context: Context) {
+        val manager = AppWidgetManager.getInstance(context)
+        for (provider in PROVIDERS) {
+            for (id in manager.getAppWidgetIds(ComponentName(context, provider))) update(context, id)
+        }
+    }
+
     /** Whether any widget of ours is on a home screen: the background sync is only needed while there is. */
     fun anyPlaced(context: Context): Boolean {
         val manager = AppWidgetManager.getInstance(context)
