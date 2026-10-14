@@ -36,4 +36,6 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.foundation)
     implementation(libs.activity.compose)
+    // The background sync, for the widgets and the reminders.
+    implementation(libs.work.runtime)
 }

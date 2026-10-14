@@ -544,6 +544,23 @@ class Store(
         projectFocus = null
     }
 
+    /** Told whenever tasks were written (the phone redraws its widgets). */
+    var onWritten: (() -> Unit)? = null
+
+    /** The tasks may have changed behind the screen's back (a widget ticked one off): draw what is on screen again. */
+    fun reloadFromOutside() {
+        if (setup != Setup.Ready) return
+        rev++
+        live?.let { go { exec(it) } }
+    }
+
+    /** A report with a filter, opened from outside (a day of the calendar widget). */
+    fun openReport(name: String, filterText: String) {
+        view = View.Tasks
+        report = name
+        filter = filterText
+    }
+
     /** A task to open once the app has started (a notification was tapped while it was not running). */
     private var launchTask: String? = null
 
@@ -732,6 +749,7 @@ class Store(
 
     /** Something was written: let the views reload, and refresh the completion names if they depend on it. */
     fun written() {
+        onWritten?.invoke()
         rev++
         scope.launch { refreshNames() }
         if (setup == Setup.Ready) notifier.pollSoon()

@@ -9,18 +9,89 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Meghnaad (next)"
         android:theme="@style/Theme.Meghnaad"
         android:extractNativeLibs="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver
+            android:name=".widgets.TasksWidget"
+            android:exported="true"
+            android:label="@string/widget_tasks_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/tasks_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widgets.BurndownWidget"
+            android:exported="true"
+            android:label="@string/widget_burndown_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/burndown_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widgets.CalendarWidget"
+            android:exported="true"
+            android:label="@string/widget_calendar_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/calendar_widget_info" />
+        </receiver>
+
+        <!-- Asked for when a widget is added, and again from its settings: which report, which fields. -->
+        <activity
+            android:name=".widgets.WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".widgets.CalendarWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <service
+            android:name=".widgets.TasksWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <!-- What a tap in the widget's list lands on; it shows nothing. -->
+        <activity
+            android:name=".widgets.WidgetActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <activity
+            android:name=".widgets.QuickAddActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.Dialog"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
         <receiver android:name=".ReminderReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="me.utsob.meghnaad.app.REMINDER" />
