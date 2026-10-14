@@ -37,6 +37,9 @@ interface EnginePort {
 interface Clock {
     fun utcOffsetSeconds(): Int
 
+    /** The offset east of UTC in force at [epochSeconds] (it differs from today's across a change of summer time). */
+    fun offsetAt(epochSeconds: Long): Int
+
     fun nowSeconds(): Double
 }
 

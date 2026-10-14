@@ -23,4 +23,15 @@ object NativeEngine {
 
     /** Go on from saved bytes: null when it worked, the reason when it did not. */
     @JvmStatic external fun nativeRestore(handle: Long, bytes: ByteArray): String?
+
+    // The three below need no handle and never wait for the engine: see `RustHelpers`.
+
+    /** The words of a command line as the engine reads them: a JSON array of strings. */
+    @JvmStatic external fun nativeSplitWords(line: String): String
+
+    /** A date in a `dateformat` pattern, in the zone [tz] seconds east of UTC. */
+    @JvmStatic external fun nativeFormatDate(pattern: String, epoch: Long, tz: Int, weekStartsMonday: Boolean): String
+
+    /** A duration the way Taskwarrior writes it: `3d`, `2w`, `1.5y`. */
+    @JvmStatic external fun nativeVague(seconds: Long): String
 }

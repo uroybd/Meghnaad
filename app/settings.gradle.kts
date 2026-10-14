@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "meghnaad-app"
 
-include(":shared", ":androidApp")
+include(":shared", ":androidApp", ":desktopApp")

@@ -3,7 +3,7 @@
 
 use crate::engine::Engine;
 use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jbyteArray, jlong, jstring};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
 use serde_json::{json, Value};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -134,4 +134,45 @@ pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeRestore(
         Ok(Ok(())) => std::ptr::null_mut(),
         Ok(Err(e)) | Err(e) => answer(&env, e),
     }
+}
+
+// The three below take no handle and touch no engine: they are `crate::helpers`, so the screens can call them while a sync
+// holds the engine.
+
+/// The words of a command line as the engine reads them: a JSON array of strings.
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeSplitWords(
+    mut env: JNIEnv,
+    _class: JClass,
+    line: JString,
+) -> jstring {
+    let line = text(&mut env, &line);
+    answer(&env, crate::helpers::words_json(&line))
+}
+
+/// A date in a `dateformat` pattern, in the zone `tz` seconds east of UTC.
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeFormatDate(
+    mut env: JNIEnv,
+    _class: JClass,
+    pattern: JString,
+    epoch: jlong,
+    tz: jint,
+    week_starts_monday: jboolean,
+) -> jstring {
+    let pattern = text(&mut env, &pattern);
+    answer(
+        &env,
+        crate::helpers::format_date(&pattern, epoch, tz, week_starts_monday != 0),
+    )
+}
+
+/// A duration the way Taskwarrior writes it: `3d`, `2w`, `1.5y`.
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeVague(
+    _env: JNIEnv,
+    _class: JClass,
+    secs: jlong,
+) -> jstring {
+    answer(&_env, crate::helpers::vague(secs))
 }

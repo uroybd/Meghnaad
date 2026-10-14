@@ -98,7 +98,10 @@ takes from the bucket the way the app checks what a person enters.
 state and the screens; `androidApp` is the activity. It loads the same `crates/android` library as the Capacitor app, so
 `NativeEngine` keeps its package (`me.utsob.meghnaad`) for the JNI names. The page-side rules hold here too: Taskwarrior
 behaviour is the engine's, and the screens only draw what it returns; mirror `web/src/lib/types.ts` and `api.ts` when the
-engine's answers change. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour. Check it with
+engine's answers change. **Never port Rust to Kotlin:** where `tc-core` already does something (splitting a command line,
+writing a date in `dateformat`, `format_vague`) call it through `crates/android/src/helpers.rs`, and add a function there
+when a screen needs another; only the web app's own view logic (`web/src/lib`: sort specs, cells, task commands) is ported,
+with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) opens a live preview of the screens. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour. Check it with
 `cd app && ./gradlew :shared:testDebugUnitTest :androidApp:assembleDebug` (build the engine for the host first:
 `cargo build --profile android -p tc-android`). It has no formatter or linter in CI yet.
 
