@@ -1,22 +1,26 @@
 # The Android app
 
-The same app, in a shell, with the engine as a native library and a widget on the home screen. It keeps your tasks on
-the phone and syncs them straight with your bucket over S3: no Worker and no Cloudflare Access are involved, and your
-keys stay on the phone.
+A native app, in Kotlin and Compose, with the engine as a native library and widgets on the home screen. It keeps your
+tasks on the phone and syncs them straight with your bucket over S3: no Worker and no Cloudflare Access are involved, and
+your keys stay on the phone. It does what the web app does, with a layout made for a phone, and a few things a browser tab
+cannot: reminders that come with the app closed, and the widgets.
 
 > **Status:** it builds, its Rust half is tested (signing, sync against a bucket that enforces conditional writes,
-> settings, hooks), and it has been tried on an Android 16 emulator: connecting, adding and syncing tasks, and the widget
-> (list, tick to finish, quick add, sync). It has not been run on a physical phone yet, so expect rough edges.
-
-> **The next app.** `app/` is a rewrite of this app in Kotlin and Compose, for the phone only, over the same engine and the
-> same settings, with the same widgets; see `app/README.md`. It installs beside this one (its id ends in `.next`) while it
-> is tried, and will replace it. What follows describes the app that is released today.
+> settings, hooks), its Kotlin half has unit tests (the screens' logic, and commands, review and import through the real
+> engine), and it has been tried on an Android 16 emulator: connecting, the pages, editing, review, reminders, the widgets,
+> importing and exporting. It has not been run on a physical phone yet, so expect rough edges.
 
 ## What you get
 
 - Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings, with a layout made
-  for a phone: a menu for the pages, and tasks as cards ([On a phone](using.md#on-a-phone)).
-- **Pull down to sync.** At the top of any page, a pull down (as in a browser) syncs with the bucket and redraws the page.
+  for a phone: a menu for the pages, and tasks as cards ([On a phone](using.md#on-a-phone)). Review is a card with
+  buttons, which `review` in the console opens too.
+- **Pull down to sync.** At the top of any page but the console, a pull down syncs with the bucket and redraws the page.
+- **Reminders that work with the app closed.** The same options as the web app's (Menu → Reminders); the phone wakes the
+  app at the moment something is due or comes off `wait`, and the notification opens the task. Allow notifications when
+  asked. The one-a-day digest of what is overdue comes at the hour you chose for dates with no time.
+- **Export and import** use the system's file pickers: `export` offers the file to keep, `import` reads one and says what
+  it would do before it writes anything.
 - **Works offline.** The engine and the tasks are on the phone; changes sync when there is a network.
 - **Home-screen widgets**, three of them, each with its own settings (long-press the widget, then its pencil; the same
   screen opens when you add it):
@@ -40,21 +44,20 @@ You need the Android SDK and NDK (Android Studio installs both), Node.js 20+, Ru
 `cargo install cargo-ndk`. Then:
 
 ```bash
-npm install
-npm run build:android          # web app, the engine for the phone, the APK
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+npm run build:android          # the engine for the phone, then the APK
+adb install -r app/androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
 The script finds the SDK in `ANDROID_HOME` or `~/Library/Android/sdk`, uses the JDK 21 that comes with Android Studio,
 adds the Rust targets it needs, and builds for `arm64-v8a` (phones); a debug build also has `x86_64` (the emulator on an
 Intel machine), and `ANDROID_ABIS` chooses. It does not build for 32-bit ARM.
 
-**Size.** The release APK is about 4.5 MB: the library has its symbols taken out (`profile.android` in `Cargo.toml`) and
-is packed compressed, a release is for arm64 only, the browser's own copy of the engine is left out of the app, and
-R8 cuts the unused code and resources of Android's and Capacitor's libraries (`android/app/proguard-rules.pro` keeps
-what is looked up by name: the engine's functions, the plugin, the widgets). If you add a class that something finds by
-name, add it there, and try the release build, not only the debug one. Open `android/` in Android Studio to run it from there. The launcher icon and the splash screens are the web app's logo:
-`node scripts/android-icons.mjs` makes them again from `web/public/logo.png` (it needs ImageMagick).
+**Size.** The library has its symbols taken out (`profile.android` in `Cargo.toml`) and is packed compressed, a release is
+for arm64 only, and R8 cuts the unused code and resources (`app/androidApp/proguard-rules.pro` keeps what is looked up by
+name: the engine's functions). If you add a class that something finds by name, add it there, and try the release build,
+not only the debug one. Open `app/` in Android Studio to run it from there; `app/README.md` says how to look at the
+screens live on a computer. The launcher icon is the web app's logo: `node scripts/android-icons.mjs` makes it again from
+`web/public/logo.png` (it needs ImageMagick).
 
 ### Releases and signing
 
@@ -81,8 +84,8 @@ region (`auto` for R2, the real one for AWS), an access key and its secret, and 
 Create the access key as in [Connect your `task` CLI](deploy.md#connect-your-task-cli): an R2 token with **Object Read &
 Write**, scoped to the bucket.
 
-The keys are kept encrypted with a key that lives in the Android Keystore. The page never sees them: it asks the app to
-sync, and the app does.
+The keys are kept encrypted with a key that lives in the Android Keystore. No screen can read them: the engine takes them
+to sync, and nothing else does.
 
 ### An example
 
@@ -111,8 +114,8 @@ The endpoint has to be `https://`; plain `http://` is only accepted for `localho
   the last sync wins; when both did, the newer one does and the other is kept as the web app's restore point
   (`config.prev.json`, `hooks.prev.lua`). A file that would not load, or a settings file holding a credential, is not taken
   from the bucket. **The secrets for hooks are never synced.** The two switches are this phone's own choice, kept on the
-  phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (pasting it works;
-  importing from a link does not yet).
+  phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (paste it, or import it from a link
+  or a file).
 - **Hooks run on the phone**, in the same Lua sandbox, with the same `http` and `secret()`, from the script you edit in
   **Settings → Hooks**. Their network calls are made by the phone, and the secrets are sealed with the Keystore key.
 - **No Cloudflare Access, no Worker.** Anyone who has the phone unlocked has the app: lock the phone.
@@ -120,11 +123,11 @@ The endpoint has to be `https://`; plain `http://` is only accepted for `localho
 ## How it fits together
 
 ```
-page (Svelte, in a WebView)
-  │  the engine's messages, and /api/… requests      web/src/engine/native.ts
+screens (Compose)                                      app/shared: Store, one file per page
+  │  JSON in and out                                   Engine.kt (mirrors web/src/lib/api.ts)
   ▼
-TcEnginePlugin (Kotlin)  ── Engines: one engine for the page, the widget and the sync worker
-  │  JNI                                              android/…/NativeEngine.kt
+LocalEngine (Kotlin)  ── AppEngine: one engine for the screens, the widgets, the reminder alarm and the sync worker
+  │  JNI                                               NativeEngine.kt (package me.utsob.meghnaad)
   ▼
 crates/android (Rust): tc-core + the S3 store + the settings routes
   │  S3 over HTTPS, signed (SigV4)
@@ -135,11 +138,14 @@ your bucket
 - `crates/android/src/engine.rs` is the engine; `jni.rs` is the thin layer Kotlin calls. Every call answers in JSON.
 - `crates/tc-core/src/request.rs` turns a request into a command and its answer for this engine and the browser's, so
   the two cannot differ. `webapi.rs` answers the settings routes (`/api/config`, `/api/settings`, …) for any store: the
-  Worker keeps them in the bucket, the app in a folder.
+  Worker keeps them in the bucket, the app in a folder; the app asks them of the engine's `api` call.
 - `s3.rs` is the bucket as tc-core's `ObjectStore`; `sigv4.rs` signs requests (tested against Amazon's own examples).
-- In the app, `fetch('/api/…')` is answered by the phone (`installNativeApi`), so the page's code is the web app's.
-- The replica is kept in a file in the app's storage after every change; the widget and the page share one engine, so
-  what the widget changes shows in the app and the other way round.
+- The replica is kept in a file in the app's storage after every change; the screens, the widgets and the reminder alarm
+  share one engine, so what a widget changes shows in the app and the other way round.
+- Reminders: `Notify.kt` is the web's rules (`notify.ts`); after every change the next moment something is worth saying is
+  worked out, `AlarmManager` is set for it, and its receiver shows what is due and sets the next one (also after the phone
+  starts). The background sync (WorkManager, every half hour) runs while a widget is placed or reminders are on.
 
-Tests: `cargo test -p tc-android` (an in-process bucket stands in for S3), `web/src/engine/native.test.ts`, and the
-widgets' field formatting and settings with `cd android && ./gradlew testDebugUnitTest`.
+Tests: `cargo test -p tc-android` (an in-process bucket stands in for S3), and in `app/`
+`./gradlew :shared:desktopTest :shared:testDebugUnitTest :androidApp:testDebugUnitTest` (build the engine for this machine
+first: `cargo build --profile android -p tc-android`; the tests that run the real engine skip without it).

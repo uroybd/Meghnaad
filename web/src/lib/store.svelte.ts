@@ -78,7 +78,7 @@ class Store {
   live = $state<Entry | null>(null);
   view = $state<'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'console' | 'settings'>('tasks');
   /** The tab the Settings page shows. */
-  settingsTab = $state<'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency' | 'sync'>('taskrc');
+  settingsTab = $state<'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency'>('taskrc');
   /** The app's own `settings.json`, read (null until it has been). */
   appSettings = $state<ParsedSettings | null>(null);
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
@@ -163,10 +163,6 @@ class Store {
     if (typeof window !== 'undefined') {
       setInterval(() => (this.now = Math.floor(Date.now() / 1000)), 30_000);
       // What another device or tab did arrives with a sync; draw again what is on screen.
-      // The phone took settings or hooks from the bucket (it keeps them in step when asked to): read them again.
-      engine.onSettingsChanged(() => {
-        void this.settingsChanged().then(() => this.loadAppSettings());
-      });
       engine.onChanged(() => {
         this.written();
         if (this.live) void this.refresh(this.live);
@@ -280,7 +276,7 @@ class Store {
   }
 
   /** Open the Settings page, on one of its tabs. */
-  openSettings(tab: 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency' | 'sync' = this.settingsTab) {
+  openSettings(tab: 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency' = this.settingsTab) {
     this.settingsTab = tab;
     this.view = 'settings';
   }

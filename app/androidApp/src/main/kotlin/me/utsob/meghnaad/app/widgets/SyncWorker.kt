@@ -1,4 +1,4 @@
-package me.utsob.meghnaad.app.widgets
+package me.utsob.meghnaad
 
 import me.utsob.meghnaad.app.SyncFailed
 import android.content.Context

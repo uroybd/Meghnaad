@@ -11,7 +11,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Meghnaad (next)"
+        android:label="Meghnaad"
         android:theme="@style/Theme.Meghnaad"
         android:extractNativeLibs="true">
         <activity
@@ -25,7 +25,7 @@
             </intent-filter>
         </activity>
         <receiver
-            android:name=".widgets.TasksWidget"
+            android:name="me.utsob.meghnaad.TasksWidget"
             android:exported="true"
             android:label="@string/widget_tasks_label">
             <intent-filter>
@@ -35,7 +35,7 @@
         </receiver>
 
         <receiver
-            android:name=".widgets.BurndownWidget"
+            android:name="me.utsob.meghnaad.BurndownWidget"
             android:exported="true"
             android:label="@string/widget_burndown_label">
             <intent-filter>
@@ -45,7 +45,7 @@
         </receiver>
 
         <receiver
-            android:name=".widgets.CalendarWidget"
+            android:name="me.utsob.meghnaad.CalendarWidget"
             android:exported="true"
             android:label="@string/widget_calendar_label">
             <intent-filter>
@@ -56,7 +56,7 @@
 
         <!-- Asked for when a widget is added, and again from its settings: which report, which fields. -->
         <activity
-            android:name=".widgets.WidgetConfigActivity"
+            android:name="me.utsob.meghnaad.WidgetConfigActivity"
             android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault.Dialog">
             <intent-filter>
@@ -65,18 +65,18 @@
         </activity>
 
         <service
-            android:name=".widgets.CalendarWidgetService"
+            android:name="me.utsob.meghnaad.CalendarWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
 
         <service
-            android:name=".widgets.TasksWidgetService"
+            android:name="me.utsob.meghnaad.TasksWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
 
         <!-- What a tap in the widget's list lands on; it shows nothing. -->
         <activity
-            android:name=".widgets.WidgetActionActivity"
+            android:name="me.utsob.meghnaad.WidgetActionActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"
@@ -84,7 +84,7 @@
             android:theme="@android:style/Theme.NoDisplay" />
 
         <activity
-            android:name=".widgets.QuickAddActivity"
+            android:name="me.utsob.meghnaad.QuickAddActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleInstance"

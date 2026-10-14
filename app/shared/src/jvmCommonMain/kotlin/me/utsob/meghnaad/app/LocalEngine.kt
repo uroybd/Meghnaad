@@ -20,7 +20,7 @@ object SystemClock : Clock {
 
 /**
  * The engine of the app: the native one, with its replica kept in a file so that the tasks are there next time. A write is
- * kept before the call returns. Mirrors `Engine` of the Capacitor app (android/…/Engines.kt) without the phone in it.
+ * kept before the call returns. Its folder and file names are the ones the earlier (Capacitor) app used, so an update finds the tasks where they were left.
  */
 class LocalEngine(dir: File, private val vault: Vault) : EnginePort {
     private val folder = File(dir, "engine").apply { mkdirs() }

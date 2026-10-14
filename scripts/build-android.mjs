@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Builds the Android app: the web app, the engine in Rust for the phone's processors, then the APK.
-//   node scripts/build-android.mjs            a debug APK (android/app/build/outputs/apk/debug)
-//   node scripts/build-android.mjs --release  a release bundle's APK (unsigned unless a keystore is configured)
+// Builds the Android app (app/): the engine in Rust for the phone's processors, then the APK.
+//   node scripts/build-android.mjs            a debug APK (app/androidApp/build/outputs/apk/debug)
+//   node scripts/build-android.mjs --release  a release APK (unsigned unless a keystore is configured)
 // It needs the Android SDK and NDK (Android Studio installs both) and `cargo-ndk`; a JDK 21 is taken from Android Studio
 // when JAVA_HOME is not one.
 import { existsSync, readdirSync, rmSync } from 'node:fs';
@@ -55,12 +55,8 @@ const env = {
   JAVA_HOME: javaHome,
 };
 
-step('web app');
-must(run('node', ['scripts/build-engine.mjs', '--if-stale']), 'the engine build');
-must(run('npm', ['--prefix', 'web', 'run', 'build']), 'the web build');
-
 step('engine for the phone (Rust)');
-const libs = join(ROOT, 'android', 'app', 'src', 'main', 'jniLibs');
+const libs = join(ROOT, 'app', 'androidApp', 'src', 'main', 'jniLibs');
 rmSync(libs, { recursive: true, force: true });
 must(
   run(
@@ -76,18 +72,14 @@ must(
 for (const abi of readdirSync(libs))
   for (const f of readdirSync(join(libs, abi))) if (f !== 'libtc_android.so') rmSync(join(libs, abi, f));
 
-step('copying the web app into the project');
-must(run('npx', ['cap', 'sync', 'android'], { cwd: join(ROOT, 'web'), env }), 'cap sync');
-
-// What only the browser needs: its copy of the engine (the phone's is native), the Web Worker that runs it, and the
-// pictures for installing the web app.
-const assets = join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
-for (const f of readdirSync(join(assets, 'assets')))
-  if (/^tc_browser_bg-.*\.wasm$/.test(f) || /^engine\.worker-.*\.js$/.test(f)) rmSync(join(assets, 'assets', f));
-for (const f of ['logo.png', 'apple-touch-icon.png', 'site.webmanifest']) rmSync(join(assets, f), { force: true });
-
 step(release ? 'APK (release)' : 'APK (debug)');
-must(run('./gradlew', [release ? 'assembleRelease' : 'assembleDebug'], { cwd: join(ROOT, 'android'), env }), 'gradle');
+must(
+  run('./gradlew', [release ? ':androidApp:assembleRelease' : ':androidApp:assembleDebug'], {
+    cwd: join(ROOT, 'app'),
+    env,
+  }),
+  'gradle',
+);
 console.log(
-  `\n[android] done: android/app/build/outputs/apk/${release ? 'release' : 'debug'}/ (install with: adb install -r <apk>)`,
+  `\n[android] done: app/androidApp/build/outputs/apk/${release ? 'release' : 'debug'}/ (install with: adb install -r <apk>)`,
 );

@@ -5,8 +5,7 @@
 // browser has pushed (they tell each other over a BroadcastChannel). A write is already applied and saved here, so a
 // push that fails (offline, a signed-out session) is only tried again later; what is waiting is pushed with it.
 
-import { isNative, NativePort, type Port } from './native';
-import type { Call, EngineReply, EngineRequest } from './protocol';
+import type { Call, EngineReply, EngineRequest, Port } from './protocol';
 
 /** How often a visible tab pulls what other devices have done. */
 const PULL_EVERY_MS = 30_000;
@@ -15,9 +14,9 @@ const PULL_NOT_SOONER_MS = 4_000;
 const CHANNEL = 'meghnaad-engine';
 export type SyncStatus = 'idle' | 'syncing' | 'failed';
 
-/** Whether this browser can run the engine: it needs Web Workers and WebAssembly (the Android app has its own). */
+/** Whether this browser can run the engine: it needs Web Workers and WebAssembly. */
 export function engineAvailable(): boolean {
-  return isNative() || (typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined');
+  return typeof Worker !== 'undefined' && typeof WebAssembly !== 'undefined';
 }
 
 export class EngineClient {
@@ -40,18 +39,11 @@ export class EngineClient {
   private channel: BroadcastChannel | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private changedListeners = new Set<() => void>();
-  private settingsListeners = new Set<() => void>();
 
   /** Called when a sync brought in changes (from another device or tab), so views can reload. */
   onChanged(fn: () => void): () => void {
     this.changedListeners.add(fn);
     return () => this.changedListeners.delete(fn);
-  }
-
-  /** Called when a sync replaced the settings or the hooks with the bucket's (the phone can keep them in step). */
-  onSettingsChanged(fn: () => void): () => void {
-    this.settingsListeners.add(fn);
-    return () => this.settingsListeners.delete(fn);
   }
 
   private send(m: EngineRequest): Promise<unknown> {
@@ -72,11 +64,8 @@ export class EngineClient {
 
   private async boot(config: string): Promise<void> {
     performance.mark('engine-boot');
-    const worker: Port = isNative()
-      ? new NativePort()
-      : (new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' }) as Port);
+    const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' }) as Port;
     this.worker = worker;
-    if (worker instanceof NativePort) worker.onsettings = () => this.settingsListeners.forEach((fn) => fn());
     worker.onmessage = (e: MessageEvent<EngineReply>) => {
       const p = this.pending.get(e.data.id);
       if (!p) return;
@@ -90,11 +79,8 @@ export class EngineClient {
       this.pending.clear();
     };
     const restored = (await this.send({ op: 'start', config, persist: true })) as boolean;
-    // With nothing saved the tasks have to come from the bucket before the first command is answered. On the phone an
-    // unreachable bucket is no reason to stop: the app starts empty, works as it is, and syncs when it can (the banner says
-    // why it has not).
+    // With nothing saved the tasks have to come from the bucket before the first command is answered.
     if (restored) void this.sync();
-    else if (isNative()) await this.sync();
     else await this.sync(true);
     // How long it took to be ready to answer, and from what (shown in the browser's performance tools).
     performance.measure(

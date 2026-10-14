@@ -1,14 +1,12 @@
 <script lang="ts">
-  import { isNative } from '../engine/native';
   import CommandsPanel from './CommandsPanel.svelte';
   import HooksPanel from './HooksPanel.svelte';
   import { store } from './store.svelte';
-  import SyncPanel from './SyncPanel.svelte';
   import TaskrcPanel from './TaskrcPanel.svelte';
   import TaskshPanel from './TaskshPanel.svelte';
   import UrgencyPanel from './UrgencyPanel.svelte';
 
-  type Tab = 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency' | 'sync';
+  type Tab = 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
     { id: 'taskrc', label: 'taskrc', hint: 'UDAs, reports, contexts, colours and the rest of your taskrc' },
     { id: 'tasksh', label: 'tasksh', hint: 'What tasksh review needs: the reviewed UDA and the _reviewed report' },
@@ -19,8 +17,6 @@
       hint: 'Lua scripts that run when a command starts, adds or changes a task, and ends',
     },
     { id: 'urgency', label: 'Urgency', hint: 'Urgency coefficients and inheritance' },
-    // The Android app keeps the tasks on the phone; where they are synced to is set here.
-    ...(isNative() ? [{ id: 'sync' as const, label: 'Sync', hint: 'The bucket this phone syncs its tasks with' }] : []),
   ];
 
   // Each tab keeps its own edits while another is shown, and says so with a dot.
@@ -30,7 +26,6 @@
     commands: false,
     hooks: false,
     urgency: false,
-    sync: false,
   });
 
   // A tab chosen from the keyboard, a link or the code may be off the edge of a narrow bar: bring it into view.
@@ -122,16 +117,6 @@
   >
     <UrgencyPanel ondirty={(v) => (dirty.urgency = v)} />
   </div>
-  {#if isNative()}
-    <div
-      role="tabpanel"
-      id="settings-panel-sync"
-      aria-labelledby="settings-tab-sync"
-      hidden={store.settingsTab !== 'sync'}
-    >
-      <SyncPanel />
-    </div>
-  {/if}
   <p class="version">Meghnaad {__APP_VERSION__}</p>
 </div>
 

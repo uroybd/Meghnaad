@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- A chart widget that follows the phone carries two pictures, one for each theme, and the phone's theme shows one of them:
-     the home screen resolves these when it draws the widget, so the switch needs no redraw by the app. -->
-<resources>
-    <item name="chart_light_alpha" format="float" type="dimen">1.0</item>
-    <item name="chart_dark_alpha" format="float" type="dimen">0.0</item>
-</resources>

@@ -1,4 +1,4 @@
-package me.utsob.meghnaad.app.widgets
+package me.utsob.meghnaad
 
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName

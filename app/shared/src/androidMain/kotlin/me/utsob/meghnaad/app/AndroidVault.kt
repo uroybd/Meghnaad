@@ -98,7 +98,7 @@ class AndroidVault(context: Context) : Vault {
         @Synchronized set(value) = prefs.edit().putBoolean(SYNC_SETTINGS, value.settings).putBoolean(SYNC_HOOKS, value.hooks).apply()
 
     private companion object {
-        const val ALIAS = "meghnaad-next-vault"
+        const val ALIAS = "meghnaad-vault"
         const val ENGINE_KEY = "engine_key"
         const val CONNECTION = "connection"
         const val LOCAL_ONLY = "local_only"

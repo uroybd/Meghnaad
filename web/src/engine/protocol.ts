@@ -16,3 +16,11 @@ export type EngineRequest =
 export type EngineReply = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: string };
 
 export type Call = EngineRequest & { id: number };
+
+/** The part of a Web Worker the engine client uses. */
+export interface Port {
+  postMessage(m: Call): void;
+  onmessage: ((e: MessageEvent<EngineReply>) => void) | null;
+  onerror: ((e: { message?: string }) => void) | null;
+  terminate(): void;
+}
