@@ -12,12 +12,12 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * The key that seals the hooks' secrets, encrypted with a key that lives in the Android Keystore and never leaves it, so a
- * copy of the app's files is not enough to read it. (The connection to the bucket comes with the sync screens.)
+ * The connection to the bucket and the key that seal the hooks' secrets, encrypted with a key that lives in the Android
+ * Keystore and never leaves it, so a copy of the app's files is not enough to read them. The Keystore is slow to answer
+ * (seconds on an emulator, and the first time in a process): each thing is opened once and kept for as long as the app runs.
  */
-class KeystoreSecrets(context: Context) : SecretStore {
+class AndroidVault(context: Context) : Vault {
     private val prefs = context.applicationContext.getSharedPreferences("vault", Context.MODE_PRIVATE)
-    private var cached: ByteArray? = null
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -47,21 +47,63 @@ class KeystoreSecrets(context: Context) : SecretStore {
         null
     }
 
+    private var engineKey: ByteArray? = null
+    private var connection: Connection? = null
+    private var connectionRead = false
+
     @Synchronized
     override fun engineKey(): ByteArray {
-        cached?.let { return it }
+        engineKey?.let { return it }
         val key = prefs.getString(ENGINE_KEY, null)?.let(::open)
             ?: ByteArray(32).also {
                 SecureRandom().nextBytes(it)
                 prefs.edit().putString(ENGINE_KEY, seal(it)).apply()
             }
-        cached = key
+        engineKey = key
         return key
     }
+
+    @Synchronized
+    override fun connection(): Connection? {
+        if (!connectionRead) {
+            connection = prefs.getString(CONNECTION, null)?.let(::open)?.let {
+                runCatching { engineJson.decodeFromString(Connection.serializer(), String(it)) }.getOrNull()
+            }
+            connectionRead = true
+        }
+        return connection
+    }
+
+    @Synchronized
+    override fun saveConnection(connection: Connection) {
+        val text = engineJson.encodeToString(Connection.serializer(), connection)
+        prefs.edit().putString(CONNECTION, seal(text.toByteArray())).apply()
+        this.connection = connection
+        connectionRead = true
+    }
+
+    @Synchronized
+    override fun clearConnection() {
+        prefs.edit().remove(CONNECTION).apply()
+        connection = null
+        connectionRead = true
+    }
+
+    override var localOnly: Boolean
+        @Synchronized get() = prefs.getBoolean(LOCAL_ONLY, false)
+        @Synchronized set(value) = prefs.edit().putBoolean(LOCAL_ONLY, value).apply()
+
+    override var syncOptions: SyncOptions
+        @Synchronized get() = SyncOptions(prefs.getBoolean(SYNC_SETTINGS, false), prefs.getBoolean(SYNC_HOOKS, false))
+        @Synchronized set(value) = prefs.edit().putBoolean(SYNC_SETTINGS, value.settings).putBoolean(SYNC_HOOKS, value.hooks).apply()
 
     private companion object {
         const val ALIAS = "meghnaad-next-vault"
         const val ENGINE_KEY = "engine_key"
+        const val CONNECTION = "connection"
+        const val LOCAL_ONLY = "local_only"
+        const val SYNC_SETTINGS = "sync_settings"
+        const val SYNC_HOOKS = "sync_hooks"
         const val IV_BYTES = 12
     }
 }

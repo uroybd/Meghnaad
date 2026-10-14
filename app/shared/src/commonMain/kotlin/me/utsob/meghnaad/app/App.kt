@@ -35,20 +35,52 @@ import androidx.compose.ui.unit.dp
 
 /** The whole app, the same on every platform. */
 @Composable
-fun App(model: AppModel) {
+fun App(model: Store) {
     MaterialTheme {
-        Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            TopBar(model)
-            model.notice?.let { Text(it, modifier = Modifier.padding(vertical = 4.dp)) }
-            model.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 4.dp)) }
-            model.response?.let { Body(model, it) }
+        when (model.setup) {
+            Setup.Checking, Setup.Starting -> Text("Starting…", modifier = Modifier.padding(24.dp))
+            Setup.NeedsConnection -> ConnectScreen(model)
+            Setup.Failed -> Text(
+                model.error ?: "The engine could not start.",
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(24.dp),
+            )
+            Setup.Ready -> Main(model)
         }
-        model.pending?.let { Question(model, it) }
     }
 }
 
 @Composable
-private fun TopBar(model: AppModel) {
+private fun Main(model: Store) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        TopBar(model)
+        SyncBanner(model)
+        model.notice?.let { Text(it, modifier = Modifier.padding(vertical = 4.dp)) }
+        model.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 4.dp)) }
+        model.response?.let { Body(model, it) }
+    }
+    model.pending?.let { Question(model, it) }
+}
+
+/** The sync failed: say why, and that nothing is lost; the same words and the same two choices as the web app. */
+@Composable
+private fun SyncBanner(model: Store) {
+    val sync = model.sync
+    if (sync.status != SyncStatus.Failed || model.localOnly) return
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            "Couldn't sync with the server (${sync.error}). What you change is kept on this phone and goes up when it works again.",
+            color = MaterialTheme.colorScheme.error,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { sync.request() }) { Text("Retry") }
+            TextButton(onClick = model::startOver) { Text("Start over from the server") }
+        }
+    }
+}
+
+@Composable
+private fun TopBar(model: Store) {
     var line by remember { mutableStateOf("") }
     var open by remember { mutableStateOf(false) }
     // The on-screen keyboard sends an action, a hardware keyboard an Enter key: both run the line.
@@ -89,7 +121,7 @@ private fun TopBar(model: AppModel) {
 }
 
 @Composable
-private fun Body(model: AppModel, response: CliResponse) {
+private fun Body(model: Store, response: CliResponse) {
     response.feedback.forEach { Text(it.text, modifier = Modifier.padding(vertical = 2.dp)) }
     when (val result = response.result) {
         is CliResult.Report -> ReportList(result.value, model.utcOffset)
@@ -130,7 +162,7 @@ private fun Lines(lines: List<String>) {
 }
 
 @Composable
-private fun Question(model: AppModel, pending: Pending) {
+private fun Question(model: Store, pending: Pending) {
     AlertDialog(
         onDismissRequest = { model.answer(false) },
         title = { Text(pending.question.message) },

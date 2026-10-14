@@ -9,10 +9,28 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
+/** What a sync found: whether the tasks changed, and which of the shared files came from the bucket. */
+class SyncResult(val changed: Boolean, val settings: List<String> = emptyList())
+
+/** A sync that did not work (offline, the bucket unreachable, a wrong key): the reason, in words to show. */
+class SyncFailed(message: String) : Exception(message)
+
 /** Where the engine is: native on every target (Rust, in the app's process). Every call answers in JSON text. */
 interface EnginePort {
-    /** `config`, `run`, `import`, `sync`, `changes` or `api`, with its argument as text. */
+    /** `config`, `run`, `import` or `api`, with its argument as text. */
     suspend fun call(op: String, arg: String): String
+
+    /** Whether the tasks were found on the device when the engine started, so a sync is not needed to have any. */
+    val restored: Boolean
+
+    /**
+     * Pull and push with the bucket, and keep the shared files in step when asked. A device that is not connected has
+     * nothing to sync with, which is a way of using it, not a failure. Throws [SyncFailed].
+     */
+    suspend fun sync(): SyncResult
+
+    /** Throw away the copy kept on the device; the next start fetches the tasks again from the bucket. */
+    suspend fun forget()
 }
 
 /** What the page and the clock are, for a request: the offset east of UTC in seconds, and the time in seconds since 1970. */
@@ -76,8 +94,27 @@ class Tw(private val port: EnginePort, private val clock: Clock) {
 }
 
 /** For tests and previews: an engine that answers from a function. */
-class FakePort(private val answer: (String, String) -> String) : EnginePort {
+class FakePort(
+    override val restored: Boolean = true,
+    private val onSync: suspend () -> SyncResult = { SyncResult(false) },
+    private val answer: (String, String) -> String = { _, _ -> "{}" },
+) : EnginePort {
+    var syncs = 0
+        private set
+
+    var forgotten = false
+        private set
+
     override suspend fun call(op: String, arg: String) = answer(op, arg)
+
+    override suspend fun sync(): SyncResult {
+        syncs++
+        return onSync()
+    }
+
+    override suspend fun forget() {
+        forgotten = true
+    }
 }
 
 internal fun JsonElement.string(): String = jsonPrimitive.content
