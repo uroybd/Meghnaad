@@ -195,6 +195,8 @@ class Store(
 
     var detail by mutableStateOf<DetailRef?>(null)
     var editing by mutableStateOf<EditRef?>(null)
+    /** tasksh's review, drawn as a card over the page while it is going. */
+    val review = ReviewSession(this)
     var adding by mutableStateOf<AddRef?>(null)
     var notifyOpen by mutableStateOf(false)
 
@@ -555,8 +557,9 @@ class Store(
         when {
             ask != null -> answerAsk(false)
             adding != null -> adding = null
-            editing != null -> editing = null
+            editing != null -> closeEditor()
             detail != null -> detail = null
+            review.phase != ReviewPhase.Idle -> review.quit()
             notifyOpen -> notifyOpen = false
             menuOpen -> menuOpen = false
             selection.count > 0 -> selection.clear()
@@ -843,6 +846,15 @@ class Store(
             }
         }
         return pending.await()
+    }
+
+    /** A command as the engine answers it, whatever it is (a question, an error): for a screen that handles those itself. */
+    suspend fun call(args: List<String>, answers: Answers = Answers()): CliResponse = tw.run(args = args, answers = answers)
+
+    /** Close the task editor; a review waiting on it (the Edit choice) carries on. */
+    fun closeEditor() {
+        editing = null
+        if (review.phase == ReviewPhase.Editing) go { review.editClosed() }
     }
 
     /** What a command answers, for a screen that asks and reads (a task's history, its instances): errors are thrown. */

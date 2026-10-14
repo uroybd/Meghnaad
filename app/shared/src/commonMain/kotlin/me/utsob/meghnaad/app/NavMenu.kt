@@ -118,8 +118,8 @@ fun NavMenu(store: Store, onNavigate: () -> Unit, pages: Boolean = true) {
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 6.dp), color = colors.outlineVariant)
-            Item("clipboard-check", "Review", false) {
-                store.notify("Review is not in this build yet.")
+            Item("clipboard-check", "Review", store.review.phase != ReviewPhase.Idle) {
+                store.go { store.review.start() }
                 onNavigate()
             }
             Item("bell-off", "Reminders", false, state = "off") {
