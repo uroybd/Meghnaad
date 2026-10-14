@@ -122,7 +122,7 @@ fun NavMenu(store: Store, onNavigate: () -> Unit, pages: Boolean = true) {
                 store.go { store.review.start() }
                 onNavigate()
             }
-            Item("bell-off", "Reminders", false, state = "off") {
+            Item(if (store.notifier.settings.enabled) "bell" else "bell-off", "Reminders", false, state = if (store.notifier.settings.enabled) "on" else "off") {
                 store.notifyOpen = true
                 onNavigate()
             }
