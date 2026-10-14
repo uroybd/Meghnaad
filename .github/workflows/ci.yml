@@ -123,3 +123,33 @@ jobs:
       - name: Unit tests
         working-directory: android
         run: ./gradlew testDebugUnitTest
+
+  # The Kotlin app (`app/`): its tests on the JVM, with the engine's library built for this machine so that the tests that
+  # run the real engine do (they skip without it), and the debug APK. There is no formatter or linter for Kotlin yet.
+  kotlin-app:
+    name: Kotlin app (tests, debug build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Engine library for this machine
+        run: cargo build --profile android -p tc-android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # The Android SDK is on the runner (ANDROID_HOME); the project finds it there.
+      - name: Tests and debug build
+        working-directory: app
+        run: ./gradlew :shared:desktopTest :shared:testDebugUnitTest :androidApp:assembleDebug
