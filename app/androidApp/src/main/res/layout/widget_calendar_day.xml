@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/cell"
+    android:layout_width="match_parent"
+    android:layout_height="31dp">
+
+    <ImageView
+        android:id="@+id/today"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:layout_gravity="center"
+        android:contentDescription="@null"
+        android:src="@drawable/circle_filled"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/day"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:paddingBottom="2dp"
+        android:textSize="13sp" />
+
+    <ImageView
+        android:id="@+id/dot"
+        android:layout_width="5dp"
+        android:layout_height="5dp"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="1dp"
+        android:contentDescription="@null"
+        android:src="@drawable/circle_filled"
+        android:visibility="gone" />
+</FrameLayout>
