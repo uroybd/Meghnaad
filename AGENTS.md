@@ -92,6 +92,16 @@ one host. Nothing may put the bucket keys or the encryption secret anywhere the 
 in step with the bucket (settings, hooks; never secrets) are listed in `crates/android/src/filesync.rs`, which checks what it
 takes from the bucket the way the app checks what a person enters.
 
+## The Kotlin app
+
+`app/` is the next Android app, in Kotlin and Compose (see `app/README.md`): `shared` has the engine's types and API, the
+state and the screens; `androidApp` is the activity. It loads the same `crates/android` library as the Capacitor app, so
+`NativeEngine` keeps its package (`me.utsob.meghnaad`) for the JNI names. The page-side rules hold here too: Taskwarrior
+behaviour is the engine's, and the screens only draw what it returns; mirror `web/src/lib/types.ts` and `api.ts` when the
+engine's answers change. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour. Check it with
+`cd app && ./gradlew :shared:testDebugUnitTest :androidApp:assembleDebug` (build the engine for the host first:
+`cargo build --profile android -p tc-android`). It has no formatter or linter in CI yet.
+
 ## Running it
 
 `npm run dev` is the dev server: it builds the engine (`scripts/build-engine.mjs`, which needs the `wasm-bindgen` tool at

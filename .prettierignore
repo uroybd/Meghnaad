@@ -14,3 +14,5 @@ web/.svelte-kit
 web/public
 wrangler.jsonc
 wrangler.deploy.jsonc
+# The Kotlin app: Gradle, Kotlin, and what they generate.
+app
