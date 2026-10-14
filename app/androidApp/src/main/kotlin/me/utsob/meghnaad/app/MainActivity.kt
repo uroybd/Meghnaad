@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         val vault = AndroidVault(this)
         engine = LocalEngine(filesDir, vault)
         val sync = SyncController(engine, lifecycleScope, SystemClock)
-        val store = Store(Tw(engine, SystemClock), engine, vault, sync, lifecycleScope, SystemClock)
+        val store = Store(Tw(engine, SystemClock), engine, vault, sync, lifecycleScope, SystemClock, AndroidPrefs(this))
         store.begin()
         // While the app is in front: pull what other devices did when it comes back, and every half minute after.
         lifecycleScope.launch {

@@ -126,6 +126,10 @@ data class ConfirmResult(val message: String, val ask: String, val items: List<C
 @Serializable
 data class ErrorResult(val message: String)
 
+/** `info`: one or more tasks in full (the detail view reads these). */
+@Serializable
+data class InfoResult(val tasks: List<Row> = emptyList())
+
 sealed interface CliResult {
     data class Report(val value: ReportResult) : CliResult
     data class Table(val value: TableResult) : CliResult
@@ -133,6 +137,10 @@ sealed interface CliResult {
     data class Changed(val value: ChangedResult) : CliResult
     data class Confirm(val value: ConfirmResult) : CliResult
     data class Error(val value: ErrorResult) : CliResult
+    data class Info(val value: InfoResult) : CliResult
+
+    /** Anything a command answers with as plain JSON (`_names`, `_remind`, `_uuids`): the value as it is. */
+    data class Json(val value: JsonElement) : CliResult
 
     /** A kind no screen draws yet (info, summary, calendar, burndown, styled, file, import, json). */
     data class Unsupported(val kind: String, val json: JsonObject) : CliResult
@@ -171,6 +179,8 @@ fun parseResponse(text: String): CliResponse {
         "changed" -> CliResult.Changed(engineJson.decodeFromJsonElement(result))
         "confirm" -> CliResult.Confirm(engineJson.decodeFromJsonElement(result))
         "error" -> CliResult.Error(engineJson.decodeFromJsonElement(result))
+        "info" -> CliResult.Info(engineJson.decodeFromJsonElement(result))
+        "json" -> CliResult.Json(result["value"] ?: kotlinx.serialization.json.JsonNull)
         else -> CliResult.Unsupported(kind, result)
     }
     return CliResponse(
@@ -212,10 +222,15 @@ data class ContextDef(
     val rc: Map<String, String> = emptyMap(),
 )
 
+/** What a report's definition carries that a screen reads: its own `dateformat`. */
+@Serializable
+data class ReportCfg(val dateformat: String? = null)
+
 /** The `config` of a [ConfigResponse]: what the taskrc settings come to. */
 @Serializable
 data class ConfigBody(
     val udas: Map<String, UdaDef> = emptyMap(),
+    val reports: Map<String, ReportCfg> = emptyMap(),
     val contexts: Map<String, ContextDef> = emptyMap(),
     @SerialName("active_context") val activeContext: String? = null,
     val urgency: Map<String, Double> = emptyMap(),

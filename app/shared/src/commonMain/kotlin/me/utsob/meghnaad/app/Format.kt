@@ -48,6 +48,8 @@ class Ctx(
     val now: Long,
     /** The viewer's offset east of UTC in seconds, for a time with no better offset. */
     val tz: Int = 0,
+    /** The offset in force at a moment (it differs across a change of summer time); [tz] when not given. */
+    val offsetAt: ((Long) -> Int)? = null,
     val udas: Map<String, UdaDef> = emptyMap(),
     /** Taskwarrior `dateformat*` patterns for table cells and for the notes under a description. */
     val reportDates: DateFmt? = null,
@@ -58,6 +60,8 @@ class Ctx(
     /** `journal.time` marker texts: those annotations are bookkeeping and are left out of lists. */
     val journal: Journal? = null,
 )
+
+private fun Ctx.zone(ts: Long) = offsetAt?.invoke(ts) ?: tz
 
 private val DATE_PROPS = setOf("entry", "start", "end", "due", "wait", "scheduled", "until", "modified")
 
@@ -84,7 +88,7 @@ private fun dateCell(ts: Long?, format: String?, ctx: Ctx): Cell {
         "epoch" -> Cell(ts.toString())
         "iso" -> Cell(isoStamp(ts))
         "julian" -> Cell(fixed(ts / 86_400.0 + 2_440_587.5, 5))
-        else -> Cell(formatMoment(ts, ctx.tz, ctx.reportDates))
+        else -> Cell(formatMoment(ts, ctx.zone(ts), ctx.reportDates))
     }
 }
 
@@ -92,7 +96,7 @@ private fun truncate(s: String, n: Int) = if (s.length <= n) s else s.take(maxOf
 
 private fun descriptionCell(row: Row, format: String?, ctx: Ctx): Cell {
     val shown = visibleNotes(row.annotations, ctx.journal)
-    val notes = shown.map { "${formatMoment(it.entry, ctx.tz, ctx.annotationDates)} ${it.text}" }
+    val notes = shown.map { "${formatMoment(it.entry, ctx.zone(it.entry), ctx.annotationDates)} ${it.text}" }
     return when (format) {
         "desc" -> Cell(row.description)
         // Like Taskwarrior: each annotation follows the description with its date.
