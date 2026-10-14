@@ -154,6 +154,14 @@ from Kotlin over JNI, and it syncs straight with the bucket, signing S3 requests
 `S3Store`, the same server code the Worker runs over R2). The same Svelte app runs in a WebView and talks to a Capacitor
 plugin in place of the Web Worker, and a widget reads the same engine. See [the Android app](android.md).
 
+**The Kotlin app** (`app/`) is the same native engine under Kotlin and Compose instead of a WebView: `shared` holds the
+engine's JSON types and API (mirroring `web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's store, and the
+screens; `androidApp` holds the activity, the reminder alarm's receiver and the widgets. Taskwarrior behaviour stays in
+`tc-core`, reached through the same JNI library (`crates/android/src/helpers.rs` for the few pure helpers a screen needs);
+only the web app's own view logic is ported. Reminders are the web's rules (`Notify.kt` mirrors `notify.ts`) plus an alarm:
+after every change the next moment something is worth saying is worked out and `AlarmManager` wakes the app then, so they
+work with the app closed. See `app/README.md`.
+
 ## `tc-core`: the engine
 
 Pure Rust, no I/O of its own, tested natively. The browser engine, the Node harness (`scripts/engine-cli.mjs`) and the tests are its hosts; the Worker uses its settings, report and protocol code but runs no commands.

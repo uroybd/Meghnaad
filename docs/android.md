@@ -8,6 +8,10 @@ keys stay on the phone.
 > settings, hooks), and it has been tried on an Android 16 emulator: connecting, adding and syncing tasks, and the widget
 > (list, tick to finish, quick add, sync). It has not been run on a physical phone yet, so expect rough edges.
 
+> **The next app.** `app/` is a rewrite of this app in Kotlin and Compose, for the phone only, over the same engine and the
+> same settings, with the same widgets; see `app/README.md`. It installs beside this one (its id ends in `.next`) while it
+> is tried, and will replace it. What follows describes the app that is released today.
+
 ## What you get
 
 - Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings, with a layout made

@@ -103,7 +103,7 @@ writing a date in `dateformat`, `format_vague`) call it through `crates/android/
 when a screen needs another; only the web app's own view logic (`web/src/lib`: sort specs, cells, task commands) is ported,
 with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) opens a live preview of the screens. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour. Check it with
 `cd app && ./gradlew :shared:testDebugUnitTest :androidApp:assembleDebug` (build the engine for the host first:
-`cargo build --profile android -p tc-android`). It has no formatter or linter in CI yet.
+`cargo build --profile android -p tc-android`); CI runs the same on the `kotlin-app` job. It has no formatter or linter in CI yet.
 
 ## Running it
 
