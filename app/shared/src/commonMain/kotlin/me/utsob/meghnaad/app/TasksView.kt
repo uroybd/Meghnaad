@@ -16,7 +16,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -76,19 +75,6 @@ fun TasksView(store: Store) {
     val heads = if (result != null && ctx != null) groupHeads(result, ctx) else emptyList()
     val dimmed = entry?.loading == true && result != null
 
-    val scope = rememberCoroutineScope()
-    var refreshing by remember { mutableStateOf(false) }
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = {
-            refreshing = true
-            scope.launch {
-                store.go { pullRefresh() }.join()
-                refreshing = false
-            }
-        },
-        modifier = Modifier.fillMaxSize(),
-    ) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
         item { FilterBar(store) }
         item { BulkBar(store) }
@@ -123,7 +109,7 @@ fun TasksView(store: Store) {
                 }
             }
         }
-    }    }
+    }
 }
 
 /** Phones have no column headers to tap, so a sort picker stands in for them (the same command underneath). */
