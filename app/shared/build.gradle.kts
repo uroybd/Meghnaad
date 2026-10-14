@@ -50,6 +50,8 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+    // What `commonMain/resources` holds (the icons) reaches the desktop by itself, and the phone's APK from here.
+    sourceSets["main"].resources.srcDir("src/commonMain/resources")
     testOptions {
         unitTests.all {
             it.systemProperty("java.library.path", engineDir.absolutePath)

@@ -92,7 +92,39 @@ class Tw(private val port: EnginePort, private val clock: Clock) {
             answers.approved?.let { put("approved", buildJsonArray { it.forEach { k -> add(JsonPrimitive(k)) } }) }
             answers.extras?.let { put("extras", buildJsonArray { it.forEach { k -> add(JsonPrimitive(k)) } }) }
         }
-        return parseResponse(port.call("run", request.toString()))
+        val got = parseResponse(port.call("run", request.toString()))
+        // `config` changed the settings: they are kept (where the device keeps them), and the engine takes them up.
+        val config = got.config?.takeIf { it !is kotlinx.serialization.json.JsonNull } ?: return got
+        return try {
+            val saved = api("PUT", "/api/config/engine", config.toString())
+            if ((saved["status"]?.jsonPrimitive?.content?.toIntOrNull() ?: 200) !in 200..299) error("not saved")
+            engineJson.parseToJsonElement(port.call("config", config.toString())).jsonObject["error"]?.let { error(it.jsonPrimitive.content) }
+            CliResponse(got.wrote, got.feedback, got.result, got.command, null)
+        } catch (e: Exception) {
+            CliResponse(got.wrote, got.feedback, CliResult.Error(ErrorResult("The settings could not be saved. Nothing was changed.")), got.command, null)
+        }
+    }
+
+    /** One of the settings routes (`/api/settings`, `/api/hooks`, …) answered by the engine: status, and the body as text. */
+    suspend fun request(method: String, path: String, body: String = ""): Pair<Int, String> {
+        val answer = api(method, path, body)
+        return (answer["status"]?.jsonPrimitive?.content?.toIntOrNull() ?: 200) to (answer["body"]?.jsonPrimitive?.content ?: "")
+    }
+
+    /** What the settings say: read again (a setting changed), and given to the engine. */
+    suspend fun config(): ConfigResponse = start()
+
+    /** An import of a file of tasks (what `export` writes): without [apply] it only reports what would happen. */
+    suspend fun import(text: String, apply: Boolean): JsonObject {
+        val arg = buildJsonObject {
+            put("text", text)
+            put("apply", apply)
+            put("tz", clock.utcOffsetSeconds())
+            put("now", clock.nowSeconds())
+        }
+        val answer = engineJson.parseToJsonElement(port.call("import", arg.toString())).jsonObject
+        answer["error"]?.let { throw EngineError(it.jsonPrimitive.content) }
+        return answer
     }
 }
 
