@@ -60,8 +60,8 @@ class TypesTest {
 
     @Test
     fun aKindWithoutAScreenIsKept() {
-        val got = parseResponse("""{"command":null,"wrote":false,"result":{"kind":"burndown","period":"daily"}}""")
-        assertEquals("burndown", assertIs<CliResult.Unsupported>(got.result).kind)
+        val got = parseResponse("""{"command":null,"wrote":false,"result":{"kind":"styled","lines":[]}}""")
+        assertEquals("styled", assertIs<CliResult.Unsupported>(got.result).kind)
     }
 
     @Test

@@ -56,6 +56,9 @@ fun ResultBlock(store: Store, e: Entry, modifier: Modifier = Modifier) {
             is CliResult.Confirm -> ConfirmView(store, e, result.value)
             is CliResult.Json -> Mono(prettyJson.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), result.value.let { it }).lines())
             is CliResult.Info -> Dim("${result.value.tasks.size} task(s): open one to see it in full.")
+            is CliResult.Summary -> SummaryView(store, result.value)
+            is CliResult.Calendar -> CalendarView(store, e, result.value)
+            is CliResult.Burndown -> BurndownView(store, result.value)
             is CliResult.Unsupported -> Dim("“${result.kind}” has no screen yet.")
         }
     }

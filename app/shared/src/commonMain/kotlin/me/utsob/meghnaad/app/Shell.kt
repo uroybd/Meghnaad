@@ -159,6 +159,9 @@ private fun MainView(store: Store) {
         View.Console -> ConsoleView(store)
         View.Projects -> ProjectsView(store)
         View.Tags -> TagsView(store)
+        View.Summary -> SummaryPage(store)
+        View.Calendar -> CalendarPage(store)
+        View.Burndown -> BurndownPage(store)
         else -> ComingSoon(store.view.name)
     }
 }
