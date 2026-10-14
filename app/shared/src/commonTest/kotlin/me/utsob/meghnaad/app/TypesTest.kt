@@ -60,8 +60,17 @@ class TypesTest {
 
     @Test
     fun aKindWithoutAScreenIsKept() {
-        val got = parseResponse("""{"command":null,"wrote":false,"result":{"kind":"styled","lines":[]}}""")
-        assertEquals("styled", assertIs<CliResult.Unsupported>(got.result).kind)
+        val got = parseResponse("""{"command":null,"wrote":false,"result":{"kind":"something-new","lines":[]}}""")
+        assertEquals("something-new", assertIs<CliResult.Unsupported>(got.result).kind)
+    }
+
+    @Test
+    fun coloursFilesAndImportsHaveTheirOwnKinds() {
+        val styled = parseResponse("""{"command":null,"wrote":false,"result":{"kind":"styled","lines":[[{"text":"a","style":{"fg":1}}]]}}""")
+        assertEquals("a", assertIs<CliResult.Styled>(styled.result).value.lines.single().single().text)
+        val file = parseResponse("""{"command":null,"wrote":false,"result":{"kind":"file","name":"t.json","mime":"application/json","text":"[]","count":0}}""")
+        assertEquals("t.json", assertIs<CliResult.File>(file.result).value.name)
+        assertIs<CliResult.Import>(parseResponse("""{"command":null,"wrote":false,"result":{"kind":"import"}}""").result)
     }
 
     @Test
