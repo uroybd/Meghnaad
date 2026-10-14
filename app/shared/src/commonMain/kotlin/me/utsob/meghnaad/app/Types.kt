@@ -126,6 +126,88 @@ data class ConfirmResult(val message: String, val ask: String, val items: List<C
 @Serializable
 data class ErrorResult(val message: String)
 
+/** `summary`: how far along each project is, with its sub-projects indented beneath it. */
+@Serializable
+data class SummaryRow(
+    /** The full project name; empty for tasks without a project. */
+    val project: String,
+    /** `(none)`, or the last part of the name. */
+    val label: String,
+    /** How many levels down (`Home.Kitchen` is 1). */
+    val depth: Int = 0,
+    val remaining: Long = 0,
+    val completed: Long = 0,
+    @SerialName("avg_age") val avgAge: String = "",
+    val complete: String = "",
+    /** Filled cells of a 30-cell bar. */
+    val bar: Int = 0,
+)
+
+@Serializable
+data class SummaryResult(val rows: List<SummaryRow> = emptyList())
+
+@Serializable
+data class CalendarDay(
+    val day: Int,
+    val today: Boolean = false,
+    val weekend: Boolean = false,
+    val holiday: Boolean = false,
+    val scheduled: Boolean = false,
+    /** overdue | due-today | due */
+    val due: String? = null,
+)
+
+@Serializable
+data class CalendarWeek(val number: Int? = null, val days: List<CalendarDay?> = emptyList())
+
+@Serializable
+data class CalendarMonth(val year: Int, val month: Int, val name: String, val weeks: List<CalendarWeek> = emptyList())
+
+@Serializable
+data class Holiday(val date: Long, val name: String)
+
+@Serializable
+data class CalendarResult(
+    val months: List<CalendarMonth> = emptyList(),
+    /** Two-letter column headings, from the first day of the week. */
+    val weekdays: List<String> = emptyList(),
+    @SerialName("week_numbers") val weekNumbers: Boolean = false,
+    val legend: Boolean = false,
+    @SerialName("due_colours") val dueColours: Boolean = false,
+    @SerialName("holiday_colours") val holidayColours: Boolean = false,
+    val holidays: List<Holiday>? = null,
+    val details: ReportResult? = null,
+)
+
+@Serializable
+data class BurndownBar(
+    /** Start of the period, in epoch seconds. */
+    val epoch: Long,
+    val major: String,
+    val minor: String,
+    val pending: Long = 0,
+    val started: Long = 0,
+    val done: Long = 0,
+)
+
+@Serializable
+data class BurndownEnd(val epoch: Long, @SerialName("in_secs") val inSecs: Long = 0, val vague: String = "")
+
+@Serializable
+data class BurndownResult(
+    val period: String = "daily",
+    val title: String = "",
+    /** Oldest first. */
+    val bars: List<BurndownBar> = emptyList(),
+    /** Tasks finished before the first bar; they are on every bar. */
+    @SerialName("carryover_done") val carryoverDone: Long = 0,
+    /** The y axis: 0, half, top. */
+    @SerialName("y_labels") val yLabels: List<Long> = emptyList(),
+    @SerialName("net_fix_rate") val netFixRate: Double? = null,
+    val completion: BurndownEnd? = null,
+    @SerialName("no_convergence") val noConvergence: Boolean = false,
+)
+
 /** `info`: one or more tasks in full (the detail view reads these). */
 @Serializable
 data class InfoResult(val tasks: List<Row> = emptyList())
@@ -138,6 +220,9 @@ sealed interface CliResult {
     data class Confirm(val value: ConfirmResult) : CliResult
     data class Error(val value: ErrorResult) : CliResult
     data class Info(val value: InfoResult) : CliResult
+    data class Summary(val value: SummaryResult) : CliResult
+    data class Calendar(val value: CalendarResult) : CliResult
+    data class Burndown(val value: BurndownResult) : CliResult
 
     /** Anything a command answers with as plain JSON (`_names`, `_remind`, `_uuids`): the value as it is. */
     data class Json(val value: JsonElement) : CliResult
@@ -180,6 +265,9 @@ fun parseResponse(text: String): CliResponse {
         "confirm" -> CliResult.Confirm(engineJson.decodeFromJsonElement(result))
         "error" -> CliResult.Error(engineJson.decodeFromJsonElement(result))
         "info" -> CliResult.Info(engineJson.decodeFromJsonElement(result))
+        "summary" -> CliResult.Summary(engineJson.decodeFromJsonElement(result))
+        "calendar" -> CliResult.Calendar(engineJson.decodeFromJsonElement(result))
+        "burndown" -> CliResult.Burndown(engineJson.decodeFromJsonElement(result))
         "json" -> CliResult.Json(result["value"] ?: kotlinx.serialization.json.JsonNull)
         else -> CliResult.Unsupported(kind, result)
     }

@@ -104,26 +104,28 @@ private fun Header(title: String, expandAll: () -> Unit, collapseAll: () -> Unit
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TreeHead(
     icon: String, label: String, isOpen: Boolean, flash: Boolean, depth: Int, count: Int, extra: String?, overdue: Int,
     onToggle: () -> Unit, onOpenInTasks: () -> Unit, labelPrefix: String = "",
 ) {
     val colors = MaterialTheme.colorScheme
-    Row(
+    // Wraps rather than squeezing the name: on a narrow screen "Open in Tasks" goes under the counts.
+    FlowRow(
         Modifier.fillMaxWidth().padding(start = (depth * 14).dp).clip(RoundedCornerShape(10.dp))
             .background(if (flash) colors.primary.copy(alpha = 0.16f) else Color.Transparent),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.weight(1f, fill = false).clickable(onClick = onToggle).padding(vertical = 10.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.clickable(onClick = onToggle).padding(vertical = 10.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             LucideIcon(if (isOpen) "chevron-down" else "chevron-right", size = 16.dp)
             LucideIcon(icon, size = 15.dp)
-            Text(labelPrefix + label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Text(labelPrefix + label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, softWrap = false)
         }
-        Dim("$count", Modifier.padding(start = 6.dp))
-        extra?.let { Dim("· $it", Modifier.padding(start = 4.dp)) }
-        if (overdue > 0) Text("$overdue overdue", Modifier.padding(start = 8.dp), color = colors.error, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+        Dim("$count")
+        extra?.let { Dim("· $it") }
+        if (overdue > 0) Text("$overdue overdue", color = colors.error, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
         TextButton(onClick = onOpenInTasks) { Text("Open in Tasks", fontSize = 12.sp) }
     }
 }
