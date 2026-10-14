@@ -13,7 +13,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -120,7 +123,13 @@ fun ConnectForm(connect: suspend (Connection) -> String?, modifier: Modifier = M
 /** The first screen, before the tasks: connect to a bucket, or go on without one. */
 @Composable
 fun ConnectScreen(store: Store) {
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp)) {
+    // The page itself takes the focus, so the keyboard does not open over the form before a field is asked for.
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp)
+            .focusRequester(focus).focusable(),
+    ) {
         Text("Your tasks", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Meghnaad keeps your tasks on this phone. To have them on your other devices too, connect the S3 bucket your " +

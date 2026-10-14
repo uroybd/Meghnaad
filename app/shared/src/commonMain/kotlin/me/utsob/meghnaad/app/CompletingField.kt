@@ -158,7 +158,7 @@ fun CompletingField(
                     }
                 },
             label = label?.let { { Text(it) } },
-            placeholder = { Text(placeholder, fontSize = 13.sp) },
+            placeholder = { Text(placeholder, fontSize = 13.sp, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             singleLine = singleLine,
             enabled = enabled,
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = if (mono) FontFamily.Monospace else null),

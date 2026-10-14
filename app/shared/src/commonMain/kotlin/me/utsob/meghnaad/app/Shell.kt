@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,23 +36,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-/** The width below which the layout is a phone's: a slide-over menu, cards, the prompt docked at the bottom. */
-private val PHONE = 760.dp
-
 @Composable
 fun Shell(store: Store) {
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        if (maxWidth > PHONE) WideShell(store) else PhoneShell(store)
+    Box(Modifier.fillMaxSize()) {
+        PhoneShell(store)
         ToastHost(store)
         Dialogs(store)
     }
 }
 
+/**
+ * The layout: a phone's, and the only one. The menu slides over from the left, the prompt is docked at the bottom where a thumb
+ * reaches it, the new-task button floats over the list, and a page is a column of cards that scrolls as one.
+ */
 @Composable
 private fun PhoneShell(store: Store) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val close: () -> Unit = { scope.launch { drawer.close() } }
+    val close: () -> Unit = { store.menuOpen = false }
+    // The store knows whether the menu is open (so the back button can close it); the drawer follows it, and the other way.
+    LaunchedEffect(store.menuOpen) { if (store.menuOpen) drawer.open() else drawer.close() }
+    LaunchedEffect(drawer.currentValue) { store.menuOpen = drawer.currentValue == DrawerValue.Open }
     ModalNavigationDrawer(
         drawerState = drawer,
         drawerContent = {
@@ -66,81 +71,29 @@ private fun PhoneShell(store: Store) {
         },
     ) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(store, wide = false, onMenu = { scope.launch { drawer.open() } })
+            TopBar(store, onMenu = { scope.launch { store.menuOpen = true } })
             Banners(store)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 MainView(store)
-                NewTaskButton(store, Modifier.align(Alignment.BottomEnd))
+                if (store.view != View.Console) NewTaskButton(store, Modifier.align(Alignment.BottomEnd))
             }
             if (store.view != View.Console) Dock(store)
         }
     }
 }
 
+/** The bar over every page: the menu button and the name; the pages are in the menu (TopBar of App.svelte, phone widths). */
 @Composable
-private fun WideShell(store: Store) {
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.width(264.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceContainer)) {
-            Text("Meghnaad", Modifier.padding(16.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
-            QuickAdd(store)
-            NavMenu(store, onNavigate = {}, pages = false)
-        }
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            TopBar(store, wide = true, onMenu = {})
-            Banners(store)
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                MainView(store)
-                NewTaskButton(store, Modifier.align(Alignment.BottomEnd))
-            }
-            if (store.view != View.Console) Dock(store)
-        }
-    }
-}
-
-private class Tab(val view: View, val label: String, val icon: String)
-
-private val TABS = listOf(
-    Tab(View.Tasks, "Tasks", "list-checks"),
-    Tab(View.Projects, "Projects", "folder"),
-    Tab(View.Tags, "Tags", "tag"),
-    Tab(View.Summary, "Summary", "chart-column"),
-    Tab(View.Calendar, "Calendar", "calendar-days"),
-    Tab(View.Burndown, "Burndown", "trending-down"),
-    Tab(View.Console, "Console", "terminal"),
-)
-
-/** The bar over every page: on a phone the menu button and the name; on a wide window the pages too (TopBar of App.svelte). */
-@Composable
-private fun TopBar(store: Store, wide: Boolean, onMenu: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
+private fun TopBar(store: Store, onMenu: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(colors.surfaceContainer).height(52.dp).padding(horizontal = 6.dp),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).height(56.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        if (!wide) IconAction("menu", "Menu", onMenu, size = 20.dp)
-        Text("Meghnaad", Modifier.padding(horizontal = 6.dp), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        if (wide) {
-            for (t in TABS) {
-                val on = store.view == t.view
-                Row(
-                    Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) colors.primary.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable { store.view = t.view }.padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    LucideIcon(t.icon, size = 15.dp, tint = if (on) colors.primary else colors.onSurface)
-                    Text(t.label, fontSize = 13.sp, color = if (on) colors.primary else colors.onSurface)
-                }
-            }
-        }
+        IconAction("menu", "Menu", onMenu, size = 22.dp)
+        Text("Meghnaad", Modifier.padding(horizontal = 4.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
         Box(Modifier.weight(1f))
-        store.config?.config?.activeContext?.let { Pill("context: $it") }
-        if (wide) {
-            IconAction("clipboard-check", "Review", { store.notify("Review is not in this build yet.") }, size = 16.dp)
-            IconAction("bell-off", "Reminders (off)", { store.notifyOpen = true }, size = 17.dp)
-            IconAction("settings", "Settings", { store.openSettings() }, size = 16.dp, tint = if (store.view == View.Settings) colors.primary else colors.onSurface)
-        }
+        store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(end = 8.dp)) }
     }
 }
 

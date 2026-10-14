@@ -120,8 +120,8 @@ private fun ConfirmView(store: Store, e: Entry, q: ConfirmResult) {
         Text(q.message, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         if (q.ask == "plain") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { scope.launch { store.confirm(e, true) } }) { Text("Yes") }
-                OutlinedButton(onClick = { scope.launch { store.confirm(e, false) } }) { Text("No") }
+                Button(onClick = { store.go { confirm(e, true) } }) { Text("Yes") }
+                OutlinedButton(onClick = { store.go { confirm(e, false) } }) { Text("No") }
             }
         } else {
             q.items.forEachIndexed { i, item ->
@@ -134,8 +134,8 @@ private fun ConfirmView(store: Store, e: Entry, q: ConfirmResult) {
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { scope.launch { store.answerItems(e, q.items.filterIndexed { i, _ -> ticked[i] }.map { it.key }) } }) { Text("Go ahead") }
-                OutlinedButton(onClick = { scope.launch { store.confirm(e, false) } }) { Text("Cancel") }
+                Button(onClick = { store.go { answerItems(e, q.items.filterIndexed { i, _ -> ticked[i] }.map { it.key }) } }) { Text("Go ahead") }
+                OutlinedButton(onClick = { store.go { confirm(e, false) } }) { Text("Cancel") }
             }
         }
     }

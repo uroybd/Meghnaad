@@ -26,7 +26,7 @@ fun AddTaskLite(store: Store, ref: AddRef) {
                 enabled = text.isNotBlank(),
                 onClick = {
                     store.adding = null
-                    scope.launch { store.act(store.live, splitWords("add $text")) }
+                    store.go { act(live, splitWords("add $text")) }
                 },
             ) { Text("Add") }
         },

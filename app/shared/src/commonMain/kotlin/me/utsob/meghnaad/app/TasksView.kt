@@ -16,6 +16,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +44,7 @@ import kotlinx.serialization.builtins.serializer
  * the filter, exactly what you would type in the console, so the list, the chips and the "last command" line stay in step
  * (TasksView.svelte).
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun TasksView(store: Store) {
     var ranFilter by remember { mutableStateOf<String?>(null) }
@@ -74,6 +76,19 @@ fun TasksView(store: Store) {
     val heads = if (result != null && ctx != null) groupHeads(result, ctx) else emptyList()
     val dimmed = entry?.loading == true && result != null
 
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            refreshing = true
+            scope.launch {
+                store.go { pullRefresh() }.join()
+                refreshing = false
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
         item { FilterBar(store) }
         item { BulkBar(store) }
@@ -108,7 +123,7 @@ fun TasksView(store: Store) {
                 }
             }
         }
-    }
+    }    }
 }
 
 /** Phones have no column headers to tap, so a sort picker stands in for them (the same command underneath). */
@@ -212,7 +227,7 @@ private fun FilterBar(store: Store) {
                 onValueChange = { store.filter = it },
                 vocab = store.vocab,
                 modifier = Modifier.weight(1f),
-                placeholder = "Filters: project:Home +work due.before:eow",
+                placeholder = "Filters: +work due:eow",
                 completeSignal = completeSignal,
             )
             IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, modifier = Modifier.padding(top = 8.dp), size = 18.dp)
