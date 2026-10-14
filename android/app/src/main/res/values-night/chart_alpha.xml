@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <item name="chart_light_alpha" format="float" type="dimen">0.0</item>
-    <item name="chart_dark_alpha" format="float" type="dimen">1.0</item>
-</resources>

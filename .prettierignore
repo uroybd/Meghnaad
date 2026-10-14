@@ -3,8 +3,6 @@ node_modules
 target
 .wrangler
 crates
-# The Android project: Kotlin, Gradle and what Capacitor generates (the copied web app, its config).
-android
 docs
 *.md
 package-lock.json

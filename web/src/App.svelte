@@ -31,15 +31,12 @@
   import NotifyDialog from './lib/NotifyDialog.svelte';
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
-  import ConnectView from './lib/ConnectView.svelte';
-  import { isNative, watchLaunch } from './engine/native';
   import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAdd from './lib/QuickAdd.svelte';
   import SettingsPage from './lib/SettingsPage.svelte';
   import SummaryPage from './lib/SummaryPage.svelte';
   import { chartProps } from './lib/colors';
-  import { splitWords } from './lib/cmdline';
   import { prefixFromPath, taskPath } from './lib/route';
   import ReviewCard from './lib/ReviewCard.svelte';
   import { review } from './lib/review.svelte';
@@ -50,8 +47,6 @@
 
   // A fresh deployment has no sign-in settings yet; say what is left instead of showing errors.
   let setup = $state<SetupStatus | null>(null);
-  // In the Android app the engine starts with the first request, so nothing is drawn until we know the phone is connected.
-  let checked = $state(!isNative());
   let started = false;
 
   // The address and the drawer say the same thing: `/task/<8 characters>` is a task's own address, so a link to it
@@ -83,12 +78,6 @@
     // `settings.json` after the settings, so the first screen doesn't wait behind it.
     void store.loadConfig().then(() => store.loadAppSettings());
     void followAddress();
-    // In the Android app, what was tapped in a widget opens here: a task, or a report for a day of the calendar.
-    if (isNative())
-      void watchLaunch(({ task, report, filter }) => {
-        if (task) void store.openFromAddress(taskPath(task));
-        else if (report) store.focusReport(report, splitWords(filter ?? ''));
-      });
     // Reminders can wait for the table. The Worker handles one request at a time, so a poll sent
     // first would make the first screen wait behind it. If the table never loads (another view,
     // or an error), start anyway.
@@ -113,7 +102,6 @@
     const s = await getSetup();
     if (s && !s.configured) setup = s;
     else start();
-    checked = true;
   });
 
   // The colours the charts use (`color.calendar.*`, `color.burndown.*`, ...), as custom properties on the page.
@@ -175,11 +163,7 @@
 
 <svelte:window {onkeydown} onpopstate={() => void followAddress()} />
 
-{#if !checked}
-  <!-- waiting to hear whether this phone is connected -->
-{:else if setup && isNative()}
-  <ConnectView onready={start} />
-{:else if setup}
+{#if setup}
   <SetupGuide status={setup} onready={start} />
 {:else}
   <div class="app">

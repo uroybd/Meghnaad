@@ -18,8 +18,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
-import me.utsob.meghnaad.app.widgets.SyncWorker
-import me.utsob.meghnaad.app.widgets.Widgets
+import me.utsob.meghnaad.SyncWorker
+import me.utsob.meghnaad.Widgets
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {

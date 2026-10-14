@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Makes the Android app's launcher icons and splash screens from the web app's logo (web/public/logo.png), so the two
+// Makes the Android app's launcher icons from the web app's logo (web/public/logo.png), so the two
 // look the same. Needs ImageMagick (`magick`). Run it again if the logo changes, and commit what it writes.
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, capture, run } from './deploy-lib.mjs';
 
 const LOGO = join(ROOT, 'web', 'public', 'logo.png');
-const RES = join(ROOT, 'android', 'app', 'src', 'main', 'res');
+const RES = join(ROOT, 'app', 'androidApp', 'src', 'main', 'res');
 /** The logo's own background, so that the icon's background and the logo's meet without a seam. */
 const BACKGROUND = '#0E0E0A';
 const DENSITIES = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
@@ -72,38 +72,5 @@ writeFileSync(
   join(RES, 'values', 'ic_launcher_background.xml'),
   `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">${BACKGROUND}</color>\n</resources>\n`,
 );
-rmSync(join(RES, 'drawable', 'ic_launcher_background.xml'), { force: true });
-rmSync(join(RES, 'drawable-v24'), { recursive: true, force: true });
 
-// The splash a phone before Android 12 shows while the app starts: the logo on the same colour, whatever the size.
-const SPLASHES = {
-  drawable: [480, 320],
-  'drawable-land-mdpi': [480, 320],
-  'drawable-land-hdpi': [800, 480],
-  'drawable-land-xhdpi': [1280, 720],
-  'drawable-land-xxhdpi': [1600, 960],
-  'drawable-land-xxxhdpi': [1920, 1280],
-  'drawable-port-mdpi': [320, 480],
-  'drawable-port-hdpi': [480, 800],
-  'drawable-port-xhdpi': [720, 1280],
-  'drawable-port-xxhdpi': [960, 1600],
-  'drawable-port-xxxhdpi': [1280, 1920],
-};
-for (const [dir, [w, h]] of Object.entries(SPLASHES)) {
-  const logo = Math.round(Math.min(w, h) * 0.34);
-  magick(
-    '-size',
-    `${w}x${h}`,
-    `xc:${BACKGROUND}`,
-    '(',
-    LOGO,
-    '-resize',
-    `${logo}x${logo}`,
-    ')',
-    '-gravity',
-    'center',
-    '-composite',
-    join(RES, dir, 'splash.png'),
-  );
-}
-console.log('[icons] wrote the launcher icons and splash screens from web/public/logo.png');
+console.log('[icons] wrote the launcher icons from web/public/logo.png');

@@ -10,3 +10,6 @@ web/.svelte-kit
 wrangler.deploy.jsonc
 web/src/engine/pkg
 /release
+
+# The engine for the phone, built by scripts/build-android.mjs.
+/app/androidApp/src/main/jniLibs/

@@ -1,4 +1,4 @@
-package me.utsob.meghnaad.app.widgets
+package me.utsob.meghnaad
 
 import android.content.Context
 import kotlinx.coroutines.runBlocking

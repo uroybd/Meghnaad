@@ -54,7 +54,7 @@ flowchart TB
   subgraph phone["Your phone: Meghnaad for Android"]
     direction TB
     wg["Widgets<br/>tasks · burndown · calendar"]
-    app["The same Svelte app<br/>in a WebView"]
+    app["The app<br/>Kotlin and Compose"]
     nat["Engine (Rust, native)<br/>tc-core, hooks (Lua)"]
     rep[("Replica in a file<br/>settings and keys on the phone")]
     wg --> nat
@@ -149,12 +149,11 @@ secret it read is replaced by `***` in what it printed, failed with or returned.
 script as `nil` and a reason, because an error from an async function ends the call and cannot be caught with `pcall`.
 
 
-**On Android** (`crates/android`, `android/`) there is no Worker: the engine is `tc-core` as a native library, called
-from Kotlin over JNI, and it syncs straight with the bucket, signing S3 requests itself (`CloudServer` over an
-`S3Store`, the same server code the Worker runs over R2). The same Svelte app runs in a WebView and talks to a Capacitor
-plugin in place of the Web Worker, and a widget reads the same engine. See [the Android app](android.md).
+**On Android** (`crates/android`, `app/`) there is no Worker: the engine is `tc-core` as a native library, called from
+Kotlin over JNI, and it syncs straight with the bucket, signing S3 requests itself (`CloudServer` over an `S3Store`, the
+same server code the Worker runs over R2). See [the Android app](android.md).
 
-**The Kotlin app** (`app/`) is the same native engine under Kotlin and Compose instead of a WebView: `shared` holds the
+**The app** (`app/`, Kotlin and Compose) draws that engine natively, not in a WebView: `shared` holds the
 engine's JSON types and API (mirroring `web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's store, and the
 screens; `androidApp` holds the activity, the reminder alarm's receiver and the widgets. Taskwarrior behaviour stays in
 `tc-core`, reached through the same JNI library (`crates/android/src/helpers.rs` for the few pure helpers a screen needs);

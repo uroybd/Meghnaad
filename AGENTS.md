@@ -84,19 +84,18 @@ versionCode (`scripts/version.mjs`), and the prebuilt package. Release by changi
 ## The Android app
 
 `crates/android` is `tc-core` natively (S3 sync with its own SigV4, the settings routes over a folder, hooks on the
-phone) behind a JNI layer; `android/` is the Capacitor shell, the Kotlin plugin and the widget; see `docs/android.md`.
-`node scripts/build-android.mjs` builds the APK. Anything the page needs from a server must also be answered by the app
-(`installNativeApi` sends `/api/…` to the phone), so a new settings route goes in `tc_core::webapi` where the Worker and
-the app share it. A request's meaning is in `tc_core::request`, shared with the browser engine: change it there, not in
-one host. Nothing may put the bucket keys or the encryption secret anywhere the page can read them. The few files a phone may keep
+phone) behind a JNI layer; `app/` is the app that loads it (below); see `docs/android.md`. `node scripts/build-android.mjs`
+builds the APK. Anything the screens need from a server must also be answered by the app (the engine's `api` call answers
+`/api/…` on the phone), so a new settings route goes in `tc_core::webapi` where the Worker and the app share it. A request's meaning is in `tc_core::request`, shared with the browser engine: change it there, not in
+one host. Nothing may put the bucket keys or the encryption secret anywhere a screen can read them. The few files a phone may keep
 in step with the bucket (settings, hooks; never secrets) are listed in `crates/android/src/filesync.rs`, which checks what it
 takes from the bucket the way the app checks what a person enters.
 
 ## The Kotlin app
 
-`app/` is the next Android app, in Kotlin and Compose (see `app/README.md`): `shared` has the engine's types and API, the
-state and the screens; `androidApp` is the activity. It loads the same `crates/android` library as the Capacitor app, so
-`NativeEngine` keeps its package (`me.utsob.meghnaad`) for the JNI names. The page-side rules hold here too: Taskwarrior
+`app/` is the Android app, in Kotlin and Compose (see `app/README.md`): `shared` has the engine's types and API, the
+state and the screens; `androidApp` is the activity, the reminder alarm and the widgets. It loads the `crates/android`
+library, so `NativeEngine` keeps its package (`me.utsob.meghnaad`) for the JNI names. The page-side rules hold here too: Taskwarrior
 behaviour is the engine's, and the screens only draw what it returns; mirror `web/src/lib/types.ts` and `api.ts` when the
 engine's answers change. **Never port Rust to Kotlin:** where `tc-core` already does something (splitting a command line,
 writing a date in `dateformat`, `format_vague`) call it through `crates/android/src/helpers.rs`, and add a function there

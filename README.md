@@ -167,7 +167,7 @@ flowchart TB
   subgraph phone["Your phone: Meghnaad for Android"]
     direction TB
     wg["Widgets<br/>tasks · burndown · calendar"]
-    app["The same Svelte app<br/>in a WebView"]
+    app["The app<br/>Kotlin and Compose"]
     nat["Engine (Rust, native)<br/>tc-core, hooks (Lua)"]
     rep[("Replica in a file<br/>settings and keys on the phone")]
     wg --> nat
@@ -357,7 +357,7 @@ crates/tc-core/   the engine: protocol, crypto, filters, reports, commands, task
 crates/browser/   the engine as WebAssembly for the browser (tc-core + sync through the Worker)
 crates/worker/    the Cloudflare Worker: Access check, R2 store, opens and seals versions, settings
 crates/android/   the engine for the Android app: tc-core natively, S3 sync, JNI
-android/          the Android app (Capacitor shell, Kotlin plugin, home-screen widget)
+app/              the Android app (Kotlin and Compose, home-screen widgets); crates/android is its engine
 web/              the Svelte 5 app (Vite)
 scripts/          setup / deploy / build / dev server · seed-dev.sh (demo data) · interop-local.sh (real-CLI regression)
 docs/             the guides above
