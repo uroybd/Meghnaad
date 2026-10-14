@@ -25,6 +25,9 @@ import androidx.compose.ui.unit.sp
 class SettingsState(store: Store) {
     val taskrc = TaskrcState(store)
     val commands = CommandsState(store)
+    val urgency = UrgencyState(store)
+    val tasksh = TaskshState(store)
+    val hooks = HooksState(store)
 }
 
 private class SettingsTabInfo(val tab: SettingsTab, val label: String)
@@ -41,7 +44,7 @@ private val TABS = listOf(
 /** One page with a tab each for the taskrc, tasksh, commands, hooks, urgency and sync; each has its own Apply (SettingsPage.svelte). */
 @Composable
 fun SettingsPage(store: Store, state: SettingsState) {
-    val dirty = mapOf(SettingsTab.Taskrc to state.taskrc.edited, SettingsTab.Commands to state.commands.edited)
+    val dirty = mapOf(SettingsTab.Taskrc to state.taskrc.edited, SettingsTab.Commands to state.commands.edited, SettingsTab.Urgency to state.urgency.edited, SettingsTab.Tasksh to state.tasksh.edited, SettingsTab.Hooks to state.hooks.edited)
     Column(Modifier.fillMaxSize()) {
         Text("Settings", Modifier.padding(start = 16.dp, top = 10.dp), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         ScrollableTabRow(selectedTabIndex = TABS.indexOfFirst { it.tab == store.settingsTab }.coerceAtLeast(0), edgePadding = 8.dp, containerColor = MaterialTheme.colorScheme.background) {
@@ -59,8 +62,10 @@ fun SettingsPage(store: Store, state: SettingsState) {
             when (store.settingsTab) {
                 SettingsTab.Taskrc -> TaskrcPanel(store, state.taskrc)
                 SettingsTab.Commands -> CommandsPanel(store, state.commands)
+                SettingsTab.Tasksh -> TaskshPanel(store, state.tasksh)
+                SettingsTab.Hooks -> HooksPanel(store, state.hooks)
+                SettingsTab.Urgency -> UrgencyPanel(store, state.urgency)
                 SettingsTab.Sync -> SyncPanel(store)
-                else -> Dim("This tab is not in this build yet.", Modifier.padding(top = 16.dp), 14)
             }
             Dim("Meghnaad ${APP_VERSION}", Modifier.padding(vertical = 16.dp), 12)
         }
