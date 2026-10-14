@@ -39,7 +39,7 @@ fun IconAction(
     size: Dp = 18.dp,
     enabled: Boolean = true,
 ) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = modifier.size(40.dp).semantics { contentDescription = description }) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = modifier.size(44.dp).semantics { contentDescription = description }) {
         LucideIcon(icon, size = size, tint = if (enabled) tint else tint.copy(alpha = 0.38f))
     }
 }

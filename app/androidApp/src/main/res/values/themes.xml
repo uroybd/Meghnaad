@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window before the first frame, in the page's own colour (the web's bg token), so nothing flashes. -->
+    <style name="Theme.Meghnaad" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFBFBFA</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

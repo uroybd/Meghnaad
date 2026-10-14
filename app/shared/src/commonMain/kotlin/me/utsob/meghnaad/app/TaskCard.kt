@@ -264,11 +264,11 @@ private fun Actions(store: Store, row: Row, from: Entry?, onEdit: ((Row) -> Unit
     val open = row.status == "pending"
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
         if (open) {
-            IconAction("check", "Done", { scope.launch { store.act(from, listOf(row.uuid, "done")) } }, tint = extras.ok)
+            IconAction("check", "Done", { store.go { act(from, listOf(row.uuid, "done")) } }, tint = extras.ok)
             if (row.start != null) {
-                IconAction("square", "Stop", { scope.launch { store.act(from, listOf(row.uuid, "stop")) } }, size = 15.dp)
+                IconAction("square", "Stop", { store.go { act(from, listOf(row.uuid, "stop")) } }, size = 15.dp)
             } else {
-                IconAction("play", "Start", { scope.launch { store.act(from, listOf(row.uuid, "start")) } }, size = 15.dp)
+                IconAction("play", "Start", { store.go { act(from, listOf(row.uuid, "start")) } }, size = 15.dp)
             }
         }
         if (onEdit != null) IconAction("pencil", "Edit", { onEdit(row) }, size = 15.dp)
@@ -282,13 +282,13 @@ private fun Actions(store: Store, row: Row, from: Entry?, onEdit: ((Row) -> Unit
                     fontSize = 13.sp,
                     modifier = Modifier.clip(CircleShape).clickable {
                         sure = false
-                        scope.launch { store.act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
+                        store.go { act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
                     }.padding(horizontal = 10.dp, vertical = 10.dp),
                 )
             } else {
                 IconAction("trash-2", "Delete", {
                     if (!store.confirmation) {
-                        scope.launch { store.act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
+                        store.go { act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
                     } else {
                         sure = true
                         scope.launch { delay(3000); sure = false }
@@ -296,7 +296,7 @@ private fun Actions(store: Store, row: Row, from: Entry?, onEdit: ((Row) -> Unit
                 }, tint = colors.error, size = 15.dp)
             }
         }
-        MoreMenu(store.taskCommands) { c -> scope.launch { store.act(from, listOf(row.uuid) + commandWords(c)) } }
+        MoreMenu(store.taskCommands) { c -> store.go { act(from, listOf(row.uuid) + commandWords(c)) } }
     }
 }
 

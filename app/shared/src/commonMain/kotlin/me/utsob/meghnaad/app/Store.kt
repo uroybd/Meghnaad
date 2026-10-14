@@ -196,6 +196,9 @@ class Store(
     var adding by mutableStateOf<AddRef?>(null)
     var notifyOpen by mutableStateOf(false)
 
+    /** Whether the slide-over menu is open (the system's back button closes it). */
+    var menuOpen by mutableStateOf(false)
+
     /** Text typed at the console line and not yet run; and a request for it to take this text and the focus. */
     var promptLine by mutableStateOf("")
     var promptRequest by mutableStateOf<Pair<String, Int>?>(null)
@@ -260,6 +263,12 @@ class Store(
         // The device took settings or hooks from the bucket (it keeps them in step when asked to): read them again.
         sync.onSettingsChanged = { scope.launch { settingsChanged(); loadAppSettings() } }
     }
+
+    /**
+     * Run something for the app, not for a screen: a command from the prompt changes the page (and so removes the prompt that
+     * sent it), and a tick on a card removes the card, neither of which may cancel what they started.
+     */
+    fun go(block: suspend Store.() -> Unit): Job = scope.launch { block() }
 
     fun tick() {
         now = clock.nowSeconds().toLong()
@@ -524,6 +533,33 @@ class Store(
     }
 
     fun clearEntries() = entries.clear()
+
+    /**
+     * The system's back button, in the order a person expects: close what is on top (a question, a form, the menu), then ends
+     * a selection, then goes back to the Tasks page. False when there is nothing to go back from: the app may close.
+     */
+    fun handleBack(): Boolean {
+        when {
+            ask != null -> answerAsk(false)
+            adding != null -> adding = null
+            editing != null -> editing = null
+            detail != null -> detail = null
+            notifyOpen -> notifyOpen = false
+            menuOpen -> menuOpen = false
+            selection.count > 0 -> selection.clear()
+            view != View.Tasks -> view = View.Tasks
+            else -> return false
+        }
+        return true
+    }
+
+    /** Pull down on a page: sync now, then draw again what is on screen (a failure is told, as the banner under the bar says why too). */
+    suspend fun pullRefresh() {
+        val result = sync.request().await()
+        result.exceptionOrNull()?.let { notify("Couldn't sync: ${sync.error ?: it.message}", bad = true) }
+        written()
+        live?.let { exec(it) }
+    }
 
     // ---- Running commands
 

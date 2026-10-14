@@ -93,7 +93,7 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
         // Reports focus the Tasks view; everything else lands in the console scrollback. Show the console first so a write or
         // an error is visible; `run` switches back for reports.
         if (store.view != View.Console && (consoleOnly(cmd) || !looksLikeReport(store, cmd))) store.view = View.Console
-        scope.launch { store.run(CliInput(line = cmd), l) }
+        store.go { run(CliInput(line = cmd), l) }
     }
 
     fun older(): Boolean {
@@ -146,7 +146,7 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 vocab = store.vocab,
                 completer = completer,
                 modifier = Modifier.weight(1f),
-                placeholder = "next · add Buy milk due:tomorrow · project:Home +work list",
+                placeholder = "next · add Buy milk due:tomorrow",
                 onSubmit = ::submit,
                 focusRequester = focus,
                 completeSignal = completeSignal,

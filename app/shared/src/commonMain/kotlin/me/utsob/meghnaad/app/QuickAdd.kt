@@ -35,9 +35,9 @@ fun QuickAdd(store: Store, modifier: Modifier = Modifier) {
     fun add() {
         if (description.isBlank() || busy) return
         busy = true
-        scope.launch {
+        store.go {
             // `description:` keeps words like "project:foo" in the text from being read as fields.
-            val res = store.act(if (store.view == View.Tasks) store.live else null, listOf("add", "description:${description.trim()}"))
+            val res = act(if (view == View.Tasks) live else null, listOf("add", "description:${description.trim()}"))
             busy = false
             if (res != null && res.result !is CliResult.Error) description = ""
         }

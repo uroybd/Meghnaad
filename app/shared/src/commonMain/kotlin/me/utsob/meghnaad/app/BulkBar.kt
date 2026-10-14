@@ -24,9 +24,9 @@ fun BulkBar(store: Store) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("$n selected", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
         TextButton(onClick = {
-            scope.launch {
-                store.act(store.live, store.selection.uuids.toList() + "done")
-                store.selection.clear()
+            store.go {
+                act(live, selection.uuids.toList() + "done")
+                selection.clear()
             }
         }) { Text("Done") }
         TextButton(onClick = { store.selection.clear() }) { Text("Clear") }

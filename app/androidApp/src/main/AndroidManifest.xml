@@ -6,7 +6,7 @@
     <application
         android:allowBackup="false"
         android:label="Meghnaad (next)"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@style/Theme.Meghnaad"
         android:extractNativeLibs="true">
         <activity
             android:name=".MainActivity"

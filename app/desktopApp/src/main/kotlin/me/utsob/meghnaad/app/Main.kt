@@ -78,8 +78,13 @@ fun main() = application {
         if (!engine.restored && vault.connection() == null) runBlocking { seed(tw) }
         Store(tw, engine, vault, SyncController(engine, scope, SystemClock), scope, SystemClock).also { it.begin() }
     }
-    // The size of a phone, to judge the layout; drag it wider to see the rest.
-    Window(onCloseRequest = ::exitApplication, title = "Meghnaad (preview)", state = rememberWindowState(width = 420.dp, height = 860.dp)) {
+    // The size of a phone (a Pixel's 412 x 892 dp), and not resizable: the app has one layout, the phone's.
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "Meghnaad (phone preview)",
+        state = rememberWindowState(width = 412.dp, height = 892.dp),
+        resizable = false,
+    ) {
         App(store)
     }
 }
