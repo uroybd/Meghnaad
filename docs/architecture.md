@@ -100,9 +100,12 @@ time zone and the time) and gets back the JSON the app reads. One entry point me
 where Taskwarrior semantics live. A file to import goes the same way, as its text; `tc-core`'s `import` module parses
 and checks it. The engine answers one message at a time, in the order they arrive.
 
-The few pure helpers (`tc_core::helpers` and `tc_core::sortspec`: a date in the user's `dateformat`, a command line split and
-quoted as the engine reads it, a duration in one unit, how a recurrence period reads, what a header click or a grouping does to
-a report's sort keys; `helpers::call` runs the ones with structured arguments by name, as JSON) take nothing from the replica, so the page does not send them to the Worker: a screen asks for a date
+The pure helpers (`tc_core::helpers`, which calls into `sortspec`, `complete`, `highlight`, `urgency_settings` and `cells`:
+a date in the user's `dateformat`, a command line split and quoted as the engine reads it, a duration in one unit, how a
+recurrence period reads, what a header click or a grouping does to a report's sort keys, what Tab completes and how a
+command line is coloured, how an urgency coefficient is named and kept, and what each cell of a report shows;
+`helpers::call` runs the ones with structured arguments by name, as JSON) take nothing from the replica, so the page does
+not send them to the Worker: a screen asks for a date
 while it draws, and a message is asynchronous. `web/src/engine/helpers.ts` loads the same WebAssembly module again on the
 page's own thread (one download, as the browser has the bytes) and calls them at once. The page is built with them (the
 store, the filters, the headers), so `main.ts` loads them before it imports the app: the first paint waits for the engine's
@@ -382,8 +385,9 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   `scheme.svelte.ts` says which page it is, and `themes.ts` and the taskrc tab's picker put a bundled theme's lines
   into the taskrc (the theme files are static assets).
 - `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`, `BurndownView`,
-  `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the console, ran the command). A report's cells are formatted in `format.ts`, the one place that knows `dateformat`,
-  indicators and urgency colours.
+  `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the console, ran the command). A report's cells are written by the engine (`tc_core::cells`: `dateformat`, indicators, urgency colours; one call
+  for the whole table through `formatCells` in `format.ts`, which only tells it the browser's zone at each moment, so summer
+  time is right).
 - **Bulk actions** (`BulkBar`, `BulkModify`, `selection.svelte.ts`, `bulk.ts`): the table's checkboxes feed one selection; the bar sends ordinary commands (the whole uuids of the ticked tasks side by side, which Taskwarrior reads as one group, then `done`, `delete` or `modify` with the words the editor made), so the engine needs nothing of its own. **CLI** hands the prompt a line through `store.requestPrompt`.
 - **Task addresses**: `route.ts` maps a task to `/task/<8 characters of its uuid>` and back; `App.svelte` keeps the address bar and the drawer in step (opening pushes an address, closing or Back leaves it), and `store.openFromAddress` finds the task with `uuid.startswith:<prefix> uuids`. `DepLink` is the id of another task (a dependency, a parent) with a hover, focus or tap card; in the drawer `DepItem` is a line that expands to the same `TaskCard`, and the tasks that wait on this one are looked up with `depends.has:<uuid>` only when asked. A project part or a tag chip jumps to its entry on the Projects or Tags page (`store.showProject` / `showTag`).
 - The filter box (`FilterInput`, `FilterChips`) and the prompt share `completion.ts`; both feed the same engine.
@@ -408,7 +412,7 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
-| `tc_core::helpers` and `tc_core::sortspec` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, and every header click, grouping and sort-override case |
+| `tc_core::helpers`, `sortspec`, `complete`, `highlight`, `urgency_settings` and `cells` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, every header click, grouping and sort-override case, what Tab completes, how a line is coloured, how urgency terms are named, and what every column format shows |
 | `npm --prefix web test` | The browser-side logic (it loads the built engine for the helpers): formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |
 | `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused |

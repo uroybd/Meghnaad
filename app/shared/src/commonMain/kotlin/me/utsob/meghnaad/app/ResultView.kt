@@ -107,7 +107,7 @@ fun ReportSection(store: Store, e: Entry, result: ReportResult) {
         Dim("No tasks match.")
         return
     }
-    val heads = groupHeads(result, ctx)
+    val heads = remember(result, ctx) { groupHeads(result, ctx) }
     // A table where there is room for one (the web's width), cards where there is not.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth > TABLE_FROM) {

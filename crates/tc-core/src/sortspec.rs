@@ -9,6 +9,29 @@ use crate::filter::split_words;
 use crate::helpers::shell_quote;
 use serde::{Deserialize, Serialize};
 
+/// Columns a header click can sort by (a screen adds the user's UDAs).
+pub const SORTABLE: &[&str] = &[
+    "id",
+    "uuid",
+    "status",
+    "description",
+    "project",
+    "priority",
+    "tags",
+    "depends",
+    "entry",
+    "start",
+    "end",
+    "due",
+    "wait",
+    "scheduled",
+    "until",
+    "modified",
+    "urgency",
+    "recur",
+    "parent",
+];
+
 /// A header click or a grouping never leaves more keys than this.
 const MAX_KEYS: usize = 4;
 

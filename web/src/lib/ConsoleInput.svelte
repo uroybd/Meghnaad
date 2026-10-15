@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { Completer } from './completer.svelte';
-  import { COMMANDS } from './completion';
+  import { COMMAND_NAMES } from './completion';
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
   import { highlightPieces } from './highlight';
@@ -42,11 +42,7 @@
 
   // The line is coloured: a copy of it drawn under the field, which has the text itself (transparent) and the caret.
   const commands = $derived(
-    new Set([
-      ...Object.keys(COMMANDS),
-      ...store.vocab.reports.map((r) => r.name),
-      ...store.taskCommands.map((c) => c.name),
-    ]),
+    new Set([...COMMAND_NAMES, ...store.vocab.reports.map((r) => r.name), ...store.taskCommands.map((c) => c.name)]),
   );
   const coloured = $derived(highlightPieces(line, commands));
   // The field is as tall as its text: a long command wraps, and all of it can be seen.

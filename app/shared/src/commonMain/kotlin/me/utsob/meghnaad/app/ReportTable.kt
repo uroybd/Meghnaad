@@ -59,10 +59,10 @@ val TABLE_SELECT = SELECT_WIDTH
 val TABLE_ACTIONS = ACTIONS_WIDTH
 
 /** What each column asks for, in dp: its widest cell or its header, whichever is wider, so a narrow column keeps its text on one line. */
-private fun preferredWidths(result: ReportResult, ctx: Ctx): List<Float> = result.columns.map { col ->
+private fun preferredWidths(result: ReportResult, ctx: Ctx): List<Float> = result.columns.mapIndexed { ci, col ->
     var longest = 0
-    for (row in result.rows) {
-        val c = cell(col, row, ctx)
+    for (cells in cellsOf(result, ctx)) {
+        val c = cells[ci]
         val n = when {
             c.chips != null -> c.chips.sumOf { it.length + 3 }
             c.segments != null -> c.segments.sumOf { it.length } + c.segments.size
@@ -242,6 +242,7 @@ private fun TableRow(
     val picked = selectable && store.selection.has(row.uuid)
     val done = row.status == "completed" || row.status == "deleted" || row.waiting
     val bold = row.style?.bold == true
+    val cells = cellsOfRow(result, ctx, row)
     Column(Modifier.fillMaxWidth().padding(top = if (gapBefore) 14.dp else 0.dp)) {
         Row(
             Modifier.fillMaxWidth().background(rowBackground(row, picked)).clickable { store.openDetail(row.uuid, entry) },
@@ -252,7 +253,7 @@ private fun TableRow(
             }
             Row(Modifier.weight(1f).horizontalScroll(scroll), verticalAlignment = Alignment.Top) {
             result.columns.forEachIndexed { ci, col ->
-                val c = cell(col, row, ctx)
+                val c = cells[ci]
                 Column(Modifier.width(widths[ci]).padding(end = 8.dp, top = 11.dp, bottom = 9.dp)) {
                     TableCell(store, col, c, row, overdue, done, bold, activeTags, onTag)
                     if (col.name == "description") c.lines?.forEach { Dim(it, Modifier.padding(top = 2.dp)) }

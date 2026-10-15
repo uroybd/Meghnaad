@@ -161,7 +161,7 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
         var oneLine by remember { mutableStateOf(0) }
         val dark = extras.dark
         val commands = remember(store.reports, store.taskCommands) {
-            COMMANDS.keys + store.reports.map { it.name } + store.taskCommands.map { it.name }
+            COMMAND_NAMES.toSet() + store.reports.map { it.name } + store.taskCommands.map { it.name }
         }
         val colouring = remember(commands, dark) { HighlightTransformation(commands, HlPalette(dark)) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

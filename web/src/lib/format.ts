@@ -1,9 +1,9 @@
-// Renders a report cell from a column spec like `due.relative` or `description.truncated`,
-// following Taskwarrior's column formats where they make sense on the web.
+// Report cells: what a column spec like `due.relative` or `description.truncated` shows for a task is the engine's
+// (`tc_core::cells`); what is here is the zone the browser is in, and the styling hints a row has.
 
-import { compactDuration, formatMoment } from './dates';
+import { callHelper } from '../engine/helpers';
 import type { DateFmt } from './dateformat';
-import { visibleNotes, type Markers } from './journal';
+import type { Markers } from './journal';
 import type { Column, Row, UdaDef } from './types';
 
 export interface Cell {
@@ -47,58 +47,8 @@ export interface Ctx {
   journal?: Markers | null;
 }
 
-const DATE_PROPS = ['entry', 'start', 'end', 'due', 'wait', 'scheduled', 'until', 'modified'] as const;
-type DateProp = (typeof DATE_PROPS)[number];
-
 export function shortUuid(u: string): string {
   return u.slice(0, 8);
-}
-
-function dateCell(ts: number | null, name: string, format: string | null, ctx: Ctx): Cell {
-  if (ts == null) return { text: '' };
-  switch (format) {
-    case 'relative':
-      return { text: compactDuration(ts - ctx.now) };
-    case 'countdown':
-      return { text: compactDuration(ts - ctx.now) };
-    case 'remaining':
-      return { text: ts > ctx.now ? compactDuration(ts - ctx.now) : '' };
-    case 'age':
-      return { text: compactDuration(ctx.now - ts) };
-    case 'epoch':
-      return { text: String(ts) };
-    case 'iso':
-      return { text: new Date(ts * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z') };
-    case 'julian':
-      return { text: (ts / 86400 + 2440587.5).toFixed(5) };
-    default:
-      return { text: formatMoment(ts, ctx.tz, ctx.dates?.report) };
-  }
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : s.slice(0, Math.max(0, n - 1)) + '…';
-}
-
-function descriptionCell(row: Row, format: string | null, ctx: Ctx): Cell {
-  const shown = visibleNotes(row.annotations, ctx.journal);
-  const notes = shown.map((a) => `${formatMoment(a.entry, ctx.tz, ctx.dates?.annotation)} ${a.text}`);
-  switch (format) {
-    case 'desc':
-      return { text: row.description };
-    case 'oneline':
-      // Like Taskwarrior: each annotation follows the description with its date.
-      return { text: [row.description, ...notes].join(' ') };
-    case 'truncated':
-      return { text: truncate(row.description, 40) };
-    case 'truncated_count':
-      return { text: truncate(row.description, 40) + (notes.length ? ` [${notes.length}]` : '') };
-    case 'count':
-      return { text: row.description + (notes.length ? ` [${notes.length}]` : '') };
-    default:
-      // Taskwarrior's default shows annotations beneath the description.
-      return { text: row.description, lines: notes.length ? notes : undefined };
-  }
 }
 
 /** A project path as its parts (`Home.Kitchen` is `Home` and `Kitchen`). */
@@ -106,90 +56,72 @@ export function projectSegments(path: string): { text: string }[] {
   return path.split('.').map((s) => ({ text: s }));
 }
 
-function projectCell(p: string | null, format: string | null): Cell {
-  if (!p) return { text: '' };
-  const parts = p.split('.');
-  if (format === 'indented') return { text: '  '.repeat(parts.length - 1) + parts[parts.length - 1] };
-  const text = format === 'parent' && parts.length > 1 ? parts.slice(0, -1).join('.') : p;
-  return { text, segments: projectSegments(text) };
+const DATE_PROPS = ['entry', 'start', 'end', 'due', 'wait', 'scheduled', 'until', 'modified'] as const;
+const FORTNIGHT = 14 * 86400;
+
+/** The browser's offset east of UTC at a moment (it changes with summer time). */
+const browserOffset = (ts: number) => -new Date(ts * 1000).getTimezoneOffset() * 60;
+
+/**
+ * The offsets the browser's zone had over the moments in the rows, as `[from, offset]` pairs: the engine writes the dates
+ * but cannot ask the browser which offset applied, so it is told. Samples a fortnight apart, and finds the exact moment of
+ * a change by halving.
+ */
+function offsetsFor(rows: Row[], now: number): [number, number][] {
+  let lo = now;
+  let hi = now;
+  const see = (t: number | null | undefined) => {
+    if (t == null) return;
+    lo = Math.min(lo, t);
+    hi = Math.max(hi, t);
+  };
+  for (const r of rows) {
+    for (const p of DATE_PROPS) see(r[p]);
+    for (const a of r.annotations) see(a.entry);
+  }
+  const out: [number, number][] = [[lo, browserOffset(lo)]];
+  for (let t = lo; t < hi;) {
+    const next = Math.min(t + FORTNIGHT, hi);
+    const here = out[out.length - 1][1];
+    if (browserOffset(next) !== here) {
+      let a = t;
+      let b = next;
+      while (b - a > 1) {
+        const mid = Math.floor((a + b) / 2);
+        if (browserOffset(mid) === here) a = mid;
+        else b = mid;
+      }
+      out.push([b, browserOffset(b)]);
+    }
+    t = next;
+  }
+  return out;
 }
 
-/** UDA values for date-typed UDAs are stored as epoch seconds. */
-function udaCell(row: Row, col: Column, ctx: Ctx): Cell {
-  const raw = row.extra[col.name];
-  if (raw == null) return { text: '' };
-  const def = ctx.udas?.[col.name];
-  if (def?.type === 'date' || col.kind === 'date') {
-    const ts = Number(raw);
-    return Number.isFinite(ts) ? dateCell(ts, col.name, col.format, ctx) : { text: raw };
-  }
-  if (def?.indicator && col.format === 'indicator') return { text: def.indicator };
-  // A multi-line value keeps its lines in the table instead of running them together.
-  return raw.includes('\n') ? { text: raw, cls: 'multiline' } : { text: raw };
-}
-
-export function cell(col: Column, row: Row, ctx: Ctx): Cell {
-  const f = col.format;
-  const name = col.name;
-
-  // `start.active`: the indicator while the task is started and not ended.
-  if (name === 'start' && f === 'active')
-    return { text: row.start != null && row.end == null ? (ctx.indicators?.active ?? '*') : '' };
-
-  if ((DATE_PROPS as readonly string[]).includes(name)) {
-    const c = dateCell(row[name as DateProp], name, f, ctx);
-    return c;
-  }
-
-  switch (name) {
-    case 'id':
-      // Hovering it offers the full uuid to copy; ids are only meaningful on this replica.
-      return row.id != null
-        ? { text: String(row.id), uuid: row.uuid }
-        : { text: shortUuid(row.uuid), cls: 'dim', uuid: row.uuid };
-    case 'uuid':
-      return { text: f === 'short' ? shortUuid(row.uuid) : row.uuid };
-    case 'status': {
-      const waiting = row.waiting === true;
-      if (f === 'short') return { text: waiting ? 'W' : (row.status[0] ?? '').toUpperCase() };
-      return { text: waiting ? 'waiting' : row.status };
-    }
-    case 'description':
-      return descriptionCell(row, f, ctx);
-    case 'project':
-      return projectCell(row.project, f);
-    case 'priority':
-      return { text: row.priority ?? '', cls: row.priority ? `pri-${row.priority.toLowerCase()}` : undefined };
-    case 'tags': {
-      if (f === 'count') return { text: row.tags.length ? `[${row.tags.length}]` : '' };
-      if (f === 'indicator') return { text: row.tags.length ? (ctx.indicators?.tag ?? '+') : '' };
-      if (f === 'list') return { text: row.tags.join(',') };
-      return { text: row.tags.join(' '), chips: row.tags.length ? row.tags : undefined };
-    }
-    case 'depends': {
-      // Only the tasks still open count: a finished one no longer holds this one up.
-      const open = row.pending_deps ?? 0;
-      if (f === 'indicator') return { text: open ? (ctx.indicators?.dependency ?? 'D') : '' };
-      if (f === 'count') return { text: open ? `[${open}]` : '' };
-      return { text: row.depends.map(shortUuid).join(' '), links: row.depends.length ? row.depends : undefined };
-    }
-    case 'urgency':
-      return {
-        text: f === 'integer' ? String(Math.round(row.urgency)) : row.urgency.toFixed(2),
-        cls: `urg-${urgencyLevel(row.urgency)}`,
-      };
-    case 'recur':
-      return { text: f === 'indicator' ? (row.recur ? (ctx.recurIndicator ?? 'R') : '') : (row.recur ?? '') };
-    case 'parent':
-      return { text: row.parent ? shortUuid(row.parent) : '', links: row.parent ? [row.parent] : undefined };
-    case 'annotations':
-      return {
-        text: f === 'count' ? String(row.annotations.length || '') : row.annotations.map((a) => a.text).join('; '),
-      };
-    default:
-      // A UDA, an orphan, or something Taskwarrior has that we don't render specially.
-      return udaCell(row, col, ctx);
-  }
+/**
+ * What every cell of a table shows, as `cells[row][column]`: the engine writes them (`tc_core::cells`), all in one call.
+ * Without a `tz` the browser's zone applies, at each moment's own offset.
+ */
+export function formatCells(columns: Column[], rows: Row[], ctx: Ctx): Cell[][] {
+  if (!rows.length || !columns.length) return rows.map(() => []);
+  const udas = Object.fromEntries(
+    Object.entries(ctx.udas ?? {}).map(([k, u]) => [k, { type: u.type, indicator: u.indicator }]),
+  );
+  const wire = {
+    now: ctx.now,
+    tz: ctx.tz ?? browserOffset(ctx.now),
+    offsets: ctx.tz == null ? offsetsFor(rows, ctx.now) : [],
+    udas,
+    dates: ctx.dates,
+    recur_indicator: ctx.recurIndicator,
+    indicators: ctx.indicators,
+    journal: ctx.journal,
+  };
+  const cols = columns.map(({ name, format, kind }) => ({ name, format, kind }));
+  type Wire = Omit<Cell, 'segments'> & { segments?: string[] };
+  return callHelper<Wire[][]>('format_cells', cols, rows, wire).map((r) =>
+    r.map((c) => (c.segments ? { ...c, segments: c.segments.map((text) => ({ text })) } : (c as Cell))),
+  );
 }
 
 /** CSS classes for a whole row. */

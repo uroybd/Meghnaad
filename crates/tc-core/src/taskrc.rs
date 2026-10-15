@@ -429,7 +429,7 @@ const SCALAR_SETTINGS: &[&str] = &[
     "uda.priority.values",
 ];
 
-pub(crate) fn valid_ident(s: &str) -> bool {
+pub fn valid_ident(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
@@ -670,8 +670,9 @@ fn check_context_rc(key: &str, value: &str) -> Result<(), RcProblem> {
     }
 }
 
-/// The built-in urgency terms: `urgency.<term>.coefficient`.
-const URGENCY_TERMS: &[&str] = &[
+/// The built-in urgency terms: `urgency.<term>.coefficient`. Names only, so that the Worker, which checks every key it saves,
+/// carries no screen text; `urgency_settings::TERMS` is the same list with its labels (a test keeps them in step).
+pub(crate) const URGENCY_TERMS: &[&str] = &[
     "project",
     "active",
     "scheduled",
@@ -687,15 +688,19 @@ const URGENCY_TERMS: &[&str] = &[
 /// Most urgency settings one save may carry.
 pub const MAX_URGENCY_SETTINGS: usize = 500;
 
+/// Whether `name` (a project, tag, keyword or the value of a UDA) can be part of an urgency setting's key: not empty, no spaces,
+/// `=` or `#`, no control characters, and Taskwarrior cuts a key at the first ".coefficient", so a name can't contain one.
+pub fn valid_urgency_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains(".coefficient")
+        && name
+            .chars()
+            .all(|c| !c.is_whitespace() && !c.is_control() && c != '=' && c != '#')
+}
+
 /// Whether `key` is an urgency setting Taskwarrior reads, spelled so a taskrc round-trips it.
 pub fn valid_urgency_key(key: &str) -> bool {
-    // Taskwarrior cuts the name at the first ".coefficient", so a name can't contain one.
-    let name_ok = |n: &str| {
-        !n.is_empty()
-            && !n.contains(".coefficient")
-            && n.chars()
-                .all(|c| !c.is_whitespace() && !c.is_control() && c != '=' && c != '#')
-    };
+    let name_ok = valid_urgency_name;
     let Some(rest) = key.strip_prefix("urgency.") else {
         return false;
     };

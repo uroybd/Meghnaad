@@ -12,28 +12,8 @@ export interface SortKey {
   brk: boolean;
 }
 
-/** Columns a header click can sort by (UDAs are added by the caller). */
-export const SORTABLE = new Set([
-  'id',
-  'uuid',
-  'status',
-  'description',
-  'project',
-  'priority',
-  'tags',
-  'depends',
-  'entry',
-  'start',
-  'end',
-  'due',
-  'wait',
-  'scheduled',
-  'until',
-  'modified',
-  'urgency',
-  'recur',
-  'parent',
-]);
+/** Columns a header click can sort by (UDAs are added by the caller): the engine's list. */
+export const SORTABLE = new Set(callHelper<string[]>('sortable_columns'));
 
 /** `due.relative` sorts by `due`. */
 export function baseColumn(spec: string): string {

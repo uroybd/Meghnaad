@@ -22,6 +22,7 @@ fun groupHeads(result: ReportResult, ctx: Ctx): List<String?> {
     val keys = parseSort(result.sort).filter { it.brk }
     if (keys.isEmpty()) return emptyList()
     val cols = keys.map { columnFor(result, it.column, ctx) }
-    fun head(row: Row) = cols.joinToString(" · ") { c -> "${c.label}: ${cell(c, row, ctx).text.trim().ifEmpty { NONE }}" }
-    return result.rows.mapIndexed { i, row -> if (i == 0 || result.breaks.getOrNull(i) == true) head(row) else null }
+    val cells = formatCells(cols, result.rows, ctx)
+    fun head(i: Int) = cols.mapIndexed { j, c -> "${c.label}: ${cells[i][j].text.trim().ifEmpty { NONE }}" }.joinToString(" · ")
+    return result.rows.indices.map { i -> if (i == 0 || result.breaks.getOrNull(i) == true) head(i) else null }
 }

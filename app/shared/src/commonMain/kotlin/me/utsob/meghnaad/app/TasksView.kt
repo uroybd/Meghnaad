@@ -73,7 +73,7 @@ fun TasksView(store: Store) {
 
     val entry = store.live
     val ctx = result?.let { store.cellCtx(it.report) }
-    val heads = if (result != null && ctx != null) groupHeads(result, ctx) else emptyList()
+    val heads = remember(result, ctx) { if (result != null && ctx != null) groupHeads(result, ctx) else emptyList() }
     val dimmed = entry?.loading == true && result != null
 
     BoxWithConstraints(Modifier.fillMaxSize()) {

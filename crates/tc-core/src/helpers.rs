@@ -124,6 +124,15 @@ pub fn shell_quote(word: &str) -> String {
     }
 }
 
+/// What completion is built from, kept between calls: the screen hands it over when it changes, and a keystroke sends only the
+/// line and the caret.
+static VOCAB: std::sync::Mutex<Option<crate::complete::Vocab>> = std::sync::Mutex::new(None);
+
+fn with_vocab<T>(f: impl FnOnce(&crate::complete::Vocab) -> T) -> T {
+    let guard = VOCAB.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    f(&guard.clone().unwrap_or_default())
+}
+
 /// The arguments of a call, as the JSON values they came as.
 struct Args(Vec<serde_json::Value>);
 
@@ -147,11 +156,66 @@ impl Args {
 
 fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
     use crate::sortspec::{self as sort, Key};
+    use crate::urgency_settings;
     use serde_json::json;
     Ok(match name {
         "split_words" => json!(split_words(&a.req::<String>(0)?)),
         "shell_quote" => json!(shell_quote(&a.req::<String>(0)?)),
         "describe_recur" => json!(describe_recur(&a.req::<String>(0)?)),
+        "set_vocab" => {
+            *VOCAB.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(a.req::<crate::complete::Vocab>(0)?);
+            json!(null)
+        }
+        "complete" => {
+            let (line, caret) = (a.req::<String>(0)?, a.req::<usize>(1)?);
+            json!(with_vocab(|v| crate::complete::complete(&line, caret, v)))
+        }
+        "insert_completion" => json!(crate::complete::insert(
+            &a.req::<String>(0)?,
+            &a.req::<crate::complete::Completion>(1)?,
+            &a.req::<String>(2)?,
+            a.opt::<bool>(3)?.unwrap_or(true)
+        )),
+        "apply_completion" => json!(crate::complete::apply(
+            &a.req::<String>(0)?,
+            &a.req::<crate::complete::Completion>(1)?
+        )),
+        "highlight" => json!(crate::highlight::highlight(
+            &a.req::<String>(0)?,
+            &a.req::<Vec<String>>(1)?.into_iter().collect()
+        )),
+        "describe_urgency_key" => json!(urgency_settings::describe(&a.req::<String>(0)?)),
+        "urgency_terms" => json!(urgency_settings::TERMS
+            .iter()
+            .map(|t| json!({ "term": t.term, "label": t.label, "hint": t.hint }))
+            .collect::<Vec<_>>()),
+        "urgency_addable" => json!(urgency_settings::ADDABLE),
+        "build_urgency_key" => json!(urgency_settings::build_key(
+            a.req::<urgency_settings::Kind>(0)?,
+            &a.req::<String>(1)?
+        )),
+        "valid_urgency_name" => json!(crate::taskrc::valid_urgency_name(&a.req::<String>(0)?)),
+        "valid_urgency_uda" => json!(urgency_settings::valid_uda(&a.req::<String>(0)?)),
+        "sort_urgency_keys" => json!(urgency_settings::sort_keys(&a.req::<Vec<String>>(0)?)),
+        "urgency_with_value" => json!(urgency_settings::with_value(
+            &a.req::<std::collections::BTreeMap<String, f64>>(0)?,
+            &a.req::<std::collections::BTreeMap<String, f64>>(1)?,
+            &a.req::<String>(2)?,
+            a.req::<f64>(3)?
+        )),
+        "format_cells" => json!(crate::cells::format(
+            &a.req::<Vec<crate::cells::Col>>(0)?,
+            &a.req::<Vec<crate::cells::Row>>(1)?,
+            &a.req::<crate::cells::Ctx>(2)?
+        )),
+        "command_names" => json!(crate::complete::COMMANDS.iter().map(|(c, _)| *c).collect::<Vec<_>>()),
+        "virtual_tags" => json!(crate::complete::VIRTUAL_TAGS),
+        "sortable_columns" => json!(sort::SORTABLE),
+        "recur_presets" => json!(crate::complete::RECUR_PRESETS
+            .iter()
+            .map(|(value, label)| json!({ "value": value, "label": label }))
+            .collect::<Vec<_>>()),
         "parse_sort" => json!(sort::parse(a.opt::<String>(0)?.as_deref())),
         "serialize_sort" => json!(sort::serialize(&a.req::<Vec<Key>>(0)?)),
         "click_sort" => json!(sort::click(

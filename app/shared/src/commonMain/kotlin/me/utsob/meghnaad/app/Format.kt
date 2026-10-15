@@ -1,10 +1,22 @@
 package me.utsob.meghnaad.app
 
-// Renders a report cell from a column spec like `due.relative` or `description.truncated`, following Taskwarrior's column
-// formats where they make sense on a phone: web/src/lib/format.ts.
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+// Report cells: what a column spec like `due.relative` or `description.truncated` shows for a task is the engine's
+// (`tc_core::cells`, through the helpers); what is here is the zone the phone is in and the styling hints a row has.
 
 /** What a cell shows. */
-class Cell(
+@Serializable
+data class Cell(
     val text: String,
     /** Extra lines under the text (annotations). */
     val lines: List<String>? = null,
@@ -18,14 +30,7 @@ class Cell(
     val uuid: String? = null,
     /** Other tasks this cell names (their uuids), each drawn as a link. */
     val links: List<String>? = null,
-) {
-    override fun equals(other: Any?) = other is Cell && text == other.text && lines == other.lines && cls == other.cls &&
-        segments == other.segments && chips == other.chips && uuid == other.uuid && links == other.links
-
-    override fun hashCode() = text.hashCode()
-
-    override fun toString() = "Cell($text, lines=$lines, cls=$cls, segments=$segments, chips=$chips, uuid=$uuid, links=$links)"
-}
+)
 
 enum class UrgencyLevel { Low, Mid, High, Crit }
 
@@ -40,10 +45,10 @@ fun urgencyLevel(u: Double): UrgencyLevel = when {
     else -> UrgencyLevel.Low
 }
 
-class Indicators(val active: String? = null, val tag: String? = null, val dependency: String? = null)
+data class Indicators(val active: String? = null, val tag: String? = null, val dependency: String? = null)
 
 /** What a cell needs to know besides the task. */
-class Ctx(
+data class Ctx(
     /** Epoch seconds "now". */
     val now: Long,
     /** The viewer's offset east of UTC in seconds, for a time with no better offset. */
@@ -61,127 +66,97 @@ class Ctx(
     val journal: Journal? = null,
 )
 
-private fun Ctx.zone(ts: Long) = offsetAt?.invoke(ts) ?: tz
-
-private val DATE_PROPS = setOf("entry", "start", "end", "due", "wait", "scheduled", "until", "modified")
-
 fun shortUuid(u: String): String = u.take(8)
-
-private fun dateOf(row: Row, name: String): Long? = when (name) {
-    "entry" -> row.entry
-    "start" -> row.start
-    "end" -> row.end
-    "due" -> row.due
-    "wait" -> row.wait
-    "scheduled" -> row.scheduled
-    "until" -> row.until
-    else -> row.modified
-}
-
-private fun dateCell(ts: Long?, format: String?, ctx: Ctx): Cell {
-    if (ts == null) return Cell("")
-    return when (format) {
-        // A duration is Taskwarrior's own `format_vague`, from the engine.
-        "relative", "countdown" -> Cell(rustHelpers().vague(ts - ctx.now))
-        "remaining" -> Cell(if (ts > ctx.now) rustHelpers().vague(ts - ctx.now) else "")
-        "age" -> Cell(rustHelpers().vague(ctx.now - ts))
-        "epoch" -> Cell(ts.toString())
-        "iso" -> Cell(isoStamp(ts))
-        "julian" -> Cell(fixed(ts / 86_400.0 + 2_440_587.5, 5))
-        else -> Cell(formatMoment(ts, ctx.zone(ts), ctx.reportDates))
-    }
-}
-
-private fun truncate(s: String, n: Int) = if (s.length <= n) s else s.take(maxOf(0, n - 1)) + "…"
-
-private fun descriptionCell(row: Row, format: String?, ctx: Ctx): Cell {
-    val shown = visibleNotes(row.annotations, ctx.journal)
-    val notes = shown.map { "${formatMoment(it.entry, ctx.zone(it.entry), ctx.annotationDates)} ${it.text}" }
-    return when (format) {
-        "desc" -> Cell(row.description)
-        // Like Taskwarrior: each annotation follows the description with its date.
-        "oneline" -> Cell((listOf(row.description) + notes).joinToString(" "))
-        "truncated" -> Cell(truncate(row.description, 40))
-        "truncated_count" -> Cell(truncate(row.description, 40) + if (notes.isNotEmpty()) " [${notes.size}]" else "")
-        "count" -> Cell(row.description + if (notes.isNotEmpty()) " [${notes.size}]" else "")
-        // Taskwarrior's default shows the annotations beneath the description.
-        else -> Cell(row.description, lines = notes.ifEmpty { null })
-    }
-}
 
 /** A project path as its parts (`Home.Kitchen` is `Home` and `Kitchen`). */
 fun projectSegments(path: String): List<String> = path.split('.')
 
-private fun projectCell(p: String?, format: String?): Cell {
-    if (p.isNullOrEmpty()) return Cell("")
-    val parts = p.split('.')
-    if (format == "indented") return Cell("  ".repeat(parts.size - 1) + parts.last())
-    val text = if (format == "parent" && parts.size > 1) parts.dropLast(1).joinToString(".") else p
-    return Cell(text, segments = projectSegments(text))
-}
+private const val FORTNIGHT = 14L * 86_400
 
-/** UDA values for date-typed UDAs are stored as epoch seconds. */
-private fun udaCell(row: Row, col: Column, ctx: Ctx): Cell {
-    val raw = row.extra[col.name] ?: return Cell("")
-    val def = ctx.udas[col.name]
-    if (def?.type == "date" || col.kind == "date") {
-        val ts = raw.toDoubleOrNull()
-        return if (ts != null && ts.isFinite()) dateCell(ts.toLong(), col.format, ctx) else Cell(raw)
+/**
+ * The offsets the phone's zone had over the moments in the rows, as `[from, offset]` pairs: the engine writes the dates but
+ * cannot ask the phone which offset applied, so it is told. Samples a fortnight apart, and finds the exact moment of a change
+ * by halving.
+ */
+private fun offsetsFor(rows: List<Row>, ctx: Ctx, offsetAt: (Long) -> Int): JsonArray {
+    var lo = ctx.now
+    var hi = ctx.now
+    fun see(t: Long?) {
+        if (t == null) return
+        lo = minOf(lo, t)
+        hi = maxOf(hi, t)
     }
-    if (def?.indicator != null && col.format == "indicator") return Cell(def.indicator)
-    // A multi-line value keeps its lines instead of running them together.
-    return if ('\n' in raw) Cell(raw, cls = "multiline") else Cell(raw)
-}
-
-fun cell(col: Column, row: Row, ctx: Ctx): Cell {
-    val f = col.format
-    val name = col.name
-
-    // `start.active`: the indicator while the task is started and not ended.
-    if (name == "start" && f == "active") return Cell(if (row.start != null && row.end == null) ctx.indicators.active ?: "*" else "")
-
-    if (name in DATE_PROPS) return dateCell(dateOf(row, name), f, ctx)
-
-    return when (name) {
-        // Ids are only meaningful on this replica; the uuid is what to copy.
-        "id" -> if (row.id != null) Cell(row.id.toString(), uuid = row.uuid) else Cell(shortUuid(row.uuid), cls = "dim", uuid = row.uuid)
-        "uuid" -> Cell(if (f == "short") shortUuid(row.uuid) else row.uuid)
-        "status" -> {
-            if (f == "short") Cell(if (row.waiting) "W" else row.status.take(1).uppercase()) else Cell(if (row.waiting) "waiting" else row.status)
-        }
-        "description" -> descriptionCell(row, f, ctx)
-        "project" -> projectCell(row.project, f)
-        "priority" -> Cell(row.priority ?: "", cls = row.priority?.let { "pri-${it.lowercase()}" })
-        "tags" -> when (f) {
-            "count" -> Cell(if (row.tags.isNotEmpty()) "[${row.tags.size}]" else "")
-            "indicator" -> Cell(if (row.tags.isNotEmpty()) ctx.indicators.tag ?: "+" else "")
-            "list" -> Cell(row.tags.joinToString(","))
-            else -> Cell(row.tags.joinToString(" "), chips = row.tags.ifEmpty { null })
-        }
-        "depends" -> {
-            // Only the tasks still open count: a finished one no longer holds this one up.
-            val open = row.pendingDeps
-            when (f) {
-                "indicator" -> Cell(if (open > 0) ctx.indicators.dependency ?: "D" else "")
-                "count" -> Cell(if (open > 0) "[$open]" else "")
-                else -> Cell(row.depends.joinToString(" ", transform = ::shortUuid), links = row.depends.ifEmpty { null })
+    for (r in rows) {
+        listOf(r.entry, r.start, r.end, r.due, r.wait, r.scheduled, r.until, r.modified).forEach(::see)
+        r.annotations.forEach { see(it.entry) }
+    }
+    val out = mutableListOf(lo to offsetAt(lo))
+    var t = lo
+    while (t < hi) {
+        val next = minOf(t + FORTNIGHT, hi)
+        val here = out.last().second
+        if (offsetAt(next) != here) {
+            var a = t
+            var b = next
+            while (b - a > 1) {
+                val mid = (a + b) / 2
+                if (offsetAt(mid) == here) a = mid else b = mid
             }
+            out += b to offsetAt(b)
         }
-        "urgency" -> Cell(
-            if (f == "integer") roundHalfUp(row.urgency).toString() else fixed(row.urgency, 2),
-            cls = "urg-${urgencyLevel(row.urgency).name.lowercase()}",
-        )
-        "recur" -> Cell(if (f == "indicator") (if (row.recur != null) ctx.recurIndicator ?: "R" else "") else row.recur ?: "")
-        "parent" -> Cell(row.parent?.let(::shortUuid) ?: "", links = row.parent?.let { listOf(it) })
-        "annotations" -> Cell(
-            if (f == "count") (row.annotations.size.takeIf { it > 0 }?.toString() ?: "") else row.annotations.joinToString("; ") { it.text },
-        )
-        // A UDA, an orphan, or something Taskwarrior has that is not drawn specially.
-        else -> udaCell(row, col, ctx)
+        t = next
     }
+    return buildJsonArray { out.forEach { (from, offset) -> add(buildJsonArray { add(JsonPrimitive(from)); add(JsonPrimitive(offset)) }) } }
 }
 
-private fun roundHalfUp(x: Double): Long = kotlin.math.floor(x + 0.5).toLong()
+private fun DateFmt?.json(): JsonElement =
+    if (this == null) JsonNull else buildJsonObject { put("pattern", pattern); put("weekstart", weekstart) }
+
+private fun Ctx.json(rows: List<Row>): JsonObject = buildJsonObject {
+    put("now", now)
+    put("tz", tz)
+    put("offsets", offsetAt?.let { offsetsFor(rows, this@json, it) } ?: JsonArray(emptyList()))
+    put("udas", buildJsonObject { udas.forEach { (name, u) -> put(name, buildJsonObject { put("type", u.type); put("indicator", u.indicator) }) } })
+    put("dates", buildJsonObject { put("report", reportDates.json()); put("annotation", annotationDates.json()) })
+    put("recur_indicator", recurIndicator)
+    put("indicators", buildJsonObject { put("active", indicators.active); put("tag", indicators.tag); put("dependency", indicators.dependency) })
+    put("journal", journal?.let { buildJsonObject { put("start", it.start); put("stop", it.stop) } } ?: JsonNull)
+}
+
+/** What every cell of a table shows, as `cells[row][column]`: the engine writes them, all in one call. */
+fun formatCells(columns: List<Column>, rows: List<Row>, ctx: Ctx): List<List<Cell>> {
+    if (rows.isEmpty() || columns.isEmpty()) return rows.map { emptyList() }
+    val cols = buildJsonArray {
+        columns.forEach { c -> add(buildJsonObject { put("name", c.name); put("format", c.format); put("kind", c.kind) }) }
+    }
+    val rowsJson = engineJson.encodeToJsonElement(ListSerializer(Row.serializer()), rows)
+    return engineJson.decodeFromJsonElement(
+        ListSerializer(ListSerializer(Cell.serializer())),
+        callHelper("format_cells", cols, rowsJson, ctx.json(rows)),
+    )
+}
+
+private class Kept(val result: ReportResult, val ctx: Ctx, val cells: List<List<Cell>>)
+
+private val kept = ArrayDeque<Kept>()
+
+/**
+ * The cells of a report's table. A table is drawn again and again as the screen scrolls and changes, so the last few are
+ * kept by the result they were made from (and the settings they were made with): one crossing into the engine per result.
+ */
+fun cellsOf(result: ReportResult, ctx: Ctx): List<List<Cell>> {
+    kept.firstOrNull { it.result === result && it.ctx == ctx }?.let { return it.cells }
+    val cells = formatCells(result.columns, result.rows, ctx)
+    kept.addFirst(Kept(result, ctx, cells))
+    while (kept.size > 6) kept.removeLast()
+    return cells
+}
+
+/** The cells of one row of [result], which a screen that draws a row at a time reads from the table's. */
+fun cellsOfRow(result: ReportResult, ctx: Ctx, row: Row): List<Cell> {
+    val i = result.rows.indexOfFirst { it === row }
+    return if (i >= 0) cellsOf(result, ctx)[i] else formatCells(result.columns, listOf(row), ctx)[0]
+}
 
 /** The states of a whole row, for styling it. */
 fun rowClass(row: Row): String {

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { formatFor, formatPattern, weekStartOf } from './dateformat';
 import { formatMoment } from './dates';
-import { cell, type Ctx } from './format';
+import { formatCells, type Ctx } from './format';
 import type { Column, Row } from './types';
+
+const cell = (c: Column, r: Row, x: Ctx) => formatCells([c], [r], x)[0][0];
 
 const WED = 1_791_376_200; // 2026-10-07 12:30:00 UTC, a Wednesday (reference values from strftime)
 const JAN1_2027 = 1_798_761_600; // Friday, ISO week 53 of 2026

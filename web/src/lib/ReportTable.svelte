@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
   import { css, look, rowVars } from './colors';
-  import { cell, rowClass } from './format';
+  import { formatCells, rowClass } from './format';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import MoreMenu from './MoreMenu.svelte';
   import ProjectPath from './ProjectPath.svelte';
@@ -59,6 +59,8 @@
       dependency: settings?.['dependency.indicator'],
     },
   });
+  // What every cell shows, worked out by the engine for the whole table at once.
+  const cells = $derived(formatCells(result.columns, result.rows, ctx));
   const keys = $derived(parseSort(result.sort));
   // A header above each group, when the sort has a `/`: what its tasks have in common.
   const heads = $derived(groupHeads(result, ctx));
@@ -257,8 +259,8 @@
                 </label>
               </td>
             {/if}
-            {#each result.columns as col (col.spec)}
-              {@const c = cell(col, row, ctx)}
+            {#each result.columns as col, ci (col.spec)}
+              {@const c = cells[i][ci]}
               <td
                 class="{col.kind} {c.cls ?? ''} col-{col.name.replace(/\W+/g, '-')}{col.format
                   ? ` fmt-${col.format}`

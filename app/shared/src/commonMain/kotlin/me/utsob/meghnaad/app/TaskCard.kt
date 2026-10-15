@@ -109,7 +109,7 @@ fun TaskCard(
     val textColor = if (done) colors.onSurfaceVariant else colors.onSurface
     val bold = row.style?.bold == true
 
-    val cells = report.columns.map { it to cell(it, row, ctx) }
+    val cells = report.columns.zip(cellsOfRow(report, ctx, row))
     val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.lines.isNullOrEmpty()) }
 
     Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = 10.dp)) {

@@ -1,8 +1,8 @@
 // Group headers for a report whose sort has a `/` (`outcome+/`, `project+/`): Taskwarrior leaves a blank line
 // where the group changes; the web draws a header above each group saying what its tasks have in common.
-import { cell, udaLabel, type Ctx } from './format';
+import { formatCells, udaLabel, type Ctx } from './format';
 import { parseSort } from './sortSpec';
-import type { Column, ReportResult, Row } from './types';
+import type { Column, ReportResult } from './types';
 
 const NONE = '(none)';
 
@@ -25,12 +25,13 @@ export function groupHeads(result: ReportResult, ctx: Ctx): (string | null)[] {
   const keys = parseSort(result.sort).filter((k) => k.brk);
   if (keys.length === 0) return [];
   const cols = keys.map((k) => columnFor(result, k.column, ctx));
-  const head = (row: Row) =>
+  const cells = formatCells(cols, result.rows, ctx);
+  const head = (i: number) =>
     cols
-      .map((c) => {
-        const value = cell(c, row, ctx).text.trim();
+      .map((c, j) => {
+        const value = cells[i][j].text.trim();
         return `${c.label}: ${value || NONE}`;
       })
       .join(' · ');
-  return result.rows.map((row, i) => (i === 0 || result.breaks[i] ? head(row) : null));
+  return result.rows.map((_, i) => (i === 0 || result.breaks[i] ? head(i) : null));
 }

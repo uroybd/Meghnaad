@@ -4,7 +4,7 @@ package me.utsob.meghnaad.app
 // (`formatPattern` asks it), so dates show the way the user's taskrc says: Taskwarrior's letters are tokens, everything else
 // is copied as it is.
 
-class DateFmt(
+data class DateFmt(
     val pattern: String,
     /** 0 = weeks start on Sunday, 1 = Monday (ISO weeks), from the `weekstart` setting. */
     val weekstart: Int,

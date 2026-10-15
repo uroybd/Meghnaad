@@ -1,6 +1,7 @@
 package me.utsob.meghnaad.app
 
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.boolean
@@ -16,11 +17,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SortKey(val column: String, val desc: Boolean = false, /** A trailing `/`: a break when the value changes. */ val brk: Boolean = false)
 
-/** Columns a header (or a sort picker) can sort by; UDAs are added by the caller. */
-val SORTABLE = setOf(
-    "id", "uuid", "status", "description", "project", "priority", "tags", "depends", "entry", "start", "end", "due", "wait",
-    "scheduled", "until", "modified", "urgency", "recur", "parent",
-)
+/** Columns a header (or a sort picker) can sort by; UDAs are added by the caller. The engine's list. */
+val SORTABLE: Set<String> by lazy { callHelper("sortable_columns").jsonArray.map { it.jsonPrimitive.content }.toSet() }
 
 /** `due.relative` sorts by `due`. */
 fun baseColumn(spec: String): String = spec.substringBefore('.')

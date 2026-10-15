@@ -16,8 +16,9 @@ The engine is `crates/android`, the one library (`libtc_android`) the app loads.
 `Java_me_utsob_meghnaad_NativeEngine_*`, so `NativeEngine` has to stay in the package `me.utsob.meghnaad`.
 
 Where `tc-core` already does something, the app calls it and does not copy it: splitting a command line, writing a date in
-the taskrc's `dateformat`, and writing a duration the way Taskwarrior does are `crates/android/src/helpers.rs`, reached
-through `RustHelpers` (they take no engine, so they never wait for a sync). The rest of what the screens do is the web app's
+the taskrc's `dateformat`, writing a duration the way Taskwarrior does, completing and colouring a command line, the
+urgency terms, sort keys and what each report cell shows are `tc_core::helpers` (`crates/android/src/helpers.rs`), reached
+through `RustHelpers` and `callHelper` (they take no engine, so they never wait for a sync). The rest of what the screens do is the web app's
 own view logic (`web/src/lib`), ported with its tests.
 
 ## Looking at it live
