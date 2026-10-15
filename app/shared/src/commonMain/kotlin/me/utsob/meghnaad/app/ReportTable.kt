@@ -59,7 +59,8 @@ val TABLE_SELECT = SELECT_WIDTH
 val TABLE_ACTIONS = ACTIONS_WIDTH
 
 /** What each column asks for, in dp: its widest cell or its header, whichever is wider, so a narrow column keeps its text on one line. */
-private fun preferredWidths(result: ReportResult, ctx: Ctx): List<Float> = result.columns.mapIndexed { ci, col ->
+private fun preferredWidths(result: ReportResult, ctx: Ctx): List<Float> = shownColumns(result, ctx).map { ci ->
+    val col = result.columns[ci]
     var longest = 0
     for (cells in cellsOf(result, ctx)) {
         val c = cells[ci]
@@ -89,7 +90,7 @@ private fun preferredWidths(result: ReportResult, ctx: Ctx): List<Float> = resul
  */
 fun tableWidths(result: ReportResult, ctx: Ctx, available: Float): List<Dp> {
     val pref = preferredWidths(result, ctx)
-    val flex = result.columns.indexOfFirst { it.kind == "description" }
+    val flex = shownColumns(result, ctx).indexOfFirst { result.columns[it].kind == "description" }
     val others = pref.filterIndexed { i, _ -> i != flex }.sum()
     return when {
         flex >= 0 -> pref.mapIndexed { i, w -> (if (i == flex) maxOf(available - others, 240f) else w).dp }
@@ -135,7 +136,7 @@ fun LazyListScope.reportTable(
     onSort: (column: String, tieBreak: Boolean) -> Unit,
 ) {
     val keys = parseSort(result.sort)
-    item(key = "table-head") { TableHeader(store, result, keys, widths, scroll, selectable = true, onSort) }
+    item(key = "table-head") { TableHeader(store, result, ctx, keys, widths, scroll, selectable = true, onSort) }
     items(result.rows.size, key = { result.rows[it].uuid }) { i ->
         val row = result.rows[i]
         heads.getOrNull(i)?.let { GroupHead(it) }
@@ -153,7 +154,7 @@ fun ReportTableBlock(store: Store, result: ReportResult, ctx: Ctx, heads: List<S
         val widths = remember(result, maxWidth) { tableWidths(result, ctx, (maxWidth - ACTIONS_WIDTH).value) }
         val scroll = rememberScrollState()
         Column(Modifier.fillMaxWidth()) {
-            TableHeader(store, result, parseSort(result.sort), widths, scroll, selectable = false, onSort = null)
+            TableHeader(store, result, ctx, parseSort(result.sort), widths, scroll, selectable = false, onSort = null)
             result.rows.forEachIndexed { i, row ->
                 heads.getOrNull(i)?.let { GroupHead(it) }
                 TableRow(store, result, ctx, widths, scroll, row, entry, selectable = false, emptyList(), null, onEdit, gapBefore = heads.isEmpty() && result.breaks.getOrNull(i) == true)
@@ -173,7 +174,7 @@ private fun GroupHead(text: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TableHeader(store: Store, result: ReportResult, keys: List<SortKey>, widths: List<Dp>, scroll: ScrollState, selectable: Boolean, onSort: ((String, Boolean) -> Unit)?) {
+private fun TableHeader(store: Store, result: ReportResult, ctx: Ctx, keys: List<SortKey>, widths: List<Dp>, scroll: ScrollState, selectable: Boolean, onSort: ((String, Boolean) -> Unit)?) {
     val colors = MaterialTheme.colorScheme
     val udas = store.config?.config?.udas ?: emptyMap()
     val all = result.rows.map { it.uuid }
@@ -191,10 +192,11 @@ private fun TableHeader(store: Store, result: ReportResult, keys: List<SortKey>,
                 )
             }
             Row(Modifier.weight(1f).horizontalScroll(scroll), verticalAlignment = Alignment.CenterVertically) {
-            result.columns.forEachIndexed { ci, col ->
+            shownColumns(result, ctx).forEachIndexed { pos, ci ->
+                val col = result.columns[ci]
                 val st = sortState(keys, col.name)
                 val sortable = onSort != null && (baseColumn(col.name) in SORTABLE || baseColumn(col.name) in udas)
-                Row(Modifier.width(widths[ci]).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.width(widths[pos]).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     val tint = if (st != null) colors.primary else colors.onSurfaceVariant
                     Row(
                         Modifier.clip(ControlShape).let { m ->
@@ -252,9 +254,10 @@ private fun TableRow(
                 Checkbox(checked = picked, onCheckedChange = { store.selection.toggle(row.uuid) })
             }
             Row(Modifier.weight(1f).horizontalScroll(scroll), verticalAlignment = Alignment.Top) {
-            result.columns.forEachIndexed { ci, col ->
+            shownColumns(result, ctx).forEachIndexed { pos, ci ->
+                val col = result.columns[ci]
                 val c = cells[ci]
-                Column(Modifier.width(widths[ci]).padding(end = 8.dp, top = 11.dp, bottom = 9.dp)) {
+                Column(Modifier.width(widths[pos]).padding(end = 8.dp, top = 11.dp, bottom = 9.dp)) {
                     TableCell(store, col, c, row, overdue, done, bold, activeTags, onTag)
                     if (col.name == "description") c.notes?.forEach { NoteLine(it, Modifier.padding(top = 2.dp)) }
                 }

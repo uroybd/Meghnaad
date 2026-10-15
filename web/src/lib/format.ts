@@ -101,12 +101,20 @@ function offsetsFor(rows: Row[], now: number): [number, number][] {
   return out;
 }
 
+/** The cells of a table, and which of its columns have nothing in them. */
+export interface Table {
+  /** `cells[row][column]` */
+  cells: Cell[][];
+  /** Per column: nothing in it for any row. Without `print.empty.columns` a table leaves such a column out. */
+  empty: boolean[];
+}
+
 /**
- * What every cell of a table shows, as `cells[row][column]`: the engine writes them (`tc_core::cells`), all in one call.
- * Without a `tz` the browser's zone applies, at each moment's own offset.
+ * What every cell of a table shows, and which columns are empty: the engine works them out (`tc_core::cells`), all in one
+ * call. Without a `tz` the browser's zone applies, at each moment's own offset.
  */
-export function formatCells(columns: Column[], rows: Row[], ctx: Ctx): Cell[][] {
-  if (!rows.length || !columns.length) return rows.map(() => []);
+export function formatTable(columns: Column[], rows: Row[], ctx: Ctx): Table {
+  if (!rows.length || !columns.length) return { cells: rows.map(() => []), empty: columns.map(() => true) };
   const udas = Object.fromEntries(
     Object.entries(ctx.udas ?? {}).map(([k, u]) => [k, { type: u.type, indicator: u.indicator }]),
   );
@@ -122,9 +130,18 @@ export function formatCells(columns: Column[], rows: Row[], ctx: Ctx): Cell[][] 
   };
   const cols = columns.map(({ name, format, kind }) => ({ name, format, kind }));
   type Wire = Omit<Cell, 'segments'> & { segments?: string[] };
-  return callHelper<Wire[][]>('format_cells', cols, rows, wire).map((r) =>
-    r.map((c) => (c.segments ? { ...c, segments: c.segments.map((text) => ({ text })) } : (c as Cell))),
-  );
+  const table = callHelper<{ cells: Wire[][]; empty: boolean[] }>('format_cells', cols, rows, wire);
+  return {
+    empty: table.empty,
+    cells: table.cells.map((r) =>
+      r.map((c) => (c.segments ? { ...c, segments: c.segments.map((text) => ({ text })) } : (c as Cell))),
+    ),
+  };
+}
+
+/** Just the cells of a table (see [formatTable]). */
+export function formatCells(columns: Column[], rows: Row[], ctx: Ctx): Cell[][] {
+  return formatTable(columns, rows, ctx).cells;
 }
 
 /** CSS classes for a whole row. */

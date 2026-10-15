@@ -138,6 +138,8 @@ export interface ReportResult {
   matched: number;
   /** The sort spec in effect (the report's, or an `rc.report.<name>.sort:` override). */
   sort: string | null;
+  /** `print.empty.columns` is on: the table keeps a column with nothing in it. Absent (Taskwarrior's default): it leaves it out. */
+  print_empty_columns?: boolean;
 }
 
 export interface InfoResult {

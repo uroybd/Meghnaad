@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
   import { css, look, rowVars } from './colors';
-  import { formatCells, rowClass } from './format';
+  import { formatTable, rowClass } from './format';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import MoreMenu from './MoreMenu.svelte';
@@ -61,7 +61,15 @@
     },
   });
   // What every cell shows, worked out by the engine for the whole table at once.
-  const cells = $derived(formatCells(result.columns, result.rows, ctx));
+  const table = $derived(formatTable(result.columns, result.rows, ctx));
+  const cells = $derived(table.cells);
+  // The columns shown: without `print.empty.columns` (Taskwarrior's default) one with nothing in it is left out, as the real
+  // `task` does. A table with no rows keeps its columns, so it still reads as a table.
+  const shown = $derived(
+    result.columns
+      .map((col, ci) => ({ col, ci }))
+      .filter(({ ci }) => result.print_empty_columns || !result.rows.length || !table.empty[ci]),
+  );
   const keys = $derived(parseSort(result.sort));
   // A header above each group, when the sort has a `/`: what its tasks have in common.
   const heads = $derived(groupHeads(result, ctx));
@@ -111,7 +119,7 @@
 
   // Phones show cards instead of a table, so there are no headers to click: a sort picker
   // stands in for them (same command underneath).
-  const sortColumns = $derived(result.columns.filter((c) => sortable(c.name)));
+  const sortColumns = $derived(shown.map((s) => s.col).filter((c) => sortable(c.name)));
   const primary = $derived(keys[0] ?? null);
 
   const isOpen = (row: Row) => row.status === 'pending';
@@ -181,7 +189,7 @@
               />
             </th>
           {/if}
-          {#each result.columns as col (col.spec)}
+          {#each shown as { col } (col.spec)}
             {@const st = sortState(keys, col.name)}
             <th class={col.kind} aria-sort={sortable(col.name) ? ariaSort(col.name) : undefined}>
               {#if sortable(col.name)}
@@ -228,7 +236,7 @@
         {#each result.rows as row, i (row.uuid)}
           {#if heads[i]}
             <tr class="grouphead"
-              ><th colspan={result.columns.length + 1 + (selectable ? 1 : 0)} scope="colgroup">{heads[i]}</th></tr
+              ><th colspan={shown.length + 1 + (selectable ? 1 : 0)} scope="colgroup">{heads[i]}</th></tr
             >
           {/if}
           {@const l = look(row.style, scheme.dark)}
@@ -260,7 +268,7 @@
                 </label>
               </td>
             {/if}
-            {#each result.columns as col, ci (col.spec)}
+            {#each shown as { col, ci } (col.spec)}
               {@const c = cells[i][ci]}
               <td
                 class="{col.kind} {c.cls ?? ''} col-{col.name.replace(/\W+/g, '-')}{col.format
@@ -958,6 +966,14 @@
     .note {
       margin-left: 0;
       flex-basis: 100%;
+    }
+    /* A field written in Markdown is a few lines: on a card it sits in a faint frame of its own, so it reads as a field beneath
+       the task and not as more of its line. */
+    td > .md {
+      flex-basis: 100%;
+      padding: 6px 10px 8px;
+      border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+      border-radius: 6px;
     }
   }
 </style>

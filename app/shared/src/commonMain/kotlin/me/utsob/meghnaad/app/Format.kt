@@ -129,20 +129,29 @@ private fun Ctx.json(rows: List<Row>): JsonObject = buildJsonObject {
     put("journal", journal?.let { buildJsonObject { put("start", it.start); put("stop", it.stop) } } ?: JsonNull)
 }
 
-/** What every cell of a table shows, as `cells[row][column]`: the engine writes them, all in one call. */
-fun formatCells(columns: List<Column>, rows: List<Row>, ctx: Ctx): List<List<Cell>> {
-    if (rows.isEmpty() || columns.isEmpty()) return rows.map { emptyList() }
+/** The cells of a table, and which of its columns have nothing in them. */
+@Serializable
+class Table(
+    /** `cells[row][column]` */
+    val cells: List<List<Cell>>,
+    /** Per column: nothing in it for any row. Without `print.empty.columns` a table leaves such a column out. */
+    val empty: List<Boolean>,
+)
+
+/** What every cell of a table shows, and which columns are empty: the engine works them out, all in one call. */
+fun formatTable(columns: List<Column>, rows: List<Row>, ctx: Ctx): Table {
+    if (rows.isEmpty() || columns.isEmpty()) return Table(rows.map { emptyList() }, columns.map { true })
     val cols = buildJsonArray {
         columns.forEach { c -> add(buildJsonObject { put("name", c.name); put("format", c.format); put("kind", c.kind) }) }
     }
     val rowsJson = engineJson.encodeToJsonElement(ListSerializer(Row.serializer()), rows)
-    return engineJson.decodeFromJsonElement(
-        ListSerializer(ListSerializer(Cell.serializer())),
-        callHelper("format_cells", cols, rowsJson, ctx.json(rows)),
-    )
+    return engineJson.decodeFromJsonElement(Table.serializer(), callHelper("format_cells", cols, rowsJson, ctx.json(rows)))
 }
 
-private class Kept(val result: ReportResult, val ctx: Ctx, val cells: List<List<Cell>>)
+/** Just the cells of a table (see [formatTable]). */
+fun formatCells(columns: List<Column>, rows: List<Row>, ctx: Ctx): List<List<Cell>> = formatTable(columns, rows, ctx).cells
+
+private class Kept(val result: ReportResult, val ctx: Ctx, val table: Table)
 
 private val kept = ArrayDeque<Kept>()
 
@@ -150,12 +159,24 @@ private val kept = ArrayDeque<Kept>()
  * The cells of a report's table. A table is drawn again and again as the screen scrolls and changes, so the last few are
  * kept by the result they were made from (and the settings they were made with): one crossing into the engine per result.
  */
-fun cellsOf(result: ReportResult, ctx: Ctx): List<List<Cell>> {
-    kept.firstOrNull { it.result === result && it.ctx == ctx }?.let { return it.cells }
-    val cells = formatCells(result.columns, result.rows, ctx)
-    kept.addFirst(Kept(result, ctx, cells))
+fun tableOf(result: ReportResult, ctx: Ctx): Table {
+    kept.firstOrNull { it.result === result && it.ctx == ctx }?.let { return it.table }
+    val table = formatTable(result.columns, result.rows, ctx)
+    kept.addFirst(Kept(result, ctx, table))
     while (kept.size > 6) kept.removeLast()
-    return cells
+    return table
+}
+
+fun cellsOf(result: ReportResult, ctx: Ctx): List<List<Cell>> = tableOf(result, ctx).cells
+
+/**
+ * Which columns of a report's table are drawn: all of them with `print.empty.columns`, and in a table with no rows; otherwise (as
+ * Taskwarrior does) those with something in them.
+ */
+fun shownColumns(result: ReportResult, ctx: Ctx): List<Int> {
+    if (result.printEmptyColumns || result.rows.isEmpty()) return result.columns.indices.toList()
+    val empty = tableOf(result, ctx).empty
+    return result.columns.indices.filter { !empty[it] }
 }
 
 /** The cells of one row of [result], which a screen that draws a row at a time reads from the table's. */

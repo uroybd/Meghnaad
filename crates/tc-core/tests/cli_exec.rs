@@ -211,6 +211,34 @@ async fn annotate_and_denotate() {
 }
 
 #[tokio::test]
+async fn print_empty_columns_is_a_setting_and_a_one_off_override() {
+    let mut r = replica();
+    run(&mut r, &Config::default(), "add something").await;
+    let flag = |res: CliResult| match res {
+        CliResult::Report(o) => o.print_empty_columns,
+        other => panic!("{other:?}"),
+    };
+    // Taskwarrior's default: columns with nothing in them are left out (by the screen), so the report does not say it keeps them.
+    assert!(!flag(run(&mut r, &Config::default(), "next").await.0));
+    // From the taskrc.
+    let on = parse("print.empty.columns=yes\n").config;
+    assert!(flag(run(&mut r, &on, "next").await.0));
+    // For one command, either way, and only for that one.
+    assert!(flag(
+        run(&mut r, &Config::default(), "rc.print.empty.columns:yes next")
+            .await
+            .0
+    ));
+    assert!(flag(
+        run(&mut r, &Config::default(), "next rc.print.empty.columns=on")
+            .await
+            .0
+    ));
+    assert!(!flag(run(&mut r, &on, "rc.print.empty.columns:no next").await.0));
+    assert!(!flag(run(&mut r, &Config::default(), "next").await.0));
+}
+
+#[tokio::test]
 async fn multi_task_writes_need_confirmation() {
     let mut r = replica();
     let cfg = Config::default();

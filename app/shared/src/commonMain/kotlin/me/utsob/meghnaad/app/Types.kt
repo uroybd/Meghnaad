@@ -87,6 +87,8 @@ data class ReportResult(
     val breaks: List<Boolean> = emptyList(),
     val matched: Int = 0,
     val sort: String? = null,
+    /** `print.empty.columns` is on: the table keeps a column with nothing in it. Without it (Taskwarrior's default) it leaves it out. */
+    @SerialName("print_empty_columns") val printEmptyColumns: Boolean = false,
 )
 
 @Serializable

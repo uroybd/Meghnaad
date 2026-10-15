@@ -125,7 +125,8 @@ Terminal output, and tools for debugging the command line client.
 | `verbose` | N/A | Accepted and ignored |
 | `nag` | N/A | The reminder printed after a command in a terminal |
 | `annotation.info` | Partial | In Taskwarrior it decides whether `task info` shows annotations. The detail view here always shows them, like opening a file, so the setting is not read |
-| `indent.annotation`, `indent.report`, `row.padding`, `column.padding`, `print.empty.columns` | N/A | Terminal layout |
+| `indent.annotation`, `indent.report`, `row.padding`, `column.padding` | N/A | Terminal layout |
+| `print.empty.columns` | Done | As in Taskwarrior, a report leaves out a column that has nothing in it for any of its rows (default `no`); `yes` keeps them. The engine reads the setting (`rc.print.empty.columns:yes` works for one command) and says which columns are empty, and the web app's tables and the Android app's tables do the leaving out. A report with no rows keeps its columns |
 | `xterm.title`, `_forcecolor` | N/A | Terminal behaviour |
 | `debug`, `debug.parser`, `obfuscate` | N/A | Debugging aids for the CLI |
 

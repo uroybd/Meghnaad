@@ -107,6 +107,10 @@ pub struct Output {
     pub matched: usize,
     /// The sort spec in effect (the report's, or an `rc.report.<name>.sort:` override).
     pub sort: Option<String>,
+    /// `print.empty.columns`: the report keeps a column with nothing in it. Without it (Taskwarrior's default) a screen leaves
+    /// such a column out; which columns are empty is `cells::Table::empty`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub print_empty_columns: bool,
 }
 
 /// Number pending tasks 1..N in a stable order (entry, then uuid). These ids are specific to
@@ -557,6 +561,7 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
         breaks,
         matched,
         sort: def.sort.clone(),
+        print_empty_columns: cfg.print_empty_columns(),
     })
 }
 
@@ -584,6 +589,24 @@ mod tests {
             seed: 7,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn a_report_says_whether_it_keeps_the_columns_with_nothing_in_them() {
+        let all = [t("a", |_| {})];
+        // Taskwarrior's default is to leave them out, so the report says nothing; the screen leaves them out.
+        let o = run(&Config::default(), "next", "", &all);
+        assert!(!o.print_empty_columns);
+        assert!(!serde_json::to_string(&o).unwrap().contains("print_empty_columns"));
+        for on in ["yes", "on", "1", "true"] {
+            let cfg = parse(&format!("print.empty.columns={on}\n")).config;
+            let o = run(&cfg, "next", "", &all);
+            assert!(o.print_empty_columns, "{on}");
+            assert!(serde_json::to_string(&o)
+                .unwrap()
+                .contains("\"print_empty_columns\":true"));
+        }
+        assert!(!run(&parse("print.empty.columns=no\n").config, "next", "", &all).print_empty_columns);
     }
 
     fn descs(o: &Output) -> Vec<&str> {

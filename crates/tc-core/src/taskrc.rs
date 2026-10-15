@@ -166,6 +166,13 @@ impl Config {
         self.settings.get("json.array").is_none_or(|v| truthy(v))
     }
 
+    /// `print.empty.columns`: whether a report keeps a column that has nothing in it for any of its rows. Taskwarrior's default is
+    /// no: such a column is left out. A screen does the leaving out; it is told this (and which columns are empty, see
+    /// `cells::Table`).
+    pub fn print_empty_columns(&self) -> bool {
+        self.settings.get("print.empty.columns").is_some_and(|v| truthy(v))
+    }
+
     /// `color`: whether tasks are coloured by the rules (on unless the taskrc turns it off).
     pub fn color(&self) -> bool {
         self.settings.get("color").is_none_or(|v| truthy(v))
@@ -369,6 +376,7 @@ pub const SETTING_DEFAULTS: &[(&str, &str)] = &[
     ("hooks", "1"),
     ("color", "1"),
     ("json.array", "1"),
+    ("print.empty.columns", "0"),
     ("confirmation", "1"),
     ("bulk", "3"),
     ("allow.empty.filter", "1"),
@@ -379,6 +387,7 @@ pub const SETTING_DEFAULTS: &[(&str, &str)] = &[
 
 const SCALAR_SETTINGS: &[&str] = &[
     "regex",
+    "print.empty.columns",
     "calendar.details",
     "calendar.details.report",
     "calendar.holidays",

@@ -140,4 +140,17 @@ class FormatTest {
         assertEquals("blocked active", rowClass(row(start = now, blocked = true)))
         assertEquals("", rowClass(row()))
     }
+
+    @Test
+    fun aColumnWithNothingInItIsLeftOutUnlessPrintEmptyColumnsIsOn() {
+        val cols = listOf(col("description"), col("priority"), col("project"))
+        val rows = listOf(row(), row(description = "b", project = "Home"))
+        val result = ReportResult(report = "next", columns = cols, rows = rows)
+        // The priority is empty in every row; the project is in one.
+        assertEquals(listOf(0, 2), shownColumns(result, ctx))
+        assertEquals(listOf(true, false), tableOf(result, ctx).empty.slice(1..2))
+        assertEquals(listOf(0, 1, 2), shownColumns(result.copy(printEmptyColumns = true), ctx))
+        // A table with no rows keeps its columns.
+        assertEquals(listOf(0, 1, 2), shownColumns(result.copy(rows = emptyList()), ctx))
+    }
 }

@@ -429,11 +429,26 @@ fn cell(col: &Col, row: &Row, ctx: &Ctx) -> Cell {
     }
 }
 
-/// The cells of a table: one list per row, one cell per column.
-pub fn format(cols: &[Col], rows: &[Row], ctx: &Ctx) -> Vec<Vec<Cell>> {
-    rows.iter()
+/// A table's cells, and which of its columns have nothing in them.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Table {
+    /// One list per row, one cell per column.
+    pub cells: Vec<Vec<Cell>>,
+    /// Per column: nothing in it for any row (no text and no notes). With `print.empty.columns` off, which is Taskwarrior's
+    /// default, such a column is not shown; the screen does that, as it draws the table.
+    pub empty: Vec<bool>,
+}
+
+/// The cells of a table.
+pub fn format(cols: &[Col], rows: &[Row], ctx: &Ctx) -> Table {
+    let cells: Vec<Vec<Cell>> = rows
+        .iter()
         .map(|r| cols.iter().map(|c| cell(c, r, ctx)).collect())
-        .collect()
+        .collect();
+    let empty = (0..cols.len())
+        .map(|j| cells.iter().all(|r| r[j].text.is_empty() && r[j].notes.is_none()))
+        .collect();
+    Table { cells, empty }
 }
 
 #[cfg(test)]
@@ -456,7 +471,7 @@ mod tests {
         ctx["now"] = json!(NOW);
         let rows = [serde_json::from_value::<Row>(row).unwrap()];
         let ctx = serde_json::from_value::<Ctx>(ctx).unwrap();
-        format(&cols, &rows, &ctx).remove(0).remove(0)
+        format(&cols, &rows, &ctx).cells.remove(0).remove(0)
     }
 
     fn text(col: &str, row: serde_json::Value) -> String {
@@ -671,6 +686,27 @@ mod tests {
     }
 
     #[test]
+    fn a_column_with_nothing_in_it_is_said_to_be_empty() {
+        let cols: Vec<Col> = ["description", "project", "due", "priority"]
+            .iter()
+            .map(|n| Col {
+                name: (*n).into(),
+                format: None,
+                kind: String::new(),
+            })
+            .collect();
+        let rows: Vec<Row> = serde_json::from_value(json!([
+            { "description": "a", "project": "P" },
+            { "description": "b", "annotations": [{ "entry": 1, "text": "n" }] },
+        ]))
+        .unwrap();
+        // A description with only notes is not empty; a project in one row is not either; nothing else has anything.
+        assert_eq!(format(&cols, &rows, &Ctx::default()).empty, [false, false, true, true]);
+        // No rows: every column is empty.
+        assert_eq!(format(&cols, &[], &Ctx::default()).empty, [true, true, true, true]);
+    }
+
+    #[test]
     fn a_table_is_rows_by_columns() {
         let cols = [
             Col {
@@ -687,8 +723,9 @@ mod tests {
         let rows: Vec<Row> =
             serde_json::from_value(json!([{ "id": 1, "description": "a" }, { "id": 2, "description": "b" }])).unwrap();
         let out = format(&cols, &rows, &Ctx::default());
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[1][0].text, "2");
-        assert_eq!(out[1][1].text, "b");
+        assert_eq!(out.cells.len(), 2);
+        assert_eq!(out.cells[1][0].text, "2");
+        assert_eq!(out.cells[1][1].text, "b");
+        assert_eq!(out.empty, [false, false]);
     }
 }

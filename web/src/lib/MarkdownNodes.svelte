@@ -80,10 +80,21 @@
     align-items: flex-start;
     margin-left: -1.4em;
   }
+  /* Smaller than the boxes that select a task (and the page's touch size for them), so a checklist reads as part of the text. */
   li.task input {
-    margin: 0.25em 0 0;
+    width: 12px;
+    height: 12px;
+    min-height: 0;
+    margin: 0.3em 0 0;
     flex: none;
     cursor: pointer;
+  }
+  @media (max-width: 760px) {
+    li.task input {
+      width: 16px;
+      height: 16px;
+      margin-top: 0.2em;
+    }
   }
   li.task input:disabled {
     cursor: default;

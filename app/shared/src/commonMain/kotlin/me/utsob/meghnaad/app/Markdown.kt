@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Checkbox
@@ -23,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -139,8 +141,14 @@ private fun Item(item: Md, marker: String, look: Look, onToggle: ((Int) -> Unit)
         if (checked == null) {
             Text(marker, color = look.color, fontSize = look.size, modifier = Modifier.width(18.dp))
         } else {
-            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 24.dp) {
-                Checkbox(checked, onCheckedChange = { item.line?.let { l -> onToggle?.invoke(l) } }, enabled = onToggle != null)
+            // Smaller than the box that selects a task, so a checklist reads as part of the text.
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 20.dp) {
+                Checkbox(
+                    checked,
+                    onCheckedChange = { item.line?.let { l -> onToggle?.invoke(l) } },
+                    modifier = Modifier.size(20.dp).scale(0.75f),
+                    enabled = onToggle != null,
+                )
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) { for (b in item.c) Block(b, inner, onToggle) }

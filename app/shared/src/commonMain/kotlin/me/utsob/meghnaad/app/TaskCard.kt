@@ -158,9 +158,14 @@ fun TaskCard(
                     ) {
                         for ((col, c) in marks) if (c.blocks == null) Mark(store, col, c, row, overdue, activeTags, onTag, done)
                     }
-                    // A UDA written in Markdown is a few lines, not a mark: it gets the width of the card, and its boxes work.
+                    // A UDA written in Markdown is a few lines, not a mark: it gets the width of the card, in a faint frame of its own so
+                    // it reads as a field beneath the task and not as more of the task's line, and its boxes work.
                     for ((col, c) in marks) if (c.blocks != null) {
-                        Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(top = 8.dp)
+                                .border(BorderStroke(1.dp, colors.outline.copy(alpha = 0.35f)), ControlShape)
+                                .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
+                        ) {
                             Dim(col.label, size = 12)
                             MarkdownView(
                                 c.blocks, color = if (done) colors.onSurfaceVariant else colors.onSurface, size = 13.5.sp,

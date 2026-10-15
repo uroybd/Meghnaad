@@ -87,7 +87,8 @@ pub fn parse(text: &str) -> Vec<Node> {
         .enumerate()
         .map(|(no, l)| Line {
             no,
-            text: l.replace('\t', "    "),
+            // A tab is four spaces, and the no-break spaces some keyboards type are spaces too.
+            text: l.replace('\t', "    ").replace(['\u{a0}', '\u{2007}', '\u{202f}'], " "),
         })
         .collect();
     let budget = Cell::new(SCAN_BUDGET);
@@ -123,14 +124,15 @@ pub fn toggle(text: &str, line: usize) -> Option<String> {
         }
         // Past the quote marks, the indentation and the bullet or number: the brackets.
         let at = l.find('[')?;
-        let flipped = match l[at..].chars().nth(1)? {
-            ' ' => "x",
+        let inside = l[at + 1..].chars().next()?;
+        let flipped = match inside {
+            ' ' | '\u{a0}' | '\u{2007}' | '\u{202f}' => "x",
             'x' | 'X' => " ",
             _ => return None,
         };
         out.push_str(&l[..at + 1]);
         out.push_str(flipped);
-        out.push_str(&l[at + 2..]);
+        out.push_str(&l[at + 1 + inside.len_utf8()..]);
     }
     Some(out)
 }
@@ -935,6 +937,21 @@ mod tests {
         assert_eq!(toggle(crlf, 0).unwrap(), "- [x] a\r\n- [x] b\r\n");
         assert_eq!(toggle("> - [ ] quoted", 0).unwrap(), "> - [x] quoted");
         assert_eq!(toggle("1) [ ] numbered", 0).unwrap(), "1) [x] numbered");
+    }
+
+    #[test]
+    fn no_break_spaces_are_spaces() {
+        // Some keyboards type them after a dash and inside the brackets.
+        assert_eq!(
+            md("-\u{a0}[\u{a0}] milk\n-\u{a0}[x] eggs"),
+            "ul(li[ ](p(milk)) li[x](p(eggs)))"
+        );
+        assert_eq!(toggled_nb("-\u{a0}[\u{a0}] milk", 0), "-\u{a0}[x] milk");
+        assert_eq!(toggle("- [ ] a\u{a0}b", 0).unwrap(), "- [x] a\u{a0}b");
+    }
+
+    fn toggled_nb(text: &str, line: usize) -> String {
+        toggle(text, line).unwrap()
     }
 
     #[test]

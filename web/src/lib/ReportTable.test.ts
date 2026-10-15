@@ -161,3 +161,41 @@ describe('what a card on a phone is made from', () => {
     expect(document.querySelector('td.description')!.classList.contains('col-description')).toBe(true);
   });
 });
+
+describe('a column with nothing in it', () => {
+  const drawWith = (rows: Row[], printEmpty?: boolean) => {
+    store.config = { colors: {}, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
+    const result: ReportResult = {
+      kind: 'report',
+      report: 'next',
+      description: null,
+      columns: [
+        { spec: 'description', name: 'description', format: null, label: 'Description', kind: 'description' },
+        { spec: 'priority', name: 'priority', format: null, label: 'P', kind: 'priority' },
+      ],
+      rows,
+      breaks: rows.map(() => false),
+      matched: rows.length,
+      sort: null,
+      ...(printEmpty ? { print_empty_columns: true } : {}),
+    };
+    app = mount(ReportTable, { target: document.body, props: { result } });
+    flushSync();
+    return [...document.querySelectorAll('thead th')]
+      .map((th) => th.textContent?.trim())
+      .filter((t) => t && t !== 'Actions');
+  };
+
+  it('is left out, as Taskwarrior leaves it out by default', () => {
+    expect(drawWith([row('a', null), row('b', null)])).toEqual(['Description']);
+    expect(document.querySelectorAll('tbody tr:first-child td.priority')).toHaveLength(0);
+  });
+
+  it('stays when any row has something in it', () => {
+    expect(drawWith([row('a', null), row('b', 'H')])).toEqual(['Description', 'P']);
+  });
+
+  it('stays with print.empty.columns', () => {
+    expect(drawWith([row('a', null)], true)).toEqual(['Description', 'P']);
+  });
+});

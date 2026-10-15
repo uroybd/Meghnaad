@@ -189,6 +189,9 @@ command would actually change are listed. A single task is a plain yes/no. The d
   so the sidebar and the report box leave them out. When there are any, an eye button beside **Reports** in the sidebar
   shows them all, and your choice is remembered. A hidden report you opened by name stays in the lists while you are on
   it, and typing its name at the prompt always works.
+- **Empty columns are left out**, as Taskwarrior leaves them out: a column with nothing in it for any row of the report
+  is not drawn (in the web app's table and the Android app's table). `print.empty.columns=yes` keeps them, and
+  `rc.print.empty.columns:yes` does it for one command.
 - **Sorting.** Click a column header (again to reverse, a third time to reset, Shift-click to add a tie-breaker). It is
   applied as `rc.report.<name>.sort:…`, so it matches what you would type.
 - **Grouping.** A `/` on a sort key (`project+/`) puts a gap in the table wherever that column's value changes, as in
