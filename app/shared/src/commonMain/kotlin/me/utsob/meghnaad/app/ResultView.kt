@@ -3,6 +3,8 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -10,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -114,32 +118,53 @@ fun ReportSection(store: Store, e: Entry, result: ReportResult) {
 
 /**
  * Taskwarrior wants an answer: a plain yes or no, or a question per task the command would change (tick the ones to go ahead
- * with), or follow-ups that only arise once those are answered.
+ * with), or follow-ups that only arise once those are answered (ConfirmView.svelte). One question is a yes or no; several are
+ * a list with a tick each, where ticking all is Taskwarrior's "all" and ticking none is its "quit".
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ConfirmView(store: Store, e: Entry, q: ConfirmResult) {
-    val scope = rememberCoroutineScope()
+    // You typed the command, so yes is the usual answer: everything starts ticked, untick the exceptions.
     val ticked = remember(q) { q.items.map { true }.toMutableStateList() }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(q.message, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        if (q.ask == "plain") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        when {
+            q.ask == "plain" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { store.go { confirm(e, true) } }) { Text("Yes") }
                 OutlinedButton(onClick = { store.go { confirm(e, false) } }) { Text("No") }
             }
-        } else {
-            q.items.forEachIndexed { i, item ->
+            q.items.size == 1 -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { store.go { answerItems(e, listOf(q.items[0].key)) } }) { Text("Yes") }
+                OutlinedButton(onClick = { store.go { answerItems(e, emptyList()) } }) { Text("No") }
+            }
+            else -> {
+                val count = ticked.count { it }
+                fun setAll(on: Boolean) = ticked.indices.forEach { ticked[it] = on }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(ticked[i], { ticked[i] = it })
-                    Column {
-                        Text("${item.id ?: "-"}  ${item.description}", fontSize = 14.sp)
-                        Dim(item.question)
+                    TriStateCheckbox(
+                        state = when (count) { q.items.size -> ToggleableState.On; 0 -> ToggleableState.Off; else -> ToggleableState.Indeterminate },
+                        onClick = { setAll(count != q.items.size) },
+                    )
+                    Dim("Select all or none")
+                }
+                q.items.forEachIndexed { i, item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(ticked[i], { ticked[i] = it })
+                        Column {
+                            Text("${item.id ?: item.uuid.take(8)}  ${item.description}", fontSize = 14.sp)
+                            // The question is only worth reading for the follow-ups: for the rest it is the same on every line.
+                            if (q.ask == "extras") Dim(item.question)
+                        }
                     }
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { store.go { answerItems(e, q.items.filterIndexed { i, _ -> ticked[i] }.map { it.key }) } }) { Text("Go ahead") }
-                OutlinedButton(onClick = { store.go { confirm(e, false) } }) { Text("Cancel") }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { setAll(true) }) { Text("Select all") }
+                    TextButton(onClick = { setAll(false) }) { Text("Select none") }
+                    TextButton(onClick = { store.go { confirm(e, false) } }) { Text("Cancel") }
+                    Button(onClick = { store.go { answerItems(e, q.items.filterIndexed { i, _ -> ticked[i] }.map { it.key }) } }) {
+                        Text("Go ahead with $count of ${q.items.size}")
+                    }
+                }
             }
         }
     }
