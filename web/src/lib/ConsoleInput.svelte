@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { Completer } from './completer.svelte';
+  import { COMMANDS } from './completion';
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
+  import { highlightPieces } from './highlight';
   import ReviewBar from './ReviewBar.svelte';
   import { review } from './review.svelte';
   import { store } from './store.svelte';
@@ -35,8 +37,25 @@
     if (autofocus && !window.matchMedia('(pointer: coarse)').matches) el?.focus();
   });
   let saved = '';
-  let el: HTMLInputElement;
+  let el: HTMLTextAreaElement;
   const completer = new Completer();
+
+  // The line is coloured: a copy of it drawn under the field, which has the text itself (transparent) and the caret.
+  const commands = $derived(
+    new Set([
+      ...Object.keys(COMMANDS),
+      ...store.vocab.reports.map((r) => r.name),
+      ...store.taskCommands.map((c) => c.name),
+    ]),
+  );
+  const coloured = $derived(highlightPieces(line, commands));
+  // The field is as tall as its text: a long command wraps, and all of it can be seen.
+  $effect(() => {
+    void line;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  });
 
   // Edit the last command (typed or UI-driven) instead of retyping it.
   function reuse() {
@@ -234,51 +253,68 @@
     submit();
   }}
 >
-  {#if store.lastCommand}
-    <div class="last row" title="The last command run, from the console or from the UI. ↑ recalls it.">
+  <!-- The last command, and the buttons for the keys a phone has not (↑ and Tab), which are only shown on one. -->
+  <div
+    class="last row"
+    class:empty={!store.lastCommand}
+    title="The last command run, from the console or from the UI. ↑ recalls it."
+  >
+    {#if store.lastCommand}
       <span class="dim">last</span>
       <code class="mono grow" data-testid="last-command">{store.lastCommand}</code>
+    {:else}
+      <span class="grow"></span>
+    {/if}
+    <button type="button" class="ghost touch" aria-label="Previous command" title="Previous command" onclick={tapOlder}
+      ><ChevronUp size={16} /></button
+    >
+    <button type="button" class="ghost touch" aria-label="Complete" title="Complete (Tab)" onclick={tapComplete}
+      ><ArrowRightToLine size={16} /></button
+    >
+    {#if store.lastCommand}
       <button type="button" class="ghost" onclick={reuse} title="Edit this command" aria-label="Edit last command"
         ><Pencil size={13} /></button
       >
       <button type="button" class="ghost" onclick={copyLast} title="Copy" aria-label="Copy last command">
         {#if copied}<Check size={13} />{:else}<Copy size={13} />{/if}
       </button>
-    </div>
-  {/if}
+    {/if}
+  </div>
   {#if review.captures}<ReviewBar />{/if}
   <CompletionMenu {completer} placement="above" onpick={(i) => edit(completer.pick(i))} />
   <label class="row">
     <span class="mono ps" aria-hidden="true">{review.captures ? 'review>' : 'task>'}</span>
     <span class="sr-only">Command</span>
-    <input
-      bind:this={el}
-      bind:value={line}
-      {onkeydown}
-      onblur={() => completer.close()}
-      oninput={() => {
-        completer.close();
-        cursor = -1;
-      }}
-      class="grow mono"
-      disabled={keysOnly}
-      placeholder={keysOnly
-        ? 'Reviewing: press a key, or use the buttons above'
-        : review.captures
-          ? '+tag -tag /teh/the/ project:X'
-          : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
-      autocomplete="off"
-      autocapitalize="off"
-      spellcheck="false"
-      enterkeyhint="go"
-      data-testid="prompt"
-    />
-    <button type="button" class="ghost touch" aria-label="Previous command" title="Previous command" onclick={tapOlder}
-      ><ChevronUp size={18} /></button
-    >
-    <button type="button" class="ghost touch" aria-label="Complete" title="Complete (Tab)" onclick={tapComplete}
-      ><ArrowRightToLine size={18} /></button
-    >
+    <span class="field grow">
+      <span class="mirror mono" aria-hidden="true"
+        >{#each coloured as piece, i (i)}<span class="hl-{piece.kind}">{piece.text}</span>{/each}</span
+      >
+      <textarea
+        bind:this={el}
+        bind:value={line}
+        {onkeydown}
+        onblur={() => completer.close()}
+        oninput={() => {
+          // A line of commands has no line breaks: a pasted one becomes spaces.
+          if (line.includes('\n')) line = line.replace(/\r?\n/g, ' ');
+          cursor = -1;
+          if (review.captures) completer.close();
+          else completer.suggest(line, el.selectionStart ?? line.length, store.vocab);
+        }}
+        rows="1"
+        class="mono"
+        disabled={keysOnly}
+        placeholder={keysOnly
+          ? 'Reviewing: press a key, or use the buttons above'
+          : review.captures
+            ? '+tag -tag /teh/the/ project:X'
+            : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        enterkeyhint="go"
+        data-testid="prompt"></textarea>
+    </span>
     <button class="primary btn" aria-label="Run"><CornerDownLeft size={15} /> <span class="run">Run</span></button>
   </label>
 </form>
@@ -299,6 +335,10 @@
     padding: 4px 12px;
     background: var(--panel-2);
     border-radius: 6px;
+  }
+  /* Nothing to show on a computer: the buttons of a phone are all this row would have. */
+  .last.empty {
+    display: none;
   }
   .last code {
     overflow: hidden;
@@ -323,10 +363,71 @@
     color: var(--accent);
     font-weight: 700;
   }
-  input {
-    border-color: transparent;
-    background: transparent;
+  /* The field is the textarea (the text, transparent, and the caret) over a copy of the line in colours: the two have the same
+     font, padding and wrapping, so every letter is where the other has it. */
+  .field {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+  .mirror,
+  textarea {
+    box-sizing: border-box;
     font-size: 16px;
+    line-height: 1.4;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    letter-spacing: normal;
+  }
+  .mirror {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--text);
+  }
+  textarea {
+    position: relative;
+    display: block;
+    width: 100%;
+    resize: none;
+    overflow: hidden;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--text);
+  }
+  textarea::placeholder {
+    color: var(--dim);
+  }
+  .mirror :global(.hl-command) {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .mirror :global(.hl-keyword),
+  .mirror :global(.hl-punct),
+  .mirror :global(.hl-config) {
+    color: var(--dim);
+  }
+  .mirror :global(.hl-config) {
+    font-style: italic;
+  }
+  .mirror :global(.hl-attr) {
+    color: var(--hl-attr);
+  }
+  .mirror :global(.hl-tag) {
+    color: var(--ok);
+  }
+  .mirror :global(.hl-id) {
+    color: var(--warn);
+  }
+  .mirror :global(.hl-op) {
+    color: var(--err);
+    font-weight: 600;
+  }
+  .mirror :global(.hl-str) {
+    color: var(--hl-str);
   }
   @media (max-width: 760px) {
     .prompt {
@@ -349,8 +450,9 @@
     .last {
       margin-bottom: 2px;
     }
-    input {
-      font-size: 16px;
+    .last.empty {
+      display: flex;
+      margin-bottom: 2px;
     }
     .ps {
       display: none;

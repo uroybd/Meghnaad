@@ -128,6 +128,11 @@ other page, it opens in the Tasks view, where it can be sorted and filtered.
 **Keys:** `/` focuses the prompt · `Tab` completes (and cycles a menu; `Shift+Tab` goes back) · `↑`/`↓` the last 20
 commands · `Esc` closes a menu · `Ctrl+L` clears the console.
 
+**The prompt shows what it is reading.** The command is bold, `name:value` attributes are purple, `+tag` green, ids orange,
+`and` / `or` and brackets red, `rc.` settings grey and italic, and quoted text its own colour. After `add` and `log` the rest is
+a description, so `and` there is only a word. A command that is longer than the line wraps, so all of it can be read.
+Suggestions open as you type, under the filter boxes and above the prompt; Tab or a tap takes one.
+
 **Abbreviations and aliases.** A command, report or attribute name may be shortened to `abbreviation.minimum`
 characters (default 2): `proj:Home`, `ann 3 text`. `alias.<name>=<words>` in the taskrc makes a typed word stand for
 others; Taskwarrior's own `rm` (delete) and `burndown` (burndown.weekly) work without one. Only what you type is
@@ -594,8 +599,8 @@ The layout adapts below about 760 px (a phone, or a narrow window):
 - **Pull down** at the top of a page, as in a browser on a phone, to sync and draw the page again.
 - **Sorting** is a **Sort** picker (there are no column headers to tap), forms and the detail view go full screen, and a
   **+** button adds a task.
-- The prompt gets **Complete** (⇥) and **Previous command** (⌃) buttons since there's no Tab or arrow key, and completions
-  can be tapped.
+- The **Complete** (⇥) and **Previous command** (⌃) buttons, for the keys a phone lacks, are on the line that shows the last
+  command, beside Edit and Copy; the prompt under it grows to show a long command, and suggestions can be tapped.
 
 You can install the web app to your home screen from the browser menu, or use [the Android app](android.md), which keeps
 the tasks on the phone, works offline, syncs straight with your bucket and has home-screen widgets.

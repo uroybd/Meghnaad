@@ -3,6 +3,7 @@ package me.utsob.meghnaad.app
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CompletionTest {
@@ -214,5 +215,46 @@ class CompletionTest {
         assertEquals(listOf("recur:weekdays", "recur:weekly"), values("recur:we"))
         assertEquals("every 2 weeks", complete("recur:bi", 8, vocab).options[0].hint)
         assertTrue("recur:" in values("rec"))
+    }
+}
+
+class TypingSuggestionsTest {
+    private val vocab = Vocab(projects = listOf("Home", "Home.Kitchen", "Work"), tags = listOf("errand", "work"))
+
+    @Test
+    fun aWordBeingTypedIsOfferedItsCompletionsWithoutChangingTheLine() {
+        val completer = Completer()
+        completer.suggest("pro", 3, vocab)
+        val menu = completer.menu!!
+        assertEquals("pro", menu.base)
+        assertTrue(menu.options.any { it.value.startsWith("project:") }, menu.options.toString())
+        assertEquals(-1, menu.sel)
+    }
+
+    @Test
+    fun aValueAboutToBeTypedIsOfferedToo() {
+        val completer = Completer()
+        completer.suggest("project:", 8, vocab)
+        assertEquals(listOf("Home", "Home.Kitchen", "Work"), completer.menu!!.options.map { it.value.removePrefix("project:") })
+    }
+
+    @Test
+    fun nothingIsOfferedForAnEmptyWordOrWhatIsAlreadyThere() {
+        val completer = Completer()
+        completer.suggest("", 0, vocab)
+        assertNull(completer.menu)
+        completer.suggest("add ", 4, vocab)
+        assertNull(completer.menu)
+        completer.suggest("project:Work", 12, vocab)
+        assertNull(completer.menu)
+    }
+
+    @Test
+    fun aTappedSuggestionTakesTheWordsPlace() {
+        val completer = Completer()
+        completer.suggest("project:Ho", 10, vocab)
+        val edit = completer.pick(0)!!
+        assertTrue(edit.line.startsWith("project:Home"), edit.line)
+        assertNull(completer.menu)
     }
 }

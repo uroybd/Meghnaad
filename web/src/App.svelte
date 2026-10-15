@@ -45,6 +45,9 @@
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
 
+  // How tall the prompt is: a long command wraps, and the floating + stays above it.
+  let dockHeight = $state(0);
+
   // A fresh deployment has no sign-in settings yet; say what is left instead of showing errors.
   let setup = $state<SetupStatus | null>(null);
   let started = false;
@@ -299,6 +302,7 @@
 
     <button
       class="fab primary"
+      style:bottom={dockHeight ? `calc(${dockHeight + 12}px)` : undefined}
       aria-label="New task"
       title="New task"
       onclick={() => (store.adding = { description: '', n: (store.adding?.n ?? 0) + 1 })}
@@ -307,7 +311,7 @@
     </button>
 
     <!-- The Console has its prompt inside it; every other page shares this one. -->
-    {#if store.view !== 'console'}<div class="dock"><ConsoleInput /></div>{/if}
+    {#if store.view !== 'console'}<div class="dock" bind:clientHeight={dockHeight}><ConsoleInput /></div>{/if}
 
     {#if store.toast}
       <div class="toast" class:bad={store.toast.kind === 'err'} role="status">{store.toast.text}</div>

@@ -3,7 +3,10 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,7 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -68,7 +73,9 @@ fun OutlinedTextField(
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
-    val oneLine = singleLine || (minLines == 1 && maxLines == 1)
+    // A field is a pill while its text is on one line, and a rounded box once it wraps.
+    var lines by remember { mutableStateOf(1) }
+    val oneLine = singleLine || (minLines == 1 && lines <= 1)
     val color = when {
         !enabled -> colors.disabledTextColor
         isError -> colors.errorTextColor
@@ -91,6 +98,7 @@ fun OutlinedTextField(
             singleLine = singleLine,
             maxLines = maxLines,
             minLines = minLines,
+            onTextLayout = { lines = it.lineCount },
             decorationBox = { inner ->
                 OutlinedTextFieldDefaults.DecorationBox(
                     value = value.text,
@@ -158,4 +166,15 @@ fun OutlinedTextField(
         trailingIcon, prefix, suffix, supportingText, isError, visualTransformation, keyboardOptions, keyboardActions, singleLine, maxLines, minLines,
         interactionSource, shape, colors,
     )
+}
+
+/**
+ * What stands beside a field in a row, centred on the field itself: [fieldHeight] is the field's own height in pixels (from its
+ * `onSize`), so a select or an icon lines up with it at any font size, and whatever hangs under the field (a completion menu) does
+ * not move it.
+ */
+@Composable
+fun BesideField(fieldHeight: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val height = with(LocalDensity.current) { fieldHeight.toDp() }
+    Box(modifier.let { if (fieldHeight > 0) it.height(height) else it.heightIn(min = FIELD_HEIGHT) }, contentAlignment = Alignment.Center) { content() }
 }

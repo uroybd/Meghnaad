@@ -3,6 +3,7 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -119,8 +120,9 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
     }
 
     Column(modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
-        if (store.lastCommand.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The history line: the last command, and the buttons that stand for keys a phone has not (↑ and Tab) beside the ones for it.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (store.lastCommand.isNotEmpty()) {
                 Text("last", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 Text(
                     store.lastCommand,
@@ -130,6 +132,10 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
+            } else Spacer(Modifier.weight(1f))
+            IconAction("chevron-up", "Previous command", { older() }, size = 16.dp)
+            IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 16.dp)
+            if (store.lastCommand.isNotEmpty()) {
                 IconAction("pencil", "Edit last command", {
                     store.promptLine = store.lastCommand.replace(Regex("^task\\s+"), "")
                     cursor = -1
@@ -141,8 +147,17 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 }, size = 14.dp)
             }
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("task>", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp, end = 4.dp))
+        // The line is as tall as its text needs; what stands beside it is level with its last line, where the menu is not.
+        var oneLine by remember { mutableStateOf(0) }
+        val dark = extras.dark
+        val commands = remember(store.reports, store.taskCommands) {
+            COMMANDS.keys + store.reports.map { it.name } + store.taskCommands.map { it.name }
+        }
+        val colouring = remember(commands, dark) { HighlightTransformation(commands, HlPalette(dark)) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            BesideField(oneLine) {
+                Text("task>", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            }
             CompletingField(
                 value = line,
                 onValueChange = {
@@ -156,6 +171,10 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 onSubmit = ::submit,
                 focusRequester = focus,
                 completeSignal = completeSignal,
+                menuAbove = true,
+                singleLine = false,
+                visualTransformation = colouring,
+                onSize = { if (oneLine == 0 || it.height < oneLine) oneLine = it.height },
                 onKey = { e, _ ->
                     when {
                         completer.menu != null -> false
@@ -169,11 +188,10 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                     }
                 },
             )
-            // Tab and ↑ have buttons too, for touch screens that have neither key.
-            IconAction("chevron-up", "Previous command", { older() }, size = 18.dp)
-            IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 18.dp)
-            Button(onClick = ::submit) {
-                LucideIcon("corner-down-left", size = 15.dp, tint = MaterialTheme.colorScheme.onPrimary)
+            BesideField(oneLine) {
+                Button(onClick = ::submit) {
+                    LucideIcon("corner-down-left", size = 15.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                }
             }
         }
     }

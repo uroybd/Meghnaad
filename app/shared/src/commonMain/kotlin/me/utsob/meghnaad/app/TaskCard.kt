@@ -43,19 +43,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // One task as a card, on a phone: the cells of the report's own columns (the report definition says what is shown, as
-// Taskwarrior's does), the description first on a line of its own, then the marks in the order the web draws them. The user's
+// Taskwarrior's does), the description first on a line of its own and the task's number in the corner, then every other
+// column as a mark, in exactly the order the report defines them. The user's
 // colour rules are only a faint wash behind the card; the priority is a stripe down its left edge.
 // Mirrors the phone layout of web/src/lib/ReportTable.svelte.
-
-/** The order of the marks: the ones that matter first, the rest after them in the report's own order. */
-private fun markOrder(col: Column): Int = when {
-    col.name == "priority" -> 1
-    col.name == "project" -> 2
-    col.kind == "tags" || col.name == "tags" -> 3
-    col.name == "due" -> 4
-    col.name == "urgency" -> 5
-    else -> 6
-}
 
 /** The small picture a mark has instead of a label, by the column it is. */
 private fun markIcon(col: Column): String? = when {
@@ -120,7 +111,6 @@ fun TaskCard(
 
     val cells = report.columns.map { it to cell(it, row, ctx) }
     val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.lines.isNullOrEmpty()) }
-        .sortedBy { markOrder(it.first) }
 
     Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = 10.dp)) {
         Box(
@@ -151,9 +141,6 @@ fun TaskCard(
                                 fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
                                 modifier = Modifier.weight(1f, fill = false),
                             )
-                            if (row.recur != null) {
-                                LucideIcon("repeat", size = 13.dp, tint = colors.onSurfaceVariant)
-                            }
                             if (row.orphans.isNotEmpty()) Pill("+${row.orphans.size}", height = 18.dp)
                         }
                         description?.lines?.forEach { line -> Dim(line, Modifier.padding(top = 2.dp)) }

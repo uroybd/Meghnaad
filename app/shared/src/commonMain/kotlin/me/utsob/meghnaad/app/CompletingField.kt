@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -88,13 +89,23 @@ fun CompletingField(
     onSubmit: (() -> Unit)? = null,
     onKey: ((androidx.compose.ui.input.key.KeyEvent, String) -> Boolean)? = null,
     onFocus: (Boolean) -> Unit = {},
-    /** Something at the end of the field (an icon takes 48 dp of height, so only ask for one when it is wanted). */
+    /** Something inside the field at its end (a small icon, such as Complete). */
     trailing: (@Composable (complete: () -> Unit) -> Unit)? = null,
+    /** Told the field's size, so what stands beside it can be centred on it (see [BesideField]). */
+    onSize: ((androidx.compose.ui.unit.IntSize) -> Unit)? = null,
     enabled: Boolean = true,
     singleLine: Boolean = true,
     focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
     /** Counts up each time the Complete button is pressed (the first value is the start). */
     completeSignal: Int = 0,
+    /** More than one line when [singleLine] is off: a long command wraps, up to this many lines, and then scrolls. */
+    maxLines: Int = if (singleLine) 1 else 6,
+    /** How the text is drawn (the console colours Taskwarrior syntax); it must not change the text itself. */
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    /** Offer what is being typed as a menu while typing, not only when Tab is asked for. */
+    suggest: Boolean = true,
+    /** The menu above the field (a prompt at the bottom of the screen) instead of under it. */
+    menuAbove: Boolean = false,
     mono: Boolean = true,
 ) {
     var tfv by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
@@ -116,17 +127,22 @@ fun CompletingField(
     }
 
     Column(modifier) {
+        if (menuAbove) CompletionMenu(completer, onPick = { apply(completer.pick(it)) }, modifier = Modifier.padding(bottom = 2.dp))
         OutlinedTextField(
             value = tfv,
-            onValueChange = {
+            onValueChange = { typed ->
+                // A line of commands has no line breaks: a pasted one becomes spaces.
+                val it = if (!singleLine && '\n' in typed.text) typed.copy(text = typed.text.replace('\n', ' ')) else typed
                 val changed = it.text != tfv.text
                 tfv = it
                 if (changed) {
                     completer.close()
                     onValueChange(it.text)
+                    if (suggest) completer.suggest(it.text, it.selection.end, vocab)
                 }
             },
             modifier = Modifier.fillMaxWidth()
+                .let { m -> if (onSize != null) m.onSizeChanged(onSize) else m }
                 .let { m -> if (focusRequester != null) m.focusRequester(focusRequester) else m }
                 .onFocusChanged {
                     onFocus(it.isFocused)
@@ -150,6 +166,11 @@ fun CompletingField(
                             completer.close()
                             true
                         }
+                        // A wrapping field would take Enter as a line break: here it runs the line (Shift+Enter is not a break either).
+                        e.key == Key.Enter && onSubmit != null && !singleLine -> {
+                            onSubmit()
+                            true
+                        }
                         e.key == Key.Escape && open -> {
                             completer.close()
                             true
@@ -160,6 +181,8 @@ fun CompletingField(
             label = label?.let { { Text(it) } },
             placeholder = { Text(placeholder, fontSize = 13.sp, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             singleLine = singleLine,
+            maxLines = maxLines,
+            visualTransformation = visualTransformation,
             enabled = enabled,
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = if (mono) FontFamily.Monospace else null),
             keyboardOptions = KeyboardOptions(
@@ -168,9 +191,9 @@ fun CompletingField(
                 imeAction = if (onSubmit != null) ImeAction.Send else ImeAction.Default,
             ),
             keyboardActions = KeyboardActions(onSend = { onSubmit?.invoke() }),
-            trailingIcon = trailing?.let { t -> { t(::complete) } },
+            suffix = trailing?.let { t -> { t(::complete) } },
         )
-        CompletionMenu(completer, onPick = { apply(completer.pick(it)) }, modifier = Modifier.padding(top = 2.dp))
+        if (!menuAbove) CompletionMenu(completer, onPick = { apply(completer.pick(it)) }, modifier = Modifier.padding(top = 2.dp))
     }
 }
 

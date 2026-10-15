@@ -52,7 +52,7 @@
     bind:this={el}
     bind:value
     {onkeydown}
-    oninput={() => completer.close()}
+    oninput={() => completer.suggest(value, el.selectionStart ?? value.length, store.vocab)}
     onblur={() => completer.close()}
     {placeholder}
     autocomplete="off"

@@ -21,6 +21,9 @@ class Menu(
 
 class Edit(val line: String, val caret: Int)
 
+/** The most options offered while typing: the rest are reached by typing more. */
+private const val MAX_SUGGESTED = 30
+
 class Completer {
     var menu by mutableStateOf<Menu?>(null)
 
@@ -53,6 +56,21 @@ class Completer {
         }
         menu = Menu(line, c.start, c.end, c.options, -1)
         return select(if (reverse) c.options.size - 1 else 0)
+    }
+
+    /**
+     * Offer what the word being typed could become, as a menu, without changing the line (a phone has no Tab to ask with). Only
+     * for a word that has been started, or a value that is about to be (`project:`); nothing for an empty word, or for one that is
+     * already exactly what would be offered. Tab then goes through the options, and a tap takes one.
+     */
+    fun suggest(line: String, caret: Int, vocab: Vocab) {
+        menu = null
+        if (line.isBlank()) return
+        val c = complete(line, caret, vocab)
+        val started = c.end > c.start || line.getOrNull(caret - 1) == ':'
+        if (!started || c.options.isEmpty()) return
+        if (c.options.size == 1 && line.substring(c.start, c.end) == c.options[0].value) return
+        menu = Menu(line, c.start, c.end, c.options.take(MAX_SUGGESTED), -1)
     }
 
     /** A tapped option (no keyboard on a phone): select it and accept it. */

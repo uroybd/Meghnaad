@@ -189,23 +189,34 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
 
         if (task.sessions.isNotEmpty()) {
             Heading("Time sessions", "timer")
-            Column(Modifier.horizontalScroll(rememberScrollState())) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Dim("#", Modifier.width(24.dp), 12); Dim("Started", Modifier.width(150.dp), 12); Dim("Stopped", Modifier.width(150.dp), 12); Dim("Duration", Modifier.width(70.dp), 12)
+            // A phone's width: the start and the stop one above the other in one column, the duration at the end.
+            Column(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth()) {
+                    Dim("#", Modifier.width(26.dp), 12)
+                    Dim("Started → stopped", Modifier.weight(1f), 12)
+                    Dim("Duration", size = 12)
                 }
                 task.sessions.forEachIndexed { i, s ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Dim("${i + 1}", Modifier.width(24.dp), 12)
-                        Text(formatStamp(s.start, store.offsetAt(s.start)), Modifier.width(150.dp), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                        if (s.end != null) Text(formatStamp(s.end, store.offsetAt(s.end)), Modifier.width(150.dp), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                        else Box150 { Pill("running", background = extras.ok.copy(alpha = 0.15f), color = extras.ok) }
-                        Text(formatSeconds(s.seconds), Modifier.width(70.dp), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Dim("${i + 1}", Modifier.width(26.dp), 12)
+                        Column(Modifier.weight(1f)) {
+                            Text(formatStamp(s.start, store.offsetAt(s.start)), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            if (s.end != null) {
+                                Text("→ ${formatStamp(s.end, store.offsetAt(s.end))}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("→", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                    Pill("running", background = extras.ok.copy(alpha = 0.15f), color = extras.ok)
+                                }
+                            }
+                        }
+                        Text(formatSeconds(s.seconds), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                     }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Total", Modifier.width(24.dp + 150.dp + 150.dp + 32.dp), fontSize = 12.sp)
-                    Text(formatSeconds(totalTracked), Modifier.width(70.dp), fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth()) {
+                    Text("Total", Modifier.weight(1f), fontSize = 12.sp)
+                    Text(formatSeconds(totalTracked), fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -276,9 +287,5 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
     }
 }
 
-@Composable
-private fun Box150(content: @Composable () -> Unit) {
-    androidx.compose.foundation.layout.Box(Modifier.width(150.dp)) { content() }
-}
 
 private fun Modifier.androidxClickable(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)

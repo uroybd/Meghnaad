@@ -13,6 +13,9 @@
   --pri-h: #cf222e;
   --pri-m: #9a6700;
   --pri-l: #1a7f37;
+  /* the colours of the prompt's syntax (the same as the app's) */
+  --hl-attr: #8250df;
+  --hl-str: #0a3069;
   /* project segment colours: saturation and lightness, the hue is per name */
   --seg-s: 55%;
   --seg-l: 36%;
@@ -36,6 +39,8 @@
     --pri-h: #ff7b72;
     --pri-m: #e3b341;
     --pri-l: #56d364;
+    --hl-attr: #d2a8ff;
+    --hl-str: #a5d6ff;
     --seg-s: 60%;
     --seg-l: 70%;
   }
@@ -55,6 +60,8 @@
   --pri-h: #ff7b72;
   --pri-m: #e3b341;
   --pri-l: #56d364;
+  --hl-attr: #d2a8ff;
+  --hl-str: #a5d6ff;
   --seg-s: 60%;
   --seg-l: 70%;
 }

@@ -80,7 +80,6 @@ fun BulkBar(store: Store) {
                     Text(if (confirmDelete) "  Delete ${picks.size}? Tap again" else "  Delete", color = MaterialTheme.colorScheme.error)
                 }
                 OutlinedButton(enabled = !busy, onClick = { modifying = true }) { LucideIcon("pencil", size = 15.dp); Text("  Modify…") }
-                OutlinedButton(enabled = !busy, onClick = { store.requestPrompt(promptFor(picks)) }) { LucideIcon("terminal", size = 15.dp); Text("  Command") }
                 MoreMenu(store.taskCommands, "More actions for the selected tasks", enabled = !busy) { c ->
                     store.go { if (run(commandWords(c))) selection.clear() }
                 }

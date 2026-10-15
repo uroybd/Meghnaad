@@ -21,7 +21,7 @@ describe('the prompt', () => {
   it('takes the text and the focus when something asks for them, each time', async () => {
     app = mount(ConsoleInput, { target: document.body });
     flushSync();
-    const input = document.querySelector('input') as HTMLInputElement;
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
     input.value = 'half typed';
     input.dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -43,7 +43,7 @@ describe('the prompt', () => {
     store.requestPrompt('old ');
     app = mount(ConsoleInput, { target: document.body });
     flushSync();
-    expect((document.querySelector('input') as HTMLInputElement).value).toBe('');
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toBe('');
   });
 });
 
@@ -52,7 +52,7 @@ describe('task commands at the prompt', () => {
     const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
     app = mount(ConsoleInput, { target: document.body });
     flushSync();
-    const input = document.querySelector('input') as HTMLInputElement;
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
     input.value = text;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
@@ -83,7 +83,7 @@ describe('after Enter', () => {
     });
     app = mount(ConsoleInput, { target: document.body });
     flushSync();
-    const input = document.querySelector('input') as HTMLInputElement;
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
     input.value = 'count';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     flushSync();
@@ -102,7 +102,7 @@ describe('tasksh review at the prompt', () => {
   function type(text: string, key = 'Enter') {
     app = mount(ConsoleInput, { target: document.body });
     flushSync();
-    const input = document.querySelector('input') as HTMLInputElement;
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
     input.value = text;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
@@ -153,7 +153,7 @@ describe('tasksh review at the prompt', () => {
     expect(pressed).toHaveBeenLastCalledWith('Enter');
     expect(run).not.toHaveBeenCalled();
     expect(store.history).not.toContain('s');
-    expect((document.querySelector('input') as HTMLInputElement).value).toBe('');
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toBe('');
   });
 
   it('leaves alone the keys that are not an answer: arrows, Tab, and anything with Ctrl or Cmd', () => {
@@ -176,7 +176,7 @@ describe('tasksh review at the prompt', () => {
 
   it('has the prompt off while a review asks, and a bar of buttons over it', () => {
     reviewing();
-    const input = document.querySelector('input') as HTMLInputElement;
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
     expect(document.querySelector('.ps')?.textContent).toBe('review>');
     expect(input.disabled).toBe(true);
     const bar = [...document.querySelectorAll('[role=toolbar] button')].map((b) =>
@@ -210,7 +210,7 @@ describe('tasksh review at the prompt', () => {
     const respond = vi.spyOn(review, 'respond').mockResolvedValue();
     const modify = vi.spyOn(review, 'modify').mockResolvedValue();
     reviewing('modifying');
-    const input = document.querySelector('input') as HTMLInputElement;
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
     expect(input.disabled).toBe(false);
     input.value = '+tag project:X';
     input.dispatchEvent(new Event('input', { bubbles: true }));

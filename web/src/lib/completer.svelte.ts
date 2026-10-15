@@ -18,6 +18,9 @@ export interface Edit {
   caret: number;
 }
 
+/** The most options offered while typing: the rest are reached by typing more. */
+const MAX_SUGGESTED = 30;
+
 export class Completer {
   menu = $state<Menu | null>(null);
 
@@ -49,6 +52,21 @@ export class Completer {
     }
     this.menu = { base: line, start: c.start, end: c.end, options: c.options, sel: -1 };
     return this.#select(reverse ? c.options.length - 1 : 0);
+  }
+
+  /**
+   * Offer what the word being typed could become, as a menu, without changing the line (a phone has no Tab to ask with). Only for
+   * a word that has been started, or a value that is about to be (`project:`); nothing for an empty word, or for one that is
+   * already exactly what would be offered. Tab then goes through the options, and a tap takes one.
+   */
+  suggest(line: string, caret: number, vocab: Vocab) {
+    this.menu = null;
+    if (!line.trim()) return;
+    const c = complete(line, caret, vocab);
+    const started = c.end > c.start || line[caret - 1] === ':';
+    if (!started || c.options.length === 0) return;
+    if (c.options.length === 1 && line.slice(c.start, c.end) === c.options[0].value) return;
+    this.menu = { base: line, start: c.start, end: c.end, options: c.options.slice(0, MAX_SUGGESTED), sel: -1 };
   }
 
   /** A tapped option (no keyboard on a phone): select it and accept it. */

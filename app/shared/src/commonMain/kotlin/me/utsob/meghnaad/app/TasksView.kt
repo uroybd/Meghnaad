@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -155,12 +156,19 @@ private fun SortBar(store: Store, result: ReportResult) {
     }
 }
 
-/** A small button that opens a menu of choices, answering with the index chosen. */
+/**
+ * A small button that opens a menu of choices, answering with the index chosen. [fillHeight]: as tall as what it stands beside
+ * (a field), not just as tall as its text.
+ */
 @Composable
-fun Choice(current: String, options: List<String>, modifier: Modifier = Modifier, hints: List<String?> = emptyList(), onPick: (Int) -> Unit) {
+fun Choice(current: String, options: List<String>, modifier: Modifier = Modifier, hints: List<String?> = emptyList(), fillHeight: Boolean = false, onPick: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
-        OutlinedButton(onClick = { open = true }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+        OutlinedButton(
+            onClick = { open = true },
+            modifier = if (fillHeight) Modifier.fillMaxHeight() else Modifier,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        ) {
             Text(current, fontSize = 13.sp, maxLines = 1)
             LucideIcon("chevron-down", Modifier.padding(start = 4.dp), size = 14.dp)
         }
@@ -191,7 +199,6 @@ private fun FilterBar(store: Store) {
     val words = splitWords(store.filter)
     val cfg = store.config?.config
     val context = cfg?.activeContext?.let { it to cfg.contexts[it]?.read }
-    var completeSignal by remember { mutableStateOf(0) }
 
     fun pickReport(name: String) {
         // Sort overrides belong to one report; drop the ones that no longer apply.
@@ -200,33 +207,37 @@ private fun FilterBar(store: Store) {
     }
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        var fieldHeight by remember { mutableStateOf(0) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val offered = store.offeredReports
-            Choice(
-                store.report,
-                offered.map { it.name },
-                hints = offered.map { it.description },
-            ) { pickReport(offered[it].name) }
+            BesideField(fieldHeight) {
+                Choice(
+                    store.report,
+                    offered.map { it.name },
+                    hints = offered.map { it.description },
+                    fillHeight = true,
+                ) { pickReport(offered[it].name) }
+            }
             CompletingField(
                 value = store.filter,
                 onValueChange = { store.filter = it },
                 vocab = store.vocab,
                 modifier = Modifier.weight(1f),
                 placeholder = "Filters: +work due:eow",
-                completeSignal = completeSignal,
+                trailing = { complete -> IconAction("arrow-right-to-line", "Complete", complete, size = 18.dp, box = 32.dp) },
+                onSize = { fieldHeight = it.height },
             )
-            IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 18.dp)
         }
         FilterChips(store.filter) { store.filter = it }
-        FilterHelpers(store, words)
-        if (meta?.filter != null || meta?.sort != null || context != null) {
-            val text = buildString {
+        // What the report and the context filter by and sort by on their own: kept out of the way until asked for.
+        val about = if (meta?.filter != null || meta?.sort != null || context != null) {
+            buildString {
                 if (meta?.filter != null) append("report filter ${meta.filter}")
                 if (meta?.sort != null) append("${if (isNotEmpty()) " · " else ""}default sort ${meta.sort}")
                 if (context != null) append("${if (isNotEmpty()) " · " else ""}context ${context.first}${context.second?.let { " ($it)" } ?: ""}")
-            }
-            Dim("$text — applied automatically; your filters are added to these.", size = 12)
-        }
+            } + " — applied automatically; your filters are added to these."
+        } else null
+        FilterHelpers(store, words, about)
     }
 }
 
@@ -256,21 +267,33 @@ fun FilterChips(filter: String, onChange: (String) -> Unit) {
 /** The filter box shared by the pages: Taskwarrior's filter syntax, with completion of projects, tags and attributes. */
 @Composable
 fun FilterField(store: Store, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "Filters: +work due:eow") {
-    var completeSignal by remember { mutableStateOf(0) }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        CompletingField(value, onChange, store.vocab, Modifier.weight(1f), placeholder = placeholder, completeSignal = completeSignal)
-        IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 18.dp)
+        CompletingField(
+            value, onChange, store.vocab, Modifier.weight(1f), placeholder = placeholder,
+            trailing = { complete -> IconAction("arrow-right-to-line", "Complete", complete, size = 18.dp, box = 32.dp) },
+        )
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterHelpers(store: Store, words: List<String>) {
+private fun FilterHelpers(store: Store, words: List<String>, about: String?) {
     var open by remember { mutableStateOf(false) }
-    TextButton(onClick = { open = !open }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)) {
-        LucideIcon("sliders-horizontal", size = 13.dp)
-        Text("  Filter helpers", fontSize = 13.sp)
+    var showAbout by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        TextButton(onClick = { open = !open }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)) {
+            LucideIcon("sliders-horizontal", size = 13.dp)
+            Text("  Filter helpers", fontSize = 13.sp)
+        }
+        // What the report filters and sorts by itself, shown or hidden (hidden to begin with).
+        if (about != null) {
+            IconAction(
+                "info", if (showAbout) "Hide what the report filters and sorts by" else "Show what the report filters and sorts by", { showAbout = !showAbout },
+                tint = if (showAbout) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, box = 36.dp,
+            )
+        }
     }
+    if (about != null && showAbout) Dim(about, size = 12)
     if (!open) return
 
     fun add(token: String) {
