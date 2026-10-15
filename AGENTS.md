@@ -52,7 +52,7 @@ run `npm run format` after editing any code, not just at the end.
   and seals versions; the page gets plain versions over HTTPS). The taskrc importer, `show` and `config` refuse sync and
   credential-like names and never echo their values, and `PUT /api/config/engine` refuses them too; keep tests that
   prove it passing, and add one for any new path that handles settings.
-- **Mind the sizes.** Both are compressed WebAssembly. The engine is downloaded by every visitor (about 595 KB; measure
+- **Mind the sizes.** Both are compressed WebAssembly. The engine is downloaded by every visitor (about 607 KB; measure
   with `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c` after `npm run build:engine`). The Worker (about 660 KB with the Lua and its network;
   `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`) has Cloudflare's 1 MB limit. Every feature spends some: measure a release build before and after, and prefer reusing what
   is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config` line editing) over a
@@ -98,8 +98,9 @@ state and the screens; `androidApp` is the activity, the reminder alarm and the 
 library, so `NativeEngine` keeps its package (`me.utsob.meghnaad`) for the JNI names. The page-side rules hold here too: Taskwarrior
 behaviour is the engine's, and the screens only draw what it returns; mirror `web/src/lib/types.ts` and `api.ts` when the
 engine's answers change. **Never port Rust to Kotlin:** where `tc-core` already does something (splitting a command line,
-writing a date in `dateformat`, `format_vague`) call it through `crates/android/src/helpers.rs`, and add a function there
-when a screen needs another; only the web app's own view logic (`web/src/lib`: sort specs, cells, task commands) is ported,
+writing a date in `dateformat`, `format_vague`) call it through `tc_core::helpers` (`crates/android/src/helpers.rs` re-exports it for
+JNI, and the page calls the same functions through `web/src/engine/helpers.ts`), and add a function there when a screen
+needs another; only the web app's own view logic (`web/src/lib`: sort specs, cells, task commands) is ported,
 with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) opens a live preview of the screens. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour. Check it with
 `cd app && ./gradlew :shared:testDebugUnitTest :androidApp:assembleDebug` (build the engine for the host first:
 `cargo build --profile android -p tc-android`); CI runs the same on the `kotlin-app` job. It has no formatter or linter in CI yet.
@@ -112,7 +113,10 @@ changes, runs `wrangler dev --local` (8787) and Vite (5273, hot reload, `/api` p
 `--persist-to` move it. The generated engine package (`web/src/engine/pkg`) is git-ignored, formatted and linted by
 nobody; `web/src/engine/tc-engine.d.ts` types it by hand, so keep it in step with `crates/browser/src/lib.rs`.
 `npm run build:web` and `npm run build` build the engine first. The engine in the page does not exist under Vitest
-(jsdom has no Web Worker), so `api.ts` takes the server path there unless a test mocks `../engine/client.svelte`.
+(jsdom has no Web Worker), so `api.ts` takes the server path there unless a test mocks `../engine/client.svelte`. The page's
+helpers are different: they are the engine's WebAssembly called at once from the page's thread (`web/src/engine/helpers.ts`:
+dates in the user's `dateformat`), so the web tests load the built engine (`web/src/test-setup.ts`), and
+`npm --prefix web test` builds it first when it is out of date (CI installs the Rust toolchain before them for this).
 
 ## Running things without disturbing the person using the app
 

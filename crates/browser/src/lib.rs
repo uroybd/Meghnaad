@@ -30,6 +30,19 @@ fn js_error(e: impl ToString) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
 
+/// A date written in the user's `dateformat` (see `tc_core::helpers::format_date`), for the page to call at once from its
+/// own thread: it takes nothing from the replica, so it needs no worker and no round trip. `ts` is seconds since 1970.
+#[wasm_bindgen]
+pub fn format_date(pattern: &str, ts: f64, tz: i32, week_starts_monday: bool) -> String {
+    tc_core::helpers::format_date(pattern, ts as i64, tz, week_starts_monday)
+}
+
+/// Any other helper (`tc_core::helpers::call`): its name and its arguments as a JSON array, its answer as JSON.
+#[wasm_bindgen]
+pub fn helper(name: &str, args: &str) -> String {
+    tc_core::helpers::call(name, args)
+}
+
 #[wasm_bindgen]
 pub struct Engine {
     replica: Replica<LiveStorage>,

@@ -74,6 +74,14 @@ jobs:
       - name: Type and accessibility check
         run: npm run check
 
+      # The web tests load the engine's WebAssembly (the page's helpers are Rust: dates in the user's format), which
+      # `npm --prefix web test` builds first when it is out of date: so the Rust toolchain is here before them.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Web tests
         run: npm --prefix web test
 
@@ -81,13 +89,8 @@ jobs:
         run: node --test scripts/*.test.mjs
 
       # The app has to build, not just pass its tests. That includes the engine that runs in the browser (Rust compiled to
-      # WebAssembly, then wasm-bindgen), which `build:web` builds first; wasm-bindgen's tool is installed if missing.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - uses: Swatinem/rust-cache@v2
-
+      # WebAssembly, then wasm-bindgen), which `build:web` builds first (the tests above built it already, and it is
+      # not built again); wasm-bindgen's tool is installed if missing.
       - name: Build
         run: npm run build:web
 

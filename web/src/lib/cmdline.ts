@@ -1,40 +1,17 @@
 // Turning between a typed command line and the argument array the API takes.
-// `splitWords` mirrors the server's `filter::split_words` so what the GUI previews is what runs.
+// Splitting and quoting are the engine's own (`tc_core::helpers`, through src/engine/helpers.ts), so what the GUI previews
+// is what runs.
 
+import { callHelper } from '../engine/helpers';
+
+/** The words of a command line, as the engine reads them: the engine's own `filter::split_words`. */
 export function splitWords(s: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let inWord = false;
-  let quote: string | null = null;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (quote) {
-      if (c === quote) quote = null;
-      else cur += c;
-    } else if (c === "'" || c === '"') {
-      quote = c;
-      inWord = true;
-    } else if (c === '\\' && i + 1 < s.length && /['"\\ ]/.test(s[i + 1])) {
-      cur += s[++i];
-      inWord = true;
-    } else if (/\s/.test(c)) {
-      if (inWord) {
-        out.push(cur);
-        cur = '';
-        inWord = false;
-      }
-    } else {
-      cur += c;
-      inWord = true;
-    }
-  }
-  if (inWord) out.push(cur);
-  return out;
+  return callHelper<string[]>('split_words', s);
 }
 
+/** A word as it is typed in a command line: as it is when that is safe, else in single quotes. */
 export function shellQuote(a: string): string {
-  if (a !== '' && /^[A-Za-z0-9_@%+=:,./()-]+$/.test(a)) return a;
-  return `'${a.replace(/'/g, `'\\''`)}'`;
+  return callHelper<string>('shell_quote', a);
 }
 
 /** The command as it would be typed: `task project:Home +work list`. */

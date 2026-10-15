@@ -5,37 +5,23 @@ import { cell, type Ctx } from './format';
 import type { Column, Row } from './types';
 
 const WED = 1_791_376_200; // 2026-10-07 12:30:00 UTC, a Wednesday (reference values from strftime)
-const JAN1_2026 = 1_767_225_600; // Thursday
 const JAN1_2027 = 1_798_761_600; // Friday, ISO week 53 of 2026
 const f = (pattern: string, ws: 0 | 1 = 1) => ({ pattern, weekstart: ws });
 
+// Writing a date is the engine's (tc_core::helpers, tested there with the cases that were here); this is what the page adds.
 describe('formatPattern', () => {
-  it('formats Taskwarrior tokens, padded and unpadded', () => {
-    expect(formatPattern(WED, f('Y-M-D'), 0)).toBe('2026-10-07');
-    expect(formatPattern(WED, f('d/m/y'), 0)).toBe('7/10/26');
+  it('writes through the engine, in the pattern given', () => {
     expect(formatPattern(WED, f('Y-M-D H:N:S'), 0)).toBe('2026-10-07 12:30:00');
-    expect(formatPattern(WED, f('h:n:s'), 0)).toBe('12:30:0');
-  });
-  it('names days and months', () => {
     expect(formatPattern(WED, f('a A b B'), 0)).toBe('Wed Wednesday Oct October');
-    expect(formatPattern(WED, f('w'), 0)).toBe('3');
-  });
-  it('copies anything that is not a token, and tokens are case sensitive', () => {
-    expect(formatPattern(WED, f('[Y] @ H.N'), 0)).toBe('[2026] @ 12.30');
-    expect(formatPattern(WED, f('Z-q'), 0)).toBe('Z-q');
-  });
-  it('counts days and weeks like strftime', () => {
-    expect(formatPattern(WED, f('j J'), 0)).toBe('280 280');
-    expect(formatPattern(JAN1_2026, f('j J'), 0)).toBe('1 001');
-    expect(formatPattern(WED, f('V v', 1), 0)).toBe('41 41'); // %V
-    expect(formatPattern(WED, f('V', 0), 0)).toBe('40'); // %U
-    expect(formatPattern(JAN1_2026, f('V', 0), 0)).toBe('00'); // before the first Sunday
-    expect(formatPattern(JAN1_2026, f('V', 1), 0)).toBe('01');
-    expect(formatPattern(JAN1_2027, f('V', 1), 0)).toBe('53'); // ISO week of the old year
   });
   it('uses the viewer zone', () => {
     // 23:30 UTC on the 7th is already the 8th at UTC+2.
     expect(formatPattern(WED + 11 * 3600, f('Y-M-D H:N'), 2 * 3600)).toBe('2026-10-08 01:30');
+  });
+  it('takes the week start from the setting: 1 is Monday (ISO), 0 is Sunday', () => {
+    expect(formatPattern(WED, f('V', 1), 0)).toBe('41');
+    expect(formatPattern(WED, f('V', 0), 0)).toBe('40');
+    expect(formatPattern(JAN1_2027, f('V', 1), 0)).toBe('53');
   });
 });
 

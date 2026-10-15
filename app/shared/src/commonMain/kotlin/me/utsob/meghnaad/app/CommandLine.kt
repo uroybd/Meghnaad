@@ -6,9 +6,8 @@ package me.utsob.meghnaad.app
 /** The words of a command line, as the engine reads them: the engine's own `filter::split_words`. */
 fun splitWords(s: String): List<String> = rustHelpers().splitWords(s)
 
-private val PLAIN = Regex("^[A-Za-z0-9_@%+=:,./()-]+$")
-
-fun shellQuote(a: String): String = if (a.isNotEmpty() && PLAIN.matches(a)) a else "'" + a.replace("'", "'\\''") + "'"
+/** A word as it is typed in a command line: as it is when that is safe, else in single quotes (`tc_core::helpers::shell_quote`). */
+fun shellQuote(a: String): String = callHelper("shell_quote", kotlinx.serialization.json.JsonPrimitive(a)).let { (it as kotlinx.serialization.json.JsonPrimitive).content }
 
 /** The command as it would be typed: `task project:Home +work list`. */
 fun previewLine(args: List<String>): String = (listOf("task") + args.map(::shellQuote)).joinToString(" ")

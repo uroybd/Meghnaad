@@ -100,6 +100,14 @@ time zone and the time) and gets back the JSON the app reads. One entry point me
 where Taskwarrior semantics live. A file to import goes the same way, as its text; `tc-core`'s `import` module parses
 and checks it. The engine answers one message at a time, in the order they arrive.
 
+The few pure helpers (`tc_core::helpers` and `tc_core::sortspec`: a date in the user's `dateformat`, a command line split and
+quoted as the engine reads it, a duration in one unit, how a recurrence period reads, what a header click or a grouping does to
+a report's sort keys; `helpers::call` runs the ones with structured arguments by name, as JSON) take nothing from the replica, so the page does not send them to the Worker: a screen asks for a date
+while it draws, and a message is asynchronous. `web/src/engine/helpers.ts` loads the same WebAssembly module again on the
+page's own thread (one download, as the browser has the bytes) and calls them at once. The page is built with them (the
+store, the filters, the headers), so `main.ts` loads them before it imports the app: the first paint waits for the engine's
+module to arrive, which the engine needs a moment later anyway. The phone calls the same functions through JNI.
+
 **On the Worker** (`crates/worker`), behind Cloudflare Access:
 
 1. **Static files** (the app shell and the engine's `.wasm`) are served by Cloudflare without running the Worker. Only
@@ -156,7 +164,8 @@ same server code the Worker runs over R2). See [the Android app](android.md).
 **The app** (`app/`, Kotlin and Compose) draws that engine natively, not in a WebView: `shared` holds the
 engine's JSON types and API (mirroring `web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's store, and the
 screens; `androidApp` holds the activity, the reminder alarm's receiver and the widgets. Taskwarrior behaviour stays in
-`tc-core`, reached through the same JNI library (`crates/android/src/helpers.rs` for the few pure helpers a screen needs);
+`tc-core`, reached through the same JNI library (`tc_core::helpers` for the few pure helpers a screen needs, which the page
+calls too, through WebAssembly: see below);
 only the web app's own view logic is ported. Reminders are the web's rules (`Notify.kt` mirrors `notify.ts`) plus an alarm:
 after every change the next moment something is worth saying is worked out and `AlarmManager` wakes the app then, so they
 work with the app closed. See `app/README.md`.
@@ -399,7 +408,8 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
-| `npm --prefix web test` | The browser-side logic: formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |
+| `tc_core::helpers` and `tc_core::sortspec` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, and every header click, grouping and sort-override case |
+| `npm --prefix web test` | The browser-side logic (it loads the built engine for the helpers): formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |
 | `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused |
 | `scripts/*.test.mjs` | The build and deploy scripts, including `package-release.mjs`: the prebuilt release has the built Worker and app, the scripts, and a config with no build step, and none of the sources |

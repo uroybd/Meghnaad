@@ -167,6 +167,19 @@ pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeFormatDate(
     )
 }
 
+/// Any other helper, by name, with its arguments as a JSON array (`tc_core::helpers::call`).
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeHelper(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: JString,
+    args: JString,
+) -> jstring {
+    let name = text(&mut env, &name);
+    let args = text(&mut env, &args);
+    answer(&env, crate::helpers::call(&name, &args))
+}
+
 /// A duration the way Taskwarrior writes it: `3d`, `2w`, `1.5y`.
 #[no_mangle]
 pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeVague(

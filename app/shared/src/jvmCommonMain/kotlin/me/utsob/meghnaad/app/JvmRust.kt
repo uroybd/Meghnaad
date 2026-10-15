@@ -12,6 +12,8 @@ private object JvmRust : RustHelpers {
         NativeEngine.nativeFormatDate(pattern, epoch, tz, weekStartsMonday)
 
     override fun vague(seconds: Long): String = NativeEngine.nativeVague(seconds)
+
+    override fun call(name: String, args: String): String = NativeEngine.nativeHelper(name, args)
 }
 
 actual fun rustHelpers(): RustHelpers = JvmRust

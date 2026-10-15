@@ -5,37 +5,18 @@ import kotlin.test.assertEquals
 
 // The same cases as web/src/lib/recurrence.test.ts.
 class RecurrenceTest {
+    // The words are the engine's (tc_core::helpers::describe_recur, tested there with the cases that were here).
     @Test
-    fun theCommonPeriodsAreNamed() {
-        assertEquals("every day", describeRecur("daily"))
-        assertEquals("every weekday", describeRecur("weekdays"))
-        assertEquals("every 2 weeks", describeRecur("biweekly"))
-        assertEquals("every 3 months", describeRecur("quarterly"))
-        assertEquals("every year", describeRecur("Annual"))
-    }
-
-    @Test
-    fun countsAndUnitsAreRead() {
+    fun theEngineDescribesAPeriod() {
         assertEquals("every 3 days", describeRecur("3d"))
-        assertEquals("every week", describeRecur("1w"))
-        assertEquals("every 2 weeks", describeRecur("2 weeks"))
-        assertEquals("every 6 months", describeRecur("6mo"))
-        assertEquals("every 2 quarters", describeRecur("2q"))
+        assertEquals("every week", describeRecur("weekly"))
     }
 
     @Test
-    fun isoDurationsAreRead() {
-        assertEquals("every 1 month", describeRecur("P1M"))
-        assertEquals("every 2 weeks", describeRecur("P2W"))
-        assertEquals("every 1 year 2 months", describeRecur("P1Y2M"))
-    }
-
-    @Test
-    fun unknownTextIsLeftAloneAndEmptyIsHandled() {
-        assertEquals("fortnightish", describeRecur("fortnightish"))
-        assertEquals("P", describeRecur("P"))
+    fun noPeriodAndUnknownTextAreHandled() {
         assertEquals("", describeRecur(null))
         assertEquals("", describeRecur(""))
+        assertEquals("fortnightish", describeRecur("fortnightish"))
     }
 
     @Test

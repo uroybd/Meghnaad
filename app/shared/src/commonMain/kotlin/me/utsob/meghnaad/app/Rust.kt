@@ -14,6 +14,16 @@ interface RustHelpers {
 
     /** A duration the way Taskwarrior writes it: `3d`, `2w`, `4mo`, `1.5y`; empty for under a second. */
     fun vague(seconds: Long): String
+
+    /** Any other helper of `tc_core::helpers`, by name: its arguments as a JSON array, its answer as JSON (see [callHelper]). */
+    fun call(name: String, args: String): String
+}
+
+/** A helper of `tc_core::helpers` by name, with its arguments; its answer, or an error when it is not a helper or not its arguments. */
+fun callHelper(name: String, vararg args: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement {
+    val out = engineJson.parseToJsonElement(rustHelpers().call(name, kotlinx.serialization.json.JsonArray(args.toList()).toString()))
+    (out as? kotlinx.serialization.json.JsonObject)?.get("error")?.let { error("helper $name: ${it.toString()}") }
+    return out
 }
 
 expect fun rustHelpers(): RustHelpers

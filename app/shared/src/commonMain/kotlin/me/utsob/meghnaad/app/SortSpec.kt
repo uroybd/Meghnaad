@@ -1,8 +1,19 @@
 package me.utsob.meghnaad.app
 
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.Serializable
 // Sorting by a column. A sort is a Taskwarrior sort spec (`due+,priority-,project+/`), applied through the command line as
-// `rc.report.<name>.sort:<spec>`, so the console and the list always agree: web/src/lib/sortSpec.ts.
+// `rc.report.<name>.sort:<spec>`, so the console and the list always agree. What choosing a column or a grouping does to the keys
+// is the engine's (`tc_core::sortspec`, through `callHelper`), which every front end shares; the cases are tested there.
 
+@Serializable
 data class SortKey(val column: String, val desc: Boolean = false, /** A trailing `/`: a break when the value changes. */ val brk: Boolean = false)
 
 /** Columns a header (or a sort picker) can sort by; UDAs are added by the caller. */
@@ -11,22 +22,23 @@ val SORTABLE = setOf(
     "scheduled", "until", "modified", "urgency", "recur", "parent",
 )
 
-private const val MAX_KEYS = 4
-
 /** `due.relative` sorts by `due`. */
 fun baseColumn(spec: String): String = spec.substringBefore('.')
 
-fun parseSort(spec: String?): List<SortKey> {
-    val s = (spec ?: "").trim()
-    if (s.isEmpty() || s == "none" || s == "random") return emptyList()
-    val key = Regex("^(.+?)([+-])(/?)$")
-    return s.split(',').mapNotNull { part ->
-        key.find(part.trim())?.let { m -> SortKey(baseColumn(m.groupValues[1]), m.groupValues[2] == "-", m.groupValues[3] == "/") }
-    }
-}
+private val KEYS = ListSerializer(SortKey.serializer())
 
-fun serializeSort(keys: List<SortKey>): String =
-    keys.joinToString(",") { "${it.column}${if (it.desc) "-" else "+"}${if (it.brk) "/" else ""}" }
+private fun keysJson(keys: List<SortKey>): JsonElement = engineJson.encodeToJsonElement(KEYS, keys)
+
+private fun keysOf(e: JsonElement): List<SortKey> = engineJson.decodeFromJsonElement(KEYS, e)
+
+private fun text(s: String?): JsonElement = if (s == null) JsonNull else JsonPrimitive(s)
+
+private fun JsonElement.textOrNull(): String? = if (this is JsonNull) null else jsonPrimitive.content
+
+/** The keys of a spec: none for `none`, `random` or nothing, and a part that is no key is left out. */
+fun parseSort(spec: String?): List<SortKey> = keysOf(callHelper("parse_sort", text(spec)))
+
+fun serializeSort(keys: List<SortKey>): String = callHelper("serialize_sort", keysJson(keys)).jsonPrimitive.content
 
 class ClickResult(val keys: List<SortKey>, /** The third click on a column: go back to the report's own sort. */ val reset: Boolean)
 
@@ -37,45 +49,26 @@ class ClickResult(val keys: List<SortKey>, /** The third click on a column: go b
  *  - [shift]: add the column as a further tie-breaker, or flip its direction if present.
  */
 fun clickSort(current: List<SortKey>, column: String, shift: Boolean = false): ClickResult {
-    val at = current.indexOfFirst { it.column == column }
-    if (shift) {
-        if (at >= 0) return ClickResult(current.mapIndexed { i, k -> if (i == at) k.copy(desc = !k.desc) else k }, false)
-        return ClickResult((current + SortKey(column)).take(MAX_KEYS), false)
-    }
-    if (at == 0) {
-        if (!current[0].desc) return ClickResult(listOf(current[0].copy(desc = true)) + current.drop(1), false)
-        return ClickResult(emptyList(), true)
-    }
-    return ClickResult((listOf(SortKey(column)) + current.filter { it.column != column }).take(MAX_KEYS), false)
+    val o = callHelper("click_sort", keysJson(current), JsonPrimitive(column), JsonPrimitive(shift)).jsonObject
+    return ClickResult(keysOf(o.getValue("keys")), o.getValue("reset").jsonPrimitive.boolean)
 }
-
-private fun tokenFor(report: String) = Regex("^rc\\.report\\.${Regex.escape(report)}\\.sort[:=]")
 
 /** The sort override for [report] in a filter string, if any. */
-fun sortOverride(filter: String, report: String): String? {
-    val re = tokenFor(report)
-    val w = splitWords(filter).firstOrNull { re.containsMatchIn(it) } ?: return null
-    return w.substring(w.indexOfFirst { it == ':' || it == '=' } + 1)
-}
+fun sortOverride(filter: String, report: String): String? =
+    callHelper("sort_override", JsonPrimitive(filter), JsonPrimitive(report)).textOrNull()
 
-/**
- * Set (or with null, remove) the sort override in a filter string. A spec equal to the report's default needs no
- * override, so it is dropped to keep the command short.
- */
-fun withSortOverride(filter: String, report: String, spec: String?, defaultSpec: String?): String {
-    val re = tokenFor(report)
-    val words = splitWords(filter).filter { !re.containsMatchIn(it) }.toMutableList()
-    if (!spec.isNullOrEmpty() && spec != (defaultSpec ?: "")) words += "rc.report.$report.sort:$spec"
-    return joinWords(words)
-}
+/** Set (or with null, remove) the sort override in a filter string; a spec equal to the report's default needs none. */
+fun withSortOverride(filter: String, report: String, spec: String?, defaultSpec: String?): String =
+    callHelper("with_sort_override", JsonPrimitive(filter), JsonPrimitive(report), text(spec), text(defaultSpec)).jsonPrimitive.content
 
 class SortState(val desc: Boolean, val rank: Int?, val group: Boolean)
 
 /** For a header: its place in the active sort (and whether it groups the list), or null. */
 fun sortState(keys: List<SortKey>, column: String): SortState? {
-    val i = keys.indexOfFirst { it.column == baseColumn(column) }
-    if (i < 0) return null
-    return SortState(keys[i].desc, if (keys.size > 1) i + 1 else null, keys[i].brk)
+    val e = callHelper("sort_state", keysJson(keys), JsonPrimitive(column))
+    if (e is JsonNull) return null
+    val o = e.jsonObject
+    return SortState(o.getValue("desc").jsonPrimitive.boolean, o.getValue("rank").let { if (it is JsonNull) null else it.jsonPrimitive.int }, o.getValue("group").jsonPrimitive.boolean)
 }
 
 /**
@@ -83,20 +76,11 @@ fun sortState(keys: List<SortKey>, column: String): SortState? {
  * yet becomes the first key, ascending, since a group is only whole when the grouping column is what the list is sorted by
  * first.
  */
-fun toggleGroup(current: List<SortKey>, column: String, defaults: List<SortKey> = emptyList()): List<SortKey> {
-    val base = baseColumn(column)
-    val key = current.firstOrNull { it.column == base }
-    if (key != null) {
-        // Ending a grouping that put the column into the sort takes it out again; one the report's own sort has keeps its
-        // place and loses only the `/`.
-        if (key.brk && defaults.none { it.column == base }) return current.filter { it !== key }
-        return current.map { if (it === key) it.copy(brk = !it.brk) else it }
-    }
-    return (listOf(SortKey(base, brk = true)) + current).take(MAX_KEYS)
-}
+fun toggleGroup(current: List<SortKey>, column: String, defaults: List<SortKey> = emptyList()): List<SortKey> =
+    keysOf(callHelper("toggle_group", keysJson(current), JsonPrimitive(column), keysJson(defaults)))
 
 /** The same sort with no grouping at all. */
-fun clearGroups(current: List<SortKey>): List<SortKey> = current.map { it.copy(brk = false) }
+fun clearGroups(current: List<SortKey>): List<SortKey> = keysOf(callHelper("clear_groups", keysJson(current)))
 
 /** The column the list is grouped by first, if any. */
-fun groupColumn(keys: List<SortKey>): String? = keys.firstOrNull { it.brk }?.column
+fun groupColumn(keys: List<SortKey>): String? = callHelper("group_column", keysJson(keys)).textOrNull()

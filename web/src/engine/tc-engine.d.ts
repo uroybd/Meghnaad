@@ -2,6 +2,12 @@
 // so that type-checking and the tests do not need it built; keep this in step with crates/browser/src/lib.rs.
 declare module 'tc-engine' {
   export default function init(input?: { module_or_path: string | URL | Request }): Promise<unknown>;
+  /** The same, from bytes already in hand and at once (the tests, which have no network). */
+  export function initSync(input: { module: BufferSource | WebAssembly.Module }): unknown;
+  /** Any other helper (`tc_core::helpers::call`): its name and its arguments as JSON text, its answer as JSON text. */
+  export function helper(name: string, args: string): string;
+  /** A date in a `dateformat` pattern (`tc_core::helpers::format_date`): `ts` is seconds since 1970, `tz` seconds east of UTC. */
+  export function format_date(pattern: string, ts: number, tz: number, week_starts_monday: boolean): string;
   export class Engine {
     constructor();
     /** The settings (the `config` of `GET /api/config`), as JSON text. */
