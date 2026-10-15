@@ -21,7 +21,9 @@ cannot: reminders that come with the app closed, and the widgets.
   Columns take the width of what they hold and the description the rest; a report with more columns than fit scrolls
   sideways, with the tick box and the buttons kept in place. Narrower than that you get the cards. Summary is a table too, the calendar shows its months side by side and the
   burndown chart grows to fill the width. A task's details open as a drawer on the right (560 dp, the web's), the task form
-  and the review as a card in the middle, and Settings is no wider than the web's 820 dp.
+  and the review as a card in the middle, and Settings is no wider than the web's 820 dp. The menu is not over the page
+  there: the list of reports and the quick add are a sidebar that is always open, the pages are tabs along the top (their
+  names drop away below 1100 dp, those of Review and Settings below 1400 dp), and there is no floating +.
 - **With a keyboard attached**, the web's keys work: `/` focuses the prompt with its line selected (not while you are typing
   in a field), Tab completes, ↑ and ↓ go through the last commands, Ctrl+L clears the console and Esc leaves the prompt;
   in the Hooks editor Ctrl+S saves and Tab indents; in the task form Enter saves and Ctrl+Enter saves from a field that

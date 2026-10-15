@@ -1,5 +1,6 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.ui.graphics.asImageBitmap
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
         // Draw under the system bars (the app pads for them), as a phone's apps do.
         enableEdgeToEdge()
         APP_VERSION = packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        APP_LOGO = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.logo)?.asImageBitmap()
         val vault = AppEngine.vault(this)
         engine = AppEngine.get(this)
         val sync = SyncController(engine, lifecycleScope, SystemClock)

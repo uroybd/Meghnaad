@@ -1,5 +1,6 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.dp
@@ -69,6 +70,10 @@ private suspend fun seed(tw: Tw) {
 }
 
 fun main() = application {
+    // The mark beside the name, from the preview's resources.
+    if (APP_LOGO == null) {
+        APP_LOGO = object {}.javaClass.getResourceAsStream("/logo.png")?.use { org.jetbrains.skia.Image.makeFromEncoded(it.readBytes()).toComposeImageBitmap() }
+    }
     val dir = File(System.getProperty("meghnaad.data") ?: "build/preview-data").apply { mkdirs() }
     val scope = rememberCoroutineScope()
     val store = remember {

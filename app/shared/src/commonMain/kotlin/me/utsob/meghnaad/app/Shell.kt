@@ -1,5 +1,10 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,15 +56,95 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun Shell(store: Store) {
-    Box(Modifier.fillMaxSize()) {
-        PhoneShell(store)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The web's two layouts: with room, a sidebar and tabs along the top; without, the menu over the page and the phone's bar.
+        if (maxWidth > TABLE_FROM) WideShell(store, labels = maxWidth > 1100.dp, buttonLabels = maxWidth > 1400.dp) else PhoneShell(store)
         ToastHost(store)
         Dialogs(store)
     }
 }
 
+/** `/` focuses the prompt from anywhere that isn't a text field (a hardware keyboard). */
+private fun slashKey(store: Store) = Modifier.onPreviewKeyEvent { e ->
+    val slash = e.type == KeyEventType.KeyDown && e.key == Key.Slash && !e.isCtrlPressed && !e.isMetaPressed && !e.isAltPressed
+    if (slash && !TypingFocus.typing && store.detail == null) {
+        store.focusPrompt()
+        true
+    } else false
+}
+
+/** The pages along the top of the wide layout, as the web's tabs. */
+private class Tab(val view: View, val label: String, val icon: String)
+
+private val TABS = listOf(
+    Tab(View.Tasks, "Tasks", "list-checks"),
+    Tab(View.Projects, "Projects", "folder"),
+    Tab(View.Tags, "Tags", "tag"),
+    Tab(View.Summary, "Summary", "chart-column"),
+    Tab(View.Calendar, "Calendar", "calendar-days"),
+    Tab(View.Burndown, "Burndown", "trending-down"),
+    Tab(View.Console, "Console", "terminal"),
+)
+
 /**
- * The layout: a phone's, and the only one. The menu slides over from the left, the prompt is docked at the bottom where a thumb
+ * The layout with room for it (App.svelte, over 760 px): the bar along the top with a tab for each page, the list of reports and
+ * the quick add in a sidebar that is always there, the page beside it and the prompt under both. There is no menu button and no
+ * floating + (the quick add is in the sidebar).
+ */
+@Composable
+private fun WideShell(store: Store, labels: Boolean, buttonLabels: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxSize().then(slashKey(store))) {
+        WideTopBar(store, labels, buttonLabels)
+        Banners(store)
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            Column(Modifier.width(270.dp).fillMaxHeight().background(colors.surfaceContainer).padding(top = 12.dp)) {
+                QuickAdd(store)
+                NavMenu(store, onNavigate = {}, pages = false)
+            }
+            VerticalDivider(color = colors.outlineVariant)
+            Box(Modifier.weight(1f).fillMaxHeight()) { MainView(store) }
+        }
+        if (store.view != View.Console) Dock(store)
+    }
+}
+
+@Composable
+private fun WideTopBar(store: Store, labels: Boolean, buttonLabels: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    @Composable
+    fun Button(icon: String, label: String, on: Boolean, showLabel: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+        Row(
+            Modifier.heightIn(min = 36.dp).clip(ControlShape)
+                .background(if (on) colors.primary.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
+                .clickable(enabled = enabled, onClick = onClick)
+                .semantics { contentDescription = label }
+                .padding(horizontal = if (showLabel) 12.dp else 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            LucideIcon(icon, size = 16.dp, tint = if (on) colors.primary else colors.onSurface.copy(alpha = if (enabled) 1f else 0.4f))
+            if (showLabel) Text(label, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = if (on) colors.primary else colors.onSurface.copy(alpha = if (enabled) 1f else 0.4f))
+        }
+    }
+    Column(Modifier.fillMaxWidth().background(colors.surfaceContainer)) {
+        Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Logo(28.dp, Modifier.padding(end = 8.dp))
+            Text("Meghnaad", Modifier.padding(end = 14.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            for (t in TABS) Button(t.icon, t.label, store.view == t.view, labels) { store.view = t.view }
+            Box(Modifier.weight(1f))
+            TimerChip(store, Modifier)
+            store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(horizontal = 8.dp)) }
+            Button("clipboard-check", "Review", store.review.phase != ReviewPhase.Idle, buttonLabels, enabled = store.review.phase == ReviewPhase.Idle) { store.go { store.review.start() } }
+            Button(if (store.notifier.settings.enabled) "bell" else "bell-off", "Reminders (${if (store.notifier.settings.enabled) "on" else "off"})", false, false) { store.notifyOpen = true }
+            Button("settings", "Settings", store.view == View.Settings, buttonLabels) { store.openSettings() }
+        }
+        HorizontalDivider(color = colors.outlineVariant)
+    }
+}
+
+/**
+ * The phone's layout (a window of up to 760 dp): the menu slides over from the left, the prompt is docked at the bottom where a thumb
  * reaches it, the new-task button floats over the list, and a page is a column of cards that scrolls as one.
  */
 @Composable
@@ -83,16 +168,7 @@ private fun PhoneShell(store: Store) {
             }
         },
     ) {
-        Column(
-            Modifier.fillMaxSize().onPreviewKeyEvent { e ->
-                // `/` focuses the prompt from anywhere that isn't a text field (a hardware keyboard).
-                val slash = e.type == KeyEventType.KeyDown && e.key == Key.Slash && !e.isCtrlPressed && !e.isMetaPressed && !e.isAltPressed
-                if (slash && !TypingFocus.typing && store.detail == null) {
-                    store.focusPrompt()
-                    true
-                } else false
-            },
-        ) {
+        Column(Modifier.fillMaxSize().then(slashKey(store))) {
             TopBar(store, onMenu = { scope.launch { store.menuOpen = true } })
             Banners(store)
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -113,7 +189,8 @@ private fun TopBar(store: Store, onMenu: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         IconAction("menu", "Menu", onMenu, size = 22.dp)
-        Text("Meghnaad", Modifier.padding(horizontal = 4.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        Logo(28.dp)
+        Text("Meghnaad", Modifier.padding(horizontal = 6.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
         Box(Modifier.weight(1f))
         TimerChip(store, Modifier.weight(3f, fill = false))
         store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(end = 8.dp)) }

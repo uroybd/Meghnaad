@@ -1,5 +1,6 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -80,6 +81,14 @@ fun Pill(
             maxLines = 1,
         )
     }
+}
+
+/** The app's mark, set by the platform that builds it (the web's logo, which stands beside the name). */
+var APP_LOGO: androidx.compose.ui.graphics.ImageBitmap? = null
+
+@Composable
+fun Logo(size: Dp, modifier: Modifier = Modifier) {
+    APP_LOGO?.let { Image(it, contentDescription = null, modifier = modifier.size(size)) }
 }
 
 /**

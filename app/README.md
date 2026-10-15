@@ -35,7 +35,8 @@ ones, and saves no keys. To try a bucket, set `MEGHNAAD_ENDPOINT`, `MEGHNAAD_BUC
 never written, but what you change is pushed to that bucket.
 
 The window is a phone's. For the wide layout (a report as a table, the calendar's months side by side) set
-`MEGHNAAD_PREVIEW_WIDTH=1000` (dp): the window is then that wide, and can be resized.
+`MEGHNAAD_PREVIEW_WIDTH=1000` (dp): the window is then that wide, and can be resized. Over 760 dp the sidebar and the tabs
+along the top appear, as the web app's do.
 
 ## Build and test
 
