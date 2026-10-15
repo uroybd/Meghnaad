@@ -54,14 +54,24 @@ object Tasks {
         }
     }
 
-    /** The names of the reports there are (the built-in ones and the user's), for choosing one. */
-    fun reportNames(context: Context): List<String> = try {
+    /** The reports there are (the built-in ones and the user's) with how each is described, hidden ones left out; null when the engine could not say. */
+    private fun reports(context: Context): List<Pair<String, String>>? = try {
         val answer = JSONObject(Engines.get(context).call("api", JSONObject().put("method", "GET").put("path", "/api/config").toString()))
-        val body = JSONObject(answer.getString("body"))
-        val reports = body.getJSONArray("reports")
-        (0 until reports.length()).map { reports.getJSONObject(it).getString("name") }.filter { !it.startsWith("_") }
+        val reports = JSONObject(answer.getString("body")).getJSONArray("reports")
+        (0 until reports.length()).map { reports.getJSONObject(it) }
+            .map { it.getString("name") to (if (it.isNull("description")) "" else it.optString("description", "")) }
+            .filter { !it.first.startsWith("_") }
     } catch (e: Exception) {
-        listOf("next")
+        null
+    }
+
+    /** The names of the reports there are, for choosing one. */
+    fun reportNames(context: Context): List<String> = reports(context)?.map { it.first } ?: listOf("next")
+
+    /** How a report is described (`next`: "Most urgent tasks"), empty when it has no description; null when the engine could not say. */
+    fun reportDescription(context: Context, report: String): String? {
+        val all = reports(context) ?: return null
+        return all.firstOrNull { it.first == report }?.second ?: ""
     }
 
     /** A burndown (`burndown.daily|weekly|monthly`) of the tasks the filter picks; null when the engine had none to give. */

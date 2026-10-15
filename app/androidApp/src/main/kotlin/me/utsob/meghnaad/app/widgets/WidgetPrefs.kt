@@ -29,9 +29,11 @@ data class ListConfig(
     val limit: Int = 12,
     val fields: List<String> = ListFields.DEFAULT,
     val title: String = "",
+    /** The report's own description ("Most urgent tasks"), kept here so the title can be drawn without asking the engine. */
+    val description: String = "",
 ) {
-    /** What the widget calls itself. */
-    fun heading() = title.ifBlank { report }
+    /** What the widget calls itself: the title it was given, else what the report is described as, else the report's name. */
+    fun heading() = title.ifBlank { description.ifBlank { report } }
 
     fun toJson(): JSONObject = JSONObject()
         .put("report", report)
@@ -39,6 +41,7 @@ data class ListConfig(
         .put("limit", limit)
         .put("fields", JSONArray(fields))
         .put("title", title)
+        .put("description", description)
 
     companion object {
         fun fromJson(j: JSONObject): ListConfig {
@@ -49,6 +52,7 @@ data class ListConfig(
                 j.optInt("limit", 12).coerceIn(1, 50),
                 fields,
                 j.optString("title", ""),
+                j.optString("description", ""),
             )
         }
     }

@@ -26,6 +26,24 @@ class TasksWidgetService : RemoteViewsService() {
                 emptyList()
             }
             Log.d("TasksWidget", "${tasks.size} tasks")
+            nameAfterTheReport()
+        }
+
+        /**
+         * The widget is called what its report is described as (unless it was given a title). That is the engine's to say, which
+         * is asked here, off the main thread; when it differs from what was kept, it is kept and the title is drawn again.
+         */
+        private fun nameAfterTheReport() {
+            val config = WidgetPrefs.list(context, widgetId)
+            val said = try {
+                Tasks.reportDescription(context, config.report)
+            } catch (e: Exception) {
+                null
+            }
+            if (said != null && said != config.description) {
+                WidgetPrefs.saveList(context, widgetId, config.copy(description = said))
+                TasksWidget.update(context, widgetId)
+            }
         }
 
         override fun onDestroy() {}

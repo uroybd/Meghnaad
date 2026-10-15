@@ -152,7 +152,8 @@ class WidgetConfigActivity : Activity() {
         label("Filter (optional)")
         val filter = field("project:Home +work due.before:eow", current.filter)
         label("Title (optional)")
-        val title = field(current.report, current.title)
+        // Left empty, the widget is called what its report is described as.
+        val title = field(current.description.ifBlank { current.report }, current.title)
         label("Most tasks to show")
         val limit = field("12", current.limit.toString(), number = true)
         label("Show under each task")
@@ -175,6 +176,8 @@ class WidgetConfigActivity : Activity() {
                     limit.text.toString().toIntOrNull()?.coerceIn(1, 50) ?: 12,
                     ListFields.ALL.filterIndexed { i, _ -> boxes[i].isChecked }.map { it.first },
                     title.text.toString().trim(),
+                    // The description is of the report: it is looked up again once the widget is drawn.
+                    if ((report.selectedItem?.toString() ?: current.report) == current.report) current.description else "",
                 ),
             )
         }
