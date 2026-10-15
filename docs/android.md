@@ -25,7 +25,7 @@ cannot: reminders that come with the app closed, and the widgets.
 - **Home-screen widgets**, three of them, each with its own settings (long-press the widget, then its pencil; the same
   screen opens when you add it):
   - **Tasks**: the tasks of any report, the built-in ones and your own, narrowed by a filter (`project:Home +work`), as
-    many as you choose, with a title of your own. Tap a circle to mark a task done, the text to open **that task** in
+    many as you choose, with a title of your own (left empty, the widget is called what its report is described as: `Most urgent tasks` for `next`). Tap a circle to mark a task done, the text to open **that task** in
     the app (open or not), **+** to add a task by typing it as in the console (`Buy milk due:tomorrow +home`), and the
     sync button to pull now. Under each task it shows the fields you tick: project, due date, priority, tags, urgency,
     age, scheduled, wait, recurrence, task number, notes.
@@ -116,6 +116,9 @@ The endpoint has to be `https://`; plain `http://` is only accepted for `localho
   from the bucket. **The secrets for hooks are never synced.** The two switches are this phone's own choice, kept on the
   phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (paste it, or import it from a link
   or a file).
+- **Settings → Sync** shows where the phone syncs to (the endpoint, the bucket, the region and a hint of the access key's
+  name; never a secret) and changes it: blank fields keep their value, so the address can be corrected without typing the
+  keys again, and the change is tried with a sync first. A change that does not work is not kept.
 - **Hooks run on the phone**, in the same Lua sandbox, with the same `http` and `secret()`, from the script you edit in
   **Settings → Hooks**. Their network calls are made by the phone, and the secrets are sealed with the Keystore key.
 - **No Cloudflare Access, no Worker.** Anyone who has the phone unlocked has the app: lock the phone.

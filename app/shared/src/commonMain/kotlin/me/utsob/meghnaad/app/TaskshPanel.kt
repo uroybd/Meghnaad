@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +36,18 @@ class TaskshState(private val store: Store) {
     var error by mutableStateOf<String?>(null)
     var done by mutableStateOf(false)
 
+    /** What the fields were last made from: when the saved report changes and they were not touched, they are made again. */
+    private var base = saved
+
+    /** The saved report changed (the taskrc tab, the console): follow it, unless there are edits here. */
+    fun follow() {
+        val now = saved
+        if (now == base) return
+        val untouched = want == base
+        base = now
+        if (untouched) revert()
+    }
+
     val want get() = ReviewWanted(filter.trim(), sort.trim())
     val valid get() = want.filter.isNotEmpty() && want.sort.isNotEmpty() && '\n' !in filter + sort && '\r' !in filter + sort
     /** What Apply would write: nothing when the taskrc already is as wanted. */
@@ -47,6 +58,7 @@ class TaskshState(private val store: Store) {
     fun revert() {
         filter = saved.filter
         sort = saved.sort
+        base = saved
     }
 
     fun defaults() {
@@ -77,14 +89,7 @@ class TaskshState(private val store: Store) {
 fun TaskshPanel(store: Store, st: TaskshState) {
     val colors = MaterialTheme.colorScheme
     // The saved report changed somewhere else (the taskrc tab, the console): follow it, unless there are edits here.
-    var before by remember { mutableStateOf(st.saved) }
-    LaunchedEffect(st.saved) {
-        val now = st.saved
-        val untouched = st.want == before
-        val changed = now != before
-        before = now
-        if (changed && untouched) st.revert()
-    }
+    LaunchedEffect(st.saved) { st.follow() }
     val status = st.status
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

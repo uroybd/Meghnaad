@@ -142,7 +142,7 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("task>", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 17.dp, end = 4.dp))
+            Text("task>", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp, end = 4.dp))
             CompletingField(
                 value = line,
                 onValueChange = {
@@ -170,9 +170,9 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 },
             )
             // Tab and ↑ have buttons too, for touch screens that have neither key.
-            IconAction("chevron-up", "Previous command", { older() }, modifier = Modifier.padding(top = 8.dp), size = 18.dp)
-            IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, modifier = Modifier.padding(top = 8.dp), size = 18.dp)
-            Button(onClick = ::submit, modifier = Modifier.padding(top = 10.dp)) {
+            IconAction("chevron-up", "Previous command", { older() }, size = 18.dp)
+            IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 18.dp)
+            Button(onClick = ::submit) {
                 LucideIcon("corner-down-left", size = 15.dp, tint = MaterialTheme.colorScheme.onPrimary)
             }
         }

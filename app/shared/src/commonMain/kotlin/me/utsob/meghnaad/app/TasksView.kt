@@ -205,7 +205,6 @@ private fun FilterBar(store: Store) {
             Choice(
                 store.report,
                 offered.map { it.name },
-                modifier = Modifier.padding(top = 8.dp),
                 hints = offered.map { it.description },
             ) { pickReport(offered[it].name) }
             CompletingField(
@@ -216,7 +215,7 @@ private fun FilterBar(store: Store) {
                 placeholder = "Filters: +work due:eow",
                 completeSignal = completeSignal,
             )
-            IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, modifier = Modifier.padding(top = 8.dp), size = 18.dp)
+            IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 18.dp)
         }
         FilterChips(store.filter) { store.filter = it }
         FilterHelpers(store, words)
@@ -260,7 +259,7 @@ fun FilterField(store: Store, value: String, onChange: (String) -> Unit, modifie
     var completeSignal by remember { mutableStateOf(0) }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         CompletingField(value, onChange, store.vocab, Modifier.weight(1f), placeholder = placeholder, completeSignal = completeSignal)
-        IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, modifier = Modifier.padding(top = 8.dp), size = 18.dp)
+        IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 18.dp)
     }
 }
 

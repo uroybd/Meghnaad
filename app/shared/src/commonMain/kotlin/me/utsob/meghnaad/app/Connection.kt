@@ -49,6 +49,14 @@ data class Connection(
     }
 }
 
+/** What the Sync tab may show of the connection: where it is, and a hint of the key's name. Never a secret. */
+data class ConnectionInfo(val endpoint: String, val bucket: String, val region: String, val accessKeyHint: String)
+
+fun Connection.info(): ConnectionInfo = ConnectionInfo(
+    endpoint, bucket, region,
+    if (accessKey.length > 8) "${accessKey.take(4)}…${accessKey.takeLast(4)}" else "•".repeat(accessKey.length),
+)
+
 /** Which of the shared files the phone keeps in step with the bucket's (the secrets of hooks never are). */
 data class SyncOptions(val settings: Boolean = false, val hooks: Boolean = false) {
     /** The files in the bucket these two stand for. */

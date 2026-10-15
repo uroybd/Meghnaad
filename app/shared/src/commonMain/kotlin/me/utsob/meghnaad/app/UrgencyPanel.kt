@@ -10,7 +10,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +48,18 @@ class UrgencyState(private val store: Store) {
     var error by mutableStateOf<String?>(null)
     var done by mutableStateOf(false)
 
+    /** What the values were last made from: when the saved ones change and the values were not touched, they are made again. */
+    private var base = savedOverrides to savedInherit
+
+    /** The saved values changed (the taskrc tab, the console, a sync): follow them, unless there are edits here. */
+    fun follow() {
+        val now = savedOverrides to savedInherit
+        if (now == base) return
+        val untouched = overrides == base.first && inherit == base.second
+        base = now
+        if (untouched) revert()
+    }
+
     val edited get() = overrides != savedOverrides || inherit != savedInherit
     val blocked get() = store.config?.configError != null
     val keys get() = sortUrgencyKeys((defaults.keys + overrides.keys).toSet())
@@ -68,6 +79,7 @@ class UrgencyState(private val store: Store) {
     fun revert() {
         overrides = savedOverrides
         inherit = savedInherit
+        base = savedOverrides to savedInherit
         done = false
     }
 
@@ -96,14 +108,7 @@ class UrgencyState(private val store: Store) {
 fun UrgencyPanel(store: Store, st: UrgencyState) {
     val colors = MaterialTheme.colorScheme
     // The saved values changed somewhere else (the taskrc tab, the console): follow them, unless there are edits here.
-    var before by remember { mutableStateOf(st.savedOverrides to st.savedInherit) }
-    LaunchedEffect(st.savedOverrides, st.savedInherit) {
-        val now = st.savedOverrides to st.savedInherit
-        val untouched = st.overrides == before.first && st.inherit == before.second
-        val changed = now != before
-        before = now
-        if (changed && untouched) st.revert()
-    }
+    LaunchedEffect(st.savedOverrides, st.savedInherit) { st.follow() }
     val defaults = st.defaults
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

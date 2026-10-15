@@ -15,7 +15,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,7 +88,8 @@ fun CompletingField(
     onSubmit: (() -> Unit)? = null,
     onKey: ((androidx.compose.ui.input.key.KeyEvent, String) -> Boolean)? = null,
     onFocus: (Boolean) -> Unit = {},
-    trailing: @Composable (complete: () -> Unit) -> Unit = {},
+    /** Something at the end of the field (an icon takes 48 dp of height, so only ask for one when it is wanted). */
+    trailing: (@Composable (complete: () -> Unit) -> Unit)? = null,
     enabled: Boolean = true,
     singleLine: Boolean = true,
     focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
@@ -168,7 +168,7 @@ fun CompletingField(
                 imeAction = if (onSubmit != null) ImeAction.Send else ImeAction.Default,
             ),
             keyboardActions = KeyboardActions(onSend = { onSubmit?.invoke() }),
-            trailingIcon = { trailing(::complete) },
+            trailingIcon = trailing?.let { t -> { t(::complete) } },
         )
         CompletionMenu(completer, onPick = { apply(completer.pick(it)) }, modifier = Modifier.padding(top = 2.dp))
     }

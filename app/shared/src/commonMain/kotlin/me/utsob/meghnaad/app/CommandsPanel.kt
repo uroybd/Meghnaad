@@ -9,7 +9,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +48,18 @@ class CommandsState(private val store: Store) {
         get() = rows.map { r -> TaskCommand(r.name.trim(), r.command.trim(), r.icon.takeIf { it.isNotEmpty() }) }
 
     val saved: List<TaskCommand> get() = store.taskCommands
+
+    /** What the rows were last made from: when the saved commands change and the rows were not touched, they are made again. */
+    private var base = store.taskCommands
+
+    /** The saved commands changed (read late at start, applied here, or changed by a sync): follow them, unless there are edits. */
+    fun follow() {
+        val now = store.taskCommands
+        if (now == base) return
+        val untouched = commands == base
+        base = now
+        if (untouched) reset()
+    }
     val edited get() = commands != saved
 
     /** What is wrong with each row, by key. */
@@ -82,6 +93,7 @@ class CommandsState(private val store: Store) {
     fun reset() {
         rows.clear()
         rows.addAll(toRows(saved))
+        base = saved
         done = false
     }
 
@@ -104,15 +116,8 @@ class CommandsState(private val store: Store) {
 @Composable
 fun CommandsPanel(store: Store, st: CommandsState) {
     val colors = MaterialTheme.colorScheme
-    // The saved commands changed (this page applied them, or settings.json was read late): follow them, unless there are edits here.
-    var before by remember { mutableStateOf(st.saved) }
-    LaunchedEffect(store.taskCommands) {
-        val now = store.taskCommands
-        val untouched = st.commands == before
-        val changed = now != before
-        before = now
-        if (changed && untouched) st.reset()
-    }
+    // settings.json is read a moment after the app starts, and this page may be made before: follow what is saved, unless edited.
+    LaunchedEffect(store.taskCommands) { st.follow() }
     val problems = st.problems
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

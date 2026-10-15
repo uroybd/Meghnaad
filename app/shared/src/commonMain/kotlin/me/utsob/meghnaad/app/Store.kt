@@ -313,6 +313,33 @@ class Store(
         return null
     }
 
+    /** Where this phone syncs to, for the Sync tab: no secret is in it. Null when it is not connected. */
+    val connectionInfo: ConnectionInfo? get() = if (connectionVersion >= 0) vault.connection()?.info() else null
+
+    /**
+     * Change the connection: what is left blank keeps its value (the keys are never shown, so they are not typed again to change
+     * the address). It is tried with a sync; when that fails the connection that worked is put back. Returns what went wrong, or null.
+     */
+    suspend fun changeConnection(endpoint: String, bucket: String, region: String, accessKey: String, secretKey: String, secret: String): String? {
+        val old = vault.connection() ?: return "Not connected."
+        val next = Connection.typed(
+            endpoint.ifBlank { old.endpoint }, bucket.ifBlank { old.bucket }, region,
+            accessKey.ifBlank { old.accessKey }, secretKey.ifBlank { old.secretKey }, secret.ifBlank { old.encryptionSecret },
+        )
+        next.problem()?.let { return it }
+        if (next == old) return null
+        vault.saveConnection(next)
+        val result = sync.request().await()
+        if (result.isFailure) {
+            vault.saveConnection(old)
+            connectionVersion++
+            return sync.error ?: "Could not connect."
+        }
+        connectionVersion++
+        written()
+        return null
+    }
+
     /** Go on without a bucket: the tasks stay on this device, and a connection can be made later in Settings. */
     fun useLocally() {
         vault.localOnly = true
