@@ -23,6 +23,8 @@ uda.estimate.label=Size
 uda.estimate.values=big,medium,small
 uda.points.type=numeric
 uda.points.label=Points
+uda.todo.type=string
+uda.todo.label=Todo
 RC
 
 # Older tasks, so ages differ.
@@ -41,6 +43,11 @@ old=$(line "add Renew passport project:Home" | uuid_of)
 args "$review" start >/dev/null
 args "$review" annotate "waiting on CI before merging" >/dev/null
 args "$review" annotate "ask Sam about the migration" >/dev/null
+# A string UDA and a note are drawn as Markdown, and the boxes of a checklist in the UDA can be ticked.
+args "$review" modify "todo:- [x] read the description
+- [ ] check the **migration** and its rollback
+- [ ] run the tests, see [the guide](https://example.com/review)" >/dev/null
+args "$review" annotate "Needs the **rollback plan** first: [runbook](https://example.com/runbook)" >/dev/null
 args "$old" done >/dev/null
 
 # 2. The final taskrc: `points` is no longer defined, so it becomes an orphan on the review task
@@ -52,10 +59,12 @@ uda.estimate.label=Size
 uda.estimate.values=big,medium,small
 uda.outcome.type=string
 uda.outcome.label=Outcome
+uda.todo.type=string
+uda.todo.label=Todo
 
 report.work.description=Work tasks by size
-report.work.columns=id,priority,estimate,due.relative,description
-report.work.labels=ID,P,Size,Due,Task
+report.work.columns=id,priority,estimate,due.relative,description,todo
+report.work.labels=ID,P,Size,Due,Task,Todo
 report.work.sort=estimate-,due+
 report.work.filter=project:Work status:pending
 

@@ -64,8 +64,8 @@ tasks on the phone and syncs straight with your bucket.
 > UDAs, reports, recurring series, snapshots, purge, import), and in use on a real R2 bucket.
 
 <p align="center">
-  <img src="docs/screenshots/android-widgets.png" alt="The Android app's three widgets: a task list, a burndown and a calendar" width="900" />
-  <br /><sub>The Android app's widgets: tasks (any report, the fields you choose), a burndown and a calendar</sub>
+  <img src="docs/screenshots/android-widgets.png" alt="The Android app's three widgets: a task list, a calendar with the tasks of the selected day, and a burndown" width="900" />
+  <br /><sub>The Android app's widgets: tasks (any report, the fields you choose), a calendar (tap a day to see its tasks) and a burndown</sub>
 </p>
 
 <p align="center">
