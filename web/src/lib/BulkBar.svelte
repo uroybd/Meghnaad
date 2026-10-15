@@ -90,7 +90,9 @@
       class="btn"
       disabled={busy}
       onclick={command}
-      title="Put these tasks at the prompt and type the rest of the command"><Terminal size={15} /> Send to CLI</button
+      aria-label="Send to CLI"
+      title="Send to CLI: put these tasks at the prompt and type the rest of the command"
+      ><Terminal size={15} /> CLI</button
     >
     <MoreMenu
       commands={store.taskCommands}

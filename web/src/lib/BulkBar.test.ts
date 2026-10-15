@@ -148,10 +148,10 @@ describe('the bulk bar', () => {
 
   it('puts the tasks at the prompt: numbers as a list, a whole uuid for one without a number', () => {
     pick(U1, U2, U3);
-    button('Send to CLI').click();
+    button('CLI').click();
     expect(store.promptRequest?.text).toBe(`1,2 ${U3} `);
     const first = store.promptRequest!.n;
-    button('Send to CLI').click();
+    button('CLI').click();
     expect(store.promptRequest!.n).toBe(first + 1);
     expect(selection.count).toBe(3);
   });

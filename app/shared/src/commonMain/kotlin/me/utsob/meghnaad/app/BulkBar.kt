@@ -78,7 +78,7 @@ fun BulkBar(store: Store) {
                 }
                 OutlinedButton(enabled = !busy, onClick = { modifying = true }) { LucideIcon("pencil", size = 15.dp); Text("  Modify…") }
                 // Name the tasks at the prompt and leave the rest to the user.
-                OutlinedButton(enabled = !busy, onClick = { store.requestPrompt(promptFor(picks)) }) { LucideIcon("terminal", size = 15.dp); Text("  Send to CLI") }
+                OutlinedButton(enabled = !busy, onClick = { store.requestPrompt(promptFor(picks)) }) { LucideIcon("terminal", size = 15.dp); Text("  CLI") }
                 MoreMenu(store.taskCommands, "More actions for the selected tasks", enabled = !busy) { c ->
                     store.go { if (run(commandWords(c))) selection.clear() }
                 }
