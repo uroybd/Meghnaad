@@ -384,6 +384,7 @@ class Store(
                 loadAppSettings()
                 notifier.start()
                 launchTask?.let { launchTask = null; openDetail(it) }
+                launchLink?.let { launchLink = null; openFromPrefix(it) }
             } catch (e: Exception) {
                 error = e.message ?: e.toString()
                 setup = Setup.Failed
@@ -592,6 +593,7 @@ class Store(
 
     /** A task to open once the app has started (a notification was tapped while it was not running). */
     private var launchTask: String? = null
+    private var launchLink: String? = null
 
     /** Open a task from outside (a notification): at once, or when the app is ready. */
     fun openFromOutside(uuid: String) {
@@ -600,6 +602,20 @@ class Store(
 
     fun openDetail(uuid: String, from: Entry? = null) {
         detail = DetailRef(uuid, from)
+    }
+
+    /** A task's link (`meghnaad://task/1a2b3c4d`) opened from outside: at once, or when the app is ready. Anything else is ignored. */
+    fun openFromLink(link: String) {
+        val prefix = prefixFromLink(link) ?: return
+        if (setup == Setup.Ready) go { openFromPrefix(prefix) } else launchLink = prefix
+    }
+
+    /** Counts up each time the prompt is asked for with `/` (a hardware keyboard): it takes the focus, with its line selected. */
+    var promptFocus by mutableStateOf(0)
+        private set
+
+    fun focusPrompt() {
+        promptFocus++
     }
 
     /** Put [text] at the console line, with the cursor after it, ready to be carried on. */
@@ -928,8 +944,10 @@ class Store(
 
     /** The task, by its uuid prefix of at least 8 characters (what a widget tap or a link carries). */
     suspend fun openFromPrefix(prefix: String) {
+        // Already showing it: nothing to look up.
+        detail?.uuid?.let { if (it.startsWith(prefix) || it.replace("-", "").startsWith(prefix)) return }
         val found = try {
-            ((tw.run(args = listOf("uuid:$prefix", "uuids")).result as? CliResult.Text)?.value?.lines ?: emptyList())
+            ((tw.run(args = listOf(prefixFilter(prefix), "uuids")).result as? CliResult.Text)?.value?.lines ?: emptyList())
                 .joinToString(" ").split(Regex("\\s+")).filter { it.isNotEmpty() }
         } catch (e: Exception) {
             notify(e.message ?: e.toString(), bad = true)

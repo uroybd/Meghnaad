@@ -15,10 +15,17 @@ cannot: reminders that come with the app closed, and the widgets.
 - Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings, with a layout made
   for a phone: a menu for the pages, and tasks as cards ([On a phone](using.md#on-a-phone)). Review is a card with
   buttons, which `review` in the console opens too.
+- **A table where there is room.** On a tablet, a foldable or a phone held wide (more than 760 dp across), a report is
+  drawn as the web's table, not as cards: the report's own columns, headers that sort (a long press adds a tie-breaker,
+  the web's Shift-click) with a button to group by the column, a tick box on each row and the row's buttons at the end.
+  Narrower than that you get the cards.
 - **Pull down to sync.** At the top of any page but the console, a pull down syncs with the bucket and redraws the page.
 - **Reminders that work with the app closed.** The same options as the web app's (Menu → Reminders); the phone wakes the
   app at the moment something is due or comes off `wait`, and the notification opens the task. Allow notifications when
   asked. The one-a-day digest of what is overdue comes at the hour you chose for dates with no time.
+- **Task links.** The link button in a task's details copies `meghnaad://task/1a2b3c4d` (the first 8 characters of its
+  uuid, as the web app's `/task/1a2b3c4d`); opening that link, from a note or another app, opens the task. It works on
+  the phone that has the task: the link names the task, and does not carry it.
 - **Export and import** use the system's file pickers: `export` offers the file to keep, `import` reads one and says what
   it would do before it writes anything.
 - **Works offline.** The engine and the tasks are on the phone; changes sync when there is a network.

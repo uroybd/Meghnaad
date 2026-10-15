@@ -22,6 +22,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -53,6 +54,7 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
     val completer = remember { Completer() }
     val focus = remember { FocusRequester() }
     val clipboard = LocalClipboardManager.current
+    val focusManager = LocalFocusManager.current
     var cursor by remember { mutableStateOf(-1) } // -1 = the line being typed
     var saved by remember { mutableStateOf("") }
     var copied by remember { mutableStateOf(false) }
@@ -68,6 +70,15 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
         store.promptLine = r.first
         cursor = -1
         completer.close()
+        runCatching { focus.requestFocus() }
+    }
+    // `/` from anywhere that is not a text field (a hardware keyboard): the prompt, with its line selected.
+    var focusAsked by remember { mutableStateOf(store.promptFocus) }
+    var selectAll by remember { mutableStateOf(0) }
+    LaunchedEffect(store.promptFocus) {
+        if (store.promptFocus == focusAsked) return@LaunchedEffect
+        focusAsked = store.promptFocus
+        selectAll++
         runCatching { focus.requestFocus() }
     }
     LaunchedEffect(copied) {
@@ -170,17 +181,23 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 onSubmit = ::submit,
                 focusRequester = focus,
                 completeSignal = completeSignal,
+                selectAllSignal = selectAll,
                 menuAbove = true,
                 singleLine = false,
                 visualTransformation = colouring,
                 onSize = { if (oneLine == 0 || it.height < oneLine) oneLine = it.height },
                 onKey = { e, _ ->
                     when {
+                        e.key == Key.L && e.isCtrlPressed -> {
+                            store.clearEntries()
+                            true
+                        }
                         completer.menu != null -> false
                         e.key == Key.DirectionUp -> older()
                         e.key == Key.DirectionDown -> newer()
-                        e.key == Key.L && e.isCtrlPressed -> {
-                            store.clearEntries()
+                        // With no menu to close, Escape leaves the prompt.
+                        e.key == Key.Escape -> {
+                            focusManager.clearFocus()
                             true
                         }
                         else -> false

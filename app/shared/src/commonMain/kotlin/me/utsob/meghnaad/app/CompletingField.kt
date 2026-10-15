@@ -98,6 +98,8 @@ fun CompletingField(
     focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
     /** Counts up each time the Complete button is pressed (the first value is the start). */
     completeSignal: Int = 0,
+    /** Counts up each time the whole line is to be selected (`/` focuses the prompt, as in the web). */
+    selectAllSignal: Int = 0,
     /** More than one line when [singleLine] is off: a long command wraps, up to this many lines, and then scrolls. */
     maxLines: Int = if (singleLine) 1 else 6,
     /** How the text is drawn (the console colours Taskwarrior syntax); it must not change the text itself. */
@@ -124,6 +126,12 @@ fun CompletingField(
     if (completeSignal != seenSignal) {
         seenSignal = completeSignal
         complete()
+    }
+
+    var seenSelect by remember { mutableStateOf(selectAllSignal) }
+    if (selectAllSignal != seenSelect) {
+        seenSelect = selectAllSignal
+        tfv = tfv.copy(selection = TextRange(0, tfv.text.length))
     }
 
     Column(modifier) {

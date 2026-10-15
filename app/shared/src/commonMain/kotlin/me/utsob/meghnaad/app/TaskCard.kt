@@ -245,7 +245,7 @@ fun ProjectPath(segments: List<String>, modifier: Modifier = Modifier, onPick: (
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Actions(store: Store, row: Row, from: Entry?, onEdit: ((Row) -> Unit)?, ctx: Ctx, scope: kotlinx.coroutines.CoroutineScope) {
+fun Actions(store: Store, row: Row, from: Entry?, onEdit: ((Row) -> Unit)?, ctx: Ctx, scope: kotlinx.coroutines.CoroutineScope) {
     val colors = MaterialTheme.colorScheme
     var sure by remember(row.uuid) { mutableStateOf(false) }
     val open = row.status == "pending"

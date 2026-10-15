@@ -23,6 +23,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,12 +83,15 @@ fun DetailScreen(store: Store, ref: DetailRef) {
         }
     }
 
+    val clipboard = LocalClipboardManager.current
+
     fun act(vararg args: String) = store.go { act(ref.from, listOf(uuid) + args.toList()) }
 
     Surface(Modifier.fillMaxSize(), color = colors.surfaceContainerLow) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(live?.description ?: "Task", Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 3)
+                IconAction("link", "Copy a link to this task", { clipboard.setText(AnnotatedString(taskLink(uuid))); store.notify("Link copied.") }, size = 20.dp)
                 IconAction("x", "Close details", { store.detail = null }, size = 20.dp)
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {

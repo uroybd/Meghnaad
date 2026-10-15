@@ -35,6 +35,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,7 +83,16 @@ private fun PhoneShell(store: Store) {
             }
         },
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.fillMaxSize().onPreviewKeyEvent { e ->
+                // `/` focuses the prompt from anywhere that isn't a text field (a hardware keyboard).
+                val slash = e.type == KeyEventType.KeyDown && e.key == Key.Slash && !e.isCtrlPressed && !e.isMetaPressed && !e.isAltPressed
+                if (slash && !TypingFocus.typing && store.detail == null) {
+                    store.focusPrompt()
+                    true
+                } else false
+            },
+        ) {
             TopBar(store, onMenu = { scope.launch { store.menuOpen = true } })
             Banners(store)
             Box(Modifier.weight(1f).fillMaxWidth()) {

@@ -3,6 +3,7 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -74,6 +75,9 @@ fun TasksView(store: Store) {
     val heads = if (result != null && ctx != null) groupHeads(result, ctx) else emptyList()
     val dimmed = entry?.loading == true && result != null
 
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // A table where there is room for one (the web's width), cards where there is not.
+    val wide = maxWidth > TABLE_FROM
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
         item { FilterBar(store) }
         item { BulkBar(store) }
@@ -82,6 +86,14 @@ fun TasksView(store: Store) {
             entry.failure != null -> item { Text(entry.failure!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
             result == null -> item { ResultBlock(store, entry) }
             result.rows.isEmpty() -> item { Dim("No tasks match.", Modifier.padding(vertical = 16.dp), size = 14) }
+            wide -> reportTable(
+                store, result, ctx!!, heads, entry,
+                activeTags = activeTags(store.filter),
+                onTag = { store.filter = toggleTag(store.filter, it) },
+                onEdit = { store.editing = EditRef(it, entry) },
+                onSort = { column, tieBreak -> sortReport(store, result, column, tieBreak) },
+                onGroup = { column -> groupReport(store, result, column) },
+            )
             else -> {
                 item { SortBar(store, result) }
                 items(result.rows.size, key = { result.rows[it].uuid }) { i ->
@@ -99,16 +111,32 @@ fun TasksView(store: Store) {
                         )
                     }
                 }
-                item {
-                    Dim(
-                        if (result.rows.size == result.matched) "${result.matched} ${if (result.matched == 1) "task" else "tasks"}"
-                        else "showing ${result.rows.size} of ${result.matched}",
-                        Modifier.padding(vertical = 8.dp),
-                    )
-                }
             }
         }
+        // The count, under the cards or the table.
+        if (result != null && result.rows.isNotEmpty() && entry?.failure == null) item {
+            Dim(
+                if (result.rows.size == result.matched) "${result.matched} ${if (result.matched == 1) "task" else "tasks"}"
+                else "showing ${result.rows.size} of ${result.matched}",
+                Modifier.padding(vertical = 8.dp),
+            )
+        }
     }
+    }
+}
+
+/** What a tap on a column's header does: its sort key is added, reversed or dropped, as a rewrite of `rc.report.<name>.sort:…` in the filter. */
+private fun sortReport(store: Store, result: ReportResult, column: String, tieBreak: Boolean) {
+    val default = store.reports.firstOrNull { it.name == store.report }?.sort
+    val res = clickSort(parseSort(result.sort), baseColumn(column), tieBreak)
+    store.filter = withSortOverride(store.filter, store.report, if (res.reset) null else serializeSort(res.keys), default)
+}
+
+/** Group by [column] (null: stop grouping): the same rewrite, with the trailing `/` on its key. */
+private fun groupReport(store: Store, result: ReportResult, column: String?) {
+    val default = store.reports.firstOrNull { it.name == store.report }?.sort
+    val ks = if (column != null) toggleGroup(parseSort(result.sort), column, parseSort(default)) else clearGroups(parseSort(result.sort))
+    store.filter = withSortOverride(store.filter, store.report, serializeSort(ks), default)
 }
 
 /** Phones have no column headers to tap, so a sort picker stands in for them (the same command underneath). */
@@ -120,17 +148,9 @@ private fun SortBar(store: Store, result: ReportResult) {
     val udas = store.config?.config?.udas ?: emptyMap()
     val columns = result.columns.filter { baseColumn(it.name) in SORTABLE || baseColumn(it.name) in udas }
     if (columns.isEmpty()) return
-    val default = store.reports.firstOrNull { it.name == store.report }?.sort
+    fun sortBy(column: String) = sortReport(store, result, column, false)
 
-    fun sortBy(column: String) {
-        val res = clickSort(parseSort(result.sort), baseColumn(column), false)
-        store.filter = withSortOverride(store.filter, store.report, if (res.reset) null else serializeSort(res.keys), default)
-    }
-
-    fun groupBy(column: String?) {
-        val ks = if (column != null) toggleGroup(parseSort(result.sort), column, parseSort(default)) else clearGroups(parseSort(result.sort))
-        store.filter = withSortOverride(store.filter, store.report, serializeSort(ks), default)
-    }
+    fun groupBy(column: String?) = groupReport(store, result, column)
 
     FlowRow(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

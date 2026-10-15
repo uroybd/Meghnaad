@@ -23,6 +23,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- A task's link, meghnaad://task/<first 8 characters of its uuid>, which the task's "copy a link" button makes. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="meghnaad" android:host="task" />
+            </intent-filter>
         </activity>
         <receiver
             android:name="me.utsob.meghnaad.TasksWidget"

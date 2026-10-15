@@ -19,7 +19,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -44,6 +46,22 @@ private val FIELD_HEIGHT = 40.dp
 /** A one-line field is as round as the select beside it; a taller one is rounded less. */
 private val PILL = ControlShape
 private val BOX = ControlShape
+
+/** Whether a text field has the focus: `/` is a shortcut for the prompt only when none does (`typing` in ConsoleInput.svelte). */
+object TypingFocus {
+    var fields by mutableIntStateOf(0)
+        private set
+
+    val typing get() = fields > 0
+
+    @Composable
+    fun Track(focused: Boolean) {
+        DisposableEffect(focused) {
+            if (focused) fields++
+            onDispose { if (focused) fields-- }
+        }
+    }
+}
 
 @Composable
 fun OutlinedTextField(
@@ -73,6 +91,7 @@ fun OutlinedTextField(
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
+    TypingFocus.Track(focused)
     // A field is a pill while its text is on one line, and a rounded box once it wraps.
     var lines by remember { mutableStateOf(1) }
     val oneLine = singleLine || (minLines == 1 && lines <= 1)

@@ -2,6 +2,7 @@ package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,12 +29,18 @@ fun ConsoleView(store: Store) {
     Column(Modifier.fillMaxSize()) {
         if (store.entries.isEmpty()) {
             Dim(
-                "Type a command below: next, add Buy milk due:tomorrow, project:Home +work list, … Tab completes; help lists them all.",
+                "Type a command below, like task next or task add Buy milk due:tomorrow. Press / to focus the prompt, Tab to complete, ↑ for history, help for commands.",
                 Modifier.weight(1f).padding(16.dp),
                 size = 14,
             )
         } else {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = state, verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)) {
+                // The web's "clear" button, at the head of the scrollback (Ctrl+L does it from the prompt).
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { store.clearEntries() }) { LucideIcon("eraser", size = 14.dp); Text("  clear") }
+                    }
+                }
                 items(store.entries.toList(), key = { it.id }) { e ->
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (e.title.isNotEmpty()) {

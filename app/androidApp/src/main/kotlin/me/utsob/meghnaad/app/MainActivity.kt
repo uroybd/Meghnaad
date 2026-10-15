@@ -95,6 +95,11 @@ class MainActivity : ComponentActivity() {
 
     private fun openWhatWasTapped(intent: Intent?) {
         if (intent == null) return
+        // A task's link (`meghnaad://task/1a2b3c4d`), from another app or a note.
+        intent.data?.takeIf { intent.action == Intent.ACTION_VIEW }?.let {
+            intent.data = null
+            store.openFromLink(it.toString())
+        }
         intent.getStringExtra(EXTRA_TASK)?.let {
             intent.removeExtra(EXTRA_TASK)
             store.openFromOutside(it)
