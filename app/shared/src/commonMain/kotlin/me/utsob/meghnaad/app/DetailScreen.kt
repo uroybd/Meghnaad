@@ -87,7 +87,7 @@ fun DetailScreen(store: Store, ref: DetailRef) {
 
     fun act(vararg args: String) = store.go { act(ref.from, listOf(uuid) + args.toList()) }
 
-    Surface(Modifier.fillMaxSize(), color = colors.surfaceContainerLow) {
+    Sheet(drawer = true, width = 560.dp, color = colors.surfaceContainerLow) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(live?.description ?: "Task", Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 3)

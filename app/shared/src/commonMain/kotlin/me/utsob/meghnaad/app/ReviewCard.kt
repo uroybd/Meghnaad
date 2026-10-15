@@ -65,7 +65,7 @@ fun ReviewCard(store: Store) {
         store.go { review.press(ch.toChar().toString()) }
         true
     }
-    Surface(Modifier.fillMaxSize().then(keys), color = colors.surfaceContainerLow) {
+    Sheet(drawer = false, width = 760.dp, color = colors.surfaceContainerLow, modifier = keys, scrim = true) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (review.phase in setOf(ReviewPhase.Running, ReviewPhase.Asking, ReviewPhase.Modifying, ReviewPhase.Editing)) {

@@ -1,5 +1,7 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,7 +60,7 @@ fun SettingsPage(store: Store, state: SettingsState) {
                 }
             }
         }
-        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        Column(Modifier.weight(1f).widthIn(max = 820.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             when (store.settingsTab) {
                 SettingsTab.Taskrc -> TaskrcPanel(store, state.taskrc)
                 SettingsTab.Commands -> CommandsPanel(store, state.commands)
@@ -68,6 +70,8 @@ fun SettingsPage(store: Store, state: SettingsState) {
                 SettingsTab.Sync -> SyncPanel(store)
             }
             if (APP_VERSION.isNotEmpty()) Dim("Meghnaad $APP_VERSION", Modifier.padding(vertical = 16.dp), 12)
+            // Room under the last control, so the floating + never covers it (the web's 72 px under every page).
+            Box(Modifier.height(72.dp))
         }
     }
 }

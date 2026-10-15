@@ -150,7 +150,7 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
     val st = remember(row?.uuid, initialDescription) { EditorState(store, row, initialDescription) }
     val colors = MaterialTheme.colorScheme
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = colors.surfaceContainerLow) {
+        Sheet(drawer = false, width = 760.dp, color = colors.surfaceContainerLow) {
             Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                 // What the form's own Enter does on the web: save, or add, when there is something to save.
                 fun submit() {

@@ -1,5 +1,9 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -75,6 +79,30 @@ fun Pill(
             fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else null,
             maxLines = 1,
         )
+    }
+}
+
+/**
+ * What opens over a page: the whole screen on a phone and, where there is room (the web's width), what the web draws: a drawer
+ * on the right for a task's details, or a card in the middle for a form, over a dimmed page when [scrim] says so.
+ */
+@Composable
+fun Sheet(drawer: Boolean, width: Dp, color: Color, modifier: Modifier = Modifier, scrim: Boolean = false, content: @Composable () -> Unit) {
+    val outline = MaterialTheme.colorScheme.outline
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        when {
+            maxWidth <= TABLE_FROM -> Surface(modifier.fillMaxSize(), color = color, content = content)
+            drawer -> Surface(
+                modifier.align(Alignment.CenterEnd).fillMaxHeight().widthIn(max = width),
+                color = color, border = BorderStroke(1.dp, outline), shadowElevation = 8.dp, content = content,
+            )
+            else -> Box(
+                Modifier.fillMaxSize().let { if (scrim) it.background(Color.Black.copy(alpha = 0.32f)).clickable(interactionSource = null, indication = null) {} else it },
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(modifier.widthIn(max = width).fillMaxHeight(0.94f), shape = PanelShape, color = color, border = BorderStroke(1.dp, outline), shadowElevation = 8.dp, content = content)
+            }
+        }
     }
 }
 
