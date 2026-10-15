@@ -545,6 +545,10 @@
       z-index: 2;
       background: var(--bg);
     }
+    /* The cell of an open menu is above the cells of the rows after it, which are pinned over the page the same way. */
+    .pinned tbody tr td.actions:has(:global(.menu)) {
+      z-index: 3;
+    }
     .pinned tbody tr td.actions {
       z-index: 1;
       padding-left: 10px;
@@ -967,13 +971,19 @@
       margin-left: 0;
       flex-basis: 100%;
     }
-    /* A field written in Markdown is a few lines: on a card it sits in a faint frame of its own, so it reads as a field beneath
-       the task and not as more of its line. */
-    td > .md {
+    /* A field written in Markdown is a few lines: on a card it sits in a faint frame of its own, label and all, so it reads
+       as a field beneath the task and not as more of its line. Its text and the notes keep the plain weight a started or
+       coloured task's description does not pass on to them (the Android app's cards do the same). */
+    td:has(> .md) {
+      display: block;
       flex-basis: 100%;
       padding: 6px 10px 8px;
       border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
       border-radius: 6px;
+    }
+    .md,
+    .note {
+      font-weight: 400;
     }
   }
 </style>
