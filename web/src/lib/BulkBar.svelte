@@ -90,7 +90,7 @@
       class="btn"
       disabled={busy}
       onclick={command}
-      title="Put these tasks at the prompt and type the rest of the command"><Terminal size={15} /> Command</button
+      title="Put these tasks at the prompt and type the rest of the command"><Terminal size={15} /> Send to CLI</button
     >
     <MoreMenu
       commands={store.taskCommands}

@@ -208,11 +208,11 @@ command would actually change are listed. A single task is a plain yes/no. The d
   snapshot are not in it. It is fetched when you open the section (the hidden `_history <uuid>`), not with the task,
   so `info`, the pages and exports never carry it. Buttons: done, start/stop, edit, delete.
 - **Bulk actions.** In the Tasks table, tick the box on a row (the box in the header ticks them all) and, once two or
-  more are ticked, a bar appears with **Complete**, **Delete**, **Modify…**, **Command** and **Clear**. Complete and
+  more are ticked, a bar appears with **Complete**, **Delete**, **Modify…**, **Send to CLI** and **Clear**. Complete and
   Delete act on every ticked task (Delete asks once, as the row's own button does, unless `confirmation` is off).
   **Modify…** opens an editor of lines, each a field and a value (project, priority, due, wait, scheduled, until,
   repeat, depends, your UDAs, and tags to add or remove): it says what it will do, and applies all the lines to every
-  ticked task as one `modify`. An empty value clears the field. **Command** puts the ticked tasks at the prompt (their
+  ticked task as one `modify`. An empty value clears the field. **Send to CLI** puts the ticked tasks at the prompt (their
   numbers as a list, `1,3-5`, and the whole uuid of any without a number) and leaves you there to type the rest, for
   example `annotate called them`. A selection only lasts while it is in the table: another filter, or leaving the page,
   ends it. A long selection goes in several commands of 120 tasks, so `undo` takes it back a batch at a time.

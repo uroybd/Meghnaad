@@ -10,11 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -80,6 +77,8 @@ fun BulkBar(store: Store) {
                     Text(if (confirmDelete) "  Delete ${picks.size}? Tap again" else "  Delete", color = MaterialTheme.colorScheme.error)
                 }
                 OutlinedButton(enabled = !busy, onClick = { modifying = true }) { LucideIcon("pencil", size = 15.dp); Text("  Modify…") }
+                // Name the tasks at the prompt and leave the rest to the user.
+                OutlinedButton(enabled = !busy, onClick = { store.requestPrompt(promptFor(picks)) }) { LucideIcon("terminal", size = 15.dp); Text("  Send to CLI") }
                 MoreMenu(store.taskCommands, "More actions for the selected tasks", enabled = !busy) { c ->
                     store.go { if (run(commandWords(c))) selection.clear() }
                 }
