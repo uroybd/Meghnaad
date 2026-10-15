@@ -1,5 +1,7 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -124,7 +126,7 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
         Text("taskrc", fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         Dim(
             "UDAs, custom reports, contexts and journal settings live in your ~/.taskrc, not in your synced data, so this app keeps a copy. " +
-                "They are saved with your tasks and stay until you change them. Edit below, or paste your taskrc, then Apply. Only those settings are kept: " +
+                "They are saved with your tasks and stay until you change them. Edit below, or paste or choose your taskrc, then Apply. Only those settings are kept: " +
                 "sync settings and anything that looks like a credential are blocked; they are never stored, logged or shown.",
             size = 13,
         )
@@ -167,7 +169,15 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
                 Text("Saved ${r.udas} UDA${if (r.udas == 1) "" else "s"}, ${r.reports} report${if (r.reports == 1) "" else "s"}, ${r.contexts} context${if (r.contexts == 1) "" else "s"}.", color = extras.ok, fontSize = 13.sp)
                 if (r.blocked.isNotEmpty()) Text("Blocked for safety (${r.blocked.size}): ${r.blocked.joinToString(", ")}", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 r.warnings.forEach { Text(it, color = extras.warn, fontSize = 13.sp) }
-                if (r.ignored.isNotEmpty()) Dim("${r.ignored.size} other settings not used: ${r.ignored.joinToString(", ")}", size = 12)
+                if (r.ignored.isNotEmpty()) {
+                    // Closed until asked for, as the web's: the list can be long.
+                    var showIgnored by remember(r) { mutableStateOf(false) }
+                    Row(Modifier.clickable { showIgnored = !showIgnored }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        LucideIcon(if (showIgnored) "chevron-down" else "chevron-right", size = 13.dp)
+                        Dim("${r.ignored.size} other settings not used", size = 12)
+                    }
+                    if (showIgnored) Text(r.ignored.joinToString(", "), fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = colors.onSurfaceVariant)
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {

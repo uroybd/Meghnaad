@@ -1,5 +1,14 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,7 +47,25 @@ fun ReviewCard(store: Store) {
     var args by remember { mutableStateOf("") }
     val choosing = review.phase == ReviewPhase.Running && !review.busy
 
-    Surface(Modifier.fillMaxSize(), color = colors.surfaceContainerLow) {
+    // The keys of tasksh's menu (and y, n to a question) on a hardware keyboard, unless something is being typed; Enter is the focused
+    // button's. Escape ends the review, or cancels the change being typed (ReviewCard.svelte, ReviewBar.svelte).
+    val keys = Modifier.onPreviewKeyEvent { e ->
+        if (e.type != KeyEventType.KeyDown || e.isCtrlPressed || e.isMetaPressed || e.isAltPressed) return@onPreviewKeyEvent false
+        if (e.key == Key.Escape) {
+            when (review.phase) {
+                ReviewPhase.Modifying -> { args = ""; store.go { review.modify("") } }
+                ReviewPhase.Done -> review.close()
+                else -> review.quit()
+            }
+            return@onPreviewKeyEvent true
+        }
+        if (TypingFocus.typing) return@onPreviewKeyEvent false
+        val ch = e.utf16CodePoint
+        if (ch <= 32 || ch > 126) return@onPreviewKeyEvent false
+        store.go { review.press(ch.toChar().toString()) }
+        true
+    }
+    Surface(Modifier.fillMaxSize().then(keys), color = colors.surfaceContainerLow) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (review.phase in setOf(ReviewPhase.Running, ReviewPhase.Asking, ReviewPhase.Modifying, ReviewPhase.Editing)) {

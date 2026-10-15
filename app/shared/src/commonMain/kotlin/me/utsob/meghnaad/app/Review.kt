@@ -128,6 +128,15 @@ class ReviewSession(private val store: Store) {
         }
     }
 
+    /** A key pressed (Enter is the usual answer): the menu's choice, or y or n to a question (`press` in review.svelte.ts). */
+    suspend fun press(key: String) {
+        if (busy) return
+        val k = key.lowercase()
+        if (phase == ReviewPhase.Setup && (k == "y" || k == "n")) return answerSetup(k == "y")
+        if (phase == ReviewPhase.Asking && (k == "y" || k == "n")) return answer(k == "y")
+        if (phase == ReviewPhase.Running) menuKey(if (key == "Enter") "" else key)?.let { act(it) }
+    }
+
     /** One of the menu's choices. */
     suspend fun act(key: ReviewKey) {
         val task = row
