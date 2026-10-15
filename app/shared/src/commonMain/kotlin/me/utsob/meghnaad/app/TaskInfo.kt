@@ -73,6 +73,10 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
     val dates = listOf("Entered" to task.entry, "Due" to task.due, "Scheduled" to task.scheduled, "Wait" to task.wait, "Until" to task.until, "Started" to task.start, "Ended" to task.end, "Modified" to task.modified)
     // The journal's "Started task"/"Stopped task" notes are bookkeeping; the sessions table shows them.
     val notes = visibleNotes(task.annotations, store.config?.journal)
+    // A string UDA and a note may hold Markdown: its tree, or null for text that is only words.
+    val stringUdas = udaKeys.filter { defs.getValue(it).type == "string" }
+    val udaTrees = remember(task.uuid, task.modified) { stringUdas.zip(markdownTrees(stringUdas.map { task.extra.getValue(it) })).toMap() }
+    val noteTrees = remember(task.uuid, task.modified) { markdownTrees(notes.map { it.text }) }
     val totalTracked = task.activeSeconds ?: task.sessions.sumOf { it.seconds }
 
     Column(Modifier.fillMaxWidth()) {
@@ -154,7 +158,14 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
                 }
             }
         }
-        for (k in udaKeys) Field(udaLabel(defs.getValue(k))) { Text(task.extra.getValue(k), fontSize = 14.sp) }
+        for (k in udaKeys) Field(udaLabel(defs.getValue(k))) {
+            val tree = udaTrees[k]
+            if (tree != null) {
+                MarkdownView(tree, onToggle = { line -> store.go { tickBox(null, task.uuid, k, task.extra.getValue(k), line) } })
+            } else {
+                Text(task.extra.getValue(k), fontSize = 14.sp)
+            }
+        }
         Field("Urgency") { UrgencyText(task.urgency) }
         if (task.virtualTags.isNotEmpty()) Field("Virtual tags") { Dim(task.virtualTags.joinToString(" "), size = 13) }
 
@@ -222,10 +233,11 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
 
         if (notes.isNotEmpty()) {
             Heading("Annotations")
-            for (a in notes) {
+            notes.forEachIndexed { i, a ->
                 Row(Modifier.padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Dim(formatMoment(a.entry, store.offsetAt(a.entry), noteFmt), size = 12)
-                    Text(a.text, fontSize = 14.sp)
+                    val tree = noteTrees.getOrNull(i)
+                    if (tree != null) MarkdownView(tree, Modifier.weight(1f)) else Text(a.text, fontSize = 14.sp)
                 }
             }
         }

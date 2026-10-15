@@ -4,6 +4,7 @@
 //! result, not once per cell.
 
 use crate::helpers::{format_date, vague};
+use crate::markdown::{self, Node};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -132,13 +133,29 @@ impl Ctx {
     }
 }
 
+/// A note under a description.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct NoteCell {
+    /// When it was made, in the report's date format.
+    pub at: String,
+    pub text: String,
+    /// The moment it was made, which names it: `annotation_<entry>` is what `modify` takes to change its text.
+    pub entry: i64,
+    /// The text as Markdown, when it uses any (a plain note is drawn from `text`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocks: Option<Vec<Node>>,
+}
+
 /// What a cell shows.
 #[derive(Serialize, Default, Debug, PartialEq)]
 pub struct Cell {
     pub text: String,
-    /// Extra lines under the text (annotations).
+    /// The notes under the text (annotations).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lines: Option<Vec<String>>,
+    pub notes: Option<Vec<NoteCell>>,
+    /// The text as Markdown, in a string UDA that uses any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocks: Option<Vec<Node>>,
     /// How to style it: `dim`, `multiline`, `pri-h`, `urg-crit`, …
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cls: Option<String>,
@@ -201,7 +218,7 @@ fn date_cell(ts: Option<i64>, format: Option<&str>, ctx: &Ctx) -> Cell {
 }
 
 fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx) -> Cell {
-    let notes: Vec<String> = row
+    let shown: Vec<&Note> = row
         .annotations
         .iter()
         .filter(|n| {
@@ -209,31 +226,49 @@ fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx) -> Cell {
                 .as_ref()
                 .is_none_or(|j| n.text != j.start && n.text != j.stop)
         })
-        .map(|n| format!("{} {}", ctx.written(n.entry, ctx.dates.annotation.as_ref()), n.text))
         .collect();
-    let count = if notes.is_empty() {
+    let at = |n: &Note| ctx.written(n.entry, ctx.dates.annotation.as_ref());
+    // One line each, for the formats that put them beside the description.
+    let line = |n: &&Note| format!("{} {}", at(n), n.text);
+    let count = if shown.is_empty() {
         String::new()
     } else {
-        format!(" [{}]", notes.len())
+        format!(" [{}]", shown.len())
     };
     match format {
         Some("desc") => Cell::text(&row.description),
         // Like Taskwarrior: each annotation follows the description with its date.
         Some("oneline") => Cell::text(
-            std::iter::once(row.description.as_str())
-                .chain(notes.iter().map(String::as_str))
+            std::iter::once(row.description.clone())
+                .chain(shown.iter().map(line))
                 .collect::<Vec<_>>()
                 .join(" "),
         ),
         Some("truncated") => Cell::text(truncate(&row.description, 40)),
         Some("truncated_count") => Cell::text(truncate(&row.description, 40) + &count),
         Some("count") => Cell::text(row.description.clone() + &count),
-        // Taskwarrior's default shows the annotations beneath the description.
+        // Taskwarrior's default shows annotations beneath the description.
         _ => Cell {
-            lines: non_empty(notes),
+            notes: non_empty(
+                shown
+                    .iter()
+                    .map(|n| NoteCell {
+                        at: at(n),
+                        text: n.text.clone(),
+                        entry: n.entry,
+                        blocks: markup(&n.text),
+                    })
+                    .collect(),
+            ),
             ..Cell::text(&row.description)
         },
     }
+}
+
+/// The tree of a text that uses Markdown; none for one that is only words.
+pub fn markup(text: &str) -> Option<Vec<Node>> {
+    let tree = markdown::parse(text);
+    (!markdown::is_plain(&tree)).then_some(tree)
 }
 
 fn project_cell(project: Option<&str>, format: Option<&str>) -> Cell {
@@ -270,11 +305,15 @@ fn uda_cell(row: &Row, col: &Col, ctx: &Ctx) -> Cell {
     if let (Some(ind), Some("indicator")) = (def.and_then(|d| d.indicator.as_deref()), col.format.as_deref()) {
         return Cell::text(ind);
     }
-    // A multi-line value keeps its lines instead of running them together.
+    // A string may hold Markdown; a multi-line value keeps its lines instead of running them together.
+    let cell = Cell {
+        blocks: def.filter(|d| d.kind == "string").and_then(|_| markup(raw)),
+        ..Cell::text(raw)
+    };
     if raw.contains('\n') {
-        Cell::text(raw).cls("multiline")
+        cell.cls("multiline")
     } else {
-        Cell::text(raw)
+        cell
     }
 }
 
@@ -475,8 +514,13 @@ mod tests {
         );
         let c = one("description", row, json!({}));
         assert_eq!(c.text, long);
-        assert_eq!(c.lines, Some(vec!["2026-10-07 12:30 note".to_owned()]));
-        assert_eq!(one("description", json!({ "description": "a" }), json!({})).lines, None);
+        let notes = c.notes.unwrap();
+        assert_eq!(
+            (notes[0].at.as_str(), notes[0].text.as_str(), notes[0].entry),
+            ("2026-10-07 12:30", "note", NOW)
+        );
+        assert_eq!(notes[0].blocks, None);
+        assert_eq!(one("description", json!({ "description": "a" }), json!({})).notes, None);
     }
 
     #[test]
@@ -484,9 +528,9 @@ mod tests {
         let row = json!({ "description": "t", "annotations": [
             { "entry": NOW, "text": "Started" }, { "entry": NOW, "text": "mine" }, { "entry": NOW, "text": "Stopped" } ] });
         let ctx = json!({ "journal": { "start": "Started", "stop": "Stopped" } });
-        assert_eq!(one("description", row.clone(), ctx.clone()).lines.unwrap().len(), 1);
+        assert_eq!(one("description", row.clone(), ctx.clone()).notes.unwrap().len(), 1);
         assert_eq!(one("description.count", row.clone(), ctx).text, "t [1]");
-        assert_eq!(one("description", row, json!({})).lines.unwrap().len(), 3);
+        assert_eq!(one("description", row, json!({})).notes.unwrap().len(), 3);
     }
 
     #[test]
@@ -605,6 +649,25 @@ mod tests {
         assert_eq!(one("absent", row.clone(), ctx.clone()).text, "");
         // A date UDA that is not a number is shown as it is.
         assert_eq!(one("when", json!({ "extra": { "when": "soon" } }), ctx).text, "soon");
+    }
+
+    #[test]
+    fn notes_and_string_udas_carry_their_markdown() {
+        let row = json!({ "description": "t", "annotations": [
+            { "entry": 5, "text": "- [ ] milk\n- [x] eggs" }, { "entry": 6, "text": "just words" } ],
+            "extra": { "plan": "**now**", "words": "a b", "count": "**1**", "legacy": "**x**" } });
+        let ctx = json!({ "udas": { "plan": { "type": "string" }, "words": { "type": "string" }, "count": { "type": "numeric" } } });
+        let notes = one("description", row.clone(), ctx.clone()).notes.unwrap();
+        assert_eq!(notes[0].blocks.as_ref().unwrap()[0].t, "ul");
+        assert_eq!(notes[0].text, "- [ ] milk\n- [x] eggs");
+        // A note that is only words is drawn from its text.
+        assert_eq!(notes[1].blocks, None);
+        assert_eq!(one("plan", row.clone(), ctx.clone()).blocks.unwrap()[0].c[0].t, "b");
+        assert_eq!(one("plan", row.clone(), ctx.clone()).text, "**now**");
+        // Only a string UDA is read as Markdown: not a plain one, another type, or a property the taskrc does not define.
+        assert_eq!(one("words", row.clone(), ctx.clone()).blocks, None);
+        assert_eq!(one("count", row.clone(), ctx.clone()).blocks, None);
+        assert_eq!(one("legacy", row, ctx).blocks, None);
     }
 
     #[test]

@@ -14,12 +14,18 @@ import kotlinx.serialization.json.put
 // Report cells: what a column spec like `due.relative` or `description.truncated` shows for a task is the engine's
 // (`tc_core::cells`, through the helpers); what is here is the zone the phone is in and the styling hints a row has.
 
+/** A note under a description: when it was made, its text, and its Markdown when it uses any. */
+@Serializable
+data class NoteCell(val at: String, val text: String, val entry: Long, val blocks: List<Md>? = null)
+
 /** What a cell shows. */
 @Serializable
 data class Cell(
     val text: String,
-    /** Extra lines under the text (annotations). */
-    val lines: List<String>? = null,
+    /** The notes under the text (annotations). */
+    val notes: List<NoteCell>? = null,
+    /** The text as Markdown, in a string UDA that uses any. */
+    val blocks: List<Md>? = null,
     /** How to style it: `dim`, `multiline`, `pri-h`, `urg-crit`, … */
     val cls: String? = null,
     /** A project path as its parts, so the dots between them can be muted. */

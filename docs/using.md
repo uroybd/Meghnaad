@@ -242,6 +242,14 @@ command would actually change are listed. A single task is a plain yes/no. The d
   new line; in a UDA field Enter starts a new line and Ctrl/Cmd+Enter saves. How a table shows annotations is up to
   the report's `description` column, as in Taskwarrior 3 (`description`, `description.oneline`, `description.count`,
   `description.desc`).
+- **Notes and string UDAs are drawn as Markdown** in the detail view and in the reports (tables and, in the Android app,
+  cards): paragraphs (a line break stays a line break), `#` headings, `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``
+  and fenced code, `[links](https://…)` and bare web addresses, bullet and numbered lists (nested), `>` quotes and `---`.
+  Not tables, images, footnotes or HTML: those are shown as typed, and a link is only made to `http`, `https` or
+  `mailto`. Text with none of it is shown as it always was, and the stored text is never changed by being shown.
+  **Checklists** (`- [ ] milk`, `- [x] eggs`) have boxes you can click in a string UDA: the app changes that one box in
+  the text and saves the whole new text with an ordinary `modify <uda>:<text>`, so the CLI, a hook and the history see
+  a normal edit. The boxes in a note are only shown, because Taskwarrior has no way to change a note in place.
 - **Dates are shown the way your taskrc says**: `dateformat`, `dateformat.report` (tables), `dateformat.info` (detail
   view), `dateformat.annotation` (notes) and a report's own `dateformat`, with Taskwarrior's tokens (`Y y M m D d H h N
   n S s A a B b V v J j w`). Without one, dates show as `2026-12-25`, plus the time when there is one.

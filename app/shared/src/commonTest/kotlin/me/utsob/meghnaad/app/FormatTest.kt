@@ -73,8 +73,8 @@ class FormatTest {
         assertEquals(Cell("aaaaaaaa", cls = "dim", uuid = row().uuid), cell(col("id"), row(id = null), ctx))
         assertEquals(listOf("Home", "Kitchen"), cell(col("project"), row(project = "Home.Kitchen"), ctx).segments)
         assertEquals(listOf("a", "b"), cell(col("tags"), row(tags = listOf("a", "b")), ctx).chips)
-        assertEquals(listOf("2026-10-07 12:30 n"), cell(col("description"), row(annotations = listOf(Note(now, "n"))), ctx).lines)
-        assertNull(cell(col("description"), row(), ctx).lines)
+        assertEquals(listOf(NoteCell("2026-10-07 12:30", "n", now)), cell(col("description"), row(annotations = listOf(Note(now, "n"))), ctx).notes)
+        assertNull(cell(col("description"), row(), ctx).notes)
     }
 
     @Test
@@ -85,7 +85,7 @@ class FormatTest {
         val withDates = Ctx(now = now, tz = 3600, reportDates = DateFmt("D.M.Y H:N", 1), annotationDates = DateFmt("M/D", 1))
         val r = row(due = now, annotations = listOf(Note(now, "called")))
         assertEquals("07.10.2026 13:30", cell(col("due"), r, withDates).text)
-        assertEquals(listOf("10/07 called"), cell(Column("description", "description", null, "description", "description"), r, withDates).lines)
+        assertEquals(listOf("10/07" to "called"), cell(Column("description", "description", null, "description", "description"), r, withDates).notes?.map { it.at to it.text })
     }
 
     @Test
@@ -112,7 +112,7 @@ class FormatTest {
         assertEquals("DEP", cell(col("depends.indicator"), row(pendingDeps = 1), custom).text)
         assertEquals("↻", cell(col("recur.indicator"), row(recur = "weekly"), custom).text)
         val noted = row(annotations = listOf(Note(now, "Started task"), Note(now + 5, "call Sam first")))
-        assertEquals(listOf("2026-10-07 12:30 call Sam first"), cell(col("description"), noted, custom).lines)
+        assertEquals(listOf("call Sam first"), cell(col("description"), noted, custom).notes?.map { it.text })
         assertEquals("2026-10-07 12:30", cell(col("ship", "date"), row(extra = mapOf("ship" to now.toString())), custom).text)
     }
 

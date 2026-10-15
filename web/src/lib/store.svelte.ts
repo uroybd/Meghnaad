@@ -6,6 +6,7 @@ import { isHiddenReport, offeredReports as pickable } from './reportList';
 import { prefixFilter, prefixFromPath, taskPath } from './route';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
+import { toggled } from './markdown';
 import type { CliResponse, CliResult, ConfigResponse, HookLine, ReportMeta, Row } from './types';
 
 export interface Entry {
@@ -485,6 +486,25 @@ class Store {
   get confirmation(): boolean {
     const v = this.config?.config.settings?.confirmation;
     return v === undefined || /^(1|y|yes|on|true)$/i.test(v.trim());
+  }
+
+  #ticking = false;
+
+  /**
+   * Tick or untick a checkbox in a string UDA. The engine changes the text (`tc_core::markdown`), and the task is told the
+   * new one with an ordinary `modify <uda>:<text>`. One at a time, so a second click never works from the text the first
+   * one has just changed.
+   */
+  async tickBox(from: Entry | null, uuid: string, uda: string, text: string, line: number) {
+    if (this.#ticking) return;
+    const next = toggled(text, line);
+    if (next === null) return;
+    this.#ticking = true;
+    try {
+      await this.act(from, [uuid, 'modify', `${uda}:${next}`], {}, true);
+    } finally {
+      this.#ticking = false;
+    }
   }
 
   /** A GUI action (done, start, add, ...): run it, report the outcome, refresh what's on screen. */

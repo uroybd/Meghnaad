@@ -22,6 +22,7 @@ pub mod import;
 pub mod live;
 #[cfg(feature = "lua")]
 pub mod lua_hooks;
+pub mod markdown;
 pub mod model;
 pub mod modify;
 pub mod names;

@@ -85,7 +85,7 @@ describe('where it is used', () => {
   it('table date cells, and the notes under a description', () => {
     expect(cell(col('due'), row, ctx).text).toBe('07.10.2026');
     const d = cell({ ...col('description'), kind: 'description' }, { ...row, description: 'x' } as Row, ctx);
-    expect(d.lines).toEqual(['10/07 called']);
+    expect(d.notes?.map((n) => [n.at, n.text])).toEqual([['10/07', 'called']]);
   });
   it('other column formats ignore the pattern', () => {
     expect(cell(col('due', 'epoch'), row, ctx).text).toBe(String(WED));

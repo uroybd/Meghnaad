@@ -110,7 +110,7 @@ fun TaskCard(
     val bold = row.style?.bold == true
 
     val cells = report.columns.zip(cellsOfRow(report, ctx, row))
-    val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.lines.isNullOrEmpty()) }
+    val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.notes.isNullOrEmpty()) }
 
     Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = 10.dp)) {
         Box(
@@ -143,7 +143,7 @@ fun TaskCard(
                             )
                             if (row.orphans.isNotEmpty()) Pill("+${row.orphans.size}", height = 18.dp)
                         }
-                        description?.lines?.forEach { line -> Dim(line, Modifier.padding(top = 2.dp)) }
+                        description?.notes?.forEach { NoteLine(it, Modifier.padding(top = 2.dp)) }
                     }
                     // The task's number, a small badge in the corner.
                     cells.firstOrNull { it.first.name == "id" }?.second?.takeIf { it.text.isNotEmpty() }?.let { id ->
@@ -156,7 +156,17 @@ fun TaskCard(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        for ((col, c) in marks) Mark(store, col, c, row, overdue, activeTags, onTag, done)
+                        for ((col, c) in marks) if (c.blocks == null) Mark(store, col, c, row, overdue, activeTags, onTag, done)
+                    }
+                    // A UDA written in Markdown is a few lines, not a mark: it gets the width of the card, and its boxes work.
+                    for ((col, c) in marks) if (c.blocks != null) {
+                        Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Dim(col.label, size = 12)
+                            MarkdownView(
+                                c.blocks, color = if (done) colors.onSurfaceVariant else colors.onSurface, size = 13.5.sp,
+                                onToggle = { line -> store.go { tickBox(from, row.uuid, col.name, c.text, line) } },
+                            )
+                        }
                     }
                 }
                 Actions(store, row, from, onEdit, ctx, scope)

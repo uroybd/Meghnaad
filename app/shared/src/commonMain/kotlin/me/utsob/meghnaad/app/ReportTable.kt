@@ -256,7 +256,7 @@ private fun TableRow(
                 val c = cells[ci]
                 Column(Modifier.width(widths[ci]).padding(end = 8.dp, top = 11.dp, bottom = 9.dp)) {
                     TableCell(store, col, c, row, overdue, done, bold, activeTags, onTag)
-                    if (col.name == "description") c.lines?.forEach { Dim(it, Modifier.padding(top = 2.dp)) }
+                    if (col.name == "description") c.notes?.forEach { NoteLine(it, Modifier.padding(top = 2.dp)) }
                 }
             }
             }
@@ -317,6 +317,10 @@ private fun TableCell(
                 )
             }
         }
+        c.blocks != null -> MarkdownView(
+            c.blocks, color = tone, size = 13.5.sp,
+            onToggle = { line -> store.go { tickBox(null, row.uuid, col.name, c.text, line) } },
+        )
         col.name == "priority" && row.priority != null -> {
             // The priority as a small pill of its own colour: the user's `color.uda.priority.*` washes it, the text stays readable.
             val style = store.config?.colors?.get("uda.priority.${row.priority}")

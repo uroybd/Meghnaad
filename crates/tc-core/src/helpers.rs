@@ -204,6 +204,15 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<String>(2)?,
             a.req::<f64>(3)?
         )),
+        "markdown" => json!(a
+            .req::<Vec<String>>(0)?
+            .iter()
+            .map(|t| {
+                let tree = crate::markdown::parse(t);
+                (!crate::markdown::is_plain(&tree)).then_some(tree)
+            })
+            .collect::<Vec<_>>()),
+        "markdown_toggle" => json!(crate::markdown::toggle(&a.req::<String>(0)?, a.req::<usize>(1)?)),
         "format_cells" => json!(crate::cells::format(
             &a.req::<Vec<crate::cells::Col>>(0)?,
             &a.req::<Vec<crate::cells::Row>>(1)?,

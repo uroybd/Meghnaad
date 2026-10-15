@@ -4,12 +4,15 @@
 import { callHelper } from '../engine/helpers';
 import type { DateFmt } from './dateformat';
 import type { Markers } from './journal';
+import type { MdNode } from './markdown';
 import type { Column, Row, UdaDef } from './types';
 
 export interface Cell {
   text: string;
-  /** Extra lines under the text (annotations). */
-  lines?: string[];
+  /** The notes under the text (annotations): when each was made, its text, the moment that names it, and its Markdown. */
+  notes?: { at: string; text: string; entry: number; blocks?: MdNode[] }[];
+  /** The text as Markdown, in a string UDA that uses any. */
+  blocks?: MdNode[];
   cls?: string;
   /** A project path as coloured parts, so the dots between them can be muted. */
   segments?: { text: string }[];

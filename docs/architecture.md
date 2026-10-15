@@ -103,8 +103,8 @@ and checks it. The engine answers one message at a time, in the order they arriv
 The pure helpers (`tc_core::helpers`, which calls into `sortspec`, `complete`, `highlight`, `urgency_settings` and `cells`:
 a date in the user's `dateformat`, a command line split and quoted as the engine reads it, a duration in one unit, how a
 recurrence period reads, what a header click or a grouping does to a report's sort keys, what Tab completes and how a
-command line is coloured, how an urgency coefficient is named and kept, and what each cell of a report shows;
-`helpers::call` runs the ones with structured arguments by name, as JSON) take nothing from the replica, so the page does
+command line is coloured, how an urgency coefficient is named and kept, and what each cell of a report shows, and the Markdown of a note or
+a string UDA with the change a ticked box makes to its text; `helpers::call` runs the ones with structured arguments by name, as JSON) take nothing from the replica, so the page does
 not send them to the Worker: a screen asks for a date
 while it draws, and a message is asynchronous. `web/src/engine/helpers.ts` loads the same WebAssembly module again on the
 page's own thread (one download, as the browser has the bytes) and calls them at once. The page is built with them (the
@@ -162,7 +162,8 @@ script as `nil` and a reason, because an error from an async function ends the c
 
 **On Android** (`crates/android`, `app/`) there is no Worker: the engine is `tc-core` as a native library, called from
 Kotlin over JNI, and it syncs straight with the bucket, signing S3 requests itself (`CloudServer` over an `S3Store`, the
-same server code the Worker runs over R2). See [the Android app](android.md).
+same server code the Worker runs over R2) or with a TaskChampion sync server (`syncserver.rs`, the same sealed versions over
+HTTP, keyed by the client id). See [the Android app](android.md).
 
 **The app** (`app/`, Kotlin and Compose) draws that engine natively, not in a WebView: `shared` holds the
 engine's JSON types and API (mirroring `web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's store, and the
@@ -412,7 +413,7 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
-| `tc_core::helpers`, `sortspec`, `complete`, `highlight`, `urgency_settings` and `cells` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, every header click, grouping and sort-override case, what Tab completes, how a line is coloured, how urgency terms are named, and what every column format shows |
+| `tc_core::helpers`, `sortspec`, `complete`, `highlight`, `urgency_settings`, `cells` and `markdown` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, every header click, grouping and sort-override case, what Tab completes, how a line is coloured, how urgency terms are named, what every column format shows, and the Markdown subset (nesting, checklists, safe links, the limits that keep a hostile text quick) |
 | `npm --prefix web test` | The browser-side logic (it loads the built engine for the helpers): formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |
 | `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused |

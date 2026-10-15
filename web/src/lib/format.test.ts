@@ -66,9 +66,29 @@ describe('formatCells', () => {
     expect(cell(col('id'), row({ id: null }))).toEqual({ text: 'aaaaaaaa', cls: 'dim', uuid: row().uuid });
     expect(cell(col('project'), row({ project: 'Home.Kitchen' })).segments).toEqual(projectSegments('Home.Kitchen'));
     expect(cell(col('tags'), row({ tags: ['a', 'b'] })).chips).toEqual(['a', 'b']);
-    expect(cell(col('description'), row({ annotations: [{ entry: NOW, text: 'n' }] })).lines).toEqual([
-      '2026-10-07 12:30 n',
+    expect(cell(col('description'), row({ annotations: [{ entry: NOW, text: 'n' }] })).notes).toEqual([
+      { at: '2026-10-07 12:30', text: 'n', entry: NOW },
     ]);
+  });
+
+  it('carries the Markdown of a note and of a string UDA, and only when there is any', () => {
+    const udas = {
+      plan: { name: 'plan', type: 'string' as const, label: null, values: [], default: null, indicator: null },
+    };
+    const r = row({
+      annotations: [
+        { entry: NOW, text: '- [ ] milk' },
+        { entry: NOW + 1, text: 'plain words' },
+      ],
+      extra: { plan: 'do **this**' },
+    });
+    const notes = cell(col('description'), r).notes!;
+    expect(notes[0].blocks?.[0].t).toBe('ul');
+    expect(notes[1].blocks).toBeUndefined();
+    const plan = cell(col('plan'), r, { ...ctx, udas });
+    expect(plan.text).toBe('do **this**');
+    expect(plan.blocks?.[0].c?.map((n) => n.t)).toEqual(['text', 'b']);
+    expect(cell(col('plan'), row({ extra: { plan: 'words' } }), { ...ctx, udas }).blocks).toBeUndefined();
   });
 
   it('writes dates in the pattern and the zone it is given', () => {

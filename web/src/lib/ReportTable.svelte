@@ -2,6 +2,7 @@
   import { formatFor } from './dateformat';
   import { css, look, rowVars } from './colors';
   import { formatCells, rowClass } from './format';
+  import MarkdownNodes from './MarkdownNodes.svelte';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import MoreMenu from './MoreMenu.svelte';
   import ProjectPath from './ProjectPath.svelte';
@@ -265,7 +266,7 @@
                 class="{col.kind} {c.cls ?? ''} col-{col.name.replace(/\W+/g, '-')}{col.format
                   ? ` fmt-${col.format}`
                   : ''}"
-                class:blank={!c.text && !c.lines?.length}
+                class:blank={!c.text && !c.notes?.length}
                 data-label={col.label}
                 style={col.name === 'priority' && row.priority
                   ? css(look(store.config?.colors?.[`uda.priority.${row.priority}`], scheme.dark))
@@ -279,6 +280,13 @@
                   <ProjectPath segments={c.segments} />
                 {:else if c.chips}
                   {#each c.chips as t (t)}<TagChip tag={t} active={activeTags.includes(t)} onclick={ontag} />{/each}
+                {:else if c.blocks}
+                  <div class="md">
+                    <MarkdownNodes
+                      nodes={c.blocks}
+                      ontoggle={(line) => store.tickBox(entry, row.uuid, col.name, c.text, line)}
+                    />
+                  </div>
                 {:else}
                   {c.text}
                 {/if}
@@ -302,8 +310,17 @@
                     +{row.orphans.length}
                   </span>
                 {/if}
-                {#each c.lines ?? [] as line, _i (_i)}
-                  <div class="note dim">{line}</div>
+                {#each c.notes ?? [] as note (note.entry)}
+                  <div class="note dim">
+                    {note.at}
+                    {#if note.blocks}
+                      <div class="md">
+                        <MarkdownNodes nodes={note.blocks} />
+                      </div>
+                    {:else}
+                      {note.text}
+                    {/if}
+                  </div>
                 {/each}
               </td>
             {/each}
@@ -585,6 +602,10 @@
   }
   td.multiline {
     white-space: pre-line;
+  }
+  /* Markdown is laid out by its own elements: the line breaks of the text are already in them. */
+  .md {
+    white-space: normal;
   }
   .actions {
     text-align: right;

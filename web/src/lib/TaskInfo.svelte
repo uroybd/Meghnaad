@@ -6,6 +6,8 @@
   import { projectSegments, shortUuid, udaLabel, urgencyLevel } from './format';
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
   import { visibleNotes } from './journal';
+  import MarkdownNodes from './MarkdownNodes.svelte';
+  import { trees } from './markdown';
   import ProjectPath from './ProjectPath.svelte';
   import TagChip from './TagChip.svelte';
   import { describeRecur } from './recurrence';
@@ -81,6 +83,16 @@
   ]);
   // The journal's "Started task"/"Stopped task" notes are bookkeeping; the sessions table shows them.
   const notes = $derived(visibleNotes(task.annotations, store.config?.journal));
+  // A string UDA and a note may hold Markdown: its tree, or null for text that is only words.
+  const udaTrees = $derived(
+    Object.fromEntries(
+      (() => {
+        const names = udaKeys.filter((k) => defs[k].type === 'string');
+        return trees(names.map((k) => task.extra[k])).map((t, i) => [names[i], t]);
+      })(),
+    ),
+  );
+  const noteTrees = $derived(trees(notes.map((a) => a.text)));
   const totalTracked = $derived(task.active_seconds ?? task.sessions.reduce((n, s) => n + s.seconds, 0));
   // A recurring template lists its instances (newest first); an instance links back to it.
   let instances = $state<Row[]>([]);
@@ -211,7 +223,16 @@
     {/if}
     {#each udaKeys as k (k)}
       <dt>{udaLabel(defs[k])}</dt>
-      <dd class="pre">{task.extra[k]}</dd>
+      {#if udaTrees[k]}
+        <dd class="md">
+          <MarkdownNodes
+            nodes={udaTrees[k]}
+            ontoggle={(line) => store.tickBox(null, task.uuid, k, task.extra[k], line)}
+          />
+        </dd>
+      {:else}
+        <dd class="pre">{task.extra[k]}</dd>
+      {/if}
     {/each}
     <dt>Urgency</dt>
     <dd class="urg-{urgencyLevel(task.urgency)}">{task.urgency.toFixed(2)}</dd>
@@ -276,8 +297,15 @@
   {#if notes.length}
     <h4>Annotations</h4>
     <ul>
-      {#each notes as a, _i (_i)}<li>
-          <span class="dim">{formatMoment(a.entry, undefined, noteFmt)}</span> <span class="pre">{a.text}</span>
+      {#each notes as a, i (a.entry)}<li>
+          <span class="dim">{formatMoment(a.entry, undefined, noteFmt)}</span>
+          {#if noteTrees[i]}
+            <div class="md">
+              <MarkdownNodes nodes={noteTrees[i]} />
+            </div>
+          {:else}
+            <span class="pre">{a.text}</span>
+          {/if}
         </li>{/each}
     </ul>
   {/if}
@@ -489,6 +517,13 @@
     padding: 0 4px;
     margin-left: -4px;
     text-align: left;
+  }
+  .md {
+    white-space: normal;
+    min-width: 0;
+  }
+  li > .md {
+    margin-top: 2px;
   }
   .pre {
     white-space: pre-wrap;
