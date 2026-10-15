@@ -78,7 +78,9 @@ class CalendarWidgetService : RemoteViewsService() {
                 return row
             }
             row.setTextViewText(R.id.day, cell.day.toString())
-            palette.setTextColor(row, R.id.day, if (cell.today) Palette.WHITE else if (cell.dim) Palette.DIM else Palette.TEXT)
+            palette.setTextColor(row, R.id.day, if (cell.today) Palette.WHITE else Palette.TEXT)
+            // A day of another month is quieter by being fainter, which is the same in both themes.
+            if (cell.dim && !cell.today) row.setFloat(R.id.day, "setAlpha", 0.55f)
             if (cell.today) {
                 row.setViewVisibility(R.id.today, android.view.View.VISIBLE)
                 palette.setTint(row, R.id.today, Palette.ACCENT)
@@ -91,6 +93,9 @@ class CalendarWidgetService : RemoteViewsService() {
             }
             if (dot != null) {
                 row.setViewVisibility(R.id.dot, android.view.View.VISIBLE)
+                // The dots that differ between the themes are drawables with their colour from a resource (see Palette.set).
+                if (!cell.today && dot === Palette.OVERDUE) row.setImageViewResource(R.id.dot, R.drawable.circle_overdue)
+                else if (!cell.today && dot === Palette.DIM) row.setImageViewResource(R.id.dot, R.drawable.circle_dim)
                 palette.setTint(row, R.id.dot, if (cell.today) Palette.WHITE else dot)
             }
             row.setOnClickFillInIntent(R.id.cell, Intent().putExtra("kind", "day").putExtra("date", cell.date))

@@ -55,16 +55,17 @@ class Palette(context: Context, val look: WidgetLook = WidgetLook()) {
     val follows get() = look.theme == "auto"
 
     /**
-     * Put a colour on one property of a view (`setTextColor`, `setColorFilter`, `setBackgroundColor`). A look that follows
-     * the phone hands the home screen both colours (Android 14 and newer), which picks one itself each time the phone
-     * changes theme, so the widget is right the moment the switch is flipped. Older phones get today's colour, and the
-     * widget is drawn again on the next sync or when the app is opened.
+     * Put a colour on one property of a view (`setTextColor`, `setColorFilter`, `setBackgroundColor`). A look that follows the
+     * phone sets none that differs between the themes: nothing here runs when the phone changes theme, and a colour set from
+     * here would stay the one it was drawn with (the text stayed dark on a dark widget). What follows the phone is what the
+     * layouts and drawables name by a resource, which has a night variant (`values-night`) and which the home screen reads again
+     * itself. A fixed look (light or dark) sets its colours here, as it does not change.
      */
     fun set(views: RemoteViews, id: Int, method: String, tone: Tone) {
         when {
             !follows -> views.setInt(id, method, tone.pick(dark))
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> views.setColorInt(id, method, tone.light, tone.dark)
-            else -> views.setInt(id, method, tone.pick(dark))
+            tone.light == tone.dark -> views.setInt(id, method, tone.light)
+            else -> Unit
         }
     }
 

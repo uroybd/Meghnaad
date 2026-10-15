@@ -19,6 +19,7 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:paddingBottom="2dp"
+        android:textColor="@color/widget_text"
         android:textSize="13sp" />
 
     <ImageView

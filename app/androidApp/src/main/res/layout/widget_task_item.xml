@@ -41,5 +41,16 @@
             android:maxLines="2"
             android:textColor="@color/widget_dim"
             android:textSize="12sp" />
+
+        <!-- The same line for an overdue task, in the colour the theme gives an error (a resource, so it follows the phone). -->
+        <TextView
+            android:id="@+id/detail_overdue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="@color/widget_error"
+            android:textSize="12sp"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>
