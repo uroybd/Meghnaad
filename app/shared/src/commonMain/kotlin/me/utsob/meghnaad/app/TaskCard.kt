@@ -115,10 +115,10 @@ fun TaskCard(
     Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = 10.dp)) {
         Box(
             Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
+                .clip(PanelShape)
                 .background(background)
                 .drawBehind { stripe?.let { drawRect(it, size = Size(4.dp.toPx(), size.height)) } }
-                .border(BorderStroke(1.dp, if (picked) colors.primary else colors.outline), RoundedCornerShape(14.dp))
+                .border(BorderStroke(1.dp, if (picked) colors.primary else colors.outline), PanelShape)
                 .clickable { store.openDetail(row.uuid, from) },
         ) {
             Column(Modifier.fillMaxWidth().padding(start = 15.dp, end = 12.dp, top = 12.dp, bottom = 6.dp)) {

@@ -23,7 +23,6 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
@@ -203,7 +202,7 @@ private fun ToastHost(store: Store) {
     val colors = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize().padding(bottom = 96.dp, start = 16.dp, end = 16.dp), Alignment.BottomCenter) {
         Surface(
-            shape = RoundedCornerShape(10.dp),
+            shape = PanelShape,
             color = if (t.bad) colors.errorContainer else colors.inverseSurface,
             shadowElevation = 6.dp,
             modifier = Modifier.clickable { store.dismissToast() },

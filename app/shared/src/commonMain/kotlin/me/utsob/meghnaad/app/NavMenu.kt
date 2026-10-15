@@ -45,7 +45,7 @@ private val VIEWS = listOf(
 private fun Item(icon: String, label: String, on: Boolean, state: String? = null, enabled: Boolean = true, trailing: @Composable () -> Unit = {}, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp))
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(ControlShape)
             .background(if (on) colors.primary.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp),

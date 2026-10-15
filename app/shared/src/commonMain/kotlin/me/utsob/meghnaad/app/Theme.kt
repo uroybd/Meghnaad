@@ -2,9 +2,12 @@ package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -87,13 +90,22 @@ private val DarkScheme: ColorScheme = darkColorScheme(
     onError = Color(0xFF0B1220),
 )
 
+/** The web's corners (see [ControlShape]): dialogs, menus and the completion list are its `--radius`. */
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(6.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(8.dp),
+    extraLarge = RoundedCornerShape(8.dp),
+)
+
 val LocalExtras = compositionLocalOf { LightExtras }
 
 /** The app's colours, for the system's light or dark. */
 @Composable
 fun AppTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalExtras provides if (dark) DarkExtras else LightExtras) {
-        MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, content = content)
+        MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, shapes = AppShapes, content = content)
     }
 }
 

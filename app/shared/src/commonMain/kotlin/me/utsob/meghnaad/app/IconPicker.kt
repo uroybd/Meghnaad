@@ -16,9 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,7 +66,7 @@ fun IconPicker(value: String, onChange: (String) -> Unit, label: String = "Icon"
                     LazyVerticalGrid(GridCells.Adaptive(48.dp), Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
                         items(shown) { name ->
                             Box(
-                                Modifier.padding(2.dp).size(44.dp).clip(RoundedCornerShape(10.dp))
+                                Modifier.padding(2.dp).size(44.dp).clip(ControlShape)
                                     .background(if (name == value) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent)
                                     .clickable { onChange(name); open = false }
                                     .semantics { contentDescription = name },

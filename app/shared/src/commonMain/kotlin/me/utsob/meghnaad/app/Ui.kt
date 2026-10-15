@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
@@ -75,11 +78,28 @@ fun Pill(
     }
 }
 
+/** The web's corners: a button, field or list row is 6px there, and a card, menu or dialog is its 8px `--radius`. Only chips, tags and status pills are round. */
+val ControlShape = RoundedCornerShape(6.dp)
+val PanelShape = RoundedCornerShape(8.dp)
+
+// Material's own buttons are fully round, whatever the theme's shapes say; these take the web's corner for the same call.
+@Composable
+fun Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.ContentPadding, content: @Composable RowScope.() -> Unit) =
+    androidx.compose.material3.Button(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, contentPadding = contentPadding, content = content)
+
+@Composable
+fun OutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.ContentPadding, content: @Composable RowScope.() -> Unit) =
+    androidx.compose.material3.OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, contentPadding = contentPadding, content = content)
+
+@Composable
+fun TextButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding, content: @Composable RowScope.() -> Unit) =
+    androidx.compose.material3.TextButton(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, contentPadding = contentPadding, content = content)
+
 @Composable
 fun Card(modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.surfaceContainerLow, content: @Composable () -> Unit) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = PanelShape,
         color = color,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         content = content,

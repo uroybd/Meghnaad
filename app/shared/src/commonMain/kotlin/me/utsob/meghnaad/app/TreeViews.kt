@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,7 +70,7 @@ fun TaskLine(store: Store, row: Row, depth: Int) {
     val wash = row.style.tint(extras.dark, colors.surface)
     val fmt = formatFor(FormatKind.Report, store.config?.config?.settings)
     Row(
-        Modifier.fillMaxWidth().padding(start = (depth * 14).dp, top = 2.dp, bottom = 2.dp).clip(RoundedCornerShape(10.dp)).background(wash ?: Color.Transparent),
+        Modifier.fillMaxWidth().padding(start = (depth * 14).dp, top = 2.dp, bottom = 2.dp).clip(ControlShape).background(wash ?: Color.Transparent),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (pending) IconAction("check", "Mark done: ${row.description}", { store.go { act(null, listOf(row.uuid, "done")) } }, tint = extras.ok, size = 16.dp)
@@ -113,7 +112,7 @@ private fun TreeHead(
     val colors = MaterialTheme.colorScheme
     // Wraps rather than squeezing the name: on a narrow screen "Open in Tasks" goes under the counts.
     FlowRow(
-        Modifier.fillMaxWidth().padding(start = (depth * 14).dp).clip(RoundedCornerShape(10.dp))
+        Modifier.fillMaxWidth().padding(start = (depth * 14).dp).clip(ControlShape)
             .background(if (flash) colors.primary.copy(alpha = 0.16f) else Color.Transparent),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         itemVerticalAlignment = Alignment.CenterVertically,

@@ -42,8 +42,8 @@ import androidx.compose.ui.unit.sp
 private val FIELD_HEIGHT = 40.dp
 
 /** A one-line field is as round as the select beside it; a taller one is rounded less. */
-private val PILL = RoundedCornerShape(20.dp)
-private val BOX = RoundedCornerShape(14.dp)
+private val PILL = ControlShape
+private val BOX = ControlShape
 
 @Composable
 fun OutlinedTextField(
