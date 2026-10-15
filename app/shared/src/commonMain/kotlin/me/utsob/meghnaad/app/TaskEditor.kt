@@ -1,5 +1,17 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -140,6 +152,15 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = colors.surfaceContainerLow) {
             Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                // What the form's own Enter does on the web: save, or add, when there is something to save.
+                fun submit() {
+                    if (st.busy || !st.dirty) return
+                    store.go { if (st.save(from)) { if (st.adding) onAdded(false) else onClose() } }
+                }
+                // Ctrl+Enter (or Cmd+Enter) saves from a field where Enter adds a line (multiline.ts: newlineOnEnter).
+                val saveOnCtrlEnter = Modifier.onPreviewKeyEvent { e ->
+                    if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && (e.isCtrlPressed || e.isMetaPressed)) { submit(); true } else false
+                }
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(if (st.adding) "New task" else "Edit task", Modifier.weight(1f), fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     row?.let { Dim(it.uuid.take(8), size = 12) }
@@ -147,8 +168,13 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                     FieldLabel("Description")
+                    // A description is one line, as the web's input is: it may wrap on a phone, but Enter saves it instead of breaking it.
                     OutlinedTextField(
-                        st.description, { st.description = it }, Modifier.fillMaxWidth(),
+                        st.description,
+                        { v -> if ('\n' in v) { st.description = v.replace("\n", " ").trimEnd(); submit() } else st.description = v },
+                        Modifier.fillMaxWidth().onPreviewKeyEvent { e ->
+                            if (e.type == KeyEventType.KeyDown && e.key == Key.Enter) { submit(); true } else false
+                        },
                         minLines = 1, maxLines = 4,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     )
@@ -212,7 +238,7 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
                                 current, { st.udaValues[u.name] = it }, Modifier.fillMaxWidth(), singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             )
-                            u.type == "string" -> OutlinedTextField(current, { st.udaValues[u.name] = it }, Modifier.fillMaxWidth(), minLines = 1, maxLines = 5)
+                            u.type == "string" -> OutlinedTextField(current, { st.udaValues[u.name] = it }, Modifier.fillMaxWidth().then(saveOnCtrlEnter), minLines = 1, maxLines = 5)
                             else -> OutlinedTextField(current, { st.udaValues[u.name] = it }, Modifier.fillMaxWidth(), singleLine = true)
                         }
                     }
@@ -224,7 +250,7 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
                             IconAction(if (gone) "rotate-ccw" else "x", if (gone) "Keep dependency" else "Remove dependency", { st.removedDeps = if (gone) st.removedDeps - d else st.removedDeps + d }, size = 14.dp)
                         }
                     }
-                    OutlinedTextField(st.newDep, { st.newDep = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("task ids or uuid prefixes", fontSize = 14.sp) })
+                    DependsField(store, st.newDep) { st.newDep = it }
                     if (st.adding) {
                         FieldLabel("Start")
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -239,6 +265,16 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
                         }
                         for (k in row.orphans) Text("$k = ${row.extra[k]}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                         Dim("read-only: define uda.${row.orphans[0]}.type in your taskrc to edit", size = 12)
+                    }
+                    fun addNote() {
+                        val text = st.note.trim()
+                        store.go {
+                            val res = act(from, listOf(row!!.uuid, "annotate", text))
+                            if (res != null && res.result !is CliResult.Error) {
+                                st.note = ""
+                                onClose()
+                            }
+                        }
                     }
                     FieldLabel(if (st.adding) "Note" else "Annotations")
                     for (a in visibleNotes(row?.annotations ?: emptyList(), store.config?.journal)) {
@@ -255,20 +291,19 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
                     }
                     Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            st.note, { st.note = it }, Modifier.weight(1f), minLines = 1, maxLines = 4,
+                            st.note, { st.note = it },
+                            Modifier.weight(1f).onPreviewKeyEvent { e ->
+                                // Enter adds the note to a task being edited, or adds the task being made (Shift+Enter is a line break).
+                                if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && !e.isShiftPressed) {
+                                    if (st.adding) submit() else if (st.note.isNotBlank()) addNote()
+                                    true
+                                } else false
+                            },
+                            minLines = 1, maxLines = 4,
                             placeholder = { Text(if (st.adding) "Optional first note" else "Add an annotation", fontSize = 14.sp) },
                         )
                         if (!st.adding) {
-                            Button(enabled = st.note.isNotBlank(), onClick = {
-                                val text = st.note.trim()
-                                store.go {
-                                    val res = act(from, listOf(row!!.uuid, "annotate", text))
-                                    if (res != null && res.result !is CliResult.Error) {
-                                        st.note = ""
-                                        onClose()
-                                    }
-                                }
-                            }) { Text("Add") }
+                            Button(enabled = st.note.isNotBlank(), onClick = ::addNote) { Text("Add") }
                         }
                     }
                 }
@@ -283,6 +318,36 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String
                         Button(enabled = !st.busy && st.dirty, onClick = { store.go { if (st.save(from)) { if (st.adding) onAdded(false) else onClose() } } }) {
                             Text(if (st.adding) "Add task" else "Save")
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The task a dependency can name: a field for ids or uuid prefixes, offering the tasks that have a number (the web's datalist). */
+@Composable
+private fun DependsField(store: Store, value: String, onChange: (String) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val word = wordAt(value, value.length, list = true)
+    val typed = word.text.trim()
+    val options = if (!focused || typed.isEmpty()) emptyList() else store.tasks.filter { t ->
+        t.id != null && (t.id.toString().startsWith(typed) || t.description.contains(typed, ignoreCase = true))
+    }.take(8)
+    Column(Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value, onChange, Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }, singleLine = true,
+            placeholder = { Text("task ids or uuid prefixes", fontSize = 14.sp) },
+        )
+        if (options.isNotEmpty()) {
+            Surface(Modifier.fillMaxWidth().padding(top = 2.dp), shape = MaterialTheme.shapes.medium, tonalElevation = 3.dp, shadowElevation = 4.dp, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                Column {
+                    options.forEachIndexed { i, t ->
+                        Row(Modifier.fillMaxWidth().clickable { onChange(choose(value, word, t.id.toString(), list = true).value) }.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(t.id.toString(), fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(t.description, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (i < options.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
             }

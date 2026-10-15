@@ -1,5 +1,6 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,7 +47,8 @@ fun NotifyDialog(store: Store) {
                     Switch(s.enabled, { if (it) n.enable() else n.disable() })
                 }
                 Dim(status, size = 12)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Dimmed while reminders are off, and still usable, as in the web.
+                Column(Modifier.alpha(if (s.enabled) 1f else 0.5f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Heads-up before a timed due date", fontSize = 14.sp)
                     Choice(LEADS.first { it.first == s.leadMinutes }.second, LEADS.map { it.second }) { n.update(s.copy(leadMinutes = LEADS[it].first)) }
                     Text("Due on a date with no time", fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))

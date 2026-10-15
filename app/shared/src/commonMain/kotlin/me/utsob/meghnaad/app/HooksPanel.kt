@@ -1,5 +1,20 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -169,11 +184,39 @@ fun HooksPanel(store: Store, st: HooksState) {
         st.loadFailed?.let { Text("The hooks could not be read: $it", color = colors.error, fontSize = 13.sp) }
         if (st.loading) Dim("Loading…", size = 14)
         if (st.loaded) {
+            // The text with its cursor, so Tab can indent where it is; what is typed here and what Discard or an example puts there are the same text.
+            var tfv by remember { mutableStateOf(TextFieldValue(st.text, TextRange(st.text.length))) }
+            if (tfv.text != st.text) tfv = TextFieldValue(st.text, TextRange(st.text.length))
+            val x = extras
+            val palette = remember(x, colors) { LuaPalette(colors.primary, x.ok, x.warn, colors.onSurfaceVariant, colors.error) }
+            val problemLine = (st.result as? HookCheck.Bad)?.line
+            val colouring = remember(palette, problemLine) { LuaTransformation(palette, problemLine) }
             OutlinedTextField(
-                st.text, { st.text = it; st.done = false; st.error = null }, Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp),
+                tfv,
+                { v -> tfv = v; if (v.text != st.text) { st.text = v.text; st.done = false; st.error = null } },
+                Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp).onPreviewKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when {
+                        // Ctrl+S or Cmd+S saves, as in the web's editor.
+                        e.key == Key.S && (e.isCtrlPressed || e.isMetaPressed) -> {
+                            if (st.canSave) store.go { st.save() }
+                            true
+                        }
+                        // Tab indents (two spaces) instead of leaving the field.
+                        e.key == Key.Tab && !e.isShiftPressed -> {
+                            val sel = tfv.selection
+                            val text = tfv.text.replaceRange(sel.min, sel.max, "  ")
+                            tfv = TextFieldValue(text, TextRange(sel.min + 2))
+                            st.text = text; st.done = false; st.error = null
+                            true
+                        }
+                        else -> false
+                    }
+                },
                 textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
                 isError = st.result is HookCheck.Bad,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
+                visualTransformation = colouring,
             )
             when (val r = st.result) {
                 is HookCheck.Bad -> Text("${if (r.line != null) "Line ${r.line}: " else ""}${r.message}", color = colors.error, fontSize = 13.sp)
@@ -183,7 +226,7 @@ fun HooksPanel(store: Store, st: HooksState) {
             st.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = { store.go { st.save() } }, enabled = st.canSave) { Text(if (st.busy) "Saving…" else if (st.blank && st.edited) "Remove the hooks" else "Save") }
-                TextButton(onClick = { st.text = st.saved }, enabled = st.edited && !st.busy) { Text("Discard") }
+                TextButton(onClick = { st.text = st.saved }, enabled = st.edited && !st.busy) { Text("Discard changes") }
                 if (st.blank) TextButton(onClick = { st.text = HOOKS_EXAMPLE }) { Text("Insert an example") }
                 if (st.done && !st.edited) Text("Saved.", color = extras.ok, fontSize = 13.sp)
             }
@@ -209,8 +252,47 @@ fun HooksPanel(store: Store, st: HooksState) {
                 Text(if (st.secretName in st.secrets) "Replace" else "Keep")
             }
             st.secretError?.let { Text(it, color = colors.error, fontSize = 13.sp) }
-            Dim("What a hook gets: a task (task, old, new) with description, project, priority, status, uuid, tags as a set (task.tags:has(\"work\"), :add, :remove), dates as values with arithmetic (task.due = tomorrow()), helpers (task:in_project(\"Work\"), :is_overdue()), say(…) and warn(…) to print, refuse(\"why\") to stop the command, and http.get/post/… to hosts declared with allow_hosts{\"acme.example.com\"}.", size = 12)
+            var help by remember { mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth().clickable { help = !help }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LucideIcon(if (help) "chevron-down" else "chevron-right", size = 14.dp)
+                Text("What a hook gets", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+            if (help) for (item in HOOK_HELP) {
+                Text(richText(item, SpanStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, background = colors.surfaceVariant)), fontSize = 13.sp, lineHeight = 19.sp, color = colors.onSurfaceVariant)
+            }
             Row(Modifier.padding(bottom = 24.dp)) {}
         }
     }
 }
+
+/** Text with `code` in monospace and **bold** in bold: what the help below is written in. */
+private fun richText(text: String, code: SpanStyle): AnnotatedString = buildAnnotatedString {
+    var i = 0
+    while (i < text.length) {
+        when {
+            text[i] == '`' -> {
+                val e = text.indexOf('`', i + 1).let { if (it < 0) text.length else it }
+                withStyle(code) { append(text.substring(i + 1, e)) }
+                i = minOf(e + 1, text.length)
+            }
+            text.startsWith("**", i) -> {
+                val e = text.indexOf("**", i + 2).let { if (it < 0) text.length else it }
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(text.substring(i + 2, e)) }
+                i = minOf(e + 2, text.length)
+            }
+            else -> {
+                append(text[i])
+                i++
+            }
+        }
+    }
+}
+
+/** What a hook gets (the web's "What a hook gets", HooksPanel.svelte). */
+private val HOOK_HELP = listOf(
+    """**A task** (`task`, `old`, `new`): `description`, `project`, `priority`, `status`, `uuid`, `blocked`, `blocking`, `recur`, `annotations` (a list of `{entry, text}`), and your UDAs as plain fields (`task.estimate = "big"`; set one to `nil` to remove it). `status`, `uuid`, annotations and recurrence can be read, not changed. Change the task you are given, or return one.""",
+    """**Tags** are a set: `task.tags:has("work")`, `:add("a", "b")`, `:remove("x")`, `:has_any(…)`, `:has_all(…)`, `:list()`, `#task.tags`, `for t in task.tags:each() do … end`. So is `task.depends` (task ids as text).""",
+    """**Dates** (`due`, `wait`, `scheduled`, `start`, `entry`, `modified`, `finished` for `end`, `expires` for `until`) are values with arithmetic: `task.due = tomorrow()`, `task.wait = task.due - days(2)`, `date("friday")`, `date("2026-12-25")`, `date("eom")`, `d1 < d2`, `d2 - d1` (a duration), `d.year .month .day .hour .min .sec .weekday`, `d:format("Y-M-D")`, `d:start_of("week")`, `now()`, `today()`. **Durations**: `days(n)`, `hours(n)`, `minutes(n)`, `weeks(n)`, `duration("3d")`, `d:in_days()`.""",
+    """**The network**, to hosts the script declares at the top (`allow_hosts{"acme.example.com"}`), over https: `local res, err = http.post(url, { headers = { Authorization = "Bearer " .. secret("jira") }, json = { … } })` (also `get`, `put`, `patch`, `delete`). `res` is `{status, ok, headers, body, json}`, or `nil` and a reason if the network failed, so a script can carry on. A few requests a call, 10 seconds at most each.""",
+    """**Helpers**: `task:in_project("Work")` (also true for `Work.Mail`), `:is_pending()`, `:is_waiting()`, `:is_overdue()`. `say(…)` and `warn(…)` print under the result; `refuse("why")` (or any error) stops the command. There are no files, and a script that runs too long is stopped.""",
+)

@@ -1,5 +1,10 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,15 +57,20 @@ fun IconPicker(value: String, onChange: (String) -> Unit, label: String = "Icon"
         val matches = if (LucideLib.loaded) searchIcons(LucideLib.tags, query) else emptyList()
         val shown = matches.take(SHOWN)
         val typed = query.trim().lowercase()
-        val usable = ICON_NAME.matches(typed) && !LucideLib.has(typed) && LucideLib.loaded
+        // A name is taken as typed only while the list of icons is not there to check it against (the web's, when it cannot be fetched).
+        val usable = ICON_NAME.matches(typed) && !LucideLib.loaded
         AlertDialog(
             onDismissRequest = { open = false },
             title = { Text("Choose an icon") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                        placeholder = { Text(if (LucideLib.loaded) "Search ${LucideLib.names().size} icons" else "Loading icons…", fontSize = 14.sp) },
+                        query, { query = it },
+                        Modifier.fillMaxWidth().onPreviewKeyEvent { e ->
+                            if (e.type == KeyEventType.KeyDown && e.key == Key.Enter && usable) { onChange(typed); open = false; true } else false
+                        },
+                        singleLine = true,
+                        placeholder = { Text(if (LucideLib.loaded) "Search ${LucideLib.names().size} icons" else "Search icons, or type a name", fontSize = 14.sp) },
                         keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
                     )
                     LazyVerticalGrid(GridCells.Adaptive(48.dp), Modifier.fillMaxWidth().heightIn(max = 260.dp)) {

@@ -7,6 +7,12 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -117,6 +123,36 @@ fun SummaryView(store: Store, result: SummaryResult) {
     val colors = MaterialTheme.colorScheme
     val track = store.styleOf("summary.background")?.tintSource(extras.dark)?.copy(alpha = 0.3f) ?: colors.surfaceVariant
     val fill = store.styleOf("summary.bar")?.tintSource(extras.dark) ?: extras.ok
+    val show = { row: SummaryRow -> store.focusReport("list", listOf(if (row.project.isNotEmpty()) "project:${row.project}" else "project:")) }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    if (maxWidth > TABLE_FROM) {
+        // The web's table: the project, three numbers and the bar with its 0% and 100% at the ends.
+        Column(Modifier.widthIn(max = 760.dp)) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                val head = @Composable { text: String, w: Float, align: androidx.compose.ui.text.style.TextAlign -> Text(text, Modifier.weight(w), color = colors.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Medium, textAlign = align) }
+                head("Project", 3f, androidx.compose.ui.text.style.TextAlign.Start)
+                head("Remaining", 1.2f, androidx.compose.ui.text.style.TextAlign.End)
+                head("Avg age", 1.2f, androidx.compose.ui.text.style.TextAlign.End)
+                head("Complete", 1.2f, androidx.compose.ui.text.style.TextAlign.End)
+                Row(Modifier.weight(3f).padding(start = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("0%", color = colors.onSurfaceVariant, fontSize = 13.sp); Text("100%", color = colors.onSurfaceVariant, fontSize = 13.sp)
+                }
+            }
+            HorizontalDivider(color = colors.outline)
+            for (row in result.rows) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(row.label, Modifier.weight(3f).padding(start = (row.depth * 20).dp).clickable { show(row) }, color = colors.primary, fontSize = 14.sp)
+                    Text(row.remaining.toString(), Modifier.weight(1.2f), textAlign = androidx.compose.ui.text.style.TextAlign.End, fontSize = 14.sp)
+                    Text(row.avgAge, Modifier.weight(1.2f), textAlign = androidx.compose.ui.text.style.TextAlign.End, fontSize = 14.sp)
+                    Text(row.complete, Modifier.weight(1.2f), textAlign = androidx.compose.ui.text.style.TextAlign.End, fontSize = 14.sp)
+                    Box(Modifier.weight(3f).padding(start = 16.dp).height(8.dp).clip(CircleShape).background(track)) {
+                        Box(Modifier.fillMaxWidth(row.bar.coerceIn(0, CELLS) / CELLS.toFloat()).height(8.dp).background(fill))
+                    }
+                }
+            }
+            Dim("${result.rows.size} ${if (result.rows.size == 1) "project" else "projects"}", Modifier.padding(top = 6.dp))
+        }
+    } else
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         for (row in result.rows) {
             Column(Modifier.fillMaxWidth().padding(start = (row.depth * 16).dp)) {
@@ -124,7 +160,7 @@ fun SummaryView(store: Store, result: SummaryResult) {
                     // A project's name shows that project's tasks (and its sub-projects') in the built-in `list` report, which is always there.
                     Text(
                         row.label,
-                        Modifier.weight(1f).clickable { store.focusReport("list", listOf(if (row.project.isNotEmpty()) "project:${row.project}" else "project:")) },
+                        Modifier.weight(1f).clickable { show(row) },
                         color = colors.primary, fontSize = 15.sp, fontWeight = FontWeight.Medium,
                     )
                     Text(row.complete, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -136,6 +172,7 @@ fun SummaryView(store: Store, result: SummaryResult) {
             }
         }
         Dim("${result.rows.size} ${if (result.rows.size == 1) "project" else "projects"}")
+    }
     }
 }
 
@@ -156,9 +193,26 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
         store.focusReport("list", listOf(if (d.due != null) "due:$day" else "scheduled:$day"))
     }
 
+    fun describe(m: CalendarMonth, d: CalendarDay): String {
+        val bits = buildList {
+            if (d.today) add("today")
+            if (d.holiday) add("holiday")
+            if (d.due == "overdue") add("overdue")
+            if (d.due == "due-today") add("due later today")
+            if (d.due == "due") add("something is due")
+            if (d.scheduled) add("scheduled")
+        }
+        return "${m.name} ${d.day}" + if (bits.isEmpty()) "" else ": " + bits.joinToString(", ")
+    }
+
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        for (m in result.months) {
-            Column(Modifier.fillMaxWidth()) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // The web's grid: as many 17.5rem columns as fit, the months side by side.
+        val cols = maxOf(1, ((maxWidth.value + 24f) / (280f + 24f)).toInt())
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        for (group in result.months.chunked(cols)) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        for (m in group) {
+            Column(Modifier.weight(1f)) {
                 Text("${m.name} ${m.year}", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(bottom = 6.dp))
                 Row(Modifier.fillMaxWidth()) {
                     if (result.weekNumbers) Box(Modifier.weight(0.7f))
@@ -193,6 +247,7 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
                             val clickable = d.due != null || d.scheduled
                             Box(
                                 Modifier.weight(1f).aspectRatio(1f).padding(2.dp).clip(RoundedCornerShape(8.dp)).background(wash ?: Color.Transparent)
+                                    .semantics { contentDescription = describe(m, d) }
                                     .let { if (clickable) it.clickable { show(m, d) } else it },
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -206,6 +261,10 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
                     }
                 }
             }
+        }
+        repeat(cols - group.size) { Box(Modifier.weight(1f)) }
+        }
+        }
         }
         if (result.legend) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
@@ -279,8 +338,14 @@ fun BurndownView(store: Store, result: BurndownResult) {
         // The newest bars are on the right: start there, as a phone's screen shows only the end of a long chart.
         val scroll = rememberScrollState()
         LaunchedEffect(scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
+        val last = result.bars.last()
+        val summary = "${result.title}: ${result.bars.size} bars. Latest: ${last.major} ${last.minor}: ${last.pending} pending, ${last.started} started, ${doneOf(last)} done."
+        // With room to spare the drawing grows to fill it, up to 1100, as the web's does; otherwise it keeps its size and scrolls.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val grow = if (maxWidth.value > width) minOf(maxWidth.value, 1100f) / width else 1f
         Box(Modifier.horizontalScroll(scroll)) {
-            Canvas(Modifier.width(width.dp).height(height.dp)) {
+            Canvas(Modifier.width((width * grow).dp).height((height * grow).dp).semantics { contentDescription = summary }) {
+              scale(grow, Offset.Zero) {
                 val axis = TextStyle(fontSize = 11.sp, color = dim)
                 for (v in result.yLabels) {
                     val y = (base - h(v)).dp.toPx()
@@ -299,7 +364,9 @@ fun BurndownView(store: Store, result: BurndownResult) {
                     drawText(minor, topLeft = Offset((x + bar / 2f).dp.toPx() - minor.size.width / 2f, (base + 4).dp.toPx()))
                     if (majors[i].isNotEmpty()) drawText(measurer.measure(majors[i], TextStyle(fontSize = 10.sp, color = colors.onSurface)), topLeft = Offset(x.dp.toPx(), (base + 22).dp.toPx()))
                 }
+              }
             }
+        }
         }
         FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             for ((label, c) in listOf("Done" to done, "Started" to started, "Pending" to pending)) {

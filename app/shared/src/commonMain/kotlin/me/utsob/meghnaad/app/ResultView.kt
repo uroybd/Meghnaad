@@ -2,6 +2,7 @@ package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -107,9 +108,16 @@ fun ReportSection(store: Store, e: Entry, result: ReportResult) {
         return
     }
     val heads = groupHeads(result, ctx)
-    result.rows.forEachIndexed { i, row ->
-        heads.getOrNull(i)?.let { Text(it, Modifier.padding(top = 10.dp, bottom = 4.dp), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        TaskCard(store, row, result, ctx, from = e, selectable = false, onEdit = { store.editing = EditRef(it, e) }, gapBefore = heads.isEmpty() && result.breaks.getOrNull(i) == true)
+    // A table where there is room for one (the web's width), cards where there is not.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth > TABLE_FROM) {
+            ReportTableBlock(store, result, ctx, heads, e) { store.editing = EditRef(it, e) }
+        } else Column(Modifier.fillMaxWidth()) {
+            result.rows.forEachIndexed { i, row ->
+                heads.getOrNull(i)?.let { Text(it, Modifier.padding(top = 10.dp, bottom = 4.dp), fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                TaskCard(store, row, result, ctx, from = e, selectable = false, onEdit = { store.editing = EditRef(it, e) }, gapBefore = heads.isEmpty() && result.breaks.getOrNull(i) == true)
+            }
+        }
     }
     Dim(
         if (result.rows.size == result.matched) "${result.matched} ${if (result.matched == 1) "task" else "tasks"}" else "showing ${result.rows.size} of ${result.matched}",

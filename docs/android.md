@@ -18,7 +18,12 @@ cannot: reminders that come with the app closed, and the widgets.
 - **A table where there is room.** On a tablet, a foldable or a phone held wide (more than 760 dp across), a report is
   drawn as the web's table, not as cards: the report's own columns, headers that sort (a long press adds a tie-breaker,
   the web's Shift-click) with a button to group by the column, a tick box on each row and the row's buttons at the end.
-  Narrower than that you get the cards.
+  Narrower than that you get the cards. Summary is a table too, the calendar shows its months side by side and the
+  burndown chart grows to fill the width.
+- **With a keyboard attached**, the web's keys work: `/` focuses the prompt with its line selected (not while you are typing
+  in a field), Tab completes, ↑ and ↓ go through the last commands, Ctrl+L clears the console and Esc leaves the prompt;
+  in the Hooks editor Ctrl+S saves and Tab indents; in the task form Enter saves and Ctrl+Enter saves from a field that
+  takes several lines.
 - **Pull down to sync.** At the top of any page but the console, a pull down syncs with the bucket and redraws the page.
 - **Reminders that work with the app closed.** The same options as the web app's (Menu → Reminders); the phone wakes the
   app at the moment something is due or comes off `wait`, and the notification opens the task. Allow notifications when

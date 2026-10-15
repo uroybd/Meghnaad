@@ -99,29 +99,48 @@ fun LazyListScope.reportTable(
     onGroup: (column: String) -> Unit,
 ) {
     val keys = parseSort(result.sort)
-    item(key = "table-head") { TableHeader(store, result, keys, onSort, onGroup) }
+    item(key = "table-head") { TableHeader(store, result, keys, selectable = true, onSort, onGroup) }
     items(result.rows.size, key = { result.rows[it].uuid }) { i ->
         val row = result.rows[i]
-        heads.getOrNull(i)?.let { head ->
-            Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
-                Text(head, Modifier.padding(bottom = 4.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                HorizontalDivider(color = MaterialTheme.colorScheme.primary)
-            }
+        heads.getOrNull(i)?.let { GroupHead(it) }
+        TableRow(store, result, ctx, row, entry, selectable = true, activeTags, onTag, onEdit, gapBefore = heads.isEmpty() && result.breaks.getOrNull(i) == true)
+    }
+}
+
+/**
+ * The same table where nothing is sorted, grouped or ticked: a report the console prints, or the tasks due in the months of a
+ * calendar (the web's ReportTable with only the report). A tag chip opens the tag's entry on the Tags page.
+ */
+@Composable
+fun ReportTableBlock(store: Store, result: ReportResult, ctx: Ctx, heads: List<String?>, entry: Entry?, onEdit: (Row) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        TableHeader(store, result, parseSort(result.sort), selectable = false, onSort = null, onGroup = null)
+        result.rows.forEachIndexed { i, row ->
+            heads.getOrNull(i)?.let { GroupHead(it) }
+            TableRow(store, result, ctx, row, entry, selectable = false, emptyList(), null, onEdit, gapBefore = heads.isEmpty() && result.breaks.getOrNull(i) == true)
         }
-        TableRow(store, result, ctx, row, entry, activeTags, onTag, onEdit, gapBefore = heads.isEmpty() && result.breaks.getOrNull(i) == true)
+    }
+}
+
+/** The heading above a group of rows: what its tasks have in common, in the accent colour with a line under it. */
+@Composable
+private fun GroupHead(text: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 14.dp)) {
+        Text(text, Modifier.padding(bottom = 4.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        HorizontalDivider(color = MaterialTheme.colorScheme.primary)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TableHeader(store: Store, result: ReportResult, keys: List<SortKey>, onSort: (String, Boolean) -> Unit, onGroup: (String) -> Unit) {
+private fun TableHeader(store: Store, result: ReportResult, keys: List<SortKey>, selectable: Boolean, onSort: ((String, Boolean) -> Unit)?, onGroup: ((String) -> Unit)?) {
     val colors = MaterialTheme.colorScheme
     val udas = store.config?.config?.udas ?: emptyMap()
     val all = result.rows.map { it.uuid }
     val ticked = all.count { store.selection.has(it) }
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(SELECT_WIDTH), contentAlignment = Alignment.Center) {
+            if (selectable) Box(Modifier.width(SELECT_WIDTH), contentAlignment = Alignment.Center) {
                 TriStateCheckbox(
                     state = when {
                         all.isNotEmpty() && ticked == all.size -> ToggleableState.On
@@ -133,12 +152,12 @@ private fun TableHeader(store: Store, result: ReportResult, keys: List<SortKey>,
             }
             for (col in result.columns) {
                 val st = sortState(keys, col.name)
-                val sortable = baseColumn(col.name) in SORTABLE || baseColumn(col.name) in udas
+                val sortable = onSort != null && (baseColumn(col.name) in SORTABLE || baseColumn(col.name) in udas)
                 Row(Modifier.weight(share(col)).padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     val tint = if (st != null) colors.primary else colors.onSurfaceVariant
                     Row(
                         Modifier.clip(ControlShape).let { m ->
-                            if (sortable) m.combinedClickable(onClick = { onSort(col.name, false) }, onLongClick = { onSort(col.name, true) }) else m
+                            if (sortable) m.combinedClickable(onClick = { onSort?.invoke(col.name, false) }, onLongClick = { onSort?.invoke(col.name, true) }) else m
                         }.padding(horizontal = 4.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -148,7 +167,7 @@ private fun TableHeader(store: Store, result: ReportResult, keys: List<SortKey>,
                             st.rank?.let { Text(it.toString(), color = tint, fontSize = 10.sp) }
                         }
                     }
-                    if (sortable) {
+                    if (sortable && onGroup != null) {
                         IconAction("rows-3", if (st?.group == true) "Stop grouping by ${col.label}" else "Group by ${col.label}", { onGroup(baseColumn(col.name)) }, size = 12.dp, box = 28.dp, tint = if (st?.group == true) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.6f))
                     }
                 }
@@ -167,8 +186,9 @@ private fun TableRow(
     ctx: Ctx,
     row: Row,
     entry: Entry?,
+    selectable: Boolean,
     activeTags: List<String>,
-    onTag: (String) -> Unit,
+    onTag: ((String) -> Unit)?,
     onEdit: (Row) -> Unit,
     gapBefore: Boolean,
 ) {
@@ -176,7 +196,7 @@ private fun TableRow(
     val scope = rememberCoroutineScope()
     val open = row.status == "pending"
     val overdue = open && row.due != null && row.due < store.now
-    val picked = store.selection.has(row.uuid)
+    val picked = selectable && store.selection.has(row.uuid)
     val done = row.status == "completed" || row.status == "deleted" || row.waiting
     val bold = row.style?.bold == true
     Column(Modifier.fillMaxWidth().padding(top = if (gapBefore) 14.dp else 0.dp)) {
@@ -184,7 +204,7 @@ private fun TableRow(
             Modifier.fillMaxWidth().background(rowBackground(row, picked)).clickable { store.openDetail(row.uuid, entry) },
             verticalAlignment = Alignment.Top,
         ) {
-            Box(Modifier.width(SELECT_WIDTH).padding(top = 2.dp), contentAlignment = Alignment.Center) {
+            if (selectable) Box(Modifier.width(SELECT_WIDTH).padding(top = 2.dp), contentAlignment = Alignment.Center) {
                 Checkbox(checked = picked, onCheckedChange = { store.selection.toggle(row.uuid) })
             }
             for (col in result.columns) {
@@ -211,7 +231,7 @@ private fun TableCell(
     done: Boolean,
     bold: Boolean,
     activeTags: List<String>,
-    onTag: (String) -> Unit,
+    onTag: ((String) -> Unit)?,
 ) {
     val colors = MaterialTheme.colorScheme
     val x = extras
@@ -247,7 +267,7 @@ private fun TableCell(
                     height = 21.dp,
                     background = if (on) colors.primary.copy(alpha = 0.18f) else colors.surfaceVariant,
                     color = if (on) colors.primary else colors.onSurface,
-                    onClick = { onTag(t) },
+                    onClick = { if (onTag != null) onTag(t) else store.showTag(t) },
                 )
             }
         }
