@@ -203,7 +203,7 @@ class WidgetConfigActivity : Activity() {
         label("Only the tasks that match (optional)")
         val filter = field("project:Work", current.filter)
         form.addView(TextView(this).apply {
-            text = "Days with something due get a dot: red when overdue, amber today, blue otherwise. Tap a day to see its tasks."
+            text = "Days with something due get a dot: red when overdue, amber today, blue otherwise. Tap a day to select it; make the widget bigger to see that day's tasks beside the month or under it."
             textSize = 13f
             alpha = 0.7f
             setPadding(0, dp(12), 0, 0)

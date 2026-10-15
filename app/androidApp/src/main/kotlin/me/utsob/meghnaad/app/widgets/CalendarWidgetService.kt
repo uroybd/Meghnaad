@@ -25,10 +25,12 @@ class CalendarWidgetService : RemoteViewsService() {
 
     private class Factory(private val context: Context, private val widgetId: Int) : RemoteViewsFactory {
         private var cells: List<Cell> = emptyList()
+        private var selected: String = ""
 
         override fun onCreate() {}
 
         override fun onDataSetChanged() {
+            selected = CalendarWidget.selected(context, widgetId)
             cells = try {
                 val (year, month) = CalendarWidget.month(context, widgetId)
                 Tasks.calendar(context, WidgetPrefs.calendar(context, widgetId), year, month)
@@ -84,6 +86,10 @@ class CalendarWidgetService : RemoteViewsService() {
             if (cell.today) {
                 row.setViewVisibility(R.id.today, android.view.View.VISIBLE)
                 palette.setTint(row, R.id.today, Palette.ACCENT)
+            } else if (cell.date == selected) {
+                // The day whose tasks are shown, when it is not today (which is marked already).
+                row.setViewVisibility(R.id.selected, android.view.View.VISIBLE)
+                palette.setTint(row, R.id.selected, Palette.ACCENT)
             }
             val dot = when (cell.due) {
                 "overdue" -> Palette.OVERDUE
@@ -98,7 +104,8 @@ class CalendarWidgetService : RemoteViewsService() {
                 else if (!cell.today && dot === Palette.DIM) row.setImageViewResource(R.id.dot, R.drawable.circle_dim)
                 palette.setTint(row, R.id.dot, if (cell.today) Palette.WHITE else dot)
             }
-            row.setOnClickFillInIntent(R.id.cell, Intent().putExtra("kind", "day").putExtra("date", cell.date))
+            // A tap selects the day (the widget answers it); the app opens from the day's own pane.
+            row.setOnClickFillInIntent(R.id.cell, Intent().putExtra("date", cell.date))
             return row
         }
 

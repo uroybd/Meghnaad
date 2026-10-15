@@ -117,10 +117,17 @@ object WidgetPrefs {
         prefs(context).edit().putInt("offset:$id", offset).apply()
     }
 
+    /** The day a calendar widget shows the tasks of (`2026-10-17`); null is today. */
+    fun selectedDay(context: Context, id: Int): String? = prefs(context).getString("day:$id", null)
+
+    fun selectDay(context: Context, id: Int, date: String?) {
+        prefs(context).edit().apply { if (date == null) remove("day:$id") else putString("day:$id", date) }.apply()
+    }
+
     /** A widget was removed from the home screen. */
     fun forget(context: Context, ids: IntArray) {
         val edit = prefs(context).edit()
-        for (id in ids) for (kind in listOf("list", "burndown", "calendar", "look", "offset")) edit.remove("$kind:$id")
+        for (id in ids) for (kind in listOf("list", "burndown", "calendar", "look", "offset", "day")) edit.remove("$kind:$id")
         edit.apply()
     }
 }

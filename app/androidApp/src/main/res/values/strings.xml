@@ -11,7 +11,13 @@
     <string name="widget_burndown_label">Burndown</string>
     <string name="widget_calendar_label">Calendar</string>
     <string name="widget_burndown_description">How the pending, started and finished tasks add up over time</string>
-    <string name="widget_calendar_description">A month, with the days that have something due marked</string>
+    <string name="widget_calendar_description">A month, with the days that have something due marked. Make it bigger to see the tasks of a day beside it or under it</string>
+    <string name="widget_show_all">Show all %1$d ›</string>
+    <string name="widget_day_empty">Nothing due or scheduled</string>
+    <plurals name="widget_day_count">
+        <item quantity="one">%1$d task</item>
+        <item quantity="other">%1$d tasks</item>
+    </plurals>
     <string name="widget_previous">Previous month</string>
     <string name="widget_next">Next month</string>
     <string name="widget_nothing_to_show">Nothing to show yet.</string>

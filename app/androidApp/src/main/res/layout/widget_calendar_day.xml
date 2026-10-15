@@ -5,6 +5,15 @@
     android:layout_height="31dp">
 
     <ImageView
+        android:id="@+id/selected"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="center"
+        android:contentDescription="@null"
+        android:src="@drawable/ring_accent"
+        android:visibility="gone" />
+
+    <ImageView
         android:id="@+id/today"
         android:layout_width="26dp"
         android:layout_height="26dp"

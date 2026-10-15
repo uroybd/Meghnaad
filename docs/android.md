@@ -49,6 +49,11 @@ cannot: reminders that come with the app closed, and the widgets.
     pending, with how long it would take to clear them at this pace.
   - **Calendar**: a month with today circled and a dot on the days with something due (red when overdue, amber today,
     blue after), for the tasks a filter picks. The arrows go to other months, and the month's name back to this one.
+    **A tap on a day selects it** (a ring marks it) and, when the widget has the room, shows that day's tasks (due or
+    scheduled): beside the month when it is wide, under it when it is tall, with the month alone when it is small, so
+    resizing the widget is how you choose. Two tasks are listed, each with its time, or "scheduled", and its project (a
+    tap opens the task), and when there are more a **Show all** line opens the whole day in the app, as the date above them
+    does. The month's name goes back to this month and to today.
 
   They redraw after any change, from the app or the widget, and sync by themselves about every half hour.
 - **Any S3-compatible store**: Cloudflare R2, AWS S3, MinIO, Backblaze B2. The store has to accept conditional writes

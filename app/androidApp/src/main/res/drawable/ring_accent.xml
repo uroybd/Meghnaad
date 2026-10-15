@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The ring around the selected day of the calendar widget (white, so it can be tinted). A shape with only a stroke is filled when it
+     is tinted, a ring drawn as a path is not. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,1a11,11 0 1,0 0.001,0zM12,2.4a9.6,9.6 0 1,1 -0.001,0z" />
+</vector>

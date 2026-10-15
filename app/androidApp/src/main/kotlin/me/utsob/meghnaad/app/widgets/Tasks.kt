@@ -8,6 +8,9 @@ import java.util.TimeZone
 /** One task as the widget shows it. */
 data class WidgetTask(val uuid: String, val description: String, val detail: String, val overdue: Boolean)
 
+/** The tasks of one day of the calendar: the first few of them, and how many there are in all. */
+data class DayTasks(val tasks: List<WidgetTask>, val total: Int)
+
 /** The few things the widget asks of the engine, as ordinary commands. */
 object Tasks {
     private fun request(vararg fields: Pair<String, Any>): String {
@@ -86,6 +89,42 @@ object Tasks {
         val args = JSONArray(listOf("rc.calendar.monthsperline:1", "calendar", month.toString(), year.toString()) + config.filter.trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
         val result = run(context, "args" to args).optJSONObject("result") ?: return null
         return result.takeIf { it.optString("kind") == "calendar" }
+    }
+
+    /**
+     * The tasks due or scheduled on [date] (`2026-10-17`), the way the app lists them for a day: the `list` report, narrowed by the
+     * widget's filter. Only the first [limit] come, and how many there are.
+     */
+    fun day(context: Context, config: CalendarConfig, date: String, limit: Int): DayTasks {
+        val filter = config.filter.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val args = JSONArray(listOf("list", "(", "due:$date", "or", "scheduled:$date", ")") + filter + "limit:$limit")
+        val result = run(context, "args" to args).optJSONObject("result")
+        return if (result?.optString("kind") == "report") dayOf(result, date, System.currentTimeMillis() / 1000) else DayTasks(emptyList(), 0)
+    }
+
+    /** The day's tasks out of a report answer: each with what it is for that day (a time it is due, or that it is scheduled), and its project. */
+    fun dayOf(report: JSONObject, date: String, nowSecs: Long, zone: TimeZone = TimeZone.getDefault()): DayTasks {
+        val rows = report.optJSONArray("rows") ?: return DayTasks(emptyList(), 0)
+        fun long(row: JSONObject, key: String) = if (row.isNull(key)) null else row.optLong(key)
+        fun day(epoch: Long) = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).apply { timeZone = zone }.format(java.util.Date(epoch * 1000))
+        fun time(epoch: Long): String? {
+            val c = java.util.Calendar.getInstance(zone).apply { timeInMillis = epoch * 1000 }
+            if (c.get(java.util.Calendar.HOUR_OF_DAY) == 0 && c.get(java.util.Calendar.MINUTE) == 0) return null
+            return java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).apply { timeZone = zone }.format(java.util.Date(epoch * 1000))
+        }
+        val tasks = (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            val due = long(row, "due")
+            val scheduled = long(row, "scheduled")
+            val mark = when {
+                due != null && day(due) == date -> time(due) ?: "due"
+                scheduled != null && day(scheduled) == date -> "scheduled" + (time(scheduled)?.let { " $it" } ?: "")
+                else -> null
+            }
+            val project = if (row.isNull("project")) null else row.optString("project").takeIf { it.isNotEmpty() }
+            WidgetTask(row.getString("uuid"), row.getString("description"), listOfNotNull(mark, project).joinToString(" · "), due != null && due < nowSecs)
+        }
+        return DayTasks(tasks, report.optInt("matched", tasks.size))
     }
 
     /** Mark a task done. Null when it worked, the reason when it did not. */
