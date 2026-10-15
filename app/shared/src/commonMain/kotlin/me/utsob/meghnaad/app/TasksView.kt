@@ -3,6 +3,7 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -78,6 +79,9 @@ fun TasksView(store: Store) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
     // A table where there is room for one (the web's width), cards where there is not.
     val wide = maxWidth > TABLE_FROM
+    val tableScroll = rememberScrollState()
+    // The columns' widths, in what the row has after the page's margins, the tick box and the buttons.
+    val widths = remember(result, maxWidth) { if (result != null && ctx != null && wide) tableWidths(result, ctx, (maxWidth - 24.dp - TABLE_SELECT - TABLE_ACTIONS).value) else emptyList() }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
         item { FilterBar(store) }
         item { BulkBar(store) }
@@ -86,14 +90,17 @@ fun TasksView(store: Store) {
             entry.failure != null -> item { Text(entry.failure!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
             result == null -> item { ResultBlock(store, entry) }
             result.rows.isEmpty() -> item { Dim("No tasks match.", Modifier.padding(vertical = 16.dp), size = 14) }
-            wide -> reportTable(
-                store, result, ctx!!, heads, entry,
-                activeTags = activeTags(store.filter),
-                onTag = { store.filter = toggleTag(store.filter, it) },
-                onEdit = { store.editing = EditRef(it, entry) },
-                onSort = { column, tieBreak -> sortReport(store, result, column, tieBreak) },
-                onGroup = { column -> groupReport(store, result, column) },
-            )
+            wide -> {
+                // The Group picker is how a table is grouped on a touch screen (the web's group buttons show on hover).
+                item { SortBar(store, result) }
+                reportTable(
+                    store, result, ctx!!, widths, tableScroll, heads, entry,
+                    activeTags = activeTags(store.filter),
+                    onTag = { store.filter = toggleTag(store.filter, it) },
+                    onEdit = { store.editing = EditRef(it, entry) },
+                    onSort = { column, tieBreak -> sortReport(store, result, column, tieBreak) },
+                )
+            }
             else -> {
                 item { SortBar(store, result) }
                 items(result.rows.size, key = { result.rows[it].uuid }) { i ->

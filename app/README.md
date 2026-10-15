@@ -34,6 +34,9 @@ ones, and saves no keys. To try a bucket, set `MEGHNAAD_ENDPOINT`, `MEGHNAAD_BUC
 `MEGHNAAD_ACCESS_KEY`, `MEGHNAAD_SECRET_KEY` and `MEGHNAAD_ENCRYPTION_SECRET` in the environment: they are held in memory and
 never written, but what you change is pushed to that bucket.
 
+The window is a phone's. For the wide layout (a report as a table, the calendar's months side by side) set
+`MEGHNAAD_PREVIEW_WIDTH=1000` (dp): the window is then that wide, and can be resized.
+
 ## Build and test
 
 ```bash

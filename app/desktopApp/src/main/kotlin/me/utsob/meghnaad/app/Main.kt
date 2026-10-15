@@ -78,12 +78,13 @@ fun main() = application {
         if (!engine.restored && vault.connection() == null) runBlocking { seed(tw) }
         Store(tw, engine, vault, SyncController(engine, scope, SystemClock), scope, SystemClock).also { it.begin() }
     }
-    // The size of a phone (a Pixel's 412 x 892 dp), and not resizable: the app has one layout, the phone's.
+    // The size of a phone (a Pixel's 412 x 892 dp). MEGHNAAD_PREVIEW_WIDTH=1000 (dp) shows the wide layout, the tables a tablet gets.
+    val wide = System.getenv("MEGHNAAD_PREVIEW_WIDTH")?.toIntOrNull()
     Window(
         onCloseRequest = ::exitApplication,
-        title = "Meghnaad (phone preview)",
-        state = rememberWindowState(width = 412.dp, height = 892.dp),
-        resizable = false,
+        title = if (wide != null) "Meghnaad (wide preview)" else "Meghnaad (phone preview)",
+        state = rememberWindowState(width = (wide ?: 412).dp, height = if (wide != null) 800.dp else 892.dp),
+        resizable = wide != null,
     ) {
         App(store)
     }

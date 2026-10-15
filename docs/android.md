@@ -18,7 +18,8 @@ cannot: reminders that come with the app closed, and the widgets.
 - **A table where there is room.** On a tablet, a foldable or a phone held wide (more than 760 dp across), a report is
   drawn as the web's table, not as cards: the report's own columns, headers that sort (a long press adds a tie-breaker,
   the web's Shift-click) with a button to group by the column, a tick box on each row and the row's buttons at the end.
-  Narrower than that you get the cards. Summary is a table too, the calendar shows its months side by side and the
+  Columns take the width of what they hold and the description the rest; a report with more columns than fit scrolls
+  sideways, with the tick box and the buttons kept in place. Narrower than that you get the cards. Summary is a table too, the calendar shows its months side by side and the
   burndown chart grows to fill the width.
 - **With a keyboard attached**, the web's keys work: `/` focuses the prompt with its line selected (not while you are typing
   in a field), Tab completes, ↑ and ↓ go through the last commands, Ctrl+L clears the console and Esc leaves the prompt;
