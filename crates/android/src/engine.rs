@@ -8,7 +8,9 @@ use crate::net::PhoneNet;
 use crate::s3::{Bucket, S3Store};
 use crate::secrets::{valid_name, Secrets};
 use crate::sigv4::sha256_hex;
+use crate::syncserver::{self, SyncServer};
 use serde::Deserialize;
+use serde_json::Value;
 use std::rc::Rc;
 use std::sync::Arc;
 use taskchampion::chrono::Utc;
@@ -24,18 +26,110 @@ use tc_core::warm::Warm;
 use tc_core::webapi::WebSettings;
 use tc_core::{load_cryptor, save_replica, CloudServer, LiveStorage, Saver};
 
-/// Where the bucket is and the secret that opens it, as the app hands them over for each sync.
+/// What a sync fails with, at the start of its message, when the phone's tasks were last synced somewhere else than
+/// where the settings now point: the app asks what to do and syncs again with a [`Switch`].
+pub const CHANGED: &str = "backend-changed";
+
+/// What to do with the tasks on the phone when it is set to sync somewhere it did not before.
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+enum Switch {
+    /// Start from what the new place holds; the tasks on the phone are let go.
+    Replace,
+    /// Keep the tasks on the phone and add them to what the new place holds.
+    Merge,
+}
+
+/// Where the tasks sync to.
 #[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TasksAt {
+    /// A bucket over S3 (R2, AWS, MinIO, …), laid out the way the `task` CLI's cloud sync lays it out.
+    Bucket(Bucket),
+    /// A TaskChampion sync server.
+    Server { url: String, client_id: String },
+}
+
+/// Where the tasks sync to and the secret that opens them, as the app hands them over for each sync.
 struct SyncSettings {
-    #[serde(flatten)]
-    bucket: Bucket,
+    tasks: TasksAt,
     /// `sync.encryption_secret` of the taskrc.
     encryption_secret: String,
-    /// Files to keep the same as the bucket's (`web/config.json`, `web/settings.json`, `web/hooks.lua`): the ones the user
+    /// Files to keep the same as a bucket's (`web/config.json`, `web/settings.json`, `web/hooks.lua`): the ones the user
     /// turned on. Anything else named here is ignored.
+    files: Vec<String>,
+    /// The bucket those files are kept in. By default, the one the tasks sync to (when they do).
+    files_bucket: Option<Bucket>,
+    switch: Option<Switch>,
+}
+
+#[derive(Deserialize)]
+struct RawSettings {
+    #[serde(default)]
+    tasks: Option<TasksAt>,
+    encryption_secret: String,
     #[serde(default)]
     files: Vec<String>,
+    #[serde(default)]
+    files_bucket: Option<Bucket>,
+    #[serde(default)]
+    switch: Option<Switch>,
+    /// Before there was a choice, the bucket's own fields stood here beside the others.
+    #[serde(flatten)]
+    legacy: serde_json::Map<String, Value>,
 }
+
+impl SyncSettings {
+    fn parse(text: &str) -> Result<SyncSettings, String> {
+        let bad = |e: serde_json::Error| format!("invalid sync settings: {e}");
+        let raw: RawSettings = serde_json::from_str(text).map_err(bad)?;
+        let tasks = match raw.tasks {
+            Some(t) => t,
+            None => TasksAt::Bucket(serde_json::from_value(Value::Object(raw.legacy)).map_err(bad)?),
+        };
+        Ok(SyncSettings {
+            tasks,
+            encryption_secret: raw.encryption_secret,
+            files: raw.files,
+            files_bucket: raw.files_bucket,
+            switch: raw.switch,
+        })
+    }
+
+    /// The client id of a sync server, which is a UUID.
+    fn client_id(id: &str) -> Result<uuid::Uuid, String> {
+        uuid::Uuid::parse_str(id.trim())
+            .map_err(|_| "the client id should be a UUID, such as 3f2b8d1e-9c4a-4b7e-8f21-5a6d0c9e1b34".to_owned())
+    }
+
+    /// What the tasks sync to, as a line to compare with the last one. The client id is not kept, only a hash of it.
+    fn origin(&self) -> Result<String, String> {
+        Ok(match &self.tasks {
+            TasksAt::Bucket(b) => format!("bucket|{}|{}", b.endpoint.trim_end_matches('/'), b.bucket),
+            TasksAt::Server { url, client_id } => {
+                let id = Self::client_id(client_id)?;
+                format!(
+                    "server|{}|{}",
+                    url.trim().trim_end_matches('/'),
+                    &sha256_hex(id.to_string().as_bytes())[..16]
+                )
+            }
+        })
+    }
+}
+
+/// An [`origin`](SyncSettings::origin) in words.
+fn describe_origin(origin: &str) -> String {
+    let mut parts = origin.split('|');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("bucket"), Some(endpoint), Some(bucket)) => format!("the bucket {bucket} at {endpoint}"),
+        (Some("server"), Some(url), _) => format!("the sync server at {url}"),
+        _ => "somewhere else".to_owned(),
+    }
+}
+
+/// Where the engine remembers what the tasks were last synced with.
+const ORIGIN_KEY: &str = "web/.sync-origin";
 
 pub struct Engine {
     replica: Replica<LiveStorage>,
@@ -109,34 +203,60 @@ impl Engine {
         self.warm.generation()
     }
 
-    /// Pull what others have done and push what is waiting. `settings` is JSON: `endpoint`, `bucket`, `region`
-    /// (optional), `access_key`, `secret_key`, `encryption_secret`, and `files` (optional: which of the settings, the app's
-    /// settings and the hooks to keep in step with the bucket's). Answers which of those files were replaced here.
+    /// Pull what others have done and push what is waiting. `settings` is JSON: `tasks` (where they sync to: `{ kind:
+    /// "bucket", endpoint, bucket, region (optional), access_key, secret_key }` or `{ kind: "server", url, client_id }`),
+    /// `encryption_secret`, and optionally `files` (which of the settings, the app's settings and the hooks to keep in step
+    /// with a bucket's), `files_bucket` (that bucket, when the tasks do not sync to one) and `switch` (`replace` or
+    /// `merge`, see below). Before `tasks` there were the bucket's fields beside the others, which still work. Answers which
+    /// of the files were replaced here.
+    ///
+    /// When the tasks on the phone were last synced with another place than `tasks` names, the replica cannot go on
+    /// there (that place does not have the version it stands on), so this fails with a message that starts with
+    /// [`CHANGED`] and changes nothing. Asking again with `switch` goes: `replace` starts from what the new place holds,
+    /// `merge` keeps the phone's tasks and adds them to it. Nothing on the phone changes until the new place has answered.
     pub fn sync(&mut self, settings: &str) -> Result<Vec<String>, String> {
-        let s: SyncSettings = serde_json::from_str(settings).map_err(|e| format!("invalid sync settings: {e}"))?;
-        let fingerprint =
-            sha256_hex(format!("{}\n{}\n{}", s.bucket.endpoint, s.bucket.bucket, s.encryption_secret).as_bytes());
+        let s = SyncSettings::parse(settings)?;
+        let origin = s.origin()?;
+        // The files come from a bucket of their own, or the one the tasks are in.
         let files: Vec<&str> = filesync::SETTINGS
             .iter()
             .chain(filesync::HOOKS)
             .copied()
             .filter(|k| s.files.iter().any(|f| f == k))
             .collect();
-        let for_files = S3Store::new(s.bucket.clone()).map_err(|e| e.to_string())?;
-        let store = S3Store::new(s.bucket).map_err(|e| e.to_string())?;
-        let cryptor = match self.key.take() {
-            Some((f, c)) if f == fingerprint => c,
-            _ => pollster::block_on(load_cryptor(&store, s.encryption_secret.as_bytes())).map_err(|e| e.to_string())?,
+        let for_files = match (&s.files_bucket, &s.tasks) {
+            _ if files.is_empty() => None,
+            (Some(b), _) | (None, TasksAt::Bucket(b)) => Some(S3Store::new(b.clone()).map_err(|e| e.to_string())?),
+            (None, TasksAt::Server { .. }) => {
+                return Err("sharing settings needs a bucket to keep them in: add one, or turn sharing off".into())
+            }
         };
-        let mut server: Box<dyn Server> =
-            Box::new(CloudServer::with_cryptor(store, cryptor.clone()).with_cleanup(now_secs));
-        let synced = pollster::block_on(self.replica.sync(&mut server, false));
+        let fingerprint = sha256_hex(format!("{origin}\n{}", s.encryption_secret).as_bytes());
+        let (mut server, cryptor) = self.connect(&s, &fingerprint)?;
+
+        let recorded = pollster::block_on(tc_core::ObjectStore::get(&self.folder, ORIGIN_KEY))
+            .map_err(|e| e.to_string())?
+            .map(|b| String::from_utf8_lossy(&b).into_owned());
+        let elsewhere = recorded.filter(|r| *r != origin && !self.is_empty());
+        let synced = match (elsewhere, s.switch) {
+            (None, _) => pollster::block_on(self.replica.sync(&mut server, false)).map_err(|e| request::root_cause(&e)),
+            (Some(old), None) => {
+                return Err(format!(
+                    "{CHANGED}: the tasks on this phone were synced with {}, and the settings now point at {}",
+                    describe_origin(&old),
+                    describe_origin(&origin)
+                ))
+            }
+            (Some(_), Some(how)) => self.sync_elsewhere(&mut server, how),
+        };
         // A wrong secret or a replaced bucket makes the key useless: derive it again next time.
-        synced.map_err(|e| request::root_cause(&e))?;
+        synced?;
         self.key = Some((fingerprint, cryptor));
-        if files.is_empty() {
+        pollster::block_on(tc_core::ObjectStore::put(&self.folder, ORIGIN_KEY, origin.as_bytes()))
+            .map_err(|e| e.to_string())?;
+        let Some(for_files) = for_files else {
             return Ok(Vec::new());
-        }
+        };
         let state_key = "web/.sync-state.json";
         let mut state = State::load(
             pollster::block_on(tc_core::ObjectStore::get(&self.folder, state_key))
@@ -152,6 +272,68 @@ impl Engine {
             self.script = None;
         }
         Ok(report.pulled)
+    }
+
+    /// The place the tasks sync to as a TaskChampion server, with the key that opens it (kept from the last sync when it is
+    /// the same place and secret: deriving it is slow on a phone).
+    fn connect(&mut self, s: &SyncSettings, fingerprint: &str) -> Result<(Box<dyn Server>, Cryptor), String> {
+        let kept = match self.key.take() {
+            Some((f, c)) if f == fingerprint => Some(c),
+            _ => None,
+        };
+        match &s.tasks {
+            TasksAt::Bucket(b) => {
+                let store = S3Store::new(b.clone()).map_err(|e| e.to_string())?;
+                let cryptor = match kept {
+                    Some(c) => c,
+                    None => pollster::block_on(load_cryptor(&store, s.encryption_secret.as_bytes()))
+                        .map_err(|e| e.to_string())?,
+                };
+                Ok((
+                    Box::new(CloudServer::with_cryptor(store, cryptor.clone()).with_cleanup(now_secs)),
+                    cryptor,
+                ))
+            }
+            TasksAt::Server { url, client_id } => {
+                let id = SyncSettings::client_id(client_id)?;
+                let cryptor = kept.unwrap_or_else(|| syncserver::cryptor(id, &s.encryption_secret));
+                let server = SyncServer::new(url, id, cryptor.clone()).map_err(|e| e.to_string())?;
+                Ok((Box::new(server), cryptor))
+            }
+        }
+    }
+
+    /// Whether the replica holds no tasks at all.
+    fn is_empty(&mut self) -> bool {
+        pollster::block_on(self.replica.all_task_uuids()).is_ok_and(|all| all.is_empty())
+    }
+
+    /// Sync to a place the tasks were not synced with before. A replica of its own is made for it, and only when that has
+    /// worked does it take the place of this one.
+    fn sync_elsewhere(&mut self, server: &mut Box<dyn Server>, how: Switch) -> Result<(), String> {
+        let (mut replica, saver, warm) = fresh(LiveStorage::new());
+        let mut undo = UndoStack::default();
+        if how == Switch::Merge {
+            let answer = self.run(&serde_json::json!({ "line": "export", "now": now_secs() }).to_string());
+            let answer: Value = serde_json::from_str(&answer).map_err(|e| e.to_string())?;
+            let text = answer["result"]["text"].as_str().unwrap_or("[]");
+            let imported = pollster::block_on(request::import(
+                &mut replica,
+                &self.cfg,
+                &mut undo,
+                |_| None,
+                (text, true, 0, now_secs() as f64),
+            ));
+            if let Some(why) = serde_json::from_str::<Value>(&imported)
+                .ok()
+                .and_then(|v| v.get("error").cloned())
+            {
+                return Err(format!("the tasks on the phone could not be carried over: {why}"));
+            }
+        }
+        pollster::block_on(replica.sync(server, false)).map_err(|e| request::root_cause(&e))?;
+        (self.replica, self.saver, self.warm, self.undo) = (replica, saver, warm, undo);
+        Ok(())
     }
 
     /// A request to one of the settings routes the web app makes of its server (`/api/config`, `/api/settings`, …):
@@ -246,5 +428,75 @@ impl Engine {
             |clock| Self::hooks((web, secrets, script), clock),
             (text, apply, tz, now),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const ID: &str = "3f2b8d1e-9c4a-4b7e-8f21-5a6d0c9e1b34";
+    fn bucket() -> Value {
+        json!({ "endpoint": "https://x.example/", "bucket": "tasks", "region": "auto", "access_key": "AK", "secret_key": "SK" })
+    }
+
+    #[test]
+    fn the_settings_name_where_the_tasks_go() {
+        // As the app sends them now.
+        let mut tasks = bucket();
+        tasks["kind"] = json!("bucket");
+        let s = SyncSettings::parse(
+            &json!({ "tasks": tasks, "encryption_secret": "pw", "files": ["web/hooks.lua"] }).to_string(),
+        )
+        .unwrap();
+        assert!(matches!(s.tasks, TasksAt::Bucket(_)));
+        assert_eq!(s.files, ["web/hooks.lua"]);
+        assert_eq!(s.origin().unwrap(), "bucket|https://x.example|tasks");
+
+        // As it was before there was a choice: the bucket's fields beside the others.
+        let mut flat = bucket();
+        flat["encryption_secret"] = json!("pw");
+        let s = SyncSettings::parse(&flat.to_string()).unwrap();
+        assert!(matches!(s.tasks, TasksAt::Bucket(_)));
+
+        // A sync server, with a bucket of its own for the files and an answer to the question of where the tasks go.
+        let s = SyncSettings::parse(
+            &json!({
+                "tasks": { "kind": "server", "url": "https://t.example/", "client_id": ID.to_uppercase() },
+                "encryption_secret": "pw", "files_bucket": bucket(), "switch": "merge",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(matches!(s.tasks, TasksAt::Server { .. }) && s.files_bucket.is_some());
+        assert_eq!(s.switch, Some(Switch::Merge));
+        // The origin names the server, and holds the client id only as a hash.
+        let origin = s.origin().unwrap();
+        assert!(
+            origin.starts_with("server|https://t.example|") && !origin.contains(ID),
+            "{origin}"
+        );
+        assert_eq!(describe_origin(&origin), "the sync server at https://t.example");
+        assert_eq!(
+            describe_origin("bucket|https://x.example|tasks"),
+            "the bucket tasks at https://x.example"
+        );
+    }
+
+    #[test]
+    fn settings_that_cannot_be_read_say_so() {
+        assert!(SyncSettings::parse("{}")
+            .err()
+            .unwrap()
+            .contains("invalid sync settings"));
+        assert!(SyncSettings::parse(&json!({ "encryption_secret": "pw" }).to_string()).is_err());
+        let s = SyncSettings::parse(
+            &json!({ "tasks": { "kind": "server", "url": "https://t.example", "client_id": "mine" }, "encryption_secret": "pw" }).to_string(),
+        )
+        .unwrap();
+        assert!(s.origin().unwrap_err().contains("UUID"));
+        let bad = json!({ "tasks": { "kind": "server", "url": "u", "client_id": ID }, "encryption_secret": "pw", "switch": "sideways" });
+        assert!(SyncSettings::parse(&bad.to_string()).is_err());
     }
 }

@@ -317,6 +317,24 @@ private fun Dialogs(store: Store) {
             dismissButton = { TextButton(onClick = { store.answerAsk(false) }) { Text(a.no) } },
         )
     }
+    store.switchAsk?.let { q ->
+        AlertDialog(
+            onDismissRequest = { store.answerSwitch(null) },
+            title = { Text("Sync somewhere else?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(q.message)
+                    Text("What should happen to the tasks on this phone?", fontWeight = FontWeight.SemiBold)
+                    Button(onClick = { store.answerSwitch("merge") }, modifier = Modifier.fillMaxWidth()) { Text("Keep them and add them there") }
+                    Dim("They are added to what is already there, and everything is then on both.", size = 12)
+                    OutlinedButton(onClick = { store.answerSwitch("replace") }, modifier = Modifier.fillMaxWidth()) { Text("Start from what is there") }
+                    Dim("The tasks on this phone are let go, and only what the new place holds is kept.", size = 12)
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { store.answerSwitch(null) }) { Text("Cancel") } },
+        )
+    }
     // A review is a card over the page; the editor and a task's details open over it.
     if (store.review.phase != ReviewPhase.Idle) ReviewCard(store)
     store.editing?.let { e -> key(e.row.uuid) { TaskEditor(store, e.row, e.from, onClose = { store.closeEditor() }) } }

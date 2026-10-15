@@ -34,11 +34,15 @@ class SyncController(private val port: EnginePort, private val scope: CoroutineS
     var onSettingsChanged: () -> Unit = {}
 
     private var running: Deferred<Result<Unit>>? = null
+
+    /** What to do with the tasks on the device if the next sync finds they were synced somewhere else; used once. */
+    private var pendingSwitch: String? = null
     private var again = false
     private var lastPull = Double.NEGATIVE_INFINITY
 
     /** Pull and push now, or after the one under way. The result says whether it worked, for a caller who wants to know. */
-    fun request(): Deferred<Result<Unit>> {
+    fun request(switch: String? = null): Deferred<Result<Unit>> {
+        if (switch != null) pendingSwitch = switch
         running?.let {
             again = true
             return it
@@ -68,7 +72,9 @@ class SyncController(private val port: EnginePort, private val scope: CoroutineS
     private suspend fun run(): Result<Unit> {
         status = SyncStatus.Syncing
         return try {
-            val done = port.sync()
+            val switch = pendingSwitch
+            pendingSwitch = null
+            val done = port.sync(switch)
             error = null
             status = SyncStatus.Idle
             lastSync = clock.nowSeconds()

@@ -57,7 +57,7 @@ tasks on the phone and syncs straight with your bucket.
 - **Works on a phone.** The layout adapts (a menu for the pages, tasks as cards with their marks, time tracking, reminders,
   a console with completion), and there is a native **[Android app](#android-app)**.
 - **An Android app and widgets.** The engine runs on the phone, so it works offline, syncs straight with any
-  S3-compatible bucket (no Worker, no Cloudflare Access), and has three home-screen widgets: a task list for any report,
+  S3-compatible bucket or a TaskChampion sync server (no Worker, no Cloudflare Access), and has three home-screen widgets: a task list for any report,
   a burndown and a calendar ([the Android app](docs/android.md)).
 
 > **Status.** Verified against the released `task` 3.5.0 on a local S3-compatible server, in both directions (tasks,
@@ -129,7 +129,7 @@ tasks on the phone and syncs straight with your bucket.
 | --- | --- |
 | **[Using Meghnaad](docs/using.md)** | Pages, console, confirmations, hooks, recurrence, urgency, time tracking |
 | **[Deploying](docs/deploy.md)** | Setup, GitHub Actions deploy, Access, connecting `task`, troubleshooting |
-| **[The Android app](docs/android.md)** | Install, connect (or use without a bucket), the three widgets, sharing settings and hooks, building it |
+| **[The Android app](docs/android.md)** | Install, connect (a bucket or a TaskChampion sync server, or neither), the three widgets, sharing settings and hooks, building it |
 | **[Architecture](docs/architecture.md)** | The engine, sync, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
 

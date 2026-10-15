@@ -1,8 +1,8 @@
 # The Android app
 
 A native app, in Kotlin and Compose, with the engine as a native library and widgets on the home screen. It keeps your
-tasks on the phone and syncs them straight with your bucket over S3: no Worker and no Cloudflare Access are involved, and
-your keys stay on the phone. It does what the web app does, with a layout made for a phone, and a few things a browser tab
+tasks on the phone and syncs them straight with your bucket over S3, or with a TaskChampion sync server: no Worker and no
+Cloudflare Access are involved, and your keys stay on the phone. It does what the web app does, with a layout made for a phone, and a few things a browser tab
 cannot: reminders that come with the app closed, and the widgets.
 
 > **Status:** it builds, its Rust half is tested (signing, sync against a bucket that enforces conditional writes,
@@ -94,7 +94,9 @@ the same variables set in the environment (`ANDROID_KEYSTORE_FILE` is the path).
 
 ## First run
 
-The app asks for the bucket: the S3 endpoint (`https://<account>.r2.cloudflarestorage.com` for R2), the bucket, the
+The app asks where your tasks sync: **an S3 bucket** or **a sync server**.
+
+For a bucket, it asks for the bucket: the S3 endpoint (`https://<account>.r2.cloudflarestorage.com` for R2), the bucket, the
 region (`auto` for R2, the real one for AWS), an access key and its secret, and the encryption secret (the same as
 `sync.encryption_secret` in your taskrc). It tries them with a first sync and says what is wrong if they do not work.
 Create the access key as in [Connect your `task` CLI](deploy.md#connect-your-task-cli): an R2 token with **Object Read &
@@ -121,6 +123,39 @@ pair is an R2 API token with **Object Read & Write** on the bucket.
 
 The endpoint has to be `https://`; plain `http://` is only accepted for `localhost` and `127.0.0.1` (for trying it out).
 
+### A sync server
+
+Choose **Sync server** to use a TaskChampion sync server (`taskchampion-sync-server` or anything that speaks its protocol)
+instead of a bucket. It takes three things, the values your `task` CLI already has:
+
+| Field | In your taskrc |
+| --- | --- |
+| Server address, such as `https://tasks.example.com` | `sync.server.url` |
+| Client ID, a UUID the same on every device that shares the tasks (**Generate** makes one for a new set of tasks) | `sync.server.client_id` |
+| Encryption secret | `sync.encryption_secret` |
+
+The address has to be `https://` (`http://` only for `localhost` and `127.0.0.1`). The tasks are sealed on the phone
+before they are sent, so the server only holds what it cannot read; the client ID is kept in the Keystore like the keys.
+
+The web app and the Worker sync with the bucket only, so tasks that sync to a sync server do not reach the web app. A
+sync server does not hold the app's settings and hooks either. **A bucket for those files is optional**: tick *Also keep
+settings and hooks in a bucket* and give it a bucket (a different one from the web app's tasks is fine), and the two
+switches under **Settings → Sync** keep the settings and the hooks in step with it, as below. Without one, they stay on
+the phone.
+
+### Syncing somewhere else
+
+A phone remembers where its tasks were last synced. If you set it to sync to a different place (another server, another
+bucket, or from a bucket to a server) the new place does not have the version the phone stands on, so the app **asks first**:
+
+- **Keep them and add them there**: the tasks on the phone are added to what the new place holds (the same tasks
+  are not duplicated), and everything is then in both.
+- **Start from what is there**: the tasks on the phone are let go, and only what the new place holds is kept.
+- Cancel changes nothing.
+
+Nothing on the phone changes until the new place has answered, so a wrong address or secret leaves the phone as it was. A
+phone with no tasks goes to another place without asking.
+
 ## Different from the web app
 
 - **Settings are on the phone**, unless you turn sharing on. The taskrc subset, the app's settings, the hooks script and
@@ -133,7 +168,7 @@ The endpoint has to be `https://`; plain `http://` is only accepted for `localho
   phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (paste it, or import it from a link
   or a file).
 - **Settings → Sync** shows where the phone syncs to (the endpoint, the bucket, the region and a hint of the access key's
-  name; never a secret) and changes it: blank fields keep their value, so the address can be corrected without typing the
+  name, or the sync server and a hint of the client ID; never a secret) and changes it: blank fields keep their value, so the address can be corrected without typing the
   keys again, and the change is tried with a sync first. A change that does not work is not kept.
 - **Hooks run on the phone**, in the same Lua sandbox, with the same `http` and `secret()`, from the script you edit in
   **Settings → Hooks**. Their network calls are made by the phone, and the secrets are sealed with the Keystore key.
@@ -159,6 +194,12 @@ your bucket
   the two cannot differ. `webapi.rs` answers the settings routes (`/api/config`, `/api/settings`, …) for any store: the
   Worker keeps them in the bucket, the app in a folder; the app asks them of the engine's `api` call.
 - `s3.rs` is the bucket as tc-core's `ObjectStore`; `sigv4.rs` signs requests (tested against Amazon's own examples).
+- `syncserver.rs` is a TaskChampion sync server as a `taskchampion::Server` (`/v1/client/…`, `X-Client-Id`, the key derived
+  with the client id as the salt). `engine.rs` chooses between it and the bucket for the tasks, keeps a bucket of its own
+  for the shared files, and remembers where the tasks were last synced: another place makes `sync` fail with
+  `backend-changed` until it is asked again with `switch` (`merge` or `replace`), and the replica of the new place is made
+  aside and swapped in only when it has synced. `tests/syncserver.rs` runs the engine against a server kept in the test, and,
+  with `--ignored` and `TC_SYNC_SERVER`, against the real `taskchampion-sync-server` and the `task` CLI.
 - The replica is kept in a file in the app's storage after every change; the screens, the widgets and the reminder alarm
   share one engine, so what a widget changes shows in the app and the other way round.
 - Reminders: `Notify.kt` is the web's rules (`notify.ts`); after every change the next moment something is worth saying is

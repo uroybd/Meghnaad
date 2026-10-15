@@ -92,4 +92,60 @@ class SyncTest {
         val json = c.toSyncJson(SyncOptions(settings = true, hooks = true).files())
         assertTrue("\"access_key\":\"key\"" in json && "web/hooks.lua" in json && "web/settings.json" in json)
     }
+
+    private val clientId = "3f2b8d1e-9c4a-4b7e-8f21-5a6d0c9e1b34"
+
+    @Test
+    fun aSyncServerConnectionIsTypedAndSentAsTasksAtAServer() {
+        val c = Connection.typedServer(" https://tasks.example.com/ ", " ${clientId.uppercase()} ", " pw ")
+        assertEquals("https://tasks.example.com", c.server?.url)
+        assertEquals(clientId, c.server?.clientId)
+        assertEquals("pw", c.encryptionSecret)
+        assertNull(c.problem())
+        // Without a bucket there is nowhere to keep the shared files, so none are asked for.
+        val json = c.toSyncJson(SyncOptions(settings = true, hooks = true).files())
+        assertTrue("\"kind\":\"server\"" in json && "\"client_id\":\"$clientId\"" in json, json)
+        assertTrue("\"files\":[]" in json && "files_bucket" !in json && "web/hooks.lua" !in json, json)
+        assertTrue("\"switch\"" !in json)
+        assertTrue("\"switch\":\"merge\"" in c.toSyncJson(switch = "merge"))
+    }
+
+    @Test
+    fun theBucketOfASyncServerConnectionKeepsOnlyTheSharedFiles() {
+        val c = Connection.typedServer("https://tasks.example.com", clientId, "pw", "https://x.example", "settings", "", "key", "secret")
+        assertNull(c.problem())
+        assertTrue(c.hasBucket)
+        val json = c.toSyncJson(SyncOptions(hooks = true).files())
+        assertTrue("\"files_bucket\":{" in json && "web/hooks.lua" in json, json)
+        // The tasks are not in the bucket: its fields are not under `tasks`.
+        assertTrue(json.indexOf("\"files_bucket\"") > json.indexOf("\"tasks\":{\"kind\":\"server\""))
+        // A bucket is all there or not at all.
+        assertNotNull(Connection.typedServer("https://tasks.example.com", clientId, "pw", "https://x.example", "", "", "", "").problem())
+    }
+
+    @Test
+    fun aSyncServerConnectionNeedsItsThreeThings() {
+        assertNotNull(Connection.typedServer("", clientId, "pw").problem())
+        assertNotNull(Connection.typedServer("https://x.example", "", "pw").problem())
+        assertNotNull(Connection.typedServer("https://x.example", clientId, "").problem())
+        assertTrue("UUID" in Connection.typedServer("https://x.example", "mine", "pw").problem()!!)
+        assertTrue(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$").matches(newClientId()))
+    }
+
+    @Test
+    fun theTabShowsAHintOfTheClientIdAndNeverASecret() {
+        val info = Connection.typedServer("https://x.example", clientId, "pw").info()
+        assertEquals("https://x.example", info.serverUrl)
+        assertEquals("3f2b…1b34", info.clientIdHint)
+        assertEquals(false, info.hasBucket)
+    }
+
+    @Test
+    fun aBucketConnectionSavedBeforeTheChoiceStillReads() {
+        val old = """{"endpoint":"https://x.example","bucket":"tasks","region":"auto","accessKey":"k","secretKey":"s","encryptionSecret":"p"}"""
+        val c = engineJson.decodeFromString(Connection.serializer(), old)
+        assertNull(c.server)
+        assertNull(c.problem())
+        assertTrue("\"kind\":\"bucket\"" in c.toSyncJson())
+    }
 }

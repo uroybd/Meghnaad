@@ -12,6 +12,9 @@ import kotlinx.serialization.json.put
 /** What a sync found: whether the tasks changed, and which of the shared files came from the bucket. */
 class SyncResult(val changed: Boolean, val settings: List<String> = emptyList())
 
+/** What the message of a sync starts with when the tasks were synced somewhere else before (see [EnginePort.sync]). */
+const val BACKEND_CHANGED = "backend-changed"
+
 /** A sync that did not work (offline, the bucket unreachable, a wrong key): the reason, in words to show. */
 class SyncFailed(message: String) : Exception(message)
 
@@ -24,10 +27,12 @@ interface EnginePort {
     val restored: Boolean
 
     /**
-     * Pull and push with the bucket, and keep the shared files in step when asked. A device that is not connected has
-     * nothing to sync with, which is a way of using it, not a failure. Throws [SyncFailed].
+     * Pull and push with the bucket or the sync server, and keep the shared files in step when asked. A device that is not
+     * connected has nothing to sync with, which is a way of using it, not a failure. Throws [SyncFailed]; when the tasks were
+     * last synced somewhere else, its message starts with [BACKEND_CHANGED] and nothing has changed: syncing again with
+     * [switch] (`merge` keeps this device's tasks and adds them to the new place, `replace` starts from what it holds) goes on.
      */
-    suspend fun sync(): SyncResult
+    suspend fun sync(switch: String? = null): SyncResult
 
     /** Throw away the copy kept on the device; the next start fetches the tasks again from the bucket. */
     suspend fun forget()
@@ -140,10 +145,15 @@ class FakePort(
     var forgotten = false
         private set
 
+    /** The `switch` of the last sync. */
+    var lastSwitch: String? = null
+        private set
+
     override suspend fun call(op: String, arg: String) = answer(op, arg)
 
-    override suspend fun sync(): SyncResult {
+    override suspend fun sync(switch: String?): SyncResult {
         syncs++
+        lastSwitch = switch
         return onSync()
     }
 

@@ -3,11 +3,13 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.foundation.focusable
@@ -51,9 +53,61 @@ fun SecretField(value: String, onChange: (String) -> Unit, label: String, modifi
     )
 }
 
-/** The bucket's address and keys: the form of the first screen, and of Settings when the device is not connected. */
+/** The bucket's address and keys. [hint] says what it is for. */
+@Composable
+private fun BucketFields(
+    endpoint: String, onEndpoint: (String) -> Unit,
+    bucket: String, onBucket: (String) -> Unit,
+    region: String, onRegion: (String) -> Unit,
+    accessKey: String, onAccessKey: (String) -> Unit,
+    secretKey: String, onSecretKey: (String) -> Unit,
+) {
+    val plain = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None)
+    OutlinedTextField(
+        value = endpoint,
+        onValueChange = onEndpoint,
+        label = { Text("S3 endpoint") },
+        placeholder = { Text("https://<account>.r2.cloudflarestorage.com") },
+        singleLine = true,
+        keyboardOptions = plain.copy(keyboardType = KeyboardType.Uri),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = bucket,
+        onValueChange = onBucket,
+        label = { Text("Bucket") },
+        singleLine = true,
+        keyboardOptions = plain,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = region,
+        onValueChange = onRegion,
+        label = { Text("Region") },
+        supportingText = { Text("“auto” for R2; the bucket's region (such as eu-west-1) for AWS.") },
+        singleLine = true,
+        keyboardOptions = plain,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = accessKey,
+        onValueChange = onAccessKey,
+        label = { Text("Access key ID") },
+        supportingText = { Text("“Access Key ID” in R2 and AWS, “keyID” in Backblaze.") },
+        singleLine = true,
+        keyboardOptions = plain,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    SecretField(secretKey, onSecretKey, "Secret access key", Modifier.fillMaxWidth())
+}
+
+/** The first screen's and Settings' form for a device that is not connected: an S3 bucket, or a TaskChampion sync server. */
 @Composable
 fun ConnectForm(connect: suspend (Connection) -> String?, modifier: Modifier = Modifier) {
+    var server by remember { mutableStateOf(false) }
+    var url by remember { mutableStateOf("") }
+    var clientId by remember { mutableStateOf("") }
+    var withBucket by remember { mutableStateOf(false) }
     var endpoint by remember { mutableStateOf("") }
     var bucket by remember { mutableStateOf("") }
     var region by remember { mutableStateOf("auto") }
@@ -63,52 +117,74 @@ fun ConnectForm(connect: suspend (Connection) -> String?, modifier: Modifier = M
     var working by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    val typed = Connection.typed(endpoint, bucket, region, accessKey, secretKey, secret)
+    val typed = if (server) {
+        Connection.typedServer(
+            url, clientId, secret,
+            if (withBucket) endpoint else "", if (withBucket) bucket else "", region,
+            if (withBucket) accessKey else "", if (withBucket) secretKey else "",
+        )
+    } else {
+        Connection.typed(endpoint, bucket, region, accessKey, secretKey, secret)
+    }
     val plain = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None)
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OutlinedTextField(
-            value = endpoint,
-            onValueChange = { endpoint = it },
-            label = { Text("S3 endpoint") },
-            placeholder = { Text("https://<account>.r2.cloudflarestorage.com") },
-            singleLine = true,
-            keyboardOptions = plain.copy(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = bucket,
-            onValueChange = { bucket = it },
-            label = { Text("Bucket") },
-            singleLine = true,
-            keyboardOptions = plain,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = region,
-            onValueChange = { region = it },
-            label = { Text("Region") },
-            supportingText = { Text("“auto” for R2; the bucket's region (such as eu-west-1) for AWS.") },
-            singleLine = true,
-            keyboardOptions = plain,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = accessKey,
-            onValueChange = { accessKey = it },
-            label = { Text("Access key ID") },
-            supportingText = { Text("“Access Key ID” in R2 and AWS, “keyID” in Backblaze.") },
-            singleLine = true,
-            keyboardOptions = plain,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        SecretField(secretKey, { secretKey = it }, "Secret access key", Modifier.fillMaxWidth())
+        Text("Where do your tasks sync?", fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!server) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("S3 bucket") }
+            else OutlinedButton(onClick = { server = false }, modifier = Modifier.weight(1f)) { Text("S3 bucket") }
+            if (server) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("Sync server") }
+            else OutlinedButton(onClick = { server = true }, modifier = Modifier.weight(1f)) { Text("Sync server") }
+        }
+        if (server) {
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text("Server address") },
+                placeholder = { Text("https://tasks.example.com") },
+                supportingText = { Text("sync.server.url in your taskrc.") },
+                singleLine = true,
+                keyboardOptions = plain.copy(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = clientId,
+                onValueChange = { clientId = it },
+                label = { Text("Client ID") },
+                supportingText = { Text("sync.server.client_id: the same on every device that shares these tasks. Starting new? Generate one.") },
+                singleLine = true,
+                keyboardOptions = plain,
+                suffix = {
+                    Text(
+                        "Generate", Modifier.clickable { clientId = newClientId() }.padding(horizontal = 4.dp),
+                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium, fontSize = 14.sp,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            BucketFields(endpoint, { endpoint = it }, bucket, { bucket = it }, region, { region = it }, accessKey, { accessKey = it }, secretKey, { secretKey = it })
+        }
         SecretField(secret, { secret = it }, "Encryption secret", Modifier.fillMaxWidth())
         Text(
             "The same value as sync.encryption_secret in your taskrc.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (server) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Checkbox(withBucket, { withBucket = it })
+                Text("Also keep settings and hooks in a bucket (optional)")
+            }
+            Text(
+                "A bucket shares this app's settings and Lua hooks with the web app. The tasks themselves go to the server only.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (withBucket) {
+                BucketFields(endpoint, { endpoint = it }, bucket, { bucket = it }, region, { region = it }, accessKey, { accessKey = it }, secretKey, { secretKey = it })
+            }
+        }
         if (problem.isNotEmpty()) Text(problem, color = MaterialTheme.colorScheme.error)
         Button(
             onClick = {
@@ -138,8 +214,8 @@ fun ConnectScreen(store: Store) {
         Text("Your tasks", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Meghnaad keeps your tasks on this phone. To have them on your other devices too, connect the S3 bucket your " +
-                "task CLI syncs with (Cloudflare R2, AWS S3, MinIO, anything that speaks S3). The keys stay on this phone, in " +
-                "its secure storage.",
+                "task CLI syncs with (Cloudflare R2, AWS S3, MinIO, anything that speaks S3), or a TaskChampion sync server. " +
+                "The keys stay on this phone, in its secure storage.",
             modifier = Modifier.padding(vertical = 12.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

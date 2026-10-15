@@ -22,3 +22,6 @@ taskchampion = { version = "3.1", default-features = false }
 tc-core = { path = "../tc-core", features = ["lua"] }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 uuid = { version = "1", default-features = false }
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }

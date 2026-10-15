@@ -77,17 +77,19 @@ class LocalEngine(dir: File, private val vault: Vault) : EnginePort {
         }
     }
 
-    override suspend fun sync(): SyncResult = withContext(Dispatchers.Default) {
+    override suspend fun sync(switch: String?): SyncResult = withContext(Dispatchers.Default) {
         // Read before the engine is taken: the Keystore can be slow, and nothing else should wait on it.
         val connection = vault.connection() ?: return@withContext SyncResult(false)
         val files = vault.syncOptions.files()
         synchronized(this@LocalEngine) {
             val before = changes()
-            val answer = engineJson.parseToJsonElement(NativeEngine.nativeCall(handle, "sync", connection.toSyncJson(files))).jsonObject
+            val answer = engineJson.parseToJsonElement(NativeEngine.nativeCall(handle, "sync", connection.toSyncJson(files, switch))).jsonObject
             answer["error"]?.let { throw SyncFailed(it.jsonPrimitive.content) }
             val pulled = (answer["settings"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList()
+            // A switch put another replica in place of this one: it is the one to keep, and the screen is drawn again.
+            if (switch != null) saved = -1
             save()
-            SyncResult(changes() != before, pulled)
+            SyncResult(switch != null || changes() != before, pulled)
         }
     }
 

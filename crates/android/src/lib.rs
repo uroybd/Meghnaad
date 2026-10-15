@@ -12,3 +12,4 @@ pub mod net;
 pub mod s3;
 pub mod secrets;
 pub mod sigv4;
+pub mod syncserver;

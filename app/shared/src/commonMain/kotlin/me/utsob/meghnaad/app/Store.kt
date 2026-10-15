@@ -65,6 +65,9 @@ class Toast(val text: String, val bad: Boolean = false)
 /** A question put to the person, answered by a dialog: `yes` is what the engine's `confirmation` wants. */
 class Ask(val message: String, val yes: String = "Yes", val no: String = "No", val answer: CompletableDeferred<Boolean> = CompletableDeferred())
 
+/** The question of where a phone's tasks go when it is set to sync somewhere they were not synced before: `merge`, `replace` or null (leave it). */
+class SwitchAsk(val message: String, val answer: CompletableDeferred<String?> = CompletableDeferred())
+
 class DetailRef(val uuid: String, val from: Entry?)
 
 class EditRef(val row: Row, val from: Entry?)
@@ -222,6 +225,10 @@ class Store(
     var ask by mutableStateOf<Ask?>(null)
         private set
 
+    /** The question of where the tasks on the phone go, while a new connection is being tried. */
+    var switchAsk by mutableStateOf<SwitchAsk?>(null)
+        private set
+
     /** The most recent command run, whether typed or driven by the screens. Shown above the prompt. */
     var lastCommand by mutableStateOf("")
         private set
@@ -302,15 +309,36 @@ class Store(
         connection.problem()?.let { return it }
         vault.saveConnection(connection)
         vault.localOnly = false
-        val result = sync.request().await()
-        if (result.isFailure) {
+        trySync()?.let {
             vault.clearConnection()
-            return sync.error ?: "Could not connect."
+            return it
         }
         connectionVersion++
         // Connecting from Settings (the engine is running): keep going. From the first screen: start.
         if (setup == Setup.Ready) written() else boot()
         return null
+    }
+
+    /**
+     * A sync to try a connection with: null when it worked, otherwise why not. When the phone's tasks were synced somewhere
+     * else before, the person is asked what to do with them first (the engine has changed nothing until they say).
+     */
+    private suspend fun trySync(): String? {
+        var result = sync.request().await()
+        val why = sync.error
+        if (result.isFailure && why?.startsWith(BACKEND_CHANGED) == true) {
+            val q = SwitchAsk(why.removePrefix(BACKEND_CHANGED).removePrefix(":").trim().replaceFirstChar { it.uppercase() } + ".")
+            switchAsk = q
+            val how = q.answer.await()
+            if (switchAsk === q) switchAsk = null
+            how ?: return "Nothing was changed: the tasks stay as they were."
+            result = sync.request(how).await()
+        }
+        return if (result.isFailure) sync.error ?: "Could not connect." else null
+    }
+
+    fun answerSwitch(how: String?) {
+        switchAsk?.answer?.complete(how)
     }
 
     /** Where this phone syncs to, for the Sync tab: no secret is in it. Null when it is not connected. */
@@ -325,15 +353,39 @@ class Store(
         val next = Connection.typed(
             endpoint.ifBlank { old.endpoint }, bucket.ifBlank { old.bucket }, region,
             accessKey.ifBlank { old.accessKey }, secretKey.ifBlank { old.secretKey }, secret.ifBlank { old.encryptionSecret },
+        ).copy(server = old.server)
+        return replaceConnection(old, next)
+    }
+
+    /**
+     * Change a sync server connection, and the optional bucket that keeps the shared files: blank keeps what was there, except
+     * the bucket's address and name, which are shown and typed (all of them blank takes the bucket away).
+     */
+    suspend fun changeServer(
+        url: String, clientId: String, secret: String,
+        endpoint: String, bucket: String, region: String, accessKey: String, secretKey: String,
+    ): String? {
+        val old = vault.connection() ?: return "Not connected."
+        val was = old.server ?: return "Not connected to a sync server."
+        val dropBucket = endpoint.isBlank() && bucket.isBlank()
+        val next = Connection.typedServer(
+            url.ifBlank { was.url }, clientId.ifBlank { was.clientId }, secret.ifBlank { old.encryptionSecret },
+            endpoint, bucket, region,
+            if (dropBucket) "" else accessKey.ifBlank { old.accessKey },
+            if (dropBucket) "" else secretKey.ifBlank { old.secretKey },
         )
+        return replaceConnection(old, next)
+    }
+
+    /** Try [next] with a sync, and keep it; when that fails, [old] is put back. Returns what went wrong, or null. */
+    private suspend fun replaceConnection(old: Connection, next: Connection): String? {
         next.problem()?.let { return it }
         if (next == old) return null
         vault.saveConnection(next)
-        val result = sync.request().await()
-        if (result.isFailure) {
+        trySync()?.let {
             vault.saveConnection(old)
             connectionVersion++
-            return sync.error ?: "Could not connect."
+            return it
         }
         connectionVersion++
         written()
@@ -632,6 +684,7 @@ class Store(
     fun handleBack(): Boolean {
         when {
             ask != null -> answerAsk(false)
+            switchAsk != null -> answerSwitch(null)
             adding != null -> adding = null
             editing != null -> closeEditor()
             detail != null -> detail = null

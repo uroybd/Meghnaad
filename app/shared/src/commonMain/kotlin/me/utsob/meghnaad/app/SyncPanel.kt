@@ -26,16 +26,93 @@ import androidx.compose.ui.unit.sp
 private fun ConnectionSection(store: Store) {
     val info = store.connectionInfo ?: return
     var editing by remember { mutableStateOf(false) }
+    val server = info.serverUrl != null
     Text("Connection", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
-    for ((label, value) in listOf("Endpoint" to info.endpoint, "Bucket" to info.bucket, "Region" to info.region, "Access key ID" to info.accessKeyHint)) {
+    val rows = buildList {
+        if (server) {
+            add("Sync server" to info.serverUrl!!)
+            add("Client ID" to (info.clientIdHint ?: ""))
+        }
+        if (info.hasBucket) {
+            add("Endpoint" to info.endpoint)
+            add("Bucket" to info.bucket)
+            add("Region" to info.region)
+            add("Access key ID" to info.accessKeyHint)
+        }
+    }
+    for ((label, value) in rows) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(label, Modifier.width(104.dp), fontSize = 13.sp, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
             Text(value, Modifier.weight(1f), fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
         }
     }
+    if (server && info.hasBucket) Dim("The bucket keeps this app's settings and hooks; the tasks go to the sync server.", size = 12)
     Dim("The secret key and the encryption secret are kept in the phone's secure storage and are never shown.", size = 12)
-    if (!editing) OutlinedButton(onClick = { editing = true }) { Text("Edit the connection") } else {
+    if (!editing) OutlinedButton(onClick = { editing = true }) { Text("Edit the connection") } else if (server) {
+        ServerEditForm(store, info, onDone = { editing = false })
+    } else {
         ConnectionEditForm(store, info, onDone = { editing = false })
+    }
+}
+
+/**
+ * Change the sync server, the client ID or the secret, or add, change or take away the bucket that keeps settings and hooks;
+ * what is left blank stays as it is. It is tried with a sync before it is kept.
+ */
+@Composable
+private fun ServerEditForm(store: Store, info: ConnectionInfo, onDone: () -> Unit) {
+    var url by remember(info) { mutableStateOf(info.serverUrl ?: "") }
+    var clientId by remember { mutableStateOf("") }
+    var secret by remember { mutableStateOf("") }
+    var withBucket by remember(info) { mutableStateOf(info.hasBucket) }
+    var endpoint by remember(info) { mutableStateOf(info.endpoint) }
+    var bucket by remember(info) { mutableStateOf(info.bucket) }
+    var region by remember(info) { mutableStateOf(info.region) }
+    var accessKey by remember { mutableStateOf("") }
+    var secretKey by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf("") }
+    val plain = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("Server address") }, singleLine = true, keyboardOptions = plain.copy(keyboardType = KeyboardType.Uri))
+        OutlinedTextField(clientId, { clientId = it }, Modifier.fillMaxWidth(), label = { Text("Client ID (blank keeps it)") }, singleLine = true, keyboardOptions = plain)
+        SecretField(secret, { secret = it }, "Encryption secret (blank keeps it)", Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(withBucket, { withBucket = it })
+            Text("Keep settings and hooks in a bucket", fontSize = 14.sp)
+        }
+        if (withBucket) {
+            OutlinedTextField(endpoint, { endpoint = it }, Modifier.fillMaxWidth(), label = { Text("S3 endpoint") }, singleLine = true, keyboardOptions = plain.copy(keyboardType = KeyboardType.Uri))
+            OutlinedTextField(bucket, { bucket = it }, Modifier.fillMaxWidth(), label = { Text("Bucket") }, singleLine = true, keyboardOptions = plain)
+            OutlinedTextField(region, { region = it }, Modifier.fillMaxWidth(), label = { Text("Region") }, singleLine = true, keyboardOptions = plain)
+            OutlinedTextField(
+                accessKey, { accessKey = it }, Modifier.fillMaxWidth(),
+                label = { Text(if (info.hasBucket) "Access key ID (blank keeps it)" else "Access key ID") }, singleLine = true, keyboardOptions = plain,
+            )
+            SecretField(secretKey, { secretKey = it }, if (info.hasBucket) "Secret access key (blank keeps it)" else "Secret access key", Modifier.fillMaxWidth())
+        }
+        if (problem.isNotEmpty()) Text(problem, color = androidx.compose.material3.MaterialTheme.colorScheme.error, fontSize = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !working && url.isNotBlank(),
+                onClick = {
+                    working = true
+                    problem = ""
+                    store.go {
+                        val why = changeServer(
+                            url, clientId, secret,
+                            if (withBucket) endpoint else "", if (withBucket) bucket else "", region, accessKey, secretKey,
+                        )
+                        working = false
+                        if (why == null) {
+                            notify("Connection saved. Your tasks are syncing.")
+                            onDone()
+                        } else problem = why
+                    }
+                },
+            ) { Text(if (working) "Trying it…" else "Save the connection") }
+            OutlinedButton(onClick = onDone, enabled = !working) { Text("Cancel") }
+        }
     }
 }
 
@@ -82,7 +159,7 @@ private fun ConnectionEditForm(store: Store, info: ConnectionInfo, onDone: () ->
     }
 }
 
-/** The bucket this phone syncs its tasks with: connect it later, keep settings and hooks in step, sync now, or stop (SyncPanel.svelte). */
+/** Where this phone syncs its tasks: connect it later, keep settings and hooks in step, sync now, or stop (SyncPanel.svelte). */
 @Composable
 fun SyncPanel(store: Store) {
     var busy by remember { mutableStateOf(false) }
@@ -106,28 +183,34 @@ fun SyncPanel(store: Store) {
 
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (store.connected) {
-            Text("Syncing is on: this phone's tasks go to your S3 bucket, and what other devices add comes here.", fontSize = 14.sp)
+            val info = store.connectionInfo
+            val where = if (info?.serverUrl != null) "your sync server" else "your S3 bucket"
+            Text("Syncing is on: this phone's tasks go to $where, and what other devices add comes here.", fontSize = 14.sp)
             store.sync.lastSync?.let { Dim("Last synced ${formatStamp(it.toLong(), store.offsetAt(it.toLong())).takeLast(8)}.") }
             ConnectionSection(store)
-            Text("Keep in step with the bucket", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(options.settings, { choose(options.copy(settings = it)) })
-                Text("Settings: the taskrc subset, reports, commands and the rest", fontSize = 14.sp)
+            if (info?.hasBucket != false) {
+                Text("Keep in step with the bucket", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(options.settings, { choose(options.copy(settings = it)) })
+                    Text("Settings: the taskrc subset, reports, commands and the rest", fontSize = 14.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(options.hooks, { choose(options.copy(hooks = it)) })
+                    Text("Hooks: the Lua script", fontSize = 14.sp)
+                }
+                Dim(
+                    "These are the files the web app keeps in the bucket, so an edit on either side reaches the other at the next sync; when both changed, " +
+                        "the newer one wins and the other is kept to restore. The secrets for hooks are never synced.",
+                    size = 12,
+                )
+            } else {
+                Dim("Settings and hooks stay on this phone. To share them with the web app, add a bucket under Edit the connection.", size = 12)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(options.hooks, { choose(options.copy(hooks = it)) })
-                Text("Hooks: the Lua script", fontSize = 14.sp)
-            }
-            Dim(
-                "These are the files the web app keeps in the bucket, so an edit on either side reaches the other at the next sync; when both changed, " +
-                    "the newer one wins and the other is kept to restore. The secrets for hooks are never synced.",
-                size = 12,
-            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = ::syncNow, enabled = !busy) { Text(if (busy) "Syncing…" else "Sync now") }
                 OutlinedButton(onClick = {
                     store.go {
-                        if (confirmAsk("Stop syncing? The tasks stay on this phone, and the bucket keeps what it has.", "Stop syncing", "Cancel")) {
+                        if (confirmAsk("Stop syncing? The tasks stay on this phone, and ${if (info?.serverUrl != null) "the server" else "the bucket"} keeps what it has.", "Stop syncing", "Cancel")) {
                             disconnect()
                             notify("Not syncing any more. Your tasks are on this phone only.")
                         }
@@ -136,8 +219,8 @@ fun SyncPanel(store: Store) {
             }
         } else {
             Text(
-                "Syncing is off: your tasks are on this phone only. Connect an S3 bucket (the one your task CLI syncs with) to have them everywhere. " +
-                    "What is on the phone is added to what the bucket has.",
+                "Syncing is off: your tasks are on this phone only. Connect an S3 bucket or a sync server (the one your task CLI syncs with) to have them everywhere. " +
+                    "What is on the phone is added to what is there.",
                 fontSize = 14.sp,
             )
             ConnectForm(connect = {
