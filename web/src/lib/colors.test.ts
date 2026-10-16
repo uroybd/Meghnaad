@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { chartProps, contrast, css, look, paletteHex, readable, rowVars } from './colors';
+import {
+  CHART_COLOR_NAMES,
+  chartColor,
+  chartProps,
+  contrast,
+  css,
+  defaultSeriesColor,
+  defaultSeriesName,
+  look,
+  namedColorHex,
+  paletteHex,
+  readable,
+  rowVars,
+} from './colors';
 
 describe('paletteHex', () => {
   it('draws the colour cube and the grays exactly, as xterm does', () => {
@@ -98,5 +111,34 @@ describe('chartProps', () => {
       '--cc-calendar-today-w',
     ]);
     expect(chartProps(undefined, false)).toEqual({});
+  });
+});
+
+describe('the colours a chart is given by name', () => {
+  it('are the basic colours of the page’s palette, and follow a light and a dark page', () => {
+    expect(namedColorHex('red', false)).toBe(paletteHex(1, false));
+    expect(namedColorHex(' Bright Blue ', true)).toBe(paletteHex(12, true));
+    expect(namedColorHex('red', true)).not.toBe(namedColorHex('red', false));
+    expect(namedColorHex('puce', false)).toBeNull();
+  });
+
+  it('are offered without black and white, which would vanish on one page or the other', () => {
+    expect(CHART_COLOR_NAMES).toHaveLength(12);
+    expect(CHART_COLOR_NAMES).not.toContain('black');
+    expect(CHART_COLOR_NAMES).not.toContain('white');
+    for (const n of CHART_COLOR_NAMES) expect(namedColorHex(n, false), n).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it('can be a name or a value, and nothing else', () => {
+    expect(chartColor('green', false)).toBe(paletteHex(2, false));
+    expect(chartColor('#2da44e', true)).toBe('#2da44e');
+    expect(chartColor('puce', false)).toBeUndefined();
+    expect(chartColor(undefined, false)).toBeUndefined();
+  });
+
+  it('are what a series takes when it names none: blue first, and round again after the last', () => {
+    expect(defaultSeriesColor(0, false)).toBe(namedColorHex('blue', false));
+    expect(defaultSeriesName(1)).toBe('red');
+    expect(defaultSeriesColor(9, false)).toBe(defaultSeriesColor(0, false));
   });
 });

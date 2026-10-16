@@ -1,6 +1,77 @@
-// A task has an address, `/task/<first 8 characters of its uuid>`, so a link can be shared with anyone who can sign
-// in to the same deployment. It opens the task's detail drawer. (The first 8 characters are how a task is named
-// everywhere else too; the numbers `task 3` uses differ from one replica to the next and change as tasks finish.)
+// Every page has an address, so a link can be shared with anyone who can sign in to the same deployment, and the back
+// button goes where it did:
+//
+//   /report/<name>      Tasks, as that report (a report is its own slug: `next`, `list`, `_reviewed`, one of yours)
+//   /projects /tags /summary /calendar /burndown /console
+//   /boards             the list of boards;  /board/<slug>  one of them
+//   /settings           Settings;  /settings/<tab>  one of its tabs
+//   /task/<8 characters>  a task's detail drawer (the first 8 characters of its uuid; the numbers `task 3` uses differ
+//                       from one replica to the next and change as tasks finish)
+//
+// `/` is the home page the settings choose. `Place` is where the app is; `parsePath` and `placePath` turn it into an
+// address and back.
+
+/** The tabs of Settings. */
+export const SETTINGS_TABS = ['general', 'taskrc', 'tasksh', 'commands', 'hooks', 'urgency'] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+/** The pages that are just a page. */
+export const PLAIN_PAGES = ['projects', 'tags', 'summary', 'calendar', 'burndown', 'console'] as const;
+export type PlainPage = (typeof PLAIN_PAGES)[number];
+
+export type Place =
+  | { page: 'tasks'; report: string }
+  | { page: PlainPage }
+  | { page: 'boards'; board: string | null }
+  | { page: 'settings'; tab: SettingsTab | null }
+  | { page: 'task'; prefix: string };
+
+/** The place an address names, or `null` for the front page and for an address that is nothing. */
+export function parsePath(path: string): Place | null {
+  const prefix = prefixFromPath(path);
+  if (prefix) return { page: 'task', prefix };
+  const board = boardFromPath(path);
+  if (board !== null) return { page: 'boards', board };
+  if (isBoardsPath(path)) return { page: 'boards', board: null };
+  const report = /^\/report\/([^/]+)\/?$/.exec(path);
+  if (report) {
+    try {
+      const name = decodeURIComponent(report[1]);
+      if (name) return { page: 'tasks', report: name };
+    } catch {
+      return null; // a broken %-escape
+    }
+    return null;
+  }
+  const settings = /^\/settings(?:\/([a-z]+))?\/?$/.exec(path);
+  if (settings) {
+    const tab = settings[1] as SettingsTab | undefined;
+    if (!tab) return { page: 'settings', tab: null };
+    return SETTINGS_TABS.includes(tab) ? { page: 'settings', tab } : null;
+  }
+  const plain = /^\/([a-z]+)\/?$/.exec(path)?.[1] as PlainPage | undefined;
+  return plain && PLAIN_PAGES.includes(plain) ? { page: plain } : null;
+}
+
+/** The address of a place. */
+export function placePath(p: Place): string {
+  switch (p.page) {
+    case 'tasks':
+      return `/report/${encodeURIComponent(p.report)}`;
+    case 'boards':
+      return p.board === null ? BOARDS_PATH : boardPath(p.board);
+    case 'settings':
+      return p.tab ? `/settings/${p.tab}` : '/settings';
+    case 'task':
+      return `/task/${p.prefix}`;
+    default:
+      return `/${p.page}`;
+  }
+}
+
+// A task's address, `/task/<first 8 characters of its uuid>`, opens its detail drawer. (The first 8 characters are how a
+// task is named everywhere else too; the numbers `task 3` uses differ from one replica to the next and change as tasks
+// finish.)
 
 /** The address that opens this task. */
 export function taskPath(uuid: string): string {
@@ -24,4 +95,26 @@ export function taskLink(uuid: string, origin: string): string {
  */
 export function prefixFilter(prefix: string): string {
   return `uuid.startswith:${prefix}`;
+}
+
+// A board has an address too, `/board/<slug>`, and the list of boards is `/boards`. A slug is one lower case word
+// (`weekly`, `q4-review`), the same rule the engine keeps boards to (`tc_core::board::valid_id`).
+
+/** The list of boards. */
+export const BOARDS_PATH = '/boards';
+
+/** The address that opens this board. */
+export function boardPath(slug: string): string {
+  return `/board/${slug}`;
+}
+
+/** The slug in an address like `/board/weekly`, or `null` when the address is not a board's. */
+export function boardFromPath(path: string): string | null {
+  const m = /^\/board\/([a-z0-9_-]{1,40})\/?$/.exec(path);
+  return m ? m[1] : null;
+}
+
+/** Whether the address is the list of boards. */
+export function isBoardsPath(path: string): boolean {
+  return /^\/boards\/?$/.test(path);
 }

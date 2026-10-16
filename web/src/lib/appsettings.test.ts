@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { nameProblem, commandProblem, parseSettings, serializeSettings } from './appsettings';
+import {
+  nameProblem,
+  commandProblem,
+  parseHomepage,
+  parseSettings,
+  serializeBoards,
+  serializeHomepage,
+  serializeSettings,
+} from './appsettings';
 
 describe('parseSettings', () => {
   it('reads the task commands', () => {
@@ -85,5 +93,77 @@ describe('a command that is several commands', () => {
     expect(commandProblem('done ; modify +x')).toBeNull();
     expect(commandProblem('|| done')).toBe('Nothing before ‘||’.');
     expect(commandProblem('  ')).toBe('needs a command');
+  });
+});
+
+describe('boards in the settings', () => {
+  const board = { id: 'week', name: 'Week', sections: [{ id: 'open', type: 'number', x: 0, y: 0, w: 3, h: 2 }] };
+
+  it('are read and tidied by the engine, and their problems kept apart from the commands’', () => {
+    const p = parseSettings(JSON.stringify({ boards: [board, { id: 'Bad Id', name: 'x' }] }));
+    expect(p.boards.map((b) => b.id)).toEqual(['week']);
+    expect(p.boards[0].sections[0].measure).toEqual({ fn: 'count' });
+    expect(p.boardErrors).toHaveLength(1);
+    // Saving the commands does not drop boards, so their problems are not "dropped on apply" warnings.
+    expect(p.errors).toEqual([]);
+  });
+
+  it('are none in a file without them', () => {
+    expect(parseSettings('{}')).toMatchObject({ boards: [], boardErrors: [] });
+  });
+
+  it('are saved beside the other keys, with a version, and leave the commands alone', () => {
+    const raw = { taskCommands: [{ name: 'fail', command: 'done' }], other: 1 };
+    const out = JSON.parse(serializeBoards(raw, parseSettings(JSON.stringify({ boards: [board] })).boards));
+    expect(out).toMatchObject({ other: 1, boardsVersion: 1, taskCommands: [{ name: 'fail' }] });
+    expect(out.boards).toHaveLength(1);
+  });
+
+  it('are left out of the file when there are none', () => {
+    const out = JSON.parse(serializeBoards({ boards: [board], boardsVersion: 1, other: 1 }, []));
+    expect(out).toEqual({ other: 1 });
+  });
+
+  it('survive saving the commands', () => {
+    const raw = parseSettings(JSON.stringify({ boards: [board], boardsVersion: 1 })).raw;
+    expect(JSON.parse(serializeSettings(raw, [{ name: 'fail', command: 'done' }]))).toMatchObject({
+      boards: [{ id: 'week' }],
+      boardsVersion: 1,
+      taskCommands: [{ name: 'fail' }],
+    });
+  });
+});
+
+describe('the home page in the settings', () => {
+  it('is a report or a board, one of the two', () => {
+    expect(parseHomepage({ report: ' list ' })).toEqual({ report: 'list' });
+    expect(parseHomepage({ board: 'week' })).toEqual({ board: 'week' });
+    for (const bad of [
+      undefined,
+      null,
+      'next',
+      [],
+      {},
+      { report: '' },
+      { report: 3 },
+      { report: 'a', board: 'b' },
+      { report: 'a', x: 1 },
+    ])
+      expect(parseHomepage(bad)).toBeNull();
+  });
+
+  it('is read with the rest of the file, and none is none', () => {
+    expect(parseSettings('{ "homepage": { "board": "week" } }').homepage).toEqual({ board: 'week' });
+    expect(parseSettings('{ "homepage": 7 }')).toMatchObject({ homepage: null, errors: [] });
+    expect(parseSettings('').homepage).toBeNull();
+  });
+
+  it('is saved beside the other keys, and survives saving the commands and the boards', () => {
+    const raw = { taskCommands: [{ name: 'fail', command: 'done' }], boards: [] };
+    const out = JSON.parse(serializeHomepage(raw, { report: 'list' }));
+    expect(out).toEqual({ ...raw, homepage: { report: 'list' } });
+    expect(JSON.parse(serializeHomepage(out, null))).toEqual(raw);
+    expect(JSON.parse(serializeSettings(out, [])).homepage).toEqual({ report: 'list' });
+    expect(JSON.parse(serializeBoards(out, [])).homepage).toEqual({ report: 'list' });
   });
 });

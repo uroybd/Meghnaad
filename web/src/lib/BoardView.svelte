@@ -1,0 +1,313 @@
+<script lang="ts">
+  import { ArrowDown, ArrowUp, Move, Pencil, Trash2 } from './icons';
+  import BoardSection from './BoardSection.svelte';
+  import SectionInfo from './SectionInfo.svelte';
+  import {
+    COLUMNS,
+    GAP_PX,
+    ROW_PX,
+    loadBoard,
+    moveBy,
+    place,
+    reorder,
+    resizeBy,
+    stacked,
+    zoneNow,
+    type Board,
+    type Rect,
+    type Section,
+    type SectionData,
+  } from './boards';
+  import { store } from './store.svelte';
+
+  /**
+   * A board: its sections on a 12-column grid, or in one column on a narrow screen (in reading order). Editing the layout
+   * drags a section by its handle, resizes it by the corner, or with the arrow keys on either; the places are the engine's
+   * (`tc_core::board::layout`), which pushes what a section lands on down and floats everything up. This draws the board it
+   * is given and reports the new sections; it keeps nothing.
+   */
+  let {
+    board,
+    editing = false,
+    selected = null,
+    onchange,
+    onselect,
+    onremove,
+  }: {
+    board: Board;
+    editing?: boolean;
+    selected?: string | null;
+    onchange?: (sections: Section[]) => void;
+    onselect?: (id: string) => void;
+    onremove?: (id: string) => void;
+  } = $props();
+
+  // ---- The data ----------------------------------------------------------------------------------------------------
+  let data = $state<Record<string, SectionData>>({});
+  // Ask again when what a section asks for changes (not when it only moves), and when a task changes anywhere.
+  const dataKey = $derived(
+    JSON.stringify([
+      board.filter,
+      board.sections.map((s) => [s.id, s.type, s.report, s.filter, s.measure, s.by, s.series]),
+    ]),
+  );
+  let asked = 0;
+  $effect(() => {
+    void dataKey;
+    void store.rev;
+    const mine = ++asked;
+    const zone = zoneNow(store.config?.config.settings);
+    const t = setTimeout(() => {
+      void loadBoard($state.snapshot(board) as Board, zone).then((d) => {
+        if (mine === asked) data = d;
+      });
+    }, 150);
+    return () => clearTimeout(t);
+  });
+
+  // ---- The info panel -----------------------------------------------------------------------------------------------
+  let info = $state<string | null>(null);
+  const infoSection = $derived(board.sections.find((s) => s.id === info) ?? null);
+  function closeInfo() {
+    const id = info;
+    info = null;
+    // Back to the button that opened it.
+    if (id) queueMicrotask(() => document.getElementById(`board-info-${id}`)?.focus());
+  }
+
+  // ---- Wide or narrow ----------------------------------------------------------------------------------------------
+  let narrow = $state(false);
+  $effect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const mq = matchMedia('(max-width: 720px)');
+    narrow = mq.matches;
+    const on = (e: MediaQueryListEvent) => (narrow = e.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  });
+
+  // Reading order is also the order a screen reader and the Tab key meet them in.
+  const ordered = $derived(stacked(board.sections));
+
+  // ---- Moving and resizing -----------------------------------------------------------------------------------------
+  let grid: HTMLDivElement | undefined = $state();
+  let announce = $state('');
+  let drag: {
+    id: string;
+    mode: 'move' | 'resize';
+    x: number;
+    y: number;
+    start: Rect;
+    base: Section[];
+    last: string;
+  } | null = null;
+
+  const describe = (s: Section) =>
+    `${s.title}: column ${s.x + 1}, row ${s.y + 1}, ${s.w} ${s.w === 1 ? 'column' : 'columns'} wide, ${s.h} ${s.h === 1 ? 'row' : 'rows'} high`;
+
+  function begin(e: PointerEvent, s: Section, mode: 'move' | 'resize') {
+    if (!editing || narrow) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag = {
+      id: s.id,
+      mode,
+      x: e.clientX,
+      y: e.clientY,
+      start: { x: s.x, y: s.y, w: s.w, h: s.h },
+      base: board.sections,
+      last: '',
+    };
+    onselect?.(s.id);
+  }
+
+  function track(e: PointerEvent) {
+    if (!drag || !grid) return;
+    // One grid step is a column (or row) and its gap. Each step is worked out from where the drag began, on the layout
+    // as it was then, so dragging back puts what was pushed aside back where it was.
+    const dx = Math.round((e.clientX - drag.x) / ((grid.clientWidth + GAP_PX) / COLUMNS));
+    const dy = Math.round((e.clientY - drag.y) / (ROW_PX + GAP_PX));
+    const s = drag.start;
+    const r: Rect =
+      drag.mode === 'move'
+        ? { ...s, x: Math.max(0, s.x + dx), y: Math.max(0, s.y + dy) }
+        : { ...s, w: Math.max(1, s.w + dx), h: Math.max(1, s.h + dy) };
+    const key = `${r.x},${r.y},${r.w},${r.h}`;
+    if (key === drag.last) return;
+    drag.last = key;
+    onchange?.(place(drag.base, drag.id, r));
+  }
+
+  function end() {
+    if (!drag) return;
+    const s = board.sections.find((x) => x.id === drag?.id);
+    drag = null;
+    if (s) announce = describe(s);
+  }
+
+  const ARROWS: Record<string, [number, number]> = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  };
+
+  function key(e: KeyboardEvent, s: Section, mode: 'move' | 'resize') {
+    const d = ARROWS[e.key];
+    if (!d) return;
+    e.preventDefault();
+    const next =
+      mode === 'move' ? moveBy(board.sections, s.id, d[0], d[1]) : resizeBy(board.sections, s.id, d[0], d[1]);
+    onchange?.(next);
+    const now = next.find((x) => x.id === s.id);
+    if (now) announce = describe(now);
+  }
+
+  function shift(s: Section, delta: -1 | 1) {
+    const next = reorder(board.sections, s.id, delta);
+    onchange?.(next);
+    announce = `${s.title}: now number ${stacked(next).findIndex((x) => x.id === s.id) + 1} of ${next.length}`;
+  }
+</script>
+
+{#if !board.sections.length}
+  <p class="dim empty">
+    {editing ? 'Nothing here yet. Add a section.' : 'This board has no sections yet. Edit it to add some.'}
+  </p>
+{/if}
+<div class="grid" class:editing bind:this={grid} style:--row="{ROW_PX}px" style:--gap="{GAP_PX}px">
+  {#each ordered as s, i (s.id)}
+    <div
+      class="cell"
+      class:selected={editing && selected === s.id}
+      style:--x={s.x}
+      style:--y={s.y}
+      style:--w={s.w}
+      style:--h={s.h}
+    >
+      <BoardSection section={s} data={data[s.id]} {editing} oninfo={() => (info = s.id)} />
+      {#if editing}
+        <div class="tools">
+          {#if narrow}
+            <button
+              class="ghost"
+              aria-label="Move {s.title} up"
+              title="Move up"
+              disabled={i === 0}
+              onclick={() => shift(s, -1)}><ArrowUp size={15} /></button
+            >
+            <button
+              class="ghost"
+              aria-label="Move {s.title} down"
+              title="Move down"
+              disabled={i === ordered.length - 1}
+              onclick={() => shift(s, 1)}><ArrowDown size={15} /></button
+            >
+          {:else}
+            <button
+              class="ghost handle"
+              aria-label="Move {s.title}. Drag, or use the arrow keys."
+              title="Drag to move, or use the arrow keys"
+              onpointerdown={(e) => begin(e, s, 'move')}
+              onpointermove={track}
+              onpointerup={end}
+              onpointercancel={end}
+              onkeydown={(e) => key(e, s, 'move')}><Move size={15} /></button
+            >
+          {/if}
+          <button class="ghost" aria-label="Settings of {s.title}" title="Settings" onclick={() => onselect?.(s.id)}
+            ><Pencil size={15} /></button
+          >
+          <button class="ghost danger" aria-label="Remove {s.title}" title="Remove" onclick={() => onremove?.(s.id)}
+            ><Trash2 size={15} /></button
+          >
+        </div>
+        {#if !narrow}
+          <button
+            class="resize"
+            aria-label="Resize {s.title}. Drag, or use the arrow keys."
+            title="Drag to resize, or use the arrow keys"
+            onpointerdown={(e) => begin(e, s, 'resize')}
+            onpointermove={track}
+            onpointerup={end}
+            onpointercancel={end}
+            onkeydown={(e) => key(e, s, 'resize')}
+          ></button>
+        {/if}
+      {/if}
+    </div>
+  {/each}
+</div>
+<p class="sr-only" aria-live="polite">{announce}</p>
+{#if infoSection && data[infoSection.id]}
+  <SectionInfo section={infoSection} data={data[infoSection.id]} onclose={closeInfo} />
+{/if}
+
+<style>
+  .empty {
+    margin: 8px 0 14px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-auto-rows: var(--row);
+    gap: var(--gap);
+  }
+  .cell {
+    position: relative;
+    min-width: 0;
+    grid-column: calc(var(--x) + 1) / span var(--w);
+    grid-row: calc(var(--y) + 1) / span var(--h);
+  }
+  /* A narrow screen has one column and the sections in reading order; the places on the grid mean nothing there. */
+  @media (max-width: 720px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+      grid-auto-rows: auto;
+    }
+    .cell {
+      grid-column: 1;
+      grid-row: auto;
+      min-height: calc(var(--h) * var(--row) + (var(--h) - 1) * var(--gap));
+    }
+  }
+  .editing .cell {
+    outline: 1px dashed var(--line);
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
+  .editing .cell.selected {
+    outline: 2px solid var(--accent);
+  }
+  .tools {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    gap: 2px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px;
+  }
+  .tools button {
+    padding: 4px 6px;
+  }
+  .handle {
+    cursor: grab;
+    touch-action: none;
+  }
+  .resize {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 0 0 6px 0;
+    background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
+    cursor: nwse-resize;
+    touch-action: none;
+  }
+</style>
