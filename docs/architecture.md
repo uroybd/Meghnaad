@@ -16,7 +16,9 @@ bucket, and the clients agree on its layout. Meghnaad is one more client of that
   Cloudflare **Worker** sits between the page and the bucket: it checks Cloudflare Access, holds the encryption secret,
   and opens and seals the versions that pass through. It never parses a task.
 - Everything that is *Taskwarrior behaviour* (filters, reports, urgency, recurrence, confirmations, dates) lives in
-  one Rust library, `tc-core`. The Svelte app draws what the engine returns; it has no logic of its own.
+  one Rust library, `tc-core`. The Svelte app draws what the engine returns and has no Taskwarrior logic of its own;
+  what it does own is the shell level around `task`: task commands, `&&` `||` `;` chains, bulk actions and review, which
+  only send ordinary commands to the engine.
 - It started the other way round: the Worker held the replica and ran every command, so every request spent the free
   plan's 10 ms of CPU. Moving the engine to the page took that cost off the Worker, and made reads and writes
   instantaneous. Every current browser has the two things it needs (Web Workers and WebAssembly), so the Worker does not
@@ -100,10 +102,10 @@ time zone and the time) and gets back the JSON the app reads. One entry point me
 where Taskwarrior semantics live. A file to import goes the same way, as its text; `tc-core`'s `import` module parses
 and checks it. The engine answers one message at a time, in the order they arrive.
 
-The pure helpers (`tc_core::helpers`, which calls into `sortspec`, `complete`, `highlight`, `urgency_settings` and `cells`:
+The pure helpers (`tc_core::helpers`, which calls into `sortspec`, `complete`, `highlight`, `urgency_settings`, `cells` and `board`:
 a date in the user's `dateformat`, a command line split and quoted as the engine reads it, a duration in one unit, how a
 recurrence period reads, what a header click or a grouping does to a report's sort keys, what Tab completes and how a
-command line is coloured, how an urgency coefficient is named and kept, and what each cell of a report shows, and the Markdown of a note or
+command line is coloured, how an urgency coefficient is named and kept, what each cell of a report shows, the numbers a board section shows from an `export` and where its sections sit on the grid, and the Markdown of a note or
 a string UDA with the change a ticked box makes to its text; `helpers::call` runs the ones with structured arguments by name, as JSON) take nothing from the replica, so the page does
 not send them to the Worker: a screen asks for a date
 while it draws, and a message is asynchronous. `web/src/engine/helpers.ts` loads the same WebAssembly module again on the
@@ -188,6 +190,7 @@ Pure Rust, no I/O of its own, tested natively. The browser engine, the Node harn
 | **Colour** | `color` | Taskwarrior's colour specifications and how they blend, the rules that colour a task (with precedence and merge), the `colors` command and the history graph's colours; checked against the escape codes of the real `task` |
 | **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | The `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` (and `_get`, which reads the same DOM) and `export` commands, each a port of its Taskwarrior counterpart. `export` writes Taskwarrior's own JSON from the stored properties; `import` reads it back (a port of `CmdImport`, checking the whole file before it writes anything); the app's pages use a separate, hidden `_rows`, and the detail view's History a hidden `_history <uuid>` that reads one task's operations without loading the rest |
 | **Hooks** | `hooks`, `lua_hooks` (+ `lua/prelude.lua`) | `hooks` runs a user's code at Taskwarrior's four hook points (`on_launch`, `on_add`, `on_modify`, `on_exit`): any `HookHost` (async, so a hook may be a request) or plain `Hooks`, with what they print returned to the Console, the task as JSON (`task_to_json` / `task_from_json`) and `diff` turning what came back into changes. `lua_hooks` (the `lua` feature) runs a Lua script in a sandbox (`LuaRunner`: JSON in, JSON out) and as in-process hooks (`LuaHooks`); the prelude is the Lua library a script gets: a task, tags as a set, dates and durations with arithmetic |
+| **Boards** | `board` (`aggregate`, `layout`) | The saved `boards` of `settings.json` and what a board section shows, for every front end. `normalize` keeps the valid boards and sections, fits them to the 12-column grid and says what it dropped; `aggregate` reads an `export` (Taskwarrior's JSON: `20261007T123000Z` dates, ISO durations, numbers) and counts, sums, averages or compares it as a whole and per value of an attribute or per day, week, month, quarter or year of a date (a period with nothing in it is kept; `weekstart` and the zone come from the caller); a series may carry a `span` (`from`, `to`, `unless`: dates of a task), and then `chart` counts the tasks in that state as of the end of each period, from the first task to the period of `now` or the last on the axis, which is how `task burndown` counts pending, started and done; `chart` lays several series (each its own `export` and measure) on one axis in Chart.js's shape (labels, and a dataset of values for each series; every period from the first to the last, so a series with nothing in one still has a place); `layout` places, moves and resizes a section so that what it lands on is pushed down and everything floats up, and orders the sections for a narrow screen. Pure, with no replica; the page asks for them through `helpers::call`, which is what an Android screen will do. Sorting and keeping the first few groups is the screen's |
 | **Settings** | `taskrc`, `rc_url`, `settings`, `appsettings` | The allowlisted subset of a taskrc: what is accepted, what is refused, and the typed `Config` the rest reads; `rc_url` is which links the Worker may fetch a taskrc from (HTTPS to a public host name only, redirects included) and the GitHub/GitLab page-to-raw rewrite; and the `show` / `config` / `context` commands that list and edit it under the same rules (`context` is a few `context.<name>.*` settings, edited through `config`); `appsettings` checks that the app's own `settings.json` is a JSON object of a sensible size before the Worker stores it |
 
 ### How a command runs
@@ -366,6 +369,27 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   107 KB compressed, its own chunk). The panel asks the Worker whether the script is all right a moment after typing
   (`POST /api/hooks/check`, the same Lua that will run it) and marks the line; a script that does not load cannot be
   saved, an empty one removes the hooks. `api.ts` tells the engine which hooks the saved script defines (`refreshHooks`).
+- **Addresses.** Every page has one, in `route.ts`: a `Place` (a report, a plain page, the boards or one board, Settings or one tab, a
+  task) with `parsePath` and `placePath` to turn it into a path and back, and the Worker serves the app for them all (single-page
+  fallback). `store.place` is where the app is, derived from the page, the report, the board, the tab and the drawer;
+  `store.openFromAddress` goes where an address says (a page that needs the reports or the boards waits until they are read, and
+  the start asks again); and one effect in `App.svelte` keeps the address in step with `store.place` the other way, pushing a
+  history entry for each move but replacing the address when the front page finds where it is, when the drawer closes over the page
+  under it, and when Settings changes tab. A new page adds a `Place`, a test of its round trip, and a row in `docs/using.md`.
+- **The home page** is a `homepage` key of `settings.json` (`{ report }` or `{ board }`, read by `parseHomepage`). `store.goHome()` runs once the settings have loaded, from the front page only, and does nothing for a task's address or a report or board that is gone. The General tab of Settings writes it.
+- **The info panel** of a card (`SectionInfo`, a modal `<dialog>`) is drawn from what the load already had: `loadBoard` keeps, beside each
+  result, the filter each series ran and the `export` text it got, so the panel parses and lists the tasks only when it is opened.
+- **Boards** are the browser's pages over the engine's `board` module. `appsettings.ts` reads `settings.json`'s `boards` with
+  `board_normalize` (the problems are kept apart from the commands') and `serializeBoards` writes them back with the other keys
+  as they were; `boards.ts` runs `<filter> export` for each distinct filter (sections with the same one share it) and a table's
+  report, hands the text to `board_aggregate`, and sorts and trims the groups. `BoardView` is the grid and the drag, resize and
+  keyboard handling (each step is worked out from where the drag began, on the layout as it was then, by `board_place`);
+  `BoardChart` is [Chart.js](https://www.chartjs.org/) on a canvas at the size of its box, loaded as a chunk of its own (`chartjs.ts`,
+  only the controllers and scales the boards use; about 66 KB compressed, fetched when a board first draws a chart), so bar, line,
+  area, pie, donut, radar and polar charts are one library's work, and only the table is the app's own. What it is given,
+  `chartConfig` in `boardChart.ts`, is a change of names and colours from the engine's `Chart` (labels, and a dataset of values for
+  each series), which already has Chart.js's shape on purpose: it is the contract any front end draws from, mapping it to its own
+  chart library. Nothing reads the replica.
 - **Task commands** are the browser's. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name,
   command, icon? }] }`, other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s
   `appsettings` checks that it is a JSON object under 64 KB and nothing more). `taskCommands.ts` writes a command out on
@@ -413,6 +437,7 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
+| `board` unit tests (and `a_board_reads_what_export_writes`, `finished_tasks_split_into_succeeded_and_failed_by_a_uda` and `spans_over_an_export_are_what_the_weekly_burndown_counts` in `cli_exec`, which feed the real `export` to the aggregation, the last checking pending, started and done against `burndown.weekly` week by week) | Grid placement (the moved section wins, the overlapped are pushed down, everything floats up, clamping, keyboard steps, reading order), the saved format (what is valid, what is dropped and named), counts, sums, averages and comparisons of numbers and durations, grouping by value, by each tag, and by a date in each step, in each zone and week start, with empty periods kept, and the refusals (a word is not a duration, too many periods) |
 | `tc_core::helpers`, `sortspec`, `complete`, `highlight`, `urgency_settings`, `cells` and `markdown` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, every header click, grouping and sort-override case, what Tab completes, how a line is coloured, how urgency terms are named, what every column format shows, and the Markdown subset (nesting, checklists, safe links, the limits that keep a hostile text quick) |
 | `npm --prefix web test` | The browser-side logic (it loads the built engine for the helpers): formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |

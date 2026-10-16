@@ -6,7 +6,7 @@ this guide says so. How the engine works is in [Architecture](architecture.md); 
 [taskrc support](taskrc-support.md).
 
 **Contents:** [The pages](#the-pages) · [The console](#the-console) · [Questions](#questions-taskwarrior-asks) ·
-[Tasks](#tasks) · [Your taskrc](#your-taskrc) · [Urgency](#urgency) · [Recurring tasks](#recurring-tasks) ·
+[Tasks](#tasks) · [Boards](#boards) · [Your taskrc](#your-taskrc) · [Urgency](#urgency) · [Recurring tasks](#recurring-tasks) ·
 [Hooks](#hooks) · [Time tracking and reminders](#time-tracking-and-reminders) · [On a phone](#on-a-phone) · [Different from the
 desktop](#different-from-the-desktop)
 
@@ -20,7 +20,22 @@ desktop](#different-from-the-desktop)
 | **Summary** | How far along each project is |
 | **Calendar** | Months, with what is due or scheduled on which day |
 | **Burndown** | Pending, started and done over time |
+| **Boards** | Pages of your own: numbers, tables and charts, each with its own filter, laid out on a grid |
 | **Console** | Type commands; reports and answers print here |
+
+**Every page has an address**, so a link to it can be shared with anyone who can sign in to the same deployment, opened in
+a new tab, and the browser's back button goes where you were:
+
+| Address | Page |
+| --- | --- |
+| `/` | Your **home page** (Settings → General): a report or a board, `next` when you have not chosen |
+| `/report/<name>` | Tasks, as that report: `/report/next`, `/report/list`, `/report/_reviewed`, and every report of your own is its name |
+| `/projects` `/tags` `/summary` `/calendar` `/burndown` `/console` | those pages |
+| `/boards`, `/board/<slug>` | the list of boards, and one board (its slug is its address; see [Boards](#boards)) |
+| `/settings`, `/settings/<tab>` | Settings, and one of its tabs: `general` `taskrc` `tasksh` `commands` `hooks` `urgency` |
+| `/task/<8 characters>` | a task's detail, over the page behind it (the first 8 characters of its uuid) |
+
+An address for a report or a board that is not there says so and opens your home page. A filter you typed is not in the address.
 
 Summary, Calendar, Burndown, Projects and Tags have the same filter box as Tasks (Tab completes, filters become chips, the filter
 helpers are below it) and it is focused when you open the page (not on a phone, where that would raise the keyboard).
@@ -282,12 +297,125 @@ and `.end`).
 week, month or year. It counts as Taskwarrior does, quirks included (checked bar by bar). `burndown.cumulative=0`
 stops carrying finished tasks forward.
 
+## Boards
+
+A **board** is a page of your own made of **sections**, each a number, a table or a chart over the tasks its filter picks.
+Open **Boards**, type a name and press **New board**; **Edit** turns the layout and the sections into something you can change,
+and **Save** keeps it. Every board has a **slug**, the last part of its address (`/board/week`): one lower case word of
+letters, digits, `-` and `_`, made from the name when the board is created and yours to change under **Edit** → **Address**.
+It cannot be the same as another board's, and if the board is your home page, changing it moves the home page with it. A board is kept in the app's own `settings.json` (key `boards`), not in your taskrc, so it follows you
+to every device that signs in to the same deployment. A board is not a Taskwarrior report: it is built from what
+`<filter> export` prints, so it sees every attribute of a task, your UDAs included, and runs nothing of its own.
+
+**A section** has a title, a filter, and one of these to show. The charts are drawn by [Chart.js](https://www.chartjs.org/)
+(loaded the first time a board draws one), with the page's colours; hovering a bar, point or slice shows its figure. The table is
+the app's own:
+
+| Shows | What it is |
+| --- | --- |
+| **Number** | One figure: the count of the tasks, or a **sum**, **average**, **smallest** or **largest** of a field |
+| **Bar chart** | The same figure for each value of an attribute (`project`, `tags`, `priority`, a UDA), or for each period of a date. Bars of a category lie down; bars of a date stand up |
+| **Line chart** | The same, drawn as a line; it is meant for a date (`end` per week shows what you finish) |
+| **Area chart** | A line with the area under it filled |
+| **Pie chart**, **Donut chart** | The share of each value in the whole. One series, and its slices are the values; hover a slice for its share |
+| **Radar chart** | The values around a circle, a shape for each series: good for comparing two or three series over a handful of values |
+| **Polar area chart** | A pie whose slices differ in how far they reach, not in their angle |
+| **Table** | Any report (`next`, `list`, one of yours) over the section's filter, drawn as on the Tasks page |
+
+- **The filter** is the same one the Tasks page takes (Tab completes). A board can have a filter of its own, which every section
+  adds to: `( board filter ) ( section filter )`, so an `or` in one cannot spill into the other.
+- **Measuring** a field works on numbers (`urgency`, a numeric UDA) and durations (a duration UDA, as `2h` or `PT2H`). A
+  figure over a duration is shown the way Taskwarrior writes one (`2h`, `3d`). A task with no value for the field is left out of
+  a sum, average or comparison, and a group in which no task has one shows `–` (not zero). Anything else is refused, saying so.
+- **Grouping** by an attribute makes a bar for each value; a task with none is counted under `(none)`. A task with several
+  tags is counted once under each, so the bars can add up to more than the tasks (the figure above them does not). A date is
+  cut into **days, weeks, months, quarters or years** in your time zone, with weeks starting on the day `weekstart` says, and a
+  period with nothing in it is still drawn, so a line runs on and a chart has no gaps. A date is cut into at most 2000 periods.
+- **Series.** A chart can have several, as Chart.js has datasets: each is a label and a filter (added to the board's and the
+  section's), drawn as its own line or its own bars on the same axis, with a legend. **Stacked** piles the bars on each other
+  or adds the lines up. A pie, donut or polar chart has one series (its slices are the values). A series can have a colour of its own, chosen
+  from Taskwarrior's basic colours by name (`red`, `bright blue`, … drawn in the page's palette, so a choice follows a light and a
+  dark page and your theme's look) or any other `#rrggbb` from the system's picker; with none, the series take the palette's
+  blue, red, green, yellow, magenta and cyan in turn. A series can also have a measure of its own (in the file; it is the section's
+  otherwise). They share the grouping, so a period in which one series has nothing still has a place for it (zero, or `–`
+  for an average). Unlike `task burndown`, which counts what is pending at each moment, a chart counts per period by the date
+  you choose (`end`, `entry`, `due`), so "finished per week, by outcome" is a stacked bar chart with series
+  `Succeeded` (`outcome:success or outcome:`, which takes a task with no outcome as a success) and `Failed`
+  (`outcome:failed`). Every series of a chart must measure the same kind of thing (numbers or durations).
+- **Burndown-style series.** A series can count **what is open at the end of each period** instead of what happened in it,
+  which is how `task burndown` counts: **Pending** (entered, not yet finished, and not started), **Started** (started, not yet
+  finished) and **Done** (finished by then, so it adds up). Pick it in the series' **Counts** menu, or give it a `span` in the
+  file: `{ "from": "entry", "to": "end", "unless": "start" }` is pending, `{ "from": "start", "to": "end" }` started and
+  `{ "from": "end" }` done, and any other dates work (open from `scheduled` until `end`). The chart must be grouped by a date,
+  and the periods run from the first task to the current one. Stack them to get Taskwarrior's burndown, and split any of them
+  with its filter: Done into `outcome:success or outcome:` (a task with no outcome is a success) and `outcome:failed`. It counts
+  the same as `burndown.weekly` for tasks that were started after they were entered (checked week by week), except that
+  Taskwarrior counts only a task that is still pending as started, and a task started and then finished is started between the
+  two here.
+- **The info button.** Every card has an **ⓘ** in its corner. It opens a panel with what the card asks (its measure and grouping,
+  or its report), the filter each series ran (with **Open in Tasks** to look at those tasks on the Tasks page), the figure or, for
+  a chart, each value on its axis with the number of tasks behind it and the total over all the tasks, and the tasks the filter
+  got (the first 200, with the columns it measures and groups by). It is the way to check where a number came from.
+- **Order and number.** A chart of values puts the largest first; **Order** changes that (smallest first, or by name), and
+  **Keep** shows only the first few. A date is in time order.
+
+**Laying out the board.** The page is 12 columns wide. In **Edit**, drag a section by its move handle (top right) to put it
+elsewhere, and its bottom right corner to make it wider or taller; it snaps to the grid. What it lands on is pushed down and
+everything floats up to the first free row, so there are never gaps or overlaps. Without a mouse, each handle takes the arrow
+keys (move, or resize) and says where the section is now. **Add** puts a new section in the first free place; **Settings** (the
+pencil) opens its filter, measure and grouping; the bin removes it. **Cancel** drops everything since **Edit**.
+
+**On a phone** the grid is one column, in reading order (top to bottom, left to right). **Edit** there offers up and down
+buttons for each section instead of handles, and the places on the grid are rewritten as a single column in the order you
+chose.
+
+You never have to write the file by hand, but you can: the format is below. A board or section that is not valid is named at
+the top of the page and left out (the rest of `settings.json` is read as usual); saving a board writes the valid ones, so fix the
+file first if you want to keep what was left out.
+
+```json
+{
+  "boardsVersion": 1,
+  "boards": [
+    {
+      "id": "week",
+      "name": "My week",
+      "description": "What I got done",
+      "filter": "project.not:Someday",
+      "sections": [
+        { "id": "open", "title": "Open", "x": 0, "y": 0, "w": 3, "h": 2, "type": "number",
+          "filter": "status:pending" },
+        { "id": "done", "title": "Done per week", "x": 3, "y": 0, "w": 9, "h": 4, "type": "line",
+          "filter": "status:completed", "by": { "time": { "field": "end", "step": "week" } } },
+        { "id": "outcome", "title": "Finished per week, by outcome", "x": 0, "y": 4, "w": 12, "h": 4, "type": "bar",
+          "stacked": true, "filter": "status:completed", "by": { "time": { "field": "end", "step": "week" } },
+          "series": [
+            { "label": "Succeeded", "filter": "outcome:success or outcome:", "color": "green" },
+            { "label": "Failed", "filter": "outcome:failed", "color": "red" }
+          ] },
+        { "id": "effort", "title": "Estimate by project", "x": 0, "y": 8, "w": 12, "h": 4, "type": "bar",
+          "measure": { "fn": "sum", "field": "estimate" }, "by": { "field": "project" }, "limit": 10 }
+      ]
+    }
+  ]
+}
+```
+
+`x` and `w` are columns (0 to 11, and 1 to 12); `y` and `h` are rows. `measure` is `{ "fn": "count" }` unless it says
+otherwise, and `estimate` above is a duration UDA of yours.
+
 ## Settings
 
-**Settings** in the header opens one page with a tab each for the **taskrc**, **tasksh**, **Commands**, **Hooks** and **Urgency**. Every tab has
+**Settings** in the header opens one page with a tab each for **General**, the **taskrc**, **tasksh**, **Commands**, **Hooks** and **Urgency**. Every tab has
 its own **Apply** (**Save**, on Hooks), and applying one does not touch the others. A tab with edits that are not applied yet has a dot, and
 the edits stay while you look at another tab or another page. If the saved settings change from somewhere else (the
 Console's `config`, another tab), a tab with no edits of its own follows them.
+
+**General** chooses the **home page**: the page the app opens on. It can be any report (including your own) or any of your
+boards; left alone it is `next`. It is kept in the app's own `settings.json` (`"homepage": { "report": "list" }` or
+`{ "board": "week" }`), not in your taskrc, so it is the same on every device that signs in to the same deployment. A link
+to a task still opens that task, and a report or board that is gone opens `next`. (The taskrc's `default.command` is
+different: it is the command a line runs when it names none.)
 
 ![The Settings page, on its taskrc tab: the saved settings as text to edit, with a colour theme picker and import from a file or a link](screenshots/settings-taskrc.png)
 
