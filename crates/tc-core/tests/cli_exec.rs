@@ -3653,6 +3653,162 @@ mod export_command {
         assert!(text.ends_with("}\n]\n"), "{text}");
     }
 
+    // A board section measures what `export` prints, so what the engine writes has to be what the aggregation reads.
+    #[tokio::test]
+    async fn a_board_reads_what_export_writes() {
+        use tc_core::board::aggregate::{aggregate, Ctx, Query, Unit};
+        let mut r = replica();
+        let cfg = parse("uda.points.type=numeric\nuda.est.type=duration\n").config;
+        run(&mut r, &cfg, "add A project:Home +x due:2026-12-25 points:3 est:2h").await;
+        run(
+            &mut r,
+            &cfg,
+            "add B project:Home +x +y due:2026-12-27 points:4 est:PT30M",
+        )
+        .await;
+        run(&mut r, &cfg, "add C project:Work").await;
+        let (res, _) = run(&mut r, &cfg, "export").await;
+        let (_, text, _) = file(&res);
+        let ctx = Ctx {
+            tz: 0,
+            week_starts_monday: true,
+            now: 1_790_000_000,
+        };
+        let ask = |json: &str| aggregate(text, &serde_json::from_str::<Query>(json).unwrap(), &ctx).unwrap();
+
+        let a = ask(r#"{"measure":{"fn":"sum","field":"points"},"by":{"field":"project"}}"#);
+        assert_eq!(a.total, Some(7.0));
+        assert_eq!(a.groups[0].label, "Home");
+        let a = ask(r#"{"measure":{"fn":"sum","field":"est"}}"#);
+        assert_eq!((a.unit, a.total), (Unit::Duration, Some(9000.0)));
+        let a = ask(r#"{"by":{"field":"tags"}}"#);
+        assert_eq!(
+            a.groups.iter().map(|g| (g.label.as_str(), g.count)).collect::<Vec<_>>(),
+            [("(none)", 1), ("x", 2), ("y", 1)]
+        );
+        let a = ask(r#"{"by":{"time":{"field":"due","step":"day"}}}"#);
+        assert_eq!(a.groups.len(), 3);
+        assert_eq!(a.groups[0].label, "2026-12-25");
+        let a = ask(r#"{"measure":{"fn":"avg","field":"urgency"}}"#);
+        assert!(a.total.is_some_and(|u| u > 0.0));
+    }
+
+    // Finished tasks split by an outcome attribute: success, or nothing, against failed, as two series of one chart.
+    #[tokio::test]
+    async fn finished_tasks_split_into_succeeded_and_failed_by_a_uda() {
+        use tc_core::board::aggregate::{chart, By, Ctx, SeriesInput};
+        let mut r = replica();
+        let cfg = parse("uda.outcome.type=string\nuda.outcome.values=success,failed\n").config;
+        for line in [
+            "add A outcome:success",
+            "add B",
+            "add C outcome:failed",
+            "add D outcome:failed",
+            "add E",
+        ] {
+            run(&mut r, &cfg, line).await;
+        }
+        run_yes(&mut r, &cfg, "1-4 done").await;
+        let (res, _) = run(&mut r, &cfg, "status:completed ( outcome:success or outcome: ) export").await;
+        let CliResult::File { text: ok, .. } = res else {
+            panic!("not a file")
+        };
+        let (res, _) = run(&mut r, &cfg, "status:completed outcome:failed export").await;
+        let CliResult::File { text: failed, .. } = res else {
+            panic!("not a file")
+        };
+        let series = |label: &str, tasks: String| SeriesInput {
+            label: label.into(),
+            tasks,
+            measure: None,
+            span: None,
+        };
+        let by: By = serde_json::from_str(r#"{"time":{"field":"end","step":"week"}}"#).unwrap();
+        let ctx = Ctx {
+            tz: 0,
+            week_starts_monday: true,
+            now: taskchampion::chrono::Utc::now().timestamp(),
+        };
+        let c = chart(&[series("Succeeded", ok), series("Failed", failed)], Some(&by), &ctx).unwrap();
+        // A finished task with no outcome is a success; the pending one is in neither.
+        assert_eq!(c.datasets[0].total, Some(2.0));
+        assert_eq!(c.datasets[1].total, Some(2.0));
+        assert_eq!(c.labels.len(), 1);
+        assert_eq!(
+            (c.datasets[0].data.clone(), c.datasets[1].data.clone()),
+            (vec![Some(2.0)], vec![Some(2.0)])
+        );
+    }
+
+    // `task burndown`'s pending, started and done are the state of the tasks at the end of each period; a chart of spans over the
+    // `export` of the same tasks has to come out as the burndown does.
+    #[tokio::test]
+    async fn spans_over_an_export_are_what_the_weekly_burndown_counts() {
+        use tc_core::board::aggregate::{chart, By, Ctx, SeriesInput, Span};
+        let mut r = replica();
+        let cfg = Config::default();
+        for line in [
+            "add A entry:-20d",
+            "add B entry:-12d start:-5d",
+            "log C entry:-25d end:-8d",
+            "log D entry:-9d end:-2d",
+            "add E entry:-3d",
+            "add F entry:-1d start:-1d",
+        ] {
+            run(&mut r, &cfg, line).await;
+        }
+        let (res, _) = run(&mut r, &cfg, "burndown.weekly").await;
+        let CliResult::Burndown(b) = res else {
+            panic!("not a burndown")
+        };
+        let (res, _) = run(&mut r, &cfg, "export").await;
+        let CliResult::File { text, .. } = res else {
+            panic!("not a file")
+        };
+
+        let state = |label: &str, from: &str, to: Option<&str>, unless: Option<&str>| SeriesInput {
+            label: label.into(),
+            tasks: text.clone(),
+            measure: None,
+            span: Some(Span {
+                from: from.into(),
+                to: to.map(Into::into),
+                unless: unless.map(Into::into),
+            }),
+        };
+        let by: By = serde_json::from_str(r#"{"time":{"field":"end","step":"week"}}"#).unwrap();
+        let ctx = Ctx {
+            tz: 0,
+            week_starts_monday: false,
+            now: taskchampion::chrono::Utc::now().timestamp(),
+        };
+        let c = chart(
+            &[
+                state("Pending", "entry", Some("end"), Some("start")),
+                state("Started", "start", Some("end"), None),
+                state("Done", "end", None, None),
+            ],
+            Some(&by),
+            &ctx,
+        )
+        .unwrap();
+        assert!(c.labels.len() >= 4, "{:?}", c.labels);
+        for (i, l) in c.labels.iter().enumerate() {
+            let bar = b
+                .bars
+                .iter()
+                .find(|x| x.epoch.to_string() == l.key)
+                .unwrap_or_else(|| panic!("no bar for {}", l.label));
+            let ours = |d: usize| c.datasets[d].data[i].unwrap() as i64;
+            assert_eq!(
+                (ours(0), ours(1), ours(2)),
+                (bar.pending, bar.started, bar.done + b.carryover_done),
+                "the week of {}",
+                l.label
+            );
+        }
+    }
+
     #[tokio::test]
     async fn json_array_off_prints_one_task_per_line_and_nothing_selected_prints_an_empty_array() {
         let mut r = replica();
