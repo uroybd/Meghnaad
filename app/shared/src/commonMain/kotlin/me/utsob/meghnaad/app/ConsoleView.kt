@@ -42,7 +42,7 @@ fun ConsoleView(store: Store) {
                     }
                 }
                 items(store.entries.toList(), key = { it.id }) { e ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(if (e.chained) 0.dp else 4.dp)) {
                         if (e.title.isNotEmpty()) {
                             Text("$ ${e.title}", fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

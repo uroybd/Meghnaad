@@ -32,7 +32,7 @@
         >
       </div>
       {#each store.entries as e (e.id)}
-        <section class="entry">
+        <section class="entry" class:chained={e.chained}>
           {#if e.title}<div class="cmd mono"><span class="dim">$</span> {e.title}</div>{/if}
           <ResultView entry={e} onedit={(row, from) => (store.editing = { row, from })} />
         </section>
@@ -64,6 +64,14 @@
   .entry {
     padding: 12px 0 16px;
     border-bottom: 1px dashed var(--line);
+  }
+  /* A later statement of one line (`a ; b`) is under the same heading, with no rule between. */
+  .entry:has(+ .chained) {
+    border-bottom: 0;
+    padding-bottom: 6px;
+  }
+  .entry.chained {
+    padding-top: 0;
   }
   .cmd {
     font-weight: 600;

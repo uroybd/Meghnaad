@@ -140,7 +140,8 @@ expanded, never what the buttons send.
 
 **Several commands on one line.** Like a shell, the console runs `a && b` (`b` only if `a` worked), `a || b` (`b`
 only if `a` failed) and `a ; b` (always), left to right with no precedence, so `a && b || c` is `(a && b) || c`. Each
-command has its own entry in the console, and the prompt is back after the last one. A command that asks a question
+command draws its answer in the console under one heading, the line as you typed it, and the prompt is back after the
+last one. A command that asks a question
 (a delete, say) waits for the answer before the line goes on; "no" counts as a failure. Clearing the console ends the line.
 An error is a failure, and so is a command that could not be reached. This is the page's, as it is a shell's: the engine
 is sent one command at a time, so these are not Taskwarrior syntax. An operator that is not quoted always separates

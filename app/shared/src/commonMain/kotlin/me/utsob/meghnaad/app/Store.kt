@@ -60,6 +60,8 @@ class Entry(val id: Int, input: CliInput, title: String) {
     var answers by mutableStateOf(Answers())
     /** The question it asked was answered no. */
     var declined by mutableStateOf(false)
+    /** It continues the line above it (a later statement of `a ; b`): drawn under the same heading. */
+    var chained by mutableStateOf(false)
 }
 
 class Toast(val text: String, val bad: Boolean = false)
@@ -111,7 +113,12 @@ private const val SHOW_HIDDEN_KEY = "show-hidden-reports"
 fun shortenUuids(s: String): String =
     Regex("\\b([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b").replace(s) { it.groupValues[1] }
 
-private fun titleOf(input: CliInput) = input.args?.let(::previewLine) ?: "task ${input.line ?: ""}".trim()
+// A line typed with `task` in front (the engine drops it) is headed by one `task`, not two.
+private fun titleOf(input: CliInput) =
+    input.args?.let(::previewLine) ?: "task ${(input.line ?: "").replace(Regex("^task(\\s+|$)"), "")}".trim()
+
+/** The heading a statement of a line draws: the whole line for the first, none (null) for the ones under it. */
+class ChainHeading(val heading: String?)
 
 private fun hookText(lines: List<HookLine>) = lines.joinToString(" · ") { it.text }
 
@@ -221,6 +228,9 @@ class Store(
         private set
     private val waiting = HashMap<Int, CompletableDeferred<Unit>>()
     private var aborted = false
+    /** The heading of the line that runs, and whether an entry has shown it yet. */
+    private var heading = ""
+    private var headingShown = false
     var promptRequest by mutableStateOf<Pair<String, Int>?>(null)
         private set
 
@@ -784,14 +794,15 @@ class Store(
      * Run a command from the console. A report command focuses that report instead of scrolling. [typed] is what was typed when
      * [input] is that with a task command written out: the history keeps it.
      */
-    suspend fun run(input: CliInput, typed: String? = null, inChain: Boolean = false): Entry {
+    suspend fun run(input: CliInput, typed: String? = null, chain: ChainHeading? = null): Entry {
         // Typed in the Console, a report prints right there. From the bar under the other pages it opens in the Tasks view
         // instead, where it can be sorted and filtered.
         val inConsole = view == View.Console
-        val e = Entry(nextId++, input, titleOf(input))
+        val e = Entry(nextId++, input, if (chain != null) chain.heading ?: "" else titleOf(input))
+        e.chained = chain != null && chain.heading == null
         e.loading = true
         entries.add(e)
-        if (!inChain) remember(typed ?: input.line ?: previewLine(input.args ?: emptyList()))
+        if (chain == null) remember(typed ?: input.line ?: previewLine(input.args ?: emptyList()))
         val res = exec(e)
         // `config` and `context` rewrite the saved settings: pick them up so the pages follow.
         val name = res?.command?.name
@@ -813,7 +824,8 @@ class Store(
 
     /**
      * Run the statements of a line one after the other, as a shell does (`&&` after a success, `||` after a failure, `;`
-     * always). Each is an entry of its own in the Console; the history keeps the line as it was typed. A statement that asks a
+     * always). Each is an entry of its own in the Console, under one heading, the line as it was typed (which is also what the
+     * history keeps). A statement that asks a
      * question waits for the answer: yes goes on, no is a failure. Clearing the Console ends the line.
      */
     suspend fun runChain(steps: List<Statement>, typed: String) {
@@ -821,6 +833,8 @@ class Store(
         chainBusy = true
         aborted = false
         remember(typed)
+        heading = titleOf(CliInput(line = typed))
+        headingShown = false
         try {
             runSequence(steps.map { it.join }) { i -> !aborted && runStep(steps[i].line) }
         } finally {
@@ -832,9 +846,12 @@ class Store(
     private suspend fun runStep(line: String): Boolean {
         if (line == "clear" || line == "cls") {
             entries.clear()
+            headingShown = false // what comes after it is a new block
             return true
         }
-        val e = run(CliInput(line = line), inChain = true)
+        val shown = if (headingShown) null else heading
+        headingShown = true
+        val e = run(CliInput(line = line), chain = ChainHeading(shown))
         while (e.result is CliResult.Confirm && !aborted) {
             val answered = CompletableDeferred<Unit>()
             waiting[e.id] = answered

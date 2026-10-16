@@ -28,7 +28,9 @@ describe('runChain', () => {
     runCli.mockImplementation(async ({ line }) => (line === 'a' ? bad : ok));
     await store.runChain(steps([null, 'a'], ['&&', 'b'], ['||', 'c'], [';', 'd']), 'a && b || c ; d');
     expect(lines()).toEqual(['a', 'c', 'd']);
-    expect(store.entries.map((e) => e.title)).toEqual(['task a', 'task c', 'task d']);
+    // One heading, the line as typed; each statement that ran draws under it.
+    expect(store.entries.map((e) => e.title)).toEqual(['task a && b || c ; d', '', '']);
+    expect(store.entries.map((e) => e.chained)).toEqual([false, true, true]);
     expect(store.history.at(-1)).toBe('a && b || c ; d');
     expect(store.history.filter((h) => h === 'a' || h === 'c')).toEqual([]);
   });
@@ -92,7 +94,18 @@ describe('runChain', () => {
     runCli.mockImplementation(async () => ok);
     await store.runChain(steps([null, 'a'], [';', 'clear'], [';', 'b']), 'a ; clear ; b');
     expect(lines()).toEqual(['a', 'b']);
-    expect(store.entries.map((e) => e.title)).toEqual(['task b']);
+    // What comes after `clear` is a new block, with the heading again.
+    expect(store.entries.map((e) => e.title)).toEqual(['task a ; clear ; b']);
+    expect(store.entries[0].chained).toBe(false);
+  });
+});
+
+describe('the heading of a line', () => {
+  it('is one `task` and the line as it was typed, once for the whole line', async () => {
+    runCli.mockImplementation(async () => ok);
+    await store.runChain(steps([null, 'task next'], [';', 'task overdue']), 'task next; task overdue');
+    expect(store.entries.map((e) => e.title)).toEqual(['task next; task overdue', '']);
+    expect(lines()).toEqual(['task next', 'task overdue']);
   });
 });
 

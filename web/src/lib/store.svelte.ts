@@ -26,6 +26,8 @@ export interface Entry {
   answers?: Answers;
   /** The question it asked was answered no. */
   declined?: boolean;
+  /** It continues the line above it (a later statement of `a ; b`): the console draws them as one block. */
+  chained?: boolean;
 }
 
 export interface Toast {
@@ -62,7 +64,8 @@ export function shortenUuids(s: string): string {
 }
 
 function titleOf(input: CliInput): string {
-  return input.args ? previewLine(input.args) : `task ${input.line ?? ''}`.trim();
+  // A line typed with `task` in front (the engine drops it) is headed by one `task`, not two.
+  return input.args ? previewLine(input.args) : `task ${(input.line ?? '').replace(/^task(\s+|$)/, '')}`.trim();
 }
 
 function hookText(lines: HookLine[]): string {
@@ -129,6 +132,8 @@ class Store {
   chainBusy = $state(false);
   #waiting = new Map<number, () => void>();
   #aborted = false;
+  /** The heading of the line that runs, once an entry has shown it. */
+  #heading: { text: string; shown: boolean } = { text: '', shown: false };
   /** Ask the prompt to take this text and the focus (the bulk bar's Command); `n` makes each ask a new one. */
   promptRequest = $state<{ text: string; n: number } | null>(null);
   /** The task detail drawer. */
@@ -386,21 +391,22 @@ class Store {
    * Run a command from the console. A report command focuses that report instead of scrolling. `typed` is what was
    * typed when `input` is that with a task command written out: the history keeps it.
    */
-  async run(input: CliInput, typed?: string, inChain = false): Promise<Entry> {
+  async run(input: CliInput, typed?: string, chain?: { heading: string | null }): Promise<Entry> {
     // Typed in the Console, a report prints right there. From the bar under the other pages it opens
     // in the Tasks view instead, where it can be sorted and filtered.
     const inConsole = this.view === 'console';
     const e = $state<Entry>({
       id: nextId++,
       input,
-      title: titleOf(input),
+      title: chain ? (chain.heading ?? '') : titleOf(input),
       result: null,
       loading: true,
       failure: null,
       at: Date.now(),
+      chained: chain !== undefined && chain.heading === null,
     });
     this.entries.push(e);
-    if (!inChain) this.remember(typed ?? input.line ?? previewLine(input.args ?? []));
+    if (!chain) this.remember(typed ?? input.line ?? previewLine(input.args ?? []));
     const res = await this.#exec(e);
     // `config` and `context` rewrite the saved settings: pick them up so the pages follow.
     const name = res?.command?.name;
@@ -422,7 +428,8 @@ class Store {
 
   /**
    * Run the statements of a line one after the other, as a shell does (`&&` after a success, `||` after a failure,
-   * `;` always). Each is an entry of its own in the Console; the history keeps the line as it was typed. A statement
+   * `;` always). Each is an entry of its own in the Console, under one heading, the line as it was typed (which is also
+   * what the history keeps). A statement
    * that asks a question waits for the answer: yes goes on, no is a failure. Clearing the Console ends the line.
    */
   async runChain(steps: Statement[], typed: string) {
@@ -430,6 +437,7 @@ class Store {
     this.chainBusy = true;
     this.#aborted = false;
     this.remember(typed);
+    this.#heading = { text: titleOf({ line: typed }), shown: false };
     try {
       await runSequence(
         steps.map((s) => s.join),
@@ -444,9 +452,12 @@ class Store {
   async #runStep(line: string): Promise<boolean> {
     if (line === 'clear' || line === 'cls') {
       this.entries = [];
+      this.#heading.shown = false; // what comes after it is a new block
       return true;
     }
-    const e = await this.run({ line }, undefined, true);
+    const heading = this.#heading.shown ? null : this.#heading.text;
+    this.#heading.shown = true;
+    const e = await this.run({ line }, undefined, { heading });
     while (e.result?.kind === 'confirm' && !this.#aborted) {
       await new Promise<void>((resume) => this.#waiting.set(e.id, resume));
     }
