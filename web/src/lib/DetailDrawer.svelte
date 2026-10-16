@@ -7,7 +7,7 @@
   import { taskLink } from './route';
   import TaskInfo from './TaskInfo.svelte';
   import { store } from './store.svelte';
-  import { commandWords } from './taskCommands';
+  import { commandSteps } from './taskCommands';
   import type { Row } from './types';
 
   let { uuid }: { uuid: string } = $props();
@@ -140,7 +140,14 @@
           >{#if confirmDelete}sure?{:else}<Trash2 size={14} /> Delete{/if}</button
         >
       {/if}
-      <MoreMenu commands={store.taskCommands} onrun={(c) => act(...commandWords(c))} />
+      <MoreMenu
+        commands={store.taskCommands}
+        onrun={(c) =>
+          store.actSteps(
+            store.detail?.from ?? null,
+            commandSteps(c).map((s) => ({ ...s, args: [uuid, ...s.words] })),
+          )}
+      />
     </div>
 
     {#if live.start != null && live.active_seconds != null}

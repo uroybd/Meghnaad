@@ -58,6 +58,8 @@ class Entry(val id: Int, input: CliInput, title: String) {
     var feedback by mutableStateOf<List<HookLine>>(emptyList())
     /** What was already answered on this command, for the questions that follow the first. */
     var answers by mutableStateOf(Answers())
+    /** The question it asked was answered no. */
+    var declined by mutableStateOf(false)
 }
 
 class Toast(val text: String, val bad: Boolean = false)
@@ -214,6 +216,11 @@ class Store(
 
     /** Text typed at the console line and not yet run; and a request for it to take this text and the focus. */
     var promptLine by mutableStateOf("")
+    /** A line of several statements is running: the prompt is back when the last of them has ended. */
+    var chainBusy by mutableStateOf(false)
+        private set
+    private val waiting = HashMap<Int, CompletableDeferred<Unit>>()
+    private var aborted = false
     var promptRequest by mutableStateOf<Pair<String, Int>?>(null)
         private set
 
@@ -675,7 +682,13 @@ class Store(
         promptRequest = text to ((promptRequest?.second ?: 0) + 1)
     }
 
-    fun clearEntries() = entries.clear()
+    fun clearEntries() {
+        entries.clear()
+        // A line that waits for an answer on an entry that is gone ends there.
+        aborted = true
+        waiting.values.forEach { it.complete(Unit) }
+        waiting.clear()
+    }
 
     /**
      * The system's back button, in the order a person expects: close what is on top (a question, a form, the menu), then ends
@@ -771,14 +784,14 @@ class Store(
      * Run a command from the console. A report command focuses that report instead of scrolling. [typed] is what was typed when
      * [input] is that with a task command written out: the history keeps it.
      */
-    suspend fun run(input: CliInput, typed: String? = null): Entry {
+    suspend fun run(input: CliInput, typed: String? = null, inChain: Boolean = false): Entry {
         // Typed in the Console, a report prints right there. From the bar under the other pages it opens in the Tasks view
         // instead, where it can be sorted and filtered.
         val inConsole = view == View.Console
         val e = Entry(nextId++, input, titleOf(input))
         e.loading = true
         entries.add(e)
-        remember(typed ?: input.line ?: previewLine(input.args ?: emptyList()))
+        if (!inChain) remember(typed ?: input.line ?: previewLine(input.args ?: emptyList()))
         val res = exec(e)
         // `config` and `context` rewrite the saved settings: pick them up so the pages follow.
         val name = res?.command?.name
@@ -796,6 +809,43 @@ class Store(
             live?.let { exec(it) }
         }
         return e
+    }
+
+    /**
+     * Run the statements of a line one after the other, as a shell does (`&&` after a success, `||` after a failure, `;`
+     * always). Each is an entry of its own in the Console; the history keeps the line as it was typed. A statement that asks a
+     * question waits for the answer: yes goes on, no is a failure. Clearing the Console ends the line.
+     */
+    suspend fun runChain(steps: List<Statement>, typed: String) {
+        if (chainBusy) return
+        chainBusy = true
+        aborted = false
+        remember(typed)
+        try {
+            runSequence(steps.map { it.join }) { i -> !aborted && runStep(steps[i].line) }
+        } finally {
+            chainBusy = false
+        }
+    }
+
+    /** One statement of a line: did it succeed? */
+    private suspend fun runStep(line: String): Boolean {
+        if (line == "clear" || line == "cls") {
+            entries.clear()
+            return true
+        }
+        val e = run(CliInput(line = line), inChain = true)
+        while (e.result is CliResult.Confirm && !aborted) {
+            val answered = CompletableDeferred<Unit>()
+            waiting[e.id] = answered
+            answered.await()
+        }
+        return !aborted && e.failure == null && !e.declined && e.result !is CliResult.Error
+    }
+
+    /** A question was answered (or the line was abandoned): the statement that waits for it looks again. */
+    private fun wake(e: Entry) {
+        waiting.remove(e.id)?.complete(Unit)
     }
 
     /** Run (or run again) the Tasks view's live table. */
@@ -831,9 +881,12 @@ class Store(
     suspend fun confirm(e: Entry, yes: Boolean) {
         if (!yes) {
             e.result = CliResult.Text(TextResult(listOf("Cancelled.")))
+            e.declined = true
+            wake(e)
             return
         }
         val res = exec(e, e.answers.copy(confirmed = true))
+        wake(e)
         if (res?.wrote == true) live?.let { exec(it) }
     }
 
@@ -841,7 +894,9 @@ class Store(
     suspend fun answerItems(e: Entry, keys: List<String>) {
         val r = (e.result as? CliResult.Confirm)?.value ?: return
         val more = if (r.ask == "permission") e.answers.copy(approved = keys) else e.answers.copy(extras = keys)
+        if (r.ask == "permission" && keys.isEmpty()) e.declined = true
         val res = exec(e, more)
+        wake(e)
         if (res?.wrote == true) live?.let { exec(it) }
     }
 
@@ -852,6 +907,16 @@ class Store(
         scope.launch { refreshNames() }
         if (setup == Setup.Ready) notifier.pollSoon()
     }
+
+    /**
+     * A button that stands for a line of statements (a task command with `&&`, `||` or `;`): each runs as [act] would run it, and
+     * it succeeds when it was neither refused nor left unanswered.
+     */
+    suspend fun actSteps(from: Entry?, steps: List<CommandStep>): Boolean =
+        runSequence(steps.map { it.join }) { i ->
+            val res = act(from, steps[i].words)
+            res != null && res.result !is CliResult.Error && res.result !is CliResult.Confirm
+        }
 
     /** A screen's action (done, start, add, …): run it, say how it went, and draw again what is on screen. */
     suspend fun act(from: Entry?, args: List<String>, answers: Answers = Answers(), again: Boolean = false): CliResponse? {

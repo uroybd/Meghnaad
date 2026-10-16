@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { Completer } from './completer.svelte';
+  import type { Statement } from './compound';
   import { COMMAND_NAMES } from './completion';
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
@@ -8,7 +9,7 @@
   import ReviewBar from './ReviewBar.svelte';
   import { review } from './review.svelte';
   import { store } from './store.svelte';
-  import { expandTaskCommands } from './taskCommands';
+  import { planChain } from './taskCommands';
   import { parseReview } from './tasksh';
 
   /** Focus the prompt when it appears (not on a phone, where that would raise the keyboard). */
@@ -95,7 +96,7 @@
       return;
     }
     const l = line.trim();
-    if (!l) return;
+    if (!l || store.chainBusy) return;
     clearLine(); // the command moves to the "last command" line above the prompt
     cursor = -1;
     completer.close();
@@ -111,8 +112,31 @@
       return;
     }
     // A task command from settings.json stands for the command line it names (what runs, and what the checks
-    // below look at, is that); the history keeps what was typed.
-    const cmd = expandTaskCommands(l, store.taskCommands);
+    // below look at, is that); the history keeps what was typed. A line may be several statements, joined by the
+    // shell's `&&`, `||` and `;` (see `compound.ts`): they run one after the other, and the prompt is back after the last.
+    let steps: Statement[];
+    try {
+      steps = planChain(l, store.taskCommands);
+    } catch (e) {
+      store.view = 'console';
+      store.addEntry(l, { kind: 'error', message: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    if (!steps.length) return;
+    if (steps.length > 1) {
+      store.view = 'console';
+      if (steps.some((x) => parseReview(x.line))) {
+        store.addEntry(l, {
+          kind: 'error',
+          message: '‘review’ can only be run on its own, not in a line of several commands.',
+        });
+        return;
+      }
+      returnFocus = document.activeElement === el;
+      void store.runChain(steps, l);
+      return;
+    }
+    const cmd = steps[0].line;
     // Reports focus the Tasks view; everything else lands in the console scrollback.
     // Show the console first so a write or an error is visible; `run` switches back for reports.
     if (store.view !== 'console' && (consoleOnly(cmd) || !looksLikeReport(cmd))) store.view = 'console';
@@ -189,6 +213,15 @@
     void review.press(e.key);
     return true;
   }
+
+  // The prompt is off while a line of several statements runs; it gets the focus back after the last one.
+  let returnFocus = false;
+  $effect(() => {
+    if (!store.chainBusy && returnFocus) {
+      returnFocus = false;
+      void tick().then(() => el?.focus());
+    }
+  });
 
   // The prompt is off while a review asks, except to type the change: it has the focus then.
   const keysOnly = $derived(review.captures && review.phase !== 'modifying');
@@ -299,12 +332,14 @@
         }}
         rows="1"
         class="mono"
-        disabled={keysOnly}
-        placeholder={keysOnly
-          ? 'Reviewing: press a key, or use the buttons above'
-          : review.captures
-            ? '+tag -tag /teh/the/ project:X'
-            : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
+        disabled={keysOnly || store.chainBusy}
+        placeholder={store.chainBusy
+          ? 'Running…'
+          : keysOnly
+            ? 'Reviewing: press a key, or use the buttons above'
+            : review.captures
+              ? '+tag -tag /teh/the/ project:X'
+              : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"

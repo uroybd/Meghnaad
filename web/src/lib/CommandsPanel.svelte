@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { putAppSettings } from './api';
-  import { MAX_SETTINGS_BYTES, nameProblem, serializeSettings, type TaskCommand } from './appsettings';
+  import { MAX_SETTINGS_BYTES, commandProblem, nameProblem, serializeSettings, type TaskCommand } from './appsettings';
   import IconPicker from './IconPicker.svelte';
   import { lucide } from './lucideLib.svelte';
   import { Plus, TriangleAlert, X } from './icons';
@@ -59,7 +59,7 @@
     const seen = new Set<string>();
     for (const r of rows) {
       const name = r.name.trim();
-      const why = nameProblem(name) ?? (r.command.trim() ? null : 'needs a command');
+      const why = nameProblem(name) ?? commandProblem(r.command);
       const dup = seen.has(name) ? `there is already a command named ${name}` : null;
       seen.add(name);
       const bad = why ?? dup ?? (r.icon && lucide.missing[r.icon] ? `no Lucide icon is called “${r.icon}”` : null);

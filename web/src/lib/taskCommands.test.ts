@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskCommand } from './appsettings';
-import { commandWords, expandTaskCommands, isFilterWord } from './taskCommands';
+import { ChainError } from './compound';
+import { commandSteps, expandTaskCommands, isFilterWord, planChain } from './taskCommands';
 
 const FAIL: TaskCommand = { name: 'fail', command: 'done outcome:fail' };
 const LATE: TaskCommand = { name: 'late', command: '+OVERDUE list' };
@@ -87,8 +88,71 @@ describe('isFilterWord', () => {
   });
 });
 
-describe('commandWords', () => {
-  it('is what a click adds after the tasks', () => {
-    expect(commandWords({ name: 'x', command: `modify 'a b' +c` })).toEqual(['modify', 'a b', '+c']);
+describe('commandSteps', () => {
+  it('is what a click adds after the tasks, a statement at a time', () => {
+    expect(commandSteps({ name: 'x', command: `modify 'a b' +c` })).toEqual([
+      { words: ['modify', 'a b', '+c'], join: null },
+    ]);
+    expect(commandSteps({ name: 'x', command: 'done && modify +failed ; annotate x' })).toEqual([
+      { words: ['done'], join: null },
+      { words: ['modify', '+failed'], join: '&&' },
+      { words: ['annotate', 'x'], join: ';' },
+    ]);
+  });
+});
+
+describe('planChain', () => {
+  const both: TaskCommand[] = [
+    ...CMDS,
+    { name: 'wrap', command: 'done outcome:fail && modify +failed' },
+    { name: 'tidy', command: 'wrap || annotate gave up' },
+  ];
+  const plan = (line: string, cmds = both) => planChain(line, cmds).map((s) => [s.join, s.line]);
+
+  it('is the line itself when it is one statement', () => {
+    expect(plan('1 done')).toEqual([[null, '1 done']]);
+    expect(plan('', both)).toEqual([]);
+  });
+
+  it('writes out the task commands of each statement', () => {
+    expect(plan('3 fail ; late')).toEqual([
+      [null, '3 done outcome:fail'],
+      [';', '+OVERDUE list'],
+    ]);
+  });
+
+  it('puts the filter in front of every statement a command stands for, and what follows after the last', () => {
+    expect(plan('3 wrap +x')).toEqual([
+      [null, '3 done outcome:fail'],
+      ['&&', '3 modify +failed +x'],
+    ]);
+  });
+
+  it('puts a command that stands for a chain into the chain it is in', () => {
+    expect(plan('count && 7 tidy ; list')).toEqual([
+      [null, 'count'],
+      ['&&', '7 done outcome:fail'],
+      ['&&', '7 modify +failed'],
+      ['||', '7 annotate gave up'],
+      [';', 'list'],
+    ]);
+  });
+
+  it('does not take an operator in quotes for one', () => {
+    expect(plan(`add 'a && b' ; add c\\;d`)).toEqual([
+      [null, `add 'a && b'`],
+      [';', `add c';'d`],
+    ]);
+  });
+
+  it('refuses a line with nothing on one side of an operator', () => {
+    expect(() => plan('&& 1 done')).toThrow(ChainError);
+    expect(() => plan('1 done &&')).toThrow(ChainError);
+    expect(() => plan('1 done && ; 2 done')).toThrow(ChainError);
+  });
+
+  it('writes a chain back as a line', () => {
+    expect(expandTaskCommands('3 wrap', both)).toBe('3 done outcome:fail && 3 modify +failed');
+    expect(expandTaskCommands('1 done ; 2 done', both)).toBe('1 done ; 2 done');
   });
 });

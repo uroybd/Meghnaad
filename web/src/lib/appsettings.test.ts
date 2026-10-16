@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nameProblem, parseSettings, serializeSettings } from './appsettings';
+import { nameProblem, commandProblem, parseSettings, serializeSettings } from './appsettings';
 
 describe('parseSettings', () => {
   it('reads the task commands', () => {
@@ -72,5 +72,18 @@ describe('nameProblem', () => {
     for (const n of ['fail', 'done2', 'my_cmd', 'x.y']) expect(nameProblem(n), n).toBeNull();
     for (const n of ['', 'a b', '+x', '-x', 'a:b', 'a=b', '5', '1,2', '/x', 'task', '--'])
       expect(nameProblem(n), n).not.toBeNull();
+  });
+});
+
+describe('a command that is several commands', () => {
+  it('is read, and one with nothing on a side of an operator is reported and left out', () => {
+    const p = parseSettings(
+      '{ "taskCommands": [ { "name": "wrap", "command": "done && modify +failed" }, { "name": "bad", "command": "done &&" } ] }',
+    );
+    expect(p.commands).toEqual([{ name: 'wrap', command: 'done && modify +failed' }]);
+    expect(p.errors).toEqual(['taskCommands[1] (bad): Nothing after ‘&&’.']);
+    expect(commandProblem('done ; modify +x')).toBeNull();
+    expect(commandProblem('|| done')).toBe('Nothing before ‘||’.');
+    expect(commandProblem('  ')).toBe('needs a command');
   });
 });

@@ -81,7 +81,63 @@ class TaskCommandsTest {
     }
 
     @Test
-    fun commandWordsIsWhatATapAddsAfterTheTasks() {
-        assertEquals(listOf("modify", "a b", "+c"), commandWords(TaskCommand("x", "modify 'a b' +c")))
+    fun commandStepsIsWhatATapAddsAfterTheTasksAStatementAtATime() {
+        assertEquals(listOf(CommandStep(listOf("modify", "a b", "+c"), null)), commandSteps(TaskCommand("x", "modify 'a b' +c")))
+        assertEquals(
+            listOf(
+                CommandStep(listOf("done"), null),
+                CommandStep(listOf("modify", "+failed"), Joiner.And),
+                CommandStep(listOf("annotate", "x"), Joiner.Then),
+            ),
+            commandSteps(TaskCommand("x", "done && modify +failed ; annotate x")),
+        )
+    }
+
+    private val both = cmds + listOf(
+        TaskCommand("wrap", "done outcome:fail && modify +failed"),
+        TaskCommand("tidy", "wrap || annotate gave up"),
+    )
+
+    private fun plan(line: String) = planChain(line, both).map { it.join to it.line }
+
+    @Test
+    fun aLineIsItselfWhenItIsOneStatement() {
+        assertEquals(listOf(null to "1 done"), plan("1 done"))
+        assertEquals(emptyList(), plan(""))
+    }
+
+    @Test
+    fun writesOutTheTaskCommandsOfEachStatement() {
+        assertEquals(listOf(null to "3 done outcome:fail", Joiner.Then to "+OVERDUE list"), plan("3 fail ; late"))
+    }
+
+    @Test
+    fun putsTheFilterInFrontOfEveryStatementACommandStandsForAndWhatFollowsAfterTheLast() {
+        assertEquals(listOf(null to "3 done outcome:fail", Joiner.And to "3 modify +failed +x"), plan("3 wrap +x"))
+    }
+
+    @Test
+    fun putsACommandThatStandsForAChainIntoTheChainItIsIn() {
+        assertEquals(
+            listOf(
+                null to "count",
+                Joiner.And to "7 done outcome:fail",
+                Joiner.And to "7 modify +failed",
+                Joiner.Or to "7 annotate gave up",
+                Joiner.Then to "list",
+            ),
+            plan("count && 7 tidy ; list"),
+        )
+    }
+
+    @Test
+    fun doesNotTakeAnOperatorInQuotesForOne() {
+        assertEquals(listOf(null to "add 'a && b'", Joiner.Then to "add c';'d"), plan("add 'a && b' ; add c\\;d"))
+    }
+
+    @Test
+    fun writesAChainBackAsALine() {
+        assertEquals("3 done outcome:fail && 3 modify +failed", expandTaskCommands("3 wrap", both))
+        assertEquals("1 done ; 2 done", expandTaskCommands("1 done ; 2 done", both))
     }
 }

@@ -66,7 +66,7 @@ class CommandsState(private val store: Store) {
             val seen = HashSet<String>()
             for (r in rows) {
                 val name = r.name.trim()
-                val why = nameProblem(name) ?: if (r.command.trim().isEmpty()) "needs a command" else null
+                val why = nameProblem(name) ?: commandProblem(r.command)
                 val dup = if (name in seen) "there is already a command named $name" else null
                 seen += name
                 val bad = why ?: dup ?: if (r.icon.isNotEmpty() && LucideLib.loaded && !LucideLib.has(r.icon)) "no Lucide icon is called “${r.icon}”" else null

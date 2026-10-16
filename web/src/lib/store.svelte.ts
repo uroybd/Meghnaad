@@ -6,6 +6,7 @@ import { isHiddenReport, offeredReports as pickable } from './reportList';
 import { prefixFilter, prefixFromPath, taskPath } from './route';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
+import { runSequence, type Joiner, type Statement } from './compound';
 import { toggled } from './markdown';
 import type { CliResponse, CliResult, ConfigResponse, HookLine, ReportMeta, Row } from './types';
 
@@ -23,6 +24,8 @@ export interface Entry {
   feedback?: HookLine[];
   /** What was already answered on this command, for the questions that follow the first. */
   answers?: Answers;
+  /** The question it asked was answered no. */
+  declined?: boolean;
 }
 
 export interface Toast {
@@ -122,6 +125,10 @@ class Store {
   adding = $state<{ description: string; n: number } | null>(null);
   /** Text typed at the prompt and not yet run. */
   promptLine = $state('');
+  /** A line of several statements is running: the prompt is back when the last of them has ended. */
+  chainBusy = $state(false);
+  #waiting = new Map<number, () => void>();
+  #aborted = false;
   /** Ask the prompt to take this text and the focus (the bulk bar's Command); `n` makes each ask a new one. */
   promptRequest = $state<{ text: string; n: number } | null>(null);
   /** The task detail drawer. */
@@ -379,7 +386,7 @@ class Store {
    * Run a command from the console. A report command focuses that report instead of scrolling. `typed` is what was
    * typed when `input` is that with a task command written out: the history keeps it.
    */
-  async run(input: CliInput, typed?: string): Promise<Entry> {
+  async run(input: CliInput, typed?: string, inChain = false): Promise<Entry> {
     // Typed in the Console, a report prints right there. From the bar under the other pages it opens
     // in the Tasks view instead, where it can be sorted and filtered.
     const inConsole = this.view === 'console';
@@ -393,7 +400,7 @@ class Store {
       at: Date.now(),
     });
     this.entries.push(e);
-    this.remember(typed ?? input.line ?? previewLine(input.args ?? []));
+    if (!inChain) this.remember(typed ?? input.line ?? previewLine(input.args ?? []));
     const res = await this.#exec(e);
     // `config` and `context` rewrite the saved settings: pick them up so the pages follow.
     const name = res?.command?.name;
@@ -411,6 +418,45 @@ class Store {
       void this.refresh(this.live);
     }
     return e;
+  }
+
+  /**
+   * Run the statements of a line one after the other, as a shell does (`&&` after a success, `||` after a failure,
+   * `;` always). Each is an entry of its own in the Console; the history keeps the line as it was typed. A statement
+   * that asks a question waits for the answer: yes goes on, no is a failure. Clearing the Console ends the line.
+   */
+  async runChain(steps: Statement[], typed: string) {
+    if (this.chainBusy) return;
+    this.chainBusy = true;
+    this.#aborted = false;
+    this.remember(typed);
+    try {
+      await runSequence(
+        steps.map((s) => s.join),
+        async (i) => !this.#aborted && (await this.#runStep(steps[i].line)),
+      );
+    } finally {
+      this.chainBusy = false;
+    }
+  }
+
+  /** One statement of a line: did it succeed? */
+  async #runStep(line: string): Promise<boolean> {
+    if (line === 'clear' || line === 'cls') {
+      this.entries = [];
+      return true;
+    }
+    const e = await this.run({ line }, undefined, true);
+    while (e.result?.kind === 'confirm' && !this.#aborted) {
+      await new Promise<void>((resume) => this.#waiting.set(e.id, resume));
+    }
+    return !this.#aborted && !e.failure && !e.declined && e.result?.kind !== 'error';
+  }
+
+  /** A question was answered (or the line was abandoned): the statement that waits for it looks again. */
+  #wake(e: Entry) {
+    this.#waiting.get(e.id)?.();
+    this.#waiting.delete(e.id);
   }
 
   /** Run (or re-run) the Tasks view's live table. */
@@ -461,9 +507,12 @@ class Store {
   async confirm(e: Entry, yes: boolean) {
     if (!yes) {
       e.result = { kind: 'text', lines: ['Cancelled.'] };
+      e.declined = true;
+      this.#wake(e);
       return;
     }
     const res = await this.#exec(e, { ...e.answers, confirmed: true });
+    this.#wake(e);
     if (res?.wrote && this.live) void this.refresh(this.live);
   }
 
@@ -472,7 +521,9 @@ class Store {
     const r = e.result;
     if (r?.kind !== 'confirm') return;
     const more: Answers = r.ask === 'permission' ? { approved: keys } : { extras: keys };
+    if (r.ask === 'permission' && !keys.length) e.declined = true;
     const res = await this.#exec(e, { ...e.answers, ...more });
+    this.#wake(e);
     if (res?.wrote && this.live) void this.refresh(this.live);
   }
 
@@ -550,6 +601,24 @@ class Store {
 
   clear() {
     this.entries = [];
+    // A line that waits for an answer on an entry that is gone ends there.
+    this.#aborted = true;
+    for (const wake of this.#waiting.values()) wake();
+    this.#waiting.clear();
+  }
+
+  /**
+   * A button that stands for a line of statements (a task command with `&&`, `||` or `;`): each runs as `act` would
+   * run it, and it succeeds when it was neither refused nor left unanswered.
+   */
+  async actSteps(from: Entry | null, steps: { args: string[]; join: Joiner | null }[]): Promise<boolean> {
+    return runSequence(
+      steps.map((s) => s.join),
+      async (i) => {
+        const res = await this.act(from, steps[i].args);
+        return !!res && res.result.kind !== 'error' && res.result.kind !== 'confirm';
+      },
+    );
   }
 
   /** Put `text` at the prompt, with the cursor after it, ready to be carried on. */

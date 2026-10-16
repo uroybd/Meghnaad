@@ -302,10 +302,11 @@ add Pay rent project:Home due:eom +bills
 calc 2 days + 3 hours
 history.monthly   ghistory.monthly   timesheet   export   (Console only; export downloads a file)
 show weekstart     config weekstart monday   (Console only)
+3 done && add Next step ; list   (Console, and task commands: && after a success, || after a failure, ; always)
 ```
 
 A report typed in the Console prints there; elsewhere it opens in Tasks. Taskwarrior's confirmations arrive as a table of
-ticks. More in **[Using Meghnaad](docs/using.md)**.
+ticks. `&&`, `||` and `;` chain commands as in a shell: the page runs them one after the other. More in **[Using Meghnaad](docs/using.md)**.
 
 ## Hooks
 

@@ -80,7 +80,10 @@ fun BulkBar(store: Store) {
                 // Name the tasks at the prompt and leave the rest to the user.
                 OutlinedButton(enabled = !busy, onClick = { store.requestPrompt(promptFor(picks)) }) { LucideIcon("terminal", size = 15.dp); Text("  CLI") }
                 MoreMenu(store.taskCommands, "More actions for the selected tasks", enabled = !busy) { c ->
-                    store.go { if (run(commandWords(c))) selection.clear() }
+                    store.go {
+                        val steps = commandSteps(c)
+                        if (runSequence(steps.map { it.join }) { i -> run(steps[i].words) }) selection.clear()
+                    }
                 }
                 TextButton(onClick = { store.selection.clear() }) { LucideIcon("x", size = 15.dp); Text("  Clear") }
             }

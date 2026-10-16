@@ -88,9 +88,18 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
         }
     }
 
+    // The prompt is off while a line of several statements runs; it gets the focus back after the last one.
+    var returnFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(store.chainBusy) {
+        if (!store.chainBusy && returnFocus) {
+            returnFocus = false
+            runCatching { focus.requestFocus() }
+        }
+    }
+
     fun submit() {
         val l = line.trim()
-        if (l.isEmpty()) return
+        if (l.isEmpty() || store.chainBusy) return
         store.promptLine = "" // the command moves to the "last command" line above the prompt
         cursor = -1
         completer.close()
@@ -105,8 +114,27 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
             return
         }
         // A task command from settings.json stands for the command line it names (what runs, and what the checks below look
-        // at, is that); the history keeps what was typed.
-        val cmd = expandTaskCommands(l, store.taskCommands)
+        // at, is that); the history keeps what was typed. A line may be several statements, joined by the shell's `&&`, `||` and
+        // `;` (see Compound.kt): they run one after the other, and the prompt is back after the last.
+        val steps = try {
+            planChain(l, store.taskCommands)
+        } catch (e: ChainError) {
+            store.view = View.Console
+            store.addEntry(l, CliResult.Error(ErrorResult(e.message ?: "")))
+            return
+        }
+        if (steps.isEmpty()) return
+        if (steps.size > 1) {
+            store.view = View.Console
+            if (steps.any { parseReview(it.line) != null }) {
+                store.addEntry(l, CliResult.Error(ErrorResult("‘review’ can only be run on its own, not in a line of several commands.")))
+                return
+            }
+            returnFocus = true
+            store.go { store.runChain(steps, l) }
+            return
+        }
+        val cmd = steps[0].line
         // Reports focus the Tasks view; everything else lands in the console scrollback. Show the console first so a write or
         // an error is visible; `run` switches back for reports.
         if (store.view != View.Console && (consoleOnly(cmd) || !looksLikeReport(store, cmd))) store.view = View.Console
@@ -177,7 +205,8 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 vocab = store.vocab,
                 completer = completer,
                 modifier = Modifier.weight(1f),
-                placeholder = "next · add Buy milk due:tomorrow",
+                placeholder = if (store.chainBusy) "Running…" else "next · add Buy milk due:tomorrow",
+                enabled = !store.chainBusy,
                 onSubmit = ::submit,
                 focusRequester = focus,
                 completeSignal = completeSignal,

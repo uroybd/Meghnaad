@@ -298,7 +298,7 @@ fun Actions(store: Store, row: Row, from: Entry?, onEdit: ((Row) -> Unit)?, ctx:
                 }, tint = colors.error, size = 15.dp)
             }
         }
-        MoreMenu(store.taskCommands) { c -> store.go { act(from, listOf(row.uuid) + commandWords(c)) } }
+        MoreMenu(store.taskCommands) { c -> store.go { actSteps(from, commandSteps(c).map { it.copy(words = listOf(row.uuid) + it.words) }) } }
     }
 }
 

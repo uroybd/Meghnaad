@@ -138,6 +138,16 @@ characters (default 2): `proj:Home`, `ann 3 text`. `alias.<name>=<words>` in the
 others; Taskwarrior's own `rm` (delete) and `burndown` (burndown.weekly) work without one. Only what you type is
 expanded, never what the buttons send.
 
+**Several commands on one line.** Like a shell, the console runs `a && b` (`b` only if `a` worked), `a || b` (`b`
+only if `a` failed) and `a ; b` (always), left to right with no precedence, so `a && b || c` is `(a && b) || c`. Each
+command has its own entry in the console, and the prompt is back after the last one. A command that asks a question
+(a delete, say) waits for the answer before the line goes on; "no" counts as a failure. Clearing the console ends the line.
+An error is a failure, and so is a command that could not be reached. This is the page's, as it is a shell's: the engine
+is sent one command at a time, so these are not Taskwarrior syntax. An operator that is not quoted always separates
+commands, in a filter too, so write `or` and `and` there (as Taskwarrior documents them), or quote it (`'||'`, `\|\|`).
+`add 'Fish & chips; or pizza'` keeps its `;`. `review` has to be on a line of its own. Task commands (below) may use
+them too.
+
 **Text is matched as regular expressions**, as in Taskwarrior (`regex=1`): plain words, `/pattern/`, `.has`,
 `.startswith`, `.endswith`, `.word`, and the `/from/to/` substitution in `modify`. A pattern is searched for anywhere in
 the text, and for the description the annotations are searched too. Quote one that has spaces (`'/buy.*milk/'`).
@@ -360,6 +370,12 @@ once on a line, which lets `done` stand for `done outcome:ok` and still reach Ta
 **A command wins over a Taskwarrior command, a report or a taskrc `alias.*` with the same name.** It is unlike a taskrc
 alias in two ways: it is yours alone (it is kept in this app's `settings.json`, not in the taskrc that mirrors your
 desktop one), and it reads the line the way Taskwarrior does, so it only applies where the command goes.
+
+A command may be several commands: `wrap` for `done outcome:fail && modify +failed` runs the second only if the first
+worked, and `||` and `;` work as on the console line. The filter before the name goes in front of every one of them
+(`3 wrap` is `3 done outcome:fail && 3 modify +failed`; so use a uuid, not a number, when an earlier step changes what the
+number means), and what comes after the name goes after the last (`3 wrap +x` ends with `3 modify +failed +x`). A
+button runs each on the task it is for, by its uuid, and stops where `&&` would.
 
 Every command is also a button: the **⋯** menu on a task (in the table, and in the drawer) runs it on that task, and the
 one in the bar over selected tasks runs it on all of them (a batch at a time, like the other bulk actions). The menu is
@@ -625,6 +641,10 @@ the tasks on the phone, works offline, syncs straight with your bucket and has h
   a Lua script that you edit in Settings and that runs on the server. See [Hooks](#hooks).
 - **Task commands and `settings.json` are the app's own.** They are not in your taskrc, so a desktop `task` knows nothing
   of them; the taskrc's `alias.*` still works there. See [Commands](#commands).
+- **`&&`, `||` and `;` are the console's, as a shell's would be.** The page splits the line and sends the engine one
+  command at a time. Taskwarrior's own filter reads `&&` and `||` too, but evaluates them wrongly (`+a || +b` finds only
+  the tasks with `+b`), so here an operator that is not quoted always ends a command: write `and` and `or` in a filter.
+  See [the console](#the-console).
 - **tasksh** is only its `review` here. The rest of the shell (`!` and `exec`, `diagnostics`, its own prompt and
   history) has no meaning in a browser. `e` opens the app's editor, not `$EDITOR`. The `reviewed` attribute and
   `_reviewed` report the tasksh tab defines are the same lines tasksh adds to a desktop taskrc, so you can copy them there.

@@ -73,6 +73,65 @@ describe('task commands at the prompt', () => {
   });
 });
 
+describe('a line of several statements at the prompt', () => {
+  function type(text: string) {
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    flushSync();
+    return input;
+  }
+
+  it('runs the statements as a chain, with a task command written out in each, and keeps what was typed', () => {
+    store.appSettings = parseSettings('{ "taskCommands": [ { "name": "fail", "command": "done outcome:fail" } ] }');
+    const chain = vi.spyOn(store, 'runChain').mockResolvedValue();
+    type('count && 3 fail || add x ; list');
+    expect(chain).toHaveBeenCalledWith(
+      [
+        { join: null, line: 'count' },
+        { join: '&&', line: '3 done outcome:fail' },
+        { join: '||', line: 'add x' },
+        { join: ';', line: 'list' },
+      ],
+      'count && 3 fail || add x ; list',
+    );
+  });
+
+  it('prints what is wrong with a line that is not one, and runs nothing', () => {
+    const chain = vi.spyOn(store, 'runChain').mockResolvedValue();
+    const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
+    const before = store.entries.length;
+    type('count &&');
+    expect(chain).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(store.entries.at(-1)?.result).toEqual({ kind: 'error', message: 'Nothing after ‘&&’.' });
+    store.entries.length = before;
+  });
+
+  it('will not run review inside one', () => {
+    const chain = vi.spyOn(store, 'runChain').mockResolvedValue();
+    const before = store.entries.length;
+    type('count ; review');
+    expect(chain).not.toHaveBeenCalled();
+    expect(store.entries.at(-1)?.result).toMatchObject({ kind: 'error' });
+    store.entries.length = before;
+  });
+
+  it('is off while the line runs, and back after the last statement', () => {
+    const input = type('');
+    store.chainBusy = true;
+    flushSync();
+    expect(input.disabled).toBe(true);
+    expect(input.placeholder).toBe('Running…');
+    store.chainBusy = false;
+    flushSync();
+    expect(input.disabled).toBe(false);
+  });
+});
+
 describe('after Enter', () => {
   it('empties the prompt, and the line the next prompt starts from, before the page can change', () => {
     // A command typed on the Tasks page opens the Console, which builds a new prompt that starts from the shared line.

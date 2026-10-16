@@ -15,7 +15,7 @@
   import { baseColumn, groupColumn, parseSort, SORTABLE, sortState } from './sortSpec';
   import { selection } from './selection.svelte';
   import { store, type Entry } from './store.svelte';
-  import { commandWords } from './taskCommands';
+  import { commandSteps } from './taskCommands';
   import type { ReportResult, Row } from './types';
 
   let {
@@ -362,7 +362,14 @@
                   {#if pendingDelete === row.uuid}sure?{:else}<Trash2 size={14} />{/if}
                 </button>
               {/if}
-              <MoreMenu commands={store.taskCommands} onrun={(c) => act(row, ...commandWords(c))} />
+              <MoreMenu
+                commands={store.taskCommands}
+                onrun={(c) =>
+                  store.actSteps(
+                    entry,
+                    commandSteps(c).map((s) => ({ ...s, args: [row.uuid, ...s.words] })),
+                  )}
+              />
             </td>
           </tr>
         {/each}

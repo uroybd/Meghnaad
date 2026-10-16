@@ -52,6 +52,17 @@ fun nameProblem(name: String): String? {
     return null
 }
 
+/** Why what a command stands for is not a command line (`done &&` has nothing after the `&&`), or null. */
+fun commandProblem(command: String): String? {
+    if (command.isBlank()) return "needs a command"
+    return try {
+        splitChain(command)
+        null
+    } catch (e: ChainError) {
+        e.message
+    }
+}
+
 private fun JsonElement.text(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content
 
 fun parseSettings(text: String): ParsedSettings {
@@ -86,8 +97,9 @@ fun parseSettings(text: String): ParsedSettings {
             return@forEachIndexed
         }
         val command = c["command"]?.text()
-        if (command == null || command.isBlank()) {
-            errors += "$at ($name): needs a command"
+        val wrong = if (command == null) "needs a command" else commandProblem(command)
+        if (command == null || wrong != null) {
+            errors += "$at ($name): $wrong"
             return@forEachIndexed
         }
         val iconElement = c["icon"]

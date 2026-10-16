@@ -82,4 +82,14 @@ class AppSettingsTest {
         for (n in listOf("fail", "done2", "my_cmd", "x.y")) assertNull(nameProblem(n), n)
         for (n in listOf("", "a b", "+x", "-x", "a:b", "a=b", "5", "1,2", "/x", "task", "--")) assertNotNull(nameProblem(n), n)
     }
+
+    @Test
+    fun aCommandMayBeSeveralCommandsAndOneWithNothingOnASideOfAnOperatorIsReportedAndLeftOut() {
+        val p = parseSettings("""{ "taskCommands": [ { "name": "wrap", "command": "done && modify +failed" }, { "name": "bad", "command": "done &&" } ] }""")
+        assertEquals(listOf(TaskCommand("wrap", "done && modify +failed")), p.commands)
+        assertEquals(listOf("taskCommands[1] (bad): Nothing after ‘&&’."), p.errors)
+        assertNull(commandProblem("done ; modify +x"))
+        assertEquals("Nothing before ‘||’.", commandProblem("|| done"))
+        assertEquals("needs a command", commandProblem("  "))
+    }
 }

@@ -6,7 +6,8 @@
   import MoreMenu from './MoreMenu.svelte';
   import { selection } from './selection.svelte';
   import { store } from './store.svelte';
-  import { commandWords } from './taskCommands';
+  import { commandSteps } from './taskCommands';
+  import { runSequence } from './compound';
 
   // The ticked tasks, as the table shows them (their numbers come from the rows), in the order they were ticked.
   const picks = $derived.by((): Pick[] => {
@@ -68,7 +69,14 @@
 
   // A task command from settings.json, run on the ticked tasks.
   async function runCommand(c: TaskCommand) {
-    if (await run(commandWords(c))) selection.clear();
+    const steps = commandSteps(c);
+    if (
+      await runSequence(
+        steps.map((s) => s.join),
+        (i) => run(steps[i].words),
+      )
+    )
+      selection.clear();
   }
 
   // Name the tasks at the prompt and leave the rest to the user.

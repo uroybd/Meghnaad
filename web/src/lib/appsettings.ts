@@ -4,6 +4,8 @@
 //
 //   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ] }
 
+import { ChainError, splitChain } from './compound';
+
 /** The most the Worker saves (it says so in the same words). */
 export const MAX_SETTINGS_BYTES = 64 * 1024;
 
@@ -41,6 +43,18 @@ export function nameProblem(name: string): string | null {
   return null;
 }
 
+/** Why what a command stands for is not a command line (`done &&` has nothing after the `&&`), or `null`. */
+export function commandProblem(command: string): string | null {
+  if (!command.trim()) return 'needs a command';
+  try {
+    splitChain(command);
+    return null;
+  } catch (e) {
+    if (e instanceof ChainError) return e.message;
+    throw e;
+  }
+}
+
 export function parseSettings(text: string): ParsedSettings {
   const out: ParsedSettings = { raw: {}, commands: [], errors: [] };
   if (!text.trim()) return out;
@@ -71,7 +85,8 @@ export function parseSettings(text: string): ParsedSettings {
     if (typeof name !== 'string') return void out.errors.push(`${at}: name must be text`);
     const bad = nameProblem(name);
     if (bad) return void out.errors.push(`${at} (${name || 'no name'}): ${bad}`);
-    if (typeof command !== 'string' || !command.trim()) return void out.errors.push(`${at} (${name}): needs a command`);
+    const wrong = typeof command !== 'string' ? 'needs a command' : commandProblem(command);
+    if (wrong || typeof command !== 'string') return void out.errors.push(`${at} (${name}): ${wrong}`);
     if (icon !== undefined && (typeof icon !== 'string' || !ICON_NAME.test(icon)))
       return void out.errors.push(`${at} (${name}): icon must be a Lucide icon name such as "circle-x"`);
     if (seen.has(name)) return void out.errors.push(`${at}: there is already a command named ${name}`);
