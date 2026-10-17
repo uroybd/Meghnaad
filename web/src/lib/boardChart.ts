@@ -82,7 +82,8 @@ export function chartConfig(input: ChartInput): ChartConfiguration {
       data: d.data,
       borderColor: c,
       backgroundColor: filled ? withAlpha(c, 0x40) : c,
-      fill: filled,
+      // A stacked area lies between the line under it and its own ('-1', the one before); the first, and any area that is not stacked, down to the axis.
+      fill: filled && stacked && kind === 'area' && i > 0 ? '-1' : filled,
       borderWidth: 2,
       pointRadius: 3,
       spanGaps: false,

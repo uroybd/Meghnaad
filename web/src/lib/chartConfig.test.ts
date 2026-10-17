@@ -75,6 +75,12 @@ describe('a chart for Chart.js', () => {
     expect(cfg(input('area', { colors: ['#2da44e'] })).data.datasets[0].backgroundColor).toBe('#2da44e40');
   });
 
+  it('fills a stacked area between the lines, so the colours do not pile up', () => {
+    const fills = (stacked: boolean) => cfg(input('area', { stacked, time: true })).data.datasets.map((d) => d.fill);
+    expect(fills(true)).toEqual([true, '-1']);
+    expect(fills(false)).toEqual([true, true]);
+  });
+
   it('stacks both axes of bars together, and lays a category down', () => {
     const o = cfg(input('bar', { stacked: true })).options;
     expect(o.indexAxis).toBe('y');

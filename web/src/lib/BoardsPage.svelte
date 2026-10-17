@@ -94,7 +94,8 @@
   }
 
   async function save() {
-    if (!draft || !check?.boards[0]) return;
+    // The tidied board leaves out what the engine refuses, so a draft with a problem is not saved at all.
+    if (!draft || !valid || !check?.boards[0]) return;
     const kept = check.boards[0];
     const was = from ?? kept.id;
     // The home page names a board by its slug: if that is the board whose slug changed, it follows.
