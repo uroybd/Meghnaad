@@ -238,9 +238,7 @@
         >
       {/if}
     </div>
-    {#if !draft}<p class="dim address"><code>{boardPath(board.id)}</code></p>{/if}
     {#if !draft && board.description}<p class="dim">{board.description}</p>{/if}
-    {#if !draft && board.filter}<p class="dim">Filter: <code>{board.filter}</code></p>{/if}
     {#if error}<p class="err" role="alert">{error}</p>{/if}
 
     {#if draft}
@@ -340,9 +338,6 @@
     display: grid;
     gap: 8px;
     max-width: 640px;
-  }
-  .address {
-    margin: 0 0 6px;
   }
   .slug-input {
     display: flex;

@@ -79,7 +79,19 @@ describe('the boards page', () => {
     document.querySelector<HTMLAnchorElement>('a.card')!.click();
     await settle();
     expect(store.boardId).toBe('week');
-    expect(document.querySelector('.address')?.textContent).toBe('/board/week');
+  });
+
+  it('does not show the board’s address or filter above it', async () => {
+    server({
+      boardsVersion: 1,
+      boards: [{ ...board('week', 'My week'), description: 'What is on', filter: 'project:Home' }],
+    });
+    store.boardId = 'week';
+    app = mount(BoardsPage, { target: document.body });
+    await settle();
+    expect(document.body.textContent).toContain('What is on');
+    expect(document.body.textContent).not.toContain('/board/week');
+    expect(document.body.textContent).not.toContain('project:Home');
   });
 
   it('changes a board’s address, and the home page goes with it', async () => {
@@ -105,7 +117,6 @@ describe('the boards page', () => {
     expect(out.homepage).toEqual({ board: 'weekly' });
     // Still on the board, at its new address, and not thrown back to the list.
     expect(store.boardId).toBe('weekly');
-    expect(document.querySelector('.address')?.textContent).toBe('/board/weekly');
   });
 
   it('leaves the home page alone when another board’s address changes, and refuses an address in use', async () => {
