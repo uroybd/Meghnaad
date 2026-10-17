@@ -68,6 +68,8 @@ class BoardsTest {
         val board = Board("b", "B", filter = "project:Home", sections = listOf(s))
         assertEquals("( project:Home ) ( +a or +b ) ( outcome:failed )", effectiveFilter(board, s, Series("f", "outcome:failed")))
         assertEquals("( +a or +b )", effectiveFilter(Board("b", "B"), s))
+        // A section can leave the board's filter out.
+        assertEquals("( +a or +b )", effectiveFilter(board, s.copy(ignoreBoardFilter = true)))
         assertEquals("", effectiveFilter(Board("b", "B", filter = "  "), sec("y")))
     }
 

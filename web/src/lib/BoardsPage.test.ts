@@ -160,6 +160,35 @@ describe('the boards page', () => {
     expect(document.querySelector('dialog')).toBeNull();
   });
 
+  it('has a switch, off, to leave the board’s filter out of a section, and saves it', async () => {
+    server({
+      boardsVersion: 1,
+      boards: [
+        {
+          id: 'week',
+          name: 'My week',
+          filter: 'project:Home',
+          sections: [{ id: 'open', title: 'Open', x: 0, y: 0, w: 3, h: 2, type: 'number', measure: { fn: 'count' } }],
+        },
+      ],
+    });
+    store.boardId = 'week';
+    app = mount(BoardsPage, { target: document.body });
+    await settle();
+    await click(/Edit/);
+    await click(/Settings of Open/);
+    const ignore = [...document.querySelectorAll<HTMLInputElement>('dialog input[type=checkbox]')].find((i) =>
+      i.closest('label')?.textContent?.includes('Ignore the board'),
+    )!;
+    expect(ignore.checked).toBe(false);
+    ignore.click();
+    await settle();
+    await click(/^Close$/);
+    await click(/^Save/);
+    const saved = JSON.parse(puts[puts.length - 1]);
+    expect(saved.boards[0].sections[0].ignoreBoardFilter).toBe(true);
+  });
+
   it('opens the panel for a section just added', async () => {
     server({ boardsVersion: 1, boards: [board('week', 'My week')] });
     store.boardId = 'week';

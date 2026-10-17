@@ -110,6 +110,9 @@ pub struct Section {
     pub report: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
+    /// The section asks about its own tasks only: the board's filter is not added to it.
+    #[serde(default, rename = "ignoreBoardFilter", skip_serializing_if = "Option::is_none")]
+    pub ignore_board_filter: Option<bool>,
     #[serde(default = "count")]
     pub measure: Measure,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -300,6 +303,10 @@ pub fn normalize(value: &Value) -> Normalized {
             for x in &mut section.series {
                 x.label = x.label.trim().to_owned();
             }
+            // Off is the default, and is not written.
+            if section.ignore_board_filter == Some(false) {
+                section.ignore_board_filter = None;
+            }
             section.set_rect(layout::clamp(section.rect()));
             sections.push(section);
         }
@@ -413,6 +420,19 @@ mod tests {
             s.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
             normalize(&json!([{ "id": "b", "name": "B", "sections": [s] }]))
         };
+        let own = line(json!({ "ignoreBoardFilter": true }));
+        assert_eq!(own.boards[0].sections[0].ignore_board_filter, Some(true));
+        assert_eq!(
+            serde_json::to_value(&own.boards[0].sections[0]).unwrap()["ignoreBoardFilter"],
+            json!(true)
+        );
+        // Off is the default: it is not kept.
+        let off = line(json!({ "ignoreBoardFilter": false }));
+        assert_eq!(off.boards[0].sections[0].ignore_board_filter, None);
+        assert!(serde_json::to_value(&off.boards[0].sections[0])
+            .unwrap()
+            .get("ignoreBoardFilter")
+            .is_none());
         let n = line(json!({ "stacked": true, "series": [
             { "label": " Succeeded ", "filter": "outcome:success or outcome:", "color": "bright green" },
             { "label": "Failed", "filter": "outcome:failed", "measure": { "fn": "sum", "field": "points" } } ] }));

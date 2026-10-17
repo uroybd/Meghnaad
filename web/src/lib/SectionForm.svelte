@@ -298,6 +298,14 @@
       id="section-filter-{section.id}"
       placeholder="Which tasks: project:Home +work  (added to the board's filter)"
     />
+    <label class="check">
+      <input
+        type="checkbox"
+        checked={!!section.ignoreBoardFilter}
+        onchange={(e) => set({ ignoreBoardFilter: e.currentTarget.checked || undefined })}
+      />
+      Ignore the board's filter
+    </label>
   </div>
 </div>
 
