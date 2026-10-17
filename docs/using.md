@@ -368,8 +368,10 @@ section in the first free place; **Settings** (the pencil) slides a panel in fro
 grouping (a full-width one on a phone); the bin removes it. **Cancel** drops everything since **Edit**.
 
 **On a phone** the sections keep their reading order (top to bottom, left to right) on a grid of 6 columns, or 4 on a small
-phone, and each is as wide as its share of the row: four numbers of three columns each sit side by side on 4 columns, three
-to a row on 6. Two columns of the 12 is the narrowest, which is one column of the phone's. **Edit** there shows the same
+phone. A number is as wide as its share of the row: four numbers of three columns each sit side by side on 4 columns, three
+to a row on 6. A table or a chart is too cramped in a quarter of a phone, so it stacks as Bootstrap's columns do: a whole row
+if it is half the grid or wider, half a row if it is narrower. Two columns of the 12 is the narrowest, which is one column
+of the phone's. A table or chart has these two sizes on a phone, so its corner drag there jumps between them. **Edit** there shows the same
 board with the corner to drag to resize a section by the phone's columns (the width is saved in the 12, so it holds on a
 wide screen too), up and down buttons to move it earlier or later in the order, and the same side panel for its settings.
 
@@ -756,8 +758,9 @@ The layout adapts below about 760 px (a phone, or a narrow window):
   field above them. The bar itself keeps what is live: the running task and the active context.
 - **Tasks are cards.** The description comes first with a tick box and the task's number; then small marks: priority (a
   pill, and a stripe down the card's edge), project, tags (small pills you can tap to filter), due date (red once it has
-  passed), urgency, and the other columns of the report by name. A started task is tinted. The buttons (done, start or stop,
-  edit, delete, **⋯**) share the marks' line when there is room.
+  passed), urgency, and the other columns of the report by name. A started task is tinted. A card is compact: it shows one
+  button, **Done**, with a **⋯** whose menu has start or stop, edit and delete, then your task commands (on the phone app,
+  both sit on the description's line).
 - **Pull down** at the top of a page, as in a browser on a phone, to sync and draw the page again.
 - **Sorting** is a **Sort** picker (there are no column headers to tap), forms and the detail view go full screen, and a
   **+** button adds a task.

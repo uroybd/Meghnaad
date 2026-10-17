@@ -216,7 +216,11 @@ describe('a table with no room for its buttons', () => {
         disconnect() {}
       },
     );
-    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: () => undefined }));
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      matches: q.includes('min-width'),
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
     vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(scroll);
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(box);
     vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(120);
@@ -246,5 +250,29 @@ describe('a table with no room for its buttons', () => {
     await Promise.resolve();
     flushSync();
     expect(buttons()).toEqual(['Done', 'Start', 'Delete']);
+  });
+});
+
+describe('a task card on a phone', () => {
+  const buttons = () => [...document.querySelectorAll('td.actions button')].map((b) => b.getAttribute('aria-label'));
+
+  it('keeps one button, Done, and has the rest in its ⋯ menu', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      matches: q.includes('max-width: 760px'),
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    draw([row('one', null)]);
+    await Promise.resolve();
+    flushSync();
+    expect(buttons()).toEqual(['Done', 'More actions']);
+    document.querySelector<HTMLButtonElement>('td.actions button[aria-haspopup=menu]')!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    flushSync();
+    expect([...document.querySelectorAll('[role=menuitem]')].map((e) => e.textContent?.trim())).toEqual([
+      'Start',
+      'Delete',
+    ]);
   });
 });

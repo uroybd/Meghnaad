@@ -106,11 +106,23 @@
     return () => watch.disconnect();
   });
 
-  // What a row's buttons are, in the menu they fold into.
-  function menuActions(row: Row): MenuAction[] {
+  // On a phone the rows are cards (the same width as the CSS below), and a card keeps one button, Done, with the rest in its ⋯
+  // menu: it is compact, and a thumb has fewer to miss.
+  let card = $state(false);
+  $effect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const q = matchMedia('(max-width: 760px)');
+    card = q.matches;
+    const on = (e: MediaQueryListEvent) => (card = e.matches);
+    q.addEventListener('change', on);
+    return () => q.removeEventListener('change', on);
+  });
+
+  // What a row's buttons are, in the menu they fold into (without Done, on a card, which has its own button).
+  function menuActions(row: Row, withDone = true): MenuAction[] {
     const list: MenuAction[] = [];
     if (isOpen(row)) {
-      list.push({ label: 'Done', icon: Check, run: () => act(row, 'done') });
+      if (withDone) list.push({ label: 'Done', icon: Check, run: () => act(row, 'done') });
       list.push(
         row.start != null
           ? { label: 'Stop', icon: Square, run: () => act(row, 'stop') }
@@ -373,7 +385,13 @@
               </td>
             {/each}
             <td class="actions">
-              {#if !folded}
+              {#if card}
+                {#if isOpen(row)}
+                  <button class="ghost" title="Done" aria-label="Done" onclick={() => act(row, 'done')}
+                    ><Check size={16} /></button
+                  >
+                {/if}
+              {:else if !folded}
                 {#if isOpen(row)}
                   <button class="ghost" title="Done" aria-label="Done" onclick={() => act(row, 'done')}
                     ><Check size={16} /></button
@@ -406,7 +424,7 @@
               {/if}
               <MoreMenu
                 commands={store.taskCommands}
-                actions={folded ? menuActions(row) : []}
+                actions={card ? menuActions(row, false) : folded ? menuActions(row) : []}
                 onrun={(c) =>
                   store.actSteps(
                     entry,
@@ -745,9 +763,9 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 6px 12px;
-      padding: 12px 12px 8px 15px;
-      margin-bottom: 10px;
+      gap: 4px 10px;
+      padding: 9px 8px 7px 15px;
+      margin-bottom: 8px;
       border: 1px solid var(--line);
       border-radius: 14px;
       background: var(--panel);
@@ -1002,8 +1020,8 @@
       gap: 2px;
     }
     td.actions button {
-      min-width: 40px;
-      min-height: 36px;
+      min-width: 36px;
+      min-height: 32px;
       border-color: transparent;
       background: transparent;
       color: var(--dim);

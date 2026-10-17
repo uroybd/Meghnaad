@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +39,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -121,7 +124,7 @@ fun TaskCard(
                 .border(BorderStroke(1.dp, if (picked) colors.primary else colors.outline), PanelShape)
                 .clickable { store.openDetail(row.uuid, from) },
         ) {
-            Column(Modifier.fillMaxWidth().padding(start = 15.dp, end = 12.dp, top = 12.dp, bottom = 6.dp)) {
+            Column(Modifier.fillMaxWidth().padding(start = 15.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     if (selectable) {
                         Checkbox(
@@ -149,6 +152,8 @@ fun TaskCard(
                     cells.firstOrNull { it.first.name == "id" }?.second?.takeIf { it.text.isNotEmpty() }?.let { id ->
                         Pill((if (row.id != null) "#" else "") + id.text, Modifier.padding(start = 8.dp), mono = false, height = 20.dp, color = colors.onSurfaceVariant)
                     }
+                    // Done and a ⋯ for the rest, on the title's line: the card has no row of buttons of its own.
+                    Actions(store, row, from, onEdit, ctx, scope, compact = true, modifier = Modifier.offset(y = (-6).dp))
                 }
                 if (marks.isNotEmpty()) {
                     FlowRow(
@@ -174,7 +179,6 @@ fun TaskCard(
                         }
                     }
                 }
-                Actions(store, row, from, onEdit, ctx, scope)
             }
         }
     }
@@ -258,58 +262,104 @@ fun ProjectPath(segments: List<String>, modifier: Modifier = Modifier, onPick: (
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * A task's buttons. [compact] is for a card: only Done (the everyday one) shows, and Start or Stop, Edit and Delete are in the
+ * ⋯ menu with the task commands.
+ */
 @Composable
-fun Actions(store: Store, row: Row, from: Entry?, onEdit: ((Row) -> Unit)?, ctx: Ctx, scope: kotlinx.coroutines.CoroutineScope) {
+fun Actions(
+    store: Store,
+    row: Row,
+    from: Entry?,
+    onEdit: ((Row) -> Unit)?,
+    ctx: Ctx,
+    scope: kotlinx.coroutines.CoroutineScope,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
     val colors = MaterialTheme.colorScheme
     var sure by remember(row.uuid) { mutableStateOf(false) }
     val open = row.status == "pending"
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+    val box = if (compact) 36.dp else 44.dp
+    // The second tap is the answer to Taskwarrior's "Delete task N?" (the `confirmation` setting); with it off, the first tap
+    // deletes.
+    val delete: () -> Unit = {
+        if (!store.confirmation) {
+            store.go { act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
+        } else {
+            sure = true
+            scope.launch { delay(3000); sure = false }
+        }
+    }
+    val confirm: () -> Unit = {
+        sure = false
+        store.go { act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
+    }
+    val start: () -> Unit = { store.go { act(from, listOf(row.uuid, if (row.start != null) "stop" else "start")) } }
+    Row(modifier.then(if (compact) Modifier else Modifier.fillMaxWidth()), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
         if (open) {
-            IconAction("check", "Done", { store.go { act(from, listOf(row.uuid, "done")) } }, tint = extras.ok)
-            if (row.start != null) {
-                IconAction("square", "Stop", { store.go { act(from, listOf(row.uuid, "stop")) } }, size = 15.dp)
-            } else {
-                IconAction("play", "Start", { store.go { act(from, listOf(row.uuid, "start")) } }, size = 15.dp)
+            IconAction("check", "Done", { store.go { act(from, listOf(row.uuid, "done")) } }, tint = extras.ok, box = box)
+            if (!compact) {
+                if (row.start != null) IconAction("square", "Stop", start, size = 15.dp) else IconAction("play", "Start", start, size = 15.dp)
             }
         }
-        if (onEdit != null) IconAction("pencil", "Edit", { onEdit(row) }, size = 15.dp)
-        if (row.status != "deleted") {
-            // The second tap is the answer to Taskwarrior's "Delete task N?" (the `confirmation` setting); with it off, the
-            // first tap deletes.
-            if (sure) {
-                Text(
-                    "sure?",
-                    color = colors.error,
-                    fontSize = 13.sp,
-                    modifier = Modifier.clip(CircleShape).clickable {
-                        sure = false
-                        store.go { act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
-                    }.padding(horizontal = 10.dp, vertical = 10.dp),
-                )
-            } else {
-                IconAction("trash-2", "Delete", {
-                    if (!store.confirmation) {
-                        store.go { act(from, listOf(row.uuid, "delete"), Answers(approved = listOf(row.uuid))) }
-                    } else {
-                        sure = true
-                        scope.launch { delay(3000); sure = false }
-                    }
-                }, tint = colors.error, size = 15.dp)
+        if (!compact) {
+            if (onEdit != null) IconAction("pencil", "Edit", { onEdit(row) }, size = 15.dp)
+            if (row.status != "deleted") {
+                if (sure) {
+                    Text(
+                        "sure?",
+                        color = colors.error,
+                        fontSize = 13.sp,
+                        modifier = Modifier.clip(CircleShape).clickable { confirm() }.padding(horizontal = 10.dp, vertical = 10.dp),
+                    )
+                } else {
+                    IconAction("trash-2", "Delete", { delete() }, tint = colors.error, size = 15.dp)
+                }
             }
         }
-        MoreMenu(store.taskCommands) { c -> store.go { actSteps(from, commandSteps(c).map { it.copy(words = listOf(row.uuid) + it.words) }) } }
+        val own = buildList {
+            if (compact) {
+                if (open) add(MenuAction(if (row.start != null) "Stop" else "Start", if (row.start != null) "square" else "play", run = start))
+                if (onEdit != null) add(MenuAction("Edit", "pencil") { onEdit(row) })
+                if (row.status != "deleted") {
+                    add(MenuAction(if (sure) "Tap again to delete" else "Delete", "trash-2", danger = true, stay = store.confirmation && !sure) { if (sure) confirm() else delete() })
+                }
+            }
+        }
+        MoreMenu(store.taskCommands, extra = own, box = box) { c -> store.go { actSteps(from, commandSteps(c).map { it.copy(words = listOf(row.uuid) + it.words) }) } }
     }
 }
 
-/** The task commands from `settings.json` under one "⋯" button, so the buttons for the everyday actions stay few. */
+/** One of the app's own buttons, folded into a [MoreMenu]. [stay] leaves the menu open after it runs (a delete that asks twice). */
+class MenuAction(val label: String, val icon: String, val danger: Boolean = false, val stay: Boolean = false, val run: () -> Unit)
+
+/** The task commands from `settings.json` under one "⋯" button, so the buttons for the everyday actions stay few; [extra] are buttons that had no room. */
 @Composable
-fun MoreMenu(commands: List<TaskCommand>, label: String = "More actions", enabled: Boolean = true, onRun: (TaskCommand) -> Unit) {
-    if (commands.isEmpty()) return
+fun MoreMenu(
+    commands: List<TaskCommand>,
+    label: String = "More actions",
+    enabled: Boolean = true,
+    extra: List<MenuAction> = emptyList(),
+    box: Dp = 44.dp,
+    onRun: (TaskCommand) -> Unit,
+) {
+    if (commands.isEmpty() && extra.isEmpty()) return
     var open by remember { mutableStateOf(false) }
     Box {
-        IconAction("ellipsis", label, { open = true }, enabled = enabled)
+        IconAction("ellipsis", label, { open = true }, enabled = enabled, box = box)
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (a in extra) {
+                DropdownMenuItem(
+                    leadingIcon = { LucideIcon(a.icon, size = 15.dp, tint = if (a.danger) MaterialTheme.colorScheme.error else LocalContentColor.current) },
+                    text = { Text(a.label, fontSize = 14.sp, color = if (a.danger) MaterialTheme.colorScheme.error else Color.Unspecified) },
+                    onClick = {
+                        if (!a.stay) open = false
+                        a.run()
+                    },
+                )
+            }
+            if (extra.isNotEmpty() && commands.isNotEmpty()) HorizontalDivider()
             for (c in commands) {
                 DropdownMenuItem(
                     leadingIcon = { CommandIcon(c.icon, 15) },

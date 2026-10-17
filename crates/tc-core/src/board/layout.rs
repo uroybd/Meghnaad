@@ -31,6 +31,10 @@ pub struct Cell {
     pub y: u32,
     pub w: u32,
     pub h: u32,
+    /// A table or a chart: it needs room to be read, so a phone gives it half a row or a whole one (`phone_width`). Only `flow`
+    /// and `resize_flow` read it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wide: bool,
 }
 
 impl Cell {
@@ -41,6 +45,7 @@ impl Cell {
             y: r.y,
             w: r.w,
             h: r.h,
+            wide: false,
         }
     }
 
@@ -132,6 +137,17 @@ fn scaled(w: u32, cols: u32) -> u32 {
     ((w * cols + COLUMNS / 2) / COLUMNS).clamp(1, cols)
 }
 
+/// How many of a screen's `cols` columns a section takes: a number (not `wide`) its share of the row, as `scaled`. A table or a
+/// chart is too cramped in a quarter of a phone, so it stacks as Bootstrap's columns do: a whole row if it is half the grid or
+/// more, half a row if it is less.
+fn phone_width(w: u32, cols: u32, wide: bool) -> u32 {
+    match (wide && cols < COLUMNS, w >= COLUMNS / 2) {
+        (false, _) => scaled(w, cols),
+        (true, true) => cols,
+        (true, false) => scaled(w, cols).max(cols.div_ceil(2)),
+    }
+}
+
 /// The sections laid out on a screen of `cols` columns (4 or 6 on a phone, 12 is the grid itself): in reading order, each as wide
 /// as its share of the row, put in the first place after the one before it where it fits, so the order is never changed. The
 /// cells are in that order, with the screen's columns in `x` and `w`.
@@ -143,7 +159,7 @@ pub fn flow(cells: &[Cell], cols: u32) -> Vec<Cell> {
         let size = Rect {
             x: 0,
             y: 0,
-            w: scaled(cells[i].w, cols),
+            w: phone_width(cells[i].w, cols, cells[i].wide),
             h: cells[i].h.clamp(1, MAX_ROWS),
         };
         let at = loop {
@@ -168,10 +184,20 @@ pub fn resize_flow(cells: &[Cell], id: &str, cols: u32, dcols: i32, dh: i32) -> 
     let cols = cols.clamp(1, COLUMNS);
     match find(cells, id) {
         Some(r) => {
+            let wide = cells.iter().any(|c| c.id == id && c.wide);
             let w = if dcols == 0 {
                 r.w
+            } else if wide {
+                // A wide section has two sizes on a phone, half a row and a whole one; the width it keeps in the 12 stays on
+                // the side of 6 that says which.
+                let now = phone_width(r.w, cols, true);
+                if shift(now, dcols) >= cols {
+                    r.w.max(COLUMNS / 2)
+                } else {
+                    r.w.min(COLUMNS / 2 - 1)
+                }
             } else {
-                shift(scaled(r.w, cols), dcols).clamp(1, cols) * COLUMNS / cols
+                shift(phone_width(r.w, cols, false), dcols).clamp(1, cols) * COLUMNS / cols
             };
             place(
                 cells,
@@ -419,6 +445,49 @@ mod tests {
         assert_eq!(six[2], ("c".into(), 4, 0, 2, 2));
         assert_eq!(six[3], ("d".into(), 0, 2, 2, 2));
         assert_eq!(six[4].2, 4);
+    }
+
+    fn wide(id: &str, x: u32, y: u32, w: u32, h: u32) -> Cell {
+        Cell {
+            wide: true,
+            ..cell(id, x, y, w, h)
+        }
+    }
+
+    #[test]
+    fn tables_and_charts_stack_on_a_phone_and_numbers_keep_their_share() {
+        // The Home board: a table and a chart each half the grid, a pie a quarter, a number a quarter.
+        let cells = vec![
+            wide("table", 0, 0, 6, 8),
+            wide("bar", 6, 0, 6, 4),
+            wide("pie", 6, 4, 3, 4),
+            cell("done", 9, 4, 3, 2),
+        ];
+        let four = flowed(&cells, 4);
+        // Half the grid or more is a whole row; less is half a row; a number is its quarter.
+        assert_eq!(four[0], ("table".into(), 0, 0, 4, 8));
+        assert_eq!(four[1], ("bar".into(), 0, 8, 4, 4));
+        assert_eq!(four[2], ("pie".into(), 0, 12, 2, 4));
+        assert_eq!(four[3], ("done".into(), 2, 12, 1, 2));
+        let six = flowed(&cells, 6);
+        assert_eq!((six[0].3, six[2].3, six[3].3), (6, 3, 2));
+        // The grid itself is not a phone: nothing is widened there, and reordering keeps the widths.
+        assert_eq!(flowed(&cells, 12)[2].3, 3);
+        let moved = reorder(&cells, "done", -1);
+        assert_eq!(moved.iter().find(|c| c.id == "pie").map(|c| c.w), Some(3));
+    }
+
+    #[test]
+    fn a_wide_section_has_two_sizes_on_a_phone_and_keeps_its_width_in_the_twelve() {
+        let cells = vec![wide("a", 0, 0, 4, 2)];
+        let at = |cells: &[Cell]| cells[0].w;
+        // Half a row to a whole one: it becomes at least half the grid, so a whole row.
+        assert_eq!(at(&resize_flow(&cells, "a", 4, 2, 0)), 6);
+        // One column more is still half a row: nothing changes.
+        assert_eq!(at(&resize_flow(&cells, "a", 4, 1, 0)), 4);
+        // A whole row, a column in: half a row, under half the grid.
+        let full = vec![wide("a", 0, 0, 9, 2)];
+        assert_eq!(at(&resize_flow(&full, "a", 4, -1, 0)), 5);
     }
 
     #[test]
