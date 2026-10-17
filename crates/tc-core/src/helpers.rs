@@ -248,6 +248,12 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         )),
         "clear_groups" => json!(sort::clear_groups(&a.req::<Vec<Key>>(0)?)),
         "group_column" => json!(sort::group_column(&a.req::<Vec<Key>>(0)?)),
+        "add_preview" => json!(crate::preview::add(
+            &a.req::<String>(0)?,
+            &a.req::<crate::taskrc::Config>(1)?,
+            a.req::<i64>(2)?,
+            a.opt::<i32>(3)?.unwrap_or(0)
+        )),
         "board_normalize" => json!(crate::board::normalize(&a.req::<serde_json::Value>(0)?)),
         "board_aggregate" => json!(crate::board::aggregate::aggregate(
             &a.req::<String>(0)?,

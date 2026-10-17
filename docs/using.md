@@ -261,7 +261,14 @@ command would actually change are listed. A single task is a plain yes/no. The d
   so this is for sharing between your own devices, or with people your Cloudflare Access policy lets in). The 8
   characters are the uuid, not the task number `task 3` uses, because numbers differ between replicas and change as
   tasks finish; a longer prefix works too, and one that matches no task, or several, says so.
-- **Add tasks** from the sidebar. *More fields…* opens the full form: project, priority, due/wait/scheduled/until, tags,
+- **Add tasks** with the round **+** button that floats at the bottom right of every page, on a desktop as on a phone and in
+  the Android app. It opens a box with one line, typed as in the console: `Buy milk due:tomorrow +home project:Home
+  priority:H`. The words are the description; `project:`, `due:`, `priority:`, `recur:`, a UDA and `+tag` set the rest. Under
+  the line a card shows the task as it will be made, as you type: the description, priority, project, dates, repeat, UDAs,
+  dependencies and tags, read by the engine's own `add`, so what the card shows is what is added. A part that is wrong (a
+  date that is not one, a priority that is not allowed, a repeat with no due date) is named under the card and Add waits
+  until it is fixed. Enter adds. Put a word in quotes to keep it out of the fields (`'read project:x'`). *More fields* opens
+  the full form with the line already broken into its fields: project, priority, due/wait/scheduled/until, tags,
   dependencies, UDAs, "start now" and a first note. Every date field takes a date and an optional time.
   The project and tags fields suggest names as you type (every project and tag you have, not only those on screen): ↑/↓
   to pick, Enter or Tab to take it, Esc to put the list away, or a tap. A tag is suggested on its own, and not again if
@@ -756,8 +763,8 @@ CPU time, but it is time your command waits.
 The layout adapts below about 760 px (a phone, or a narrow window):
 
 - **The menu (☰)** holds everything the top bar has on a desktop: **Tasks** (which opens into the list of reports, naming the
-  one you are on), Projects, Tags, Summary, Calendar, Burndown, Console, Review, Reminders and Settings, with the quick-add
-  field above them. The bar itself keeps what is live: the running task and the active context.
+  one you are on), Projects, Tags, Summary, Calendar, Burndown, Console, Review, Reminders and Settings. The bar itself
+  keeps what is live: the running task and the active context. The **+** button floats over every page.
 - **Tasks are cards.** The description comes first with a tick box and the task's number; then small marks: priority (a
   pill, and a stripe down the card's edge), project, tags (small pills you can tap to filter), due date (red once it has
   passed), urgency, and the other columns of the report by name. A started task is tinted. A card is compact: it shows one

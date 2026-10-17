@@ -76,8 +76,11 @@ class DetailRef(val uuid: String, val from: Entry?)
 
 class EditRef(val row: Row, val from: Entry?)
 
-/** The add-task form; [n] makes each ask a new one, so "add another" starts it again. */
-class AddRef(val description: String, val n: Int)
+/**
+ * The add-task dialog: [quick] is the one line with a preview of the task (starting with [line]), otherwise the full form,
+ * which starts from [seed] when the line was broken down first. [n] makes each ask a new one, so "add another" starts it again.
+ */
+class AddRef(val n: Int, val quick: Boolean, val line: String = "", val seed: FormSeed? = null)
 
 /** Which rows of the Tasks list are ticked, in the order they were ticked: held here so the list, the bulk bar and the console see the same ones. */
 class Selection {
@@ -285,6 +288,16 @@ class Store(
     val utcOffset get() = clock.utcOffsetSeconds()
 
     fun offsetAt(epoch: Long) = clock.offsetAt(epoch)
+
+    /** Open the one-line add, with [line] typed in it already. */
+    fun quickAdd(line: String = "") {
+        adding = AddRef((adding?.n ?: 0) + 1, quick = true, line = line)
+    }
+
+    /** Open the full add form, starting from the fields of a line already broken down (or empty). */
+    fun addWithForm(seed: FormSeed? = null) {
+        adding = AddRef((adding?.n ?: 0) + 1, quick = false, seed = seed)
+    }
 
     val vocab: Vocab
         get() = Vocab(

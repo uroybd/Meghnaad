@@ -38,7 +38,7 @@ pub fn failure(message: impl ToString) -> String {
 }
 
 /// The clock for a request: the user's offset, and the week start the active context chooses.
-fn clock_at(cfg: &Config, now: i64, tz: i32) -> Clock {
+pub(crate) fn clock_at(cfg: &Config, now: i64, tz: i32) -> Clock {
     Clock {
         now,
         tz_offset: tz.clamp(-14 * 3600, 14 * 3600),

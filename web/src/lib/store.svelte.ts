@@ -17,6 +17,7 @@ import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
 import { runSequence, type Joiner, type Statement } from './compound';
 import { toggled } from './markdown';
+import type { FormSeed } from './addPreview';
 import type { CliResponse, CliResult, ConfigResponse, HookLine, ReportMeta, Row } from './types';
 
 export interface Entry {
@@ -137,8 +138,11 @@ class Store {
   rev = $state(0);
 
   editing = $state<{ row: Row; from: Entry | null } | null>(null);
-  /** The add-task form (null = closed). `n` re-mounts it for "add another". */
-  adding = $state<{ description: string; n: number } | null>(null);
+  /**
+   * The add-task dialog (null = closed): `quick` is the one line with a preview of the task, otherwise the full form, which
+   * starts from `seed` when the line was broken down first. `n` re-mounts it.
+   */
+  adding = $state<{ n: number; quick: boolean; line: string; seed?: FormSeed } | null>(null);
   /** Text typed at the prompt and not yet run. */
   promptLine = $state('');
   /** A line of several statements is running: the prompt is back when the last of them has ended. */
@@ -360,6 +364,16 @@ class Store {
   openSettings(tab: SettingsTab = this.settingsTab) {
     this.settingsTab = tab;
     this.view = 'settings';
+  }
+
+  /** Open the one-line add, with `line` typed in it already. */
+  quickAdd(line = '') {
+    this.adding = { n: (this.adding?.n ?? 0) + 1, quick: true, line };
+  }
+
+  /** Open the full add form, starting from the fields of a line already broken down (or empty). */
+  addWithForm(seed?: FormSeed) {
+    this.adding = { n: (this.adding?.n ?? 0) + 1, quick: false, line: '', seed };
   }
 
   /** Show a tag's entry on the Tags page: what a tag chip does wherever it is not toggling a report's filter. */

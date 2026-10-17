@@ -35,7 +35,7 @@
   import { notifier } from './lib/notifier.svelte';
   import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
-  import QuickAdd from './lib/QuickAdd.svelte';
+  import QuickAddModal from './lib/QuickAddModal.svelte';
   import SettingsPage from './lib/SettingsPage.svelte';
   import SummaryPage from './lib/SummaryPage.svelte';
   import { chartProps } from './lib/colors';
@@ -307,7 +307,6 @@
         <strong class="grow">Meghnaad</strong>
         <button class="ghost" aria-label="Close menu" onclick={() => (navOpen = false)}><X size={18} /></button>
       </div>
-      <QuickAdd />
       <NavMenu onnavigate={() => (navOpen = false)} />
     </aside>
 
@@ -337,7 +336,7 @@
       style:bottom={dockHeight ? `calc(${dockHeight + 12}px)` : undefined}
       aria-label="New task"
       title="New task"
-      onclick={() => (store.adding = { description: '', n: (store.adding?.n ?? 0) + 1 })}
+      onclick={() => store.quickAdd()}
     >
       <Plus size={22} />
     </button>
@@ -364,13 +363,21 @@
   {/if}
   {#if store.adding}
     {#key store.adding.n}
-      <TaskEditor
-        row={null}
-        from={store.view === 'tasks' ? store.live : null}
-        initialDescription={store.adding.description}
-        onclose={() => (store.adding = null)}
-        onadded={(again) => (store.adding = again ? { description: '', n: (store.adding?.n ?? 0) + 1 } : null)}
-      />
+      {#if store.adding.quick}
+        <QuickAddModal
+          line={store.adding.line}
+          from={store.view === 'tasks' ? store.live : null}
+          onclose={() => (store.adding = null)}
+        />
+      {:else}
+        <TaskEditor
+          row={null}
+          from={store.view === 'tasks' ? store.live : null}
+          seed={store.adding.seed}
+          onclose={() => (store.adding = null)}
+          onadded={(again) => (again ? store.addWithForm() : (store.adding = null))}
+        />
+      {/if}
     {/key}
   {/if}
   {#if review.surface === 'card' && review.phase !== 'idle'}<ReviewCard />{/if}
@@ -450,7 +457,7 @@
   .main {
     grid-area: main;
     overflow: auto;
-    padding: 24px 36px 32px;
+    padding: 24px 36px 84px;
     min-width: 0;
   }
   /* The Console fills the area and scrolls its own output, so its prompt can sit at the bottom. */
@@ -478,7 +485,7 @@
   .toast {
     position: fixed;
     right: 16px;
-    bottom: 76px;
+    bottom: 140px;
     background: var(--panel);
     border: 1px solid var(--ok);
     color: var(--text);
@@ -531,9 +538,24 @@
     }
   }
 
+  /* The new-task button floats over every page, on a desktop as on a phone; the dock's height sets how high. */
+  .fab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    z-index: 12;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 50%;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: 76px;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+  }
+
   /* Phone-only chrome stays out of the desktop layout. */
   .burger,
-  .fab,
   .scrim,
   .side-head {
     display: none;
@@ -620,18 +642,8 @@
     }
 
     .fab {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      position: fixed;
-      z-index: 12;
-      width: 52px;
-      height: 52px;
-      padding: 0;
-      border-radius: 50%;
       right: max(16px, env(safe-area-inset-right));
       bottom: calc(96px + env(safe-area-inset-bottom));
-      box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
     }
     .toast {
       left: 12px;
