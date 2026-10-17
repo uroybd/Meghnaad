@@ -7,12 +7,14 @@ serialization = "1.9.0"
 activityCompose = "1.11.0"
 hotReload = "1.2.0"
 work = "2.10.5"
+koalaplot = "0.10.4"
 
 [libraries]
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+koalaplot-core = { module = "io.github.koalaplot:koalaplot-core", version.ref = "koalaplot" }
 work-runtime = { module = "androidx.work:work-runtime", version.ref = "work" }
 
 [plugins]

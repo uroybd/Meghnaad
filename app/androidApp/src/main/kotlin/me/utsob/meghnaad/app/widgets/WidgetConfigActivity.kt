@@ -44,6 +44,7 @@ class WidgetConfigActivity : Activity() {
         when (kind) {
             "list" -> listForm()
             "burndown" -> burndownForm()
+            "board" -> boardForm()
             else -> calendarForm()
         }
     }
@@ -194,6 +195,51 @@ class WidgetConfigActivity : Activity() {
         buttons {
             WidgetPrefs.saveLook(this, id, look())
             WidgetPrefs.saveBurndown(this, id, BurndownConfig(period.selectedItem.toString(), filter.text.toString().trim()))
+        }
+    }
+
+    private fun boardForm() {
+        val current = WidgetPrefs.board(this, id)
+        heading(getString(R.string.widget_board_label))
+        label("Board")
+        val board = choice(listOf(getString(R.string.widget_nothing_to_show)), "")
+        label("Card")
+        val card = choice(listOf(""), "")
+        var boards: List<me.utsob.meghnaad.app.Board> = emptyList()
+        fun showCards(selected: String?) {
+            val sections = boards.getOrNull(board.selectedItemPosition)?.sections.orEmpty()
+            val names = sections.map { it.title.ifBlank { it.id } + if (it.type == "table") " (a table is not drawn)" else "" }
+            card.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names.ifEmpty { listOf("") })
+            card.setSelection(sections.indexOfFirst { it.id == selected }.coerceAtLeast(0))
+        }
+        board.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, itemId: Long) = showCards(current.section.takeIf { boards.getOrNull(position)?.id == current.board })
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+        // The boards are read from the engine, which may take a moment the first time.
+        Thread {
+            val found = BoardsData.boards(this).orEmpty()
+            runOnUiThread {
+                boards = found
+                val names = found.map { it.name }.ifEmpty { listOf(getString(R.string.widget_nothing_to_show)) }
+                board.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
+                board.setSelection(found.indexOfFirst { it.id == current.board }.coerceAtLeast(0))
+                showCards(current.section)
+            }
+        }.start()
+        form.addView(TextView(this).apply {
+            text = "A number is drawn large; a chart is drawn as in the app. Make the widget bigger for more detail. Tap it to open the board."
+            textSize = 13f
+            alpha = 0.7f
+            setPadding(0, dp(12), 0, 0)
+        })
+        val look = lookForm()
+        buttons {
+            WidgetPrefs.saveLook(this, id, look())
+            val chosen = boards.getOrNull(board.selectedItemPosition)
+            val section = chosen?.sections?.getOrNull(card.selectedItemPosition)
+            WidgetPrefs.saveBoard(this, id, BoardWidgetConfig(chosen?.id.orEmpty(), section?.id.orEmpty()))
         }
     }
 

@@ -38,7 +38,24 @@ cannot: reminders that come with the app closed, and the widgets.
 - **Export and import** use the system's file pickers: `export` offers the file to keep, `import` reads one and says what
   it would do before it writes anything.
 - **Works offline.** The engine and the tasks are on the phone; changes sync when there is a network.
-- **Home-screen widgets**, three of them, each with its own settings (long-press the widget, then its pencil; the same
+- **Boards.** The pages you make in the web app (a number, a table or a chart per card, each with its own filter) are in the menu
+  under **Boards**, in reading order in one column. They are worked out by the same engine code as the web's, so the numbers
+  agree: counts, sums and averages of numbers and durations, per value of an attribute or per day, week, month, quarter or year of
+  a date, several series on one chart (stacked or side by side), and a series that counts pending, started and done as of the
+  end of each period, as `task burndown` does. Bars, lines, areas, pies, donuts and radar are drawn by
+  [Koala Plot](https://github.com/koalaplot/koalaplot-core) (a polar area chart is drawn as a pie). Every card has an **ⓘ**: its
+  filter (with **Open in Tasks**), the tasks that filter got, and the values on its axis. **Settings → General** chooses the home
+  page, any report or board, which the app opens on. The pencil changes a board on the phone, as the web does: its name,
+  description, filter and address, and for each card its title, type, filter, measure, grouping, order and series (their colours,
+  and which state of `task burndown` they count). The phone has one column, so a card is moved up or down rather than dragged. The
+  engine says whether the draft is valid and **Save** waits until it is. Boards are in `settings.json`, which syncs with the bucket: a
+  board saved on one device is on the others after the next sync.
+- **Links.** Every page has a `meghnaad://` link, which opens it from a note or a message (and which the web's addresses mirror):
+  `meghnaad://report/<name>`, `meghnaad://board/<slug>`, `meghnaad://boards`, `meghnaad://settings/<tab>`, the pages
+  (`projects`, `tags`, `summary`, `calendar`, `burndown`, `console`) and `meghnaad://task/<8 characters>`. A board has a button that
+  copies its link. A link to a report or board that is not there says so and opens the home page.
+
+- **Home-screen widgets**, four of them, each with its own settings (long-press the widget, then its pencil; the same
   screen opens when you add it):
   - **Tasks**: the tasks of any report, the built-in ones and your own, narrowed by a filter (`project:Home +work`), as
     many as you choose, with a title of your own (left empty, the widget is called what its report is described as: `Most urgent tasks` for `next`). Tap a circle to mark a task done, the text to open **that task** in
@@ -47,6 +64,9 @@ cannot: reminders that come with the app closed, and the widgets.
     age, scheduled, wait, recurrence, task number, notes.
   - **Burndown**: daily, weekly or monthly bars of the tasks a filter picks: finished at the bottom, then started, then
     pending, with how long it would take to clear them at this pace.
+  - **Board card**: one card of a board, chosen by board and card in the widget's settings: a number drawn large, or a chart (bars,
+    lines, areas, pies, donuts, radar) drawn from the same numbers as the board, in the light or dark look of the widget. A tap
+    opens the board. A table card is not drawn (it says so).
   - **Calendar**: a month with today circled and a dot on the days with something due (red when overdue, amber today,
     blue after), for the tasks a filter picks. The arrows go to other months, and the month's name back to this one.
     **A tap on a day selects it** (a ring marks it) and, when the widget has the room, shows that day's tasks (due or

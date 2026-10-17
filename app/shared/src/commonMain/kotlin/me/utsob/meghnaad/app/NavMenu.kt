@@ -37,6 +37,7 @@ private val VIEWS = listOf(
     MenuItem(View.Summary, "Summary", "chart-column"),
     MenuItem(View.Calendar, "Calendar", "calendar-days"),
     MenuItem(View.Burndown, "Burndown", "trending-down"),
+    MenuItem(View.Boards, "Boards", "layout-dashboard"),
     MenuItem(View.Console, "Console", "terminal"),
 )
 

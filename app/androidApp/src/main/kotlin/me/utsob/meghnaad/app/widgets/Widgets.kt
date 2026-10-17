@@ -8,7 +8,7 @@ import me.utsob.meghnaad.app.loadSettings
 
 /** All the widgets there can be, so that a change redraws every one of them. */
 object Widgets {
-    private val PROVIDERS = listOf(TasksWidget::class.java, BurndownWidget::class.java, CalendarWidget::class.java)
+    private val PROVIDERS = listOf(TasksWidget::class.java, BurndownWidget::class.java, BoardWidget::class.java, CalendarWidget::class.java)
 
     /** Redraw them all from the engine. Never call this while holding the engine: the lists read it to draw. */
     fun refreshAll(context: Context) {
@@ -43,6 +43,7 @@ object Widgets {
         return when (provider) {
             TasksWidget::class.java.name -> "list"
             BurndownWidget::class.java.name -> "burndown"
+            BoardWidget::class.java.name -> "board"
             CalendarWidget::class.java.name -> "calendar"
             else -> null
         }
@@ -52,7 +53,7 @@ object Widgets {
     fun update(context: Context, id: Int) {
         when (kindOf(context, id)) {
             "list" -> TasksWidget.update(context, id)
-            "burndown" -> ImageWidget.refresh(context, intArrayOf(id))
+            "burndown", "board" -> ImageWidget.refresh(context, intArrayOf(id))
             "calendar" -> CalendarWidget.update(context, id)
         }
     }

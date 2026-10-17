@@ -23,12 +23,22 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- A task's link, meghnaad://task/<first 8 characters of its uuid>, which the task's "copy a link" button makes. -->
+            <!-- The app's links (Route.kt): a task, which the task's "copy a link" button makes, a report, a board, Settings, and the pages. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="meghnaad" android:host="task" />
+                <data android:scheme="meghnaad" android:host="report" />
+                <data android:scheme="meghnaad" android:host="board" />
+                <data android:scheme="meghnaad" android:host="boards" />
+                <data android:scheme="meghnaad" android:host="settings" />
+                <data android:scheme="meghnaad" android:host="projects" />
+                <data android:scheme="meghnaad" android:host="tags" />
+                <data android:scheme="meghnaad" android:host="summary" />
+                <data android:scheme="meghnaad" android:host="calendar" />
+                <data android:scheme="meghnaad" android:host="burndown" />
+                <data android:scheme="meghnaad" android:host="console" />
             </intent-filter>
         </activity>
         <receiver
@@ -49,6 +59,16 @@
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/burndown_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name="me.utsob.meghnaad.BoardWidget"
+            android:exported="true"
+            android:label="@string/widget_board_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/board_widget_info" />
         </receiver>
 
         <receiver

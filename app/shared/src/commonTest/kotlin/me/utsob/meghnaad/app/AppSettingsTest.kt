@@ -92,4 +92,46 @@ class AppSettingsTest {
         assertEquals("Nothing before ‘||’.", commandProblem("|| done"))
         assertEquals("needs a command", commandProblem("  "))
     }
+
+    @Test
+    fun boardsAndTheHomePageAreReadWithTheRestOfTheFile() {
+        val board = """{"id":"week","name":"Week","sections":[{"id":"s","type":"number","x":0,"y":0,"w":3,"h":2}]}"""
+        val p = parseSettings("""{"boards":[$board,{"id":"Bad Id","name":"x"}],"homepage":{"board":"week"},"taskCommands":[{"name":"fail","command":"done"}]}""")
+        assertEquals(listOf("week"), p.boards.map { it.id })
+        // The boards' problems are kept apart from the commands'.
+        assertEquals(1, p.boardErrors.size)
+        assertEquals(emptyList(), p.errors)
+        assertEquals(Homepage(board = "week"), p.homepage)
+        assertEquals(listOf("fail"), p.commands.map { it.name })
+        assertEquals(emptyList(), parseSettings("{}").boards)
+    }
+
+    @Test
+    fun aHomePageIsAReportOrABoardOneOfTheTwo() {
+        fun home(json: String) = parseHomepage(Json.parseToJsonElement(json))
+        assertEquals(Homepage(report = "list"), home("""{"report":" list "}"""))
+        assertEquals(Homepage(board = "week"), home("""{"board":"week"}"""))
+        for (bad in listOf("""{}""", """{"report":""}""", """{"report":3}""", """{"report":"a","board":"b"}""", """{"report":"a","x":1}""", "\"next\"", "null")) {
+            assertNull(home(bad), bad)
+        }
+    }
+
+    @Test
+    fun boardsAndTheHomePageAreSavedBesideTheOtherKeysAndSurviveSavingTheCommands() {
+        val raw = parseSettings("""{"taskCommands":[{"name":"fail","command":"done"}],"other":1,"homepage":{"report":"list"}}""").raw
+        val board = Board("week", "Week", sections = emptyList())
+        // The home page is left as it was unless asked.
+        val kept = Json.parseToJsonElement(serializeBoards(raw, listOf(board))) as kotlinx.serialization.json.JsonObject
+        assertEquals(setOf("taskCommands", "other", "homepage", "boardsVersion", "boards"), kept.keys)
+        // Or moved with a board whose slug changed, or taken out.
+        val moved = Json.parseToJsonElement(serializeBoards(raw, listOf(board), Homepage(board = "weekly"), setHomepage = true)).toString()
+        assertTrue("\"board\":\"weekly\"" in moved.replace(" ", ""), moved)
+        val none = Json.parseToJsonElement(serializeBoards(raw, emptyList(), null, setHomepage = true)) as kotlinx.serialization.json.JsonObject
+        assertEquals(setOf("taskCommands", "other"), none.keys)
+
+        val home = Json.parseToJsonElement(serializeHomepage(raw, Homepage(board = "week"))) as kotlinx.serialization.json.JsonObject
+        assertEquals(setOf("taskCommands", "other", "homepage"), home.keys)
+        val cmds = Json.parseToJsonElement(serializeSettings(parseSettings(serializeBoards(raw, listOf(board))).raw, emptyList())) as kotlinx.serialization.json.JsonObject
+        assertTrue("boards" in cmds.keys && "homepage" in cmds.keys, cmds.keys.toString())
+    }
 }

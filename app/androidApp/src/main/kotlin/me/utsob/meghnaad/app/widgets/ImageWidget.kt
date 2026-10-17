@@ -20,6 +20,8 @@ class Rendered(
     val darkBitmap: Bitmap? = null,
     val caption: String = "",
     val message: String? = null,
+    /** Where a tap goes: a link of the app's (`meghnaad://board/week`); the app opens as it was if there is none. */
+    val link: String? = null,
 )
 
 /**
@@ -62,7 +64,8 @@ abstract class ImageWidget : AppWidgetProvider() {
         /** Draw every chart-like widget again. */
         fun refreshAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
-            val ids = manager.getAppWidgetIds(ComponentName(context, BurndownWidget::class.java)).toList()
+            val ids = listOf(BurndownWidget::class.java, BoardWidget::class.java)
+                .flatMap { manager.getAppWidgetIds(ComponentName(context, it)).toList() }
             if (ids.isNotEmpty()) refresh(context, ids.toIntArray())
         }
 
@@ -85,7 +88,11 @@ abstract class ImageWidget : AppWidgetProvider() {
         }
 
         private fun draw(context: Context, id: Int) {
-            val provider: ImageWidget = if (Widgets.kindOf(context, id) == "burndown") BurndownWidget() else return
+            val provider: ImageWidget = when (Widgets.kindOf(context, id)) {
+                "burndown" -> BurndownWidget()
+                "board" -> BoardWidget()
+                else -> return
+            }
             val manager = AppWidgetManager.getInstance(context)
             val (width, height) = chartSize(context, manager, id)
             val rendered = provider.render(context, id, width, height)
@@ -135,12 +142,10 @@ abstract class ImageWidget : AppWidgetProvider() {
                 views.setTextViewText(R.id.message, r.message ?: context.getString(R.string.widget_nothing_to_show))
                 views.setViewVisibility(R.id.message, View.VISIBLE)
             }
-            val open = PendingIntent.getActivity(
-                context,
-                id * 10,
-                Intent(context, MainActivity::class.java),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
+            // A tap opens the app, on the page the widget is of when it says (a board's link), else as the app was.
+            val target = r.link?.let { Intent(Intent.ACTION_VIEW, android.net.Uri.parse(it)).setClass(context, MainActivity::class.java) }
+                ?: Intent(context, MainActivity::class.java)
+            val open = PendingIntent.getActivity(context, id * 10, target, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             views.setOnClickPendingIntent(R.id.chart, open)
             views.setOnClickPendingIntent(R.id.title, open)
             views.setOnClickPendingIntent(R.id.refresh, broadcast(context, id, provider, 1, ACTION_SYNC))

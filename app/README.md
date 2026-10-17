@@ -56,12 +56,14 @@ JDK 21 (Android Studio's is one).
 ## What works
 
 Everything the web app does, on a phone: connecting (or using the phone alone), the pages (Tasks, Projects, Tags, Summary,
-Calendar, Burndown, Console), the task detail and editor, bulk actions, the console with completion and history, the engine's
+Calendar, Burndown, Boards, Console), the task detail and editor, bulk actions, the console with completion and history, the engine's
 questions as dialogs, tasksh's review (a card), Settings (taskrc with its colour themes, tasksh, commands with their icons,
 hooks and their secrets, urgency, sync), file import and export through the system's pickers, and pull down to sync.
 
 On the phone it also has what a browser tab cannot: reminders that work with the app closed (an alarm set for the next
-moment something is due, a notification that opens the task), the running-task timer in the top bar, and the three
+moment something is due, a notification that opens the task), the running-task timer in the top bar, and the four
 home-screen widgets with a background sync.
 
-Not done yet: the app has no formatter or linter, and the desktop preview keeps no secrets.
+Boards are shown, made and edited on the phone (BoardEditor.kt), with their info panels and charts, and a card of one can be a home-screen widget. A polar area
+chart is drawn as a pie. The charts are Koala Plot 0.10.4: its newer releases are built with a Kotlin newer than this app's, so it moves up
+with the Kotlin version. Not done yet: the app has no formatter or linter, and the desktop preview keeps no secrets.

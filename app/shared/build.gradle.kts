@@ -30,6 +30,8 @@ kotlin {
             implementation(compose.ui)
             implementation(libs.coroutines.core)
             implementation(libs.serialization.json)
+            // The charts of a board; one library for the phone and the desktop preview (the web draws the same data with Chart.js).
+            implementation(libs.koalaplot.core)
         }
         commonTest.dependencies { implementation(kotlin("test")) }
         val desktopMain by getting
