@@ -12,8 +12,16 @@
     section,
     data,
     editing = false,
+    compact = false,
     oninfo,
-  }: { section: Section; data: SectionData | undefined; editing?: boolean; oninfo?: () => void } = $props();
+  }: {
+    section: Section;
+    data: SectionData | undefined;
+    editing?: boolean;
+    /** Too narrow for buttons: while the layout is edited the section's menu has the information button too. */
+    compact?: boolean;
+    oninfo?: () => void;
+  } = $props();
 
   const answer = $derived(data?.kind === 'answer' ? data.answer : null);
   const chart = $derived(data?.kind === 'chart' ? orderChart(data.chart, section) : null);
@@ -39,16 +47,18 @@
 </script>
 
 <section class="section" aria-label={section.title}>
-  <header class:editing>
+  <header class:editing class:compact={editing && compact}>
     <h3 class="title">{section.title}</h3>
-    <button
-      class="ghost info"
-      id="board-info-{section.id}"
-      aria-label="Information about {section.title}"
-      title="What this shows: the filter, the tasks it got, and the values"
-      disabled={!data}
-      onclick={() => oninfo?.()}><Info size={15} /></button
-    >
+    {#if !(editing && compact)}
+      <button
+        class="ghost info"
+        id="board-info-{section.id}"
+        aria-label="Information about {section.title}"
+        title="What this shows: the filter, the tasks it got, and the values"
+        disabled={!data}
+        onclick={() => oninfo?.()}><Info size={15} /></button
+      >
+    {/if}
   </header>
   <div class="body">
     {#if !data}
@@ -98,6 +108,10 @@
   /* While the layout is edited, the tools of the section sit over the top right corner. */
   header.editing {
     padding-right: 96px;
+  }
+  /* One ⋯ button over the corner instead of the row of tools. */
+  header.compact {
+    padding-right: 40px;
   }
   .title {
     flex: 1;

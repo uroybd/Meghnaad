@@ -1,6 +1,8 @@
 // The icons the app uses, in one place (Lucide, https://lucide.dev). Deep imports keep the
 // bundle to just these.
 export { default as ArrowDown } from '@lucide/svelte/icons/arrow-down';
+export { default as ArrowLeft } from '@lucide/svelte/icons/arrow-left';
+export { default as ArrowRight } from '@lucide/svelte/icons/arrow-right';
 export { default as ArrowRightToLine } from '@lucide/svelte/icons/arrow-right-to-line';
 export { default as ArrowUp } from '@lucide/svelte/icons/arrow-up';
 export { default as Bell } from '@lucide/svelte/icons/bell';

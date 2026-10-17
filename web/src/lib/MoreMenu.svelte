@@ -1,21 +1,35 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, type Component } from 'svelte';
   import type { TaskCommand } from './appsettings';
   import CommandIcon from './CommandIcon.svelte';
   import { Ellipsis } from './icons';
 
+  /** One of the app's own buttons, folded into the menu where there is no room for it. */
+  export interface MenuAction {
+    label: string;
+    icon?: Component<{ size?: number }>;
+    run: () => void;
+    danger?: boolean;
+    disabled?: boolean;
+    /** Leave the menu open after it runs (a delete that asks to be clicked twice). */
+    stay?: boolean;
+  }
+
   /**
    * The task commands from settings.json under one "⋯" button, so the buttons for the everyday actions stay few.
-   * It draws nothing when there are none.
+   * Where a row or card has no room for its buttons, they come here too (`actions`), ahead of the commands.
+   * It draws nothing when there are none of either.
    */
   let {
-    commands,
-    onrun,
+    commands = [],
+    actions = [],
+    onrun = () => {},
     label = 'More actions',
     disabled = false,
   }: {
-    commands: TaskCommand[];
-    onrun: (c: TaskCommand) => void;
+    commands?: TaskCommand[];
+    actions?: MenuAction[];
+    onrun?: (c: TaskCommand) => void;
     label?: string;
     disabled?: boolean;
   } = $props();
@@ -42,7 +56,7 @@
     items()[0]?.focus();
   }
 
-  const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role=menuitem]') ?? [])];
+  const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role=menuitem]:not(:disabled)') ?? [])];
 
   function close(refocus = false) {
     open = false;
@@ -52,6 +66,11 @@
   function run(c: TaskCommand) {
     close();
     onrun(c);
+  }
+
+  function runAction(a: MenuAction) {
+    if (!a.stay) close();
+    a.run();
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -87,7 +106,7 @@
 
 <svelte:window onpointerdown={away} onscrollcapture={scrolled} onresize={() => open && close()} {onkeydown} />
 
-{#if commands.length}
+{#if commands.length || actions.length}
   <span class="more">
     <button
       bind:this={button}
@@ -111,6 +130,21 @@
         style:bottom={place.bottom === undefined ? undefined : `${place.bottom}px`}
         style:max-height="{place.max}px"
       >
+        {#each actions as a, i (i)}
+          {@const Icon = a.icon}
+          <button
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            class:danger={a.danger}
+            disabled={a.disabled}
+            onclick={() => runAction(a)}
+          >
+            {#if Icon}<Icon size={15} />{/if}
+            <span class="name">{a.label}</span>
+          </button>
+        {/each}
+        {#if actions.length && commands.length}<hr />{/if}
         {#each commands as c (c.name)}
           <button type="button" role="menuitem" tabindex="-1" title={c.command} onclick={() => run(c)}>
             <CommandIcon name={c.icon} size={15} />
@@ -157,6 +191,17 @@
   .menu button:hover,
   .menu button:focus-visible {
     background: var(--panel-2);
+  }
+  .menu button:disabled {
+    opacity: 0.45;
+  }
+  .menu button.danger {
+    color: var(--err);
+  }
+  .menu hr {
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid var(--line);
   }
   .name {
     font-weight: 600;
