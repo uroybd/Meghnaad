@@ -339,7 +339,7 @@
             ? 'Reviewing: press a key, or use the buttons above'
             : review.captures
               ? '+tag -tag /teh/the/ project:X'
-              : 'next · add Buy milk due:tomorrow · project:Home +work list   ( / to focus )'}
+              : 'next · add Buy milk due:tomorrow'}
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
