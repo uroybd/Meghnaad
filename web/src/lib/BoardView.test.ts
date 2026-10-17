@@ -188,6 +188,87 @@ describe('a board on a phone', () => {
   });
 });
 
+describe('a card too narrow for its tools', () => {
+  // jsdom lays nothing out: the cells have the width the test says.
+  function narrowCards(width: number) {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private cb: ResizeObserverCallback) {}
+        observe(el: Element) {
+          this.cb([{ target: el } as ResizeObserverEntry], this as unknown as ResizeObserver);
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(width);
+  }
+  afterEach(() => vi.restoreAllMocks());
+
+  const menuItems = () => [...document.querySelectorAll('[role=menuitem]')].map((e) => e.textContent?.trim());
+
+  it('folds them into one ⋯ menu', async () => {
+    narrowCards(200);
+    draw({ editing: true });
+    flushSync();
+    expect(document.querySelector('button[aria-label^="Settings of"]')).toBeNull();
+    expect(document.querySelector('button[aria-label^="Remove"]')).toBeNull();
+    expect(document.querySelector('button[aria-label^="Information about"]')).toBeNull();
+    const more = document.querySelectorAll<HTMLButtonElement>('.tools button[aria-haspopup=menu]');
+    expect(more).toHaveLength(3);
+  });
+
+  it('has everything the buttons did, in the menu', async () => {
+    narrowCards(200);
+    const onremove = vi.fn();
+    const onedit = vi.fn();
+    const onchange = vi.fn();
+    draw({ editing: true, onremove, onedit, onchange });
+    flushSync();
+    const more = () => document.querySelector<HTMLButtonElement>('.tools button[aria-haspopup=menu]')!;
+    more().click();
+    await vi.advanceTimersByTimeAsync(0);
+    flushSync();
+    expect(menuItems()).toEqual([
+      'Information',
+      'Move up',
+      'Move down',
+      'Move left',
+      'Move right',
+      'Settings',
+      'Remove',
+    ]);
+    const item = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find((e) => e.textContent?.includes(name))!;
+    item('Move down').click();
+    expect(onchange).toHaveBeenCalled();
+    more().click();
+    await vi.advanceTimersByTimeAsync(0);
+    flushSync();
+    item('Settings').click();
+    expect(onedit).toHaveBeenCalledWith('a');
+    more().click();
+    await vi.advanceTimersByTimeAsync(0);
+    flushSync();
+    item('Remove').click();
+    expect(onremove).toHaveBeenCalledWith('a');
+  });
+
+  it('keeps the buttons on a card with room', () => {
+    narrowCards(600);
+    draw({ editing: true });
+    expect(button('Settings of A')).not.toBeNull();
+    expect(document.querySelector('.tools button[aria-haspopup=menu]')).toBeNull();
+  });
+
+  it('keeps the information button when the layout is not being edited', () => {
+    narrowCards(200);
+    draw({});
+    expect(document.querySelector('button[aria-label^="Information about"]')).not.toBeNull();
+  });
+});
+
 describe('the info of a card', () => {
   const loaded = async () => {
     draw({});

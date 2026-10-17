@@ -362,7 +362,8 @@ the app's own:
 **Laying out the board.** The page is 12 columns wide. In **Edit**, drag a section by its move handle (top right) to put it
 elsewhere, and its bottom right corner to make it wider or taller; it snaps to the grid. What it lands on is pushed down and
 everything floats up to the first free row, so there are never gaps or overlaps. No section is narrower than two columns.
-Without a mouse, each handle takes the arrow keys (move, or resize) and says where the section is now. **Add** puts a new
+A card too narrow for its tools (about 280 px) shows one **⋯** instead of them, with Information, Move, Settings and Remove
+in the menu. Without a mouse, each handle takes the arrow keys (move, or resize) and says where the section is now. **Add** puts a new
 section in the first free place; **Settings** (the pencil) slides a panel in from the side with its filter, measure and
 grouping (a full-width one on a phone); the bin removes it. **Cancel** drops everything since **Edit**.
 
@@ -511,7 +512,9 @@ button runs each on the task it is for, by its uuid, and stops where `&&` would.
 
 Every command is also a button: the **⋯** menu on a task (in the table, and in the drawer) runs it on that task, and the
 one in the bar over selected tasks runs it on all of them (a batch at a time, like the other bulk actions). The menu is
-not there while you have no commands. Names are one word that can't be taken for a filter (no spaces, no `+` `-` `/`, no
+not there while you have no commands. Where a table is wider than its box (a table in a narrow board card, say), the
+buttons on each row fold into that menu too (Done, Start or Stop, Edit and Delete, then the commands), so the column is one
+small button and the table has the room; it opens out again when there is room for it. Names are one word that can't be taken for a filter (no spaces, no `+` `-` `/`, no
 `:` or `=`, not a number).
 
 ![The Commands tab: fail, later and urgent, each with a name, what it stands for and an icon](screenshots/settings-commands.png)

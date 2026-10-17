@@ -267,13 +267,16 @@ private fun Slices(chart: BoardChart, section: Section, dark: Boolean, plot: Dp?
         return
     }
     val slice = chart.labels.indices.map { defaultSeriesColor(it, dark) }
-    val pie: @Composable (Modifier, Dp) -> Unit = { modifier, side ->
+    val pie: @Composable (Modifier, Dp) -> Unit = { modifier, room ->
+        // A section a quarter of a phone's row wide leaves less than the library's smallest pie, and it throws if its
+        // smallest is larger than its largest.
+        val side = room.coerceAtLeast(24.dp)
         Box(modifier.height(side)) {
             PieChart(
                 values = values.map { it.toFloat() },
                 slice = { i -> DefaultSlice(color = slice[i]) },
                 holeSize = if (section.type == "donut") 0.55f else 0f,
-                minPieDiameter = 64.dp,
+                minPieDiameter = minOf(64.dp, side),
                 maxPieDiameter = side,
             )
         }

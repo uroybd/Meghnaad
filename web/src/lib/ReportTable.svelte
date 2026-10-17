@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { formatFor } from './dateformat';
   import { css, look, rowVars } from './colors';
   import { formatTable, rowClass } from './format';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
-  import MoreMenu from './MoreMenu.svelte';
+  import MoreMenu, { type MenuAction } from './MoreMenu.svelte';
   import ProjectPath from './ProjectPath.svelte';
   import TagChip from './TagChip.svelte';
   import DepLink from './DepLink.svelte';
@@ -77,19 +78,58 @@
   let pendingDelete = $state<string | null>(null);
 
   // A table wider than the window scrolls sideways; its Actions column then stays at the right edge, so the buttons
-  // (and the ⋯ menu) are never out of reach. Only then: a table that fits is laid out as it always was.
+  // (and the ⋯ menu) are never out of reach. Only then: a table that fits is laid out as it always was. If it is wider
+  // still with the buttons in it, they fold into the ⋯ menu, so the column is one small button and the table has the room.
   let wrap = $state<HTMLElement>();
   let pinned = $state(false);
+  let folded = $state(false);
+  // How wide the column is with its buttons out; once they are folded, that is what it would grow back to.
+  let full = 0;
   $effect(() => {
     const el = wrap;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const check = () => (pinned = el.scrollWidth > el.clientWidth + 1);
-    const watch = new ResizeObserver(check);
+    const check = () => {
+      const column = el.querySelector<HTMLElement>('td.actions')?.offsetWidth ?? 0;
+      const over = el.scrollWidth > el.clientWidth + 1;
+      if (!folded) {
+        full = column;
+        if (over && column > 0 && matchMedia('(min-width: 761px)').matches) folded = true;
+      } else if (full > 0 && el.scrollWidth + (full - column) <= el.clientWidth + 1) {
+        folded = false;
+      }
+      pinned = el.scrollWidth > el.clientWidth + 1;
+    };
+    const watch = new ResizeObserver(() => untrack(check));
     watch.observe(el);
     if (el.firstElementChild) watch.observe(el.firstElementChild); // the table: its width follows what is in it
-    check();
+    untrack(check);
     return () => watch.disconnect();
   });
+
+  // What a row's buttons are, in the menu they fold into.
+  function menuActions(row: Row): MenuAction[] {
+    const list: MenuAction[] = [];
+    if (isOpen(row)) {
+      list.push({ label: 'Done', icon: Check, run: () => act(row, 'done') });
+      list.push(
+        row.start != null
+          ? { label: 'Stop', icon: Square, run: () => act(row, 'stop') }
+          : { label: 'Start', icon: Play, run: () => act(row, 'start') },
+      );
+    }
+    if (onedit) list.push({ label: 'Edit', icon: Pencil, run: () => onedit(row) });
+    if (row.status !== 'deleted') {
+      const asking = store.confirmation && pendingDelete !== row.uuid;
+      list.push({
+        label: pendingDelete === row.uuid ? 'Click again to delete' : 'Delete',
+        icon: Trash2,
+        danger: true,
+        stay: asking,
+        run: () => del(row),
+      });
+    }
+    return list;
+  }
 
   const sortable = (name: string) => !!onsort && (SORTABLE.has(baseColumn(name)) || baseColumn(name) in udas);
 
@@ -333,37 +373,40 @@
               </td>
             {/each}
             <td class="actions">
-              {#if isOpen(row)}
-                <button class="ghost" title="Done" aria-label="Done" onclick={() => act(row, 'done')}
-                  ><Check size={16} /></button
-                >
-                {#if row.start != null}
-                  <button class="ghost" title="Stop" aria-label="Stop" onclick={() => act(row, 'stop')}
-                    ><Square size={14} fill="currentColor" /></button
+              {#if !folded}
+                {#if isOpen(row)}
+                  <button class="ghost" title="Done" aria-label="Done" onclick={() => act(row, 'done')}
+                    ><Check size={16} /></button
                   >
-                {:else}
-                  <button class="ghost" title="Start" aria-label="Start" onclick={() => act(row, 'start')}
-                    ><Play size={14} /></button
+                  {#if row.start != null}
+                    <button class="ghost" title="Stop" aria-label="Stop" onclick={() => act(row, 'stop')}
+                      ><Square size={14} fill="currentColor" /></button
+                    >
+                  {:else}
+                    <button class="ghost" title="Start" aria-label="Start" onclick={() => act(row, 'start')}
+                      ><Play size={14} /></button
+                    >
+                  {/if}
+                {/if}
+                {#if onedit}
+                  <button class="ghost" title="Edit" aria-label="Edit" onclick={() => onedit(row)}
+                    ><Pencil size={14} /></button
                   >
                 {/if}
-              {/if}
-              {#if onedit}
-                <button class="ghost" title="Edit" aria-label="Edit" onclick={() => onedit(row)}
-                  ><Pencil size={14} /></button
-                >
-              {/if}
-              {#if row.status !== 'deleted'}
-                <button
-                  class="ghost danger"
-                  title={pendingDelete === row.uuid ? 'Click again to delete' : 'Delete'}
-                  aria-label="Delete"
-                  onclick={() => del(row)}
-                >
-                  {#if pendingDelete === row.uuid}sure?{:else}<Trash2 size={14} />{/if}
-                </button>
+                {#if row.status !== 'deleted'}
+                  <button
+                    class="ghost danger"
+                    title={pendingDelete === row.uuid ? 'Click again to delete' : 'Delete'}
+                    aria-label="Delete"
+                    onclick={() => del(row)}
+                  >
+                    {#if pendingDelete === row.uuid}sure?{:else}<Trash2 size={14} />{/if}
+                  </button>
+                {/if}
               {/if}
               <MoreMenu
                 commands={store.taskCommands}
+                actions={folded ? menuActions(row) : []}
                 onrun={(c) =>
                   store.actSteps(
                     entry,

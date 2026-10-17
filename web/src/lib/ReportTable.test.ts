@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import ReportTable from './ReportTable.svelte';
 import { selection } from './selection.svelte';
@@ -14,6 +14,8 @@ afterEach(() => {
   store.config = null;
   store.detail = null;
   selection.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const row = (description: string, priority: string | null, style?: Row['style']): Row =>
@@ -197,5 +199,52 @@ describe('a column with nothing in it', () => {
 
   it('stays with print.empty.columns', () => {
     expect(drawWith([row('a', null)], true)).toEqual(['Description', 'P']);
+  });
+});
+
+describe('a table with no room for its buttons', () => {
+  // jsdom lays nothing out: the table is as wide, and its box as narrow, as the test says.
+  function squeeze(scroll: number, box: number) {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private cb: ResizeObserverCallback) {}
+        observe() {
+          this.cb([], this as unknown as ResizeObserver);
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: () => undefined }));
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(scroll);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(box);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(120);
+  }
+  const buttons = () => [...document.querySelectorAll('td.actions button')].map((b) => b.getAttribute('aria-label'));
+
+  it('shows one ⋯ button, and the others in its menu', async () => {
+    squeeze(900, 500);
+    draw([row('one', null)]);
+    await Promise.resolve();
+    flushSync();
+    expect(buttons()).toEqual(['More actions']);
+    document.querySelector<HTMLButtonElement>('td.actions button')!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    flushSync();
+    expect([...document.querySelectorAll('[role=menuitem]')].map((e) => e.textContent?.trim())).toEqual([
+      'Done',
+      'Start',
+      'Delete',
+    ]);
+  });
+
+  it('keeps the buttons when the table fits', async () => {
+    squeeze(500, 500);
+    draw([row('one', null)]);
+    await Promise.resolve();
+    flushSync();
+    expect(buttons()).toEqual(['Done', 'Start', 'Delete']);
   });
 });

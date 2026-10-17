@@ -99,4 +99,38 @@ describe('the more-actions menu', () => {
     await tick();
     expect(items()).toHaveLength(0);
   });
+
+  it('holds the buttons that have no room as actions, ahead of the commands', async () => {
+    const run = vi.fn();
+    const actions = [
+      { label: 'Done', run },
+      { label: 'Delete', run: vi.fn(), danger: true, disabled: true },
+    ];
+    app = mount(MoreMenu, { target: document.body, props: { commands: CMDS, actions, onrun: vi.fn() } });
+    flushSync();
+    trigger()!.click();
+    await tick();
+    expect(items().map((i) => i.querySelector('.name')?.textContent)).toEqual(['Done', 'Delete', 'fail', 'later']);
+    // A disabled one is drawn, and the keyboard skips it.
+    expect(document.querySelector<HTMLButtonElement>('[role=menuitem]:nth-child(2)')!.disabled).toBe(true);
+    items()[0].click();
+    await tick();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(items()).toHaveLength(0);
+  });
+
+  it('draws an action with nothing else, and stays open for one that says so', async () => {
+    const run = vi.fn();
+    app = mount(MoreMenu, {
+      target: document.body,
+      props: { actions: [{ label: 'Delete', run, stay: true }] },
+    });
+    flushSync();
+    trigger()!.click();
+    await tick();
+    items()[0].click();
+    await tick();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(items()).toHaveLength(1);
+  });
 });

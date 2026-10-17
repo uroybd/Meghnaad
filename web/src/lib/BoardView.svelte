@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ArrowDown, ArrowUp, Move, Pencil, Trash2 } from './icons';
+  import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Info, Move, Pencil, Trash2 } from './icons';
+  import MoreMenu, { type MenuAction } from './MoreMenu.svelte';
   import BoardSection from './BoardSection.svelte';
   import SectionInfo from './SectionInfo.svelte';
   import {
@@ -105,6 +106,53 @@
   // Reading order is also the order a screen reader and the Tab key meet them in. A narrow screen has the sections' places on
   // its own, fewer columns.
   const ordered = $derived(narrow ? flowed(board.sections, cols) : stacked(board.sections));
+
+  // ---- A card too narrow for its buttons ----------------------------------------------------------------------------
+  // Its tools fold into one ⋯ menu. A width of 0 (not measured yet, or no layout at all) is not narrow.
+  const COMPACT_PX = 280;
+  let widths = $state<Record<string, number>>({});
+  function measure(el: HTMLElement, id: string) {
+    if (typeof ResizeObserver === 'undefined') return;
+    const read = () => (widths[id] = el.clientWidth);
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    read();
+    return { destroy: () => watch.disconnect() };
+  }
+  const compact = (s: Section) => (widths[s.id] ?? 0) > 0 && widths[s.id] < COMPACT_PX;
+
+  function cellActions(s: Section, i: number): MenuAction[] {
+    const go = (dx: number, dy: number) => () => {
+      const next = moveBy(board.sections, s.id, dx, dy);
+      onchange?.(next);
+      const now = next.find((x) => x.id === s.id);
+      if (now) announce = describe(now);
+    };
+    const moves: MenuAction[] = narrow
+      ? [
+          { label: 'Move up', icon: ArrowUp, run: () => shift(s, -1), disabled: i === 0 },
+          { label: 'Move down', icon: ArrowDown, run: () => shift(s, 1), disabled: i === ordered.length - 1 },
+        ]
+      : [
+          { label: 'Move up', icon: ArrowUp, run: go(0, -1) },
+          { label: 'Move down', icon: ArrowDown, run: go(0, 1) },
+          { label: 'Move left', icon: ArrowLeft, run: go(-1, 0) },
+          { label: 'Move right', icon: ArrowRight, run: go(1, 0) },
+        ];
+    return [
+      { label: 'Information', icon: Info, run: () => (info = s.id), disabled: !data[s.id] },
+      ...moves,
+      {
+        label: 'Settings',
+        icon: Pencil,
+        run: () => {
+          onselect?.(s.id);
+          onedit?.(s.id);
+        },
+      },
+      { label: 'Remove', icon: Trash2, danger: true, run: () => onremove?.(s.id) },
+    ];
+  }
 
   // ---- Moving and resizing -----------------------------------------------------------------------------------------
   let grid: HTMLDivElement | undefined = $state();
@@ -215,11 +263,14 @@
       style:--y={s.y}
       style:--w={s.w}
       style:--h={s.h}
+      use:measure={s.id}
     >
-      <BoardSection section={s} data={data[s.id]} {editing} oninfo={() => (info = s.id)} />
+      <BoardSection section={s} data={data[s.id]} {editing} compact={compact(s)} oninfo={() => (info = s.id)} />
       {#if editing}
         <div class="tools">
-          {#if narrow}
+          {#if compact(s)}
+            <MoreMenu label="Actions of {s.title}" actions={cellActions(s, i)} />
+          {:else if narrow}
             <button
               class="ghost"
               aria-label="Move {s.title} up"
@@ -246,18 +297,20 @@
               onkeydown={(e) => key(e, s, 'move')}><Move size={15} /></button
             >
           {/if}
-          <button
-            class="ghost"
-            aria-label="Settings of {s.title}"
-            title="Settings"
-            onclick={() => {
-              onselect?.(s.id);
-              onedit?.(s.id);
-            }}><Pencil size={15} /></button
-          >
-          <button class="ghost danger" aria-label="Remove {s.title}" title="Remove" onclick={() => onremove?.(s.id)}
-            ><Trash2 size={15} /></button
-          >
+          {#if !compact(s)}
+            <button
+              class="ghost"
+              aria-label="Settings of {s.title}"
+              title="Settings"
+              onclick={() => {
+                onselect?.(s.id);
+                onedit?.(s.id);
+              }}><Pencil size={15} /></button
+            >
+            <button class="ghost danger" aria-label="Remove {s.title}" title="Remove" onclick={() => onremove?.(s.id)}
+              ><Trash2 size={15} /></button
+            >
+          {/if}
         </div>
         <button
           class="resize"
