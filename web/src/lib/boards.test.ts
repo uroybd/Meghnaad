@@ -67,6 +67,9 @@ describe('the filter a section runs', () => {
     const s = sec('a', 0, 0, 3, 2, { filter: '+a or +b' });
     expect(effectiveFilter(board([s], { filter: 'project:Home' }), s)).toBe('( project:Home ) ( +a or +b )');
     expect(effectiveFilter(board([s]), s)).toBe('( +a or +b )');
+    // A section can leave the board's filter out, and is then asked about its own tasks only.
+    const own = { ...s, ignoreBoardFilter: true };
+    expect(effectiveFilter(board([own], { filter: 'project:Home' }), own)).toBe('( +a or +b )');
     expect(effectiveFilter(board([sec('c', 0, 0, 1, 1)], { filter: '  ' }), sec('c', 0, 0, 1, 1))).toBe('');
   });
 });

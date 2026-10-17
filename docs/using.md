@@ -323,7 +323,9 @@ the app's own:
 | **Table** | Any report (`next`, `list`, one of yours) over the section's filter, drawn as on the Tasks page |
 
 - **The filter** is the same one the Tasks page takes (Tab completes). A board can have a filter of its own, which every section
-  adds to: `( board filter ) ( section filter )`, so an `or` in one cannot spill into the other.
+  adds to: `( board filter ) ( section filter )`, so an `or` in one cannot spill into the other. A section that should ask about
+  its own tasks only has **Ignore the board's filter** ticked in its settings (off by default), and then the board's filter is
+  not added to it.
 - **Measuring** a field works on numbers (`urgency`, a numeric UDA) and durations (a duration UDA, as `2h` or `PT2H`). A
   figure over a duration is shown the way Taskwarrior writes one (`2h`, `3d`). A task with no value for the field is left out of
   a sum, average or comparison, and a group in which no task has one shows `–` (not zero). Anything else is refused, saying so.

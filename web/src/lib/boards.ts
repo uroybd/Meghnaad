@@ -85,6 +85,8 @@ export interface Section extends Rect {
   /** A table shows this report's columns. */
   report?: string;
   filter?: string;
+  /** Ask about this section's own tasks only: the board's filter is not added. */
+  ignoreBoardFilter?: boolean;
   measure: Measure;
   by?: By;
   /** A chart's series; none is one series, the section's own measure. */
@@ -334,11 +336,11 @@ export function newBoard(name: string, boards: Board[]): Board {
 }
 
 /**
- * The filter a section runs: the board's, then its own, then a series', each in parentheses so an `or` in one cannot leak
- * into the next.
+ * The filter a section runs: the board's (unless the section ignores it), then its own, then a series', each in parentheses
+ * so an `or` in one cannot leak into the next.
  */
 export function effectiveFilter(board: Board, section: Section, series?: Series): string {
-  return [board.filter, section.filter, series?.filter]
+  return [section.ignoreBoardFilter ? undefined : board.filter, section.filter, series?.filter]
     .map((f) => f?.trim())
     .filter((f): f is string => !!f)
     .map((f) => `( ${f} )`)

@@ -215,6 +215,10 @@ private fun SectionForm(store: Store, s: Section, onChange: (Section) -> Unit) {
         Labeled("Filter") {
             CompletingField(s.filter.orEmpty(), { v -> onChange(s.copy(filter = v.ifEmpty { null })) }, store.vocab, placeholder = "Which tasks: project:Home +work")
         }
+        Row(Modifier.clickable { onChange(s.copy(ignoreBoardFilter = if (s.ignoreBoardFilter == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(s.ignoreBoardFilter == true, onCheckedChange = null)
+            Text("Ignore the board's filter", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
+        }
 
         if (s.type == "table") {
             Pick("Report", store.offeredReports.map { it.name to it.name }, s.report ?: "next") { onChange(s.copy(report = it)) }

@@ -54,7 +54,7 @@ fun BoardsPage(store: Store) {
 @Composable
 fun rememberBoardData(store: Store, board: Board, wait: Boolean): Map<String, SectionData> {
     var data by remember { mutableStateOf<Map<String, SectionData>>(emptyMap()) }
-    val asks = listOf(board.filter, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.measure, it.by, it.series) })
+    val asks = listOf(board.filter, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.ignoreBoardFilter, it.measure, it.by, it.series) })
     LaunchedEffect(asks, store.rev) {
         // While a board is being edited, a keystroke in a filter is not a question.
         if (wait) delay(250)

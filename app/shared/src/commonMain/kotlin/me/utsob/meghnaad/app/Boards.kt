@@ -58,6 +58,8 @@ data class Section(
     val type: String,
     val report: String? = null,
     val filter: String? = null,
+    /** Ask about this section's own tasks only: the board's filter is not added. */
+    val ignoreBoardFilter: Boolean? = null,
     val measure: Measure = Measure("count"),
     val by: By? = null,
     val series: List<Series> = emptyList(),
@@ -186,9 +188,9 @@ fun slugProblem(slug: String, others: Collection<String>): String? {
 
 // ---- What a section runs
 
-/** The filter a section runs: the board's, then its own, then a series', each in parentheses so an `or` cannot leak. */
+/** The filter a section runs: the board's (unless the section ignores it), then its own, then a series', each in parentheses so an `or` cannot leak. */
 fun effectiveFilter(board: Board, section: Section, series: Series? = null): String =
-    listOf(board.filter, section.filter, series?.filter)
+    listOf(if (section.ignoreBoardFilter == true) null else board.filter, section.filter, series?.filter)
         .mapNotNull { it?.trim()?.takeIf { f -> f.isNotEmpty() } }
         .joinToString(" ") { "( $it )" }
 
