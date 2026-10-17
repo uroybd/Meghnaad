@@ -120,7 +120,6 @@ private fun BoardScreen(store: Store, board: Board) {
             IconAction("link", "Copy a link to this board", { clipboard.setText(AnnotatedString(placeLink(AppPlace.Boards(board.id)))); store.notify("Link copied.") }, size = 20.dp)
         }
         board.description?.let { Dim(it, Modifier.padding(horizontal = 12.dp)) }
-        board.filter?.let { Dim("Filter: $it", Modifier.padding(horizontal = 12.dp)) }
         if (board.sections.isEmpty()) Dim("This board has no sections yet. Edit it to add some.", Modifier.padding(horizontal = 12.dp))
         BoardGrid(store, board.sections, data, onInfo = { info = it })
     }
