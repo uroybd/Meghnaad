@@ -54,6 +54,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 kotlin { jvmToolchain(21) }
@@ -68,4 +69,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Android's own org.json is only a stub on the JVM that runs the unit tests.
     testImplementation("org.json:json:20240303")
+    // Real Android graphics on the JVM, so the widgets' pictures can be drawn (and looked at) in a test.
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.test:core:1.6.1")
 }

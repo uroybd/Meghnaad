@@ -10,6 +10,11 @@
     <string name="widget_tasks_label">Tasks</string>
     <string name="widget_burndown_label">Burndown</string>
     <string name="widget_calendar_label">Calendar</string>
+    <string name="widget_board_label">Board card</string>
+    <string name="widget_board_description">One card of a board: a number or a chart, drawn from the same numbers as the board. Tap it to open the board</string>
+    <string name="widget_board_choose">Choose a board and a card in the widget\'s settings (press and hold it)</string>
+    <string name="widget_board_gone">That board or card is not there any more. Choose another in the widget\'s settings</string>
+    <string name="widget_board_table">A table is not drawn here. Tap to open the board</string>
     <string name="widget_burndown_description">How the pending, started and finished tasks add up over time</string>
     <string name="widget_calendar_description">A month, with the days that have something due marked. Make it bigger to see the tasks of a day beside it or under it</string>
     <string name="widget_show_all">Show all %1$d ›</string>

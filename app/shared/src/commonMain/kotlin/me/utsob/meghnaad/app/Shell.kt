@@ -83,6 +83,7 @@ private val TABS = listOf(
     Tab(View.Summary, "Summary", "chart-column"),
     Tab(View.Calendar, "Calendar", "calendar-days"),
     Tab(View.Burndown, "Burndown", "trending-down"),
+    Tab(View.Boards, "Boards", "layout-dashboard"),
     Tab(View.Console, "Console", "terminal"),
 )
 
@@ -268,6 +269,7 @@ private fun MainView(store: Store) {
             View.Settings -> SettingsPage(store, settingsState)
             View.Calendar -> CalendarPage(store)
             View.Burndown -> BurndownPage(store)
+            View.Boards -> BoardsPage(store)
             else -> ComingSoon(store.view.name)
         }
     }

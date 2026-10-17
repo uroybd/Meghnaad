@@ -81,6 +81,17 @@ data class CalendarConfig(val filter: String = "") {
     }
 }
 
+/** A board widget: one card of one board, by the board's slug and the section's id. Nothing chosen yet is empty. */
+data class BoardWidgetConfig(val board: String = "", val section: String = "") {
+    val chosen get() = board.isNotEmpty() && section.isNotEmpty()
+
+    fun toJson(): JSONObject = JSONObject().put("board", board).put("section", section)
+
+    companion object {
+        fun fromJson(j: JSONObject) = BoardWidgetConfig(j.optString("board", ""), j.optString("section", ""))
+    }
+}
+
 /** What each widget on the home screen was set up to show, by the id the system gave it. */
 object WidgetPrefs {
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences("widgets", Context.MODE_PRIVATE)
@@ -106,6 +117,11 @@ object WidgetPrefs {
 
     fun saveCalendar(context: Context, id: Int, config: CalendarConfig) = write(context, "calendar", id, config.toJson())
 
+    fun board(context: Context, id: Int): BoardWidgetConfig =
+        read(context, "board", id)?.let(BoardWidgetConfig::fromJson) ?: BoardWidgetConfig()
+
+    fun saveBoard(context: Context, id: Int, config: BoardWidgetConfig) = write(context, "board", id, config.toJson())
+
     fun look(context: Context, id: Int): WidgetLook = read(context, "look", id)?.let(WidgetLook::fromJson) ?: WidgetLook()
 
     fun saveLook(context: Context, id: Int, look: WidgetLook) = write(context, "look", id, look.toJson())
@@ -127,7 +143,7 @@ object WidgetPrefs {
     /** A widget was removed from the home screen. */
     fun forget(context: Context, ids: IntArray) {
         val edit = prefs(context).edit()
-        for (id in ids) for (kind in listOf("list", "burndown", "calendar", "look", "offset", "day")) edit.remove("$kind:$id")
+        for (id in ids) for (kind in listOf("list", "burndown", "calendar", "board", "look", "offset", "day")) edit.remove("$kind:$id")
         edit.apply()
     }
 }

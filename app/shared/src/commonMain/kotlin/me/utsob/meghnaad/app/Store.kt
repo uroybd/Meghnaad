@@ -34,9 +34,9 @@ enum class Setup {
     Failed,
 }
 
-enum class View { Tasks, Projects, Tags, Summary, Calendar, Burndown, Console, Settings }
+enum class View { Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings }
 
-enum class SettingsTab { Taskrc, Tasksh, Commands, Hooks, Urgency, Sync }
+enum class SettingsTab { General, Taskrc, Tasksh, Commands, Hooks, Urgency, Sync }
 
 /** The pages that show one command's answer with the same component the console uses. */
 enum class Panel { Summary, Calendar, Burndown }
@@ -160,6 +160,12 @@ class Store(
         private set
 
     val taskCommands: List<TaskCommand> get() = appSettings?.commands ?: emptyList()
+
+    /** The boards in `settings.json`: pages of numbers, tables and charts. */
+    val boards: List<Board> get() = appSettings?.boards ?: emptyList()
+
+    /** Where the app opens: a report or a board of `settings.json`, or `next` when it says nothing. */
+    val homepage: Homepage? get() = appSettings?.homepage
     val reports: List<ReportMeta> get() = config?.reports ?: emptyList()
 
     /** Reports named `_something` are hidden helpers: left out of the lists to pick from unless this is on. */
@@ -182,6 +188,12 @@ class Store(
     // ---- What is on screen
     var view by mutableStateOf(View.Tasks)
     var settingsTab by mutableStateOf(SettingsTab.Taskrc)
+
+    /** The board the Boards page shows (null: the list of boards). */
+    var boardId by mutableStateOf<String?>(null)
+
+    /** The board being changed, if one is (a draft: nothing is kept until it is saved). */
+    var boardEditor by mutableStateOf<BoardEditor?>(null)
 
     /** The report in focus, and the extra filter on it. Running a report in the console sets these too. */
     var report by mutableStateOf("next")
@@ -451,9 +463,11 @@ class Store(
                 if (port.restored) sync.request() else sync.request().await()
                 setup = Setup.Ready
                 loadAppSettings()
+                // The home page, unless the app was opened for a task or a link.
+                if (launchTask == null && launchLink == null) goHome()
                 notifier.start()
                 launchTask?.let { launchTask = null; openDetail(it) }
-                launchLink?.let { launchLink = null; openFromPrefix(it) }
+                launchLink?.let { launchLink = null; openPlace(it) }
             } catch (e: Exception) {
                 error = e.message ?: e.toString()
                 setup = Setup.Failed
@@ -473,6 +487,49 @@ class Store(
             configError = e.message ?: e.toString()
             if (first) throw e
         }
+    }
+
+    /** What each section of [board] shows now: their filters run, their numbers worked out (see [loadBoard]). */
+    suspend fun loadBoardData(board: Board): Map<String, SectionData> =
+        loadBoard(tw, board, boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds()))
+
+    /**
+     * Open the home page the settings choose. Unforced, only from the front page: a person who has already gone somewhere is
+     * left there, and nothing chosen is `next`, which is where the app begins. Forced, it is where the logo goes, whatever was
+     * shown. A report or board that is not there any more is no choice.
+     */
+    fun goHome(force: Boolean = false) {
+        if (!force && (view != View.Tasks || detail != null || homepage == null)) return
+        if (force) detail = null
+        val home = homepage
+        when {
+            home?.board != null && boards.any { it.id == home.board } -> {
+                boardId = home.board
+                view = View.Boards
+            }
+            home?.report != null && reports.any { it.name == home.report } -> {
+                report = home.report
+                view = View.Tasks
+            }
+            force -> {
+                report = "next"
+                view = View.Tasks
+            }
+        }
+    }
+
+    /** Save the boards (the rest of `settings.json` as it was) and read them back. Throws what the engine refused. */
+    suspend fun saveBoards(next: List<Board>, homepage: Homepage? = null, setHomepage: Boolean = false) {
+        val text = serializeBoards(appSettings?.raw ?: JsonObject(emptyMap()), next, homepage, setHomepage)
+        if (text.encodeToByteArray().size > MAX_SETTINGS_BYTES) error("The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.")
+        request("PUT", "/api/settings", text)
+        loadAppSettings()
+    }
+
+    /** Save where the app opens (null: `next`), the rest of `settings.json` as it was. Throws what the engine refused. */
+    suspend fun saveHomepage(homepage: Homepage?) {
+        request("PUT", "/api/settings", serializeHomepage(appSettings?.raw ?: JsonObject(emptyMap()), homepage))
+        loadAppSettings()
     }
 
     /** Read `settings.json`. A failure leaves what was there: the commands are a convenience, not needed to work. */
@@ -662,7 +719,7 @@ class Store(
 
     /** A task to open once the app has started (a notification was tapped while it was not running). */
     private var launchTask: String? = null
-    private var launchLink: String? = null
+    private var launchLink: AppPlace? = null
 
     /** Open a task from outside (a notification): at once, or when the app is ready. */
     fun openFromOutside(uuid: String) {
@@ -673,10 +730,43 @@ class Store(
         detail = DetailRef(uuid, from)
     }
 
-    /** A task's link (`meghnaad://task/1a2b3c4d`) opened from outside: at once, or when the app is ready. Anything else is ignored. */
+    /** A link of this app's (`meghnaad://board/week`, `meghnaad://task/1a2b3c4d`, see Route.kt) opened from outside: at once, or when the app is ready. Anything else is ignored. */
     fun openFromLink(link: String) {
-        val prefix = prefixFromLink(link) ?: return
-        if (setup == Setup.Ready) go { openFromPrefix(prefix) } else launchLink = prefix
+        val place = parseLink(link) ?: return
+        if (setup == Setup.Ready) go { openPlace(place) } else launchLink = place
+    }
+
+    /** Where the app is, as a link names it: the task in the drawer if one is open, else the page. */
+    val place: AppPlace
+        get() = detail?.let { AppPlace.TaskAt(it.uuid.take(8)) } ?: when (view) {
+            View.Tasks -> AppPlace.Report(report)
+            View.Boards -> AppPlace.Boards(boardId)
+            View.Settings -> AppPlace.SettingsAt(settingsTab)
+            else -> AppPlace.Page(view)
+        }
+
+    /** Go where a link says. A report or a board that is not there is told, and the home page opens instead. */
+    suspend fun openPlace(place: AppPlace) {
+        if (place !is AppPlace.TaskAt) detail = null
+        when (place) {
+            is AppPlace.TaskAt -> openFromPrefix(place.prefix)
+            is AppPlace.Report -> if (reports.any { it.name == place.name }) {
+                report = place.name
+                view = View.Tasks
+            } else {
+                notify("There is no report called ${place.name}.", bad = true)
+                goHome(force = true)
+            }
+            is AppPlace.Page -> view = place.view
+            is AppPlace.Boards -> if (place.slug == null || boards.any { it.id == place.slug }) {
+                boardId = place.slug
+                view = View.Boards
+            } else {
+                notify("There is no board called ${place.slug}.", bad = true)
+                goHome(force = true)
+            }
+            is AppPlace.SettingsAt -> openSettings(place.tab ?: settingsTab)
+        }
     }
 
     /** Counts up each time the prompt is asked for with `/` (a hardware keyboard): it takes the focus, with its line selected. */
@@ -715,6 +805,8 @@ class Store(
             notifyOpen -> notifyOpen = false
             menuOpen -> menuOpen = false
             selection.count > 0 -> selection.clear()
+            boardEditor != null -> boardEditor = null
+            view == View.Boards && boardId != null -> boardId = null
             view != View.Tasks -> view = View.Tasks
             else -> return false
         }
