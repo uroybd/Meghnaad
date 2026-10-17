@@ -5,8 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 // Making and changing boards on the phone (web/src/lib/boards.ts and BoardsPage.svelte). Which boards and sections are valid is the
-// engine's (`board_normalize`), which the draft asks before it can be saved, so what is refused here is what the web refuses. The
-// phone has one column, so a section's place is just its order: every section is full width, one under the other.
+// engine's (`board_normalize`), which the draft asks before it can be saved, so what is refused here is what the web refuses. Where
+// sections go (a new one's place, moving one, resizing one in the phone's columns) is the engine's too (`tc_core::board::layout`).
 
 class SectionType(val id: String, val label: String)
 
@@ -79,15 +79,13 @@ fun freshId(base: String, taken: Collection<String>): String {
 
 fun newBoard(name: String, boards: List<Board>): Board = Board(freshId(name, boards.map { it.id }), name.trim())
 
-private val DEFAULT_HEIGHT = mapOf("number" to 2, "table" to 6)
+/** The size, in the grid's columns and rows, a new section of each type has to begin with (as on the web). */
+private val DEFAULT_SIZE = mapOf(
+    "number" to (3 to 2), "bar" to (6 to 5), "line" to (6 to 5), "area" to (6 to 5),
+    "pie" to (4 to 5), "donut" to (4 to 5), "radar" to (4 to 5), "polar" to (4 to 5), "table" to (12 to 6),
+)
 
-/** The sections one under the other, in the order given. */
-fun relayout(sections: List<Section>): List<Section> {
-    var y = 0
-    return sections.map { s -> s.copy(x = 0, y = y, w = 12).also { y += s.h } }
-}
-
-/** A new section of this type, under the others. */
+/** A new section of this type, in the first free place. */
 fun newSection(board: Board, type: String): Section {
     val label = SECTION_TYPES.firstOrNull { it.id == type }?.label ?: type
     val by = when {
@@ -95,28 +93,19 @@ fun newSection(board: Board, type: String): Section {
         isChartType(type) -> By(field = "project")
         else -> null
     }
+    val (w, h) = DEFAULT_SIZE.getValue(type)
+    val at = firstFree(board.sections, w, h)
     return Section(
         id = freshId(type, board.sections.map { it.id }),
         title = label,
-        x = 0,
-        y = board.sections.sumOf { it.h },
-        w = 12,
-        h = DEFAULT_HEIGHT[type] ?: 5,
+        x = at.x,
+        y = at.y,
+        w = at.w,
+        h = at.h,
         type = type,
         report = if (type == "table") "next" else null,
         by = by,
     )
-}
-
-/** [id] one place earlier (-1) or later (1) in the reading order; the sections are laid one under the other in the new order. */
-fun reorder(sections: List<Section>, id: String, delta: Int): List<Section> {
-    val order = stacked(sections).toMutableList()
-    val at = order.indexOfFirst { it.id == id }
-    val to = at + delta
-    if (at < 0 || to < 0 || to >= order.size) return sections
-    val moved = order.removeAt(at)
-    order.add(to, moved)
-    return relayout(order)
 }
 
 /** A section's type changed: a chart gets something to group by, a table a report, a round chart loses what it cannot have. */
@@ -138,8 +127,11 @@ class BoardEditor(private val store: Store, original: Board) {
     /** The slug the draft had when it was opened, which it may change. */
     val from = original.id
 
-    /** The section whose settings are open. */
+    /** The section last touched, outlined on the board. */
     var selected by mutableStateOf<String?>(null)
+
+    /** The section whose settings are open in the pop-up. */
+    var opened by mutableStateOf<String?>(null)
 
     var busy by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
@@ -155,14 +147,19 @@ class BoardEditor(private val store: Store, original: Board) {
         val s = newSection(draft, type)
         edit { it.copy(sections = it.sections + s) }
         selected = s.id
+        opened = s.id
     }
 
     fun remove(id: String) {
-        edit { b -> b.copy(sections = relayout(b.sections.filter { it.id != id })) }
+        edit { b -> b.copy(sections = b.sections.filter { it.id != id }) }
         if (selected == id) selected = null
+        if (opened == id) opened = null
     }
 
     fun move(id: String, delta: Int) = edit { it.copy(sections = reorder(it.sections, id, delta)) }
+
+    /** Put the sections as [sections] have them (a drag of a corner works from the layout it began with). */
+    fun layout(sections: List<Section>) = edit { it.copy(sections = sections) }
 
     /** What the engine says of the draft: the sections it would drop, and the board it would keep. */
     val check get() = normalizeBoards(boardsToJson(listOf(draft)))

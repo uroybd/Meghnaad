@@ -276,6 +276,19 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             a.req::<i32>(2)?,
             a.req::<i32>(3)?
         )),
+        "board_flow" => json!(crate::board::layout::flow(&a.req::<Vec<Cell>>(0)?, a.req::<u32>(1)?)),
+        "board_resize_flow" => json!(crate::board::layout::resize_flow(
+            &a.req::<Vec<Cell>>(0)?,
+            &a.req::<String>(1)?,
+            a.req::<u32>(2)?,
+            a.req::<i32>(3)?,
+            a.req::<i32>(4)?
+        )),
+        "board_reorder" => json!(crate::board::layout::reorder(
+            &a.req::<Vec<Cell>>(0)?,
+            &a.req::<String>(1)?,
+            a.req::<i32>(2)?
+        )),
         "board_compact" => json!(crate::board::layout::compact(&a.req::<Vec<Cell>>(0)?)),
         "board_stack" => json!(crate::board::layout::stack(&a.req::<Vec<Cell>>(0)?)),
         "board_first_free" => json!(crate::board::layout::first_free(
@@ -462,6 +475,14 @@ mod tests {
         .unwrap();
         assert_eq!(placed[0]["y"], 2);
         assert_eq!(call("board_stack", &format!("[{cells}]")), r#"["a","b"]"#);
+        let flowed: serde_json::Value = serde_json::from_str(&call("board_flow", &format!("[{cells},4]"))).unwrap();
+        assert_eq!((flowed[1]["x"].as_u64(), flowed[1]["w"].as_u64()), (Some(2), Some(2)));
+        let wider: serde_json::Value =
+            serde_json::from_str(&call("board_resize_flow", &format!(r#"[{cells},"a",4,-1,0]"#))).unwrap();
+        assert_eq!(wider[0]["w"], 3);
+        let moved: serde_json::Value =
+            serde_json::from_str(&call("board_reorder", &format!(r#"[{cells},"b",-1]"#))).unwrap();
+        assert_eq!((moved[0]["x"].as_u64(), moved[0]["y"].as_u64()), (Some(6), Some(0)));
         assert_eq!(
             call("board_normalize", "[[1]]"),
             r#"{"boards":[],"errors":["board 1: not an object"]}"#

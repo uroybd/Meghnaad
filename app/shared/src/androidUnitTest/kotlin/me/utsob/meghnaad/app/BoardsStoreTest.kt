@@ -205,7 +205,8 @@ class BoardsStoreTest {
         editor.add("bar")
         editor.add("table")
         assertEquals(listOf("number", "bar", "table"), editor.draft.sections.map { it.id })
-        assertEquals(listOf(0, 2, 7), editor.draft.sections.map { it.y })
+        // A number takes a quarter of the row, a bar half of it beside the number, and a table the whole row under them.
+        assertEquals(listOf(0 to 0, 3 to 0, 0 to 5), editor.draft.sections.map { it.x to it.y })
         assertTrue(editor.valid)
 
         // The engine refuses a measure with nothing to measure, and the draft cannot be saved until it is put right.
@@ -217,7 +218,7 @@ class BoardsStoreTest {
         editor.update(number.copy(measure = Measure("sum", "urgency")))
         assertTrue(editor.valid)
 
-        // Moving a section changes the order, one under the other.
+        // Moving a section changes the reading order.
         editor.move("table", -1)
         assertEquals(listOf("number", "table", "bar"), stacked(editor.draft.sections).map { it.id })
 

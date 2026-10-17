@@ -361,13 +361,16 @@ the app's own:
 
 **Laying out the board.** The page is 12 columns wide. In **Edit**, drag a section by its move handle (top right) to put it
 elsewhere, and its bottom right corner to make it wider or taller; it snaps to the grid. What it lands on is pushed down and
-everything floats up to the first free row, so there are never gaps or overlaps. Without a mouse, each handle takes the arrow
-keys (move, or resize) and says where the section is now. **Add** puts a new section in the first free place; **Settings** (the
-pencil) opens its filter, measure and grouping; the bin removes it. **Cancel** drops everything since **Edit**.
+everything floats up to the first free row, so there are never gaps or overlaps. No section is narrower than two columns.
+Without a mouse, each handle takes the arrow keys (move, or resize) and says where the section is now. **Add** puts a new
+section in the first free place; **Settings** (the pencil) slides a panel in from the side with its filter, measure and
+grouping (a full-width one on a phone); the bin removes it. **Cancel** drops everything since **Edit**.
 
-**On a phone** the grid is one column, in reading order (top to bottom, left to right). **Edit** there offers up and down
-buttons for each section instead of handles, and the places on the grid are rewritten as a single column in the order you
-chose.
+**On a phone** the sections keep their reading order (top to bottom, left to right) on a grid of 6 columns, or 4 on a small
+phone, and each is as wide as its share of the row: four numbers of three columns each sit side by side on 4 columns, three
+to a row on 6. Two columns of the 12 is the narrowest, which is one column of the phone's. **Edit** there shows the same
+board with the corner to drag to resize a section by the phone's columns (the width is saved in the 12, so it holds on a
+wide screen too), up and down buttons to move it earlier or later in the order, and the same side panel for its settings.
 
 You never have to write the file by hand, but you can: the format is below. A board or section that is not valid is named at
 the top of the page and left out (the rest of `settings.json` is read as usual); saving a board writes the valid ones, so fix the
@@ -401,7 +404,7 @@ file first if you want to keep what was left out.
 }
 ```
 
-`x` and `w` are columns (0 to 11, and 1 to 12); `y` and `h` are rows. `measure` is `{ "fn": "count" }` unless it says
+`x` and `w` are columns (0 to 11, and 2 to 12); `y` and `h` are rows. `measure` is `{ "fn": "count" }` unless it says
 otherwise, and `estimate` above is a duration UDA of yours.
 
 ## Settings

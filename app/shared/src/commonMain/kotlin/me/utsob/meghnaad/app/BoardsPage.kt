@@ -30,11 +30,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Boards on the phone (BoardsPage.svelte, BoardView.svelte, BoardSection.svelte, SectionInfo.svelte): a page of cards, each a
-// number, a table or a chart over the tasks its filter picks. The phone has one column, so the cards are in reading order and the
-// places the web gives them on its grid mean nothing here. Boards are made and changed here too (BoardEditor.kt); they are in `settings.json`,
+// number, a table or a chart over the tasks its filter picks, on the phone's 4 or 6 columns (BoardGrid.kt). Boards are made and changed here too (BoardEditor.kt); they are in `settings.json`,
 // which the phone keeps in step with the bucket, so what is changed on one device is on the others after a sync.
 
 @Composable
@@ -48,6 +48,19 @@ fun BoardsPage(store: Store) {
         board == null -> BoardList(store)
         else -> BoardScreen(store, board)
     }
+}
+
+/** What the sections of [board] show, asked again when what a section asks for changes (not when it only moves) and when a task changes anywhere. */
+@Composable
+fun rememberBoardData(store: Store, board: Board, wait: Boolean): Map<String, SectionData> {
+    var data by remember { mutableStateOf<Map<String, SectionData>>(emptyMap()) }
+    val asks = listOf(board.filter, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.measure, it.by, it.series) })
+    LaunchedEffect(asks, store.rev) {
+        // While a board is being edited, a keystroke in a filter is not a question.
+        if (wait) delay(250)
+        data = store.loadBoardData(board)
+    }
+    return data
 }
 
 @Composable
@@ -95,9 +108,7 @@ private fun BoardList(store: Store) {
 
 @Composable
 private fun BoardScreen(store: Store, board: Board) {
-    // Ask again when the board changes and when a task changes anywhere (`rev`).
-    var data by remember(board) { mutableStateOf<Map<String, SectionData>>(emptyMap()) }
-    LaunchedEffect(board, store.rev) { data = store.loadBoardData(board) }
+    val data = rememberBoardData(store, board, wait = false)
     var info by remember(board) { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -111,41 +122,13 @@ private fun BoardScreen(store: Store, board: Board) {
         board.description?.let { Dim(it, Modifier.padding(horizontal = 12.dp)) }
         board.filter?.let { Dim("Filter: $it", Modifier.padding(horizontal = 12.dp)) }
         if (board.sections.isEmpty()) Dim("This board has no sections yet. Edit it to add some.", Modifier.padding(horizontal = 12.dp))
-        stacked(board.sections).forEach { s -> BoardCard(store, s, data[s.id]) { info = s.id } }
+        BoardGrid(store, board.sections, data, onInfo = { info = it })
     }
 
     info?.let { id ->
         val section = board.sections.firstOrNull { it.id == id }
         val got = data[id]
         if (section != null && got != null) SectionInfoDialog(store, section, got) { info = null }
-    }
-}
-
-@Composable
-private fun BoardCard(store: Store, section: Section, data: SectionData?, onInfo: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 12.dp, top = 4.dp, end = 4.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(section.title, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant)
-                IconAction("info", "Information about ${section.title}", onInfo, enabled = data != null, tint = colors.onSurfaceVariant, size = 16.dp, box = 40.dp)
-            }
-            Column(Modifier.padding(end = 8.dp)) {
-                when (data) {
-                    null -> Dim("Loading…")
-                    is SectionData.Failed -> Text(data.message, color = colors.error, fontSize = 13.sp)
-                    is SectionData.Number -> {
-                        Text(formatBoardValue(data.answer.total, data.answer.unit), fontSize = 34.sp, fontWeight = FontWeight.Bold)
-                        Dim("${data.answer.tasks} ${if (data.answer.tasks == 1) "task" else "tasks"}")
-                    }
-                    is SectionData.Chart -> BoardChartView(orderChart(data.chart, section), section, extras.dark)
-                    is SectionData.Table -> {
-                        val e = remember(data) { Entry(0, CliInput(args = emptyList()), section.report ?: "next").also { it.result = data.result } }
-                        ResultBlock(store, e)
-                    }
-                }
-            }
-        }
     }
 }
 

@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,10 +38,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 
-// Changing a board on the phone (BoardsPage.svelte's edit mode, SectionForm.svelte, ColorPicker.svelte). The phone has one column, so
-// a section is moved up or down in the order rather than dragged on a grid; everything else is the web's: the name, description,
+// Changing a board on the phone (BoardsPage.svelte's edit mode, SectionForm.svelte, ColorPicker.svelte). The board is drawn as it will
+// look (BoardGrid.kt): a tap picks a card, its corner resizes it and the bar above moves it earlier or later; its settings are in a
+// pop-up, as the web has them in a panel at the side. Everything else is the web's: the name, description,
 // filter and address of the board, and for each section its title, type, filter, measure, grouping, order, series, colours and, for a
 // burndown, the state a series counts. The engine says whether the draft is valid (BoardsEdit.kt).
 
@@ -91,7 +95,7 @@ private fun Suggestions(names: List<String>, onPick: (String) -> Unit) {
     }
 }
 
-/** Edit a board: its settings, then its sections, then Save. */
+/** Edit a board: the board as it will look, a card picked by a tap, its settings in a pop-up, and Save. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
@@ -99,47 +103,79 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val d = editor.draft
     var confirmDelete by remember { mutableStateOf(false) }
+    // A board with nothing in it starts with its settings in view; one with cards, with the cards.
+    var showSettings by remember { mutableStateOf(d.sections.isEmpty()) }
+    val data = rememberBoardData(store, d, wait = true)
+    val picked = d.sections.firstOrNull { it.id == editor.selected }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Editing ${d.name}", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             TextButton(onDone, enabled = !editor.busy) { Text("Cancel") }
             Button({ scope.launch { if (editor.save()) onDone() } }, enabled = editor.valid && !editor.busy) { Text("Save") }
         }
 
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextBox("Name", d.name, { v -> editor.edit { it.copy(name = v) } })
-                TextBox("Description", d.description.orEmpty(), { v -> editor.edit { it.copy(description = v.ifEmpty { null }) } }, placeholder = "optional")
-                TextBox(
-                    "Address", d.id, { v -> editor.edit { it.copy(id = v.trim().lowercase()) } },
-                    mono = true, prefix = "/board/",
-                    error = editor.slugError,
-                )
-                if (editor.slugError == null) Dim("The last part of the board's link, so it can be shared: meghnaad://board/${d.id}", size = 11)
-                Labeled("Filter for every section") {
-                    CompletingField(d.filter.orEmpty(), { v -> editor.edit { it.copy(filter = v.ifEmpty { null }) } }, store.vocab, placeholder = "optional: project:Home")
+        // What the picked card can do stays in reach while the board scrolls.
+        Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), shape = RoundedCornerShape(12.dp), color = colors.surfaceContainerHigh) {
+            Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (picked == null) {
+                    Dim("Tap a card to pick it. Drag its corner to resize it.", Modifier.weight(1f).padding(vertical = 10.dp), size = 13)
+                } else {
+                    Text(picked.title.ifEmpty { "(no title)" }, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    IconAction("arrow-up", "Move ${picked.title} earlier", { editor.move(picked.id, -1) }, size = 18.dp, box = 44.dp)
+                    IconAction("arrow-down", "Move ${picked.title} later", { editor.move(picked.id, 1) }, size = 18.dp, box = 44.dp)
+                    IconAction("pencil", "Settings of ${picked.title}", { editor.opened = picked.id }, size = 18.dp, box = 44.dp)
+                    IconAction("trash-2", "Remove ${picked.title}", { editor.remove(picked.id) }, size = 18.dp, box = 44.dp, tint = colors.error)
                 }
             }
         }
 
-        Text("Sections", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        val ordered = stacked(d.sections)
-        if (ordered.isEmpty()) Dim("Nothing here yet. Add a section.")
-        ordered.forEachIndexed { i, s ->
-            SectionEditCard(store, editor, s, first = i == 0, last = i == ordered.lastIndex)
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth().clickable { showSettings = !showSettings }, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Board settings", Modifier.weight(1f).padding(vertical = 10.dp), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        LucideIcon(if (showSettings) "chevron-up" else "chevron-down", size = 18.dp)
+                    }
+                    if (showSettings) {
+                        TextBox("Name", d.name, { v -> editor.edit { it.copy(name = v) } })
+                        TextBox("Description", d.description.orEmpty(), { v -> editor.edit { it.copy(description = v.ifEmpty { null }) } }, placeholder = "optional")
+                        TextBox(
+                            "Address", d.id, { v -> editor.edit { it.copy(id = v.trim().lowercase()) } },
+                            mono = true, prefix = "/board/",
+                            error = editor.slugError,
+                        )
+                        if (editor.slugError == null) Dim("The last part of the board's link, so it can be shared: meghnaad://board/${d.id}", size = 11)
+                        Labeled("Filter for every section") {
+                            CompletingField(d.filter.orEmpty(), { v -> editor.edit { it.copy(filter = v.ifEmpty { null }) } }, store.vocab, placeholder = "optional: project:Home")
+                        }
+                        Spacer4()
+                    }
+                }
+            }
+
+            Dim("Add a card")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                SECTION_TYPES.forEach { t -> OutlinedButton({ editor.add(t.id) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("+ ${t.label}", fontSize = 12.sp) } }
+            }
+
+            if (d.sections.isEmpty()) Dim("Nothing here yet. Add a card.")
+            BoardGrid(
+                store, d.sections, data, onInfo = {},
+                edit = GridEdit(editor.selected, { editor.selected = it }, { editor.layout(it) }),
+            )
+
+            val problems = editor.check.errors
+            if (problems.isNotEmpty()) problems.forEach { Text("• $it", color = colors.error, fontSize = 12.sp) }
+            editor.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
+
+            TextButton({ confirmDelete = true }, enabled = !editor.busy) { Text("Delete this board", color = colors.error) }
         }
+    }
 
-        Dim("Add")
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            SECTION_TYPES.forEach { t -> OutlinedButton({ editor.add(t.id) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("+ ${t.label}", fontSize = 12.sp) } }
-        }
-
-        val problems = editor.check.errors
-        if (problems.isNotEmpty()) problems.forEach { Text("• $it", color = colors.error, fontSize = 12.sp) }
-        editor.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
-
-        TextButton({ confirmDelete = true }, enabled = !editor.busy) { Text("Delete this board", color = colors.error) }
+    // The settings of a card are in a pop-up over the board, not among the cards.
+    d.sections.firstOrNull { it.id == editor.opened }?.let { s ->
+        SectionDialog(store, s, onChange = { editor.update(it) }, onDismiss = { editor.opened = null })
     }
 
     if (confirmDelete) {
@@ -153,22 +189,18 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
     }
 }
 
+/** The settings of a card in a pop-up that fills the screen, so the form has room and the keyboard does not cover it. */
 @Composable
-private fun SectionEditCard(store: Store, editor: BoardEditor, s: Section, first: Boolean, last: Boolean) {
-    val open = editor.selected == s.id
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = if (open) 12.dp else 2.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).clickable { editor.selected = if (open) null else s.id }) {
-                    Text(s.title.ifEmpty { "(no title)" }, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
-                    Dim(SECTION_TYPES.firstOrNull { it.id == s.type }?.label ?: s.type, size = 11)
+private fun SectionDialog(store: Store, s: Section, onChange: (Section) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.title.ifEmpty { "Card" }, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Button(onDismiss) { Text("Done") }
                 }
-                IconAction("arrow-up", "Move ${s.title} up", { editor.move(s.id, -1) }, enabled = !first, size = 16.dp, box = 40.dp)
-                IconAction("arrow-down", "Move ${s.title} down", { editor.move(s.id, 1) }, enabled = !last, size = 16.dp, box = 40.dp)
-                IconAction(if (open) "chevron-up" else "pencil", "Settings of ${s.title}", { editor.selected = if (open) null else s.id }, size = 16.dp, box = 40.dp)
-                IconAction("trash-2", "Remove ${s.title}", { editor.remove(s.id) }, size = 16.dp, box = 40.dp, tint = MaterialTheme.colorScheme.error)
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) { SectionForm(store, s, onChange) }
             }
-            if (open) SectionForm(store, s) { editor.update(it) }
         }
     }
 }

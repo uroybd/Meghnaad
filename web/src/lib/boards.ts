@@ -10,6 +10,8 @@ import { splitWords } from './cmdline';
 import type { CliResponse, CliResult } from './types';
 
 export const COLUMNS = 12;
+/** The narrowest a section may be, in the 12 columns (one column of a phone's six or four). */
+export const MIN_WIDTH = 2;
 /** The height of one grid row, in pixels. */
 export const ROW_PX = 56;
 /** The gap between sections, in pixels. */
@@ -228,24 +230,28 @@ export function stacked(sections: Section[]): Section[] {
 }
 
 /**
- * Move `id` to just before or after `other` in the reading order, for a narrow screen where the places on the grid
- * mean nothing: the sections are laid in a single column in the new order, which the grid then keeps.
+ * `id` one place earlier (-1) or later (1) in the reading order. The sections keep their widths and are laid out again in the
+ * new order, so it holds on the 12 columns as on a phone.
  */
 export function reorder(sections: Section[], id: string, delta: -1 | 1): Section[] {
-  const order = stackOrder(sections);
-  const at = order.indexOf(id);
-  const to = at + delta;
-  if (at < 0 || to < 0 || to >= order.length) return sections;
-  [order[at], order[to]] = [order[to], order[at]];
+  return withCells(sections, callHelper<Cell[]>('board_reorder', cellsOf(sections), id, delta));
+}
+
+/** The columns a screen of this width (in pixels) has: 12, or 6, or 4 on a narrow one. */
+export const columnsFor = (narrow: boolean, small: boolean) => (narrow ? (small ? 4 : 6) : COLUMNS);
+
+/** The sections in reading order, placed on a screen of `cols` columns (`x` and `w` are that screen's columns). */
+export function flowed(sections: Section[], cols: number): Section[] {
   const by = new Map(sections.map((s) => [s.id, s]));
-  let y = 0;
-  return order.flatMap((i) => {
-    const s = by.get(i);
-    if (!s) return [];
-    const placed = { ...s, x: 0, y, w: COLUMNS };
-    y += s.h;
-    return [placed];
+  return callHelper<Cell[]>('board_flow', cellsOf(sections), cols).flatMap((c) => {
+    const s = by.get(c.id);
+    return s ? [{ ...s, x: c.x, y: c.y, w: c.w, h: c.h }] : [];
   });
+}
+
+/** One step of resizing `id` on a screen of `cols` columns: `dcols` of its columns wider, `dh` rows taller. */
+export function resizeFlow(sections: Section[], id: string, cols: number, dcols: number, dh: number): Section[] {
+  return withCells(sections, callHelper<Cell[]>('board_resize_flow', cellsOf(sections), id, cols, dcols, dh));
 }
 
 /** A board's slug is one lower case word: letters a to z, digits, `-` and `_`, up to 40 of them. */

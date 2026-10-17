@@ -12,14 +12,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 // Boards: named pages of sections (a number, a table or a chart each) kept in `settings.json` under `boards`
 // (web/src/lib/boards.ts). What a board file means (which sections are valid, the numbers a section shows, where each
 // sits) is the engine's (`tc_core::board`, through `callHelper`), which every front end shares; this file asks it and runs
-// the commands that give it tasks. The phone has one column, so it keeps the sections in reading order and ignores their
-// places on the grid (the web app's wide layout).
+// the commands that give it tasks. A phone has 4 or 6 columns instead of the grid's 12 (`flowed`): the sections keep their
+// reading order and each is as wide as its share of the row, so several numbers sit side by side.
 
 @Serializable
 data class Measure(val fn: String, val field: String? = null)
@@ -115,12 +116,56 @@ fun normalizeBoards(value: JsonElement): NormalizedBoards =
 
 // ---- The sections' order and slugs
 
+private fun cellsOf(sections: List<Section>) =
+    JsonArray(sections.map { buildJsonObject { put("id", it.id); put("x", it.x); put("y", it.y); put("w", it.w); put("h", it.h) } })
+
+/** The sections with the places in [cells] (a list of `{id, x, y, w, h}`), in the order the cells are in. */
+private fun withCells(sections: List<Section>, cells: JsonElement): List<Section> {
+    val by = sections.associateBy { it.id }
+    return cells.jsonArray.mapNotNull { c ->
+        val o = c as JsonObject
+        by[o.getValue("id").jsonPrimitive.content]?.copy(
+            x = o.getValue("x").jsonPrimitive.content.toInt(),
+            y = o.getValue("y").jsonPrimitive.content.toInt(),
+            w = o.getValue("w").jsonPrimitive.content.toInt(),
+            h = o.getValue("h").jsonPrimitive.content.toInt(),
+        )
+    }
+}
+
+/** The columns of the grid a board is saved on, and the narrowest a section may be on it. */
+const val BOARD_COLUMNS = 12
+const val MIN_WIDTH = 2
+
 /** The sections in the order a phone shows them: top to bottom, left to right. */
 fun stacked(sections: List<Section>): List<Section> {
-    val cells = JsonArray(sections.map { buildJsonObject { put("id", it.id); put("x", it.x); put("y", it.y); put("w", it.w); put("h", it.h) } })
-    val order = callHelper("board_stack", cells).jsonArray.map { it.jsonPrimitive.content }
+    val order = callHelper("board_stack", cellsOf(sections)).jsonArray.map { it.jsonPrimitive.content }
     val by = sections.associateBy { it.id }
     return order.mapNotNull { by[it] }
+}
+
+/** The columns a phone has for a screen [widthDp] wide: six, or four on a small one. */
+fun phoneColumns(widthDp: Float) = if (widthDp < 480f) 4 else 6
+
+/** The sections in reading order, placed on a screen of [cols] columns (`x` and `w` are that screen's columns, `y` and `h` rows). */
+fun flowed(sections: List<Section>, cols: Int): List<Section> =
+    withCells(sections, callHelper("board_flow", cellsOf(sections), JsonPrimitive(cols)))
+
+/** One step of resizing [id] on a screen of [cols] columns: [dcols] of its columns wider and [dh] rows taller, kept in the board's twelve. */
+fun resizeFlow(sections: List<Section>, id: String, cols: Int, dcols: Int, dh: Int): List<Section> =
+    withCells(sections, callHelper("board_resize_flow", cellsOf(sections), JsonPrimitive(id), JsonPrimitive(cols), JsonPrimitive(dcols), JsonPrimitive(dh)))
+
+/** [id] one place earlier (-1) or later (1) in the reading order, the sections keeping their widths. */
+fun reorder(sections: List<Section>, id: String, delta: Int): List<Section> =
+    withCells(sections, callHelper("board_reorder", cellsOf(sections), JsonPrimitive(id), JsonPrimitive(delta)))
+
+/** Where a new section [w] wide and [h] high goes: the first free place in reading order, under everything if there is none. */
+fun firstFree(sections: List<Section>, w: Int, h: Int): Section {
+    val r = callHelper("board_first_free", cellsOf(sections), JsonPrimitive(w), JsonPrimitive(h)).jsonObject
+    return Section(
+        id = "", x = r.getValue("x").jsonPrimitive.content.toInt(), y = r.getValue("y").jsonPrimitive.content.toInt(),
+        w = r.getValue("w").jsonPrimitive.content.toInt(), h = r.getValue("h").jsonPrimitive.content.toInt(), type = "",
+    )
 }
 
 val SLUG = Regex("^[a-z0-9_-]{1,40}$")

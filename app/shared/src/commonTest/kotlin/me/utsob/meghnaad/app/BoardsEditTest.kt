@@ -21,7 +21,8 @@ class BoardsEditTest {
     fun aNewSectionGoesUnderTheOthersWithWhatItNeeds() {
         val board = Board("b", "B", sections = listOf(sec("number", 0, 2), sec("bar", 2, 5, "bar")))
         val n = newSection(board, "number")
-        assertEquals(listOf("number-2", 7, 2), listOf(n.id, n.y, n.h))
+        // Where there is room: not beside the full-width sections, but under them.
+        assertEquals(listOf("number-2", 7, 2, 3), listOf(n.id, n.y, n.h, n.w))
         assertEquals(By(time = TimeBy("entry", "week")), newSection(board, "line").by)
         assertEquals(By(field = "project"), newSection(board, "donut").by)
         assertEquals("next", newSection(board, "table").report)
@@ -29,18 +30,33 @@ class BoardsEditTest {
     }
 
     @Test
-    fun theSectionsAreLaidOneUnderTheOtherInTheOrderGiven() {
-        val out = relayout(listOf(sec("a", 9, 2), sec("b", 4, 3), sec("c", 0, 1)))
-        assertEquals(listOf(0, 2, 5), out.map { it.y })
-        assertTrue(out.all { it.x == 0 && it.w == 12 })
+    fun aPhoneHasSeveralNumbersToARowAndNoSectionNarrowerThanTwoColumns() {
+        val row = listOf(
+            Section(id = "a", x = 0, y = 0, w = 3, h = 2, type = "number"),
+            Section(id = "b", x = 3, y = 0, w = 3, h = 2, type = "number"),
+            Section(id = "c", x = 6, y = 0, w = 3, h = 2, type = "number"),
+            Section(id = "d", x = 9, y = 0, w = 3, h = 2, type = "number"),
+            Section(id = "t", x = 0, y = 2, w = 12, h = 4, type = "table"),
+        )
+        assertEquals(listOf(0, 1, 2, 3, 0), flowed(row, 4).map { it.x })
+        assertEquals(listOf(1, 1, 1, 1, 4), flowed(row, 4).map { it.w })
+        // On six columns three fit and the fourth goes under them.
+        assertEquals(listOf(0 to 0, 2 to 0, 4 to 0, 0 to 2), flowed(row, 6).take(4).map { it.x to it.y })
+        // Resizing is in the phone's columns, kept in the board's twelve, and stops at one column.
+        assertEquals(6, resizeFlow(row, "a", 4, 1, 0).first { it.id == "a" }.w)
+        assertEquals(MIN_WIDTH, resizeFlow(row, "a", 6, -9, 0).first { it.id == "a" }.w)
+        // Only the height changing leaves the width as it was.
+        assertEquals(3 to 3, resizeFlow(row, "a", 4, 0, 1).first { it.id == "a" }.let { it.w to it.h })
     }
 
     @Test
     fun aSectionMovesUpOrDownAndStopsAtTheEnds() {
         val three = listOf(sec("a", 0, 2), sec("b", 2, 3), sec("c", 5, 1))
-        assertEquals(listOf("b", "a", "c"), reorder(three, "b", -1).map { it.id })
-        assertEquals(listOf("a", "c", "b"), reorder(three, "b", 1).map { it.id })
-        assertEquals(listOf(0, 3, 5), reorder(three, "b", -1).map { it.y })
+        assertEquals(listOf("b", "a", "c"), stacked(reorder(three, "b", -1)).map { it.id })
+        assertEquals(listOf("a", "c", "b"), stacked(reorder(three, "b", 1)).map { it.id })
+        assertEquals(listOf(0, 3, 5), stacked(reorder(three, "b", -1)).map { it.y })
+        // The widths are kept.
+        assertTrue(reorder(three, "b", -1).all { it.w == 12 })
         assertEquals(three, reorder(three, "a", -1))
         assertEquals(three, reorder(three, "c", 1))
         assertEquals(three, reorder(three, "zz", 1))
