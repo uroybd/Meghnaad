@@ -30,6 +30,19 @@ class BoardsEditTest {
     }
 
     @Test
+    fun tablesAndChartsStackOnAPhoneAndNumbersKeepTheirShare() {
+        val home = listOf(
+            Section(id = "table", x = 0, y = 0, w = 6, h = 8, type = "table"),
+            Section(id = "bar", x = 6, y = 0, w = 6, h = 4, type = "bar"),
+            Section(id = "pie", x = 6, y = 4, w = 3, h = 4, type = "pie"),
+            Section(id = "done", x = 9, y = 4, w = 3, h = 2, type = "number"),
+        )
+        // Half the grid or more is a whole row, less is half a row, and a number is its quarter.
+        assertEquals(listOf(4, 4, 2, 1), flowed(home, 4).map { it.w })
+        assertEquals(listOf(0 to 0, 0 to 8, 0 to 12, 2 to 12), flowed(home, 4).map { it.x to it.y })
+    }
+
+    @Test
     fun aPhoneHasSeveralNumbersToARowAndNoSectionNarrowerThanTwoColumns() {
         val row = listOf(
             Section(id = "a", x = 0, y = 0, w = 3, h = 2, type = "number"),

@@ -145,6 +145,21 @@ describe('the grid', () => {
     expect(flowed(row, 6).find((s) => s.id === 'd')).toMatchObject({ x: 0, y: 2, w: 2 });
   });
 
+  it('stacks tables and charts on a phone: half a row, or a whole one from half the grid', () => {
+    const home = [
+      sec('table', 0, 0, 6, 8, { type: 'table' }),
+      sec('bar', 6, 0, 6, 4, { type: 'bar' }),
+      sec('pie', 6, 4, 3, 4, { type: 'pie' }),
+      sec('done', 9, 4, 3, 2),
+    ];
+    expect(flowed(home, 4).map((s) => [s.id, s.x, s.y, s.w])).toEqual([
+      ['table', 0, 0, 4],
+      ['bar', 0, 8, 4],
+      ['pie', 0, 12, 2],
+      ['done', 2, 12, 1],
+    ]);
+  });
+
   it('is resized in the phone’s columns and kept in the board’s twelve, never under two', () => {
     const row = [sec('a', 0, 0, 3, 2), sec('b', 3, 0, 3, 2)];
     expect(resizeFlow(row, 'a', 4, 1, 1).find((s) => s.id === 'a')).toMatchObject({ w: 6, h: 3 });

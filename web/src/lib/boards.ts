@@ -147,6 +147,8 @@ export interface Chart {
 
 export interface Cell extends Rect {
   id: string;
+  /** A table or a chart: a phone gives it half a row or a whole one, not its share of a quarter. */
+  wide?: boolean;
 }
 
 export interface Normalized {
@@ -181,7 +183,14 @@ export function normalizeBoards(value: unknown): Normalized {
   return callHelper<Normalized>('board_normalize', value);
 }
 
-export const cellOf = (s: Rect & { id: string }): Cell => ({ id: s.id, x: s.x, y: s.y, w: s.w, h: s.h });
+export const cellOf = (s: Rect & { id: string; type?: string }): Cell => ({
+  id: s.id,
+  x: s.x,
+  y: s.y,
+  w: s.w,
+  h: s.h,
+  ...(s.type && s.type !== 'number' ? { wide: true } : {}),
+});
 export const cellsOf = (sections: Section[]): Cell[] => sections.map(cellOf);
 
 /** `sections` with the places in `cells` (matched by id). */

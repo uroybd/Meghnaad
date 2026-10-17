@@ -117,7 +117,13 @@ fun normalizeBoards(value: JsonElement): NormalizedBoards =
 // ---- The sections' order and slugs
 
 private fun cellsOf(sections: List<Section>) =
-    JsonArray(sections.map { buildJsonObject { put("id", it.id); put("x", it.x); put("y", it.y); put("w", it.w); put("h", it.h) } })
+    JsonArray(sections.map {
+        buildJsonObject {
+            put("id", it.id); put("x", it.x); put("y", it.y); put("w", it.w); put("h", it.h)
+            // A table or a chart: a phone gives it half a row or a whole one.
+            if (it.type != "number") put("wide", true)
+        }
+    })
 
 /** The sections with the places in [cells] (a list of `{id, x, y, w, h}`), in the order the cells are in. */
 private fun withCells(sections: List<Section>, cells: JsonElement): List<Section> {
