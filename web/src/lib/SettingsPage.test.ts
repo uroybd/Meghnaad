@@ -56,10 +56,11 @@ const button = (within: HTMLElement, text: string) =>
   [...within.querySelectorAll('button')].find((b) => b.textContent?.trim() === text) as HTMLButtonElement;
 
 describe('the Settings page', () => {
-  it('has a tab each for taskrc, tasksh, commands, hooks and urgency, and shows one at a time', async () => {
+  it('has a tab each for general, taskrc, tasksh, commands, hooks and urgency, and shows one at a time', async () => {
     app = mount(SettingsPage, { target: document.body });
     await tick();
     expect([...document.querySelectorAll('[role=tab]')].map((t) => t.textContent?.trim())).toEqual([
+      'General',
       'taskrc',
       'tasksh',
       'Commands',

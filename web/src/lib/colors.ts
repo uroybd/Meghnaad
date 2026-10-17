@@ -81,6 +81,50 @@ export function paletteHex(i: number, dark: boolean): string {
   return toHex([v, v, v]);
 }
 
+/** Taskwarrior's basic colours, by their place in the palette (a bright one is eight further on). */
+const BASIC = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'];
+
+/** The colours a chart may be given by name: the page's soft basic colours and their bright forms. Not black and white. */
+export const CHART_COLOR_NAMES: readonly string[] = [
+  ...BASIC.slice(1, 7),
+  ...BASIC.slice(1, 7).map((n) => `bright ${n}`),
+];
+
+/** The names a chart's series take by default, in turn: blue first, then the other hues, then bright forms. */
+const DEFAULT_SERIES = [
+  'blue',
+  'red',
+  'green',
+  'yellow',
+  'magenta',
+  'cyan',
+  'bright blue',
+  'bright red',
+  'bright green',
+];
+
+/** The page's colour for a basic colour name (`red`, `bright blue`), or null for what is not one. */
+export function namedColorHex(name: string, dark: boolean): string | null {
+  const n = name.trim().toLowerCase();
+  const bright = n.startsWith('bright ');
+  const i = BASIC.indexOf(bright ? n.slice(7) : n);
+  return i < 0 ? null : paletteHex(i + (bright ? 8 : 0), dark);
+}
+
+/** A chart colour as the page draws it: a name through the palette, a `#hex` as it is; nothing for neither. */
+export function chartColor(color: string | undefined, dark: boolean): string | undefined {
+  if (!color) return undefined;
+  return color.startsWith('#') ? color : (namedColorHex(color, dark) ?? undefined);
+}
+
+/** The colour the series (or slice) at `i` has when it names none. */
+export function defaultSeriesColor(i: number, dark: boolean): string {
+  return namedColorHex(DEFAULT_SERIES[i % DEFAULT_SERIES.length], dark) ?? '#808080';
+}
+
+/** The default colour's name, for the picker to say which one it is. */
+export const defaultSeriesName = (i: number): string => DEFAULT_SERIES[i % DEFAULT_SERIES.length];
+
 const mix = (a: string, b: string, weightOfA: number): string => {
   const [x, y] = [toRgb(a), toRgb(b)];
   return toHex([0, 1, 2].map((k) => x[k] * weightOfA + y[k] * (1 - weightOfA)) as RGB);

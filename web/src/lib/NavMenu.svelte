@@ -9,6 +9,7 @@
     Eye,
     EyeOff,
     Folder,
+    LayoutDashboard,
     ListChecks,
     Settings,
     Tag,
@@ -33,6 +34,7 @@
     { id: 'summary', label: 'Summary', icon: ChartColumn },
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'burndown', label: 'Burndown', icon: TrendingDown },
+    { id: 'boards', label: 'Boards', icon: LayoutDashboard },
     { id: 'console', label: 'Console', icon: Terminal },
   ] as const;
 

@@ -1,13 +1,15 @@
 <script lang="ts">
   import CommandsPanel from './CommandsPanel.svelte';
+  import GeneralPanel from './GeneralPanel.svelte';
   import HooksPanel from './HooksPanel.svelte';
   import { store } from './store.svelte';
   import TaskrcPanel from './TaskrcPanel.svelte';
   import TaskshPanel from './TaskshPanel.svelte';
   import UrgencyPanel from './UrgencyPanel.svelte';
 
-  type Tab = 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
+  type Tab = 'general' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
+    { id: 'general', label: 'General', hint: 'Where the app opens' },
     { id: 'taskrc', label: 'taskrc', hint: 'UDAs, reports, contexts, colours and the rest of your taskrc' },
     { id: 'tasksh', label: 'tasksh', hint: 'What tasksh review needs: the reviewed UDA and the _reviewed report' },
     { id: 'commands', label: 'Commands', hint: 'Words that stand for a command line, and show under ⋯ on a task' },
@@ -21,6 +23,7 @@
 
   // Each tab keeps its own edits while another is shown, and says so with a dot.
   let dirty = $state<Record<Tab, boolean>>({
+    general: false,
     taskrc: false,
     tasksh: false,
     commands: false,
@@ -77,6 +80,14 @@
   </div>
 
   <!-- They all stay mounted, so edits survive a trip to another tab. -->
+  <div
+    role="tabpanel"
+    id="settings-panel-general"
+    aria-labelledby="settings-tab-general"
+    hidden={store.settingsTab !== 'general'}
+  >
+    <GeneralPanel ondirty={(v) => (dirty.general = v)} />
+  </div>
   <div
     role="tabpanel"
     id="settings-panel-taskrc"

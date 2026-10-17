@@ -9,6 +9,7 @@
     CalendarDays,
     ChartColumn,
     Folder,
+    LayoutDashboard,
     Tag,
     ListChecks,
     Menu,
@@ -22,6 +23,7 @@
   } from './lib/icons';
   import NavMenu from './lib/NavMenu.svelte';
   import { pullToRefresh, PULL_THRESHOLD } from './lib/pullRefresh';
+  import BoardsPage from './lib/BoardsPage.svelte';
   import BurndownPage from './lib/BurndownPage.svelte';
   import CalendarPage from './lib/CalendarPage.svelte';
   import ConsoleView from './lib/ConsoleView.svelte';
@@ -37,7 +39,7 @@
   import SettingsPage from './lib/SettingsPage.svelte';
   import SummaryPage from './lib/SummaryPage.svelte';
   import { chartProps } from './lib/colors';
-  import { prefixFromPath, taskPath } from './lib/route';
+  import { parsePath, placePath, prefixFromPath } from './lib/route';
   import ReviewCard from './lib/ReviewCard.svelte';
   import { review } from './lib/review.svelte';
   import { scheme } from './lib/scheme.svelte';
@@ -52,34 +54,61 @@
   let setup = $state<SetupStatus | null>(null);
   let started = false;
 
-  // The address and the drawer say the same thing: `/task/<8 characters>` is a task's own address, so a link to it
-  // can be shared. It is followed only once the page has read the address (a link opened cold), then both ways.
+  // The address and the page say the same thing: every page has one (`lib/route.ts`), so a link can be shared and the back
+  // button goes where it did. It is followed only once the page has read the address (a link opened cold), then both ways.
   let routed = $state(false);
+  // A page that needs the reports or the boards waits for them, and for the start to have followed the address: until
+  // then the page is not where the address says, and the address must not be taken for a page that has been left.
+  let addressReady = $state(false);
 
   async function followAddress() {
     const canonical = await store.openFromAddress(location.pathname);
-    // A longer prefix, or a task that isn't there, is rewritten to the short address (or the front page).
+    // A longer prefix, or something that isn't there, is rewritten to the short address (or the front page).
     if (canonical && canonical !== location.pathname) history.replaceState(null, '', canonical);
     routed = true;
   }
 
-  // The drawer opened or moved to another task: that is a new place to go back from. It closed: the front page.
+  // The page moved: a new place to go back from. Not when it only found where it is (the front page, an address that was
+  // nothing), when the drawer closed over the page under it, or when Settings changed tab: those take the place of the
+  // address they leave.
   $effect(() => {
-    if (!routed) return;
-    const want = store.detail ? taskPath(store.detail.uuid) : null;
-    if (want) {
-      if (location.pathname !== want) history.pushState(null, '', want);
-    } else if (prefixFromPath(location.pathname)) {
-      history.replaceState(null, '', '/');
-    }
+    if (!routed || !(addressReady || store.detail)) return;
+    const want = placePath(store.place);
+    const here = location.pathname;
+    if (here === want) return;
+    const a = parsePath(here);
+    const finding = here === '/' || !a;
+    const closing = a?.page === 'task' && store.place.page !== 'task';
+    const tab = a?.page === 'settings' && store.place.page === 'settings';
+    if (finding || closing || tab) history.replaceState(null, '', want);
+    else history.pushState(null, '', want);
   });
+
+  /** The logo and the name go to the home page. Opened in a new tab (or with a modifier key) it is just the link to `/`. */
+  function goHome(e: MouseEvent) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button) return;
+    e.preventDefault();
+    store.goHome(true);
+    navOpen = false;
+  }
 
   function start() {
     setup = null;
     if (started) return;
     started = true;
     // `settings.json` after the settings, so the first screen doesn't wait behind it.
-    void store.loadConfig().then(() => store.loadAppSettings());
+    void store
+      .loadConfig()
+      .then(() => store.loadAppSettings())
+      // Where the address says wins over the home page (`/` is the home page). The reports and the boards had to be read
+      // first to know what the address names, so it is followed again now that they are.
+      .then(async () => {
+        if (!prefixFromPath(location.pathname)) {
+          const canonical = await store.openFromAddress(location.pathname);
+          if (canonical && canonical !== location.pathname) history.replaceState(null, '', canonical);
+        }
+        addressReady = true;
+      });
     void followAddress();
     // Reminders can wait for the table. The Worker handles one request at a time, so a poll sent
     // first would make the first screen wait behind it. If the table never loads (another view,
@@ -180,10 +209,10 @@
       >
         <Menu size={20} />
       </button>
-      <span class="brand">
+      <a class="brand" href="/" aria-label="Meghnaad, home page" title="Home page" onclick={goHome}>
         <img class="logo" src="/logo-64.png" width="28" height="28" alt="" />
         <strong class="name">Meghnaad</strong>
-      </span>
+      </a>
       <nav class="tabs" aria-label="View">
         <button class:on={store.view === 'tasks'} aria-label="Tasks" onclick={() => (store.view = 'tasks')}
           ><ListChecks size={15} /> <span class="lbl">Tasks</span></button
@@ -202,6 +231,9 @@
         >
         <button class:on={store.view === 'burndown'} aria-label="Burndown" onclick={() => (store.view = 'burndown')}
           ><TrendingDown size={15} /> <span class="lbl">Burndown</span></button
+        >
+        <button class:on={store.view === 'boards'} aria-label="Boards" onclick={() => (store.view = 'boards')}
+          ><LayoutDashboard size={15} /> <span class="lbl">Boards</span></button
         >
         <button class:on={store.view === 'console'} aria-label="Console" onclick={() => (store.view = 'console')}
           ><Terminal size={15} /> <span class="lbl">Console</span></button
@@ -283,7 +315,7 @@
       {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView
         />{:else if store.view === 'tags'}<TagsView />{:else if store.view === 'summary'}<SummaryPage
         />{:else if store.view === 'calendar'}<CalendarPage />{:else if store.view === 'burndown'}<BurndownPage
-        />{:else if store.view === 'console'}<ConsoleView />{/if}
+        />{:else if store.view === 'boards'}<BoardsPage />{:else if store.view === 'console'}<ConsoleView />{/if}
       <!-- Once opened it stays, hidden, so what was typed in a tab is still there when you come back. -->
       {#if seenSettings}<div hidden={store.view !== 'settings'}><SettingsPage /></div>{/if}
     </main>
@@ -366,6 +398,8 @@
     background: var(--panel);
   }
   .brand {
+    color: inherit;
+    text-decoration: none;
     display: inline-flex;
     align-items: center;
     gap: 10px;

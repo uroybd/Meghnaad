@@ -3,6 +3,7 @@
 //! through JNI, the page through WebAssembly) instead of keeping a copy of its own, so what it shows is what the engine
 //! means. They take nothing from the replica, so they never wait for a sync.
 
+use crate::board::layout::{Cell, Rect};
 use crate::dates::{format_vague, Clock, DateFormat};
 use crate::filter::split_words;
 
@@ -247,6 +248,41 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         )),
         "clear_groups" => json!(sort::clear_groups(&a.req::<Vec<Key>>(0)?)),
         "group_column" => json!(sort::group_column(&a.req::<Vec<Key>>(0)?)),
+        "board_normalize" => json!(crate::board::normalize(&a.req::<serde_json::Value>(0)?)),
+        "board_aggregate" => json!(crate::board::aggregate::aggregate(
+            &a.req::<String>(0)?,
+            &a.req::<crate::board::aggregate::Query>(1)?,
+            &a.req::<crate::board::aggregate::Ctx>(2)?
+        )?),
+        "board_chart" => json!(crate::board::aggregate::chart(
+            &a.req::<Vec<crate::board::aggregate::SeriesInput>>(0)?,
+            a.opt::<crate::board::aggregate::By>(1)?.as_ref(),
+            &a.req::<crate::board::aggregate::Ctx>(2)?
+        )?),
+        "board_place" => json!(crate::board::layout::place(
+            &a.req::<Vec<Cell>>(0)?,
+            &a.req::<String>(1)?,
+            a.req::<Rect>(2)?
+        )),
+        "board_move_by" => json!(crate::board::layout::move_by(
+            &a.req::<Vec<Cell>>(0)?,
+            &a.req::<String>(1)?,
+            a.req::<i32>(2)?,
+            a.req::<i32>(3)?
+        )),
+        "board_resize_by" => json!(crate::board::layout::resize_by(
+            &a.req::<Vec<Cell>>(0)?,
+            &a.req::<String>(1)?,
+            a.req::<i32>(2)?,
+            a.req::<i32>(3)?
+        )),
+        "board_compact" => json!(crate::board::layout::compact(&a.req::<Vec<Cell>>(0)?)),
+        "board_stack" => json!(crate::board::layout::stack(&a.req::<Vec<Cell>>(0)?)),
+        "board_first_free" => json!(crate::board::layout::first_free(
+            &a.req::<Vec<Cell>>(0)?,
+            a.req::<u32>(1)?,
+            a.req::<u32>(2)?
+        )),
         _ => return Err(format!("{name} is not a helper")),
     })
 }
@@ -398,5 +434,37 @@ mod tests {
         assert_eq!(vague(-3 * 86_400), "-3d");
         assert_eq!(vague(14 * 86_400), "2w");
         assert_eq!(vague(90 * 86_400), "3mo");
+    }
+
+    #[test]
+    fn the_board_helpers_answer_by_name() {
+        let ctx = r#"{"tz":0,"week_starts_monday":true,"now":1791376200}"#;
+        let tasks = r#"[{"project":"A"},{"project":"A"},{"project":"B"}]"#;
+        let args = format!(
+            r#"[{},{{"by":{{"field":"project"}}}},{ctx}]"#,
+            serde_json::to_string(tasks).unwrap()
+        );
+        let out: serde_json::Value = serde_json::from_str(&call("board_aggregate", &args)).unwrap();
+        assert_eq!(out["total"], 3.0);
+        assert_eq!(out["groups"][0]["label"], "A");
+        // A problem comes back as the helper's error, not a panic.
+        let bad = format!(
+            r#"[{},{{"measure":{{"fn":"sum"}}}},{ctx}]"#,
+            serde_json::to_string(tasks).unwrap()
+        );
+        assert!(call("board_aggregate", &bad).contains("need a field"));
+
+        let cells = r#"[{"id":"a","x":0,"y":0,"w":6,"h":2},{"id":"b","x":6,"y":0,"w":6,"h":2}]"#;
+        let placed: serde_json::Value = serde_json::from_str(&call(
+            "board_place",
+            &format!(r#"[{cells},"b",{{"x":0,"y":0,"w":6,"h":2}}]"#),
+        ))
+        .unwrap();
+        assert_eq!(placed[0]["y"], 2);
+        assert_eq!(call("board_stack", &format!("[{cells}]")), r#"["a","b"]"#);
+        assert_eq!(
+            call("board_normalize", "[[1]]"),
+            r#"{"boards":[],"errors":["board 1: not an object"]}"#
+        );
     }
 }

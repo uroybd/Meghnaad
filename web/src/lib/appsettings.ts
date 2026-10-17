@@ -2,8 +2,10 @@
 // text; this page reads it. So far it holds one thing: `taskCommands`, words you type (or click) that stand for a
 // whole command line.
 //
-//   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ] }
+//   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ],
+//     "boards": [ … ] }            (what a board is: boards.ts and tc_core::board)
 
+import { normalizeBoards, type Board } from './boards';
 import { ChainError, splitChain } from './compound';
 
 /** The most the Worker saves (it says so in the same words). */
@@ -18,11 +20,34 @@ export interface TaskCommand {
   icon?: string;
 }
 
+/** The page the app opens on: a report (`{ "report": "next" }`) or a board (`{ "board": "week" }`). Nothing set is `next`. */
+export type Homepage = { report: string } | { board: string };
+
+/** A saved `homepage` that is one of the two shapes; anything else is no choice (the app opens on `next`). */
+export function parseHomepage(v: unknown): Homepage | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const { report, board, ...more } = v as Record<string, unknown>;
+  if (Object.keys(more).length || (report === undefined) === (board === undefined)) return null;
+  if (typeof report === 'string' && report.trim()) return { report: report.trim() };
+  if (typeof board === 'string' && board.trim()) return { board: board.trim() };
+  return null;
+}
+
+export function sameHomepage(a: Homepage | null, b: Homepage | null): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export interface ParsedSettings {
   /** Every top-level key as it was, so what this page does not know about is kept when it saves. */
   raw: Record<string, unknown>;
   /** The valid task commands, in order. */
   commands: TaskCommand[];
+  /** The valid boards, in order, as the engine tidied them. */
+  boards: Board[];
+  /** Where the app opens, if the settings say. */
+  homepage: Homepage | null;
+  /** What is wrong with the boards, one line each; a board or section with a problem is left out. */
+  boardErrors: string[];
   /** What is wrong, one line each; a command with a problem is left out. */
   errors: string[];
 }
@@ -56,7 +81,7 @@ export function commandProblem(command: string): string | null {
 }
 
 export function parseSettings(text: string): ParsedSettings {
-  const out: ParsedSettings = { raw: {}, commands: [], errors: [] };
+  const out: ParsedSettings = { raw: {}, commands: [], boards: [], homepage: null, boardErrors: [], errors: [] };
   if (!text.trim()) return out;
   let value: unknown;
   try {
@@ -70,6 +95,12 @@ export function parseSettings(text: string): ParsedSettings {
     return out;
   }
   out.raw = value as Record<string, unknown>;
+  out.homepage = parseHomepage(out.raw.homepage);
+  if (out.raw.boards !== undefined) {
+    const n = normalizeBoards(out.raw.boards);
+    out.boards = n.boards;
+    out.boardErrors = n.errors;
+  }
   const list = out.raw.taskCommands;
   if (list === undefined) return out;
   if (!Array.isArray(list)) {
@@ -102,5 +133,32 @@ export function serializeSettings(raw: Record<string, unknown>, commands: TaskCo
   const next: Record<string, unknown> = { ...rest };
   if (commands.length)
     next.taskCommands = commands.map(({ name, command, icon }) => (icon ? { name, command, icon } : { name, command }));
+  return JSON.stringify(next, null, 2) + '\n';
+}
+
+/**
+ * The text to save: the other top-level keys as they were, and `boards` as given (none leaves the key out). A `homepage` of
+ * `undefined` is left as it was; `null` takes it out, and a value sets it (a board whose slug changed must take the home page
+ * with it).
+ */
+export function serializeBoards(raw: Record<string, unknown>, boards: Board[], homepage?: Homepage | null): string {
+  const { boards: _old, boardsVersion: _v, ...rest } = raw;
+  const next: Record<string, unknown> = { ...rest };
+  if (homepage !== undefined) {
+    delete next.homepage;
+    if (homepage) next.homepage = homepage;
+  }
+  if (boards.length) {
+    next.boardsVersion = 1;
+    next.boards = boards;
+  }
+  return JSON.stringify(next, null, 2) + '\n';
+}
+
+/** The text to save: the other top-level keys as they were, and `homepage` as given (none leaves the key out). */
+export function serializeHomepage(raw: Record<string, unknown>, homepage: Homepage | null): string {
+  const { homepage: _old, ...rest } = raw;
+  const next: Record<string, unknown> = { ...rest };
+  if (homepage) next.homepage = homepage;
   return JSON.stringify(next, null, 2) + '\n';
 }

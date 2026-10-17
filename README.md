@@ -52,6 +52,9 @@ tasks on the phone and syncs straight with your bucket.
   Lucide. It works typed (`3 fail`, `project:Home fail`) and from a **⋯** menu on a task and on the selected tasks. Kept in
   the app's own `settings.json`.
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
+- **Boards.** Pages of your own made of numbers, tables and charts (bars, stacked or side by side, lines, areas, pies,
+  donuts, radar: a sum of estimates by project, what you finish per week, split by outcome), each with its own filter, laid out on a 12-column grid that you drag and resize, and one column on a phone.
+  Kept in the app's own `settings.json` ([Boards](docs/using.md#boards)).
 - **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions in a script you edit in Settings,
   kept in your bucket and run on the Worker, or on the phone in the Android app ([Hooks](#hooks)).
 - **Works on a phone.** The layout adapts (a menu for the pages, tasks as cards with their marks, time tracking, reminders,
@@ -290,7 +293,7 @@ the secrets for hooks never are. Everything about it, including building it your
 
 ## Using it
 
-The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown** and **Console**, and **Settings**
+The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown**, **Boards** and **Console**, and **Settings**
 (the taskrc, tasksh, your own commands, hooks and urgency). Anything you can click
 you can type:
 

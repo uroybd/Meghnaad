@@ -6,6 +6,39 @@ returns, a small Rust → WASM Cloudflare Worker (`crates/worker`) that checks A
 versions, and an R2 bucket as the TaskChampion store. The README and `docs/architecture.md` explain the design; this
 file is how to change it.
 
+## Where a feature goes
+
+Two layers. Ask which one the feature is about.
+
+1. **Taskwarrior and TaskChampion** (`crates/tc-core`, carried by `crates/browser`, `crates/worker`, `crates/android` and
+   the bucket). It does what the real `task` 3.5.0 CLI does, command for command: what a filter, report, date, urgency,
+   recurrence, confirmation, `calc`, setting or hook means, and the sync format. Check against the real `task`; where it
+   is odd, so are we. The Worker, the browser engine, the phone library and the bucket only host this layer (storage,
+   sync, the secret, running hooks) and add no behaviour.
+2. **UI** (`web/`, `app/`). Everything a TUI or a shell adds around `task`, and everything custom: screens, the console,
+   task commands, `&&` `||` `;` chains, bulk actions, review, reminders, themes, routes. It uses the task CLI as its
+   backend to our instance: it sends command lines (and `_` hidden commands, as Taskwarrior has) and draws what comes
+   back. It never reaches into the replica and never re-implements layer 1.
+
+Test: would the real `task` do this with the same command line? Layer 1. Would a person do it with a shell alias, tasksh
+or a TUI around `task`? Layer 2.
+
+- A UI feature never changes how the engine runs a command. If it needs structured data, use `<filter> export`, which
+  gives Taskwarrior's own JSON, and work from that in the UI; `_rows` is fine too when it already has everything the
+  screen needs. Don't add another command of our own for a screen. The existing app-only ones (`_rows`, `_history`,
+  `_remind`, `_names`) stay as they are; nothing needs migrating.
+- `tc_core::helpers` (a date in `dateformat`, a line split as the engine reads it, completion, a report's cells) is
+  layer 1 knowledge handed to both UIs, so they never copy it. Shell-level logic does not go there, with the exceptions
+  below.
+- Layer 2 is per front end: the web app's logic is ported to Kotlin with its tests, not shared through Rust. Two
+  exceptions, because they are pure functions both UIs would otherwise write twice and drift apart on: the header-sort
+  helpers (`sortspec`) and boards (`tc_core::board`: what a saved board means, the numbers a section shows from an
+  `export`, and the grid layout), both reached through `helpers`. Sorting and trimming a chart's groups, and all drawing,
+  stay in each UI.
+- Charts are drawn by a charting library on each front end (Chart.js on the web), never by hand; the table is the one thing
+  that stays ours. The engine's `Chart` (labels and a dataset for each series, `tc_core::board::aggregate::chart`) is the
+  shared contract, shaped like Chart.js's `data`: a front end maps it to its library and never computes chart data itself.
+
 ## Before you say a change is done
 
 Format, lint and test, in that order. CI runs the same checks and fails on any of them.
@@ -41,6 +74,8 @@ run `npm run format` after editing any code, not just at the end.
 
 - **Follow Taskwarrior 3.5.0, not a lookalike.** For behaviour (filters, dates, reports, confirmations, `calc`, settings)
   read the C++ first and check against the real `task` run on a scratch `TASKRC` and data directory. Don't guess.
+- **Every page has an address** (`web/src/lib/route.ts`, `Place`): a new page or view adds its place, a round-trip test and a
+  row in the address table of `docs/using.md`, so it can be linked and the back button works.
 - **Docs move with the code.** A new or changed feature updates `docs/using.md`, and `docs/taskrc-support.md` for a
   setting, `docs/architecture.md` for a module, and the README if it is user-visible. Keep the Mermaid diagram identical
   in the README and `docs/architecture.md`.

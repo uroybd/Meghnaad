@@ -1,9 +1,18 @@
 import { engine } from '../engine/client.svelte';
-import { ApiError, getAppSettings, getConfig, runCli, type Answers, type CliInput } from './api';
-import { parseSettings, type ParsedSettings, type TaskCommand } from './appsettings';
+import { ApiError, getAppSettings, getConfig, putAppSettings, runCli, type Answers, type CliInput } from './api';
+import {
+  MAX_SETTINGS_BYTES,
+  parseSettings,
+  serializeBoards,
+  serializeHomepage,
+  type Homepage,
+  type ParsedSettings,
+  type TaskCommand,
+} from './appsettings';
+import type { Board } from './boards';
 import { lucide } from './lucideLib.svelte';
 import { isHiddenReport, offeredReports as pickable } from './reportList';
-import { prefixFilter, prefixFromPath, taskPath } from './route';
+import { parsePath, placePath, prefixFilter, taskPath, type Place, type SettingsTab } from './route';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
 import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
 import { runSequence, type Joiner, type Statement } from './compound';
@@ -83,9 +92,13 @@ class Store {
   entries = $state<Entry[]>([]);
   /** The live table in the Tasks view: the report currently in focus. */
   live = $state<Entry | null>(null);
-  view = $state<'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'console' | 'settings'>('tasks');
+  view = $state<
+    'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'boards' | 'console' | 'settings'
+  >('tasks');
+  /** The board the Boards page shows (null: the list of boards). */
+  boardId = $state<string | null>(null);
   /** The tab the Settings page shows. */
-  settingsTab = $state<'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency'>('taskrc');
+  settingsTab = $state<SettingsTab>('taskrc');
   /** The app's own `settings.json`, read (null until it has been). */
   appSettings = $state<ParsedSettings | null>(null);
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
@@ -145,6 +158,8 @@ class Store {
 
   /** The task commands in `settings.json`: words that stand for a command line, and buttons that run it. */
   taskCommands = $derived<TaskCommand[]>(this.appSettings?.commands ?? []);
+  /** The boards in `settings.json`: pages of numbers, tables and charts. */
+  boards = $derived<Board[]>(this.appSettings?.boards ?? []);
   reports = $derived<ReportMeta[]>(this.config?.reports ?? []);
   /** Reports named `_something` are hidden helpers: left out of the lists to pick from unless this is on. */
   showHiddenReports = $state(readFlag(SHOW_HIDDEN_KEY));
@@ -206,6 +221,59 @@ class Store {
     } catch {
       this.appSettings ??= parseSettings('');
     }
+  }
+
+  /** Where the app opens: a report or a board of `settings.json`, or `next` when it says nothing. */
+  homepage = $derived<Homepage | null>(this.appSettings?.homepage ?? null);
+
+  /**
+   * Open the home page the settings choose. Unforced, only from the front page: a person who has already gone somewhere (or
+   * came by the address of a task) is left there, and nothing chosen is `next`, which is where the app begins. Forced, it is
+   * where the front-page address (`/`) goes whatever was shown. A report or board that is not there any more is no choice.
+   */
+  goHome(force = false) {
+    if (!force && (this.view !== 'tasks' || this.detail || !this.homepage)) return;
+    // Going home leaves a task's drawer.
+    if (force) this.detail = null;
+    const home = this.homepage;
+    if (home && 'board' in home && this.boards.some((b) => b.id === home.board)) {
+      this.boardId = home.board;
+      this.view = 'boards';
+    } else if (home && 'report' in home && this.reports.some((r) => r.name === home.report)) {
+      this.report = home.report;
+      this.view = 'tasks';
+    } else if (force) {
+      this.report = 'next';
+      this.view = 'tasks';
+    }
+  }
+
+  /** Where the app is, as an address names it (`placePath`): the task in the drawer if one is open, else the page. */
+  place = $derived<Place>(
+    this.detail
+      ? { page: 'task', prefix: this.detail.uuid.slice(0, 8) }
+      : this.view === 'tasks'
+        ? { page: 'tasks', report: this.report }
+        : this.view === 'boards'
+          ? { page: 'boards', board: this.boardId }
+          : this.view === 'settings'
+            ? { page: 'settings', tab: this.settingsTab }
+            : { page: this.view },
+  );
+
+  /** Save where the app opens (`null`: `next`), the rest of `settings.json` as it was. Throws what the server refused. */
+  async saveHomepage(homepage: Homepage | null) {
+    await putAppSettings(serializeHomepage(this.appSettings?.raw ?? {}, homepage));
+    await this.loadAppSettings();
+  }
+
+  /** Save the boards (the rest of `settings.json` as it was) and read them back. Throws what the server refused. */
+  async saveBoards(boards: Board[], homepage?: Homepage | null) {
+    const text = serializeBoards(this.appSettings?.raw ?? {}, boards, homepage);
+    if (new Blob([text]).size > MAX_SETTINGS_BYTES)
+      throw new Error(`The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.`);
+    await putAppSettings(text);
+    await this.loadAppSettings();
   }
 
   async loadConfig() {
@@ -289,7 +357,7 @@ class Store {
   }
 
   /** Open the Settings page, on one of its tabs. */
-  openSettings(tab: 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency' = this.settingsTab) {
+  openSettings(tab: SettingsTab = this.settingsTab) {
     this.settingsTab = tab;
     this.view = 'settings';
   }
@@ -642,15 +710,18 @@ class Store {
   }
 
   /**
-   * Show what the address says: a task's address opens its drawer, any other closes it. Returns the address to
-   * put in the bar when the task was found by a longer or differently written prefix (`undefined` otherwise).
+   * Show what the address says: a task's address opens its drawer, any other closes it and goes to the page it names. Returns
+   * the address to put in the bar when it was written another way (a task found by a longer prefix) or names something that is
+   * not there (`/`), and `undefined` otherwise. The pages that need the reports or the boards say nothing until those have
+   * been read; the start asks again when they have.
    */
   async openFromAddress(path: string): Promise<string | undefined> {
-    const prefix = prefixFromPath(path);
-    if (!prefix) {
+    const place = parsePath(path);
+    if (place?.page !== 'task') {
       this.detail = null;
-      return undefined;
+      return this.openPage(place);
     }
+    const prefix = place.prefix;
     // Already showing it (going back to a task that is open): nothing to look up.
     if (
       this.detail &&
@@ -672,6 +743,46 @@ class Store {
     }
     this.detail = { uuid: found[0], from: null };
     return taskPath(found[0]);
+  }
+
+  /** Go to a page by its place (not a task's): `null` is the front page, which is the home page. */
+  private openPage(place: Place | null): string | undefined {
+    if (!place) {
+      // Which home page needs the reports and the boards.
+      if (this.config && this.appSettings) this.goHome(true);
+      return undefined;
+    }
+    switch (place.page) {
+      case 'tasks':
+        if (!this.config) return undefined;
+        if (!this.reports.some((r) => r.name === place.report)) {
+          this.notify(`There is no report called ${place.report}.`, 'err');
+          this.goHome(true);
+          return '/';
+        }
+        this.report = place.report;
+        this.view = 'tasks';
+        return placePath(place);
+      case 'boards':
+        if (!this.appSettings) return undefined;
+        if (place.board !== null && !this.boards.some((b) => b.id === place.board)) {
+          this.notify(`There is no board called ${place.board}.`, 'err');
+          this.goHome(true);
+          return '/';
+        }
+        this.boardId = place.board;
+        this.view = 'boards';
+        return place.board === null ? undefined : placePath(place);
+      case 'settings':
+        if (place.tab) this.settingsTab = place.tab;
+        this.view = 'settings';
+        return undefined;
+      case 'task':
+        return undefined;
+      default:
+        this.view = place.page;
+        return undefined;
+    }
   }
 }
 
