@@ -4,6 +4,7 @@
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
   import { udaLabel } from './format';
+  import type { FormSeed } from './addPreview';
   import { newlineOnEnter, submitOnEnter } from './multiline';
   import { CornerUpLeft, Lock, Repeat, RotateCcw, X } from './icons';
   import { visibleNotes } from './journal';
@@ -16,13 +17,14 @@
   let {
     row = null,
     from = null,
-    initialDescription = '',
+    seed = null,
     onclose,
     onadded,
   }: {
     row?: Row | null;
     from?: Entry | null;
-    initialDescription?: string;
+    /** Add mode: the fields a one-line add broke the text into. */
+    seed?: FormSeed | null;
     onclose: () => void;
     /** Add mode: "Add and another" asks the parent to re-mount a fresh form. */
     onadded?: (again: boolean) => void;
@@ -44,10 +46,11 @@
     return u.type === 'date' && raw ? wire(Number(raw)) : raw;
   }
 
-  // What the fields start as. Edit diffs against the task; add diffs against "empty" (plus UDA defaults).
+  // What the fields are measured against. Edit diffs against the task; add diffs against "empty" (plus UDA defaults), so
+  // what a seed filled in is sent too.
   /* svelte-ignore state_referenced_locally */
   const start = {
-    description: row?.description ?? initialDescription,
+    description: row?.description ?? '',
     project: row?.project ?? '',
     priority: row?.priority ?? '',
     due: wire(row?.due),
@@ -59,28 +62,31 @@
   };
   /* svelte-ignore state_referenced_locally */
   const udaStart = Object.fromEntries(Object.values(store.config?.config.udas ?? {}).map((u) => [u.name, uda(u, row)]));
+  // What the fields hold when the form opens: the task, or the seed (the same as `start` where there is none).
+  /* svelte-ignore state_referenced_locally */
+  const init = { ...start, ...(adding ? seed : null) };
 
   /* svelte-ignore state_referenced_locally */
-  let description = $state(start.description);
+  let description = $state(init.description);
   /* svelte-ignore state_referenced_locally */
-  let project = $state(start.project);
+  let project = $state(init.project);
   /* svelte-ignore state_referenced_locally */
-  let priority = $state(start.priority);
+  let priority = $state(init.priority);
   /* svelte-ignore state_referenced_locally */
-  let due = $state(start.due);
+  let due = $state(init.due);
   /* svelte-ignore state_referenced_locally */
-  let wait = $state(start.wait);
+  let wait = $state(init.wait);
   /* svelte-ignore state_referenced_locally */
-  let scheduled = $state(start.scheduled);
+  let scheduled = $state(init.scheduled);
   /* svelte-ignore state_referenced_locally */
-  let until = $state(start.until);
+  let until = $state(init.until);
   /* svelte-ignore state_referenced_locally */
-  let tags = $state(start.tags);
+  let tags = $state(init.tags);
   // Repeat: a preset, or "custom" with a free-text period (`3d`, `P2W`, ...). The server validates it.
   /* svelte-ignore state_referenced_locally */
-  let recurChoice = $state(start.recur === '' ? '' : presetFor(start.recur) || 'custom');
+  let recurChoice = $state(init.recur === '' ? '' : presetFor(init.recur) || 'custom');
   /* svelte-ignore state_referenced_locally */
-  let recurCustom = $state(presetFor(start.recur) ? '' : start.recur);
+  let recurCustom = $state(presetFor(init.recur) ? '' : init.recur);
   const recur = $derived(recurChoice === 'custom' ? recurCustom.trim() : recurChoice);
   // Instances follow their template: its period is shown but changed on the template.
   /* svelte-ignore state_referenced_locally */
@@ -90,10 +96,11 @@
   const template = row?.status === 'recurring';
   const needsDue = $derived(!instance && recur !== '' && due === '');
   /* svelte-ignore state_referenced_locally */
-  let udaValues = $state<Record<string, string>>({ ...udaStart });
+  let udaValues = $state<Record<string, string>>({ ...udaStart, ...(adding ? seed?.udas : null) });
   let startNow = $state(false);
   let removedDeps = $state<string[]>([]);
-  let newDep = $state('');
+  /* svelte-ignore state_referenced_locally */
+  let newDep = $state(adding ? (seed?.depends ?? '') : '');
   let note = $state('');
   let busy = $state(false);
   let dialog: HTMLDialogElement;
@@ -123,6 +130,7 @@
     for (const u of defined) set(u.name, udaValues[u.name] ?? '', udaStart[u.name] ?? '');
     for (const d of removedDeps) a.push(`depends:-${d}`);
     for (const d of newDep.split(/[\s,]+/).filter(Boolean)) a.push(`depends:${d}`);
+    if (adding) a.push(...(seed?.carried ?? []));
     // Starting is a separate step after adding (see save): the `start` command also journals.
     return a;
   }

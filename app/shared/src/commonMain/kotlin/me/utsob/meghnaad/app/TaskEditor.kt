@@ -47,7 +47,7 @@ import androidx.compose.ui.window.DialogProperties
  * What the form holds and what it makes of it. One form for both jobs: [row] set = edit that task, null = create a new one.
  * Either way it only sends what changed, as `modify` or `add` arguments (the state of TaskEditor.svelte).
  */
-class EditorState(private val store: Store, val row: Row?, initialDescription: String) {
+class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = null) {
     val adding = row == null
     private val defs = store.config?.config?.udas ?: emptyMap()
     val defined: List<UdaDef> = defs.values.toList()
@@ -61,8 +61,9 @@ class EditorState(private val store: Store, val row: Row?, initialDescription: S
         return if (u.type == "date" && raw.isNotEmpty()) wire(raw.toDoubleOrNull()?.toLong()) else raw
     }
 
-    // What the fields start as. Edit diffs against the task; add diffs against "empty" (plus UDA defaults).
-    private val startDescription = row?.description ?: initialDescription
+    // What the fields are measured against. Edit diffs against the task; add diffs against "empty" (plus UDA defaults), so what
+    // a seed (a line broken into fields by the quick add) filled in is sent too.
+    private val startDescription = row?.description ?: ""
     private val startProject = row?.project ?: ""
     private val startPriority = row?.priority ?: ""
     private val startDue = wire(row?.due)
@@ -73,18 +74,22 @@ class EditorState(private val store: Store, val row: Row?, initialDescription: S
     private val startRecur = row?.recur ?: ""
     private val udaStart = defined.associate { it.name to uda(it) }
 
-    var description by mutableStateOf(startDescription)
-    var project by mutableStateOf(startProject)
-    var priority by mutableStateOf(startPriority)
-    var due by mutableStateOf(startDue)
-    var wait by mutableStateOf(startWait)
-    var scheduled by mutableStateOf(startScheduled)
-    var until by mutableStateOf(startUntil)
-    var tags by mutableStateOf(startTags)
+    // What the fields hold when the form opens: the task, or the seed.
+    private val init = if (adding) seed else null
+    private val initRecur = init?.recur ?: startRecur
+
+    var description by mutableStateOf(init?.description ?: startDescription)
+    var project by mutableStateOf(init?.project ?: startProject)
+    var priority by mutableStateOf(init?.priority ?: startPriority)
+    var due by mutableStateOf(init?.due ?: startDue)
+    var wait by mutableStateOf(init?.wait ?: startWait)
+    var scheduled by mutableStateOf(init?.scheduled ?: startScheduled)
+    var until by mutableStateOf(init?.until ?: startUntil)
+    var tags by mutableStateOf(init?.tags ?: startTags)
 
     // Repeat: a preset, or "custom" with a free-text period (`3d`, `P2W`, …). The engine validates it.
-    var recurChoice by mutableStateOf(if (startRecur.isEmpty()) "" else presetFor(startRecur).ifEmpty { "custom" })
-    var recurCustom by mutableStateOf(if (presetFor(startRecur).isNotEmpty()) "" else startRecur)
+    var recurChoice by mutableStateOf(if (initRecur.isEmpty()) "" else presetFor(initRecur).ifEmpty { "custom" })
+    var recurCustom by mutableStateOf(if (presetFor(initRecur).isNotEmpty()) "" else initRecur)
     val recur: String get() = if (recurChoice == "custom") recurCustom.trim() else recurChoice
 
     /** Instances follow their template: its period is shown but changed on the template. */
@@ -93,10 +98,11 @@ class EditorState(private val store: Store, val row: Row?, initialDescription: S
     /** A template cannot stop repeating (Taskwarrior refuses); delete it instead. */
     val template = row?.status == "recurring"
     val needsDue: Boolean get() = !instance && recur.isNotEmpty() && due.isEmpty()
-    val udaValues = mutableStateMapOf<String, String>().also { it.putAll(udaStart) }
+    val udaValues = mutableStateMapOf<String, String>().also { it.putAll(udaStart); it.putAll(init?.udas ?: emptyMap()) }
     var startNow by mutableStateOf(false)
     var removedDeps by mutableStateOf(emptyList<String>())
-    var newDep by mutableStateOf("")
+    var newDep by mutableStateOf(init?.depends ?: "")
+    private val carried = init?.carried ?: emptyList()
     var note by mutableStateOf("")
     var busy by mutableStateOf(false)
 
@@ -120,6 +126,7 @@ class EditorState(private val store: Store, val row: Row?, initialDescription: S
         for (u in defined) set(u.name, udaValues[u.name] ?: "", udaStart[u.name] ?: "")
         for (d in removedDeps) a += "depends:-$d"
         for (d in newDep.split(Regex("[\\s,]+")).filter { it.isNotEmpty() }) a += "depends:$d"
+        if (adding) a += carried
         // Starting is a separate step after adding (see save): the `start` command also journals.
         return a
     }
@@ -146,8 +153,8 @@ class EditorState(private val store: Store, val row: Row?, initialDescription: S
 
 /** The form, as a screen of its own over the page (TaskEditor.svelte). */
 @Composable
-fun TaskEditor(store: Store, row: Row?, from: Entry?, initialDescription: String = "", onClose: () -> Unit, onAdded: (again: Boolean) -> Unit = { onClose() }) {
-    val st = remember(row?.uuid, initialDescription) { EditorState(store, row, initialDescription) }
+fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, onClose: () -> Unit, onAdded: (again: Boolean) -> Unit = { onClose() }) {
+    val st = remember(row?.uuid, seed) { EditorState(store, row, seed) }
     val colors = MaterialTheme.colorScheme
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Sheet(drawer = false, width = 760.dp, color = colors.surfaceContainerLow) {

@@ -28,6 +28,7 @@ pub mod model;
 pub mod modify;
 pub mod names;
 pub(crate) mod ordered;
+pub mod preview;
 pub mod rc_url;
 pub mod recur;
 pub mod report;

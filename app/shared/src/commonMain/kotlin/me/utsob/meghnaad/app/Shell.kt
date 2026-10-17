@@ -88,9 +88,9 @@ private val TABS = listOf(
 )
 
 /**
- * The layout with room for it (App.svelte, over 760 px): the bar along the top with a tab for each page, the list of reports and
- * the quick add in a sidebar that is always there, the page beside it and the prompt under both. There is no menu button and no
- * floating + (the quick add is in the sidebar).
+ * The layout with room for it (App.svelte, over 760 px): the bar along the top with a tab for each page, the list of reports in
+ * a sidebar that is always there, the page beside it and the prompt under both. There is no menu button; the floating + is the
+ * same as on a phone.
  */
 @Composable
 private fun WideShell(store: Store, labels: Boolean, buttonLabels: Boolean) {
@@ -100,11 +100,13 @@ private fun WideShell(store: Store, labels: Boolean, buttonLabels: Boolean) {
         Banners(store)
         Row(Modifier.weight(1f).fillMaxWidth()) {
             Column(Modifier.width(270.dp).fillMaxHeight().background(colors.surfaceContainer).padding(top = 12.dp)) {
-                QuickAdd(store)
                 NavMenu(store, onNavigate = {}, pages = false)
             }
             VerticalDivider(color = colors.outlineVariant)
-            Box(Modifier.weight(1f).fillMaxHeight()) { MainView(store) }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                MainView(store)
+                if (store.view != View.Console) NewTaskButton(store, Modifier.align(Alignment.BottomEnd))
+            }
         }
         if (store.view != View.Console) Dock(store)
     }
@@ -164,7 +166,6 @@ private fun PhoneShell(store: Store) {
                     Text("Meghnaad", Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     IconAction("x", "Close menu", close)
                 }
-                QuickAdd(store)
                 NavMenu(store, onNavigate = close)
             }
         },
@@ -236,7 +237,7 @@ private fun Banners(store: Store) {
 @Composable
 private fun NewTaskButton(store: Store, modifier: Modifier) {
     FloatingActionButton(
-        onClick = { store.adding = AddRef("", (store.adding?.n ?: 0) + 1) },
+        onClick = { store.quickAdd() },
         modifier = modifier.padding(16.dp),
         containerColor = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -342,11 +343,15 @@ private fun Dialogs(store: Store) {
     store.editing?.let { e -> key(e.row.uuid) { TaskEditor(store, e.row, e.from, onClose = { store.closeEditor() }) } }
     store.adding?.let { a ->
         key(a.n) {
-            TaskEditor(
-                store, null, store.live, a.description,
-                onClose = { store.adding = null },
-                onAdded = { again -> store.adding = if (again) AddRef("", a.n + 1) else null },
-            )
+            if (a.quick) {
+                QuickAdd(store, store.live, a.line, onClose = { store.adding = null })
+            } else {
+                TaskEditor(
+                    store, null, store.live, a.seed,
+                    onClose = { store.adding = null },
+                    onAdded = { again -> if (again) store.addWithForm() else store.adding = null },
+                )
+            }
         }
     }
     // The detail of a task is the whole screen (a phone's drawer); the editor opens over it.
