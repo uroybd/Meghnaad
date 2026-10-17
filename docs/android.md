@@ -39,7 +39,7 @@ cannot: reminders that come with the app closed, and the widgets.
   it would do before it writes anything.
 - **Works offline.** The engine and the tasks are on the phone; changes sync when there is a network.
 - **Boards.** The pages you make in the web app (a number, a table or a chart per card, each with its own filter) are in the menu
-  under **Boards**, in reading order in one column. They are worked out by the same engine code as the web's, so the numbers
+  under **Boards**, on 4 columns (6 on a wide phone), each card as wide as its share of the row, so several numbers sit side by side. They are worked out by the same engine code as the web's, so the numbers
   agree: counts, sums and averages of numbers and durations, per value of an attribute or per day, week, month, quarter or year of
   a date, several series on one chart (stacked or side by side), and a series that counts pending, started and done as of the
   end of each period, as `task burndown` does. Bars, lines, areas, pies, donuts and radar are drawn by
@@ -47,7 +47,8 @@ cannot: reminders that come with the app closed, and the widgets.
   filter (with **Open in Tasks**), the tasks that filter got, and the values on its axis. **Settings → General** chooses the home
   page, any report or board, which the app opens on. The pencil changes a board on the phone, as the web does: its name,
   description, filter and address, and for each card its title, type, filter, measure, grouping, order and series (their colours,
-  and which state of `task burndown` they count). The phone has one column, so a card is moved up or down rather than dragged. The
+  and which state of `task burndown` they count). The board is drawn as it will look: tap a card to pick it, drag its corner to resize it in the phone's columns, move it earlier or
+  later with the arrows in the bar above, and its settings open in a pop-up that fills the screen. The
   engine says whether the draft is valid and **Save** waits until it is. Boards are in `settings.json`, which syncs with the bucket: a
   board saved on one device is on the others after the next sync.
 - **Links.** Every page has a `meghnaad://` link, which opens it from a note or a message (and which the web's addresses mirror):

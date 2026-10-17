@@ -139,15 +139,52 @@ describe('editing the layout', () => {
     expect(onremove).toHaveBeenCalledWith('c');
   });
 
-  it('shows a narrow screen up and down buttons instead of handles', () => {
+  it('asks to select a section and to remove one', () => {
+    const onselect = vi.fn();
+    const onedit = vi.fn();
+    const onremove = vi.fn();
+    draw({ editing: true, onselect, onedit, onremove });
+    button('Settings of B').click();
+    button('Remove C').click();
+    expect(onselect).toHaveBeenCalledWith('b');
+    expect(onedit).toHaveBeenCalledWith('b');
+    expect(onremove).toHaveBeenCalledWith('c');
+  });
+});
+
+describe('a board on a phone', () => {
+  it('puts the sections on four columns, as wide as their share of the row', () => {
+    draw({}, true);
+    const cells = [...document.querySelectorAll<HTMLElement>('.cell')];
+    expect(cells.map((c) => c.style.getPropertyValue('--w'))).toEqual(['2', '2', '4']);
+    expect(cells.map((c) => c.style.getPropertyValue('--x'))).toEqual(['0', '2', '0']);
+    expect(document.querySelector<HTMLElement>('.grid')!.style.getPropertyValue('--cols')).toBe('4');
+  });
+
+  it('shows up and down buttons, and a corner to resize by', () => {
     const onchange = vi.fn();
     draw({ editing: true, onchange }, true);
-    expect(document.querySelector('.resize')).toBeNull();
+    expect(document.querySelector('.resize')).not.toBeNull();
     expect(button('Move A up').disabled).toBe(true);
     button('Move A down').click();
     const next: Section[] = onchange.mock.calls[0][0];
-    expect(next.every((s) => s.x === 0 && s.w === 12)).toBe(true);
-    expect([...next].sort((p, q) => p.y - q.y).map((s) => s.id)).toEqual(['b', 'a', 'c']);
+    expect([...next].sort((p, q) => p.y - q.y || p.x - q.x).map((s) => s.id)).toEqual(['b', 'a', 'c']);
+    // The widths are kept.
+    expect(next.map((s) => [s.id, s.w])).toEqual([
+      ['b', 6],
+      ['a', 6],
+      ['c', 12],
+    ]);
+  });
+
+  it('resizes by the phone’s columns', () => {
+    const onchange = vi.fn();
+    draw({ editing: true, onchange }, true);
+    button('Resize A').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+    );
+    // Two of four columns, one fewer: one column, which is three of the twelve.
+    expect(onchange.mock.calls[0][0].find((s: Section) => s.id === 'a')!.w).toBe(3);
   });
 });
 

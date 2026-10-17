@@ -19,6 +19,9 @@ import {
   seriesOf,
   place,
   reorder,
+  resizeFlow,
+  flowed,
+  MIN_WIDTH,
   resizeBy,
   stacked,
   zoneNow,
@@ -91,7 +94,7 @@ describe('the grid', () => {
     expect(at(moveBy(two, 'a', -1, -1), 'a')).toEqual({ x: 0, y: 0, w: 6, h: 2 });
     expect(at(moveBy(two, 'b', 1, 0), 'b').x).toBe(6);
     expect(at(resizeBy(two, 'a', 2, 1), 'a')).toMatchObject({ w: 8, h: 3 });
-    expect(at(resizeBy(two, 'a', -9, -9), 'a')).toMatchObject({ w: 1, h: 1 });
+    expect(at(resizeBy(two, 'a', -9, -9), 'a')).toMatchObject({ w: MIN_WIDTH, h: 1 });
   });
 
   it('keeps everything else about a section as it was', () => {
@@ -113,14 +116,39 @@ describe('the grid', () => {
     expect(newSection(b, 'table').report).toBe('next');
   });
 
-  it('is put in one column in a new order on a narrow screen', () => {
-    const three = [sec('a', 0, 0, 6, 2), sec('b', 6, 0, 6, 3), sec('c', 0, 3, 12, 1)];
+  it('is put in a new order, with the widths it had', () => {
+    const three = [sec('a', 0, 0, 6, 2), sec('b', 6, 0, 3, 3), sec('c', 0, 3, 12, 1)];
     const out = reorder(three, 'b', -1);
     expect(stacked(out).map((s) => s.id)).toEqual(['b', 'a', 'c']);
-    expect(out.every((s) => s.x === 0 && s.w === 12)).toBe(true);
+    expect(out.map((s) => s.w)).toEqual([6, 3, 12]);
     // The first cannot go up, nor the last down.
-    expect(reorder(three, 'a', -1)).toBe(three);
-    expect(reorder(three, 'c', 1)).toBe(three);
+    expect(reorder(three, 'a', -1)).toEqual(three);
+    expect(reorder(three, 'c', 1)).toEqual(three);
+  });
+
+  it('flows onto the columns of a phone, several numbers to a row', () => {
+    const row = [
+      sec('a', 0, 0, 3, 2),
+      sec('b', 3, 0, 3, 2),
+      sec('c', 6, 0, 3, 2),
+      sec('d', 9, 0, 3, 2),
+      sec('e', 0, 2, 12, 4),
+    ];
+    expect(flowed(row, 4).map((s) => [s.id, s.x, s.y, s.w])).toEqual([
+      ['a', 0, 0, 1],
+      ['b', 1, 0, 1],
+      ['c', 2, 0, 1],
+      ['d', 3, 0, 1],
+      ['e', 0, 2, 4],
+    ]);
+    // Six columns hold three of those, not four.
+    expect(flowed(row, 6).find((s) => s.id === 'd')).toMatchObject({ x: 0, y: 2, w: 2 });
+  });
+
+  it('is resized in the phone’s columns and kept in the board’s twelve, never under two', () => {
+    const row = [sec('a', 0, 0, 3, 2), sec('b', 3, 0, 3, 2)];
+    expect(resizeFlow(row, 'a', 4, 1, 1).find((s) => s.id === 'a')).toMatchObject({ w: 6, h: 3 });
+    expect(resizeFlow(row, 'a', 6, -5, 0).find((s) => s.id === 'a')!.w).toBe(MIN_WIDTH);
   });
 });
 

@@ -3,14 +3,17 @@
   import BoardSection from './BoardSection.svelte';
   import SectionInfo from './SectionInfo.svelte';
   import {
-    COLUMNS,
     GAP_PX,
     ROW_PX,
+    MIN_WIDTH,
+    columnsFor,
+    flowed,
     loadBoard,
     moveBy,
     place,
     reorder,
     resizeBy,
+    resizeFlow,
     stacked,
     zoneNow,
     type Board,
@@ -21,10 +24,11 @@
   import { store } from './store.svelte';
 
   /**
-   * A board: its sections on a 12-column grid, or in one column on a narrow screen (in reading order). Editing the layout
-   * drags a section by its handle, resizes it by the corner, or with the arrow keys on either; the places are the engine's
-   * (`tc_core::board::layout`), which pushes what a section lands on down and floats everything up. This draws the board it
-   * is given and reports the new sections; it keeps nothing.
+   * A board: its sections on a 12-column grid, or on 6 columns (4 on a small phone) in reading order on a narrow screen, each
+   * as wide as its share of the row, so several numbers sit side by side. Editing the layout drags a section by its handle,
+   * resizes it by the corner (on a phone too, in the screen's columns), or with the arrow keys on either; the places are the
+   * engine's (`tc_core::board::layout`), which pushes what a section lands on down and floats everything up. This draws the
+   * board it is given and reports the new sections; it keeps nothing.
    */
   let {
     board,
@@ -32,6 +36,7 @@
     selected = null,
     onchange,
     onselect,
+    onedit,
     onremove,
   }: {
     board: Board;
@@ -39,6 +44,7 @@
     selected?: string | null;
     onchange?: (sections: Section[]) => void;
     onselect?: (id: string) => void;
+    onedit?: (id: string) => void;
     onremove?: (id: string) => void;
   } = $props();
 
@@ -77,17 +83,28 @@
 
   // ---- Wide or narrow ----------------------------------------------------------------------------------------------
   let narrow = $state(false);
+  let small = $state(false);
   $effect(() => {
     if (typeof matchMedia !== 'function') return;
-    const mq = matchMedia('(max-width: 720px)');
-    narrow = mq.matches;
-    const on = (e: MediaQueryListEvent) => (narrow = e.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
+    const wide = matchMedia('(max-width: 720px)');
+    const tiny = matchMedia('(max-width: 480px)');
+    narrow = wide.matches;
+    small = tiny.matches;
+    const onWide = (e: MediaQueryListEvent) => (narrow = e.matches);
+    const onTiny = (e: MediaQueryListEvent) => (small = e.matches);
+    wide.addEventListener('change', onWide);
+    tiny.addEventListener('change', onTiny);
+    return () => {
+      wide.removeEventListener('change', onWide);
+      tiny.removeEventListener('change', onTiny);
+    };
   });
+  const cols = $derived(columnsFor(narrow, small));
+  const gap = $derived(narrow ? 8 : GAP_PX);
 
-  // Reading order is also the order a screen reader and the Tab key meet them in.
-  const ordered = $derived(stacked(board.sections));
+  // Reading order is also the order a screen reader and the Tab key meet them in. A narrow screen has the sections' places on
+  // its own, fewer columns.
+  const ordered = $derived(narrow ? flowed(board.sections, cols) : stacked(board.sections));
 
   // ---- Moving and resizing -----------------------------------------------------------------------------------------
   let grid: HTMLDivElement | undefined = $state();
@@ -102,11 +119,13 @@
     last: string;
   } | null = null;
 
-  const describe = (s: Section) =>
-    `${s.title}: column ${s.x + 1}, row ${s.y + 1}, ${s.w} ${s.w === 1 ? 'column' : 'columns'} wide, ${s.h} ${s.h === 1 ? 'row' : 'rows'} high`;
+  const describe = (s: Section) => {
+    const w = narrow ? (flowed([s], cols)[0]?.w ?? s.w) : s.w;
+    return `${s.title}: column ${s.x + 1}, row ${s.y + 1}, ${w} ${w === 1 ? 'column' : 'columns'} wide, ${s.h} ${s.h === 1 ? 'row' : 'rows'} high`;
+  };
 
   function begin(e: PointerEvent, s: Section, mode: 'move' | 'resize') {
-    if (!editing || narrow) return;
+    if (!editing) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     drag = {
@@ -125,13 +144,21 @@
     if (!drag || !grid) return;
     // One grid step is a column (or row) and its gap. Each step is worked out from where the drag began, on the layout
     // as it was then, so dragging back puts what was pushed aside back where it was.
-    const dx = Math.round((e.clientX - drag.x) / ((grid.clientWidth + GAP_PX) / COLUMNS));
-    const dy = Math.round((e.clientY - drag.y) / (ROW_PX + GAP_PX));
+    const dx = Math.round((e.clientX - drag.x) / ((grid.clientWidth + gap) / cols));
+    const dy = Math.round((e.clientY - drag.y) / (ROW_PX + gap));
     const s = drag.start;
+    if (narrow) {
+      // A phone resizes in its own columns; the engine keeps the width in the board's 12.
+      const key = `${dx},${dy}`;
+      if (drag.mode !== 'resize' || key === drag.last) return;
+      drag.last = key;
+      onchange?.(resizeFlow(drag.base, drag.id, cols, dx, dy));
+      return;
+    }
     const r: Rect =
       drag.mode === 'move'
         ? { ...s, x: Math.max(0, s.x + dx), y: Math.max(0, s.y + dy) }
-        : { ...s, w: Math.max(1, s.w + dx), h: Math.max(1, s.h + dy) };
+        : { ...s, w: Math.max(MIN_WIDTH, s.w + dx), h: Math.max(1, s.h + dy) };
     const key = `${r.x},${r.y},${r.w},${r.h}`;
     if (key === drag.last) return;
     drag.last = key;
@@ -157,7 +184,11 @@
     if (!d) return;
     e.preventDefault();
     const next =
-      mode === 'move' ? moveBy(board.sections, s.id, d[0], d[1]) : resizeBy(board.sections, s.id, d[0], d[1]);
+      mode === 'move'
+        ? moveBy(board.sections, s.id, d[0], d[1])
+        : narrow
+          ? resizeFlow(board.sections, s.id, cols, d[0], d[1])
+          : resizeBy(board.sections, s.id, d[0], d[1]);
     onchange?.(next);
     const now = next.find((x) => x.id === s.id);
     if (now) announce = describe(now);
@@ -175,7 +206,7 @@
     {editing ? 'Nothing here yet. Add a section.' : 'This board has no sections yet. Edit it to add some.'}
   </p>
 {/if}
-<div class="grid" class:editing bind:this={grid} style:--row="{ROW_PX}px" style:--gap="{GAP_PX}px">
+<div class="grid" class:editing bind:this={grid} style:--row="{ROW_PX}px" style:--gap="{gap}px" style:--cols={cols}>
   {#each ordered as s, i (s.id)}
     <div
       class="cell"
@@ -215,25 +246,29 @@
               onkeydown={(e) => key(e, s, 'move')}><Move size={15} /></button
             >
           {/if}
-          <button class="ghost" aria-label="Settings of {s.title}" title="Settings" onclick={() => onselect?.(s.id)}
-            ><Pencil size={15} /></button
+          <button
+            class="ghost"
+            aria-label="Settings of {s.title}"
+            title="Settings"
+            onclick={() => {
+              onselect?.(s.id);
+              onedit?.(s.id);
+            }}><Pencil size={15} /></button
           >
           <button class="ghost danger" aria-label="Remove {s.title}" title="Remove" onclick={() => onremove?.(s.id)}
             ><Trash2 size={15} /></button
           >
         </div>
-        {#if !narrow}
-          <button
-            class="resize"
-            aria-label="Resize {s.title}. Drag, or use the arrow keys."
-            title="Drag to resize, or use the arrow keys"
-            onpointerdown={(e) => begin(e, s, 'resize')}
-            onpointermove={track}
-            onpointerup={end}
-            onpointercancel={end}
-            onkeydown={(e) => key(e, s, 'resize')}
-          ></button>
-        {/if}
+        <button
+          class="resize"
+          aria-label="Resize {s.title}. Drag, or use the arrow keys."
+          title="Drag to resize, or use the arrow keys"
+          onpointerdown={(e) => begin(e, s, 'resize')}
+          onpointermove={track}
+          onpointerup={end}
+          onpointercancel={end}
+          onkeydown={(e) => key(e, s, 'resize')}
+        ></button>
       {/if}
     </div>
   {/each}
@@ -249,7 +284,7 @@
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
     grid-auto-rows: var(--row);
     gap: var(--gap);
   }
@@ -258,18 +293,6 @@
     min-width: 0;
     grid-column: calc(var(--x) + 1) / span var(--w);
     grid-row: calc(var(--y) + 1) / span var(--h);
-  }
-  /* A narrow screen has one column and the sections in reading order; the places on the grid mean nothing there. */
-  @media (max-width: 720px) {
-    .grid {
-      grid-template-columns: minmax(0, 1fr);
-      grid-auto-rows: auto;
-    }
-    .cell {
-      grid-column: 1;
-      grid-row: auto;
-      min-height: calc(var(--h) * var(--row) + (var(--h) - 1) * var(--gap));
-    }
   }
   .editing .cell {
     outline: 1px dashed var(--line);
@@ -301,8 +324,8 @@
     position: absolute;
     right: 2px;
     bottom: 2px;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     padding: 0;
     border: 0;
     border-radius: 0 0 6px 0;

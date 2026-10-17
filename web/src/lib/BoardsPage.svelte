@@ -1,5 +1,6 @@
 <script lang="ts">
   import BoardView from './BoardView.svelte';
+  import Drawer from './Drawer.svelte';
   import FilterInput from './FilterInput.svelte';
   import type { Homepage } from './appsettings';
   import { ChevronLeft, LayoutDashboard, Pencil, Plus, Trash2, TriangleAlert } from './icons';
@@ -23,7 +24,10 @@
   let draft = $state<Board | null>(null);
   /** The slug the draft had when it was opened, which it may change. */
   let from = $state<string | null>(null);
+  /** The section last touched, outlined on the board. */
   let selected = $state<string | null>(null);
+  /** The section whose settings are open in the side panel. */
+  let opened = $state<string | null>(null);
   let busy = $state(false);
   let error = $state<string | null>(null);
   let newName = $state('');
@@ -50,12 +54,13 @@
       : null,
   );
   const valid = $derived(!!check && check.errors.length === 0 && check.boards.length === 1 && !slugError);
-  const picked = $derived(draft?.sections.find((s) => s.id === selected) ?? null);
+  const picked = $derived(draft?.sections.find((s) => s.id === opened) ?? null);
 
   function open(id: string) {
     store.boardId = id;
     draft = null;
     selected = null;
+    opened = null;
     error = null;
   }
 
@@ -64,6 +69,7 @@
     draft = $state.snapshot(board) as Board;
     from = board.id;
     selected = null;
+    opened = null;
     error = null;
   }
 
@@ -71,6 +77,7 @@
     draft = null;
     from = null;
     selected = null;
+    opened = null;
     error = null;
   }
 
@@ -113,6 +120,7 @@
       draft = null;
       from = null;
       selected = null;
+      opened = null;
     }
   }
 
@@ -148,6 +156,7 @@
     const s = newSection(draft, type);
     draft.sections = [...draft.sections, s];
     selected = s.id;
+    opened = s.id;
   }
 
   const setSections = (sections: Section[]) => draft && (draft.sections = sections);
@@ -157,6 +166,7 @@
     if (!draft) return;
     draft.sections = draft.sections.filter((s) => s.id !== id);
     if (selected === id) selected = null;
+    if (opened === id) opened = null;
   }
 </script>
 
@@ -282,10 +292,9 @@
         </ul>
       {/if}
       {#if picked}
-        <section class="panel" aria-label="Section settings">
-          <h2>{picked.title || 'Section'}</h2>
+        <Drawer title={picked.title || 'Section'} onclose={() => (opened = null)}>
           <SectionForm section={picked} onchange={setSection} />
-        </section>
+        </Drawer>
       {/if}
     {/if}
 
@@ -295,6 +304,7 @@
       {selected}
       onchange={setSections}
       onselect={(id) => (selected = id)}
+      onedit={(id) => (opened = id)}
       onremove={removeSection}
     />
   {/if}
@@ -311,10 +321,6 @@
   }
   .head h1 {
     margin: 0;
-  }
-  h2 {
-    font-size: 15px;
-    margin: 0 0 10px;
   }
   .head {
     margin-bottom: 10px;
@@ -371,9 +377,6 @@
     border-radius: var(--radius);
     padding: 12px;
     margin-bottom: 12px;
-  }
-  .panel h2 {
-    grid-column: 1 / -1;
   }
   .panel label,
   .panel .filter {

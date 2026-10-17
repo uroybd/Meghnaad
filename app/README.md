@@ -64,6 +64,6 @@ On the phone it also has what a browser tab cannot: reminders that work with the
 moment something is due, a notification that opens the task), the running-task timer in the top bar, and the four
 home-screen widgets with a background sync.
 
-Boards are shown, made and edited on the phone (BoardEditor.kt), with their info panels and charts, and a card of one can be a home-screen widget. A polar area
+Boards are shown on 4 or 6 columns (BoardGrid.kt: the engine's `board_flow`), made and edited on the phone (BoardEditor.kt: tap a card, drag its corner, settings in a pop-up), with their info panels and charts, and a card of one can be a home-screen widget. A polar area
 chart is drawn as a pie. The charts are Koala Plot 0.10.4: its newer releases are built with a Kotlin newer than this app's, so it moves up
 with the Kotlin version. Not done yet: the app has no formatter or linter, and the desktop preview keeps no secrets.

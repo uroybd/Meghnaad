@@ -49,6 +49,14 @@ const type = async (input: HTMLInputElement, value: string) => {
 
 beforeEach(() => {
   store.boardId = null;
+  // jsdom has no modal dialogs.
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
 });
 afterEach(() => {
   if (app) unmount(app);
@@ -126,5 +134,39 @@ describe('the boards page', () => {
     // 'my-week' is free; the one with the same name as the first would be 'my-week-2'.
     expect(out.boards.map((b: { id: string }) => b.id)).toEqual(['week', 'my-week']);
     expect(store.boardId).toBe('my-week');
+  });
+
+  it('opens a section’s settings in a panel at the side, not among the board', async () => {
+    server({
+      boardsVersion: 1,
+      boards: [
+        {
+          id: 'week',
+          name: 'My week',
+          sections: [{ id: 'open', title: 'Open', x: 0, y: 0, w: 3, h: 2, type: 'number', measure: { fn: 'count' } }],
+        },
+      ],
+    });
+    store.boardId = 'week';
+    app = mount(BoardsPage, { target: document.body });
+    await settle();
+    await click(/Edit/);
+    expect(document.querySelector('dialog')).toBeNull();
+    await click(/Settings of Open/);
+    const panel = document.querySelector('dialog')!;
+    expect(panel.getAttribute('aria-label')).toBe('Open');
+    expect(panel.querySelector('input')).not.toBeNull();
+    await click(/^Close$/);
+    expect(document.querySelector('dialog')).toBeNull();
+  });
+
+  it('opens the panel for a section just added', async () => {
+    server({ boardsVersion: 1, boards: [board('week', 'My week')] });
+    store.boardId = 'week';
+    app = mount(BoardsPage, { target: document.body });
+    await settle();
+    await click(/Edit/);
+    await click(/Number/);
+    expect(document.querySelector('dialog')?.getAttribute('aria-label')).toBe('Number');
   });
 });
