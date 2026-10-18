@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { splitWords } from './cmdline';
+  import ContextPicker from './ContextPicker.svelte';
   import FilterChips from './FilterChips.svelte';
   import FilterInput from './FilterInput.svelte';
   import ResultView from './ResultView.svelte';
@@ -36,6 +37,7 @@
   $effect(() => {
     const f = filter;
     const cmd = command;
+    void store.contextChoice(which);
     void store.rev;
     const typing = lastFilter !== null && f !== lastFilter;
     const t = setTimeout(
@@ -53,6 +55,7 @@
   <div class="row top">
     {#if controls}{@render controls(entry)}{/if}
     <FilterInput bind:value={filter} id="{which}-filter" {placeholder} autofocus />
+    <ContextPicker scope={which} />
   </div>
   <FilterChips bind:value={filter} />
 </section>

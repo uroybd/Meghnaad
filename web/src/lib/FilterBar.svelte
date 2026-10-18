@@ -1,5 +1,6 @@
 <script lang="ts">
   import { reportArgs, shellQuote, splitWords } from './cmdline';
+  import ContextPicker from './ContextPicker.svelte';
   import FilterChips from './FilterChips.svelte';
   import FilterInput from './FilterInput.svelte';
   import { store } from './store.svelte';
@@ -8,9 +9,9 @@
   const args = $derived(reportArgs(store.filter, store.report));
   const words = $derived(splitWords(store.filter));
   const cfg = $derived(store.config?.config);
-  const context = $derived(
-    cfg?.active_context ? { name: cfg.active_context, read: cfg.contexts[cfg.active_context]?.read ?? null } : null,
-  );
+  const choice = $derived(store.contextChoice('tasks'));
+  const inForce = $derived(store.contextIn('tasks'));
+  const context = $derived(inForce ? { name: inForce, read: cfg?.contexts[inForce]?.read ?? null } : null);
 
   // Run the report whenever the report or filter changes. Only typing is debounced: opening the
   // page or picking another report should not wait for a keystroke that isn't coming. The console
@@ -19,7 +20,7 @@
   $effect(() => {
     const a = args;
     const filter = store.filter;
-    if (JSON.stringify(a) === store.liveKey) {
+    if (JSON.stringify(a) === store.liveKey && store.liveContext === (choice ?? '')) {
       ranFilter = filter;
       return;
     }
@@ -59,6 +60,7 @@
       {#if store.offeredReports.length === 0}<option value={store.report}>{store.report}</option>{/if}
     </select>
     <FilterInput bind:value={store.filter} id="fb-filter" />
+    <ContextPicker scope="tasks" />
   </div>
 
   <FilterChips bind:value={store.filter} />

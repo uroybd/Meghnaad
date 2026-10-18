@@ -67,7 +67,8 @@ fun PanelPage(
     // Ask again when the filter or the command changes, and when a task changes anywhere. Only typing waits (a moment); opening
     // the page and tapping a button do not.
     var lastFilter by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(filter, command, store.rev) {
+    val choice = store.contextChoice(Scope.panel(which))
+    LaunchedEffect(filter, command, store.rev, choice) {
         val typing = lastFilter != null && filter != lastFilter
         if (typing) delay(250)
         lastFilter = filter
@@ -78,6 +79,7 @@ fun PanelPage(
             Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 controls(entry)
                 FilterField(store, filter, onFilter, placeholder = placeholder)
+                ContextPicker(store, Scope.panel(which))
                 FilterChips(filter, onFilter)
             }
         }

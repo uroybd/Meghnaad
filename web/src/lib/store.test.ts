@@ -236,3 +236,35 @@ describe('the names offered for completion', () => {
     expect(store.projects).toEqual(['Keep']);
   });
 });
+
+describe('a page running in a context of its own', () => {
+  const sent = () => vi.mocked(runCli).mock.calls.at(-1)![0];
+
+  it('sends its choice with what it runs, and the console sends none', async () => {
+    store.config = null;
+    vi.mocked(runCli).mockResolvedValue({ result: { kind: 'text', lines: [] } } as never);
+    store.contextChoices = {};
+    store.setContextChoice('summary', 'work');
+    await store.runPanel('summary', { args: ['summary'] });
+    expect(sent()).toMatchObject({ args: ['rc.context=work', 'summary'] });
+    store.setContextChoice('summary', undefined);
+    await store.refresh(store.panels.summary!);
+    expect(sent()).toMatchObject({ args: ['summary'] });
+    await store.run({ line: 'count' });
+    expect(sent()).toMatchObject({ line: 'count' });
+    store.setContextChoice('tasks', 'none');
+    await store.run({ line: 'count' });
+    expect(sent()).toMatchObject({ line: 'count' });
+  });
+
+  it('fetches the table again when its context changes, even for the same filter', async () => {
+    vi.mocked(runCli).mockResolvedValue({ result: { kind: 'text', lines: [] } } as never);
+    store.setContextChoice('tasks', undefined);
+    await store.runLive({ args: ['next'] });
+    expect(store.liveContext).toBe('');
+    store.setContextChoice('tasks', 'none');
+    await store.runLive({ args: ['next'] });
+    expect(store.liveContext).toBe('none');
+    expect(sent()).toMatchObject({ args: ['rc.context=none', 'next'] });
+  });
+});

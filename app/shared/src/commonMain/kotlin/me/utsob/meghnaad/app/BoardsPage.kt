@@ -57,7 +57,8 @@ fun BoardsPage(store: Store) {
 fun rememberBoardData(store: Store, board: Board, wait: Boolean): Map<String, SectionData> {
     var data by remember { mutableStateOf<Map<String, SectionData>>(emptyMap()) }
     val asks = listOf(board.filter, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.ignoreBoardFilter, it.measure, it.by, it.series) })
-    LaunchedEffect(asks, store.rev) {
+    val choice = store.contextChoice(Scope.board(board.id))
+    LaunchedEffect(asks, store.rev, choice) {
         // While a board is being edited, a keystroke in a filter is not a question.
         if (wait) delay(250)
         data = store.loadBoardData(board)
@@ -122,6 +123,7 @@ private fun BoardScreen(store: Store, board: Board) {
             IconAction("link", "Copy a link to this board", { clipboard.setText(AnnotatedString(placeLink(AppPlace.Boards(board.id)))); store.notify("Link copied.") }, size = 20.dp)
         }
         board.description?.let { Dim(it, Modifier.padding(horizontal = 12.dp)) }
+        ContextPicker(store, Scope.board(board.id), Modifier.padding(horizontal = 12.dp))
         if (board.sections.isEmpty()) Dim("This board has no sections yet. Edit it to add some.", Modifier.padding(horizontal = 12.dp))
         BoardGrid(store, board.sections, data, onInfo = { info = it })
     }
@@ -129,7 +131,7 @@ private fun BoardScreen(store: Store, board: Board) {
     info?.let { id ->
         val section = board.sections.firstOrNull { it.id == id }
         val got = data[id]
-        if (section != null && got != null) SectionInfoDialog(store, section, got) { info = null }
+        if (section != null && got != null) SectionInfoDialog(store, section, got, store.contextChoice(Scope.board(board.id))) { info = null }
     }
 }
 
@@ -140,7 +142,7 @@ private const val LISTED = 50
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SectionInfoDialog(store: Store, section: Section, data: SectionData, onDismiss: () -> Unit) {
+private fun SectionInfoDialog(store: Store, section: Section, data: SectionData, context: String?, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val sources = when (data) {
         is SectionData.Number -> data.sources
@@ -156,8 +158,12 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
             .filterNotNull().distinct()
     }
 
+    // The context the board ran the section in (its own choice, else the console's), which the Tasks page then looks in too.
+    val inForce = (context ?: store.activeContext)?.takeIf { it != NO_CONTEXT }
+
     fun openInTasks(filter: String) {
         store.filter = filter
+        store.setContextChoice(Scope.Tasks, context)
         store.view = View.Tasks
         onDismiss()
     }
@@ -176,6 +182,7 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoHeading("What it shows")
                 if (section.type == "table") InfoLine("Report", section.report ?: "next") else InfoLine("Measure", describeMeasure(section.measure))
+                InfoLine("Context", (inForce ?: "none") + if (context == null) " (the console's)" else " (chosen for this board)")
                 describeBy(section.by)?.let { InfoLine("Grouped by", it) }
                 if (chart != null) {
                     InfoLine("Order", (section.sort ?: if (section.by?.time != null) "in time order" else "largest first") + (section.limit?.let { ", the first $it" } ?: "") + if (section.stacked == true) ", stacked" else "")

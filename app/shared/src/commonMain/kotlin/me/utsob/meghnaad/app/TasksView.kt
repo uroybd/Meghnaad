@@ -53,9 +53,10 @@ fun TasksView(store: Store) {
     // Run the report whenever the report or the filter changes. Only typing is debounced: opening the page or picking another
     // report should not wait for a keystroke that is not coming. The console may already have loaded exactly this (it hands its
     // result over), so skip duplicates.
-    LaunchedEffect(store.report, store.filter) {
+    val choice = store.contextChoice(Scope.Tasks)
+    LaunchedEffect(store.report, store.filter, choice) {
         val key = engineJson.encodeToString(ListSerializer(String.serializer()), args)
-        if (key == store.liveKey) {
+        if (key == store.liveKey && store.liveContext == choice.orEmpty()) {
             ranFilter = store.filter
             return@LaunchedEffect
         }
@@ -223,7 +224,7 @@ private fun FilterBar(store: Store) {
     val meta = store.reports.firstOrNull { it.name == store.report }
     val words = splitWords(store.filter)
     val cfg = store.config?.config
-    val context = cfg?.activeContext?.let { it to cfg.contexts[it]?.read }
+    val context = store.contextIn(Scope.Tasks)?.let { it to cfg?.contexts?.get(it)?.read }
 
     fun pickReport(name: String) {
         // Sort overrides belong to one report; drop the ones that no longer apply.
@@ -253,6 +254,7 @@ private fun FilterBar(store: Store) {
                 onSize = { fieldHeight = it.height },
             )
         }
+        ContextPicker(store, Scope.Tasks)
         FilterChips(store.filter) { store.filter = it }
         // What the report and the context filter by and sort by on their own: kept out of the way until asked for.
         val about = if (meta?.filter != null || meta?.sort != null || context != null) {
@@ -339,5 +341,26 @@ private fun Helper(label: String, values: List<String>, labels: List<String> = v
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Dim(label)
         Choice("add…", labels.ifEmpty { listOf("(none yet)") }) { i -> values.getOrNull(i)?.let(onPick) }
+    }
+}
+
+/**
+ * The context one page shows its tasks in (ContextPicker.svelte). The active context (`context work` in the console) is the
+ * console's; a page follows it unless it is told otherwise here, and then keeps its own choice, so a page never changes under another's.
+ */
+@Composable
+fun ContextPicker(store: Store, scope: String, modifier: Modifier = Modifier, fillHeight: Boolean = false) {
+    val contexts = store.config?.config?.contexts ?: emptyMap()
+    val choice = store.contextChoice(scope)
+    if (contexts.isEmpty() && choice == null) return
+    val names = contexts.keys.sorted()
+    val options = listOf("Context: ${store.activeContext ?: "none"} (same as console)", "Context: none") + names.map { "Context: $it" }
+    val current = when (choice) {
+        null -> options[0]
+        NO_CONTEXT -> options[1]
+        else -> "Context: $choice"
+    }
+    Choice(current, options, modifier, hints = listOf(null, null) + names.map { contexts[it]?.read }, fillHeight = fillHeight) { i ->
+        store.setContextChoice(scope, when (i) { 0 -> null; 1 -> NO_CONTEXT; else -> names[i - 2] })
     }
 }

@@ -45,7 +45,7 @@ enum class Panel { Summary, Calendar, Burndown }
 data class CliInput(val line: String? = null, val args: List<String>? = null)
 
 /** One command and what came of it: a line of the console's scrollback, or the live table of the Tasks view. */
-class Entry(val id: Int, input: CliInput, title: String) {
+class Entry(val id: Int, input: CliInput, title: String, /** The page it belongs to, which may run it in a context of its own; the console's entries have none. */ val scope: String? = null) {
     var input by mutableStateOf(input)
     /** What was run, as it would be typed. */
     var title by mutableStateOf(title)
@@ -504,7 +504,7 @@ class Store(
 
     /** What each section of [board] shows now: their filters run, their numbers worked out (see [loadBoard]). */
     suspend fun loadBoardData(board: Board): Map<String, SectionData> =
-        loadBoard(tw, board, boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds()))
+        loadBoard(tw, board, boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds()), contextChoice(Scope.board(board.id)))
 
     /**
      * Open the home page the settings choose. Unforced, only from the front page: a person who has already gone somewhere is
@@ -569,6 +569,30 @@ class Store(
         showHiddenReports = on
         prefs.put(SHOW_HIDDEN_KEY, if (on) "1" else "0")
     }
+
+    // ---- Each page's own context
+
+    /** The context each page chose (a name, or `none`); a page not here follows the active one. Kept on this device. */
+    val contextChoices = mutableStateMapOf<String, String>().also { it.putAll(loadChoices(prefs.get(CONTEXT_CHOICES_KEY))) }
+
+    /** The context that is active for the console, and for every page that follows it. */
+    val activeContext: String? get() = config?.config?.activeContext
+
+    /** What [scope] chose, or null to follow the active context. A context that is gone no longer counts. */
+    fun contextChoice(scope: String): String? {
+        val c = contextChoices[scope] ?: return null
+        if (c == NO_CONTEXT) return c
+        val known = config?.config?.contexts
+        return if (known == null || c in known) c else null
+    }
+
+    fun setContextChoice(scope: String, choice: String?) {
+        if (choice.isNullOrEmpty()) contextChoices.remove(scope) else contextChoices[scope] = choice
+        prefs.put(CONTEXT_CHOICES_KEY, saveChoices(contextChoices.toMap()))
+    }
+
+    /** The context in force on a page: its own choice, else the active one; null for none. */
+    fun contextIn(scope: String): String? = (contextChoice(scope) ?: activeContext)?.takeIf { it != NO_CONTEXT }
 
     // ---- Names for completion
 
@@ -841,7 +865,8 @@ class Store(
         e.failure = null
         e.answers = answers
         return try {
-            val res = tw.run(e.input.line, e.input.args, answers)
+            val input = withContext(e.input, e.scope?.let(::contextChoice))
+            val res = tw.run(input.line, input.args, answers)
             e.result = res.result
             e.feedback = res.feedback
             when (val r = res.result) {
@@ -874,7 +899,8 @@ class Store(
             // and keep showing the previous, unfiltered, list).
             val args = reportArgs(filter, report)
             liveKey = engineJson.encodeToString(ListSerializer(String.serializer()), args)
-            live = Entry(nextId++, CliInput(args = args), titleOf(CliInput(args = args))).also {
+            liveContext = ""
+            live = Entry(nextId++, CliInput(args = args), titleOf(CliInput(args = args)), Scope.Tasks).also {
                 it.result = from.result
                 it.feedback = from.feedback
                 it.at = from.at
@@ -884,6 +910,8 @@ class Store(
 
     /** The arguments the live table was loaded with, so the same thing is not fetched twice. */
     var liveKey = ""
+    /** The context the live table was last fetched in (`""`: the active one), so a changed choice fetches it again. */
+    var liveContext = ""
         private set
 
     /** Print something into the console that is not a command's answer (a review's banner and messages). */
@@ -973,7 +1001,8 @@ class Store(
     /** Run (or run again) the Tasks view's live table. */
     suspend fun runLive(input: CliInput) {
         liveKey = engineJson.encodeToString(ListSerializer(String.serializer()), input.args ?: listOf(input.line ?: ""))
-        val e = live ?: Entry(nextId++, input, titleOf(input)).also {
+        liveContext = contextChoice(Scope.Tasks).orEmpty()
+        val e = live ?: Entry(nextId++, input, titleOf(input), Scope.Tasks).also {
             it.loading = true
             live = it
         }
@@ -985,7 +1014,7 @@ class Store(
 
     /** Run (or run again) what one of the Summary, Calendar or Burndown pages shows. */
     suspend fun runPanel(which: Panel, input: CliInput) {
-        val e = panels[which] ?: Entry(nextId++, input, titleOf(input)).also {
+        val e = panels[which] ?: Entry(nextId++, input, titleOf(input), Scope.panel(which)).also {
             it.loading = true
             panels[which] = it
         }

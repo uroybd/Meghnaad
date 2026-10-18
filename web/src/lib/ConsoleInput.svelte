@@ -4,7 +4,7 @@
   import type { Statement } from './compound';
   import { COMMAND_NAMES } from './completion';
   import CompletionMenu from './CompletionMenu.svelte';
-  import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil } from './icons';
+  import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil, X } from './icons';
   import { highlightPieces } from './highlight';
   import ReviewBar from './ReviewBar.svelte';
   import { review } from './review.svelte';
@@ -285,7 +285,7 @@
   <!-- The last command, and the buttons for the keys a phone has not (↑ and Tab), which are only shown on one. -->
   <div
     class="last row"
-    class:empty={!store.lastCommand}
+    class:empty={!store.lastCommand && !store.activeContext}
     title="The last command run, from the console or from the UI. ↑ recalls it."
   >
     {#if store.lastCommand}
@@ -293,6 +293,22 @@
       <code class="mono grow" data-testid="last-command">{store.lastCommand}</code>
     {:else}
       <span class="grow"></span>
+    {/if}
+    {#if store.activeContext}
+      <span
+        class="context"
+        title="The active context: the console runs in it, and so does every page that follows it (a page can choose its own)."
+      >
+        <span class="dim">context</span>
+        <code class="mono" data-testid="active-context">{store.activeContext}</code>
+        <button
+          type="button"
+          class="ghost"
+          aria-label="Clear the context"
+          title="Clear the context (context none)"
+          onclick={() => store.run({ line: 'context none' }, 'context none')}><X size={13} /></button
+        >
+      </span>
     {/if}
     <button type="button" class="ghost touch" aria-label="Previous command" title="Previous command" onclick={tapOlder}
       ><ChevronUp size={16} /></button
@@ -375,6 +391,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .context {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    padding-left: 6px;
+  }
+  .context code {
+    color: var(--accent);
+    font-weight: 600;
   }
   .last button {
     padding: 2px 6px;

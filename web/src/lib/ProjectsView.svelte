@@ -102,6 +102,7 @@
 {/snippet}
 
 <ExportFilter
+  scope="projects"
   bind:filter={store.projectsFilter}
   onresult={(r) => (res = { rows: r.rows ?? res?.rows ?? [], error: r.error })}
   id="projects-filter"

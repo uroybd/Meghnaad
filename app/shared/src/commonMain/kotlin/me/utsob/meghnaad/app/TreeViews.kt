@@ -38,16 +38,17 @@ import kotlinx.serialization.builtins.ListSerializer
  * listed after its last task is done (ExportFilter.svelte).
  */
 @Composable
-fun ExportFilter(store: Store, filter: String, onFilter: (String) -> Unit, onResult: (rows: List<Row>?, error: String?) -> Unit) {
+fun ExportFilter(store: Store, scope: String, filter: String, onFilter: (String) -> Unit, onResult: (rows: List<Row>?, error: String?) -> Unit) {
     // Ask again when the filter changes and when a task changes anywhere (done, edit, add, console…). Only typing waits a
     // moment; opening the page does not.
     var lastFilter by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(filter, store.rev) {
+    val choice = store.contextChoice(scope)
+    LaunchedEffect(filter, store.rev, choice) {
         val typing = lastFilter != null && filter != lastFilter
         if (typing) delay(250)
         lastFilter = filter
         try {
-            val r = store.query(splitWords(filter) + "_rows")
+            val r = store.query((splitWords(filter) + "_rows").let { if (choice == null) it else listOf(contextWord(choice)) + it })
             val rows = (r as? CliResult.Json)?.value?.let { engineJson.decodeFromJsonElement(ListSerializer(Row.serializer()), it) }
             onResult(rows, null)
         } catch (e: Exception) {
@@ -56,6 +57,7 @@ fun ExportFilter(store: Store, filter: String, onFilter: (String) -> Unit, onRes
     }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterField(store, filter, onFilter, placeholder = "Filters: project:Home +work due.before:eow")
+        ContextPicker(store, scope)
         FilterChips(filter, onFilter)
     }
 }
@@ -182,7 +184,7 @@ fun ProjectsView(store: Store) {
 
     val items = mutableListOf<TreeItem>().also { flatten(tree, 0, open, it) }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = state, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
-        item { ExportFilter(store, store.projectsFilter, { store.projectsFilter = it }) { r, e -> res = (r ?: res?.first ?: emptyList()) to e } }
+        item { ExportFilter(store, Scope.Projects, store.projectsFilter, { store.projectsFilter = it }) { r, e -> res = (r ?: res?.first ?: emptyList()) to e } }
         item { Header("Projects", { open = expandable(tree).toSet() }, { open = emptySet() }, tree.isNotEmpty(), open.isNotEmpty()) }
         when {
             res?.second != null -> item { Text(res!!.second!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
@@ -235,7 +237,7 @@ fun TagsView(store: Store) {
     }
 
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), state = state, contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
-        item { ExportFilter(store, store.tagsFilter, { store.tagsFilter = it }) { r, e -> res = (r ?: res?.first ?: emptyList()) to e } }
+        item { ExportFilter(store, Scope.Tags, store.tagsFilter, { store.tagsFilter = it }) { r, e -> res = (r ?: res?.first ?: emptyList()) to e } }
         item { Header("Tags", { open = tags.map { it.name }.toSet() }, { open = emptySet() }, tags.isNotEmpty(), open.isNotEmpty()) }
         when {
             res?.second != null -> item { Text(res!!.second!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
