@@ -69,6 +69,14 @@
     store.view = 'tasks';
     dialog?.close();
   }
+
+  /** Look at one of these tasks: close this panel (it covers the page) and open the task's drawer. */
+  function openTask(task: ExportedTask) {
+    const uuid = task.uuid;
+    if (typeof uuid !== 'string') return;
+    dialog?.close();
+    store.openDetail(uuid, null);
+  }
 </script>
 
 <dialog bind:this={dialog} {onclose} aria-labelledby="info-title">
@@ -191,7 +199,14 @@
             <tbody>
               {#each src.tasks.slice(0, LIMIT) as t, k (k)}
                 <tr
-                  >{#each columns as c (c)}<td>{cell(t, c)}</td>{/each}</tr
+                  >{#each columns as c (c)}<td
+                      >{#if c === 'description' && typeof t.uuid === 'string'}<button
+                          type="button"
+                          class="link"
+                          title="Open this task"
+                          onclick={() => openTask(t)}>{cell(t, c)}</button
+                        >{:else}{cell(t, c)}{/if}</td
+                    >{/each}</tr
                 >
               {/each}
             </tbody>
@@ -301,6 +316,22 @@
   }
   td:nth-child(2) {
     white-space: normal;
+  }
+  .link {
+    all: unset;
+    cursor: pointer;
+    color: var(--accent, var(--text));
+    text-decoration: underline;
+    text-decoration-color: var(--line);
+    text-underline-offset: 2px;
+  }
+  .link:hover,
+  .link:focus-visible {
+    text-decoration-color: currentColor;
+  }
+  .link:focus-visible {
+    outline: 2px solid var(--accent, currentColor);
+    outline-offset: 2px;
   }
   th {
     color: var(--dim);

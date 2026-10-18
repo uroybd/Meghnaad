@@ -20,6 +20,7 @@ const tasks = (n: number) =>
   JSON.stringify(
     Array.from({ length: n }, (_, i) => ({
       id: i + 1,
+      uuid: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
       description: `Task ${i + 1}`,
       project: 'Home',
       status: 'pending',
@@ -82,6 +83,18 @@ describe('the info of a number', () => {
     const first = [...rows()[0].querySelectorAll('td')].map((c) => c.textContent);
     expect(first).toEqual(['1', 'Task 1', 'Home', 'pending', 'a, b', '0']);
     expect(text()).toContain('4 tasks');
+  });
+
+  it('opens a task from its description, closing the panel so the drawer is not hidden behind it', () => {
+    store.detail = null;
+    draw(sec({}), data);
+    const link = rows()[1].querySelector<HTMLButtonElement>('td button.link')!;
+    expect(link.textContent).toBe('Task 2');
+    link.click();
+    flushSync();
+    expect((store.detail as { uuid: string } | null)?.uuid).toBe('00000000-0000-0000-0000-000000000002');
+    expect(document.querySelector('dialog')!.hasAttribute('open')).toBe(false);
+    expect(closed).toHaveBeenCalled();
   });
 
   it('shows a date column when the section groups by one', () => {

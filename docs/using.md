@@ -351,6 +351,7 @@ the app's own:
   you choose (`end`, `entry`, `due`), so "finished per week, by outcome" is a stacked bar chart with series
   `Succeeded` (`outcome:success or outcome:`, which takes a task with no outcome as a success) and `Failed`
   (`outcome:failed`). Every series of a chart must measure the same kind of thing (numbers or durations).
+  Each series has its own **Remove series** button in the card's settings; **Add series** puts a new one at the end.
 - **Burndown-style series.** A series can count **what is open at the end of each period** instead of what happened in it,
   which is how `task burndown` counts: **Pending** (entered, not yet finished, and not started), **Started** (started, not yet
   finished) and **Done** (finished by then, so it adds up). Pick it in the series' **Counts** menu, or give it a `span` in the

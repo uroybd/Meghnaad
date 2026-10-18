@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 // Boards on the phone (BoardsPage.svelte, BoardView.svelte, BoardSection.svelte, SectionInfo.svelte): a page of cards, each a
 // number, a table or a chart over the tasks its filter picks, on the phone's 4 or 6 columns (BoardGrid.kt). Boards are made and changed here too (BoardEditor.kt); they are in `settings.json`,
@@ -160,6 +162,12 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
         onDismiss()
     }
 
+    /** Look at one of these tasks: close this panel and open the task's detail. */
+    fun openTask(uuid: String) {
+        onDismiss()
+        store.openDetail(uuid)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onDismiss) { Text("Close") } },
@@ -221,7 +229,8 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
                     if (sources.size > 1) Text(src.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Dim("${tasks.size} ${if (tasks.size == 1) "task" else "tasks"}", size = 12)
                     tasks.take(LISTED).forEach { t ->
-                        Column {
+                        val uuid = (t["uuid"] as? JsonPrimitive)?.contentOrNull
+                        Column(if (uuid != null) Modifier.fillMaxWidth().clickable { openTask(uuid) } else Modifier) {
                             Text("${exportedCell(t, "id") { "" }.let { if (it == "–") "" else "$it  " }}${exportedCell(t, "description") { it.toString() }}", fontSize = 13.sp)
                             val rest = columns.filter { it != "id" && it != "description" }.map { c -> c to exportedCell(t, c) { epoch -> formatMoment(epoch, tz, dateFmt) } }.filter { it.second != "–" }
                             if (rest.isNotEmpty()) Dim(rest.joinToString(" · ") { "${it.first}: ${it.second}" }, size = 11)
