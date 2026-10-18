@@ -416,7 +416,9 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
         options: Vec::new(),
         common: word.clone(),
     };
-    if word.is_empty() {
+    // `context <name>`, `context delete <name>`: a context's name, or what `context` does (offered at once, before a letter).
+    let argument = context_argument(&before[..start_c].iter().collect::<String>(), v);
+    if word.is_empty() && argument.is_none() {
         return none;
     }
     let done = |prefix: &str, options: Vec<Choice>| -> Completion {
@@ -436,6 +438,10 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
             options: full,
         }
     };
+
+    if let Some(pool) = argument {
+        return done("", matching(&word, pool, false));
+    }
 
     let first = word.chars().next().unwrap_or(' ');
     // +tag / -tag, including virtual tags.
@@ -531,6 +537,38 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
         end,
         options,
         common: if common.is_empty() { word } else { common },
+    }
+}
+
+/// What can follow `context` on the line so far (`words`, the text before the word being completed): its sub-commands and the
+/// defined contexts straight after it, the contexts after `delete`, nothing for a new name after `define`, and after that the
+/// filter, which is completed as any other.
+fn context_argument(words: &str, v: &Vocab) -> Option<Vec<Choice>> {
+    let mut words = words.split_whitespace().skip_while(|w| w.starts_with("rc."));
+    if words.next()? != "context" {
+        return None;
+    }
+    let names = || v.contexts.iter().map(|n| choice(n, Some("context")));
+    match (words.next(), words.next()) {
+        (None, _) => {
+            let mut pool: Vec<Choice> = [
+                ("list", "every context"),
+                ("show", "the active context"),
+                ("none", "turn the context off"),
+                ("define", "define work +work"),
+                ("delete", "remove a context"),
+            ]
+            .iter()
+            .map(|(w, h)| choice(w, Some(h)))
+            .collect();
+            pool.extend(names());
+            Some(pool)
+        }
+        (Some("delete"), None) => Some(names().collect()),
+        // `define <name> <filter>`: the filter is completed as any other.
+        (Some("define"), Some(_)) => None,
+        // A new name, or nothing more to say.
+        _ => Some(Vec::new()),
     }
 }
 
@@ -719,6 +757,29 @@ mod tests {
 
     fn eq(line: &str, expected: &[&str]) {
         assert_eq!(values(line), expected, "{line}");
+    }
+
+    #[test]
+    fn context_completes_what_it_does_and_the_defined_contexts() {
+        // Straight after `context`, even before a letter: its sub-commands and the contexts (work, home).
+        eq(
+            "context ",
+            &["define", "delete", "home", "list", "none", "show", "work"],
+        );
+        eq("context w", &["work"]);
+        eq("context d", &["define", "delete"]);
+        eq("context n", &["none"]);
+        eq("rc.confirmation:off context h", &["home"]);
+        // Only `delete` takes another name; a new one (`define`) or the filter after it is not a context.
+        eq("context delete ", &["home", "work"]);
+        eq("context delete h", &["home"]);
+        eq("context define h", &[]);
+        eq("context define work +w", &["+WAITING", "+WEEK", "+waiting-on", "+work"]);
+        eq("context list w", &[]);
+        // Elsewhere an empty word still offers nothing, and a word that is not after `context` is as before.
+        eq("", &[]);
+        eq("list w", &["wait:"]);
+        eq("li", &["limit:", "list"]);
     }
 
     #[test]
