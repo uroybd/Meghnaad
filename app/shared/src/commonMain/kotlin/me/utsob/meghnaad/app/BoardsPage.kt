@@ -1,6 +1,9 @@
 package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -272,10 +275,23 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
                     Dim("${tasks.size} ${if (tasks.size == 1) "task" else "tasks"}", size = 12)
                     tasks.take(LISTED).forEach { t ->
                         val uuid = (t["uuid"] as? JsonPrimitive)?.contentOrNull
-                        Column(if (uuid != null) Modifier.fillMaxWidth().clickable { openTask(uuid) } else Modifier) {
-                            Text("${exportedCell(t, "id") { "" }.let { if (it == "–") "" else "$it  " }}${exportedCell(t, "description") { it.toString() }}", fontSize = 13.sp)
-                            val rest = columns.filter { it != "id" && it != "description" }.map { c -> c to exportedCell(t, c) { epoch -> formatMoment(epoch, tz, dateFmt) } }.filter { it.second != "–" }
-                            if (rest.isNotEmpty()) Dim(rest.joinToString(" · ") { "${it.first}: ${it.second}" }, size = 11)
+                        // A task that can be opened looks like a button: a tinted row, its title in the link colour, and an arrow.
+                        val row = if (uuid != null) {
+                            Modifier.fillMaxWidth().clip(ControlShape).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .clickable { openTask(uuid) }.padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)
+                        } else Modifier
+                        Row(row, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "${exportedCell(t, "id") { "" }.let { if (it == "–") "" else "$it  " }}${exportedCell(t, "description") { it.toString() }}",
+                                    fontSize = 14.sp,
+                                    fontWeight = if (uuid != null) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (uuid != null) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                                )
+                                val rest = columns.filter { it != "id" && it != "description" }.map { c -> c to exportedCell(t, c) { epoch -> formatMoment(epoch, tz, dateFmt) } }.filter { it.second != "–" }
+                                if (rest.isNotEmpty()) Dim(rest.joinToString(" · ") { "${it.first}: ${it.second}" }, size = 11)
+                            }
+                            if (uuid != null) LucideIcon("chevron-right", size = 18.dp, tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                     if (tasks.size > LISTED) Dim("and ${tasks.size - LISTED} more (open them in Tasks to see all).", size = 11)
