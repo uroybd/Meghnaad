@@ -5792,3 +5792,70 @@ mod names_and_reminders {
             .is_empty());
     }
 }
+
+/// One argument with spaces in it is a whole filter, as in `task "+x and +y" count`: Taskwarrior lexes it again, unless it
+/// starts with a `name:value` (then the whole argument is that one value).
+#[tokio::test]
+async fn a_filter_in_one_quoted_argument_is_read_as_an_expression() {
+    let mut r = replica();
+    let cfg = Config::default();
+    for line in [
+        "add hello world",
+        "add world hello",
+        "add hello big world",
+        "add other",
+        "add alpha +x",
+        "add beta +y project:p",
+        "add gamma +x +y project:p",
+    ] {
+        run(&mut r, &cfg, line).await;
+    }
+    // (quoted filter, what the real `task` counts for it)
+    for (filter, count) in [
+        ("hello world", "3"),
+        ("hello big", "1"),
+        ("+x and +y", "1"),
+        ("+x or +y", "3"),
+        ("(+x or +y) and project:p", "2"),
+        ("(project:p or +x)", "3"),
+        ("+x or project:p", "3"),
+        // A leading `name:value` takes the whole argument as its value.
+        ("project:p and +y", "0"),
+    ] {
+        let (res, _) = run(&mut r, &cfg, &format!("\"{filter}\" count")).await;
+        assert_eq!(message(&res), count, "{filter}");
+    }
+    // `context define` takes the same kind of text, and the context then filters by it.
+    for line in [
+        "context define a \"+x or (end.after:sow and end.before:eow) or (scheduled.after:sow and scheduled.before:eow)\"",
+        "context define b \"(due.after:sow and due.before:eow) or (end.after:sow and end.before:eow)\"",
+    ] {
+        let (res, _) = run_yes(&mut r, &cfg, line).await;
+        assert!(message(&res).contains("defined (read, write)"), "{line}: {}", message(&res));
+    }
+}
+
+/// A page may run in a context of its own, sent as `rc.context=<name>` (or `none`), whatever the active one is.
+#[tokio::test]
+async fn rc_context_overrides_the_active_context_for_one_command() {
+    let cfg = parse("context=cx\ncontext.cx.read=+x\ncontext.cy.read=+y\n").config;
+    let mut r = replica();
+    for line in ["add a +x", "add b +y", "add c +x +y", "add d"] {
+        run(&mut r, &cfg, line).await;
+    }
+    for (line, count) in [
+        ("count", "2"),
+        ("rc.context=cy count", "2"),
+        ("rc.context=none count", "4"),
+        ("rc.context=cx count", "2"),
+        ("count rc.context=none", "4"),
+        ("(+y) rc.context=cx count", "1"),
+    ] {
+        let (res, _) = run(&mut r, &cfg, line).await;
+        assert_eq!(message(&res), count, "{line}");
+    }
+    // With no active context, a page can still choose one.
+    let cfg = parse("context.cy.read=+y\n").config;
+    let (res, _) = run(&mut r, &cfg, "rc.context=cy count").await;
+    assert_eq!(message(&res), "2");
+}

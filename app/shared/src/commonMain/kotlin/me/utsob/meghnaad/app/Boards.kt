@@ -282,10 +282,12 @@ sealed interface SectionData {
  * Every section's data. Sections that run the same filter share one `export`; a table runs its report, as the Tasks page does,
  * with the section's filter.
  */
-suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData> {
+suspend fun loadBoard(tw: Tw, board: Board, zone: Zone, context: String? = null): Map<String, SectionData> {
+    // The board's own context, if it chose one, is sent with every command it runs (PageContext.kt).
+    val within = listOfNotNull(context?.let(::contextWord))
     val exports = HashMap<String, CliResult>()
     suspend fun exportOf(filter: String): CliResult =
-        exports.getOrPut(filter) { tw.run(args = rustHelpers().splitWords(filter) + "export").result }
+        exports.getOrPut(filter) { tw.run(args = within + rustHelpers().splitWords(filter) + "export").result }
 
     /** The tasks a filter picks, as the text `export` prints; or why they could not be had. */
     suspend fun tasksOf(filter: String): Pair<String?, String?> = when (val r = exportOf(filter)) {
@@ -300,7 +302,7 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
             when {
                 s.type == "table" -> {
                     val filter = effectiveFilter(board, s)
-                    val r = tw.run(args = rustHelpers().splitWords(filter) + (s.report ?: "next")).result
+                    val r = tw.run(args = within + rustHelpers().splitWords(filter) + (s.report ?: "next")).result
                     if (r is CliResult.Error) SectionData.Failed(r.value.message) else SectionData.Table(r, filter)
                 }
                 s.type == "number" -> {

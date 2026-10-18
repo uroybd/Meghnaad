@@ -366,8 +366,25 @@ pub fn split_words(s: &str) -> Vec<String> {
     out
 }
 
-/// Peel `(` and `)` off the edges of words so `(due:today` and `+a)` become separate tokens.
+/// Peel `(` and `)` off the edges of words so `(due:today` and `+a)` become separate tokens. An argument with spaces in
+/// it, such as `"+a or (due:today and +b)"` in quotes, is a whole filter and is read again as one, as Taskwarrior does;
+/// unless it starts with a `name:value`, which then takes all of it (`project:Home and +a` is one project, as it is there), or is
+/// one `/pattern/`.
 fn tokenize(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for a in args {
+        let first = a.split_whitespace().next().unwrap_or_default();
+        let pattern = a.len() > 1 && a.starts_with('/') && a.ends_with('/');
+        if a.contains(char::is_whitespace) && split_pair(first).is_none() && !pattern {
+            out.extend(peel(&split_words(a)));
+        } else {
+            out.extend(peel(std::slice::from_ref(a)));
+        }
+    }
+    out
+}
+
+fn peel(args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for a in args {
         let mut s = a.as_str();

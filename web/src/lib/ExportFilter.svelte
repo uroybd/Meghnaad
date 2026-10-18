@@ -1,6 +1,8 @@
 <script lang="ts">
   import { runCli } from './api';
+  import ContextPicker from './ContextPicker.svelte';
   import { splitWords } from './cmdline';
+  import { withContext, type Scope } from './pageContext';
   import FilterChips from './FilterChips.svelte';
   import FilterInput from './FilterInput.svelte';
   import { store } from './store.svelte';
@@ -17,6 +19,7 @@
     id,
     label,
     placeholder,
+    scope,
   }: {
     filter: string;
     /** Called after each answer: the tasks, or why there are none (the last good tasks are then kept by the caller). */
@@ -24,13 +27,16 @@
     id: string;
     label: string;
     placeholder?: string;
+    /** The page, which may show its tasks in a context of its own. */
+    scope: Scope;
   } = $props();
 
   let seq = 0;
   async function load(f: string) {
     const mine = ++seq;
     try {
-      const r = (await runCli({ args: [...splitWords(f), '_rows'] })).result;
+      const input = withContext({ args: [...splitWords(f), '_rows'] }, store.contextChoice(scope));
+      const r = (await runCli(input)).result;
       if (mine !== seq) return; // a newer filter was asked for meanwhile
       if (r.kind === 'error') throw new Error(r.message);
       onresult({ rows: r.kind === 'json' ? (r.value as Row[]) : null, error: null });
@@ -44,6 +50,7 @@
   let lastFilter: string | null = null;
   $effect(() => {
     const f = filter;
+    void store.contextChoice(scope);
     void store.rev;
     const typing = lastFilter !== null && f !== lastFilter;
     const t = setTimeout(
@@ -58,7 +65,10 @@
 </script>
 
 <section class="bar" aria-label={label}>
-  <FilterInput bind:value={filter} {id} {placeholder} autofocus />
+  <div class="top">
+    <div class="field"><FilterInput bind:value={filter} {id} {placeholder} autofocus /></div>
+    <ContextPicker {scope} />
+  </div>
   <FilterChips bind:value={filter} />
 </section>
 
@@ -67,5 +77,15 @@
     display: grid;
     gap: 10px;
     margin-bottom: 14px;
+  }
+  .top {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: start;
+  }
+  .field {
+    flex: 1 1 18em;
+    min-width: 0;
   }
 </style>

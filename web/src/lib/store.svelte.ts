@@ -1,4 +1,5 @@
 import { engine } from '../engine/client.svelte';
+import { loadChoices, saveChoices, withContext, NO_CONTEXT, type Scope } from './pageContext';
 import { ApiError, getAppSettings, getConfig, putAppSettings, runCli, type Answers, type CliInput } from './api';
 import {
   MAX_SETTINGS_BYTES,
@@ -38,6 +39,8 @@ export interface Entry {
   declined?: boolean;
   /** It continues the line above it (a later statement of `a ; b`): the console draws them as one block. */
   chained?: boolean;
+  /** The page it belongs to, which may run it in a context of its own; the console's entries have none. */
+  scope?: Scope;
 }
 
 export interface Toast {
@@ -125,6 +128,8 @@ class Store {
   filter = $state('');
   /** JSON of the args `live` was loaded with, so we don't fetch the same thing twice. */
   liveKey = '';
+  /** The context the live table was last fetched in (`''`: the active one), so a changed choice fetches it again. */
+  liveContext = '';
   toast = $state<Toast | null>(null);
   /** The most recent command run, whether typed or driven by the UI. Shown above the prompt. */
   lastCommand = $state('');
@@ -180,6 +185,35 @@ class Store {
       /* private mode: the choice lasts until the page is closed */
     }
   }
+
+  /** The context each page chose (a name, or `none`); a page not here follows the active one. */
+  contextChoices = $state<Record<string, string>>(typeof localStorage === 'undefined' ? {} : loadChoices());
+
+  /** What `scope` chose, or `undefined` to follow the active context. A context that is gone no longer counts. */
+  contextChoice(scope: Scope): string | undefined {
+    const c = this.contextChoices[scope];
+    if (!c || c === NO_CONTEXT) return c;
+    const known = this.config?.config.contexts;
+    return !known || c in known ? c : undefined;
+  }
+
+  setContextChoice(scope: Scope, choice: string | undefined) {
+    const next = { ...this.contextChoices };
+    if (choice) next[scope] = choice;
+    else delete next[scope];
+    this.contextChoices = next;
+    saveChoices(next);
+  }
+
+  /** The context in force on a page: its own choice, else the active one; `null` for none. */
+  contextIn(scope: Scope): string | null {
+    const c = this.contextChoice(scope) ?? this.config?.config.active_context ?? null;
+    return c === NO_CONTEXT ? null : c;
+  }
+
+  /** The context that is active for the console, and for every page that follows it. */
+  activeContext = $derived(this.config?.config.active_context ?? null);
+
   udas = $derived(Object.values(this.config?.config.udas ?? {}));
   vocab = $derived<Vocab>({
     reports: this.reports.map((r) => ({ name: r.name, description: r.description })),
@@ -420,7 +454,7 @@ class Store {
     e.failure = null;
     e.answers = answers;
     try {
-      const res = await runCli({ ...e.input, ...answers });
+      const res = await runCli({ ...withContext(e.input, e.scope && this.contextChoice(e.scope)), ...answers });
       e.result = res.result;
       e.feedback = res.feedback;
       if (res.result.kind === 'report') this.#learn(res.result.rows);
@@ -447,7 +481,8 @@ class Store {
       // already showing these arguments; otherwise the Tasks view must run them (marking them as
       // loaded here would make it skip the run and keep showing the previous, unfiltered, table).
       this.liveKey = JSON.stringify(args);
-      this.live = { ...from, id: nextId++, input: { args }, title: titleOf({ args }) };
+      this.liveContext = '';
+      this.live = { ...from, id: nextId++, input: { args }, title: titleOf({ args }), scope: 'tasks' };
     }
   }
 
@@ -555,6 +590,7 @@ class Store {
   /** Run (or re-run) the Tasks view's live table. */
   async runLive(input: CliInput) {
     this.liveKey = JSON.stringify(input.args ?? input.line);
+    this.liveContext = this.contextChoice('tasks') ?? '';
     if (!this.live) {
       this.live = {
         id: nextId++,
@@ -564,6 +600,7 @@ class Store {
         loading: true,
         failure: null,
         at: Date.now(),
+        scope: 'tasks',
       };
     }
     this.live.input = input;
@@ -583,6 +620,7 @@ class Store {
         loading: true,
         failure: null,
         at: Date.now(),
+        scope: which,
       };
     }
     const e = this.panels[which]!;

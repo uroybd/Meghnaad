@@ -56,6 +56,7 @@
 </script>
 
 <ExportFilter
+  scope="tags"
   bind:filter={store.tagsFilter}
   onresult={(r) => (res = { rows: r.rows ?? res?.rows ?? [], error: r.error })}
   id="tags-filter"

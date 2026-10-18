@@ -301,3 +301,26 @@ describe('tasksh review at the prompt', () => {
     expect(quit).toHaveBeenCalled();
   });
 });
+
+describe('the active context at the prompt', () => {
+  const withActive = (name: string | null) =>
+    (store.config = { reports: [], config: { settings: {}, contexts: {}, active_context: name } } as never);
+  afterEach(() => (store.config = null));
+
+  it('is shown, and cleared by the button, which runs `context none`', () => {
+    withActive('work');
+    const run = vi.spyOn(store, 'run').mockResolvedValue({} as never);
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    expect(document.querySelector('[data-testid="active-context"]')?.textContent).toBe('work');
+    document.querySelector<HTMLButtonElement>('button[aria-label="Clear the context"]')!.click();
+    expect(run).toHaveBeenCalledWith({ line: 'context none' }, 'context none');
+  });
+
+  it('is not there when no context is active', () => {
+    withActive(null);
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    expect(document.querySelector('[data-testid="active-context"]')).toBeNull();
+  });
+});

@@ -23,7 +23,18 @@
    * What a board section is made of, for whoever wants to check it: the filter it ran, the tasks that filter got, and what was
    * worked out of them (the figure, or each label on the chart's axis with each series' value there).
    */
-  let { section, data, onclose }: { section: Section; data: SectionData; onclose: () => void } = $props();
+  let {
+    section,
+    data,
+    onclose,
+    context,
+  }: {
+    section: Section;
+    data: SectionData;
+    onclose: () => void;
+    /** The context the board ran the section in (its own choice), which the Tasks page then looks in too. */
+    context?: string;
+  } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
   $effect(() => {
@@ -33,6 +44,7 @@
   /** The most tasks listed for one filter; the count says how many there are. */
   const LIMIT = 200;
 
+  const inForce = $derived(context === undefined ? store.activeContext : context === 'none' ? null : context);
   const typeLabel = $derived(SECTION_TYPES.find((t) => t.id === section.type)?.label ?? section.type);
   const sources = $derived(data.kind === 'answer' || data.kind === 'chart' ? data.sources : []);
   const listed = $derived(sources.map((src) => ({ ...src, tasks: parseTasks(src.text) })));
@@ -66,6 +78,7 @@
   /** Look at these tasks on the Tasks page, with this filter. */
   function open(filter: string) {
     store.filter = filter;
+    store.setContextChoice('tasks', context);
     store.view = 'tasks';
     dialog?.close();
   }
@@ -94,6 +107,12 @@
       <dt>Measure</dt>
       <dd>{describeMeasure(section.measure)}{section.series?.length ? ' (unless a series says otherwise)' : ''}</dd>
     {/if}
+    <dt>Context</dt>
+    <dd>
+      {#if inForce}<code>{inForce}</code>{:else}none{/if}{context === undefined
+        ? ' (the console’s)'
+        : ' (chosen for this board)'}
+    </dd>
     {#if describeBy(section.by)}
       <dt>Grouped by</dt>
       <dd>{describeBy(section.by)}</dd>

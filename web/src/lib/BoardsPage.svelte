@@ -1,5 +1,6 @@
 <script lang="ts">
   import BoardView from './BoardView.svelte';
+  import ContextPicker from './ContextPicker.svelte';
   import Drawer from './Drawer.svelte';
   import FilterInput from './FilterInput.svelte';
   import type { Homepage } from './appsettings';
@@ -228,6 +229,7 @@
         ><ChevronLeft size={18} /></button
       >
       <h1 class="grow">{draft ? 'Editing ' : ''}{(draft ?? board).name}</h1>
+      <ContextPicker scope="board:{board.id}" />
       {#if draft}
         <button onclick={cancel} disabled={busy}>Cancel</button>
         <button class="primary" onclick={save} disabled={busy || !valid}>Save</button>

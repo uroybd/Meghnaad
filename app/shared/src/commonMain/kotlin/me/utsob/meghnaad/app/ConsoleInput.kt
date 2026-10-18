@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -171,6 +172,12 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             } else Spacer(Modifier.weight(1f))
+            // The active context, with the way to clear it (`context none`): the console runs in it, and so does every page that follows it.
+            store.activeContext?.let { name ->
+                Text("context", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(name, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+                IconAction("x", "Clear the context", { store.go { run(CliInput(line = "context none"), "context none") } }, size = 14.dp)
+            }
             IconAction("chevron-up", "Previous command", { older() }, size = 16.dp)
             IconAction("arrow-right-to-line", "Complete", { completeSignal++ }, size = 16.dp)
             if (store.lastCommand.isNotEmpty()) {
