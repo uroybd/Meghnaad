@@ -504,7 +504,7 @@ class Store(
 
     /** What each section of [board] shows now: their filters run, their numbers worked out (see [loadBoard]). */
     suspend fun loadBoardData(board: Board): Map<String, SectionData> =
-        loadBoard(tw, board, boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds()), contextChoice(Scope.board(board.id)))
+        loadBoard(tw, board, boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds()))
 
     /**
      * Open the home page the settings choose. Unforced, only from the front page: a person who has already gone somewhere is
@@ -569,6 +569,12 @@ class Store(
         showHiddenReports = on
         prefs.put(SHOW_HIDDEN_KEY, if (on) "1" else "0")
     }
+
+    /**
+     * The filter typed above a board to look at it another way, by the board's id: it takes the place of the board's own filter
+     * while the app is open (nothing saved). A board not here shows its own (BoardFilter.svelte).
+     */
+    val boardFilters = mutableStateMapOf<String, String>()
 
     // ---- Each page's own context
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { contextWord, loadChoices, saveChoices, withContext } from './pageContext';
+import { contextOfFilter, contextWord, loadChoices, saveChoices, withContext } from './pageContext';
 
 beforeEach(() => localStorage.clear());
 
@@ -18,13 +18,23 @@ describe('a command in a page’s context', () => {
 
 describe('the choices kept in the browser', () => {
   it('come back as saved, and a damaged value is nothing', () => {
-    saveChoices({ tasks: 'work', 'board:b': 'none' });
-    expect(loadChoices()).toEqual({ tasks: 'work', 'board:b': 'none' });
+    saveChoices({ tasks: 'work', summary: 'none' });
+    expect(loadChoices()).toEqual({ tasks: 'work', summary: 'none' });
     localStorage.setItem('tw-web-page-contexts', '[1,2]');
     expect(loadChoices()).toEqual({});
     localStorage.setItem('tw-web-page-contexts', '{"a":"x","b":3,"c":""}');
     expect(loadChoices()).toEqual({ a: 'x' });
     localStorage.setItem('tw-web-page-contexts', 'not json');
     expect(loadChoices()).toEqual({});
+  });
+});
+
+describe('the context a filter names', () => {
+  it('is the last rc.context word, none when it is empty, and nothing when there is none', () => {
+    expect(contextOfFilter('( rc.context=this_week ) ( project:Home )')).toBe('this_week');
+    expect(contextOfFilter('rc.context:work +x rc.context=none')).toBe('none');
+    expect(contextOfFilter('rc.context= +x')).toBe('none');
+    expect(contextOfFilter('project:Home +x')).toBeUndefined();
+    expect(contextOfFilter('')).toBeUndefined();
   });
 });

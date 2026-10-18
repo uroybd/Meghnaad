@@ -141,11 +141,15 @@ one filter, as Taskwarrior reads it, unless it starts with a `name:value`, which
 
 The active context is the console's: it sits above the prompt (`context work`, with a ✕ that runs `context none`), and every
 command you type runs in it. The pages follow it unless told otherwise. The Tasks page, Summary, Calendar, Burndown,
-Projects, Tags and each board have a **Context** menu of their own: *same as console* (the default), *none*, or any context.
-A page's choice is only for that page (it is remembered on this device, not synced), so `context work` in the console does not
-change a page that chose *none*, and a board that chose `this_week` stays on it. The choice is sent with the page's commands
-as Taskwarrior's own `rc.context=<name>`. A card's **Information** names the context it ran in, and **Open in Tasks** brings the
-board's choice along. New tasks (the **+** and the console's `add`) still take the *active* context's write rule.
+Projects and Tags have a **Context** menu of their own: *same as console* (the default), *none*, or any context. A page's
+choice is only for that page (it is remembered on this device, not synced), so `context work` in the console does not
+change a page that chose *none*. The choice is sent with the page's commands as Taskwarrior's own `rc.context=<name>`.
+A board has no menu: it follows the console's context unless its filter names one. Put `rc.context=this_week` in the board's
+filter (in its settings) to make that its default (a card that ignores the board's filter ignores that too), or in a card's
+filter to give that card its own; a card's
+**Information** names the context it ran in. The **Filter** above a board (collapsed until you open it) holds the board's own
+filter; what you type there replaces it while you look at the board, and nothing is saved (**Reset** brings the board's own
+back). New tasks (the **+** and the console's `add`) still take the *active* context's write rule.
 
 **Where a report prints.** Typed in the Console, a report (`list`, `next`, …) prints there. Typed in the bar under any
 other page, it opens in the Tasks view, where it can be sorted and filtered.

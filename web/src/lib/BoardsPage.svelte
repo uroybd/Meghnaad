@@ -1,6 +1,6 @@
 <script lang="ts">
   import BoardView from './BoardView.svelte';
-  import ContextPicker from './ContextPicker.svelte';
+  import BoardFilter from './BoardFilter.svelte';
   import Drawer from './Drawer.svelte';
   import FilterInput from './FilterInput.svelte';
   import type { Homepage } from './appsettings';
@@ -229,7 +229,6 @@
         ><ChevronLeft size={18} /></button
       >
       <h1 class="grow">{draft ? 'Editing ' : ''}{(draft ?? board).name}</h1>
-      <ContextPicker scope="board:{board.id}" />
       {#if draft}
         <button onclick={cancel} disabled={busy}>Cancel</button>
         <button class="primary" onclick={save} disabled={busy || !valid}>Save</button>
@@ -241,6 +240,7 @@
       {/if}
     </div>
     {#if !draft && board.description}<p class="dim">{board.description}</p>{/if}
+    {#if !draft}<BoardFilter {board} />{/if}
     {#if error}<p class="err" role="alert">{error}</p>{/if}
 
     {#if draft}
@@ -276,7 +276,7 @@
           <FilterInput
             bind:value={() => draft?.filter ?? '', (v) => draft && (draft.filter = v || undefined)}
             id="board-filter"
-            placeholder="optional: project:Home"
+            placeholder="optional: project:Home  ·  rc.context=this_week to use a context"
           />
         </div>
         <div class="wide row adds">
@@ -299,7 +299,7 @@
     {/if}
 
     <BoardView
-      board={draft ?? board}
+      board={draft ?? { ...board, filter: store.boardFilters[board.id] ?? board.filter }}
       editing={!!draft}
       {selected}
       onchange={setSections}

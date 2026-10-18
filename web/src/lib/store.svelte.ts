@@ -101,6 +101,11 @@ class Store {
   >('tasks');
   /** The board the Boards page shows (null: the list of boards). */
   boardId = $state<string | null>(null);
+  /**
+   * The filter typed above a board to look at it another way, by the board's id: it takes the place of the board's own filter
+   * while the page is open (nothing saved). A board not here shows its own.
+   */
+  boardFilters = $state<Record<string, string>>({});
   /** The tab the Settings page shows. */
   settingsTab = $state<SettingsTab>('taskrc');
   /** The app's own `settings.json`, read (null until it has been). */
