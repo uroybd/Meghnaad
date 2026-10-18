@@ -137,7 +137,7 @@ private fun WideTopBar(store: Store, labels: Boolean, buttonLabels: Boolean) {
             for (t in TABS) Button(t.icon, t.label, store.view == t.view, labels) { store.view = t.view }
             Box(Modifier.weight(1f))
             TimerChip(store, Modifier)
-            store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(horizontal = 8.dp)) }
+            store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(horizontal = 8.dp), background = extras.warn, color = contextText(), bold = true) }
             Button("clipboard-check", "Review", store.review.phase != ReviewPhase.Idle, buttonLabels, enabled = store.review.phase == ReviewPhase.Idle) { store.go { store.review.start() } }
             Button(if (store.notifier.settings.enabled) "bell" else "bell-off", "Reminders (${if (store.notifier.settings.enabled) "on" else "off"})", false, false) { store.notifyOpen = true }
             Button("settings", "Settings", store.view == View.Settings, buttonLabels) { store.openSettings() }
@@ -195,7 +195,7 @@ private fun TopBar(store: Store, onMenu: () -> Unit) {
         Text("Meghnaad", Modifier.padding(horizontal = 6.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
         Box(Modifier.weight(1f))
         TimerChip(store, Modifier.weight(3f, fill = false))
-        store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(end = 8.dp)) }
+        store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(end = 8.dp), background = extras.warn, color = contextText(), bold = true) }
     }
 }
 

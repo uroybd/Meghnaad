@@ -362,7 +362,9 @@
         enterkeyhint="go"
         data-testid="prompt"></textarea>
     </span>
-    <button class="primary btn" aria-label="Run"><CornerDownLeft size={15} /> <span class="run">Run</span></button>
+    <button class="primary btn" class:in-context={store.activeContext} aria-label="Run"
+      ><CornerDownLeft size={15} /> <span class="run">Run</span></button
+    >
   </label>
 </form>
 
