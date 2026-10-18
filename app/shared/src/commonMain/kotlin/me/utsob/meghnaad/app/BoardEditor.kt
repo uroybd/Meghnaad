@@ -266,9 +266,7 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
         Dim("Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With none, the chart is the one measure above.", size = 11)
         s.series.forEachIndexed { i, x ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextBox("Label of series ${i + 1}", x.label, { v -> patch(i) { it.copy(label = v) } }, modifier = Modifier.weight(1f))
-                }
+                TextBox("Name of series ${i + 1}", x.label, { v -> patch(i) { it.copy(label = v) } })
                 Labeled("Filter") {
                     CompletingField(x.filter.orEmpty(), { v -> patch(i) { it.copy(filter = v.ifEmpty { null }) } }, store.vocab, placeholder = "outcome:failed")
                 }
