@@ -331,6 +331,7 @@
     all: unset;
     cursor: pointer;
     color: var(--accent, var(--text));
+    font-weight: 600;
     text-decoration: underline;
     text-decoration-color: var(--line);
     text-underline-offset: 2px;
