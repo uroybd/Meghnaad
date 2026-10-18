@@ -15,7 +15,7 @@
     type Span,
     type Step,
   } from './boards';
-  import { Plus, X } from './icons';
+  import { Plus, Trash2 } from './icons';
   import { store } from './store.svelte';
 
   /** The settings of one board section. It edits a copy and reports it; saving is the board's. */
@@ -226,12 +226,6 @@
                 placeholder="Which tasks: outcome:failed"
               />
             </div>
-            <button
-              class="ghost danger"
-              aria-label="Remove series {i + 1}"
-              title="Remove"
-              onclick={() => setSeries(series.filter((_, j) => j !== i))}><X size={14} /></button
-            >
           </div>
           {#if section.by?.time}
             <div class="span-row">
@@ -273,6 +267,13 @@
             label="Colour of series {i + 1}"
             onchange={(color) => patchSeries(i, { color })}
           />
+          <div class="row-series">
+            <button
+              class="danger"
+              aria-label="Remove series {i + 1}"
+              onclick={() => setSeries(series.filter((_, j) => j !== i))}><Trash2 size={14} /> Remove series</button
+            >
+          </div>
         </div>
       {/each}
       <div class="row-series">

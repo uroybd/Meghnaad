@@ -268,12 +268,10 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextBox("Label of series ${i + 1}", x.label, { v -> patch(i) { it.copy(label = v) } }, modifier = Modifier.weight(1f))
-                    IconAction("x", "Remove series ${i + 1}", { setSeries(s.series.filterIndexed { j, _ -> j != i }) }, size = 16.dp, box = 40.dp)
                 }
                 Labeled("Filter") {
                     CompletingField(x.filter.orEmpty(), { v -> patch(i) { it.copy(filter = v.ifEmpty { null }) } }, store.vocab, placeholder = "outcome:failed")
                 }
-                ColorChoice(x.color, i, extras.dark) { c -> patch(i) { it.copy(color = c) } }
                 if (s.by?.time != null) {
                     Pick("Counts", listOf("period" to "What happened in each period") + SPAN_PRESETS.map { it.id to it.label } + ("custom" to "Open between two dates…"), spanKind(x)) { kind ->
                         patch(i) { it.copy(span = spanFor(kind ?: "period")) }
@@ -286,6 +284,8 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
                         Pick("Unless", listOf<Pair<String?, String>>(null to "nothing") + dates.map { it to "$it has passed" }, span.unless) { v -> patch(i) { it.copy(span = span.copy(unless = v)) } }
                     }
                 }
+                ColorChoice(x.color, i, extras.dark) { c -> patch(i) { it.copy(color = c) } }
+                TextButton({ setSeries(s.series.filterIndexed { j, _ -> j != i }) }) { Text("Remove series ${i + 1}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
