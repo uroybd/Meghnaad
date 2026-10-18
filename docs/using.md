@@ -134,7 +134,8 @@ sync backlog describe this page: `undo` is what it remembers, and the backlog is
 `context none` turns it off, `context delete work` removes it, and `context` (or `context list`) lists them and
 `context show` says which one is in force (the filter bar above a table names it too). They edit the saved settings,
 the same ones the taskrc tab and `config` do, so the pages follow at once. Defining asks first, as in Taskwarrior, when its filter
-matches no pending task, and deleting asks when `confirmation` is on. A filter that can't also be what new tasks get
+matches no pending task, and deleting asks when `confirmation` is on. Tab completes `context` too: what it can do (`list`, `show`, `none`, `define`, `delete`) and the contexts you have defined, and
+`rc.context:` the same way. A filter that can't also be what new tasks get
 (one with `or`, a `-tag` or a modifier such as `.before`) makes a read-only context, and says so.
 Put the whole filter in quotes (`context define this_week "+WEEK or (due.after:sow and due.before:eow)"`) and it is read as
 one filter, as Taskwarrior reads it, unless it starts with a `name:value`, which takes all of it.
