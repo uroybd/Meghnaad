@@ -10,13 +10,12 @@ import kotlinx.serialization.builtins.serializer
 /** What a page may say it wants: no context at all (as `context none`). */
 const val NO_CONTEXT = "none"
 
-/** The pages that choose a context: each report page, and each board. */
+/** The pages that choose a context: the report pages. (A board names its context in its filter: `rc.context=this_week`.) */
 object Scope {
     const val Tasks = "tasks"
     const val Projects = "projects"
     const val Tags = "tags"
     fun panel(which: Panel) = which.name.lowercase()
-    fun board(id: String) = "board:$id"
 }
 
 /** The word that makes a command run in [choice], a context's name or `none`. */
@@ -44,3 +43,13 @@ fun loadChoices(text: String?): Map<String, String> = try {
 }
 
 fun saveChoices(choices: Map<String, String>): String = engineJson.encodeToString(choicesSerializer, choices)
+
+/** The context a filter names with `rc.context=<name>` (the last such word, as the engine reads them), or null if it names none. */
+fun contextOfFilter(filter: String): String? {
+    var found: String? = null
+    for (w in rustHelpers().splitWords(filter)) {
+        val m = Regex("^rc\\.context[:=](.*)$").find(w) ?: continue
+        found = m.groupValues[1].ifEmpty { NO_CONTEXT }
+    }
+    return found
+}

@@ -57,8 +57,7 @@ fun BoardsPage(store: Store) {
 fun rememberBoardData(store: Store, board: Board, wait: Boolean): Map<String, SectionData> {
     var data by remember { mutableStateOf<Map<String, SectionData>>(emptyMap()) }
     val asks = listOf(board.filter, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.ignoreBoardFilter, it.measure, it.by, it.series) })
-    val choice = store.contextChoice(Scope.board(board.id))
-    LaunchedEffect(asks, store.rev, choice) {
+    LaunchedEffect(asks, store.rev) {
         // While a board is being edited, a keystroke in a filter is not a question.
         if (wait) delay(250)
         data = store.loadBoardData(board)
@@ -111,7 +110,9 @@ private fun BoardList(store: Store) {
 
 @Composable
 private fun BoardScreen(store: Store, board: Board) {
-    val data = rememberBoardData(store, board, wait = false)
+    // The board as it is looked at now: its own filter, or the one typed above it (BoardFilter).
+    val shown = store.boardFilters[board.id]?.let { board.copy(filter = it) } ?: board
+    val data = rememberBoardData(store, shown, wait = false)
     var info by remember(board) { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -123,7 +124,7 @@ private fun BoardScreen(store: Store, board: Board) {
             IconAction("link", "Copy a link to this board", { clipboard.setText(AnnotatedString(placeLink(AppPlace.Boards(board.id)))); store.notify("Link copied.") }, size = 20.dp)
         }
         board.description?.let { Dim(it, Modifier.padding(horizontal = 12.dp)) }
-        ContextPicker(store, Scope.board(board.id), Modifier.padding(horizontal = 12.dp))
+        BoardFilter(store, board)
         if (board.sections.isEmpty()) Dim("This board has no sections yet. Edit it to add some.", Modifier.padding(horizontal = 12.dp))
         BoardGrid(store, board.sections, data, onInfo = { info = it })
     }
@@ -131,7 +132,41 @@ private fun BoardScreen(store: Store, board: Board) {
     info?.let { id ->
         val section = board.sections.firstOrNull { it.id == id }
         val got = data[id]
-        if (section != null && got != null) SectionInfoDialog(store, section, got, store.contextChoice(Scope.board(board.id))) { info = null }
+        if (section != null && got != null) SectionInfoDialog(store, section, got) { info = null }
+    }
+}
+
+/**
+ * A filter to look at one board another way (BoardFilter.svelte): collapsed by default, and what is typed here takes the place of the
+ * board's own filter (its default, saved with the board) while the app is open. It is not saved. A context goes in it as it does in
+ * the board's own: `rc.context=this_week`.
+ */
+@Composable
+private fun BoardFilter(store: Store, board: Board) {
+    var open by remember(board.id) { mutableStateOf(false) }
+    val own = board.filter.orEmpty()
+    val typed = store.boardFilters[board.id]
+    fun set(value: String) {
+        // Typing the board's own filter back is no change.
+        if (value.trim() == own.trim()) store.boardFilters.remove(board.id) else store.boardFilters[board.id] = value
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.clickable { open = !open }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            LucideIcon(if (open) "chevron-down" else "chevron-right", size = 16.dp)
+            Text("Filter", fontSize = 14.sp)
+            if (typed != null) Pill("changed", background = MaterialTheme.colorScheme.primary, color = MaterialTheme.colorScheme.onPrimary)
+        }
+        if (open) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilterField(store, typed ?: own, ::set, Modifier.weight(1f), placeholder = "Which tasks: project:Home +work · rc.context=this_week")
+                IconAction("rotate-ccw", "Use the board's own filter", { set(own) }, enabled = typed != null, size = 18.dp)
+            }
+            Dim(
+                (if (own.isNotEmpty()) "The board's own filter is $own. " else "The board has no filter of its own. ") +
+                    "What you type here replaces it while you look at this board; nothing is saved. A card that ignores the board's filter keeps its own.",
+                size = 12,
+            )
+        }
     }
 }
 
@@ -142,7 +177,7 @@ private const val LISTED = 50
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SectionInfoDialog(store: Store, section: Section, data: SectionData, context: String?, onDismiss: () -> Unit) {
+private fun SectionInfoDialog(store: Store, section: Section, data: SectionData, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val sources = when (data) {
         is SectionData.Number -> data.sources
@@ -158,12 +193,12 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
             .filterNotNull().distinct()
     }
 
-    // The context the board ran the section in (its own choice, else the console's), which the Tasks page then looks in too.
-    val inForce = (context ?: store.activeContext)?.takeIf { it != NO_CONTEXT }
+    // The context it ran in: the one its filter names (`rc.context=this_week`), else the console's.
+    val named = contextOfFilter(if (data is SectionData.Table) data.filter else sources.firstOrNull()?.filter.orEmpty())
+    val inForce = (named ?: store.activeContext)?.takeIf { it != NO_CONTEXT }
 
     fun openInTasks(filter: String) {
         store.filter = filter
-        store.setContextChoice(Scope.Tasks, context)
         store.view = View.Tasks
         onDismiss()
     }
@@ -182,7 +217,7 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoHeading("What it shows")
                 if (section.type == "table") InfoLine("Report", section.report ?: "next") else InfoLine("Measure", describeMeasure(section.measure))
-                InfoLine("Context", (inForce ?: "none") + if (context == null) " (the console's)" else " (chosen for this board)")
+                InfoLine("Context", (inForce ?: "none") + if (named == null) " (the console's)" else " (set in the filter)")
                 describeBy(section.by)?.let { InfoLine("Grouped by", it) }
                 if (chart != null) {
                     InfoLine("Order", (section.sort ?: if (section.by?.time != null) "in time order" else "largest first") + (section.limit?.let { ", the first $it" } ?: "") + if (section.stacked == true) ", stacked" else "")

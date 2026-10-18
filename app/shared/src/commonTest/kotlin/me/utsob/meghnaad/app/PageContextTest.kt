@@ -21,7 +21,7 @@ class PageContextTest {
 
     @Test
     fun theChoicesComeBackAsSavedAndADamagedValueIsNothing() {
-        val choices = mapOf("tasks" to "work", "board:b" to NO_CONTEXT)
+        val choices = mapOf("tasks" to "work", "summary" to NO_CONTEXT)
         assertEquals(choices, loadChoices(saveChoices(choices)))
         assertEquals(emptyMap(), loadChoices("[1,2]"))
         assertEquals(emptyMap(), loadChoices("not json"))
@@ -32,6 +32,13 @@ class PageContextTest {
     @Test
     fun eachPageHasItsOwnScope() {
         assertEquals("summary", Scope.panel(Panel.Summary))
-        assertEquals("board:b1", Scope.board("b1"))
+    }
+
+    @Test
+    fun aFilterNamesItsContextWithTheLastRcWord() {
+        assertEquals("this_week", contextOfFilter("( rc.context=this_week ) ( project:Home )"))
+        assertEquals(NO_CONTEXT, contextOfFilter("rc.context:work +x rc.context=none"))
+        assertEquals(NO_CONTEXT, contextOfFilter("rc.context= +x"))
+        assertEquals(null, contextOfFilter("project:Home +x"))
     }
 }

@@ -22,8 +22,6 @@
     type Section,
     type SectionData,
   } from './boards';
-  import { runCli } from './api';
-  import { withContext } from './pageContext';
   import { store } from './store.svelte';
 
   /**
@@ -54,10 +52,8 @@
   // ---- The data ----------------------------------------------------------------------------------------------------
   let data = $state<Record<string, SectionData>>({});
   // Ask again when what a section asks for changes (not when it only moves), and when a task changes anywhere.
-  const scope = $derived(`board:${board.id}` as const);
   const dataKey = $derived(
     JSON.stringify([
-      store.contextChoice(scope),
       board.filter,
       board.sections.map((s) => [s.id, s.type, s.report, s.filter, s.ignoreBoardFilter, s.measure, s.by, s.series]),
     ]),
@@ -69,9 +65,7 @@
     const mine = ++asked;
     const zone = zoneNow(store.config?.config.settings);
     const t = setTimeout(() => {
-      const choice = store.contextChoice(scope);
-      const run = (input: { args: string[] }) => runCli(withContext(input, choice));
-      void loadBoard($state.snapshot(board) as Board, zone, run).then((d) => {
+      void loadBoard($state.snapshot(board) as Board, zone).then((d) => {
         if (mine === asked) data = d;
       });
     }, 150);
@@ -334,12 +328,7 @@
 </div>
 <p class="sr-only" aria-live="polite">{announce}</p>
 {#if infoSection && data[infoSection.id]}
-  <SectionInfo
-    section={infoSection}
-    data={data[infoSection.id]}
-    onclose={closeInfo}
-    context={store.contextChoice(scope)}
-  />
+  <SectionInfo section={infoSection} data={data[infoSection.id]} onclose={closeInfo} />
 {/if}
 
 <style>

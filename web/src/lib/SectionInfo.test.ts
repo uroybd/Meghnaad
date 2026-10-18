@@ -58,6 +58,29 @@ const draw = (section: Section, data: SectionData) => {
 const text = () => (document.querySelector('dialog')!.textContent ?? '').replace(/\s+/g, ' ');
 const rows = () => [...document.querySelectorAll('.tasks tbody tr')];
 
+describe('the context a card ran in', () => {
+  const data = {
+    kind: 'answer',
+    answer: { total: 1, tasks: 1, unit: 'number' },
+    sources: [],
+  } as unknown as SectionData;
+  it('is the console’s unless the filter names one', () => {
+    store.config = { config: { settings: {}, active_context: 'work', contexts: {} } } as never;
+    draw(sec({}), { ...data, sources: [{ label: 'x', filter: '( project:Home )', text: '[]' }] } as SectionData);
+    expect(text()).toContain('Context work (the console’s)');
+    unmount(app!);
+    draw(sec({}), {
+      ...data,
+      sources: [{ label: 'x', filter: '( rc.context=this_week ) ( project:Home )', text: '[]' }],
+    } as SectionData);
+    expect(text()).toContain('Context this_week (set in the filter)');
+    unmount(app!);
+    draw(sec({}), { ...data, sources: [{ label: 'x', filter: 'rc.context=none', text: '[]' }] } as SectionData);
+    expect(text()).toContain('Context none (set in the filter)');
+    store.config = null;
+  });
+});
+
 describe('the info of a number', () => {
   const data: SectionData = {
     kind: 'answer',

@@ -1,9 +1,11 @@
+import { splitWords } from './cmdline';
+
 // A page's own context. The context set with `context work` is the console's (it is Taskwarrior's, one for the whole
 // session); a page may choose another, or none, for what it shows. It is sent the way Taskwarrior takes an override on a
 // command line, `rc.context=<name>`, so the engine does nothing new.
 
-/** The pages that choose a context: each report page, and each board. */
-export type Scope = 'tasks' | 'summary' | 'calendar' | 'burndown' | 'projects' | 'tags' | `board:${string}`;
+/** The pages that choose a context: the report pages. (A board names its context in its filter: `rc.context=this_week`.) */
+export type Scope = 'tasks' | 'summary' | 'calendar' | 'burndown' | 'projects' | 'tags';
 
 /** What a page may say it wants: no context at all (as `context none`). */
 export const NO_CONTEXT = 'none';
@@ -43,4 +45,14 @@ export function saveChoices(choices: Record<string, string>) {
   } catch {
     /* private mode: the choice lasts until the page is closed */
   }
+}
+
+/** The context a filter names with `rc.context=<name>` (the last such word, as the engine reads them), or `undefined` if it names none. */
+export function contextOfFilter(filter: string): string | undefined {
+  let found: string | undefined;
+  for (const w of splitWords(filter)) {
+    const m = /^rc\.context[:=](.*)$/.exec(w);
+    if (m) found = m[1] || NO_CONTEXT;
+  }
+  return found;
 }
