@@ -109,5 +109,9 @@ fun AppTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> U
     }
 }
 
+/** The text on the context's colour (`--warn`): the pill in the top bar, and the button that runs a command in it. The web's `--warn-text`. */
+@Composable
+fun contextText(): Color = if (extras.dark) Color(0xFF0B1220) else Color(0xFFFFFFFF)
+
 val extras: Extras
     @Composable get() = LocalExtras.current

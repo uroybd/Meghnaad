@@ -242,7 +242,11 @@
       <span class="grow"></span>
       <TimerChip />
       {#if store.config?.config.active_context}
-        <span class="chip" title="Active context from your taskrc">context: {store.config.config.active_context}</span>
+        <span
+          class="chip context"
+          title="The active context: the console runs in it, and so does every page that follows it"
+          >context: {store.config.config.active_context}</span
+        >
       {/if}
       <button
         class="ghost btn review"

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -241,8 +242,13 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 },
             )
             BesideField(oneLine) {
-                Button(onClick = ::submit) {
-                    LucideIcon("corner-down-left", size = 15.dp, tint = MaterialTheme.colorScheme.onPrimary)
+                // With a context in force the button wears the colour of the pill in the top bar.
+                val inContext = store.activeContext != null
+                Button(
+                    onClick = ::submit,
+                    colors = if (inContext) ButtonDefaults.buttonColors(containerColor = extras.warn, contentColor = contextText()) else ButtonDefaults.buttonColors(),
+                ) {
+                    LucideIcon("corner-down-left", size = 15.dp, tint = if (inContext) contextText() else MaterialTheme.colorScheme.onPrimary)
                 }
             }
         }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -121,8 +122,8 @@ val PanelShape = RoundedCornerShape(8.dp)
 
 // Material's own buttons are fully round, whatever the theme's shapes say; these take the web's corner for the same call.
 @Composable
-fun Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.ContentPadding, content: @Composable RowScope.() -> Unit) =
-    androidx.compose.material3.Button(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, contentPadding = contentPadding, content = content)
+fun Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.buttonColors(), contentPadding: PaddingValues = ButtonDefaults.ContentPadding, content: @Composable RowScope.() -> Unit) =
+    androidx.compose.material3.Button(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, colors = colors, contentPadding = contentPadding, content = content)
 
 @Composable
 fun OutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.ContentPadding, content: @Composable RowScope.() -> Unit) =

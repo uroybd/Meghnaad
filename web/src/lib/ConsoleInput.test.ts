@@ -323,4 +323,15 @@ describe('the active context at the prompt', () => {
     flushSync();
     expect(document.querySelector('[data-testid="active-context"]')).toBeNull();
   });
+
+  it('turns the Run button the colour of the context pill, and only while a context is active', () => {
+    withActive('work');
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const run = () => document.querySelector('button[aria-label="Run"]')!;
+    expect(run().classList.contains('in-context')).toBe(true);
+    store.config = { reports: [], config: { settings: {}, contexts: {}, active_context: null } } as never;
+    flushSync();
+    expect(run().classList.contains('in-context')).toBe(false);
+  });
 });

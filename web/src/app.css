@@ -10,6 +10,7 @@
   --ok: #1a7f37;
   --err: #cf222e;
   --warn: #9a6700;
+  --warn-text: #ffffff;
   --pri-h: #cf222e;
   --pri-m: #9a6700;
   --pri-l: #1a7f37;
@@ -36,6 +37,7 @@
     --ok: #56d364;
     --err: #ff7b72;
     --warn: #e3b341;
+    --warn-text: #0b1220;
     --pri-h: #ff7b72;
     --pri-m: #e3b341;
     --pri-l: #56d364;
@@ -57,6 +59,7 @@
   --ok: #56d364;
   --err: #ff7b72;
   --warn: #e3b341;
+  --warn-text: #0b1220;
   --pri-h: #ff7b72;
   --pri-m: #e3b341;
   --pri-l: #56d364;
@@ -180,6 +183,18 @@ button:focus-visible {
   background: var(--panel-2);
   font-size: 13px;
   line-height: 22px;
+}
+.chip.context {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: var(--warn-text);
+  font-weight: 600;
+}
+/* A context is in force: the button that runs a command wears the pill's colour. */
+button.primary.in-context {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: var(--warn-text);
 }
 .lucide-icon {
   flex: none;
