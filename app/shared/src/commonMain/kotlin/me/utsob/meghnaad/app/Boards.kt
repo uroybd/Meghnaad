@@ -242,7 +242,7 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone): BoardChart {
 
 class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?)
 
-/** The chart with its labels in the order the section asks for (the largest total first for a value, time order for a date), and as many as it keeps. */
+/** The chart with its labels in the order the section asks for (the largest total first for a value, time order for a date), and as many as it keeps (for a date in time order, the latest). */
 fun orderChart(chart: BoardChart, section: Section): BoardChart {
     val sort = section.sort ?: if (section.by?.time != null) null else "value-"
     fun total(i: Int) = chart.datasets.sumOf { it.data.getOrNull(i) ?: 0.0 }
@@ -259,7 +259,8 @@ fun orderChart(chart: BoardChart, section: Section): BoardChart {
             }
         }
     }
-    section.limit?.takeIf { it > 0 }?.let { order = order.take(it) }
+    // A date in time order keeps the latest periods (a week is `per day`, keep 7); any other order keeps its first.
+    section.limit?.takeIf { it > 0 }?.let { order = if (section.by?.time != null && sort == null) order.takeLast(it) else order.take(it) }
     return BoardChart(
         chart.unit,
         order.map { chart.labels[it] },

@@ -219,6 +219,13 @@ describe('the order of a chart', () => {
     expect(out.datasets[1].counts).toEqual([1, 1]);
   });
 
+  it('keeps the latest periods of a date in time order, and the first of any other order', () => {
+    const t = sec('x', 0, 0, 1, 1, { by: { time: { field: 'due', step: 'day' } }, limit: 2 });
+    expect(keys(c, t)).toEqual(['c', 'd']);
+    expect(keys(c, { ...t, sort: 'key-' })).toEqual(['d', 'c']);
+    expect(keys(c, { ...t, sort: 'key+' })).toEqual(['a', 'b']);
+  });
+
   it('leaves a date in time order, unless asked', () => {
     const t = sec('x', 0, 0, 1, 1, { by: { time: { field: 'due', step: 'day' } } });
     expect(keys(c, t)).toEqual(['b', 'a', 'c', 'd']);

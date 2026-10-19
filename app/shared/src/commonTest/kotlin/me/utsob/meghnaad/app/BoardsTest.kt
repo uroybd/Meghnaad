@@ -98,6 +98,10 @@ class BoardsTest {
         // A date stays in time order unless asked.
         val time = by.copy(by = By(time = TimeBy("due", "day")))
         assertEquals(listOf("b", "a", "c", "d"), orderChart(c, time).labels.map { it.key })
+        // Keep takes the latest periods of a date in time order, and the first of any other order.
+        assertEquals(listOf("c", "d"), orderChart(c, time.copy(limit = 2)).labels.map { it.key })
+        assertEquals(listOf("d", "c"), orderChart(c, time.copy(limit = 2, sort = "key-")).labels.map { it.key })
+        assertEquals(listOf("a", "b"), orderChart(c, time.copy(limit = 2, sort = "key+")).labels.map { it.key })
     }
 
     @Test

@@ -383,7 +383,7 @@ export function seriesOf(section: Section): Series[] {
 
 /**
  * The chart with its labels in the order the section asks for (the largest total first for a value, time order for a
- * date), and as many as it keeps. A label's total is what its series add up to, so a stacked bar is as tall as it is sorted.
+ * date), and as many as it keeps (for a date in time order, the latest). A label's total is what its series add up to, so a stacked bar is as tall as it is sorted.
  */
 export function orderChart(chart: Chart, section: Section): Chart {
   const sort = section.sort ?? (section.by?.time ? null : 'value-');
@@ -399,7 +399,10 @@ export function orderChart(chart: Chart, section: Section): Chart {
         nothing(a) || nothing(b) ? Number(nothing(a)) - Number(nothing(b)) : sign * (total(a) - total(b)),
       );
   }
-  if (section.limit && section.limit > 0) order = order.slice(0, section.limit);
+  if (section.limit && section.limit > 0) {
+    // A date in time order keeps the latest periods (a week is `per day`, keep 7); any other order keeps its first.
+    order = section.by?.time && !sort ? order.slice(-section.limit) : order.slice(0, section.limit);
+  }
   return {
     unit: chart.unit,
     labels: order.map((i) => chart.labels[i]),
