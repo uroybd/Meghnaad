@@ -328,7 +328,15 @@
   {#if review.captures}<ReviewBar />{/if}
   <CompletionMenu {completer} placement="above" onpick={(i) => edit(completer.pick(i))} />
   <label class="row">
-    <span class="mono ps" aria-hidden="true">{review.captures ? 'review>' : 'task>'}</span>
+    <!-- In a context the prompt names it and turns amber, as the pill in the top bar does (a phone has no room for the name). -->
+    <span
+      class="mono ps"
+      class:context={store.activeContext && !review.captures}
+      title={store.activeContext && !review.captures ? `Context: ${store.activeContext}` : undefined}
+      data-testid="ps"
+      aria-hidden="true"
+      >{review.captures ? 'review>' : store.activeContext ? `task[${store.activeContext}]>` : 'task>'}</span
+    >
     <span class="sr-only">Command</span>
     <span class="field grow">
       <span class="mirror mono" aria-hidden="true"
@@ -422,6 +430,9 @@
   .ps {
     color: var(--accent);
     font-weight: 700;
+  }
+  .ps.context {
+    color: var(--warn);
   }
   /* The field is the textarea (the text, transparent, and the caret) over a copy of the line in colours: the two have the same
      font, padding and wrapping, so every letter is where the other has it. */

@@ -141,8 +141,9 @@ Put the whole filter in quotes (`context define this_week "+WEEK or (due.after:s
 one filter, as Taskwarrior reads it, unless it starts with a `name:value`, which takes all of it.
 
 The active context is the console's: it sits above the prompt (`context work`, with a ✕ that runs `context none`), and every
-command you type runs in it. While a context is active the pill in the top bar and the Run button are amber, and they
-turn back when it is cleared. The pages follow it unless told otherwise. The Tasks page, Summary, Calendar, Burndown,
+command you type runs in it. While a context is active the pill in the top bar, the Run button and the prompt are amber,
+and they turn back when it is cleared. With room the prompt names the context (`task[work]>`); on a phone it stays
+`task>` and the context is in a tooltip (a long press). The pages follow it unless told otherwise. The Tasks page, Summary, Calendar, Burndown,
 Projects and Tags have a **Context** menu of their own: *same as console* (the default), *none*, or any context. A page's
 choice is only for that page (it is remembered on this device, not synced), so `context work` in the console does not
 change a page that chose *none*. The choice is sent with the page's commands as Taskwarrior's own `rc.context=<name>`.

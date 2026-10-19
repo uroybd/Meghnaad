@@ -324,6 +324,20 @@ describe('the active context at the prompt', () => {
     expect(document.querySelector('[data-testid="active-context"]')).toBeNull();
   });
 
+  it('names the context in the prompt and turns it amber, and is plain task> without one', () => {
+    withActive('work');
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const ps = () => document.querySelector('[data-testid="ps"]')!;
+    expect(ps().textContent).toBe('task[work]>');
+    expect(ps().classList.contains('context')).toBe(true);
+    expect(ps().getAttribute('title')).toBe('Context: work');
+    store.config = { reports: [], config: { settings: {}, contexts: {}, active_context: null } } as never;
+    flushSync();
+    expect(ps().textContent).toBe('task>');
+    expect(ps().classList.contains('context')).toBe(false);
+  });
+
   it('turns the Run button the colour of the context pill, and only while a context is active', () => {
     withActive('work');
     app = mount(ConsoleInput, { target: document.body });
