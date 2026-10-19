@@ -7,6 +7,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -202,7 +211,7 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
         val colouring = remember(commands, dark) { HighlightTransformation(commands, HlPalette(dark)) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             BesideField(oneLine) {
-                Text("task>", fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                PromptLabel(store.activeContext)
             }
             CompletingField(
                 value = line,
@@ -253,4 +262,34 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/**
+ * `task>`; in a context it turns amber like the pill in the top bar. With room it names the context (`task[work]>`); on a
+ * phone it stays `task>` and the context is in a tooltip (a long press) and what a screen reader says.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PromptLabel(context: String?) {
+    val density = LocalDensity.current
+    val wide = with(density) { LocalWindowInfo.current.containerSize.width.toDp() } > TABLE_FROM
+    val label = @Composable { named: Boolean ->
+        Text(
+            if (context != null && named) "task[$context]>" else "task>",
+            fontFamily = FontFamily.Monospace,
+            color = if (context != null) extras.warn else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (context != null) FontWeight.Bold else null,
+            fontSize = 13.sp,
+        )
+    }
+    if (context == null || wide) {
+        label(true)
+        return
+    }
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text("Context: $context") } },
+        state = rememberTooltipState(),
+        modifier = Modifier.semantics { contentDescription = "Prompt, in the context $context" },
+    ) { label(false) }
 }
