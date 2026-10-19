@@ -332,8 +332,8 @@ to every device that signs in to the same deployment. A board is not a Taskwarri
 `<filter> export` prints, so it sees every attribute of a task, your UDAs included, and runs nothing of its own.
 
 **A section** has a title, a filter, and one of these to show. The charts are drawn by [Chart.js](https://www.chartjs.org/)
-(loaded the first time a board draws one), with the page's colours; hovering a bar, point or slice shows its figure. The table is
-the app's own:
+(loaded the first time a board draws one), with the page's colours; hovering a bar, point or slice shows its figure. On the phone they are drawn by Koala Plot, and a tap on a bar or a point shows its
+label in full and its figure; the labels along an axis are thinned so none is cut off. The table is the app's own:
 
 | Shows | What it is |
 | --- | --- |

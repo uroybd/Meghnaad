@@ -1,6 +1,7 @@
 package me.utsob.meghnaad.app
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -91,5 +92,23 @@ class BoardChartsTest {
         assertEquals(360f, sweeps.sum())
         assertEquals(listOf(0f, 0f), pieSweeps(listOf(0.0, 0.0)))
         assertEquals(emptyList(), pieSweeps(emptyList()))
+    }
+
+    @Test
+    fun anAxisKeepsOnlyAsManyLabelsAsFitWithoutRunningTogether() {
+        // Ten dates of ten characters, as on a phone: a label takes about 65 dp, so a 330 dp axis has room for five of them.
+        assertEquals(2, labelSkip(10, 10, 330.dp))
+        assertEquals(1, labelSkip(5, 10, 330.dp))
+        assertEquals(3, labelSkip(3, 10, 40.dp))
+        assertEquals(10, labelSkip(10, 10, 40.dp))
+        assertEquals(1, labelSkip(0, 10, 330.dp))
+    }
+
+    @Test
+    fun aTapSaysTheLabelInFullAndTheValueWithTheSeriesWhenThereAreSeveral() {
+        val one = BoardChart("number", listOf(ChartLabel("a", "2026-10-12")), listOf(Dataset("Pending", listOf(4.0))))
+        assertEquals("2026-10-12 · 4", tipText(one, 0, 0))
+        val two = one.copy(datasets = listOf(Dataset("Succeeded", listOf(1.0)), Dataset("Failed", listOf(2.0))))
+        assertEquals("2026-10-12 · Failed: 2", tipText(two, 0, 1))
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -25,12 +26,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.koalaplot.core.Symbol
+import io.github.koalaplot.core.bar.BarScope
+import io.github.koalaplot.core.bar.DefaultBar
 import io.github.koalaplot.core.bar.GroupedHorizontalBarPlot
 import io.github.koalaplot.core.bar.GroupedVerticalBarPlot
 import io.github.koalaplot.core.bar.StackedHorizontalBarPlot
 import io.github.koalaplot.core.bar.StackedVerticalBarPlot
-import io.github.koalaplot.core.bar.horizontalSolidBar
-import io.github.koalaplot.core.bar.verticalSolidBar
 import io.github.koalaplot.core.line.AreaBaseline
 import io.github.koalaplot.core.line.AreaPlot
 import io.github.koalaplot.core.line.LinePlot
@@ -88,6 +89,20 @@ fun chartTop(chart: BoardChart, stacked: Boolean): Float {
     return niceTop(tallest ?: 0.0)
 }
 
+/** Every how-many-th label of [count] fits along an axis [width] wide when the longest takes [chars] characters of axis text. */
+fun labelSkip(count: Int, chars: Int, width: Dp): Int {
+    val each = chars * 5.5f + 10f
+    val room = (width.value / each).toInt().coerceAtLeast(1)
+    return ((count + room - 1) / room).coerceAtLeast(1)
+}
+
+/** What a tap on label [i] of series [d] says: the label in full, and the value (with the series' name when there are several). */
+fun tipText(chart: BoardChart, i: Int, d: Int): String {
+    val value = formatBoardValue(chart.datasets.getOrNull(d)?.data?.getOrNull(i), chart.unit)
+    val series = if (chart.datasets.size > 1) "${chart.datasets[d].label}: " else ""
+    return "${chart.labels[i].label} · $series$value"
+}
+
 @OptIn(ExperimentalKoalaPlotApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier: Modifier = Modifier, height: Dp? = null) {
@@ -127,48 +142,70 @@ private fun Legend(labels: List<String>, colors: List<Color>) {
     }
 }
 
-/** The labels along an axis of categories: the label at each place, every [skip]-th. Typed, so the library's overloads are told apart. */
-private fun indexLabels(chart: BoardChart, skip: Int, width: Int): @Composable (Int) -> Unit = { i ->
-    if (i % skip == 0) AxisText(chart.labels[i].label.take(width))
+/**
+ * The labels along an axis of categories: the label at each place, every [skip]-th. Typed, so the library's overloads are told
+ * apart. A label is given only the room of its own category, which would cut it short; with [spread] it takes what it needs
+ * (centred on its place), and [skip] leaves the room.
+ */
+private fun indexLabels(chart: BoardChart, skip: Int, width: Int, spread: Boolean = false): @Composable (Int) -> Unit = { i ->
+    if (i % skip == 0) AxisText(chart.labels[i].label.take(width), if (spread) Modifier.wrapContentWidth(Alignment.CenterHorizontally, unbounded = true) else Modifier)
+}
+
+/** The widest label, in characters, as far as [cap]. */
+private fun widest(chart: BoardChart, cap: Int) = minOf(cap, chart.labels.maxOfOrNull { it.label.length } ?: 1)
+
+/** What shows over a bar or a point when it is tapped (or hovered): the label in full and the value. */
+@Composable
+private fun ChartTip(text: String) {
+    Box(Modifier.background(MaterialTheme.colorScheme.inverseSurface, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Text(text, fontSize = 12.sp, color = MaterialTheme.colorScheme.inverseOnSurface)
+    }
 }
 
 /** The labels along an axis of values. */
 private fun valueLabels(chart: BoardChart): @Composable (Float) -> Unit = { v -> AxisText(formatBoardValue(v.toDouble(), chart.unit)) }
 
 @Composable
-private fun AxisText(text: String) = Text(text, fontSize = 10.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-/** Every n-th label of a long axis, so they never run together. */
-private fun every(count: Int) = maxOf(1, (count + 5) / 6)
+private fun AxisText(text: String, modifier: Modifier = Modifier) =
+    Text(text, modifier, fontSize = 10.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
 @OptIn(ExperimentalKoalaPlotApi::class)
 @Composable
-private fun VerticalBars(chart: BoardChart, series: List<Color>, stacked: Boolean, plot: Dp?) {
+private fun VerticalBars(chart: BoardChart, series: List<Color>, stacked: Boolean, plot: Dp?) = BoxWithConstraints {
     val at = chart.labels.indices.toList()
     val top = chartTop(chart, stacked)
-    val skip = every(at.size)
+    val chars = widest(chart, 24)
+    val skip = labelSkip(at.size, chars, maxWidth - AXIS_ROOM)
     XYGraph(
         xAxisModel = CategoryAxisModel(at),
         yAxisModel = rememberFloatLinearAxisModel(0f..top),
-        xAxisLabels = indexLabels(chart, skip, 10),
+        xAxisLabels = indexLabels(chart, skip, chars, spread = true),
         yAxisLabels = valueLabels(chart),
         modifier = Modifier.fillMaxWidth().height(plot ?: 240.dp),
     ) {
         if (stacked) {
             StackedVerticalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series(verticalSolidBar(series[d])) { at.forEach { i -> item(i, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
+                    series({ _, i, _ -> TippedBar(series[d], tipText(chart, i, d)) }) { at.forEach { i -> item(i, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
                 }
             }
         } else {
             GroupedVerticalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series(verticalSolidBar(series[d])) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
+                    series({ _, i, _ -> TippedBar(series[d], tipText(chart, i, d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
                 }
             }
         }
     }
 }
+
+/** Room the value axis takes beside the plot. */
+private val AXIS_ROOM = 44.dp
+
+/** A bar in its series' colour that shows [tip] when tapped (or hovered). */
+@OptIn(ExperimentalKoalaPlotApi::class)
+@Composable
+private fun BarScope.TippedBar(color: Color, tip: String) = DefaultBar(brush = SolidColor(color), hoverElement = { ChartTip(tip) })
 
 /** Bars that lie down, for a category: its names are long. */
 @OptIn(ExperimentalKoalaPlotApi::class)
@@ -188,13 +225,13 @@ private fun HorizontalBars(chart: BoardChart, series: List<Color>, stacked: Bool
         if (stacked) {
             StackedHorizontalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series(horizontalSolidBar(series[d])) { at.forEach { i -> item((ds.data.getOrNull(i) ?: 0.0).toFloat(), i) } }
+                    series({ _, k, _ -> TippedBar(series[d], tipText(chart, at[k], d)) }) { at.forEach { i -> item((ds.data.getOrNull(i) ?: 0.0).toFloat(), i) } }
                 }
             }
         } else {
             GroupedHorizontalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series(horizontalSolidBar(series[d])) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
+                    series({ _, k, _ -> TippedBar(series[d], tipText(chart, at[k], d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
                 }
             }
         }
@@ -203,15 +240,16 @@ private fun HorizontalBars(chart: BoardChart, series: List<Color>, stacked: Bool
 
 @OptIn(ExperimentalKoalaPlotApi::class)
 @Composable
-private fun Lines(chart: BoardChart, series: List<Color>, stacked: Boolean, filled: Boolean, plot: Dp?) {
+private fun Lines(chart: BoardChart, series: List<Color>, stacked: Boolean, filled: Boolean, plot: Dp?) = BoxWithConstraints {
     val at = chart.labels.indices.toList()
     val top = chartTop(chart, stacked)
     val sums = if (stacked) stackedValues(chart) else emptyList()
-    val skip = every(at.size)
+    val chars = widest(chart, 24)
+    val skip = labelSkip(at.size, chars, maxWidth - AXIS_ROOM)
     XYGraph(
         xAxisModel = CategoryAxisModel(at),
         yAxisModel = rememberFloatLinearAxisModel(0f..top),
-        xAxisLabels = indexLabels(chart, skip, 10),
+        xAxisLabels = indexLabels(chart, skip, chars, spread = true),
         yAxisLabels = valueLabels(chart),
         modifier = Modifier.fillMaxWidth().height(plot ?: 240.dp),
     ) {
@@ -221,7 +259,9 @@ private fun Lines(chart: BoardChart, series: List<Color>, stacked: Boolean, fill
                 ds.data.getOrNull(i)?.let { v -> Point(i, (if (stacked) sums[i][d] else v).toFloat()) }
             }
             val line = LineStyle(SolidColor(series[d]), 2.dp)
-            val dot: @Composable HoverableElementAreaScope.(Point<Int, Float>) -> Unit = { Symbol(shape = CircleShape, size = 6.dp, fillBrush = SolidColor(series[d])) }
+            val dot: @Composable HoverableElementAreaScope.(Point<Int, Float>) -> Unit = { p ->
+                Symbol(shape = CircleShape, size = 8.dp, fillBrush = SolidColor(series[d]), modifier = Modifier.hoverableElement { ChartTip(tipText(chart, p.x, d)) })
+            }
             if (filled) {
                 // A stacked band lies between the line under it and its own; the first, and any area that is not stacked, to the axis.
                 val under = if (stacked && d > 0) AreaBaseline.ArbitraryLine(points.map { p -> Point(p.x, sums[p.x][d - 1].toFloat()) }) else AreaBaseline.ConstantLine<Int, Float>(0f)
