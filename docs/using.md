@@ -384,7 +384,8 @@ label in full and its figure; the labels along an axis are thinned so none is cu
   a chart, each value on its axis with the number of tasks behind it and the total over all the tasks, and the tasks the filter
   got (the first 200, with the columns it measures and groups by). It is the way to check where a number came from.
 - **Order and number.** A chart of values puts the largest first; **Order** changes that (smallest first, or by name), and
-  **Keep** shows only the first few. A date is in time order.
+  **Keep** shows only the first few. A date is in time order, and there **Keep** shows the latest periods:
+  `per day` with **Keep** 7 is the last week, ending today.
 
 **Laying out the board.** The page is 12 columns wide. In **Edit**, drag a section by its move handle (top right) to put it
 elsewhere, and its bottom right corner to make it wider or taller; it snaps to the grid. What it lands on is pushed down and
