@@ -2326,20 +2326,24 @@ mod recurrence {
     }
 
     #[tokio::test]
-    async fn an_until_date_in_the_past_expires_instances_and_the_template() {
+    async fn an_until_date_in_the_past_expires_the_instances_in_the_same_pass_that_makes_them() {
         let cfg = parse("recurrence=on\n").config;
         let mut r = replica();
         run(&mut r, &cfg, "add Old habit recur:daily due:3d until:yesterday").await;
-        // Pass 1 creates and expires the instance; the series is retired once none is pending.
-        for _ in 0..3 {
+        // One report is enough: `task` expires what it has just made (`handleUntil` follows `handleRecurrence`).
+        run(&mut r, &cfg, "list").await;
+        let v = all(&mut r).await;
+        let kids = instances(&v);
+        assert!(!kids.is_empty() && kids.iter().all(|f| f.status == "deleted"), "{v:?}");
+        // The parent keeps its mask as it was (an expired instance does not become an `X`), so the series is not
+        // finished and the template stays as it is.
+        let t = template(&v);
+        assert_eq!(t.status, "recurring");
+        assert!(t.mask.as_deref().unwrap().chars().all(|c| c == '-'), "{:?}", t.mask);
+        for _ in 0..2 {
             run(&mut r, &cfg, "list").await;
         }
-        let v = all(&mut r).await;
-        assert!(
-            v.iter().all(|f| f.status == "deleted"),
-            "{:?}",
-            v.iter().map(|f| &f.status).collect::<Vec<_>>()
-        );
+        assert_eq!(all(&mut r).await.len(), v.len(), "and nothing more is made");
     }
 
     // ---- recurrence.confirmation
@@ -2454,15 +2458,18 @@ mod recurrence {
             "{v:?}"
         );
 
-        // Dates stay per instance: moving one instance does not move the others.
-        let due_before: Vec<_> = instances(&v).iter().map(|f| f.due).collect();
+        // Everything goes, dates too, as `task` does with `recurrence.confirmation=yes`: moving one instance moves the
+        // others and the template.
         let first = instances(&v)[0].uuid.to_string();
-        let (res, _) = run(&mut r, &cfg, &format!("{first} modify due:10d")).await;
+        let (res, _) = run(&mut r, &cfg, &format!("{first} modify due:2031-01-02")).await;
         assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
         let v = all(&mut r).await;
-        let due_after: Vec<_> = instances(&v).iter().map(|f| f.due).collect();
-        assert_ne!(due_before[0], due_after[0]);
-        assert_eq!(due_before[1], due_after[1], "the sibling's date is untouched");
+        let moved = v
+            .iter()
+            .filter_map(|f| f.due)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(moved.len(), 1, "{v:?}");
+        assert!(v.iter().all(|f| f.due.is_some()));
     }
 
     #[tokio::test]
@@ -2472,6 +2479,301 @@ mod recurrence {
         run(&mut r, &cfg, "add plain").await;
         let (res, wrote) = run(&mut r, &cfg, "1 modify +x").await;
         assert!(wrote && !matches!(res, CliResult::Confirm { .. }), "{res:?}");
+    }
+}
+
+/// Recurrence the way `task` 3.5.0 does it. Each of these was checked against the real `task` on a scratch database.
+mod recurrence_as_task_does_it {
+    use super::*;
+    use taskchampion::{Operations, Server};
+    use tc_core::model::Facts;
+    use tc_core::{CloudServer, MemStore};
+
+    async fn all(r: &mut R) -> Vec<Facts> {
+        load_facts(r).await.unwrap()
+    }
+
+    /// The template, whatever has become of it: the one task with a mask.
+    fn template(v: &[Facts]) -> &Facts {
+        v.iter().find(|f| f.mask.is_some()).expect("a template")
+    }
+
+    fn instances(v: &[Facts]) -> Vec<&Facts> {
+        let mut c: Vec<_> = v.iter().filter(|f| f.parent.is_some()).collect();
+        c.sort_by_key(|f| f.imask);
+        c
+    }
+
+    /// A template with two open instances; no question is asked but the ones about the series.
+    async fn series(mode: &str) -> (R, Config) {
+        let cfg = parse(&format!(
+            "recurrence=on\nrecurrence.limit=2\nrecurrence.confirmation={mode}\nconfirmation=off\n"
+        ))
+        .config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Water plants recur:daily due:3d").await;
+        run(&mut r, &cfg, "list").await;
+        (r, cfg)
+    }
+
+    async fn count(r: &mut R, cfg: &Config, filter: &str) -> String {
+        message(&run(r, cfg, &format!("{filter} count")).await.0)
+    }
+
+    #[tokio::test]
+    async fn only_the_commands_task_flags_recur_make_instances() {
+        let cfg = parse("recurrence=on\n").config;
+        // None of these does: `commands` has no Recur flag for them.
+        for line in [
+            "add Other",
+            "1 modify +x",
+            "1 annotate hi",
+            "1 append more",
+            "info 1",
+            "stats",
+            "calc 1+1",
+            "show",
+            "tags",
+            "summary",
+        ] {
+            let mut r = replica();
+            run(&mut r, &cfg, "add Water recur:daily due:3d").await;
+            run(&mut r, &cfg, line).await;
+            assert!(instances(&all(&mut r).await).is_empty(), "`{line}` made an instance");
+        }
+        // All of these do.
+        for line in [
+            "count",
+            "next",
+            "list",
+            "export",
+            "projects",
+            "_projects",
+            "_tags",
+            "burndown.daily",
+            "history.daily",
+            "ghistory.daily",
+            "timesheet",
+            "ids",
+            "uuids",
+            "_rows",
+        ] {
+            let mut r = replica();
+            run(&mut r, &cfg, "add Water recur:daily due:3d").await;
+            run(&mut r, &cfg, line).await;
+            assert_eq!(
+                instances(&all(&mut r).await).len(),
+                1,
+                "`{line}` did not make the instance"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn clients_that_each_make_an_instance_before_they_sync_end_up_with_one() {
+        async fn sync(r: &mut R, store: &MemStore) {
+            let mut server: Box<dyn Server> = Box::new(CloudServer::new(store.clone(), b"pw").await.unwrap());
+            r.sync(&mut server, true).await.unwrap();
+        }
+        let cfg = parse("recurrence=on\n").config;
+        let store = MemStore::new();
+        let (mut a, mut b) = (replica(), replica());
+        run(&mut a, &cfg, "add Reading recur:daily due:3d").await;
+        sync(&mut a, &store).await;
+        sync(&mut b, &store).await;
+        // The phone and the page both read the list, and neither has the other's instance yet.
+        run(&mut a, &cfg, "next").await;
+        run(&mut b, &cfg, "next").await;
+        sync(&mut a, &store).await;
+        sync(&mut b, &store).await;
+        sync(&mut a, &store).await;
+        for r in [&mut a, &mut b] {
+            let v = all(r).await;
+            assert_eq!(instances(&v).len(), 1, "{v:?}");
+            assert_eq!(template(&v).mask.as_deref(), Some("-"));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_instance_that_is_already_there_is_not_made_again() {
+        let (mut r, cfg) = series("no").await;
+        let t = template(&all(&mut r).await).uuid;
+        // The template forgets its instances (`task` would make them again, as copies).
+        let mut ops = Operations::new();
+        r.get_task(t)
+            .await
+            .unwrap()
+            .unwrap()
+            .set_value("mask", None, &mut ops)
+            .unwrap();
+        r.commit_operations(ops).await.unwrap();
+        run(&mut r, &cfg, "list").await;
+        let v = all(&mut r).await;
+        let made: Vec<_> = instances(&v).iter().map(|f| f.imask).collect();
+        assert_eq!(made, [Some(0), Some(1)], "{v:?}");
+        assert_eq!(template(&v).mask.as_deref(), Some("--"));
+    }
+
+    #[tokio::test]
+    async fn deleting_a_template_takes_its_instances_as_recurrence_confirmation_says() {
+        for (mode, left) in [("yes", 0), ("no", 2)] {
+            let (mut r, cfg) = series(mode).await;
+            run_yes(&mut r, &cfg, "1 delete").await;
+            let v = all(&mut r).await;
+            assert_eq!(template(&v).status, "deleted", "{mode}");
+            assert_eq!(
+                instances(&v).iter().filter(|f| f.status == "pending").count(),
+                left,
+                "{mode}"
+            );
+        }
+        // `prompt` asks, in Taskwarrior's words; yes takes them, no leaves them.
+        for yes in [true, false] {
+            let (mut r, cfg) = series("prompt").await;
+            let (res, wrote) = run(&mut r, &cfg, "1 delete").await;
+            assert!(!wrote);
+            let (_, items) = asked(&res);
+            assert_eq!(
+                items[0].question,
+                "This is a recurring task.  Do you want to delete all pending recurrences of this same task?"
+            );
+            let keys = items.iter().map(|i| i.key.clone()).collect();
+            let opts = Options {
+                extras: Some(if yes { keys } else { vec![] }),
+                ..Options::default()
+            };
+            run_opts(&mut r, &cfg, "1 delete", opts).await;
+            let v = all(&mut r).await;
+            let pending = instances(&v).iter().filter(|f| f.status == "pending").count();
+            assert_eq!(pending, if yes { 0 } else { 2 });
+        }
+    }
+
+    #[tokio::test]
+    async fn deleting_an_instance_takes_the_whole_series_only_when_recurrence_confirmation_says_so() {
+        let (mut r, cfg) = series("yes").await;
+        let first = instances(&all(&mut r).await)[0].uuid;
+        run_yes(&mut r, &cfg, &format!("{first} delete")).await;
+        let v = all(&mut r).await;
+        assert!(
+            v.iter().all(|f| f.status == "deleted"),
+            "the template and both instances: {v:?}"
+        );
+        assert_eq!(template(&v).mask.as_deref(), Some("XX"));
+
+        let (mut r, cfg) = series("no").await;
+        let first = instances(&all(&mut r).await)[0].uuid;
+        run_yes(&mut r, &cfg, &format!("{first} delete")).await;
+        let v = all(&mut r).await;
+        assert_eq!(template(&v).status, "recurring");
+        assert_eq!(
+            instances(&v).iter().map(|f| f.status.as_str()).collect::<Vec<_>>(),
+            ["deleted", "pending"]
+        );
+        assert_eq!(template(&v).mask.as_deref(), Some("X-"));
+    }
+
+    #[tokio::test]
+    async fn append_prepend_and_annotate_on_an_instance_reach_the_series_but_not_from_the_template() {
+        let (mut r, cfg) = series("yes").await;
+        let first = instances(&all(&mut r).await)[0].uuid;
+        run(&mut r, &cfg, &format!("{first} append more")).await;
+        run(&mut r, &cfg, &format!("{first} prepend so")).await;
+        run(&mut r, &cfg, &format!("{first} annotate note")).await;
+        let v = all(&mut r).await;
+        assert!(v.iter().all(|f| f.description == "so Water plants more"), "{v:?}");
+        assert!(v.iter().all(|f| f.annotations.len() == 1), "{v:?}");
+        // `denotate` and the template's own `append` stay where they were said.
+        run(&mut r, &cfg, &format!("{first} denotate note")).await;
+        run(&mut r, &cfg, "1 append too").await;
+        let v = all(&mut r).await;
+        assert_eq!(v.iter().filter(|f| f.annotations.is_empty()).count(), 1);
+        assert_eq!(template(&v).description, "so Water plants more too");
+        assert!(instances(&v).iter().all(|f| f.description == "so Water plants more"));
+        // And they ask, in the words of each command.
+        let (mut r, cfg) = series("prompt").await;
+        let first = instances(&all(&mut r).await)[0].uuid;
+        for (line, verb) in [
+            ("append x", "append to"),
+            ("prepend x", "prepend to"),
+            ("annotate x", "annotate"),
+        ] {
+            let (res, _) = run(&mut r, &cfg, &format!("{first} {line}")).await;
+            let (_, items) = asked(&res);
+            assert_eq!(
+                items[0].question,
+                format!("This is a recurring task.  Do you want to {verb} all pending recurrences of this same task?")
+            );
+        }
+        let (res, _) = run(&mut r, &cfg, "1 append x").await;
+        assert!(
+            !matches!(res, CliResult::Confirm { .. }),
+            "the template's own is not asked about"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_mask_follows_a_change_of_state_but_not_a_note() {
+        let cfg = parse("recurrence=on\nconfirmation=off\nrecurrence.limit=2\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Water recur:daily due:3d wait:2d").await;
+        run(&mut r, &cfg, "list").await;
+        assert_eq!(template(&all(&mut r).await).mask.as_deref(), Some("WW"));
+        let first = instances(&all(&mut r).await)[0].uuid;
+        run(&mut r, &cfg, &format!("{first} annotate hi")).await;
+        assert_eq!(
+            template(&all(&mut r).await).mask.as_deref(),
+            Some("WW"),
+            "a note changes nothing"
+        );
+        run(&mut r, &cfg, &format!("{first} done")).await;
+        assert_eq!(template(&all(&mut r).await).mask.as_deref(), Some("+W"));
+    }
+
+    #[tokio::test]
+    async fn imask_mask_and_rtype_are_attributes_a_filter_can_use() {
+        let (mut r, cfg) = series("no").await;
+        run(&mut r, &cfg, "add Plain").await;
+        // A task with no `imask` has 0 for it, as in Taskwarrior, so `imask:0` finds the first instance and this one.
+        assert_eq!(count(&mut r, &cfg, "imask:0").await, "2");
+        assert_eq!(count(&mut r, &cfg, "imask:1").await, "1");
+        assert_eq!(count(&mut r, &cfg, "imask:7").await, "0");
+        assert_eq!(count(&mut r, &cfg, "imask.above:0").await, "1");
+        assert_eq!(count(&mut r, &cfg, "rtype:periodic").await, "2");
+        assert_eq!(count(&mut r, &cfg, "rtype.none:").await, "1");
+        let (res, _) = run(&mut r, &cfg, "mask.any: export").await;
+        let CliResult::File { text, count, .. } = res else {
+            panic!("not a file: {res:?}")
+        };
+        assert!(count == 1 && text.contains("\"mask\":\"--\""), "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_date_can_be_given_as_another_date_of_the_task_with_a_length_of_time() {
+        let cfg = Config::default();
+        let mut r = replica();
+        let (res, _) = run(
+            &mut r,
+            &cfg,
+            "add A due:2031-01-10T12:00 wait:due-1d scheduled:due-2h until:due+1w",
+        )
+        .await;
+        assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
+        let f = &all(&mut r).await[0];
+        let due = f.due.unwrap();
+        assert_eq!(f.wait, Some(due - 86_400));
+        assert_eq!(f.scheduled, Some(due - 7_200));
+        assert_eq!(f.until, Some(due + 7 * 86_400));
+        // `modify` reads what the task has; a later word sees an earlier one.
+        run(&mut r, &cfg, "1 modify wait:due-3h scheduled:wait+1h").await;
+        let f = &all(&mut r).await[0];
+        assert_eq!(f.wait, Some(due - 10_800));
+        assert_eq!(f.scheduled, Some(due - 7_200));
+        // It reads left to right: a date that is not there yet cannot be used.
+        let (res, wrote) = run(&mut r, &cfg, "add B wait:due-1d due:2031-01-10").await;
+        assert!(message(&res).starts_with("ERROR") && !wrote, "{}", message(&res));
+        let (res, _) = run(&mut r, &cfg, "add C wait:until-1d").await;
+        assert!(message(&res).starts_with("ERROR"), "{}", message(&res));
     }
 }
 
@@ -3592,21 +3894,19 @@ mod hooks {
             refuse_instances: true,
             ..Probe::default()
         });
-        // As in Taskwarrior the whole command stops, with the hook's message.
-        let d = go(&mut r, &cfg, "add Other", &p).await;
+        // As in Taskwarrior the whole command stops, with the hook's message. (A report makes the instance; a
+        // command that changes a task does not.)
+        let d = go(&mut r, &cfg, "next", &p).await;
         assert_eq!(message(&d.result), "ERROR: no instances");
         assert!(!d.wrote);
         let all = load_facts(&mut r).await.unwrap();
-        assert!(
-            all.iter().all(|f| f.parent.is_none() && f.description != "Other"),
-            "{all:?}"
-        );
+        assert!(all.iter().all(|f| f.parent.is_none()), "{all:?}");
         assert_eq!(all[0].mask, None, "the parent's mask was not touched either");
         // `hooks=off` is the way out, and then the instance is made.
-        let d = go(&mut r, &cfg, "rc.hooks:off add Free", &p).await;
+        let d = go(&mut r, &cfg, "rc.hooks:off next", &p).await;
         assert!(d.wrote && d.feedback.is_empty());
         let all = load_facts(&mut r).await.unwrap();
-        assert!(all.iter().any(|f| f.parent.is_some()) && all.iter().any(|f| f.description == "Free"));
+        assert!(all.iter().any(|f| f.parent.is_some()));
     }
 }
 

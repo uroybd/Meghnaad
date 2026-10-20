@@ -1237,12 +1237,10 @@ pub async fn execute<S: Storage>(
         d.feedback = hk.abort();
         return d;
     }
-    // Housekeeping Taskwarrior does before every command: create due recurring instances and
-    // expire tasks past `until`. On unless `recurrence` is turned off; see `recur::enabled`.
-    let skip = matches!(
-        parsed.as_ref().map(|p| &p.cmd),
-        Some(Cmd::Builtin(Undo | Sync | Help | Version))
-    );
+    // Housekeeping Taskwarrior does before the commands that read tasks (the ones `commands` flags "Recur"): create due
+    // recurring instances and expire tasks past `until`. On unless `recurrence` is turned off; see `recur::enabled`.
+    // Not before a command that writes: two clients that each make an instance before they have synced would make two.
+    let skip = parsed.as_ref().is_none_or(|p| !needs_recurrence(&p.cmd));
     let (maintained, tasks) = if skip || !recur::enabled(cfg) {
         (false, None)
     } else {
@@ -1264,6 +1262,22 @@ pub async fn execute<S: Storage>(
     done.wrote |= maintained;
     done.feedback = hk.finish(matches!(done.result, CliResult::Error { .. })).await;
     done
+}
+
+/// Whether `task` does its recurrence housekeeping before this command: the "Recur" flag of `commands`
+/// (`needs_recur_update`). Every report does; so do `count`, `export`, the `history` and `burndown` charts and the lists
+/// of ids, projects and tags, and none of the commands that change a task. The app's own reads (`_rows` and the others
+/// that feed a page) stand in for the reports they replace.
+fn needs_recurrence(cmd: &Cmd) -> bool {
+    match cmd {
+        Cmd::Report(_) => true,
+        Cmd::Builtin(Names | Remind | Rows) => true,
+        Cmd::Builtin(kind) => COMMANDS
+            .iter()
+            .find(|(_, k, _)| k == kind)
+            .and_then(|(name, ..)| COMMAND_INFO.iter().find(|i| i.0 == *name))
+            .is_some_and(|i| i.2.contains('R')),
+    }
 }
 
 /// Properties an instance does not inherit from its parent: identity and bookkeeping, and the
@@ -1320,7 +1334,12 @@ async fn maintain<S: Storage>(
                     .await
                     .map_err(e)?
                     .ok_or_else(|| format!("recurring task {parent} disappeared"))?;
-                let uuid = crate::crypto::new_uuid().map_err(|x| x.to_string())?;
+                // The same task wherever it is made, so clients that each make it merge into one (`recur::instance_uuid`).
+                // One already there (the parent's mask was cleared) is left as it is.
+                let uuid = recur::instance_uuid(parent, index);
+                if replica.get_task_data(uuid).await.map_err(e)?.is_some() {
+                    continue;
+                }
                 let mut t = replica.create_task(uuid, &mut ops).await.map_err(e)?;
                 for (k, v) in data.iter().filter(|(k, _)| !NOT_INHERITED.contains(&k.as_str())) {
                     t.set_value(k.clone(), Some(v.clone()), &mut ops).map_err(e)?;
@@ -1341,6 +1360,14 @@ async fn maintain<S: Storage>(
                 // as there (`throw 0`); nothing has been written yet, so nothing is left half done.
                 let hooked = hk.add(Facts::from_task(&t)).await?;
                 apply_changes(&mut t, &hooked, &mut ops)?;
+                // `handleUntil` runs on what `handleRecurrence` just made: an instance already past its `until` is
+                // deleted at once. The parent's mask is left as it is, as there.
+                if t.get_timestamp("until").is_some_and(|u| u.timestamp() < clock.now) {
+                    let was = Facts::from_task(&t);
+                    t.set_status(Status::Deleted, &mut ops).map_err(e)?;
+                    let hooked = hk.modify(&was, Facts::from_task(&t)).await?;
+                    apply_changes(&mut t, &hooked, &mut ops)?;
+                }
             }
             Plan::SetMask { parent, mask } => {
                 masks.insert(parent, mask);
@@ -1357,19 +1384,6 @@ async fn maintain<S: Storage>(
                 if let Some(was) = all.iter().find(|f| f.uuid == parent) {
                     let hooked = hk.modify(was, Facts::from_task(&t)).await?;
                     apply_changes(&mut t, &hooked, &mut ops)?;
-                }
-                // An expired instance frees its slot in the parent's mask.
-                if let Some(f) = all.iter().find(|f| f.uuid == parent) {
-                    if let (Some(pu), Some(i)) = (f.parent, f.imask) {
-                        let cur = masks.entry(pu).or_insert_with(|| {
-                            all.iter()
-                                .find(|x| x.uuid == pu)
-                                .and_then(|x| x.mask.clone())
-                                .unwrap_or_default()
-                        });
-                        *cur = recur::set_mask(cur, i, 'X');
-                        dirty.push(pu);
-                    }
                 }
             }
         }
@@ -2566,20 +2580,8 @@ async fn write_selected<S: Storage>(
         .copied()
         .collect();
 
-    // Deleting a recurring template also deletes its pending instances, as in Taskwarrior
-    // (otherwise they would be orphaned). Instances themselves are deleted one at a time.
+    // Deleting a task of a recurring series can take the rest of it along (below), as `recurrence.confirmation` says.
     let mut targets: Vec<&Facts> = chosen.clone();
-    if kind == Delete {
-        for f in &chosen {
-            if f.status == "recurring" {
-                for c in all.iter().filter(|c| c.parent == Some(f.uuid) && c.status == "pending") {
-                    if !targets.iter().any(|t| t.uuid == c.uuid) {
-                        targets.push(c);
-                    }
-                }
-            }
-        }
-    }
 
     // What only comes up once the above is settled, asked in one more table: carrying a change to
     // the rest of a recurring series (`recurrence.confirmation`), and repairing a dependency
@@ -2589,10 +2591,18 @@ async fn write_selected<S: Storage>(
     let said_yes = |key: &str| opts.extras.as_ref().is_some_and(|y| y.iter().any(|k| k == key));
     let mut items: Vec<ConfirmItem> = Vec::new();
     let mut propagate: BTreeSet<Uuid> = BTreeSet::new();
-    if matches!(kind, Modify) {
+    if matches!(kind, Modify | Delete | Append | Prepend | Annotate) {
         let mode = recur::confirmation(cfg);
+        let verb = match kind {
+            Delete => "delete",
+            Append => "append to",
+            Prepend => "prepend to",
+            Annotate => "annotate",
+            _ => "modify",
+        };
         for f in &changing {
-            if series_of(f, all).is_empty() {
+            // `modify` and `delete` reach a template's instances too; the others only go from an instance to its series.
+            if series_of(f, all).is_empty() || (!matches!(kind, Modify | Delete) && f.parent.is_none()) {
                 continue;
             }
             match mode {
@@ -2607,7 +2617,9 @@ async fn write_selected<S: Storage>(
                             key,
                             f,
                             ctx,
-                            "This is a recurring task. Do you want to modify all pending recurrences of this same task?".into(),
+                            format!(
+                                "This is a recurring task.  Do you want to {verb} all pending recurrences of this same task?"
+                            ),
                         ));
                     } else if said_yes(&key) {
                         propagate.insert(f.uuid);
@@ -2689,6 +2701,17 @@ async fn write_selected<S: Storage>(
         });
     }
 
+    // The series follows a delete when it was agreed to: the pending instances of a template, or the template and the
+    // other pending instances of an instance.
+    if kind == Delete {
+        for f in changing.iter().filter(|f| propagate.contains(&f.uuid)) {
+            for c in series_of(f, all) {
+                if c.status != "deleted" && !targets.iter().any(|t| t.uuid == c.uuid) {
+                    targets.push(c);
+                }
+            }
+        }
+    }
     let mut ops = Operations::new();
     let mut touched = Vec::new();
     if kind == Purge {
@@ -2832,26 +2855,49 @@ async fn write_selected<S: Storage>(
                     let changes =
                         modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
                     apply_changes(&mut task, &changes, &mut ops)?;
-                    // The descriptive changes (not dates or the recurrence itself, which are per
-                    // instance) also reach the rest of the series, when that was asked for.
-                    if propagate.contains(&f.uuid) {
-                        let shared: Vec<Change> =
-                            changes.iter().filter(|c| shared_with_instances(c)).cloned().collect();
-                        if !shared.is_empty() {
-                            for c in series_of(f, all) {
-                                // A task that is itself being modified got the change already.
-                                if targets.iter().any(|t| t.uuid == c.uuid) || instances_touched.contains(&c.uuid) {
-                                    continue;
-                                }
-                                if let Some(mut other) = replica.get_task(c.uuid).await.map_err(|x| x.to_string())? {
-                                    apply_changes(&mut other, &shared, &mut ops)?;
-                                    instances_touched.push(c.uuid);
-                                }
-                            }
-                        }
-                    }
                 }
                 _ => unreachable!(),
+            }
+            // The rest of the series gets the same command when that was agreed to (`recurrence.confirmation`): each
+            // pending member and, from an instance, the template. All of it, dates and `recur` too, as `task` does.
+            let wrote_text = !text.trim().is_empty() || kind == Modify;
+            if changed
+                && propagate.contains(&f.uuid)
+                && matches!(kind, Modify | Append | Prepend | Annotate)
+                && wrote_text
+            {
+                for c in series_of(f, all) {
+                    // A task that is itself being changed got the change already.
+                    if targets.iter().any(|t| t.uuid == c.uuid) || instances_touched.contains(&c.uuid) {
+                        continue;
+                    }
+                    let Some(mut other) = replica.get_task(c.uuid).await.map_err(|x| x.to_string())? else {
+                        continue;
+                    };
+                    match kind {
+                        Modify => {
+                            let changes = modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(c), ctx, all)
+                                .map_err(|e| e.0)?;
+                            apply_changes(&mut other, &changes, &mut ops)?;
+                        }
+                        Annotate => add_note(&mut other, &text, ctx.clock.now, &mut ops)?,
+                        _ => {
+                            let d = other.get_description().to_owned();
+                            let new = if kind == Append {
+                                format!("{d} {text}")
+                            } else {
+                                format!("{text} {d}")
+                            };
+                            other.set_description(new, &mut ops).map_err(e)?;
+                        }
+                    }
+                    let hooked = hk.modify(c, Facts::from_task(&other)).await?;
+                    apply_changes(&mut other, &hooked, &mut ops)?;
+                    if kind == Modify {
+                        mirror_mask(&mut masks, &mut mask_dirty, all, c, &other);
+                    }
+                    instances_touched.push(c.uuid);
+                }
             }
             // `on-modify`: the hook sees the task as it was and as the command leaves it, and may
             // change it or refuse.
@@ -2859,22 +2905,10 @@ async fn write_selected<S: Storage>(
                 let hooked = hk.modify(f, Facts::from_task(&task)).await?;
                 apply_changes(&mut task, &hooked, &mut ops)?;
             }
-            // An instance's state is mirrored in its parent's mask (`+` done, `X` deleted, ...).
-            if changed {
-                if let (Some(parent), Some(index)) = (f.parent, f.imask) {
-                    let ch = recur::mask_char(&model::status_str(&task.get_status()), task.is_waiting());
-                    let cur = masks.entry(parent).or_insert_with(|| {
-                        all.iter()
-                            .find(|x| x.uuid == parent)
-                            .and_then(|x| x.mask.clone())
-                            .unwrap_or_default()
-                    });
-                    let next = recur::set_mask(cur, index, ch);
-                    if next != *cur {
-                        *cur = next;
-                        mask_dirty.push(parent);
-                    }
-                }
+            // An instance's state is mirrored in its parent's mask (`+` done, `X` deleted, ...), by the commands that
+            // change a task's state; not by the ones that only add to it or take from it.
+            if changed && !matches!(kind, Annotate | Denotate | Append | Prepend) {
+                mirror_mask(&mut masks, &mut mask_dirty, all, f, &task);
             }
             Ok(changed)
         }
@@ -3049,14 +3083,23 @@ fn series_of<'a>(f: &Facts, all: &'a [Facts]) -> Vec<&'a Facts> {
     }
 }
 
-/// Changes to a task in a recurring series that the rest of the series should follow too.
-fn shared_with_instances(c: &Change) -> bool {
-    match c {
-        Change::Description(_) | Change::Priority(_) | Change::AddTag(_) | Change::RemoveTag(_) => true,
-        Change::Prop { name, .. } => !matches!(name.as_str(), "recur" | "rtype"),
-        Change::Timestamp { .. } | Change::AddDep(_) | Change::RemoveDep(_) | Change::ClearDeps | Change::Recurring => {
-            false
-        }
+/// Write an instance's state (`+` done, `X` deleted, `W` waiting, `-` pending) into its slot of its parent's mask,
+/// to be saved with the other changes. `before` is how it was, `task` how the command leaves it.
+fn mirror_mask(masks: &mut BTreeMap<Uuid, String>, dirty: &mut Vec<Uuid>, all: &[Facts], before: &Facts, task: &Task) {
+    let (Some(parent), Some(index)) = (before.parent, before.imask) else {
+        return;
+    };
+    let ch = recur::mask_char(&model::status_str(&task.get_status()), task.is_waiting());
+    let cur = masks.entry(parent).or_insert_with(|| {
+        all.iter()
+            .find(|x| x.uuid == parent)
+            .and_then(|x| x.mask.clone())
+            .unwrap_or_default()
+    });
+    let next = recur::set_mask(cur, index, ch);
+    if next != *cur {
+        *cur = next;
+        dirty.push(parent);
     }
 }
 

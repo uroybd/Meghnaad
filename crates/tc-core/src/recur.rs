@@ -251,6 +251,25 @@ pub fn generate_due_dates(parent: &Facts, limit: usize, clock: &Clock) -> Dates 
     }
 }
 
+/// The uuid of instance `index` of `parent`.
+///
+/// Taskwarrior gives each instance a random uuid, which is fine for one client. Here several can be open at once (a tab,
+/// the phone), and each makes the instance a new day needs before it has heard from the others: with random uuids that
+/// is one instance per client, all for the same due date. Derived from the parent and the index instead, they make the
+/// same task, and the replicas merge it into one when they sync. Nothing else can tell the difference: a uuid only has
+/// to be unique, and this one is (it is a hash of a parent, which is unique, and a slot, which is used once).
+pub fn instance_uuid(parent: Uuid, index: usize) -> Uuid {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"recurring-instance");
+    h.update(parent.as_bytes());
+    h.update((index as u64).to_be_bytes());
+    let digest = h.finalize();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    uuid::Builder::from_random_bytes(bytes).into_uuid()
+}
+
 /// A state letter for a task's slot in its parent's mask.
 pub fn mask_char(status: &str, waiting: bool) -> char {
     match status {
@@ -557,6 +576,15 @@ mod tests {
         let mut q = parent(at(2026, 1, 1), "daily");
         q.recur = None;
         assert!(generate_due_dates(&q, 1, &clock_at(0)).due.is_empty());
+    }
+
+    #[test]
+    fn an_instance_has_the_same_uuid_wherever_it_is_made() {
+        let (a, b) = (Uuid::from_u128(1), Uuid::from_u128(2));
+        assert_eq!(instance_uuid(a, 3), instance_uuid(a, 3));
+        assert_ne!(instance_uuid(a, 3), instance_uuid(a, 4), "each slot is its own task");
+        assert_ne!(instance_uuid(a, 3), instance_uuid(b, 3), "and each series");
+        assert_eq!(instance_uuid(a, 0).get_version_num(), 4, "it reads as any other uuid");
     }
 
     #[test]

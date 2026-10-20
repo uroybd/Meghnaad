@@ -3,7 +3,7 @@
 //! Parsing and planning are pure (no taskchampion types) so they're easy to test; `apply` in
 //! the worker/cli layer turns the resulting [`Change`]s into taskchampion operations.
 
-use crate::dates::{parse_date_expr, Clock};
+use crate::dates::{parse_date_expr, parse_duration, Clock};
 use crate::filter::{canonical_attr_name, EvalCtx};
 use crate::model::Facts;
 use crate::rx::Rx;
@@ -255,6 +255,46 @@ fn substitute(text: &str, from: &str, to: &str, global: bool, ctx: &EvalCtx) -> 
     Ok(out)
 }
 
+/// A date given as another date of the same task, with a length of time added or taken off: `due-1d`, `wait+2h`,
+/// `scheduled`. It reads what that date is at this point of the command line, as Taskwarrior does: what an earlier word
+/// of the command set, or else what the task has already. `None` when `v` is not one of these; `Some(None)` when it is
+/// but the task has no such date yet.
+fn own_date(v: &str, current: Option<&Facts>, done: &[Change]) -> Option<Option<i64>> {
+    const NAMES: [&str; 8] = ["due", "wait", "scheduled", "until", "start", "end", "entry", "modified"];
+    let name = NAMES.into_iter().find(|n| {
+        v.strip_prefix(n)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['+', '-']))
+    })?;
+    let rest = &v[name.len()..];
+    let offset = if rest.is_empty() {
+        0
+    } else {
+        let length = parse_duration(&rest[1..])?;
+        if rest.starts_with('-') {
+            -length
+        } else {
+            length
+        }
+    };
+    let set_here = done.iter().rev().find_map(|c| match c {
+        Change::Timestamp { name: n, value } if *n == name => Some(*value),
+        _ => None,
+    });
+    let base = set_here.unwrap_or_else(|| {
+        current.and_then(|f| match name {
+            "due" => f.due,
+            "wait" => f.wait,
+            "scheduled" => f.scheduled,
+            "until" => f.until,
+            "start" => f.start,
+            "end" => f.end,
+            "entry" => f.entry,
+            _ => f.modified,
+        })
+    });
+    Some(base.map(|b| b + offset))
+}
+
 /// Turn parsed modifications into concrete changes for one task.
 pub fn plan(
     m: &Mods,
@@ -365,9 +405,10 @@ pub fn plan(
                     None
                 } else {
                     Some(
-                        parse_date_expr(v, &ctx.clock)
-                            .ok_or_else(|| ModError(format!("'{v}' is not a valid date for {n}")))?
-                            .ts,
+                        own_date(v, current, &out)
+                            .map(|d| d.ok_or_else(|| ModError(format!("'{v}' is not a valid date for {n}"))))
+                            .or_else(|| parse_date_expr(v, &ctx.clock).map(|d| Ok(d.ts)))
+                            .unwrap_or_else(|| Err(ModError(format!("'{v}' is not a valid date for {n}"))))?,
                     )
                 };
                 out.push(Change::Timestamp {

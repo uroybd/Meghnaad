@@ -100,8 +100,8 @@ See [Recurring tasks](using.md#recurring-tasks) for how it behaves.
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `recurrence` | Done | On by default, as in Taskwarrior; `recurrence=off` (or `0`, `no`) turns it off. Before each command the app creates the instances that are due, retires finished series and expires tasks past `until`, the way `task` does. Taskwarrior itself advises one primary client with `recurrence=1` and `recurrence=0` on all the others when syncing several, because of a duplication bug. Instances are numbered by their index in the template's mask, which is what keeps a second replica from finding anything missing, but if you see duplicates, turn it off on one side. See [Recurring tasks](using.md#recurring-tasks) |
-| `recurrence.confirmation` | Done | Unset or `prompt` asks (the question appears in the app), a true-ish value is yes, anything else no |
+| `recurrence` | Done | On by default, as in Taskwarrior; `recurrence=off` (or `0`, `no`) turns it off. Before the commands that `task commands` flags Recur (reports, `count`, `export`, ...) the app creates the instances that are due and expires tasks past `until`, the way `task` does. Taskwarrior itself advises one primary client with `recurrence=1` and `recurrence=0` on all the others when syncing several, because two that each make an instance before they have synced make two. Between this app's own clients that cannot happen: an instance's uuid is derived from its template and its index, so every client makes the same task and the replicas merge it. A real `task` on the same data still makes its own copy, so turn it off there. See [Recurring tasks](using.md#recurring-tasks) |
+| `recurrence.confirmation` | Done | Unset or `prompt` asks (the question appears in the app), a true-ish value is yes, anything else no. It governs `modify`, `append`, `prepend`, `annotate` and `delete` on a task of a series, and `purge` of a template |
 | `recurrence.indicator` | Done | |
 | `recurrence.limit` | Done | |
 

@@ -51,6 +51,9 @@ pub struct Facts {
     pub mask: Option<String>,
     /// On an instance: its position in the parent's mask.
     pub imask: Option<usize>,
+    /// `periodic` or `chained`, on a recurring parent and its instances. Filters read it; no page does.
+    #[serde(skip)]
+    pub rtype: Option<String>,
     /// Properties that aren't core attributes: candidate UDA values (and orphans).
     pub extra: BTreeMap<String, String>,
 }
@@ -138,6 +141,7 @@ impl Facts {
             parent: t.get_value("parent").and_then(|p| Uuid::parse_str(p).ok()),
             mask: t.get_value("mask").and_then(nonempty),
             imask: t.get_value("imask").and_then(|v| v.parse().ok()),
+            rtype: t.get_value("rtype").and_then(nonempty),
             // taskchampion only knows a subset of Taskwarrior's attributes (it reports
             // `project`, `scheduled`, ... as "UDAs"), so filter those out ourselves.
             extra: crate::ordered::map_of(

@@ -137,6 +137,9 @@ enum Core {
     Modified,
     Recur,
     Parent,
+    Mask,
+    Imask,
+    Rtype,
     Depends,
     Tags,
     Annotation,
@@ -160,6 +163,9 @@ const CORE_NAMES: &[(&str, Core)] = &[
     ("modified", Core::Modified),
     ("recur", Core::Recur),
     ("parent", Core::Parent),
+    ("mask", Core::Mask),
+    ("imask", Core::Imask),
+    ("rtype", Core::Rtype),
     ("depends", Core::Depends),
     ("tags", Core::Tags),
     ("annotation", Core::Annotation),
@@ -184,7 +190,7 @@ impl Attr {
     fn ty(&self) -> Ty {
         match self {
             Attr::Core(c) => match c {
-                Core::Id | Core::Urgency => Ty::Num,
+                Core::Id | Core::Urgency | Core::Imask => Ty::Num,
                 Core::Entry
                 | Core::Start
                 | Core::End
@@ -781,6 +787,11 @@ fn attr_value(attr: &Attr, f: &Facts, ctx: &EvalCtx) -> Val {
             Core::Priority => s(&f.priority),
             Core::Recur => s(&f.recur),
             Core::Parent => f.parent.map_or(Val::Unset, |p| Val::Str(p.to_string())),
+            Core::Mask => s(&f.mask),
+            // A number that every task has: 0 when there is none, so `imask:0` also finds a template and a plain task,
+            // and `imask.any:` finds all, as in Taskwarrior.
+            Core::Imask => Val::Num(f.imask.unwrap_or(0) as f64),
+            Core::Rtype => s(&f.rtype),
             Core::Entry => d(f.entry),
             Core::Start => d(f.start),
             Core::End => d(f.end),

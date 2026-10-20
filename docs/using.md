@@ -216,8 +216,8 @@ The same questions as on the desktop, from the same settings, but answered on th
   (`allow.empty.filter`).
 - **Finishing or deleting a task in the middle of a dependency chain** offers to repair the chain
   (`dependency.confirmation`): what waited on it then waits on what it waited on.
-- **Editing one task of a recurring series** asks whether to change the rest of the series too
-  (`recurrence.confirmation`).
+- **Editing, appending to, prepending to, annotating or deleting a task of a recurring series** asks whether to do the
+  same to the rest of the series (`recurrence.confirmation`).
 
 Taskwarrior asks yes / no / all / quit about each task in turn. Here the questions arrive together as a **table with a
 tick for each task the command would change**: tick all, none, or the ones you want, then go ahead. Only tasks the
@@ -634,17 +634,33 @@ Periods are Taskwarrior's: `daily` `weekdays` `weekly` `biweekly` `monthly` `qua
 `2w` `6mo`, and ISO durations like `P1M`. A repeating task shows a repeat icon; its detail view lists its instances, and
 an instance links back to it. The recurring task itself is a template: you can edit it but not complete or start it.
 
-- **Recurrence is on by default**, as in Taskwarrior (`recurrence=1`). Before each command the app creates the
-  instances that are due (`recurrence.limit=N` keeps N upcoming ones, default 1), retires finished series and honours
-  `until`. Taskwarrior itself advises that when several clients sync, one is primary and the others set
-  `recurrence=0`, as a workaround for a duplication bug. Instances are numbered by their index in the template's mask,
-  so the CLI and the web app run side by side without duplicating each other in normal use (checked against real
-  `task` 3.5.0), but if you ever see duplicates, set `recurrence=off` here or in your CLI's taskrc so only one side
-  generates them. With it off the app still shows and edits recurring tasks and reads instances made elsewhere.
+- **Recurrence is on by default**, as in Taskwarrior (`recurrence=1`). It is done when Taskwarrior does it: before the
+  commands `task commands` flags **Recur** (the reports, `count`, `export`, `ids`, `projects`, the `history`,
+  `ghistory` and `burndown` charts and the like, and the page's own reads), and not before one that changes a task.
+  Then the app creates the instances that are due (`recurrence.limit=N` keeps N upcoming ones, default 1) and
+  expires what is past its `until`: an instance it has just made is deleted at once, and the template's mask is left as
+  it is. Taskwarrior itself advises that when several clients sync, one is primary and the others set `recurrence=0`,
+  because two that each make an instance before they have synced make two. Here that does not happen between this
+  app's own clients (the page, another tab, the phone): an instance's uuid comes from its template and its index, so
+  they all make the same task and the replicas merge it into one. A real `task` on the same data does not know this
+  trick (its instances have random uuids), so if you also run the CLI, set `recurrence=0` in its taskrc, or turn it off
+  here with `recurrence=off`. With it off the app still shows and edits recurring tasks and reads instances made
+  elsewhere.
 - **Editing one task of a series** follows `recurrence.confirmation`: `prompt` (the default) asks whether to change
   all pending recurrences or only this task; `yes` always changes the whole series; `no` only the task you edited.
-  Descriptive changes (description, project, priority, tags, UDAs) are shared; dates and the period stay per task.
-- Deleting a recurring task asks first, because it deletes its open instances too.
+  As in Taskwarrior, from an instance `modify`, `append`, `prepend` and `annotate` go to the template and every pending
+  instance (a `modify` carries its dates and `recur` too, so `modify due:friday` on one instance moves them all), and
+  from a template only `modify` goes to its instances. `denotate`, `start`, `stop` and `done` never do.
+- **Deleting** a template, or an instance, asks in the same way ("Do you want to delete all pending recurrences of this
+  same task?"): `yes` deletes the template and its pending instances (from an instance, the whole series), `no` only the
+  task named.
+- A template's **mask** has a letter for each instance (`-` pending, `+` done, `X` deleted, `W` waiting). It follows
+  `modify`, `start`, `done` and `delete` of an instance, and not a note or an `append`, as in Taskwarrior.
+- A date can be given as another date of the same task, with a length of time added or taken off, and is read left to
+  right: `add Review due:friday wait:due-1d recur:weekly`, or `modify scheduled:due-2h`. A date that the task does not
+  have yet, or that comes later on the line, cannot be used.
+- The filters `imask`, `mask` and `rtype` work as in Taskwarrior (`imask:0`, `rtype:periodic`, `mask.any:`); a task with
+  no `imask` counts as 0.
 - **Only periodic recurrence is acted on.** A template carries a recurrence type, `rtype`: `periodic` (every period from
   the due date, the default and the only thing the app and `task` 3.5.0 create) or `chained` (the next instance starts
   when the last one ends). Taskwarrior 3.5.0 knows the word `chained` but never acts on it, and does not let you set
@@ -755,7 +771,7 @@ Lua 5.4 with `string`, `table` and `math` only: no files, no clock but the comma
 few million steps) or takes too much memory is stopped with a message.
 
 Notes: `hooks=off` (or `rc.hooks:off` for one command, or `config hooks off`) turns them all off. `undo` doesn't run hooks,
-as in Taskwarrior. The housekeeping before a command does, as there: `on_add` for each recurring instance it generates, and
+as in Taskwarrior. The housekeeping before a report does, as there: `on_add` for each recurring instance it generates, and
 `on_modify` for the parent whose mask changed and for a task it expires (a series that has ended, a task past its
 `until`). A hook that refuses one of these stops the command with its message and writes nothing, where Taskwarrior can
 leave the instances made before the refusal. A command that asks a question first runs `on_launch` once per round.
