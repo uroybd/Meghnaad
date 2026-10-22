@@ -300,7 +300,7 @@
       {/if}
       {#if picked}
         <Drawer title={picked.title || 'Section'} onclose={() => (opened = null)}>
-          <SectionForm section={picked} onchange={setSection} />
+          <SectionForm section={picked} ranges={draft?.ranges ?? []} onchange={setSection} />
         </Drawer>
       {/if}
     {/if}

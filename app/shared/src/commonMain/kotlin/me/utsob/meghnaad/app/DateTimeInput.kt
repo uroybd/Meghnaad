@@ -9,6 +9,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -111,8 +115,16 @@ private fun DatePanel(value: String, onChange: (String) -> Unit, label: String, 
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     DATE_KEYWORDS.forEach { w ->
-                        TextButton({ onChange(w) }, contentPadding = tight) {
-                            Text(w, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = if (value.trim() == w) FontWeight.Bold else FontWeight.Normal)
+                        // What the word means (the engine's), shown on a long press or a hover.
+                        val means = remember(w) { runCatching { dateWords(w).firstOrNull { it.value == w }?.hint }.getOrNull() ?: w }
+                        TooltipBox(
+                            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                            tooltip = { PlainTooltip { Text(means) } },
+                            state = rememberTooltipState(),
+                        ) {
+                            TextButton({ onChange(w) }, contentPadding = tight) {
+                                Text(w, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = if (value.trim() == w) FontWeight.Bold else FontWeight.Normal)
+                            }
                         }
                     }
                 }

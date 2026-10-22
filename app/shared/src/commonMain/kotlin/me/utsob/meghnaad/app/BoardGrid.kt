@@ -164,7 +164,7 @@ private fun BoardCard(store: Store, section: Section, data: SectionData?, width:
                         Text(formatBoardValue(data.answer.total, data.answer.unit), fontSize = big, fontWeight = FontWeight.Bold, maxLines = 1)
                         Dim("${data.answer.tasks} ${if (data.answer.tasks == 1) "task" else "tasks"}", size = if (width < 100.dp) 11 else 13)
                     }
-                    is SectionData.Chart -> BoardChartView(orderChart(data.chart, section), section, extras.dark, height = height - 34.dp - 8.dp)
+                    is SectionData.Chart -> BoardChartView(orderChart(data.chart, section, data.limit), section, extras.dark, height = height - 34.dp - 8.dp)
                     is SectionData.Table -> {
                         val e = remember(data) { Entry(0, CliInput(args = emptyList()), section.report ?: "next").also { it.result = data.result } }
                         ResultBlock(store, e)

@@ -41,7 +41,7 @@
   const inForce = $derived(named === undefined ? store.activeContext : named === NO_CONTEXT ? null : named);
   const listed = $derived(sources.map((src) => ({ ...src, tasks: parseTasks(src.text) })));
   const answer = $derived(data.kind === 'answer' ? data.answer : null);
-  const chart = $derived(data.kind === 'chart' ? orderChart(data.chart, section) : null);
+  const chart = $derived(data.kind === 'chart' ? orderChart(data.chart, section, data.limit) : null);
   const unit = $derived(answer?.unit ?? chart?.unit ?? 'number');
   const fmt = (v: number | null) => formatValue(v, unit, compactDuration);
   const matched = $derived(data.kind === 'table' && data.result.kind === 'report' ? data.result.matched : null);
@@ -111,8 +111,10 @@
     {#if chart}
       <dt>Order</dt>
       <dd>
-        {section.sort ? section.sort : section.by?.time ? 'in time order' : 'largest first'}{section.limit
-          ? `, the first ${section.limit}`
+        {section.sort ? section.sort : section.by?.time ? 'in time order' : 'largest first'}{chart &&
+        data.kind === 'chart' &&
+        data.limit
+          ? `, the ${section.by?.time && !section.sort ? 'latest' : 'first'} ${data.limit}${typeof section.limit === 'string' ? ` (${section.limit})` : ''}`
           : ''}{section.stacked ? ', stacked' : ''}
       </dd>
     {/if}

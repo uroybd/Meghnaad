@@ -163,10 +163,10 @@ const DATE_ATTRS: &[&str] = &["due", "wait", "scheduled", "until", "start", "end
 const NUMERIC_ATTRS: &[&str] = &["urgency", "id"];
 
 const DATE_WORDS: &[(&str, Option<&str>)] = &[
-    ("now", None),
-    ("today", None),
-    ("tomorrow", None),
-    ("yesterday", None),
+    ("now", Some("this moment")),
+    ("today", Some("start of today")),
+    ("tomorrow", Some("start of tomorrow")),
+    ("yesterday", Some("start of yesterday")),
     ("sod", Some("start of day")),
     ("eod", Some("end of day")),
     ("sow", Some("start of week")),

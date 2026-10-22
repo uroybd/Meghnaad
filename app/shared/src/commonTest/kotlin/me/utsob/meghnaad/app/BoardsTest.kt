@@ -106,6 +106,50 @@ class BoardsTest {
     }
 
     @Test
+    fun keepIsANumberOrTheCountOfARangeAndIsWrittenAsOne() {
+        val ranges = listOf(DateRange("daterange", "sow", "eow"))
+        val z = Zone(0, true, 1_791_376_200L)
+        assertEquals(7, keepOf("7", ranges, z))
+        assertEquals(7, keepOf(" \$daterange.day_count ", ranges, z))
+        assertEquals(168, keepOf("\$daterange.hour_count", ranges, z))
+        assertNull(keepOf(null, ranges, z))
+        assertNull(keepOf("0", ranges, z))
+        assertTrue(runCatching { keepOf("\$nope.day_count", ranges, z) }.isFailure)
+        // Read from a file and written back: a number stays a number, a count stays text.
+        val n = normalizeBoards(
+            Json.parseToJsonElement(
+                """[{"id":"b","name":"B","ranges":[{"name":"week","start":"sow","end":"eow"}],"sections":[
+                    {"id":"a","type":"bar","x":0,"y":0,"w":6,"h":4,"by":{"time":{"field":"end","step":"day"}},"limit":"${'$'}week.day_count"},
+                    {"id":"c","type":"bar","x":6,"y":0,"w":6,"h":4,"by":{"field":"project"},"limit":5}]}]""",
+            ),
+        )
+        assertEquals(listOf("\$week.day_count", "5"), n.boards[0].sections.map { it.limit })
+        val out = boardsToJson(n.boards).toString()
+        assertTrue("\"limit\":5" in out && "\"limit\":\"\$week.day_count\"" in out, out)
+    }
+
+    @Test
+    fun aChartMayBeCutByTheLargestGroupOfARange() {
+        val z = Zone(0, true, 1_791_376_200L)
+        val week = listOf(DateRange("daterange", "sow", "eow"))
+        assertEquals(mapOf("daterange" to "day"), largestGroups(week, z))
+        assertEquals(mapOf("m" to "week"), largestGroups(listOf(DateRange("m", "som", "eom"), DateRange("x", "later", "eom")), z))
+        assertEquals(7, keepOf("\$daterange.lg_group.count", week, z))
+        val by = By(time = TimeBy("end", "\$daterange.lg_group.name"))
+        assertEquals(By(time = TimeBy("end", "day")), resolveBy(by, week, z))
+        assertEquals(By(time = TimeBy("end", "week")), resolveBy(By(time = TimeBy("end", "week")), week, z))
+        assertEquals(By(field = "project"), resolveBy(By(field = "project"), week, z))
+        // Kept as typed in the file, and read back the same.
+        val n = normalizeBoards(
+            Json.parseToJsonElement(
+                """[{"id":"b","name":"B","ranges":[{"name":"daterange","start":"sow","end":"eow"}],"sections":[
+                    {"id":"a","type":"bar","x":0,"y":0,"w":6,"h":4,"by":{"time":{"field":"end","step":"${'$'}daterange.lg_group.name"}}}]}]""",
+            ),
+        )
+        assertEquals(by, n.boards[0].sections[0].by)
+    }
+
+    @Test
     fun theDatesTypedOnThePageTakeThePlaceOfTheBoardsOwn() {
         val b = Board("b", "B", filter = "a", ranges = listOf(DateRange("sprint_week", "sow", "eow")))
         assertEquals(b, viewedBoard(b, null, null))
@@ -134,16 +178,16 @@ class BoardsTest {
         val by = sec("x", "bar") { it.copy(by = By(field = "p")) }
         assertEquals(listOf("a", "b", "d", "c"), orderChart(c, by).labels.map { it.key })
         assertEquals(listOf("d", "b", "a", "c"), orderChart(c, by.copy(sort = "value+")).labels.map { it.key })
-        val keyed = orderChart(c, by.copy(sort = "key-", limit = 2))
+        val keyed = orderChart(c, by.copy(sort = "key-", limit = "2"))
         assertEquals(listOf("d", "c"), keyed.labels.map { it.key })
         assertEquals(listOf(1.0, null), keyed.datasets[0].data)
         // A date stays in time order unless asked.
         val time = by.copy(by = By(time = TimeBy("due", "day")))
         assertEquals(listOf("b", "a", "c", "d"), orderChart(c, time).labels.map { it.key })
         // Keep takes the latest periods of a date in time order, and the first of any other order.
-        assertEquals(listOf("c", "d"), orderChart(c, time.copy(limit = 2)).labels.map { it.key })
-        assertEquals(listOf("d", "c"), orderChart(c, time.copy(limit = 2, sort = "key-")).labels.map { it.key })
-        assertEquals(listOf("a", "b"), orderChart(c, time.copy(limit = 2, sort = "key+")).labels.map { it.key })
+        assertEquals(listOf("c", "d"), orderChart(c, time.copy(limit = "2")).labels.map { it.key })
+        assertEquals(listOf("d", "c"), orderChart(c, time.copy(limit = "2", sort = "key-")).labels.map { it.key })
+        assertEquals(listOf("a", "b"), orderChart(c, time.copy(limit = "2", sort = "key+")).labels.map { it.key })
     }
 
     @Test

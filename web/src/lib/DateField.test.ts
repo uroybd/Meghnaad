@@ -59,6 +59,18 @@ describe('a date field', () => {
     expect(p.value).toBe('2026-10-01T09:30');
   });
 
+  it('says in a tooltip what each keyword means, and when that is now', () => {
+    draw('');
+    trigger().click();
+    flushSync();
+    const tip = (w: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('.word')].find((b) => b.textContent === w)!.title;
+    expect(tip('sow')).toMatch(/^start of week \(.+\)$/);
+    expect(tip('eom')).toMatch(/^end of month \(.+\)$/);
+    expect(tip('now')).toMatch(/^this moment \(.+\)$/);
+    for (const b of document.querySelectorAll<HTMLButtonElement>('.word')) expect(b.title).not.toBe('');
+  });
+
   it('completes the engine’s date words as they are typed, and clears', () => {
     const p = draw('');
     trigger().click();

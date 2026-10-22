@@ -207,7 +207,7 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
 
     // The settings of a card are in a pop-up over the board, not among the cards.
     d.sections.firstOrNull { it.id == editor.opened }?.let { s ->
-        SectionDialog(store, s, onChange = { editor.update(it) }, onDismiss = { editor.opened = null })
+        SectionDialog(store, s, editor.draft.ranges, onChange = { editor.update(it) }, onDismiss = { editor.opened = null })
     }
 
     if (confirmDelete) {
@@ -223,7 +223,7 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
 
 /** The settings of a card in a pop-up that fills the screen, so the form has room and the keyboard does not cover it. */
 @Composable
-private fun SectionDialog(store: Store, s: Section, onChange: (Section) -> Unit, onDismiss: () -> Unit) {
+private fun SectionDialog(store: Store, s: Section, ranges: List<DateRange>, onChange: (Section) -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize()) {
@@ -231,7 +231,7 @@ private fun SectionDialog(store: Store, s: Section, onChange: (Section) -> Unit,
                     Text(s.title.ifEmpty { "Card" }, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     Button(onDismiss) { Text("Done") }
                 }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) { SectionForm(store, s, onChange) }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) { SectionForm(store, s, ranges, onChange) }
             }
         }
     }
@@ -239,7 +239,7 @@ private fun SectionDialog(store: Store, s: Section, onChange: (Section) -> Unit,
 
 /** The settings of one section. */
 @Composable
-private fun SectionForm(store: Store, s: Section, onChange: (Section) -> Unit) {
+private fun SectionForm(store: Store, s: Section, ranges: List<DateRange>, onChange: (Section) -> Unit) {
     val udas = store.udas
     Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         TextBox("Title", s.title, { onChange(s.copy(title = it)) })
@@ -273,13 +273,18 @@ private fun SectionForm(store: Store, s: Section, onChange: (Section) -> Unit) {
             }
             if (time != null) {
                 Pick("Date", dates.map { it to it }, time.field) { onChange(s.copy(by = By(time = TimeBy(it ?: time.field, time.step)))) }
-                Pick("Per", STEPS.map { it to it }, time.step) { onChange(s.copy(by = By(time = TimeBy(time.field, it ?: time.step)))) }
+                // The steps, and the largest group of each date range of the board, as it is now.
+                val groups = largestGroups(ranges, store.boardZone())
+                val perGroups = ranges.map { r ->
+                    "\$${r.name}.lg_group.name" to "Largest group${if (ranges.size > 1) " of ${rangeLabel(r.name)}" else ""} (currently ${groups[r.name] ?: "not a date range yet"})"
+                }
+                Pick("Per", STEPS.map { it to it } + perGroups, time.step) { onChange(s.copy(by = By(time = TimeBy(time.field, it ?: time.step)))) }
             } else {
                 TextBox("Attribute", s.by?.field.orEmpty(), { onChange(s.copy(by = By(field = it.trim()))) })
                 Suggestions(groupableFields(udas)) { onChange(s.copy(by = By(field = it))) }
             }
             Pick("Order", ORDERS, s.sort) { onChange(s.copy(sort = it)) }
-            TextBox("Keep", s.limit?.toString().orEmpty(), { onChange(s.copy(limit = it.filter(Char::isDigit).toIntOrNull()?.takeIf { n -> n > 0 })) }, number = true, placeholder = "all")
+            TextBox("Keep", s.limit.orEmpty(), { v -> onChange(s.copy(limit = v.trim().ifEmpty { null })) }, mono = true, placeholder = "all, 12 or \$range.day_count")
         }
 
         if (hasManySeries(s.type)) SeriesEditor(store, s, onChange)

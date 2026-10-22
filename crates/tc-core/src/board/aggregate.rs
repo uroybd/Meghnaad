@@ -40,10 +40,69 @@ pub enum Step {
     Year,
 }
 
+impl Step {
+    pub fn name(self) -> &'static str {
+        match self {
+            Step::Day => "day",
+            Step::Week => "week",
+            Step::Month => "month",
+            Step::Quarter => "quarter",
+            Step::Year => "year",
+        }
+    }
+
+    fn parse(word: &str) -> Option<Step> {
+        [Step::Day, Step::Week, Step::Month, Step::Quarter, Step::Year]
+            .into_iter()
+            .find(|s| s.name() == word)
+    }
+}
+
+/// A date to group by, and the step it is cut into. The step may be written as a date range's group of the board
+/// (`$week.lg_group.name`, see `ranges`), which the page works out before it asks for the numbers: it is then in `var`, and `step`
+/// means nothing until it has been.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "TimeByWire", into = "TimeByWire")]
 pub struct TimeBy {
     pub field: String,
     pub step: Step,
+    pub var: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TimeByWire {
+    field: String,
+    step: String,
+}
+
+impl TryFrom<TimeByWire> for TimeBy {
+    type Error = String;
+
+    fn try_from(w: TimeByWire) -> Result<Self, String> {
+        let step = w.step.trim();
+        match Step::parse(step) {
+            Some(step) => Ok(TimeBy {
+                field: w.field,
+                step,
+                var: None,
+            }),
+            None if step.starts_with('$') => Ok(TimeBy {
+                field: w.field,
+                step: Step::Day,
+                var: Some(step.to_owned()),
+            }),
+            None => Err(format!("'{step}' is not day, week, month, quarter or year")),
+        }
+    }
+}
+
+impl From<TimeBy> for TimeByWire {
+    fn from(t: TimeBy) -> Self {
+        TimeByWire {
+            step: t.var.unwrap_or_else(|| t.step.name().to_owned()),
+            field: t.field,
+        }
+    }
 }
 
 /// How to group: by the value of an attribute (`field`), or by a date's day, week, month, quarter or year (`time`). One of
@@ -213,8 +272,16 @@ impl Acc {
     }
 }
 
+/// A step still written as a date range's group has not been worked out, and cannot be counted by.
+fn unworked(by: Option<&By>) -> Result<(), String> {
+    match by.and_then(|b| b.time.as_ref()).and_then(|t| t.var.as_ref()) {
+        Some(v) => Err(format!("{v} has to be worked out before the dates are grouped by it")),
+        None => Ok(()),
+    }
+}
+
 /// The start of the bucket of `step` that holds `ts`, and the start of the next one.
-fn bucket(clock: &Clock, step: Step, ts: i64) -> (i64, i64) {
+pub(super) fn bucket(clock: &Clock, step: Step, ts: i64) -> (i64, i64) {
     match step {
         Step::Day => (
             clock.start_of_day(ts),
@@ -268,6 +335,7 @@ fn measure_values(tasks: &[Value], measure: &Measure) -> Result<(Vec<Option<f64>
 
 /// The answer to `query` over the tasks of an `export` text.
 pub fn aggregate(tasks: &str, query: &Query, ctx: &Ctx) -> Result<Answer, String> {
+    unworked(query.by.as_ref())?;
     let tasks = read_tasks(tasks)?;
     let measure = query.measure.clone().unwrap_or(Measure {
         func: Func::Count,
@@ -505,6 +573,7 @@ fn span_answer(s: &SeriesInput, span: &Span, step: Step, until: Option<i64>, ctx
 /// one axis: the labels are every value (or, for a date, every period from the first to the last, so a series with nothing
 /// in a period still has a place there) any series has.
 pub fn chart(series: &[SeriesInput], by: Option<&By>, ctx: &Ctx) -> Result<Chart, String> {
+    unworked(by)?;
     let Some(by) = by else {
         return Err("a chart needs something to group by".into());
     };

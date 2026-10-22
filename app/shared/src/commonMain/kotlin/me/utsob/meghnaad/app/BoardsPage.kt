@@ -230,7 +230,7 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
         is SectionData.Chart -> data.sources
         else -> emptyList()
     }
-    val chart = (data as? SectionData.Chart)?.let { orderChart(it.chart, section) }
+    val chart = (data as? SectionData.Chart)?.let { orderChart(it.chart, section, it.limit) }
     val settings = store.config?.config?.settings
     val dateFmt = formatFor(FormatKind.Report, settings)
     val tz = store.utcOffset
@@ -266,7 +266,7 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
                 InfoLine("Context", (inForce ?: "none") + if (named == null) " (the console's)" else " (set in the filter)")
                 describeBy(section.by)?.let { InfoLine("Grouped by", it) }
                 if (chart != null) {
-                    InfoLine("Order", (section.sort ?: if (section.by?.time != null) "in time order" else "largest first") + (section.limit?.let { ", the first $it" } ?: "") + if (section.stacked == true) ", stacked" else "")
+                    InfoLine("Order", (section.sort ?: if (section.by?.time != null) "in time order" else "largest first") + ((data as? SectionData.Chart)?.limit?.let { ", the ${if (section.by?.time != null && section.sort == null) "latest" else "first"} $it" + (if (section.limit?.toIntOrNull() == null) " (${section.limit})" else "") } ?: "") + if (section.stacked == true) ", stacked" else "")
                 }
 
                 if (data is SectionData.Failed) {

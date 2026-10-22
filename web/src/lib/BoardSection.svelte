@@ -24,7 +24,7 @@
   } = $props();
 
   const answer = $derived(data?.kind === 'answer' ? data.answer : null);
-  const chart = $derived(data?.kind === 'chart' ? orderChart(data.chart, section) : null);
+  const chart = $derived(data?.kind === 'chart' ? orderChart(data.chart, section, data.limit) : null);
   const unit = $derived(answer?.unit ?? chart?.unit ?? 'number');
   const fmt = (v: number | null) => formatValue(v, unit, compactDuration);
   const total = $derived(answer ? fmt(answer.total) : '');

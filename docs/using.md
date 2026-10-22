@@ -370,6 +370,20 @@ label in full and its figure; the labels along an axis are thinned so none is cu
   typed above a board are only for as long as the page is open (nothing is saved, **Reset** brings the board's own back); the
   board's own are changed in its settings. A name is lower case letters, digits and `_`, starting with a letter, and is shown as a
   label (`sprint_week` is "Sprint week").
+  A range also says how long it is: `$name.minute_count`, `.hour_count`, `.day_count`, `.week_count`, `.month_count`,
+  `.quarter_count` and `.year_count` are how many of that period it touches (the singular, as in "day count"). They are for a
+  chart's **Keep**: a chart per day over `sow` to `eow` with **Keep** `$daterange.day_count` keeps 7 days. A period is counted as
+  a chart cuts them, in your time zone and with weeks starting on the day `weekstart` says, and the end is not in the range
+  (a range ending at midnight stops before it), so Monday 5 to Sunday 11 October is 7 days and 1 week, and Wednesday 7 to
+  Tuesday 13 is 7 days and 2 weeks. **Keep** takes only a number or one of these counts; the editor names a range that is not
+  the board's. The variables are also read in the series' filters, as in any other filter of the board.
+  `$name.lg_group.name` is the **largest group** of the range: the step (`day`, `week`, `month` or `year`) a chart over it is best
+  cut into, the largest that still gives at least two whole periods (a week is days, two weeks or a month are weeks, two months or a
+  year are months, two years are years, and anything shorter than two days is days), and `$name.lg_group.count` is how many of those
+  the range touches (a week is 7 days; a month is usually 5 weeks). A chart's **Per** has it as **Largest group (currently week)**,
+  one for each range (with the range's name when there are several), so the chart regroups as the range changes, and **Keep** takes
+  `$name.lg_group.count` to show exactly the range. The keyword buttons in the date panel say in a tooltip what each means and what
+  it is now.
 - **Measuring** a field works on numbers (`urgency`, a numeric UDA) and durations (a duration UDA, as `2h` or `PT2H`). A
   figure over a duration is shown the way Taskwarrior writes one (`2h`, `3d`). A task with no value for the field is left out of
   a sum, average or comparison, and a group in which no task has one shows `–` (not zero). Anything else is refused, saying so.
@@ -405,7 +419,8 @@ label in full and its figure; the labels along an axis are thinned so none is cu
   got (the first 200, with the columns it measures and groups by). It is the way to check where a number came from.
 - **Order and number.** A chart of values puts the largest first; **Order** changes that (smallest first, or by name), and
   **Keep** shows only the first few. A date is in time order, and there **Keep** shows the latest periods:
-  `per day` with **Keep** 7 is the last week, ending today.
+  `per day` with **Keep** 7 is the last week, ending today. **Keep** is a number, or the count of one of the board's date ranges
+  (below), so the chart follows the range.
 
 **Laying out the board.** The page is 12 columns wide. In **Edit**, drag a section by its move handle (top right) to put it
 elsewhere, and its bottom right corner to make it wider or taller; it snaps to the grid. What it lands on is pushed down and
@@ -449,7 +464,11 @@ file first if you want to keep what was left out.
             { "label": "Failed", "filter": "outcome:failed", "color": "red" }
           ] },
         { "id": "effort", "title": "Estimate by project", "x": 0, "y": 8, "w": 12, "h": 4, "type": "bar",
-          "measure": { "fn": "sum", "field": "estimate" }, "by": { "field": "project" }, "limit": 10 }
+          "measure": { "fn": "sum", "field": "estimate" }, "by": { "field": "project" }, "limit": 10 },
+        { "id": "days", "title": "Done per day, this range", "x": 0, "y": 12, "w": 12, "h": 4, "type": "bar",
+          "filter": "end.after:$daterange.start and end.before:$daterange.end",
+          "by": { "time": { "field": "end", "step": "$daterange.lg_group.name" } },
+          "limit": "$daterange.lg_group.count" }
       ]
     }
   ]

@@ -128,7 +128,16 @@ pub struct Section {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
+    pub limit: Option<Limit>,
+}
+
+/// How many groups a chart keeps: a number, or the count of a board's date range (`$week.day_count`) which is worked out when the
+/// board is drawn (`ranges::limit`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Limit {
+    Count(usize),
+    Expr(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -186,12 +195,22 @@ fn text(o: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
 }
 
 /// Why a section cannot be drawn, or `None`.
-fn section_problem(s: &Section) -> Option<String> {
+fn section_problem(s: &Section, ranges: &[Range]) -> Option<String> {
     if !valid_id(&s.id) {
         return Some("needs an id of lower case letters, digits, - and _".into());
     }
     if s.measure.func != Func::Count && s.measure.field.as_deref().is_none_or(str::is_empty) {
         return Some("sum, avg, min and max need a field to measure".into());
+    }
+    if let Some(Limit::Expr(text)) = &s.limit {
+        if let Some(p) = ranges::limit_problem(text, ranges) {
+            return Some(p);
+        }
+    }
+    if let Some(var) = s.by.as_ref().and_then(|b| b.time.as_ref()).and_then(|t| t.var.as_ref()) {
+        if let Some(p) = ranges::step_problem(var, ranges) {
+            return Some(p);
+        }
     }
     if s.kind.is_chart() && s.by.is_none() {
         return Some("a chart needs something to group by".into());
@@ -326,7 +345,7 @@ pub fn normalize(value: &Value) -> Normalized {
                     continue;
                 }
             };
-            if let Some(p) = section_problem(&section) {
+            if let Some(p) = section_problem(&section, &ranges) {
                 out.errors.push(format!("{at}, section {}: {p}", j + 1));
                 continue;
             }
@@ -341,6 +360,16 @@ pub fn normalize(value: &Value) -> Normalized {
             for x in &mut section.series {
                 x.label = x.label.trim().to_owned();
             }
+            // A number written as text is a number; none, or none to keep, is all.
+            section.limit = match section.limit.take() {
+                Some(Limit::Expr(t)) if t.trim().is_empty() => None,
+                Some(Limit::Expr(t)) if t.trim().bytes().all(|b| b.is_ascii_digit()) => {
+                    t.trim().parse().ok().map(Limit::Count)
+                }
+                Some(Limit::Expr(t)) => Some(Limit::Expr(t.trim().to_owned())),
+                Some(Limit::Count(0)) => None,
+                other => other,
+            };
             // Off is the default, and is not written.
             if section.ignore_board_filter == Some(false) {
                 section.ignore_board_filter = None;
@@ -435,6 +464,77 @@ mod tests {
             .unwrap()
             .get("ranges")
             .is_none());
+    }
+
+    #[test]
+    fn keep_is_a_number_or_the_count_of_a_range_of_the_board() {
+        let board = |limit: Value| {
+            normalize(&json!([{ "id": "b", "name": "B",
+                "ranges": [{ "name": "week", "start": "sow", "end": "eow" }],
+                "sections": [{ "id": "c", "type": "bar", "x": 0, "y": 0, "w": 6, "h": 4,
+                    "by": { "time": { "field": "end", "step": "day" } }, "limit": limit }] }]))
+        };
+        let kept = |limit: Value| board(limit).boards[0].sections.first().map(|s| s.limit.clone());
+        assert_eq!(kept(json!(7)), Some(Some(Limit::Count(7))));
+        assert_eq!(kept(json!("7")), Some(Some(Limit::Count(7))));
+        assert_eq!(kept(json!(0)), Some(None));
+        assert_eq!(kept(json!("")), Some(None));
+        assert_eq!(
+            kept(json!(" $week.day_count ")),
+            Some(Some(Limit::Expr("$week.day_count".into())))
+        );
+        // Written out and read again, it is the same.
+        let n = board(json!("$week.day_count"));
+        assert_eq!(normalize(&serde_json::to_value(&n.boards).unwrap()).boards, n.boards);
+        assert_eq!(
+            serde_json::to_value(&n.boards).unwrap()[0]["sections"][0]["limit"],
+            json!("$week.day_count")
+        );
+        for bad in [json!("$nope.day_count"), json!("$week.start"), json!("lots")] {
+            let n = board(bad);
+            assert!(n.boards[0].sections.is_empty());
+            assert!(n.errors[0].contains("Keep"), "{:?}", n.errors);
+        }
+    }
+
+    #[test]
+    fn a_chart_may_be_cut_by_the_largest_group_of_a_range() {
+        let board = |step: &str, limit: &str| {
+            normalize(&json!([{ "id": "b", "name": "B",
+                "ranges": [{ "name": "week", "start": "sow", "end": "eow" }],
+                "sections": [{ "id": "c", "type": "bar", "x": 0, "y": 0, "w": 6, "h": 4, "limit": limit,
+                    "by": { "time": { "field": "end", "step": step } } }] }]))
+        };
+        let n = board("$week.lg_group.name", "$week.lg_group.count");
+        assert!(n.errors.is_empty(), "{:?}", n.errors);
+        let time = n.boards[0].sections[0].by.clone().and_then(|b| b.time);
+        assert_eq!(time.map(|t| t.var), Some(Some("$week.lg_group.name".to_owned())));
+        // Written out as typed, and read again the same.
+        let out = serde_json::to_value(&n.boards).unwrap();
+        assert_eq!(
+            out[0]["sections"][0]["by"]["time"]["step"],
+            json!("$week.lg_group.name")
+        );
+        assert_eq!(normalize(&out).boards, n.boards);
+        // An ordinary step is still one.
+        let plain = board("week", "");
+        assert_eq!(
+            plain.boards[0].sections[0]
+                .by
+                .as_ref()
+                .and_then(|b| b.time.as_ref())
+                .map(|t| t.step.name()),
+            Some("week")
+        );
+        for (step, said) in [
+            ("$nope.lg_group.name", "no date range"),
+            ("$week.start", "per is day"),
+            ("fortnight", "fortnight"),
+        ] {
+            let n = board(step, "");
+            assert!(n.boards[0].sections.is_empty(), "{step}");
+            assert!(n.errors[0].contains(said), "{step}: {:?}", n.errors);
+        }
     }
 
     #[test]

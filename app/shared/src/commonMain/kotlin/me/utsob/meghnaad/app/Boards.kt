@@ -1,9 +1,17 @@
 package me.utsob.meghnaad.app
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -47,6 +55,14 @@ data class Series(
     val span: StateSpan? = null,
 )
 
+/** A chart's Keep in `settings.json`: a number, or text (`$week.day_count`). A number is written as one. */
+object KeepSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Keep", PrimitiveKind.STRING)
+    override fun deserialize(decoder: Decoder): String = (decoder as JsonDecoder).decodeJsonElement().jsonPrimitive.content
+    override fun serialize(encoder: Encoder, value: String) =
+        (encoder as JsonEncoder).encodeJsonElement(value.trim().takeIf { it.isNotEmpty() && it.all(Char::isDigit) }?.let { JsonPrimitive(it.toInt()) } ?: JsonPrimitive(value))
+}
+
 @Serializable
 data class Section(
     val id: String,
@@ -65,7 +81,8 @@ data class Section(
     val series: List<Series> = emptyList(),
     val stacked: Boolean? = null,
     val sort: String? = null,
-    val limit: Int? = null,
+    /** How many groups a chart keeps: a number, or the count of a date range of the board (`$week.day_count`), as text. */
+    @Serializable(with = KeepSerializer::class) val limit: String? = null,
 )
 
 /** A named pair of dates any filter on the board can use: `$name.start` and `$name.end`. Each is a date as Taskwarrior reads one. */
@@ -250,6 +267,26 @@ fun substituteRanges(filter: String, ranges: List<DateRange>, zone: Zone): Strin
     return got["filter"]?.jsonPrimitive?.content ?: filter
 }
 
+/** How many groups a chart keeps, worked out now: a number, or the count of a date range (`$week.day_count`); null for all. Throws why not. */
+fun keepOf(limit: String?, ranges: List<DateRange>, zone: Zone): Int? {
+    if (limit.isNullOrBlank()) return null
+    limit.trim().toIntOrNull()?.let { return it.takeIf { n -> n > 0 } }
+    val got = callHelper("board_limit", JsonPrimitive(limit), rangesJson(ranges), zone.toJson()).jsonObject
+    got["message"]?.let { error(it.jsonPrimitive.content) }
+    return got["limit"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.toIntOrNull()
+}
+
+/** What the largest group of each range is right now (`day`, `week`, `month` or `year`), by the range's name; none for one that cannot be worked out. */
+fun largestGroups(ranges: List<DateRange>, zone: Zone): Map<String, String> =
+    ranges.mapNotNull { r -> runCatching { r.name to substituteRanges("\$${r.name}.lg_group.name", ranges, zone) }.getOrNull() }.toMap()
+
+/** The grouping with a step written as a range's largest group worked out. */
+fun resolveBy(by: By?, ranges: List<DateRange>, zone: Zone): By? {
+    val time = by?.time ?: return by
+    if (!time.step.startsWith("$")) return by
+    return By(time = time.copy(step = substituteRanges(time.step, ranges, zone)))
+}
+
 private fun measureJson(m: Measure): JsonElement = boardsJson.encodeToJsonElement(Measure.serializer(), m)
 
 /** The number for a section from an `export` text. */
@@ -280,7 +317,7 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone): BoardChart {
 class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?)
 
 /** The chart with its labels in the order the section asks for (the largest total first for a value, time order for a date), and as many as it keeps (for a date in time order, the latest). */
-fun orderChart(chart: BoardChart, section: Section): BoardChart {
+fun orderChart(chart: BoardChart, section: Section, limit: Int? = section.limit?.toIntOrNull()): BoardChart {
     val sort = section.sort ?: if (section.by?.time != null) null else "value-"
     fun total(i: Int) = chart.datasets.sumOf { it.data.getOrNull(i) ?: 0.0 }
     fun nothing(i: Int) = chart.datasets.all { it.data.getOrNull(i) == null }
@@ -297,7 +334,7 @@ fun orderChart(chart: BoardChart, section: Section): BoardChart {
         }
     }
     // A date in time order keeps the latest periods (a week is `per day`, keep 7); any other order keeps its first.
-    section.limit?.takeIf { it > 0 }?.let { order = if (section.by?.time != null && sort == null) order.takeLast(it) else order.take(it) }
+    limit?.takeIf { it > 0 }?.let { order = if (section.by?.time != null && sort == null) order.takeLast(it) else order.take(it) }
     return BoardChart(
         chart.unit,
         order.map { chart.labels[it] },
@@ -311,7 +348,8 @@ class Source(val label: String, val filter: String, val text: String)
 /** What a section got: its result, and (for the info panel) where the result came from. */
 sealed interface SectionData {
     class Number(val answer: BoardAnswer, val sources: List<Source>) : SectionData
-    class Chart(val chart: BoardChart, val sources: List<Source>) : SectionData
+    /** [limit] is how many groups the chart keeps, worked out now (see [keepOf]); null for all. */
+    class Chart(val chart: BoardChart, val sources: List<Source>, val limit: Int? = null) : SectionData
     class Table(val result: CliResult, val filter: String) : SectionData
     class Failed(val message: String) : SectionData
 }
@@ -335,8 +373,10 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
     }
 
     val out = LinkedHashMap<String, SectionData>()
-    for (s in board.sections) {
-        out[s.id] = try {
+    for (section in board.sections) {
+        out[section.id] = try {
+            // A step written as a range's largest group is the step it is now.
+            val s = section.copy(by = resolveBy(section.by, board.ranges, zone))
             when {
                 s.type == "table" -> {
                     val filter = filterOf(s)
@@ -363,7 +403,7 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
                         inputs += SeriesInput(x.label, text, x.measure ?: s.measure, x.span)
                         sources += Source(x.label, filter, text)
                     }
-                    if (failure != null) SectionData.Failed(failure) else SectionData.Chart(layChart(inputs, s.by, zone), sources)
+                    if (failure != null) SectionData.Failed(failure) else SectionData.Chart(layChart(inputs, s.by, zone), sources, keepOf(s.limit, board.ranges, zone))
                 }
             }
         } catch (e: Exception) {

@@ -172,6 +172,7 @@ describe('the info of a chart', () => {
   const data: SectionData = {
     kind: 'chart',
     chart,
+    limit: null,
     sources: [
       { label: 'Succeeded', filter: '( outcome:success )', text: tasks(4) },
       { label: 'Failed', filter: '( outcome:failed )', text: '[]' },

@@ -2,7 +2,10 @@
   import { tick } from 'svelte';
   import CompletionMenu from './CompletionMenu.svelte';
   import { dateWords, type Option } from './completion';
-  import { fromParts } from './dates';
+  import { resolveRanges, zoneNow } from './boards';
+  import { formatFor } from './dateformat';
+  import { formatMoment, fromParts } from './dates';
+  import { store } from './store.svelte';
   import { Calendar, X } from './icons';
 
   /**
@@ -20,6 +23,27 @@
   }: { value?: string; label: string; id?: string; placeholder?: string; invalid?: boolean } = $props();
 
   const KEYWORDS = ['now', 'today', 'tomorrow', 'eod', 'sow', 'eow', 'som', 'eom'];
+
+  /**
+   * What each keyword button means, for its tooltip: the engine's words for it ("start of week") and the moment it is now. The
+   * moment is worked out as the board's date ranges are (a range of that word to itself), in the zone and week of the page.
+   */
+  const tips = $derived.by(() => {
+    if (!open) return {} as Record<string, string>;
+    const settings = store.config?.config.settings;
+    const fmt = formatFor('info', settings);
+    const at = resolveRanges(
+      KEYWORDS.map((w) => ({ name: w, start: w, end: w })),
+      zoneNow(settings),
+    );
+    return Object.fromEntries(
+      KEYWORDS.map((w, i) => {
+        const meaning = dateWords(w).find((o) => o.value === w)?.hint ?? w;
+        const now = at[i]?.start === undefined ? '' : ` (${formatMoment(at[i].start, undefined, fmt)})`;
+        return [w, `${meaning}${now}`];
+      }),
+    );
+  });
 
   let open = $state(false);
   let button: HTMLButtonElement | undefined = $state();
@@ -148,8 +172,12 @@
       </div>
       <div class="words" role="group" aria-label="Keywords">
         {#each KEYWORDS as w (w)}
-          <button type="button" class="ghost word mono" class:on={value.trim() === w} onclick={() => (value = w)}
-            >{w}</button
+          <button
+            type="button"
+            class="ghost word mono"
+            class:on={value.trim() === w}
+            title={tips[w]}
+            onclick={() => (value = w)}>{w}</button
           >
         {/each}
       </div>

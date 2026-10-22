@@ -36,7 +36,7 @@ class BoardWidget : ImageWidget() {
         val look = WidgetPrefs.look(context, id)
         fun draw(palette: Palette) = when (data) {
             is SectionData.Number -> BoardRenderer.number(formatBoardValue(data.answer.total, data.answer.unit), data.answer.tasks, width, height, palette)
-            is SectionData.Chart -> BoardRenderer.chart(orderChart(data.chart, section), section, width, height, palette)
+            is SectionData.Chart -> BoardRenderer.chart(orderChart(data.chart, section, data.limit), section, width, height, palette)
             else -> null
         }
         if (data is SectionData.Failed) return Rendered(section.title, message = data.message, caption = board.name, link = link)

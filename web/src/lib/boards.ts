@@ -30,7 +30,8 @@ export interface Measure {
 /** One of the two: the value of an attribute, or a date cut into days, weeks, months, quarters or years. */
 export interface By {
   field?: string;
-  time?: { field: string; step: Step };
+  /** `step` may be a date range's largest group (`$week.lg_group.name`), which is worked out when the board is drawn. */
+  time?: { field: string; step: Step | string };
 }
 
 export interface Rect {
@@ -96,7 +97,7 @@ export interface Section extends Rect {
   /** `value-`, `value+`, `key+` or `key-`: how the groups of a chart are ordered. A date is in time order by default. */
   sort?: string;
   /** Keep this many groups, after sorting. */
-  limit?: number;
+  limit?: number | string;
 }
 
 /** A named pair of dates any filter on the board can use: `$name.start` and `$name.end`. Each is a date as Taskwarrior reads one. */
@@ -382,6 +383,36 @@ export function substituteRanges(filter: string, ranges: DateRange[], zone: Zone
   return got.filter;
 }
 
+/** How many groups a chart keeps, worked out now: a number, or the count of a date range (`$week.day_count`); null for all. Throws why not. */
+export function keepOf(limit: number | string | undefined, ranges: DateRange[], zone: Zone): number | null {
+  if (limit === undefined || typeof limit === 'number') return limit || null;
+  const got = callHelper<{ limit: number | null } | { message: string }>('board_limit', limit, ranges, zone);
+  if ('message' in got) throw new Error(got.message);
+  return got.limit;
+}
+
+/**
+ * What the largest group of each range is right now (`day`, `week`, `month` or `year`: the largest step that gives at least two
+ * whole periods), by the range's name; none for a range that cannot be worked out.
+ */
+export function largestGroups(ranges: DateRange[], zone: Zone): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of ranges) {
+    try {
+      out[r.name] = substituteRanges(`$${r.name}.lg_group.name`, ranges, zone);
+    } catch {
+      // A range that is not one yet has no group.
+    }
+  }
+  return out;
+}
+
+/** The grouping with a step written as a range's largest group worked out. */
+export function resolveBy(by: By | undefined, ranges: DateRange[], zone: Zone): By | undefined {
+  if (!by?.time || !by.time.step.startsWith('$')) return by;
+  return { time: { ...by.time, step: substituteRanges(by.time.step, ranges, zone) } };
+}
+
 /** The board as it is looked at: with the filter and the range values typed on the page, where there are some. */
 export function viewed(
   board: Board,
@@ -433,7 +464,11 @@ export function seriesOf(section: Section): Series[] {
  * The chart with its labels in the order the section asks for (the largest total first for a value, time order for a
  * date), and as many as it keeps (for a date in time order, the latest). A label's total is what its series add up to, so a stacked bar is as tall as it is sorted.
  */
-export function orderChart(chart: Chart, section: Section): Chart {
+export function orderChart(
+  chart: Chart,
+  section: Section,
+  limit: number | null = typeof section.limit === 'number' ? section.limit : null,
+): Chart {
   const sort = section.sort ?? (section.by?.time ? null : 'value-');
   const total = (i: number) => chart.datasets.reduce((sum, d) => sum + (d.data[i] ?? 0), 0);
   const nothing = (i: number) => chart.datasets.every((d) => d.data[i] === null);
@@ -447,9 +482,9 @@ export function orderChart(chart: Chart, section: Section): Chart {
         nothing(a) || nothing(b) ? Number(nothing(a)) - Number(nothing(b)) : sign * (total(a) - total(b)),
       );
   }
-  if (section.limit && section.limit > 0) {
+  if (limit && limit > 0) {
     // A date in time order keeps the latest periods (a week is `per day`, keep 7); any other order keeps its first.
-    order = section.by?.time && !sort ? order.slice(-section.limit) : order.slice(0, section.limit);
+    order = section.by?.time && !sort ? order.slice(-limit) : order.slice(0, limit);
   }
   return {
     unit: chart.unit,
@@ -473,7 +508,7 @@ export interface Source {
 /** What a section got: its result, and (for the info panel) where the result came from. */
 export type SectionData =
   | { kind: 'answer'; answer: Answer; sources: Source[] }
-  | { kind: 'chart'; chart: Chart; sources: Source[] }
+  | { kind: 'chart'; chart: Chart; sources: Source[]; limit: number | null }
   | { kind: 'table'; result: CliResult; filter: string }
   | { kind: 'error'; message: string };
 
@@ -499,8 +534,10 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
     if (result.kind !== 'file') return { error: 'The tasks could not be read.' };
     return { text: result.text };
   };
-  const one = async (s: Section): Promise<[string, SectionData]> => {
+  const one = async (section: Section): Promise<[string, SectionData]> => {
     try {
+      // A step written as a range's largest group is the step it is now.
+      const s = { ...section, by: resolveBy(section.by, board.ranges ?? [], zone) };
       if (s.type === 'table') {
         const filter = filterOf(s);
         const result = (await run({ args: [...splitWords(filter), s.report || 'next'] })).result;
@@ -526,9 +563,13 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
         inputs.push({ label: x.label, tasks: got.text, measure: x.measure ?? s.measure, span: x.span });
         sources.push({ label: x.label, filter, text: got.text });
       }
-      return [s.id, { kind: 'chart', chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone), sources }];
+      const limit = keepOf(s.limit, board.ranges ?? [], zone);
+      return [
+        s.id,
+        { kind: 'chart', chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone), sources, limit },
+      ];
     } catch (e) {
-      return [s.id, { kind: 'error', message: e instanceof Error ? e.message : String(e) }];
+      return [section.id, { kind: 'error', message: e instanceof Error ? e.message : String(e) }];
     }
   };
   return Object.fromEntries(await Promise.all(board.sections.map(one)));

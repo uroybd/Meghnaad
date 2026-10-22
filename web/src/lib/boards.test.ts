@@ -7,6 +7,7 @@ import {
   firstFree,
   formatValue,
   freshId,
+  largestGroups,
   loadBoard,
   moveBy,
   newBoard,
@@ -325,6 +326,71 @@ describe('loading a board', () => {
     expect(data.n.kind).toBe('answer');
     expect(data.t).toMatchObject({ kind: 'table', filter: '( due.before:20261011T235959Z )' });
     expect(data.bad).toEqual({ kind: 'error', message: "this board has no date range called 'nope'" });
+  });
+
+  it('keeps as many groups as a date range covers, when Keep is its count', async () => {
+    const run = vi.fn(async ({ args }: { args: string[] }) =>
+      args.at(-1) === 'export'
+        ? respond({ kind: 'file', name: 't.json', mime: '', text: FILE, count: 3 })
+        : respond({ kind: 'text', lines: [] }),
+    );
+    const per = (id: string, limit: Section['limit']) =>
+      sec(id, 0, 0, 6, 4, { type: 'bar', by: { time: { field: 'end', step: 'day' } }, limit });
+    const b = board(
+      [
+        per('days', '$daterange.day_count'),
+        per('hours', '$daterange.hour_count'),
+        per('n', 5),
+        per('bad', '$nope.day_count'),
+      ],
+      {
+        ranges: [{ name: 'daterange', start: 'sow', end: 'eow' }],
+      },
+    );
+    const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
+    expect(data.days).toMatchObject({ kind: 'chart', limit: 7 });
+    expect(data.hours).toMatchObject({ kind: 'chart', limit: 168 });
+    expect(data.n).toMatchObject({ kind: 'chart', limit: 5 });
+    expect(data.bad).toEqual({ kind: 'error', message: "this board has no date range called 'nope'" });
+  });
+
+  it('cuts a chart by the largest group of a range, which Keep may count too', async () => {
+    const run = vi.fn(async ({ args }: { args: string[] }) =>
+      args.at(-1) === 'export'
+        ? respond({ kind: 'file', name: 't.json', mime: '', text: FILE, count: 3 })
+        : respond({ kind: 'text', lines: [] }),
+    );
+    const per = (id: string, step: string) =>
+      sec(id, 0, 0, 6, 4, {
+        type: 'bar',
+        by: { time: { field: 'end', step } },
+        limit: '$daterange.lg_group.count',
+      });
+    const week = { tz: 0, week_starts_monday: true, now: 1_791_376_200 };
+    const b = board(
+      [per('auto', '$daterange.lg_group.name'), per('plain', 'week'), per('bad', '$nope.lg_group.name')],
+      {
+        ranges: [{ name: 'daterange', start: 'sow', end: 'eow' }],
+      },
+    );
+    const data = await loadBoard(b, week, run);
+    // A week is days, and 7 of them are kept; a plain step is as it was.
+    expect(data.auto).toMatchObject({ kind: 'chart', limit: 7 });
+    expect(data.plain).toMatchObject({ kind: 'chart', limit: 7 });
+    expect(data.bad).toEqual({ kind: 'error', message: "this board has no date range called 'nope'" });
+    // A month is weeks.
+    const month = await loadBoard({ ...b, ranges: [{ name: 'daterange', start: 'som', end: 'eom' }] }, week, run);
+    expect(month.auto).toMatchObject({ kind: 'chart', limit: 5 });
+    expect(largestGroups(b.ranges!, week)).toEqual({ daterange: 'day' });
+    expect(
+      largestGroups(
+        [
+          { name: 'm', start: 'som', end: 'eom' },
+          { name: 'x', start: 'later', end: 'eom' },
+        ],
+        week,
+      ),
+    ).toEqual({ m: 'week' });
   });
 
   it('shows a range by the dates typed on the page, and a name as a label', () => {

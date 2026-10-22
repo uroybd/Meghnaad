@@ -279,6 +279,15 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             Ok(filter) => json!({ "filter": filter }),
             Err(error) => json!({ "message": error }),
         },
+        // The groups a chart keeps, worked out now: `{"limit": 7}` (or `null` for all) or `{"message": ..}`.
+        "board_limit" => match crate::board::ranges::limit(
+            &a.req::<String>(0)?,
+            &a.req::<Vec<crate::board::ranges::Range>>(1)?,
+            &a.req::<crate::board::aggregate::Ctx>(2)?,
+        ) {
+            Ok(limit) => json!({ "limit": limit }),
+            Err(error) => json!({ "message": error }),
+        },
         "board_place" => json!(crate::board::layout::place(
             &a.req::<Vec<Cell>>(0)?,
             &a.req::<String>(1)?,
@@ -488,6 +497,7 @@ mod tests {
         assert!(call("board_aggregate", &bad).contains("need a field"));
 
         let ranges = r#"[{"name":"week","start":"sow","end":"eow"}]"#;
+        let ranges_w = ranges;
         let got = call(
             "board_substitute",
             &format!(r#"["due.after:$week.start",{ranges},{ctx}]"#),
@@ -503,6 +513,13 @@ mod tests {
             (got[0]["start"].as_i64(), got[0]["end"].as_i64()),
             (Some(1_791_158_400), Some(1_791_763_199))
         );
+
+        let got = call("board_limit", &format!(r#"["$week.day_count",{ranges_w},{ctx}]"#));
+        assert_eq!(got, r#"{"limit":7}"#);
+        let got = call("board_limit", &format!(r#"["",{ranges_w},{ctx}]"#));
+        assert_eq!(got, r#"{"limit":null}"#);
+        let got = call("board_limit", &format!(r#"["many",{ranges_w},{ctx}]"#));
+        assert!(got.contains(r#""message""#), "{got}");
 
         let cells = r#"[{"id":"a","x":0,"y":0,"w":6,"h":2},{"id":"b","x":6,"y":0,"w":6,"h":2}]"#;
         let placed: serde_json::Value = serde_json::from_str(&call(

@@ -8,18 +8,25 @@
     STEPS,
     isChartType,
     isRoundType,
+    largestGroups,
+    rangeLabel,
+    zoneNow,
+    type DateRange,
     type Fn,
     type Section,
     type SectionType,
     type Series,
     type Span,
-    type Step,
   } from './boards';
   import { Plus, Trash2 } from './icons';
   import { store } from './store.svelte';
 
   /** The settings of one board section. It edits a copy and reports it; saving is the board's. */
-  let { section, onchange }: { section: Section; onchange: (next: Section) => void } = $props();
+  let {
+    section,
+    onchange,
+    ranges = [],
+  }: { section: Section; onchange: (next: Section) => void; ranges?: DateRange[] } = $props();
 
   const set = (patch: Partial<Section>) => onchange({ ...section, ...patch });
 
@@ -92,6 +99,13 @@
   const addSeries = () => setSeries([...series, { label: `Series ${series.length + 1}` }]);
 
   const num = (v: string) => (v.trim() === '' ? undefined : Math.max(0, Math.floor(Number(v))) || undefined);
+  /** What is typed for Keep: a number, or the count of a date range as text (the engine says if it is not one the board has). */
+  const keep = (v: string) => (/^\s*\d*\s*$/.test(v) ? num(v) : v.trim());
+  /** The step each range's largest group is now, from the dates the board has (or has been given on the page). */
+  const groups = $derived(largestGroups(ranges, zoneNow(store.config?.config.settings)));
+  /** `Largest group (currently week)`; with several ranges, whose. */
+  const groupLabel = (name: string) =>
+    `Largest group${ranges.length > 1 ? ` of ${rangeLabel(name)}` : ''} (currently ${groups[name] ?? 'not a date range yet'})`;
   const uid = $props.id();
 </script>
 
@@ -161,9 +175,12 @@
         <select
           value={section.by.time.step}
           onchange={(e) =>
-            set({ by: { time: { field: section.by?.time?.field ?? 'entry', step: e.currentTarget.value as Step } } })}
+            set({ by: { time: { field: section.by?.time?.field ?? 'entry', step: e.currentTarget.value } } })}
         >
           {#each STEPS as s (s)}<option value={s}>{s}</option>{/each}
+          {#each ranges as r (r.name)}
+            <option value="${r.name}.lg_group.name">{groupLabel(r.name)}</option>
+          {/each}
         </select>
       </label>
     {:else}
@@ -192,12 +209,13 @@
     <label>
       Keep
       <input
-        type="number"
-        min="1"
-        inputmode="numeric"
-        placeholder="all"
+        class="mono"
+        placeholder="all, 12 or $range.day_count"
+        title="A number, or how many minutes, hours, days, weeks, months, quarters or years a date range of the board covers: $range.minute_count, .hour_count, .day_count, .week_count, .month_count, .quarter_count, .year_count"
+        spellcheck="false"
+        autocomplete="off"
         value={section.limit ?? ''}
-        oninput={(e) => set({ limit: num(e.currentTarget.value) })}
+        oninput={(e) => set({ limit: keep(e.currentTarget.value) })}
       />
     </label>
   {/if}
