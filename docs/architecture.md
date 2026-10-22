@@ -265,8 +265,11 @@ writes, snapshots, cleanup) happens there, and the page never holds the key.
   are in the replica and in the saved copy, and go up with the next sync that works. The page says so and offers a
   retry, and, as a last resort, to throw the saved copy away and start from the bucket.
 - **The saved copy** is `LiveStorage::save`: the tasks, the working set, the version it is based on and the changes that
-  have not been pushed, as JSON, in one IndexedDB record, written soon after a change and after every sync. A copy that
-  cannot be read (another format) is dropped and fetched again.
+  have not been pushed, as JSON, in one IndexedDB record, written soon after a change and after every sync. The browser
+  gzips it when it can (`CompressionStream`; about 17 times smaller, because most of it is the log of changes made on
+  this device, which TaskChampion keeps for a task's history), and a record written before that is still read. This is
+  only the browser's own copy: nothing in the bucket or the sync format depends on it. A copy that cannot be read
+  (another format, damaged) is dropped and fetched again.
 
 ## Limits of the platform
 
@@ -343,7 +346,12 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   runs the syncs described above, and exposes `status` / `error` for the banner that appears when a sync fails.
   `api.ts` is where the choice is made: `runCli` and `importTasks` go to the engine in the page when it is available
   and to the Worker's endpoints when it is not; `getConfig` starts it (the engine needs the settings first) and gives it
-  the settings again whenever they are read again; and a `config` command's new settings are saved on the Worker
+  the settings again whenever they are read again. Start-up is not a chain of requests: `main.ts` loads the engine's
+  Worker (`preload`, which fetches its `.wasm` and reads the saved copy) and asks the server for what the page needs
+  (`prefetch`: whether it is set up, the settings, which hooks the script defines, and `settings.json`) before the app's
+  own code has loaded, so they all travel at once; each answer is used once, by the call that would have asked, and
+  asked for again if it was refused (a deployment that is not set up yet refuses all of them). A read of the settings
+  that is already on its way is joined, not repeated; and a `config` command's new settings are saved on the Worker
   (`PUT /api/config/engine`) before the engine takes them up. The engine's CSP allowance is `'wasm-unsafe-eval'`, which
   lets the page compile WebAssembly and nothing else.
 - `store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the

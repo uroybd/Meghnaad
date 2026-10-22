@@ -1,8 +1,9 @@
 // What the page and the engine's Web Worker say to each other.
 
 export type EngineRequest =
-  /** Start up: the settings, and whether to keep the replica in IndexedDB. Answers whether a saved replica was found. */
-  | { op: 'start'; config: string; persist: boolean }
+  /** Start up: load the engine, and whether to keep the replica in IndexedDB. Answers whether a saved replica was found.
+   * The settings come after, as `config`: they are not needed to load the engine or the saved copy. */
+  | { op: 'start'; persist: boolean }
   | { op: 'config'; config: string }
   /** Which hooks the Worker's script defines, as JSON (`["on_add"]`): only these are ever called. */
   | { op: 'hooks'; defined: string }

@@ -82,30 +82,72 @@ export interface CliInput extends Answers {
 /** Resolves when the engine is running, or rejects with why it could not. Set by the first `getConfig`. */
 let booted: Promise<void> | undefined;
 
-async function bootEngine(config: ConfigResponse): Promise<void> {
+// What starting needs from the server (is it set up, the settings, which hooks the script defines, `settings.json`) is
+// asked for as soon as the page's first script runs (`prefetch`), so those requests travel while the rest of the app is
+// still being fetched. Each answer is used once, by the call that would have made the request; if the request failed
+// (a deployment that is not set up yet refuses all of them), that call makes it again.
+const early = new Map<string, Promise<unknown>>();
+
+function takeEarly<T>(key: string): Promise<T> | undefined {
+  const asked = early.get(key) as Promise<T> | undefined;
+  early.delete(key);
+  return asked;
+}
+
+/** The hooks the saved script defines, or `undefined` if that could not be read. */
+function fetchHooks(): Promise<string[] | undefined> {
+  return request<{ defined: string[] }>('/api/hooks/defined').then(
+    (r) => r.defined,
+    () => undefined,
+  );
+}
+
+async function fetchSetup(): Promise<SetupStatus | null> {
+  try {
+    const res = await fetch('/api/setup');
+    if (!res.ok) return null;
+    return (await res.json()) as SetupStatus;
+  } catch {
+    return null;
+  }
+}
+
+/** Ask for what starting needs now (see above). Called once, before the app's code is loaded. */
+export function prefetch(): void {
+  early.set('setup', fetchSetup());
+  early.set('config', request<ConfigResponse>('/api/config'));
+  early.set('hooks', fetchHooks());
+  early.set('settings', request<unknown>('/api/settings'));
+  // Nobody is waiting yet, and a refusal is dealt with by whoever uses the answer.
+  for (const asked of early.values()) asked.catch(() => undefined);
+}
+
+async function bootEngine(config: ConfigResponse, hooks?: Promise<string[] | undefined>): Promise<void> {
   if (!engineAvailable()) {
     throw new ApiError('This browser cannot run the engine: it needs Web Workers and WebAssembly.', 0);
   }
   try {
     await engine.start(JSON.stringify(config.config));
-    await refreshHooks();
+    await applyHooks(await (hooks ?? fetchHooks()));
   } catch (e) {
     engine.stop();
     throw new ApiError(`The engine could not start in this browser: ${e instanceof Error ? e.message : String(e)}`, 0);
   }
 }
 
-/**
- * Tell the engine which hooks the saved script defines (it only asks the Worker to run those). A failure leaves it as it
- * was: with no hooks known, none run.
- */
-export async function refreshHooks(): Promise<void> {
+/** Tell the engine which hooks are defined (it only asks the Worker to run those). With none known, none run. */
+async function applyHooks(defined: string[] | undefined): Promise<void> {
+  if (defined === undefined) return;
   try {
-    const { defined } = await request<{ defined: string[] }>('/api/hooks/defined');
     await engine.setHooks(defined);
   } catch {
     // The hooks are an extra: the engine works without them.
   }
+}
+
+/** Read which hooks the saved script defines again, and tell the engine (after the script was saved). */
+export async function refreshHooks(): Promise<void> {
+  await applyHooks(await fetchHooks());
 }
 
 /** The engine, started (it needs the settings first). */
@@ -161,10 +203,38 @@ export async function importTasks(text: string, apply: boolean): Promise<ImportR
   return report;
 }
 
-export async function getConfig(): Promise<ConfigResponse> {
-  const config = await request<ConfigResponse>('/api/config');
+/** The early answer for the settings if it is good, else a request. */
+async function takeConfig(): Promise<ConfigResponse> {
+  const asked = takeEarly<ConfigResponse>('config');
+  if (asked) {
+    try {
+      return await asked;
+    } catch {
+      // Ask again below.
+    }
+  }
+  return request<ConfigResponse>('/api/config');
+}
+
+/** The early answer for which hooks are defined if there is one, else a request. */
+function takeHooks(): Promise<string[] | undefined> {
+  const asked = takeEarly<string[] | undefined>('hooks');
+  return asked ? asked.then((defined) => defined ?? fetchHooks()) : fetchHooks();
+}
+
+/** The settings the page last read, for a call that only wants to be sure it has them (see `getConfig`). */
+let lastConfig: ConfigResponse | undefined;
+/** The read that is on its way, which a call made meanwhile joins instead of asking again. */
+let reading: Promise<ConfigResponse> | undefined;
+
+async function readConfig(): Promise<ConfigResponse> {
+  const asking = takeConfig();
+  // Which hooks are defined does not depend on the settings: asked for at the same time.
+  const hooks = booted === undefined && engineAvailable() ? takeHooks() : undefined;
+  const config = await asking;
+  lastConfig = config;
   if (booted === undefined) {
-    booted = bootEngine(config);
+    booted = bootEngine(config, hooks);
     // The reason is given to whoever runs a command; here it only has to not go unnoticed by the runtime.
     booted.catch(() => {});
   } else {
@@ -172,6 +242,17 @@ export async function getConfig(): Promise<ConfigResponse> {
     await booted.then(() => engine.setConfig(JSON.stringify(config.config))).catch(() => {});
   }
   return config;
+}
+
+/**
+ * Read the saved settings from the server and hand them to the engine, starting it if it has not started. A call made
+ * while a read is on its way joins it. With `reuse`, settings read a moment ago are used instead of asking again (the
+ * page start asks for them from two places).
+ */
+export function getConfig(reuse = false): Promise<ConfigResponse> {
+  if (reuse && lastConfig && booted !== undefined) return Promise.resolve(lastConfig);
+  reading ??= readConfig().finally(() => (reading = undefined));
+  return reading;
 }
 
 /** The saved settings, rendered as a taskrc to edit and import again. */
@@ -210,7 +291,8 @@ export function importTaskrcUrl(url: string): Promise<TaskrcResponse> {
 
 /** The app's own `settings.json`, as saved (`{}` before the first save). */
 export function getAppSettings(): Promise<unknown> {
-  return request<unknown>('/api/settings');
+  const asked = takeEarly<unknown>('settings');
+  return asked ? asked.catch(() => request<unknown>('/api/settings')) : request<unknown>('/api/settings');
 }
 
 /** Save `settings.json`; the Worker keeps the text as it is, once it is a JSON object of a sensible size. */
@@ -287,11 +369,6 @@ export interface SetupStatus {
 
 /** Whether the Worker has its sign-in settings. Needs no sign-in itself; null if it can't be told. */
 export async function getSetup(): Promise<SetupStatus | null> {
-  try {
-    const res = await fetch('/api/setup');
-    if (!res.ok) return null;
-    return (await res.json()) as SetupStatus;
-  } catch {
-    return null;
-  }
+  const asked = takeEarly<SetupStatus | null>('setup');
+  return (asked ? await asked : null) ?? fetchSetup();
 }

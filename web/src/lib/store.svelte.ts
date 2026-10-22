@@ -319,9 +319,9 @@ class Store {
     await this.loadAppSettings();
   }
 
-  async loadConfig() {
+  async loadConfig(reuse = false) {
     try {
-      this.config = await getConfig();
+      this.config = await getConfig(reuse);
       this.configError = null;
       void this.refreshNames();
     } catch (e) {

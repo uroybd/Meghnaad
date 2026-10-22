@@ -34,7 +34,6 @@ async function handle(m: Call): Promise<unknown> {
   if (m.op === 'start') {
     await init({ module_or_path: wasmUrl });
     engine = new Engine();
-    engine.set_config(m.config);
     persist = m.persist;
     let restored = false;
     if (persist) {

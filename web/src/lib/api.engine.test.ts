@@ -183,3 +183,87 @@ describe('where the engine cannot run', () => {
     await expect(getConfig()).resolves.toBeTruthy();
   });
 });
+
+describe('starting', () => {
+  it('asks which hooks there are at the same time as for the settings, not after the engine is up', async () => {
+    const { getConfig } = await api();
+    let release: (r: Response) => void = () => undefined;
+    fetchMock.mockImplementation((url: string) =>
+      url === '/api/config'
+        ? new Promise<Response>((resolve) => (release = resolve))
+        : url === '/api/hooks/defined'
+          ? json({ defined: ['on_add'] })
+          : json({ ok: true }),
+    );
+    const reading = getConfig();
+    await Promise.resolve();
+    // The settings have not arrived, and the hooks have been asked for.
+    expect(urls()).toEqual(['/api/config', '/api/hooks/defined']);
+    expect(engine.start).not.toHaveBeenCalled();
+    release(new Response(JSON.stringify(config)));
+    await reading;
+    await vi.waitFor(() => expect(engine.setHooks).toHaveBeenCalledWith(['on_add']));
+  });
+
+  it('makes one request for the settings however many ask at once', async () => {
+    const { getConfig } = await api();
+    await Promise.all([getConfig(), getConfig(), getConfig()]);
+    expect(urls().filter((u) => u === '/api/config')).toHaveLength(1);
+    expect(engine.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads them again when asked later, unless it only wants to be sure it has them', async () => {
+    const { getConfig } = await api();
+    await getConfig();
+    await getConfig(true);
+    expect(urls().filter((u) => u === '/api/config')).toHaveLength(1);
+    await getConfig();
+    expect(urls().filter((u) => u === '/api/config')).toHaveLength(2);
+  });
+
+  it('uses what was asked for before the app loaded, once, and asks again after that', async () => {
+    const { prefetch, getSetup, getConfig, getAppSettings } = await api();
+    fetchMock.mockImplementation((url: string) =>
+      url === '/api/config'
+        ? json(config)
+        : url === '/api/setup'
+          ? json({ configured: true, missing: [], host: 'h' })
+          : url === '/api/hooks/defined'
+            ? json({ defined: [] })
+            : json({ homepage: 'next' }),
+    );
+    prefetch();
+    expect([...urls()].sort()).toEqual(['/api/config', '/api/hooks/defined', '/api/settings', '/api/setup']);
+    fetchMock.mockClear();
+    expect(await getSetup()).toMatchObject({ configured: true });
+    await getConfig();
+    expect(await getAppSettings()).toEqual({ homepage: 'next' });
+    // Nothing more was asked of the server, and the engine started with the settings that came.
+    expect(urls()).toEqual([]);
+    expect(engine.start).toHaveBeenCalledWith(JSON.stringify(config.config));
+    // Each answer is used once.
+    await getAppSettings();
+    expect(urls()).toEqual(['/api/settings']);
+  });
+
+  it('asks again when what it asked for early was refused, as a deployment that is not set up yet refuses it', async () => {
+    const { prefetch, getSetup, getConfig } = await api();
+    fetchMock.mockImplementation(() => json({ error: 'server misconfigured' }, 500));
+    prefetch();
+    await vi.waitFor(() => expect(urls()).toHaveLength(4));
+    // It is set up now.
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((url: string) =>
+      url === '/api/config'
+        ? json(config)
+        : url === '/api/hooks/defined'
+          ? json({ defined: ['on_add'] })
+          : json({ configured: true, missing: [], host: 'h' }),
+    );
+    expect(await getSetup()).toMatchObject({ configured: true });
+    await getConfig();
+    expect(urls().filter((u) => u === '/api/config')).toHaveLength(1);
+    // The refused hooks answer is not taken for "no hooks": they are asked for again, and the engine told.
+    await vi.waitFor(() => expect(engine.setHooks).toHaveBeenCalledWith(['on_add']));
+  });
+});

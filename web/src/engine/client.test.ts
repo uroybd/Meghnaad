@@ -11,12 +11,14 @@ let sent: Call[] = [];
 let replies: (c: Call) => unknown = () => null;
 let hold: { resolve: () => void } | undefined;
 let delay = false;
+let made = 0;
 
 class FakeWorker {
   onmessage: ((e: { data: unknown }) => void) | null = null;
   onerror: ((e: { message: string }) => void) | null = null;
   constructor(..._args: unknown[]) {
     void _args;
+    made++;
   }
   postMessage(c: Call) {
     sent.push(c);
@@ -58,6 +60,7 @@ async function fresh() {
 
 beforeEach(() => {
   sent = [];
+  made = 0;
   posted.length = 0;
   FakeChannel.last = undefined;
   delay = false;
@@ -77,8 +80,9 @@ describe('starting', () => {
     const Engine = await fresh();
     const e = new Engine();
     await e.start('{"c":1}');
-    expect(sent.map((c) => c.op)).toEqual(['start', 'sync']);
-    expect(sent[0]).toMatchObject({ op: 'start', config: '{"c":1}', persist: true });
+    expect(sent.map((c) => c.op)).toEqual(['start', 'config', 'sync']);
+    expect(sent[0]).toMatchObject({ op: 'start', persist: true });
+    expect(sent[1]).toMatchObject({ op: 'config', config: '{"c":1}' });
     e.stop();
   });
 
@@ -89,12 +93,47 @@ describe('starting', () => {
     delay = true;
     await e.start('{}');
     // Started without waiting for the sync that is still out.
-    expect(sent.map((c) => c.op)).toEqual(['start', 'sync']);
+    expect(sent.map((c) => c.op)).toEqual(['start', 'config', 'sync']);
     expect(e.status).toBe('syncing');
     hold?.resolve();
     await tick();
     expect(e.status).toBe('idle');
     e.stop();
+  });
+
+  it('can load the Worker before the settings are known, and then starts on that one', async () => {
+    const Engine = await fresh();
+    const e = new Engine();
+    e.preload();
+    e.preload();
+    await tick();
+    expect(sent.map((c) => c.op)).toEqual(['start']);
+    await e.start('{"c":1}');
+    expect(made).toBe(1);
+    expect(sent.map((c) => c.op)).toEqual(['start', 'config', 'sync']);
+    expect(sent[1]).toMatchObject({ op: 'config', config: '{"c":1}' });
+    e.stop();
+  });
+
+  it('says why it could not start even when the Worker was loaded ahead', async () => {
+    replies = (c) => {
+      if (c.op === 'start') throw new Error('the saved copy is unreadable');
+      return null;
+    };
+    const Engine = await fresh();
+    const e = new Engine();
+    e.preload();
+    await tick();
+    await expect(e.start('{}')).rejects.toThrow('the saved copy is unreadable');
+    e.stop();
+  });
+
+  it('does nothing to preload where there is no Worker', async () => {
+    vi.stubGlobal('Worker', undefined);
+    const Engine = await fresh();
+    const e = new Engine();
+    e.preload();
+    expect(sent).toEqual([]);
   });
 
   it('starts only once however many ask', async () => {

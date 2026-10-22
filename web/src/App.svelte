@@ -96,10 +96,9 @@
     setup = null;
     if (started) return;
     started = true;
-    // `settings.json` after the settings, so the first screen doesn't wait behind it.
-    void store
-      .loadConfig()
-      .then(() => store.loadAppSettings())
+    // The settings and `settings.json` are asked for together (they are two objects in the bucket). The settings were
+    // already read when the first command started the engine, so those are used.
+    void Promise.all([store.loadConfig(true), store.loadAppSettings()])
       // Where the address says wins over the home page (`/` is the home page). The reports and the boards had to be read
       // first to know what the address names, so it is followed again now that they are.
       .then(async () => {
@@ -110,9 +109,8 @@
         addressReady = true;
       });
     void followAddress();
-    // Reminders can wait for the table. The Worker handles one request at a time, so a poll sent
-    // first would make the first screen wait behind it. If the table never loads (another view,
-    // or an error), start anyway.
+    // Reminders can wait for the table: the engine answers one command at a time, so a poll sent first would be
+    // answered before the first screen. If the table never loads (another view, or an error), start anyway.
     setTimeout(() => notifier.start(), 4000);
   }
 

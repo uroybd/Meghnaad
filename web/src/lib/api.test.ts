@@ -8,13 +8,14 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("a request cut off by Cloudflare's resource limit (1102)", () => {
   it('is tried once more when it is a read', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(limit())
-      .mockResolvedValueOnce(ok({ config: {} }));
+    // (The engine starting asks which hooks there are at the same time; that is answered separately and not counted.)
+    let configs = 0;
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+      if (url !== '/api/config') return ok({ defined: [] });
+      return ++configs === 1 ? limit() : ok({ config: {} });
+    });
     vi.stubGlobal('fetch', fetchMock);
     await expect(getConfig()).resolves.toBeTruthy();
-    // (The engine starting after it asks which hooks there are; that is not what is counted here.)
     expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/config')).toHaveLength(2);
   });
 
@@ -22,7 +23,7 @@ describe("a request cut off by Cloudflare's resource limit (1102)", () => {
     const fetchMock = vi.fn().mockImplementation(async () => limit());
     vi.stubGlobal('fetch', fetchMock);
     await expect(getConfig()).rejects.toThrow(/out of CPU time/);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/config')).toHaveLength(2);
   });
 
   it('does not touch our own errors', async () => {
@@ -31,7 +32,7 @@ describe("a request cut off by Cloudflare's resource limit (1102)", () => {
       .mockImplementation(async () => new Response(JSON.stringify({ error: 'bad request' }), { status: 400 }));
     vi.stubGlobal('fetch', fetchMock);
     await expect(getConfig()).rejects.toThrow('bad request');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/config')).toHaveLength(1);
   });
 });
 

@@ -31,6 +31,8 @@ export class EngineClient {
   private next = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private starting: Promise<void> | undefined;
+  /** The Worker, started: whether it found a saved replica. */
+  private spawned: Promise<boolean> | undefined;
   private syncing: Promise<void> | undefined;
   private again = false;
   /** The next sync follows a write here, so the other tabs are told when it is done. */
@@ -56,29 +58,45 @@ export class EngineClient {
     });
   }
 
+  /**
+   * Load the engine's Worker now, before the settings are known: its WebAssembly is fetched and compiled, and the saved
+   * replica read, while the page asks the server for the rest. Harmless to call again, or where there is no Worker.
+   */
+  preload(): void {
+    if (engineAvailable()) this.spawn().catch(() => undefined);
+  }
+
   /** Start the engine with these settings (JSON text), once; later calls wait for the first. */
   start(config: string): Promise<void> {
     this.starting ??= this.boot(config);
     return this.starting;
   }
 
+  private spawn(): Promise<boolean> {
+    this.spawned ??= (() => {
+      performance.mark('engine-boot');
+      const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' }) as Port;
+      this.worker = worker;
+      worker.onmessage = (e: MessageEvent<EngineReply>) => {
+        const p = this.pending.get(e.data.id);
+        if (!p) return;
+        this.pending.delete(e.data.id);
+        if (e.data.ok) p.resolve(e.data.value);
+        else p.reject(new Error(e.data.error));
+      };
+      worker.onerror = (e) => {
+        const err = new Error(e.message || 'the engine stopped');
+        for (const p of this.pending.values()) p.reject(err);
+        this.pending.clear();
+      };
+      return this.send({ op: 'start', persist: true }) as Promise<boolean>;
+    })();
+    return this.spawned;
+  }
+
   private async boot(config: string): Promise<void> {
-    performance.mark('engine-boot');
-    const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' }) as Port;
-    this.worker = worker;
-    worker.onmessage = (e: MessageEvent<EngineReply>) => {
-      const p = this.pending.get(e.data.id);
-      if (!p) return;
-      this.pending.delete(e.data.id);
-      if (e.data.ok) p.resolve(e.data.value);
-      else p.reject(new Error(e.data.error));
-    };
-    worker.onerror = (e) => {
-      const err = new Error(e.message || 'the engine stopped');
-      for (const p of this.pending.values()) p.reject(err);
-      this.pending.clear();
-    };
-    const restored = (await this.send({ op: 'start', config, persist: true })) as boolean;
+    const restored = await this.spawn();
+    await this.send({ op: 'config', config });
     // With nothing saved the tasks have to come from the bucket before the first command is answered.
     if (restored) void this.sync();
     else await this.sync(true);
@@ -178,6 +196,7 @@ export class EngineClient {
     this.worker?.terminate();
     this.worker = undefined;
     this.starting = undefined;
+    this.spawned = undefined;
   }
 }
 
