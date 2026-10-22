@@ -1,5 +1,5 @@
 <script lang="ts">
-  import DateTimeInput from './DateTimeInput.svelte';
+  import DateField from './DateField.svelte';
   import SuggestInput from './SuggestInput.svelte';
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
@@ -194,74 +194,96 @@
     <label for="te-desc">Description</label>
     <input id="te-desc" bind:value={description} required />
 
-    <label for="te-proj">Project</label>
-    <SuggestInput id="te-proj" bind:value={project} names={store.projects} noun="project" placeholder="none" />
+    <div class="pair project">
+      <div class="cell">
+        <label for="te-proj">Project</label>
+        <SuggestInput id="te-proj" bind:value={project} names={store.projects} noun="project" placeholder="none" />
+      </div>
+      <div class="cell">
+        <label for="te-pri">Priority</label>
+        <select id="te-pri" bind:value={priority}>
+          <option value="">none</option>
+          {#each priorityValues as p (p)}<option value={p}>{p}</option>{/each}
+        </select>
+      </div>
+    </div>
 
-    <label for="te-pri">Priority</label>
-    <select id="te-pri" bind:value={priority}>
-      <option value="">none</option>
-      {#each priorityValues as p (p)}<option value={p}>{p}</option>{/each}
-    </select>
+    <div class="pair dates">
+      <div class="cell">
+        <label for="te-due">Due</label><DateField id="te-due" label="Due" bind:value={due} />
+      </div>
+      <div class="cell">
+        <label for="te-wait">Wait</label><DateField id="te-wait" label="Wait" bind:value={wait} />
+      </div>
+      <div class="cell">
+        <label for="te-sched">Scheduled</label><DateField id="te-sched" label="Scheduled" bind:value={scheduled} />
+      </div>
+      <div class="cell">
+        <label for="te-until">Until</label><DateField id="te-until" label="Until" bind:value={until} />
+      </div>
+    </div>
 
-    <label for="te-due">Due</label><DateTimeInput id="te-due" label="Due" bind:value={due} />
-    <label for="te-wait">Wait</label><DateTimeInput id="te-wait" label="Wait" bind:value={wait} />
-    <label for="te-sched">Scheduled</label><DateTimeInput id="te-sched" label="Scheduled" bind:value={scheduled} />
-    <label for="te-until">Until</label><DateTimeInput id="te-until" label="Until" bind:value={until} />
-
-    <label for="te-recur">Repeat</label>
-    {#if instance}
-      <div>
-        <span class="chip"><Repeat size={12} /> {describeRecur(row?.recur)}</span>
-        <span class="dim hint">This task is one instance of a series.</span>
-        {#if row?.parent}
-          <button
-            type="button"
-            class="ghost link"
-            onclick={() => {
-              const p = row!.parent!;
-              onclose();
-              store.openDetail(p, from);
-            }}
-          >
-            <CornerUpLeft size={13} /> open the recurring task
-          </button>
+    <div class="pair repeat-tags">
+      <div class="cell">
+        <label for="te-recur">Repeat</label>
+        {#if instance}
+          <div>
+            <span class="chip"><Repeat size={12} /> {describeRecur(row?.recur)}</span>
+            <span class="dim hint">This task is one instance of a series.</span>
+            {#if row?.parent}
+              <button
+                type="button"
+                class="ghost link"
+                onclick={() => {
+                  const p = row!.parent!;
+                  onclose();
+                  store.openDetail(p, from);
+                }}
+              >
+                <CornerUpLeft size={13} /> open the recurring task
+              </button>
+            {/if}
+          </div>
+        {:else}
+          <div class="repeat">
+            <div class="row wrapline">
+              <select id="te-recur" bind:value={recurChoice} aria-label="Repeat">
+                {#if !template}<option value="">Doesn't repeat</option>{/if}
+                {#each PRESETS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
+                <option value="custom">Custom…</option>
+              </select>
+              {#if recurChoice === 'custom'}
+                <input
+                  bind:value={recurCustom}
+                  aria-label="Custom repeat period"
+                  placeholder="3d, 2w, P1M, 6mo…"
+                  autocapitalize="off"
+                  spellcheck="false"
+                />
+              {/if}
+            </div>
+            {#if needsDue}
+              <div class="err hint" role="alert">A repeating task needs a due date.</div>
+            {:else if recur && !template}
+              <div class="dim hint">Repeats {describeRecur(recur)}, starting from the due date.</div>
+            {:else if template}
+              <div class="dim hint">
+                Changes to a repeating task also apply to its open instances (not their dates).
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
-    {:else}
-      <div class="repeat">
-        <div class="row wrapline">
-          <select id="te-recur" bind:value={recurChoice} aria-label="Repeat">
-            {#if !template}<option value="">Doesn't repeat</option>{/if}
-            {#each PRESETS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
-            <option value="custom">Custom…</option>
-          </select>
-          {#if recurChoice === 'custom'}
-            <input
-              bind:value={recurCustom}
-              aria-label="Custom repeat period"
-              placeholder="3d, 2w, P1M, 6mo…"
-              autocapitalize="off"
-              spellcheck="false"
-            />
-          {/if}
-        </div>
-        {#if needsDue}
-          <div class="err hint" role="alert">A repeating task needs a due date.</div>
-        {:else if recur && !template}
-          <div class="dim hint">Repeats {describeRecur(recur)}, starting from the due date.</div>
-        {:else if template}
-          <div class="dim hint">Changes to a repeating task also apply to its open instances (not their dates).</div>
-        {/if}
+      <div class="cell">
+        <label for="te-tags">Tags</label>
+        <SuggestInput id="te-tags" bind:value={tags} names={store.tags} noun="tag" list placeholder="space separated" />
       </div>
-    {/if}
-
-    <label for="te-tags">Tags</label>
-    <SuggestInput id="te-tags" bind:value={tags} names={store.tags} noun="tag" list placeholder="space separated" />
+    </div>
 
     {#each defined as u (u.name)}
       <label for="te-uda-{u.name}">{udaLabel(u)}</label>
       {#if u.type === 'date'}
-        <DateTimeInput id="te-uda-{u.name}" label={udaLabel(u)} bind:value={udaValues[u.name]} />
+        <DateField id="te-uda-{u.name}" label={udaLabel(u)} bind:value={udaValues[u.name]} />
       {:else if u.type === 'string' && u.values.length}
         <select id="te-uda-{u.name}" bind:value={udaValues[u.name]}>
           <option value="">none</option>
@@ -457,6 +479,43 @@
   .repeat {
     display: grid;
     gap: 4px;
+  }
+  /* Fields that share a row (the whole width, under their labels): the grid collapses as the dialog narrows. */
+  .pair {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 12px 16px;
+    align-items: start;
+  }
+  .pair.project {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  .pair.dates {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11em), 1fr));
+  }
+  .pair.repeat-tags {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+  @media (max-width: 520px) {
+    .pair.project,
+    .pair.repeat-tags {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .cell :global(.datefield) {
+    display: flex;
+  }
+  .cell :global(.datefield .trigger) {
+    flex: 1;
+  }
+  .cell {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+  .cell label {
+    padding-top: 0;
+    font-size: 12px;
   }
   /* Phones: labels sit above their fields, and the buttons stack under the command preview. */
   @media (max-width: 760px) {

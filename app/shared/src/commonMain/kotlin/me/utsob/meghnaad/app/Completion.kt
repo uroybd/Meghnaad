@@ -1,6 +1,7 @@
 package me.utsob.meghnaad.app
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
@@ -59,6 +60,10 @@ fun complete(line: String, caret: Int, v: Vocab): Completion {
     }
     return engineJson.decodeFromJsonElement(Completion.serializer(), callHelper("complete", JsonPrimitive(line), JsonPrimitive(caret)))
 }
+
+/** The date words (`sow`, `eod`) that begin with what has been typed of a date; none for a date written out or for nothing typed. */
+fun dateWords(typed: String): List<Option> =
+    engineJson.decodeFromJsonElement(ListSerializer(Option.serializer()), callHelper("date_words", JsonPrimitive(typed)))
 
 @Serializable
 class Inserted(val line: String, val caret: Int)

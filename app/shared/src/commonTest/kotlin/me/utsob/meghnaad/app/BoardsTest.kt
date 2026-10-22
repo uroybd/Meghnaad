@@ -74,6 +74,48 @@ class BoardsTest {
     }
 
     @Test
+    fun theEngineKeepsATidyDateRangeAndNamesOneItDrops() {
+        val n = normalizeBoards(
+            Json.parseToJsonElement(
+                """[{"id":"b","name":"B","ranges":[{"name":" week ","start":" sow ","end":"eow"},{"name":"Bad","start":"sow","end":"eow"}]}]""",
+            ),
+        )
+        assertEquals(listOf(DateRange("week", "sow", "eow")), n.boards[0].ranges)
+        assertEquals(1, n.errors.size)
+        // Written out and read again it is the same, and none is not written.
+        assertEquals(n.boards, normalizeBoards(boardsToJson(n.boards)).boards)
+        assertTrue("ranges" !in boardsToJson(listOf(Board("b", "B"))).toString())
+    }
+
+    @Test
+    fun aDateRangeIsWrittenIntoAFilterAsTheMomentsItMeans() {
+        val ranges = listOf(DateRange("daterange", "sow", "eow"))
+        // 2026-10-07 12:30 UTC, a Wednesday, weeks from Monday.
+        val z = Zone(0, true, 1_791_376_200L)
+        assertEquals(
+            "( end.after:20261005T000000Z and end.before:20261011T235959Z )",
+            substituteRanges("( end.after:\$daterange.start and end.before:\$daterange.end )", ranges, z),
+        )
+        assertEquals("description~foo\$", substituteRanges("description~foo\$", ranges, z))
+        assertEquals(
+            "this board has no date range called 'nope'",
+            runCatching { substituteRanges("due:\$nope.start", ranges, z) }.exceptionOrNull()?.message?.substringAfter("message: ")?.trim('"'),
+        )
+        val got = resolveRanges(ranges, z).single()
+        assertEquals(1_791_158_400L to 1_791_763_199L, got.start to got.end)
+    }
+
+    @Test
+    fun theDatesTypedOnThePageTakeThePlaceOfTheBoardsOwn() {
+        val b = Board("b", "B", filter = "a", ranges = listOf(DateRange("sprint_week", "sow", "eow")))
+        assertEquals(b, viewedBoard(b, null, null))
+        val v = viewedBoard(b, "x", mapOf("sprint_week" to DateRange("sprint_week", "som", "eom")))
+        assertEquals("x", v.filter)
+        assertEquals(listOf(DateRange("sprint_week", "som", "eom")), v.ranges)
+        assertEquals("Sprint week", rangeLabel("sprint_week"))
+    }
+
+    @Test
     fun aChartWithoutSeriesIsOneSeriesNamedAfterIt() {
         val s = sec("x", "bar") { it.copy(title = "Open", measure = Measure("sum", "points")) }
         assertEquals(listOf(Series("Open", measure = Measure("sum", "points"))), seriesOf(s))

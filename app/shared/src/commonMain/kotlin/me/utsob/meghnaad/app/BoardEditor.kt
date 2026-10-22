@@ -65,6 +65,37 @@ private fun TextBox(label: String, value: String, onChange: (String) -> Unit, mo
     )
 }
 
+/**
+ * The date ranges a board offers (RangesEditor.svelte): a name and a start and an end, each a date as Taskwarrior reads one (`sow`, `eod`,
+ * `eow-2d`, `2026-10-01`). A filter on the board uses them as `$name.start` and `$name.end`. What the engine thinks of them (a name used
+ * twice, a date it cannot read) is said with the board's other problems.
+ */
+@Composable
+private fun BoardRangesEditor(store: Store, ranges: List<DateRange>, onChange: (List<DateRange>) -> Unit) {
+    Labeled("Date ranges") {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            ranges.forEachIndexed { i, r ->
+                fun set(now: DateRange) = onChange(ranges.mapIndexed { j, x -> if (j == i) now else x })
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextBox("Name", r.name, { set(r.copy(name = it.trim().lowercase())) }, Modifier.weight(1f), mono = true)
+                    IconAction("trash-2", "Remove ${r.name.ifEmpty { "date range ${i + 1}" }}", { onChange(ranges.filterIndexed { j, _ -> j != i }) }, size = 18.dp, tint = MaterialTheme.colorScheme.error)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DateTimeInput(r.start, { set(r.copy(start = it)) }, "Start of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "sow")
+                    Dim("–")
+                    DateTimeInput(r.end, { set(r.copy(end = it)) }, "End of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "eow")
+                }
+            }
+            OutlinedButton({
+                val taken = ranges.map { it.name }.toSet()
+                val name = generateSequence(1) { it + 1 }.map { if (it == 1) "daterange" else "daterange$it" }.first { it !in taken }
+                onChange(ranges + DateRange(name, "sow", "eow"))
+            }) { Text("+ Date range", fontSize = 12.sp) }
+            Dim("Use \$name.start and \$name.end in any filter on the board, such as due.after:\$daterange.start.", size = 11)
+        }
+    }
+}
+
 /** A field with a label above it, for the dropdowns. */
 @Composable
 private fun Labeled(label: String, content: @Composable () -> Unit) {
@@ -149,6 +180,7 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
                         Labeled("Filter for every section") {
                             CompletingField(d.filter.orEmpty(), { v -> editor.edit { it.copy(filter = v.ifEmpty { null }) } }, store.vocab, placeholder = "optional: project:Home")
                         }
+                        BoardRangesEditor(store, d.ranges) { ranges -> editor.edit { it.copy(ranges = ranges) } }
                         Spacer4()
                     }
                 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Completer } from './completer.svelte';
+  import type { Option } from './completion';
 
   // Shown above (console) or below (filter bar) its input.
   let {
@@ -9,7 +9,8 @@
     label = 'Completions',
     onpick,
   }: {
-    completer: Completer;
+    /** What is on offer and which one is chosen (a `Completer` is one). */
+    completer: { menu: { options: Option[]; sel: number } | null };
     /** For an input to point at with `aria-controls`. */
     id?: string;
     label?: string;

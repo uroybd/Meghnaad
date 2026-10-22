@@ -1,6 +1,6 @@
 <script lang="ts">
   import { shellQuote, splitWords } from './cmdline';
-  import DateTimeInput from './DateTimeInput.svelte';
+  import DateField from './DateField.svelte';
   import { SlidersHorizontal, X } from './icons';
   import { store } from './store.svelte';
 
@@ -92,7 +92,7 @@
     </label>
     <label
       >Due before
-      <DateTimeInput label="Due before" bind:value={dueBefore} />
+      <DateField label="Due before" bind:value={dueBefore} />
       <button
         disabled={!dueBefore}
         onclick={() => {

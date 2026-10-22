@@ -14,6 +14,8 @@ import {
   normalizeBoards,
   orderChart,
   parseTasks,
+  rangeLabel,
+  viewed,
   stampEpoch,
   SPAN_PRESETS,
   seriesOf,
@@ -292,6 +294,47 @@ describe('loading a board', () => {
       chart: { labels: [{ label: 'Home' }, { label: 'Work' }], datasets: [{ label: 'by', data: [2, 1] }] },
     });
     expect(data.t).toMatchObject({ kind: 'table', result: { kind: 'text' } });
+  });
+
+  it('writes a date range into every filter that uses it, and says when a name is not one', async () => {
+    const run = vi.fn(async ({ args }: { args: string[] }) =>
+      args.at(-1) === 'export'
+        ? respond({ kind: 'file', name: 't.json', mime: '', text: FILE, count: 3 })
+        : respond({ kind: 'text', lines: ['a table'] }),
+    );
+    const b = board(
+      [
+        sec('n', 0, 0, 3, 2, { filter: 'end.after:$daterange.start and end.before:$daterange.end' }),
+        sec('t', 0, 2, 12, 3, { type: 'table', report: 'list', filter: 'due.before:$daterange.end' }),
+        sec('line', 3, 0, 9, 4, {
+          type: 'line',
+          by: { time: { field: 'end', step: 'day' } },
+          series: [{ label: 'a', filter: 'scheduled.after:$daterange.start' }],
+        }),
+        sec('bad', 0, 5, 3, 2, { filter: 'due.after:$nope.start' }),
+      ],
+      { ranges: [{ name: 'daterange', start: 'sow', end: 'eow' }] },
+    );
+    // 2026-10-07 12:30 UTC, a Wednesday.
+    const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
+    const ran = run.mock.calls.map(([i]) => i.args.join(' '));
+    expect(ran).toContain('( end.after:20261005T000000Z and end.before:20261011T235959Z ) export');
+    expect(ran).toContain('( due.before:20261011T235959Z ) list');
+    expect(ran).toContain('( scheduled.after:20261005T000000Z ) export');
+    expect(ran.some((a) => a.includes('$'))).toBe(false);
+    expect(data.n.kind).toBe('answer');
+    expect(data.t).toMatchObject({ kind: 'table', filter: '( due.before:20261011T235959Z )' });
+    expect(data.bad).toEqual({ kind: 'error', message: "this board has no date range called 'nope'" });
+  });
+
+  it('shows a range by the dates typed on the page, and a name as a label', () => {
+    const b = board([], { filter: 'a', ranges: [{ name: 'sprint_week', start: 'sow', end: 'eow' }] });
+    expect(viewed(b, undefined, undefined)).toEqual(b);
+    const v = viewed(b, 'b', { sprint_week: { start: 'som', end: 'eom' } });
+    expect(v.filter).toBe('b');
+    expect(v.ranges).toEqual([{ name: 'sprint_week', start: 'som', end: 'eom' }]);
+    expect(rangeLabel('sprint_week')).toBe('Sprint week');
+    expect(rangeLabel('daterange')).toBe('Daterange');
   });
 
   it('says what went wrong in one section without losing the others', async () => {

@@ -99,12 +99,28 @@ export interface Section extends Rect {
   limit?: number;
 }
 
+/** A named pair of dates any filter on the board can use: `$name.start` and `$name.end`. Each is a date as Taskwarrior reads one. */
+export interface DateRange {
+  name: string;
+  start: string;
+  end: string;
+}
+
+/** A range worked out for now: the two moments (epoch seconds), or why it cannot be. */
+export interface ResolvedRange {
+  name: string;
+  start?: number;
+  end?: number;
+  error?: string;
+}
+
 export interface Board {
   id: string;
   name: string;
   description?: string;
   /** Added to every section's filter. */
   filter?: string;
+  ranges?: DateRange[];
   sections: Section[];
 }
 
@@ -347,6 +363,38 @@ export function effectiveFilter(board: Board, section: Section, series?: Series)
     .join(' ');
 }
 
+/** A range's name as a label: `sprint_week` is `Sprint week`. The name itself is what a filter writes. */
+export function rangeLabel(name: string): string {
+  const words = name.replace(/_+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** What the board's date ranges are right now, each worked out in the page's zone and week. */
+export function resolveRanges(ranges: DateRange[], zone: Zone): ResolvedRange[] {
+  return ranges.length ? callHelper<ResolvedRange[]>('board_ranges', ranges, zone) : [];
+}
+
+/** `filter` with every `$name.start` and `$name.end` written as the moment it means; throws why it cannot be. */
+export function substituteRanges(filter: string, ranges: DateRange[], zone: Zone): string {
+  if (!filter.includes('$')) return filter;
+  const got = callHelper<{ filter: string } | { message: string }>('board_substitute', filter, ranges, zone);
+  if ('message' in got) throw new Error(got.message);
+  return got.filter;
+}
+
+/** The board as it is looked at: with the filter and the range values typed on the page, where there are some. */
+export function viewed(
+  board: Board,
+  filter: string | undefined,
+  ranges: Record<string, Omit<DateRange, 'name'>> | undefined,
+): Board {
+  return {
+    ...board,
+    filter: filter ?? board.filter,
+    ...(board.ranges ? { ranges: board.ranges.map((r) => ({ ...r, ...ranges?.[r.name] })) } : {}),
+  };
+}
+
 export interface Zone {
   tz: number;
   week_starts_monday: boolean;
@@ -437,6 +485,8 @@ type Run = (input: { args: string[] }) => Promise<CliResponse>;
  */
 export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Promise<Record<string, SectionData>> {
   const exports = new Map<string, Promise<CliResult>>();
+  /** The filter a section (or one of its series) runs, with the board's date ranges in it. */
+  const filterOf = (s: Section, x?: Series) => substituteRanges(effectiveFilter(board, s, x), board.ranges ?? [], zone);
   const exportOf = (filter: string) => {
     let p = exports.get(filter);
     if (!p) exports.set(filter, (p = run({ args: [...splitWords(filter), 'export'] }).then((r) => r.result)));
@@ -452,7 +502,7 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
   const one = async (s: Section): Promise<[string, SectionData]> => {
     try {
       if (s.type === 'table') {
-        const filter = effectiveFilter(board, s);
+        const filter = filterOf(s);
         const result = (await run({ args: [...splitWords(filter), s.report || 'next'] })).result;
         return [
           s.id,
@@ -460,7 +510,7 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
         ];
       }
       if (s.type === 'number') {
-        const filter = effectiveFilter(board, s);
+        const filter = filterOf(s);
         const got = await tasksOf(filter);
         if ('error' in got) return [s.id, { kind: 'error', message: got.error }];
         const sources = [{ label: s.title, filter, text: got.text }];
@@ -470,7 +520,7 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
       const inputs: { label: string; tasks: string; measure: Measure; span?: Span }[] = [];
       const sources: Source[] = [];
       for (const x of seriesOf(s)) {
-        const filter = effectiveFilter(board, s, x);
+        const filter = filterOf(s, x);
         const got = await tasksOf(filter);
         if ('error' in got) return [s.id, { kind: 'error', message: `${x.label}: ${got.error}` }];
         inputs.push({ label: x.label, tasks: got.text, measure: x.measure ?? s.measure, span: x.span });

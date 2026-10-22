@@ -185,20 +185,20 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                         minLines = 1, maxLines = 4,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     )
-                    FieldLabel("Project")
-                    SuggestField(st.project, { st.project = it }, store.projects, "project", placeholder = "none")
-                    FieldLabel("Priority")
-                    Choice(st.priority.ifEmpty { "none" }, listOf("none") + st.priorityValues) { i -> st.priority = if (i == 0) "" else st.priorityValues[i - 1] }
-                    for ((label, get, set) in listOf(
-                        Triple("Due", st::due, { v: String -> st.due = v }),
-                        Triple("Wait", st::wait, { v: String -> st.wait = v }),
-                        Triple("Scheduled", st::scheduled, { v: String -> st.scheduled = v }),
-                        Triple("Until", st::until, { v: String -> st.until = v }),
-                    )) {
-                        FieldLabel(label)
-                        DateTimeInput(get.get(), set, label, store.now, store.utcOffset)
-                    }
-                    FieldLabel("Repeat")
+                    // Fields that share a row, as many as fit the width (the web's `.pair` rows).
+                    FieldGrid(150.dp, listOf(
+                        FieldCell("Project", 2f) { SuggestField(st.project, { st.project = it }, store.projects, "project", placeholder = "none") },
+                        FieldCell("Priority", 1f) { Choice(st.priority.ifEmpty { "none" }, listOf("none") + st.priorityValues) { i -> st.priority = if (i == 0) "" else st.priorityValues[i - 1] } },
+                    ))
+                    FieldGrid(150.dp, listOf(
+                        FieldCell("Due") { DateTimeInput(st.due, { st.due = it }, "Due", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
+                        FieldCell("Wait") { DateTimeInput(st.wait, { st.wait = it }, "Wait", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
+                        FieldCell("Scheduled") { DateTimeInput(st.scheduled, { st.scheduled = it }, "Scheduled", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
+                        FieldCell("Until") { DateTimeInput(st.until, { st.until = it }, "Until", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
+                    ))
+                    FieldGrid(240.dp, listOf(
+                        FieldCell("Repeat", 1f) {
+                            Column {
                     if (st.instance) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Pill(describeRecur(row?.recur))
@@ -230,8 +230,10 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                             st.template -> Dim("Changes to a repeating task also apply to its open instances (not their dates).", Modifier.padding(top = 4.dp), 12)
                         }
                     }
-                    FieldLabel("Tags")
-                    SuggestField(st.tags, { st.tags = it }, store.tags, "tag", list = true, placeholder = "space separated")
+                            }
+                        },
+                        FieldCell("Tags", 2f) { SuggestField(st.tags, { st.tags = it }, store.tags, "tag", list = true, placeholder = "space separated") },
+                    ))
                     for (u in st.defined) {
                         FieldLabel(udaLabel(u))
                         val current = st.udaValues[u.name] ?: ""

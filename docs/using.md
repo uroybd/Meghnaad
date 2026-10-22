@@ -290,7 +290,10 @@ command would actually change are listed. A single task is a plain yes/no. The d
   date that is not one, a priority that is not allowed, a repeat with no due date) is named under the card and Add waits
   until it is fixed. Enter adds. Put a word in quotes to keep it out of the fields (`'read project:x'`). *More fields* opens
   the full form with the line already broken into its fields: project, priority, due/wait/scheduled/until, tags,
-  dependencies, UDAs, "start now" and a first note. Every date field takes a date and an optional time.
+  dependencies, UDAs, "start now" and a first note. Project and priority share a row, the four dates (due, wait, scheduled,
+  until) share as many as the width allows, and so do repeat and tags. Every date field is a button that opens a panel: type a
+  date as Taskwarrior reads one (`tomorrow`, `eow`, `eow-2d`, `2026-10-01`; the date words complete, Tab or a tap takes one), pick
+  a keyword, or choose a day and an optional time from the calendar.
   The project and tags fields suggest names as you type (every project and tag you have, not only those on screen): ↑/↓
   to pick, Enter or Tab to take it, Esc to put the list away, or a tap. A tag is suggested on its own, and not again if
   it is already there. You can always type something else: a name nobody has used yet is how a new project or tag is
@@ -354,6 +357,19 @@ label in full and its figure; the labels along an axis are thinned so none is cu
   adds to: `( board filter ) ( section filter )`, so an `or` in one cannot spill into the other. A section that should ask about
   its own tasks only has **Ignore the board's filter** ticked in its settings (off by default), and then the board's filter is
   not added to it.
+- **Date ranges.** A board can have any number of named ranges, each a **start** and an **end** (both needed), in the board's
+  settings. They sit above the board next to its filter, and a filter on the board (the board's, a section's or a series')
+  uses them as `$name.start` and `$name.end`, so one change moves every card:
+  `(end.after:$daterange.start and end.before:$daterange.end) or (scheduled.after:$daterange.start and scheduled.before:$daterange.end)`
+  for a range named `daterange` (`sow` to `eow`). A date is anything Taskwarrior reads: `sow`, `eod`, `som`, `2026-10-01`,
+  `2026-10-01T09:00`, `eow-2d`, in your time zone and with weeks starting on the day `weekstart` says; a bare date is the start
+  of that day, as in `due.before:2026-10-07`. Each is a button that opens a panel with a field to type it in (the date words
+  complete as you type, Tab or a tap takes one), buttons for the common words and a calendar day and time. The dates are written
+  into the filter as the moment they mean, so a value with a space cannot break it. A name that is not one of the board's ranges,
+  or a date that cannot be read (or an end before its start), is an error on the cards that use it, and nothing is run. The dates
+  typed above a board are only for as long as the page is open (nothing is saved, **Reset** brings the board's own back); the
+  board's own are changed in its settings. A name is lower case letters, digits and `_`, starting with a letter, and is shown as a
+  label (`sprint_week` is "Sprint week").
 - **Measuring** a field works on numbers (`urgency`, a numeric UDA) and durations (a duration UDA, as `2h` or `PT2H`). A
   figure over a duration is shown the way Taskwarrior writes one (`2h`, `3d`). A task with no value for the field is left out of
   a sum, average or comparison, and a group in which no task has one shows `–` (not zero). Anything else is refused, saying so.
@@ -420,6 +436,7 @@ file first if you want to keep what was left out.
       "name": "My week",
       "description": "What I got done",
       "filter": "project.not:Someday",
+      "ranges": [{ "name": "daterange", "start": "sow", "end": "eow" }],
       "sections": [
         { "id": "open", "title": "Open", "x": 0, "y": 0, "w": 3, "h": 2, "type": "number",
           "filter": "status:pending" },

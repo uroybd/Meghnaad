@@ -5,6 +5,7 @@
   import FilterInput from './FilterInput.svelte';
   import type { Homepage } from './appsettings';
   import { ChevronLeft, LayoutDashboard, Pencil, Plus, Trash2, TriangleAlert } from './icons';
+  import RangesEditor from './RangesEditor.svelte';
   import SectionForm from './SectionForm.svelte';
   import {
     SECTION_TYPES,
@@ -12,6 +13,7 @@
     newSection,
     normalizeBoards,
     slugProblem,
+    viewed,
     type Board,
     type Section,
     type SectionType,
@@ -279,6 +281,11 @@
             placeholder="optional: project:Home  ·  rc.context=this_week to use a context"
           />
         </div>
+        <div class="wide">
+          <RangesEditor
+            bind:ranges={() => draft?.ranges ?? [], (v) => draft && (draft.ranges = v.length ? v : undefined)}
+          />
+        </div>
         <div class="wide row adds">
           <span class="dim">Add</span>
           {#each SECTION_TYPES as t (t.id)}
@@ -299,7 +306,7 @@
     {/if}
 
     <BoardView
-      board={draft ?? { ...board, filter: store.boardFilters[board.id] ?? board.filter }}
+      board={draft ?? viewed(board, store.boardFilters[board.id], store.boardRanges[board.id])}
       editing={!!draft}
       {selected}
       onchange={setSections}

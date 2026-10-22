@@ -106,6 +106,11 @@ class Store {
    * while the page is open (nothing saved). A board not here shows its own.
    */
   boardFilters = $state<Record<string, string>>({});
+  /**
+   * The dates typed for a board's date ranges (by board, then by range name) in place of the board's own, while the page
+   * is open (nothing saved). A range not here has its own.
+   */
+  boardRanges = $state<Record<string, Record<string, { start: string; end: string }>>>({});
   /** The tab the Settings page shows. */
   settingsTab = $state<SettingsTab>('taskrc');
   /** The app's own `settings.json`, read (null until it has been). */

@@ -172,6 +172,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             let (line, caret) = (a.req::<String>(0)?, a.req::<usize>(1)?);
             json!(with_vocab(|v| crate::complete::complete(&line, caret, v)))
         }
+        "date_words" => json!(crate::complete::date_words(&a.req::<String>(0)?)),
         "insert_completion" => json!(crate::complete::insert(
             &a.req::<String>(0)?,
             &a.req::<crate::complete::Completion>(1)?,
@@ -265,6 +266,19 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             a.opt::<crate::board::aggregate::By>(1)?.as_ref(),
             &a.req::<crate::board::aggregate::Ctx>(2)?
         )?),
+        "board_ranges" => json!(crate::board::ranges::resolve(
+            &a.req::<Vec<crate::board::ranges::Range>>(0)?,
+            &a.req::<crate::board::aggregate::Ctx>(1)?
+        )),
+        // `{"filter": ..}` or `{"error": ..}` as the answer itself: a filter that cannot be had is not a failed call.
+        "board_substitute" => match crate::board::ranges::substitute(
+            &a.req::<String>(0)?,
+            &a.req::<Vec<crate::board::ranges::Range>>(1)?,
+            &a.req::<crate::board::aggregate::Ctx>(2)?,
+        ) {
+            Ok(filter) => json!({ "filter": filter }),
+            Err(error) => json!({ "message": error }),
+        },
         "board_place" => json!(crate::board::layout::place(
             &a.req::<Vec<Cell>>(0)?,
             &a.req::<String>(1)?,
@@ -472,6 +486,23 @@ mod tests {
             serde_json::to_string(tasks).unwrap()
         );
         assert!(call("board_aggregate", &bad).contains("need a field"));
+
+        let ranges = r#"[{"name":"week","start":"sow","end":"eow"}]"#;
+        let got = call(
+            "board_substitute",
+            &format!(r#"["due.after:$week.start",{ranges},{ctx}]"#),
+        );
+        assert_eq!(got, r#"{"filter":"due.after:20261005T000000Z"}"#);
+        let got = call(
+            "board_substitute",
+            &format!(r#"["due.after:$nope.start",{ranges},{ctx}]"#),
+        );
+        assert!(got.contains(r#""message""#) && got.contains("nope"), "{got}");
+        let got: serde_json::Value = serde_json::from_str(&call("board_ranges", &format!("[{ranges},{ctx}]"))).unwrap();
+        assert_eq!(
+            (got[0]["start"].as_i64(), got[0]["end"].as_i64()),
+            (Some(1_791_158_400), Some(1_791_763_199))
+        );
 
         let cells = r#"[{"id":"a","x":0,"y":0,"w":6,"h":2},{"id":"b","x":6,"y":0,"w":6,"h":2}]"#;
         let placed: serde_json::Value = serde_json::from_str(&call(

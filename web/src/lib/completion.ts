@@ -54,6 +54,11 @@ export function complete(line: string, caret: number, v: Vocab): Completion {
   return callHelper<Completion>('complete', line, caret);
 }
 
+/** The date words (`sow`, `eod`) that begin with what has been typed of a date; none for a date written out. */
+export function dateWords(typed: string): Option[] {
+  return callHelper<Option[]>('date_words', typed);
+}
+
 /** Insert `value` in place of the completed word; add a space unless it ends mid-token. */
 export function insert(line: string, c: Completion, value: string, space = true): { line: string; caret: number } {
   return callHelper('insert_completion', line, c, value, space);

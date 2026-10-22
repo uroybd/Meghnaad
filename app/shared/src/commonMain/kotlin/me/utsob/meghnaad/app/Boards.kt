@@ -68,6 +68,14 @@ data class Section(
     val limit: Int? = null,
 )
 
+/** A named pair of dates any filter on the board can use: `$name.start` and `$name.end`. Each is a date as Taskwarrior reads one. */
+@Serializable
+data class DateRange(val name: String, val start: String, val end: String)
+
+/** A range worked out for now: the two moments (epoch seconds), or why it cannot be. */
+@Serializable
+data class ResolvedRange(val name: String, val start: Long? = null, val end: Long? = null, val error: String? = null)
+
 @Serializable
 data class Board(
     val id: String,
@@ -76,6 +84,7 @@ data class Board(
     /** Added to every section's filter. */
     val filter: String? = null,
     val sections: List<Section> = emptyList(),
+    val ranges: List<DateRange> = emptyList(),
 )
 
 @Serializable
@@ -194,6 +203,19 @@ fun effectiveFilter(board: Board, section: Section, series: Series? = null): Str
         .mapNotNull { it?.trim()?.takeIf { f -> f.isNotEmpty() } }
         .joinToString(" ") { "( $it )" }
 
+/** A range's name as a label: `sprint_week` is `Sprint week`. The name itself is what a filter writes. */
+fun rangeLabel(name: String): String = name.replace(Regex("_+"), " ").trim().replaceFirstChar { it.uppercase() }
+
+/**
+ * The board as it is looked at: with the filter and the range dates typed on the page (BoardFilter.svelte, `viewed`), where there are some.
+ * [typed] holds, for a range's name, the dates typed for it.
+ */
+fun viewedBoard(board: Board, filter: String?, typed: Map<String, DateRange>?): Board =
+    board.copy(
+        filter = filter ?: board.filter,
+        ranges = board.ranges.map { r -> typed?.get(r.name)?.let { r.copy(start = it.start, end = it.end) } ?: r },
+    )
+
 /** The series of a chart section: its own, or the one the section itself measures. */
 fun seriesOf(section: Section): List<Series> =
     section.series.ifEmpty { listOf(Series(label = section.title, measure = section.measure)) }
@@ -212,6 +234,21 @@ class Zone(val tz: Int, val weekStartsMonday: Boolean, val now: Long) {
 /** As the engine reads `weekstart`: Monday only if the taskrc says so. */
 fun boardZone(settings: Map<String, String>?, tz: Int, nowSeconds: Double): Zone =
     Zone(tz, settings?.get("weekstart")?.trim()?.lowercase() == "monday", nowSeconds.toLong())
+
+private fun rangesJson(ranges: List<DateRange>): JsonElement = boardsJson.encodeToJsonElement(ListSerializer(DateRange.serializer()), ranges)
+
+/** What the board's date ranges are right now, each worked out in the zone and week of the page. */
+fun resolveRanges(ranges: List<DateRange>, zone: Zone): List<ResolvedRange> =
+    if (ranges.isEmpty()) emptyList()
+    else boardsJson.decodeFromJsonElement(ListSerializer(ResolvedRange.serializer()), callHelper("board_ranges", rangesJson(ranges), zone.toJson()))
+
+/** [filter] with every `$name.start` and `$name.end` written as the moment it means; throws why it cannot be. */
+fun substituteRanges(filter: String, ranges: List<DateRange>, zone: Zone): String {
+    if ('$' !in filter) return filter
+    val got = callHelper("board_substitute", JsonPrimitive(filter), rangesJson(ranges), zone.toJson()).jsonObject
+    got["message"]?.let { error(it.jsonPrimitive.content) }
+    return got["filter"]?.jsonPrimitive?.content ?: filter
+}
 
 private fun measureJson(m: Measure): JsonElement = boardsJson.encodeToJsonElement(Measure.serializer(), m)
 
@@ -285,6 +322,8 @@ sealed interface SectionData {
  */
 suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData> {
     val exports = HashMap<String, CliResult>()
+    /** The filter a section (or one of its series) runs, with the board's date ranges in it. */
+    fun filterOf(s: Section, x: Series? = null) = substituteRanges(effectiveFilter(board, s, x), board.ranges, zone)
     suspend fun exportOf(filter: String): CliResult =
         exports.getOrPut(filter) { tw.run(args = rustHelpers().splitWords(filter) + "export").result }
 
@@ -300,12 +339,12 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
         out[s.id] = try {
             when {
                 s.type == "table" -> {
-                    val filter = effectiveFilter(board, s)
+                    val filter = filterOf(s)
                     val r = tw.run(args = rustHelpers().splitWords(filter) + (s.report ?: "next")).result
                     if (r is CliResult.Error) SectionData.Failed(r.value.message) else SectionData.Table(r, filter)
                 }
                 s.type == "number" -> {
-                    val filter = effectiveFilter(board, s)
+                    val filter = filterOf(s)
                     val (text, error) = tasksOf(filter)
                     if (text == null) SectionData.Failed(error ?: "")
                     else SectionData.Number(aggregateNumber(text, s, zone), listOf(Source(s.title, filter, text)))
@@ -315,7 +354,7 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
                     val sources = ArrayList<Source>()
                     var failure: String? = null
                     for (x in seriesOf(s)) {
-                        val filter = effectiveFilter(board, s, x)
+                        val filter = filterOf(s, x)
                         val (text, error) = tasksOf(filter)
                         if (text == null) {
                             failure = "${x.label}: $error"

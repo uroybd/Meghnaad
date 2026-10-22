@@ -189,6 +189,20 @@ const DATE_WORDS: &[(&str, Option<&str>)] = &[
     ("1mo", Some("in a month")),
 ];
 
+/// The date words (`sow`, `eod`, `monday`, `3d`) that begin with what has been typed of a date, for a field that takes only
+/// one: the same words `due:` completes to. Nothing for nothing typed, or for a date written out or with arithmetic in it.
+pub fn date_words(typed: &str) -> Vec<Choice> {
+    let typed = typed.trim().to_lowercase();
+    if typed.is_empty() || typed.contains(['+', '-']) {
+        return Vec::new();
+    }
+    DATE_WORDS
+        .iter()
+        .filter(|(w, _)| w.starts_with(&typed))
+        .map(|(w, h)| choice(w, *h))
+        .collect()
+}
+
 pub const VIRTUAL_TAGS: &[&str] = &[
     "ACTIVE",
     "ANNOTATED",
@@ -702,6 +716,19 @@ pub fn apply(line: &str, c: &Completion) -> Applied {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_date_field_completes_date_words_and_nothing_else() {
+        let words = |t: &str| date_words(t).into_iter().map(|c| c.value).collect::<Vec<_>>();
+        assert_eq!(words("eo"), ["eod", "eow", "eom", "eoy"]);
+        assert_eq!(words(" SO "), ["sod", "sow", "som", "soy"]);
+        assert_eq!(words("mon"), ["monday"]);
+        assert_eq!(date_words("sow")[0].hint.as_deref(), Some("start of week"));
+        // Nothing typed, a date written out, arithmetic, or no such word.
+        for none in ["", " ", "2026-10-01", "eow-2d", "now+1d", "zzz"] {
+            assert!(words(none).is_empty(), "{none}");
+        }
+    }
+
     use super::*;
 
     // The cases of the page's own module (web/src/lib/completion.test.ts), which this replaced.

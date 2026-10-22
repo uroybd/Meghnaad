@@ -83,7 +83,7 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    fn clock(&self) -> Clock {
+    pub(super) fn clock(&self) -> Clock {
         let mut c = Clock::utc(self.now);
         c.tz_offset = self.tz;
         c.week_starts_monday = self.week_starts_monday;

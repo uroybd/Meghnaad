@@ -503,8 +503,10 @@ class Store(
     }
 
     /** What each section of [board] shows now: their filters run, their numbers worked out (see [loadBoard]). */
-    suspend fun loadBoardData(board: Board): Map<String, SectionData> =
-        loadBoard(tw, board, boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds()))
+    suspend fun loadBoardData(board: Board): Map<String, SectionData> = loadBoard(tw, board, boardZone())
+
+    /** What a board needs to cut dates into periods and to work out its date ranges: the zone now in force, the first day of the week, and today. */
+    fun boardZone(): Zone = boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds())
 
     /**
      * Open the home page the settings choose. Unforced, only from the front page: a person who has already gone somewhere is
@@ -575,6 +577,12 @@ class Store(
      * while the app is open (nothing saved). A board not here shows its own (BoardFilter.svelte).
      */
     val boardFilters = mutableStateMapOf<String, String>()
+
+    /**
+     * The dates typed for a board's date ranges, by board id and then range name: they take the place of the board's own while the
+     * app is open (nothing saved). A range not here has its own.
+     */
+    val boardRanges = mutableStateMapOf<String, Map<String, DateRange>>()
 
     // ---- Each page's own context
 

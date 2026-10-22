@@ -55,6 +55,7 @@
   const dataKey = $derived(
     JSON.stringify([
       board.filter,
+      board.ranges,
       board.sections.map((s) => [s.id, s.type, s.report, s.filter, s.ignoreBoardFilter, s.measure, s.by, s.series]),
     ]),
   );

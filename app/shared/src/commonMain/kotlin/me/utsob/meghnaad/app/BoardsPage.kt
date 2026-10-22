@@ -59,7 +59,7 @@ fun BoardsPage(store: Store) {
 @Composable
 fun rememberBoardData(store: Store, board: Board, wait: Boolean): Map<String, SectionData> {
     var data by remember { mutableStateOf<Map<String, SectionData>>(emptyMap()) }
-    val asks = listOf(board.filter, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.ignoreBoardFilter, it.measure, it.by, it.series) })
+    val asks = listOf(board.filter, board.ranges, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.ignoreBoardFilter, it.measure, it.by, it.series) })
     LaunchedEffect(asks, store.rev) {
         // While a board is being edited, a keystroke in a filter is not a question.
         if (wait) delay(250)
@@ -113,8 +113,8 @@ private fun BoardList(store: Store) {
 
 @Composable
 private fun BoardScreen(store: Store, board: Board) {
-    // The board as it is looked at now: its own filter, or the one typed above it (BoardFilter).
-    val shown = store.boardFilters[board.id]?.let { board.copy(filter = it) } ?: board
+    // The board as it is looked at now: its own filter and range dates, or the ones typed above it (BoardFilter).
+    val shown = viewedBoard(board, store.boardFilters[board.id], store.boardRanges[board.id])
     val data = rememberBoardData(store, shown, wait = false)
     var info by remember(board) { mutableStateOf<String?>(null) }
 
@@ -142,7 +142,7 @@ private fun BoardScreen(store: Store, board: Board) {
 /**
  * A filter to look at one board another way (BoardFilter.svelte): collapsed by default, and what is typed here takes the place of the
  * board's own filter (its default, saved with the board) while the app is open. It is not saved. A context goes in it as it does in
- * the board's own: `rc.context=this_week`.
+ * the board's own: `rc.context=this_week`. The board's date ranges are above it, always in view, and work the same way.
  */
 @Composable
 private fun BoardFilter(store: Store, board: Board) {
@@ -154,6 +154,7 @@ private fun BoardFilter(store: Store, board: Board) {
         if (value.trim() == own.trim()) store.boardFilters.remove(board.id) else store.boardFilters[board.id] = value
     }
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        BoardRanges(store, board)
         Row(Modifier.clickable { open = !open }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             LucideIcon(if (open) "chevron-down" else "chevron-right", size = 16.dp)
             Text("Filter", fontSize = 14.sp)
@@ -170,6 +171,48 @@ private fun BoardFilter(store: Store, board: Board) {
                 size = 12,
             )
         }
+    }
+}
+
+/** The board's date ranges (BoardFilter.svelte): each with its start and end to change, what they are now, and a way back to the board's own dates. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun BoardRanges(store: Store, board: Board) {
+    if (board.ranges.isEmpty()) return
+    val typed = store.boardRanges[board.id].orEmpty()
+    val shown = viewedBoard(board, null, typed).ranges
+    val zone = store.boardZone()
+    val resolved = remember(shown, store.rev) { runCatching { resolveRanges(shown, zone) }.getOrDefault(emptyList()) }
+    val fmt = formatFor(FormatKind.Info, store.config?.config?.settings)
+    fun keep(name: String, dates: DateRange?) {
+        val mine = typed.toMutableMap()
+        if (dates == null) mine.remove(name) else mine[name] = dates
+        if (mine.isEmpty()) store.boardRanges.remove(board.id) else store.boardRanges[board.id] = mine
+    }
+    fun change(saved: DateRange, now: DateRange) {
+        // Typing the board's own dates back is no change.
+        keep(saved.name, if (now.start.trim() == saved.start.trim() && now.end.trim() == saved.end.trim()) null else now)
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        board.ranges.forEachIndexed { i, saved ->
+            val now = shown[i]
+            val got = resolved.firstOrNull { it.name == saved.name }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(rangeLabel(saved.name), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                DateTimeInput(now.start, { change(saved, now.copy(start = it)) }, "Start of ${rangeLabel(saved.name)}", store.now, store.utcOffset, invalid = got?.error != null, placeholder = "start")
+                Dim("–")
+                DateTimeInput(now.end, { change(saved, now.copy(end = it)) }, "End of ${rangeLabel(saved.name)}", store.now, store.utcOffset, invalid = got?.error != null, placeholder = "end")
+                IconAction("rotate-ccw", "Use the board's own dates for ${rangeLabel(saved.name)}", { keep(saved.name, null) }, enabled = typed.containsKey(saved.name), size = 18.dp)
+            }
+            val line = got?.error ?: if (got?.start != null && got.end != null) "${formatMoment(got.start, store.offsetAt(got.start), fmt)} – ${formatMoment(got.end, store.offsetAt(got.end), fmt)}" else ""
+            if (line.isNotEmpty()) {
+                Text(
+                    "$${saved.name}  $line", fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    color = if (got?.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (typed.isNotEmpty()) Dim("Dates typed here replace the board's own while you look at it; nothing is saved.", size = 12)
     }
 }
 

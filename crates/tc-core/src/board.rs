@@ -7,9 +7,11 @@
 
 pub mod aggregate;
 pub mod layout;
+pub mod ranges;
 
 use aggregate::{By, Func, Measure, Span};
 use layout::{Cell, Rect};
+use ranges::Range;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -138,6 +140,9 @@ pub struct Board {
     /// Added to every section's filter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
+    /// Named dates any filter on the board can use: `$name.start` and `$name.end`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ranges: Vec<Range>,
     pub sections: Vec<Section>,
 }
 
@@ -272,6 +277,39 @@ pub fn normalize(value: &Value) -> Normalized {
             out.errors.push(format!("{at}: the id is used twice"));
             continue;
         }
+        let mut ranges: Vec<Range> = Vec::new();
+        for (j, r) in o
+            .get("ranges")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let range = match serde_json::from_value::<Range>(r.clone()) {
+                Ok(r) => Range {
+                    name: r.name.trim().to_owned(),
+                    start: r.start.trim().to_owned(),
+                    end: r.end.trim().to_owned(),
+                },
+                Err(e) => {
+                    out.errors.push(format!("{at}, date range {}: {e}", j + 1));
+                    continue;
+                }
+            };
+            if let Some(p) = ranges::problem(&range) {
+                out.errors.push(format!("{at}, date range {}: {p}", j + 1));
+                continue;
+            }
+            if ranges.iter().any(|x| x.name == range.name) {
+                out.errors.push(format!(
+                    "{at}, date range {}: the name '{}' is used twice",
+                    j + 1,
+                    range.name
+                ));
+                continue;
+            }
+            ranges.push(range);
+        }
         let mut sections: Vec<Section> = Vec::new();
         let mut section_ids = BTreeSet::new();
         for (j, s) in o
@@ -320,6 +358,7 @@ pub fn normalize(value: &Value) -> Normalized {
             name,
             description: text(o, "description"),
             filter: text(o, "filter"),
+            ranges,
             sections,
         });
     }
@@ -374,6 +413,28 @@ mod tests {
         assert_eq!(n.errors.len(), 3, "{:?}", n.errors);
         assert!(n.errors[1].contains("need a field"), "{:?}", n.errors);
         assert!(n.errors[2].contains("group by"), "{:?}", n.errors);
+    }
+
+    #[test]
+    fn date_ranges_are_kept_tidied_and_checked() {
+        let n = normalize(&json!([{ "id": "b", "name": "B", "ranges": [
+            { "name": " week ", "start": " sow ", "end": "eow" },
+            { "name": "week", "start": "som", "end": "eom" },
+            { "name": "Bad", "start": "som", "end": "eom" },
+            { "name": "late", "start": "som", "end": "someday" },
+            { "name": "open", "start": "", "end": "eom" },
+            { "start": "som" } ] }]));
+        let kept = &n.boards[0].ranges;
+        assert_eq!(kept.len(), 1);
+        assert_eq!((kept[0].name.as_str(), kept[0].start.as_str()), ("week", "sow"));
+        assert_eq!(n.errors.len(), 5, "{:?}", n.errors);
+        assert!(n.errors[0].contains("used twice") && n.errors[3].contains("needs a start"));
+        // Written out and read again, they are the same; none is not written.
+        assert_eq!(normalize(&serde_json::to_value(&n.boards).unwrap()).boards, n.boards);
+        assert!(serde_json::to_value(&normalize(&good()).boards[0])
+            .unwrap()
+            .get("ranges")
+            .is_none());
     }
 
     #[test]
