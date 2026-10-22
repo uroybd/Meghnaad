@@ -17,6 +17,7 @@ use crate::model::Facts;
 use crate::rx::{Rx, TextMatch};
 use crate::taskrc::{Config, UdaType};
 use crate::urgency::{coefficients, urgency_with};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
@@ -96,8 +97,7 @@ impl<'a> EvalCtx<'a> {
         self.cfg
             .settings
             .get("search.case.sensitive")
-            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "on" | "yes" | "y" | "true"))
-            .unwrap_or(true)
+            .is_none_or(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "on" | "yes" | "y" | "true"))
     }
 }
 
@@ -351,7 +351,7 @@ pub fn split_words(s: &str) -> Vec<String> {
                 in_word = true;
             }
             (None, '\\') if matches!(chars.peek(), Some('\'' | '"' | '\\' | ' ')) => {
-                cur.push(chars.next().unwrap());
+                cur.extend(chars.next());
                 in_word = true;
             }
             (None, c) if c.is_whitespace() => {
@@ -586,7 +586,7 @@ impl Parser<'_, '_> {
             }
         }
         if let Some(name) = tok.strip_prefix('-') {
-            if name.chars().next().is_some_and(|c| c.is_alphabetic()) && name.chars().all(tag_char) {
+            if name.chars().next().is_some_and(char::is_alphabetic) && name.chars().all(tag_char) {
                 return Ok(Some(Term::Tag {
                     name: name.to_owned(),
                     present: false,
@@ -733,11 +733,35 @@ fn eval(e: &Expr, f: &Facts, ctx: &EvalCtx) -> bool {
     }
 }
 
+/// Whether `needle` is in `hay` when case does not matter. Plain ASCII on both sides (nearly always) needs no lowercase
+/// copy of either; anything else is lowercased as Unicode, where one letter can become several.
 fn contains(hay: &str, needle: &str, case_sensitive: bool) -> bool {
     if case_sensitive {
         hay.contains(needle)
+    } else if hay.is_ascii() && needle.is_ascii() {
+        let (h, n) = (hay.as_bytes(), needle.as_bytes());
+        n.is_empty() || h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n))
     } else {
         hay.to_lowercase().contains(&needle.to_lowercase())
+    }
+}
+
+/// `starts_with` (or `ends_with`, when `end`) when case does not matter; see [`contains`].
+fn edge_matches(hay: &str, needle: &str, end: bool) -> bool {
+    if hay.is_ascii() && needle.is_ascii() {
+        let (h, n) = (hay.as_bytes(), needle.as_bytes());
+        return h.len() >= n.len()
+            && if end {
+                h[h.len() - n.len()..].eq_ignore_ascii_case(n)
+            } else {
+                h[..n.len()].eq_ignore_ascii_case(n)
+            };
+    }
+    let (h, n) = (hay.to_lowercase(), needle.to_lowercase());
+    if end {
+        h.ends_with(&n)
+    } else {
+        h.starts_with(&n)
     }
 }
 
@@ -746,9 +770,12 @@ fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
         Term::Tag { name, present } => f.has_tag(name, ctx.cfg, &ctx.clock) == *present,
         Term::Text(m) => m.is_match(&f.description) || f.annotations.iter().any(|a| m.is_match(&a.text)),
         Term::Uuid(prefix) => {
-            let simple = f.uuid.as_simple().to_string();
-            let hyphen = f.uuid.to_string();
-            simple.starts_with(prefix) || hyphen.starts_with(prefix)
+            let (mut simple, mut hyphen) = ([0u8; 32], [0u8; 36]);
+            f.uuid.simple().encode_lower(&mut simple).starts_with(prefix.as_str())
+                || f.uuid
+                    .hyphenated()
+                    .encode_lower(&mut hyphen)
+                    .starts_with(prefix.as_str())
         }
         Term::Ids(ranges) => ctx
             .ids
@@ -766,27 +793,28 @@ fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
     }
 }
 
-enum Val {
+/// An attribute's value, borrowed from the task where it can be (a filter looks at every task).
+enum Val<'a> {
     Unset,
-    Str(String),
+    Str(Cow<'a, str>),
     Num(f64),
     Date(i64),
-    Many(Vec<String>),
+    Many(Vec<Cow<'a, str>>),
 }
 
-fn attr_value(attr: &Attr, f: &Facts, ctx: &EvalCtx) -> Val {
-    let s = |o: &Option<String>| o.clone().map_or(Val::Unset, Val::Str);
+fn attr_value<'a>(attr: &Attr, f: &'a Facts, ctx: &EvalCtx) -> Val<'a> {
+    let s = |o: &'a Option<String>| o.as_deref().map_or(Val::Unset, |v| Val::Str(Cow::Borrowed(v)));
     let d = |o: Option<i64>| o.map_or(Val::Unset, Val::Date);
     match attr {
         Attr::Core(c) => match c {
             Core::Id => ctx.ids.get(&f.uuid).map_or(Val::Unset, |i| Val::Num(f64::from(*i))),
-            Core::Uuid => Val::Str(f.uuid.to_string()),
-            Core::Status => Val::Str(f.status.clone()),
-            Core::Description => Val::Str(f.description.clone()),
+            Core::Uuid => Val::Str(Cow::Owned(f.uuid.to_string())),
+            Core::Status => Val::Str(Cow::Borrowed(f.status.as_str())),
+            Core::Description => Val::Str(Cow::Borrowed(f.description.as_str())),
             Core::Project => s(&f.project),
             Core::Priority => s(&f.priority),
             Core::Recur => s(&f.recur),
-            Core::Parent => f.parent.map_or(Val::Unset, |p| Val::Str(p.to_string())),
+            Core::Parent => f.parent.map_or(Val::Unset, |p| Val::Str(Cow::Owned(p.to_string()))),
             Core::Mask => s(&f.mask),
             // A number that every task has: 0 when there is none, so `imask:0` also finds a template and a plain task,
             // and `imask.any:` finds all, as in Taskwarrior.
@@ -801,16 +829,16 @@ fn attr_value(attr: &Attr, f: &Facts, ctx: &EvalCtx) -> Val {
             Core::Until => d(f.until),
             Core::Modified => d(f.modified),
             Core::Urgency => Val::Num(ctx.urgency(f)),
-            Core::Tags => Val::Many(f.tags.iter().cloned().collect()),
-            Core::Depends => Val::Many(f.depends.iter().map(Uuid::to_string).collect()),
-            Core::Annotation => Val::Many(f.annotations.iter().map(|a| a.text.clone()).collect()),
+            Core::Tags => Val::Many(f.tags.iter().map(|t| Cow::Borrowed(t.as_str())).collect()),
+            Core::Depends => Val::Many(f.depends.iter().map(|d| Cow::Owned(d.to_string())).collect()),
+            Core::Annotation => Val::Many(f.annotations.iter().map(|a| Cow::Borrowed(a.text.as_str())).collect()),
         },
         Attr::Uda(name, ty) => match f.extra.get(name) {
             None => Val::Unset,
             Some(raw) => match ty {
                 UdaType::Numeric => raw.parse().map_or(Val::Unset, Val::Num),
                 UdaType::Date => raw.parse().map_or(Val::Unset, Val::Date),
-                _ => Val::Str(raw.clone()),
+                _ => Val::Str(Cow::Borrowed(raw.as_str())),
             },
         },
     }
@@ -867,14 +895,14 @@ fn str_op(have: &str, op: Op, want: &str, status: bool, cs: bool) -> bool {
             if cs {
                 have.starts_with(want)
             } else {
-                have.to_lowercase().starts_with(&want.to_lowercase())
+                edge_matches(have, want, false)
             }
         }
         Op::EndsWith => {
             if cs {
                 have.ends_with(want)
             } else {
-                have.to_lowercase().ends_with(&want.to_lowercase())
+                edge_matches(have, want, true)
             }
         }
         Op::Word => is_word_in(have, want, cs),

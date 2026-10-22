@@ -13,6 +13,7 @@
 //! the text, so a nasty pattern can't tie up the Worker the way it can in `std::regex`.
 
 use regex::bytes::{Regex, RegexBuilder};
+use std::borrow::Cow;
 
 /// A compiled pattern.
 #[derive(Debug, Clone)]
@@ -156,7 +157,12 @@ impl TextMatch {
             Rx::new(text, case_sensitive).map(TextMatch::Pattern)
         } else {
             Ok(TextMatch::Plain {
-                needle: text.to_owned(),
+                // Folded once here, not for every task it is tried on.
+                needle: if case_sensitive {
+                    text.to_owned()
+                } else {
+                    text.to_lowercase()
+                },
                 case_sensitive,
             })
         }
@@ -166,20 +172,18 @@ impl TextMatch {
         match self {
             TextMatch::Pattern(rx) => rx.is_match(hay),
             TextMatch::Plain { needle, case_sensitive } => {
-                let fold = |s: &str| {
-                    if *case_sensitive {
-                        s.to_owned()
-                    } else {
-                        s.to_lowercase()
-                    }
+                let h: Cow<str> = if *case_sensitive {
+                    Cow::Borrowed(hay)
+                } else {
+                    Cow::Owned(hay.to_lowercase())
                 };
-                let (h, n) = (fold(hay), fold(needle));
+                let n = needle.as_str();
                 if let Some(rest) = n.strip_prefix('^') {
                     h.starts_with(rest)
                 } else if let Some(rest) = n.strip_suffix('$') {
                     h.ends_with(rest)
                 } else {
-                    h.contains(&n)
+                    h.contains(n)
                 }
             }
         }

@@ -11,14 +11,23 @@ use crate::model::{Facts, Session};
 use crate::report::{parse_sort, resolve, SortKey, SortSpec};
 use crate::taskrc::{Config, UdaType};
 use serde::Serialize;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `skip_serializing_if` hands over a reference"
+)]
 fn is_zero(n: &u32) -> bool {
     *n == 0
 }
 
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `skip_serializing_if` hands over a reference"
+)]
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -55,11 +64,16 @@ pub struct Row {
 impl Row {
     /// A row for a table: no virtual-tag list (see [`Row::build_full`]).
     pub fn build(f: &Facts, ctx: &EvalCtx) -> Row {
+        Row::build_with(f, ctx, ctx.urgency(f))
+    }
+
+    /// [`Row::build`] for a task whose `urgency` is already worked out.
+    fn build_with(f: &Facts, ctx: &EvalCtx, urgency: f64) -> Row {
         let cfg = ctx.cfg;
         let journal = cfg.journal();
         Row {
             facts: f.clone(),
-            urgency: ctx.urgency(f),
+            urgency,
             id: ctx.ids.get(&f.uuid).copied(),
             virtual_tags: vec![],
             waiting: f.is_waiting(&ctx.clock),
@@ -262,8 +276,14 @@ fn base(column: &str) -> &str {
     column.split('.').next().unwrap_or(column)
 }
 
-fn position(order_rev: &[String], v: &str) -> usize {
-    order_rev.iter().position(|o| o == v).unwrap_or(order_rev.len())
+/// Where `v` sits in `values` read from the last to the first (Taskwarrior stores the order reversed); not found is
+/// past the end.
+fn rank_rev<S: AsRef<str>>(values: &[S], v: &str) -> usize {
+    values
+        .iter()
+        .rev()
+        .position(|o| o.as_ref() == v)
+        .unwrap_or(values.len())
 }
 
 fn fnv(uuid: &Uuid, seed: u64) -> u64 {
@@ -293,20 +313,23 @@ fn date_cmp(a: Option<i64>, b: Option<i64>, desc: bool) -> Ordering {
     }
 }
 
-fn str_of(r: &Row, field: &str) -> Option<String> {
-    let f = &r.facts;
+fn str_of<'a>(f: &'a Facts, field: &str) -> Option<Cow<'a, str>> {
     Some(match field {
-        "description" => f.description.clone(),
-        "project" => f.project.clone().unwrap_or_default(),
-        "status" => f.status.clone(),
-        "tags" => f.tags.iter().cloned().collect::<Vec<_>>().join(","),
-        "uuid" => f.uuid.to_string(),
-        "parent" => f.parent.map(|p| p.to_string()).unwrap_or_default(),
-        "mask" | "imask" => String::new(),
+        "description" => Cow::Borrowed(f.description.as_str()),
+        "project" => Cow::Borrowed(f.project.as_deref().unwrap_or("")),
+        "status" => Cow::Borrowed(f.status.as_str()),
+        "tags" => Cow::Owned(f.tags.iter().map(String::as_str).collect::<Vec<_>>().join(",")),
+        "uuid" => Cow::Owned(f.uuid.to_string()),
+        "parent" => Cow::Owned(f.parent.map(|p| p.to_string()).unwrap_or_default()),
+        "mask" | "imask" => Cow::Borrowed(""),
         _ => return None,
     })
 }
 
+#[allow(
+    clippy::option_option,
+    reason = "outer: not a date field; inner: the task has no such date"
+)]
 fn date_of(f: &Facts, field: &str) -> Option<Option<i64>> {
     Some(match field {
         "due" => f.due,
@@ -321,7 +344,23 @@ fn date_of(f: &Facts, field: &str) -> Option<Option<i64>> {
     })
 }
 
-fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32>, seed: u64) -> Ordering {
+/// What a sort looks at in a task. Borrowed, so ordering the tasks a report matches builds no rows and copies no text;
+/// the rows are made once the limit has cut the list down.
+pub struct Item<'a> {
+    pub facts: &'a Facts,
+    /// Only read when the sort has an `urgency` key.
+    pub urgency: f64,
+    pub id: Option<u32>,
+}
+
+fn cmp_key<'a>(
+    a: &Item<'a>,
+    b: &Item<'a>,
+    k: &SortKey,
+    cfg: &Config,
+    ids: &BTreeMap<Uuid, u32>,
+    seed: u64,
+) -> Ordering {
     let field = base(&k.column);
     let desc = k.descending;
     match field {
@@ -330,18 +369,21 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
         "id" => dir(a.id.unwrap_or(0).cmp(&b.id.unwrap_or(0)), desc),
         "recur" => {
             let (x, y) = (
-                a.facts.recur.clone().unwrap_or_default(),
-                b.facts.recur.clone().unwrap_or_default(),
+                a.facts.recur.as_deref().unwrap_or(""),
+                b.facts.recur.as_deref().unwrap_or(""),
             );
             if x == y {
                 return Ordering::Equal;
             }
             dir(
-                parse_duration(&x).unwrap_or(0).cmp(&parse_duration(&y).unwrap_or(0)),
+                parse_duration(x).unwrap_or(0).cmp(&parse_duration(y).unwrap_or(0)),
                 desc,
             )
         }
         "depends" => {
+            if a.facts.depends.is_empty() && b.facts.depends.is_empty() {
+                return Ordering::Equal;
+            }
             let (mut x, mut y) = (a.facts.depends.clone(), b.facts.depends.clone());
             x.sort_unstable();
             y.sort_unstable();
@@ -367,32 +409,32 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
                 _ => dir(ids.get(&x[0]).unwrap_or(&0).cmp(ids.get(&y[0]).unwrap_or(&0)), desc),
             }
         }
-        f if str_of(a, f).is_some() => {
-            let (x, y) = (str_of(a, f).unwrap(), str_of(b, f).unwrap());
-            dir(x.cmp(&y), desc)
-        }
-        f if date_of(&a.facts, f).is_some() => {
-            date_cmp(date_of(&a.facts, f).unwrap(), date_of(&b.facts, f).unwrap(), desc)
-        }
-        // UDAs, including priority, which Taskwarrior itself treats as a string UDA.
         f => {
+            if let (Some(x), Some(y)) = (str_of(a.facts, f), str_of(b.facts, f)) {
+                return dir(x.cmp(&y), desc);
+            }
+            if let (Some(x), Some(y)) = (date_of(a.facts, f), date_of(b.facts, f)) {
+                return date_cmp(x, y, desc);
+            }
+            // UDAs, including priority, which Taskwarrior itself treats as a string UDA.
             let def = cfg.udas.get(f);
-            let get = |r: &Row| -> String {
-                if f == "priority" {
-                    r.facts.priority.clone().unwrap_or_default()
+            let get = |i: &Item<'a>| -> &'a str {
+                let value = if f == "priority" {
+                    i.facts.priority.as_deref()
                 } else {
-                    r.facts.extra.get(f).cloned().unwrap_or_default()
-                }
+                    i.facts.extra.get(f).map(String::as_str)
+                };
+                value.unwrap_or("")
             };
             let (x, y) = (get(a), get(b));
-            let ty = def.map(|d| d.ty).unwrap_or(UdaType::String);
+            let ty = def.map_or(UdaType::String, |d| d.ty);
             match ty {
                 UdaType::Numeric => {
                     let n = |s: &str| s.parse::<f64>().unwrap_or(0.0);
-                    if n(&x) == n(&y) {
+                    if n(x) == n(y) {
                         return Ordering::Equal;
                     }
-                    dir(n(&x).partial_cmp(&n(&y)).unwrap_or(Ordering::Equal), desc)
+                    dir(n(x).partial_cmp(&n(y)).unwrap_or(Ordering::Equal), desc)
                 }
                 UdaType::Date => date_cmp(
                     x.parse().ok().filter(|_| !x.is_empty()),
@@ -404,7 +446,7 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
                         return Ordering::Equal;
                     }
                     dir(
-                        parse_duration(&x).unwrap_or(0).cmp(&parse_duration(&y).unwrap_or(0)),
+                        parse_duration(x).unwrap_or(0).cmp(&parse_duration(y).unwrap_or(0)),
                         desc,
                     )
                 }
@@ -412,21 +454,24 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
                     if x == y {
                         return Ordering::Equal;
                     }
-                    let values: Vec<String> = match def {
-                        Some(d) if !d.values.is_empty() => d.values.clone(),
-                        None if f == "priority" => DEFAULT_PRIORITY_VALUES.iter().map(|s| (*s).to_owned()).collect(),
-                        _ => Vec::new(),
-                    };
-                    if !values.is_empty() {
-                        // Taskwarrior stores the order reversed; ascending = lowest first.
-                        let rev: Vec<String> = values.into_iter().rev().collect();
-                        return dir(position(&rev, &x).cmp(&position(&rev, &y)), desc);
+                    // Taskwarrior stores the order reversed; ascending = lowest first.
+                    match def {
+                        Some(d) if !d.values.is_empty() => {
+                            return dir(rank_rev(&d.values, x).cmp(&rank_rev(&d.values, y)), desc)
+                        }
+                        None if f == "priority" => {
+                            return dir(
+                                rank_rev(DEFAULT_PRIORITY_VALUES, x).cmp(&rank_rev(DEFAULT_PRIORITY_VALUES, y)),
+                                desc,
+                            )
+                        }
+                        _ => {}
                     }
                     // No custom order: empty values are unconditionally last.
                     match (x.is_empty(), y.is_empty()) {
                         (true, _) => Ordering::Greater,
                         (_, true) => Ordering::Less,
-                        _ => dir(x.cmp(&y), desc),
+                        _ => dir(x.cmp(y), desc),
                     }
                 }
             }
@@ -435,13 +480,13 @@ fn cmp_key(a: &Row, b: &Row, k: &SortKey, cfg: &Config, ids: &BTreeMap<Uuid, u32
 }
 
 /// Stable sort by the sort spec. `Random` uses `seed`.
-pub fn sort_rows(rows: &mut [Row], spec: &SortSpec, cfg: &Config, ids: &BTreeMap<Uuid, u32>, seed: u64) {
+pub fn sort_items(items: &mut [Item], spec: &SortSpec, cfg: &Config, ids: &BTreeMap<Uuid, u32>, seed: u64) {
     match spec {
         SortSpec::None => {}
         SortSpec::Random => {
-            rows.sort_by_key(|r| fnv(&r.facts.uuid, seed));
+            items.sort_by_key(|i| fnv(&i.facts.uuid, seed));
         }
-        SortSpec::Keys(keys) => rows.sort_by(|a, b| {
+        SortSpec::Keys(keys) => items.sort_by(|a, b| {
             for k in keys {
                 let o = cmp_key(a, b, k, cfg, ids, seed);
                 if o != Ordering::Equal {
@@ -455,7 +500,8 @@ pub fn sort_rows(rows: &mut [Row], spec: &SortSpec, cfg: &Config, ids: &BTreeMap
 
 fn break_value(r: &Row, column: &str) -> String {
     let f = base(column);
-    str_of(r, f)
+    str_of(&r.facts, f)
+        .map(Cow::into_owned)
         .or_else(|| date_of(&r.facts, f).map(|d| d.map(|x| x.to_string()).unwrap_or_default()))
         .unwrap_or_else(|| {
             if f == "priority" {
@@ -505,23 +551,29 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
         }
     }
 
-    // Base order = working-set order, then the rest by entry; the sort is stable.
-    let mut rows: Vec<Row> = req
+    // Base order = working-set order, then the rest by entry; the sort is stable. Only the matching tasks are ordered
+    // (borrowed), and rows are built after the limit, for the tasks that are shown.
+    let by_urgency = matches!(&sort, SortSpec::Keys(keys) if keys.iter().any(|k| base(&k.column) == "urgency"));
+    let mut items: Vec<Item> = req
         .all
         .iter()
         .filter(|f| filter.matches(f, &ctx))
-        .map(|f| Row::build(f, &ctx))
+        .map(|f| Item {
+            facts: f,
+            urgency: if by_urgency { ctx.urgency(f) } else { 0.0 },
+            id: ids.get(&f.uuid).copied(),
+        })
         .collect();
-    rows.sort_by_key(|r| {
+    items.sort_by_key(|i| {
         (
-            r.id.map_or((1, 0), |i| (0, i)),
-            r.facts.entry.unwrap_or(0),
-            r.facts.uuid,
+            i.id.map_or((1, 0), |n| (0, n)),
+            i.facts.entry.unwrap_or(0),
+            i.facts.uuid,
         )
     });
-    sort_rows(&mut rows, &sort, cfg, &ids, req.seed);
+    sort_items(&mut items, &sort, cfg, &ids, req.seed);
 
-    let matched = rows.len();
+    let matched = items.len();
     // A `limit:` in the report's filter or on the command line wins; otherwise the `limit` setting
     // applies, as `rc.limit` does in Taskwarrior. Only reports are cut short: `export`, `count` and
     // the like always see every task.
@@ -531,8 +583,18 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
         cfg.default_limit()
     };
     if let Limit::N(n) = limit {
-        rows.truncate(n);
+        items.truncate(n);
     }
+    let mut rows: Vec<Row> = items
+        .iter()
+        .map(|i| {
+            if by_urgency {
+                Row::build_with(i.facts, &ctx, i.urgency)
+            } else {
+                Row::build(i.facts, &ctx)
+            }
+        })
+        .collect();
 
     // Every other row is shaded (`color.alternate`), with the rules laid over it.
     if let Some(rules) = ctx.rules() {
@@ -616,23 +678,16 @@ mod tests {
     fn sorted(cfg: &Config, spec: &str, all: &[Facts]) -> Vec<String> {
         let ids = working_set_ids(all);
         let ctx = EvalCtx::new(cfg, clock(), &ids);
-        let mut rows: Vec<Row> = all
+        let mut items: Vec<Item> = all
             .iter()
-            .map(|f| Row {
-                facts: f.clone(),
+            .map(|f| Item {
+                facts: f,
                 urgency: ctx.urgency(f),
                 id: ids.get(&f.uuid).copied(),
-                virtual_tags: vec![],
-                waiting: false,
-                orphans: vec![],
-                active_seconds: None,
-                sessions: vec![],
-                pending_deps: 0,
-                style: None,
             })
             .collect();
-        sort_rows(&mut rows, &parse_sort(spec).unwrap(), cfg, &ids, 1);
-        rows.into_iter().map(|r| r.facts.description).collect()
+        sort_items(&mut items, &parse_sort(spec).unwrap(), cfg, &ids, 1);
+        items.into_iter().map(|i| i.facts.description.clone()).collect()
     }
 
     #[test]
