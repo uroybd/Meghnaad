@@ -124,7 +124,11 @@ impl Facts {
             description: t.get_description().to_owned(),
             project: t.get_value("project").and_then(nonempty),
             priority: nonempty(t.get_priority()),
-            tags: t.get_tags().filter(|g| g.is_user()).map(|g| g.to_string()).collect(),
+            tags: t
+                .get_tags()
+                .filter(taskchampion::Tag::is_user)
+                .map(|g| g.to_string())
+                .collect(),
             annotations,
             entry: ts("entry"),
             modified: ts("modified"),
@@ -161,7 +165,7 @@ impl Facts {
         self.status != "completed" && self.status != "deleted"
     }
 
-    fn date_state(&self, ts: i64, cfg: &Config, clock: &Clock) -> DateState {
+    fn date_state(ts: i64, cfg: &Config, clock: &Clock) -> DateState {
         let today = clock.start_of_day(clock.now);
         if ts < today {
             return DateState::BeforeToday;
@@ -246,7 +250,11 @@ impl Facts {
 
     /// `Some(answer)` if `name` is a Taskwarrior virtual tag, `None` otherwise.
     pub fn virtual_tag(&self, name: &str, cfg: &Config, clock: &Clock) -> Option<bool> {
-        let due_state = || self.due.filter(|_| self.open()).map(|d| self.date_state(d, cfg, clock));
+        let due_state = || {
+            self.due
+                .filter(|_| self.open())
+                .map(|d| Self::date_state(d, cfg, clock))
+        };
         let due_between = |lo: i64, hi: i64| self.due.is_some_and(|d| self.open() && d >= lo && d <= hi);
         let now = clock.now;
         Some(match name {

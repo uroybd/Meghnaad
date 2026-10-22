@@ -56,7 +56,7 @@ impl Generation {
     /// The number now, and the tasks touched by every transaction after number `since`: `None` if that cannot be said
     /// (it was too long ago, or a transaction touched too many to list).
     pub fn touched_since(&self, since: u64) -> Option<(u64, Vec<Uuid>)> {
-        let log = self.0.log.lock().unwrap_or_else(|p| p.into_inner());
+        let log = self.0.log.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = self.get();
         let mut touched = Vec::new();
         if now != since {
@@ -74,7 +74,7 @@ impl Generation {
     }
 
     fn bump(&self, touched: Option<Vec<Uuid>>) {
-        let mut log = self.0.log.lock().unwrap_or_else(|p| p.into_inner());
+        let mut log = self.0.log.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let number = self.0.number.fetch_add(1, Ordering::AcqRel) + 1;
         log.push_back((number, touched.filter(|t| t.len() <= MAX_TOUCHED)));
         if log.len() > LOG_LEN {

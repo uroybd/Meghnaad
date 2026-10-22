@@ -116,7 +116,7 @@ impl Style {
     }
 
     /// Whether any part is a 256-colour one, which makes the whole style 256-colour.
-    fn wide(&self) -> bool {
+    fn wide(self) -> bool {
         matches!(self.fg, Some(Col::Idx(_))) || matches!(self.bg, Some(Col::Idx(_)))
     }
 
@@ -198,10 +198,10 @@ impl Style {
             }
         } else {
             if let Some(Col::Basic(n)) = self.fg {
-                parts.push((30 + n as u32).to_string());
+                parts.push((30 + u32::from(n)).to_string());
             }
             if let Some(Col::Basic(n)) = self.bg {
-                parts.push((if self.bright { 100 } else { 40 } + n as u32).to_string());
+                parts.push((if self.bright { 100 } else { 40 } + u32::from(n)).to_string());
             }
         }
         format!("\x1b[{}m", parts.join(";"))
@@ -236,7 +236,7 @@ fn effective_with(
 /// is not empty, by name without `color.` (`calendar.today`). Empty when `color` is off.
 pub fn palette_for_page(cfg: &crate::taskrc::Config) -> std::collections::BTreeMap<String, Resolved> {
     if !cfg.color() {
-        return Default::default();
+        return std::collections::BTreeMap::default();
     }
     crate::ordered::map_of(effective(cfg).into_iter().filter_map(|(k, v)| {
         let s = parse_style(&v).ok().filter(|s| !s.is_empty())?;

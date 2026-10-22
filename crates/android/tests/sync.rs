@@ -1,5 +1,13 @@
 //! Two phones and a bucket: the engine syncs through the real S3 client against a bucket that answers like S3 and R2 do
 //! (signed requests, conditional puts, a paged listing), kept in this process.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;

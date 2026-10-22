@@ -259,6 +259,10 @@ fn substitute(text: &str, from: &str, to: &str, global: bool, ctx: &EvalCtx) -> 
 /// `scheduled`. It reads what that date is at this point of the command line, as Taskwarrior does: what an earlier word
 /// of the command set, or else what the task has already. `None` when `v` is not one of these; `Some(None)` when it is
 /// but the task has no such date yet.
+#[allow(
+    clippy::option_option,
+    reason = "outer: not a date of this kind; inner: the task has none yet"
+)]
 fn own_date(v: &str, current: Option<&Facts>, done: &[Change]) -> Option<Option<i64>> {
     const NAMES: [&str; 8] = ["due", "wait", "scheduled", "until", "start", "end", "entry", "modified"];
     let name = NAMES.into_iter().find(|n| {
@@ -411,10 +415,10 @@ pub fn plan(
                             .unwrap_or_else(|| Err(ModError(format!("'{v}' is not a valid date for {n}"))))?,
                     )
                 };
-                out.push(Change::Timestamp {
-                    name: ts_prop(n).unwrap(),
-                    value,
-                });
+                let Some(name) = ts_prop(n) else {
+                    return err(format!("'{n}' is not a date"));
+                };
+                out.push(Change::Timestamp { name, value });
             }
             uda => out.push(Change::Prop {
                 name: uda.to_owned(),
@@ -500,7 +504,7 @@ fn add_defaults(out: &mut Vec<Change>, ctx: &EvalCtx) {
         }
         if let Some(d) = parse_date_expr(v, &ctx.clock) {
             out.push(Change::Timestamp {
-                name: ts_prop(prop).unwrap(),
+                name: prop,
                 value: Some(d.ts),
             });
         }

@@ -43,7 +43,7 @@ impl Warm {
 
     /// The cached list, if nothing has changed since it was built.
     pub fn get(&self) -> Option<Arc<Vec<Facts>>> {
-        let slot = self.slot.lock().unwrap_or_else(|p| p.into_inner());
+        let slot = self.slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match &*slot {
             Some((g, facts)) if *g == self.generation.get() => Some(facts.clone()),
             _ => None,
@@ -53,7 +53,7 @@ impl Warm {
     /// Keep a list built from the data as it was at `generation` (read *before* building it, so that a change in the
     /// middle can only make the list look older than it is, never newer).
     pub fn put(&self, generation: u64, facts: Arc<Vec<Facts>>) {
-        *self.slot.lock().unwrap_or_else(|p| p.into_inner()) = Some((generation, facts));
+        *self.slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((generation, facts));
     }
 }
 
@@ -61,7 +61,10 @@ impl Warm {
     /// The list that was kept, taken out of the slot, with the generation it was built under: the start of bringing
     /// it up to date. (Taken, so that it is the only holder and can be changed in place.)
     pub fn take(&self) -> Option<(u64, Arc<Vec<Facts>>)> {
-        self.slot.lock().unwrap_or_else(|p| p.into_inner()).take()
+        self.slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     /// The generation now, and the tasks changed since `since` (see [`Generation::touched_since`]).

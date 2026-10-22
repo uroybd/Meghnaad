@@ -69,7 +69,7 @@ pub fn g6(x: f64) -> String {
     if !x.is_finite() {
         return "0".into();
     }
-    let sci = format!("{:.5e}", x); // d.ddddde<exp>
+    let sci = format!("{x:.5e}"); // d.ddddde<exp>
     let (mant, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
     let exp: i32 = exp.parse().unwrap_or(0);
     if !(-4..6).contains(&exp) {

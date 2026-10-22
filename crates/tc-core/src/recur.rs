@@ -69,7 +69,7 @@ pub fn limit(cfg: &Config) -> usize {
 }
 
 fn leading_int(s: &str) -> i64 {
-    let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
     digits.parse().unwrap_or(0)
 }
 

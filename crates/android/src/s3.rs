@@ -155,7 +155,7 @@ impl S3Store {
     }
 
     /// The answer if it is a success; otherwise why not, in words that say what to change.
-    fn ok(&self, what: &str, r: Reply) -> Result<Reply> {
+    fn ok(what: &str, r: Reply) -> Result<Reply> {
         if (200..300).contains(&r.status) {
             return Ok(r);
         }
@@ -231,12 +231,12 @@ impl ObjectStore for S3Store {
         if r.status == 404 {
             return Ok(None);
         }
-        Ok(Some(self.ok("reading an object", r)?.body))
+        Ok(Some(Self::ok("reading an object", r)?.body))
     }
 
     async fn put(&self, name: &str, value: &[u8]) -> Result<()> {
         let r = self.send("PUT", name, &[], &[], value)?;
-        self.ok("writing an object", r).map(|_| ())
+        Self::ok("writing an object", r).map(|_| ())
     }
 
     async fn del(&self, name: &str) -> Result<()> {
@@ -244,7 +244,7 @@ impl ObjectStore for S3Store {
         if r.status == 404 {
             return Ok(());
         }
-        self.ok("deleting an object", r).map(|_| ())
+        Self::ok("deleting an object", r).map(|_| ())
     }
 
     async fn list_dated(&self, prefix: &str) -> Result<Vec<(String, i64)>> {
@@ -256,7 +256,7 @@ impl ObjectStore for S3Store {
                 query.push(("continuation-token", t));
             }
             let r = self.send("GET", "", &query, &[], &[])?;
-            let r = self.ok("listing the bucket", r)?;
+            let r = Self::ok("listing the bucket", r)?;
             let (page, next) = parse_listing(&String::from_utf8_lossy(&r.body));
             names.extend(page);
             match next {
@@ -279,7 +279,7 @@ impl ObjectStore for S3Store {
         if r.status == 404 {
             return Ok(None);
         }
-        let r = self.ok("reading an object", r)?;
+        let r = Self::ok("reading an object", r)?;
         let tag = r
             .etag
             .clone()
@@ -298,7 +298,7 @@ impl ObjectStore for S3Store {
         if r.status == 412 || r.status == 409 {
             return Ok(false);
         }
-        self.ok("writing an object", r).map(|_| true)
+        Self::ok("writing an object", r).map(|_| true)
     }
 }
 

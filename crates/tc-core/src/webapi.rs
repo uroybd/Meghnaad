@@ -59,7 +59,7 @@ pub fn encode(cfg: &Config) -> Result<Vec<u8>, String> {
 }
 
 /// `GET /api/config`: the settings, and what the page derives from them.
-pub fn config_response(cfg: &Config, has_previous: bool, config_error: Option<String>) -> Value {
+pub fn config_response(cfg: &Config, has_previous: bool, config_error: Option<&str>) -> Value {
     // What the app shows follows the active context's own settings; `config` below stays as saved,
     // since that is what the settings dialogs edit.
     let live = cfg.effective();
@@ -127,10 +127,15 @@ impl Reply {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value, reason = "every caller builds the value in the call")]
     fn ok(value: Value) -> Reply {
         Reply::json(200, &value)
     }
 
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "callers hand over a message of any type: a string, an error"
+    )]
     pub fn error(status: u16, message: impl ToString) -> Reply {
         Reply::json(status, &json!({ "error": message.to_string() }))
     }
@@ -311,7 +316,7 @@ impl<S: ObjectStore> WebSettings<S> {
             Ok(p) => p,
             Err(e) => return Reply::error(500, e),
         };
-        Reply::ok(config_response(&cfg, previous, self.config_error()))
+        Reply::ok(config_response(&cfg, previous, self.config_error().as_deref()))
     }
 
     async fn put_taskrc(&self, body: &[u8]) -> Reply {

@@ -29,7 +29,7 @@ use crate::model::Facts;
 use crate::modify::Change;
 use async_trait::async_trait;
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 /// One line a hook printed.
@@ -125,7 +125,7 @@ impl<T: Hooks> HookHost for T {
     }
 
     async fn on_exit(&self, h: &mut Hooked, changed: &[Facts]) {
-        Hooks::on_exit(self, h, changed)
+        Hooks::on_exit(self, h, changed);
     }
 }
 
@@ -154,7 +154,7 @@ impl Runner {
     }
 
     fn state(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Keep what a hook printed (also when it refused: it may have said why).
@@ -245,7 +245,7 @@ pub fn task_to_json(f: &Facts) -> serde_json::Value {
         "wait": f.wait,
         "scheduled": f.scheduled,
         "until": f.until,
-        "depends": f.depends.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
+        "depends": f.depends.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "blocked": f.blocked,
         "blocking": f.blocking,
         "recur": f.recur,
@@ -324,14 +324,12 @@ pub fn task_from_json(v: &serde_json::Value, before: &Facts) -> Result<Facts, St
         Some(n) => n.as_u64().map(|n| n as usize),
     };
     f.extra = match o.get("uda") {
-        None | Some(J::Null) => Default::default(),
-        Some(J::Object(m)) => crate::ordered::map_of(m.iter().map(|(k, v)| {
-            (
-                k.clone(),
-                v.as_str().map(str::to_owned).unwrap_or_else(|| v.to_string()),
-            )
-        })),
-        Some(J::Array(a)) if a.is_empty() => Default::default(),
+        None | Some(J::Null) => BTreeMap::default(),
+        Some(J::Object(m)) => crate::ordered::map_of(
+            m.iter()
+                .map(|(k, v)| (k.clone(), v.as_str().map_or_else(|| v.to_string(), str::to_owned))),
+        ),
+        Some(J::Array(a)) if a.is_empty() => BTreeMap::default(),
         Some(_) => return Err("A hook returned user-defined attributes that are not a table.".into()),
     };
     Ok(f)
@@ -517,19 +515,20 @@ mod tests {
     #[test]
     fn what_may_not_change_is_refused() {
         let t = task();
-        for edit in [
-            (|n: &mut Facts| n.uuid = Uuid::from_u128(9)) as fn(&mut Facts),
+        let edits: [fn(&mut Facts); 6] = [
+            |n| n.uuid = Uuid::from_u128(9),
             |n| n.status = "completed".into(),
             |n| {
                 n.annotations.push(crate::model::Note {
                     entry: 1,
                     text: "a".into(),
-                })
+                });
             },
             |n| n.recur = Some("weekly".into()),
             |n| n.mask = Some("-".into()),
             |n| n.description = "  ".into(),
-        ] {
+        ];
+        for edit in edits {
             let mut n = t.clone();
             edit(&mut n);
             assert!(diff(&t, &n).is_err());

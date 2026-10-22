@@ -1,3 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 #![cfg(feature = "lua")]
 //! Hooks written in Lua, run through the real `execute`: each hook point, the task / tag set / date helpers a script
 //! gets, refusing, what a script may and may not change, and the sandbox around it.
@@ -256,7 +264,7 @@ async fn what_a_hook_may_not_change_is_refused_like_for_a_rust_hook() {
     )
     .await;
     assert_eq!(message(&res), "A hook left the description empty.");
-    let (res, _) = run(&mut r, r#"function on_add(task) task.tags = 5 end"#, "add Odd").await;
+    let (res, _) = run(&mut r, r"function on_add(task) task.tags = 5 end", "add Odd").await;
     assert!(
         message(&res).contains("task.tags has to be a list of text"),
         "{}",
@@ -289,14 +297,14 @@ async fn hooks_off_runs_none() {
 #[tokio::test(flavor = "current_thread")]
 async fn the_sandbox_has_no_files_no_process_no_loading_and_stops_a_loop() {
     let runner = LuaRunner::load(
-        r#"
+        r"
         function on_launch(command)
           say(type(io), type(os), type(require), type(dofile), type(load), type(debug), type(package))
         end
         function on_add(task)
           while true do end
         end
-        "#,
+        ",
         clock(),
     )
     .unwrap();

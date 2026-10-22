@@ -5,6 +5,14 @@
 //!
 //! The heap measured is Rust's; the JavaScript side (R2 bodies on their way in) adds a copy of
 //! each body, which the budgets leave room for.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
@@ -21,30 +29,42 @@ struct Counting;
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);
 
+// SAFETY: every call is passed straight to `System` with the arguments it was given, so `System`'s own guarantees
+// hold; the counters on the side are plain atomics.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
-        let p = System.alloc(l);
-        if !p.is_null() {
-            let now = CURRENT.fetch_add(l.size(), Relaxed) + l.size();
-            PEAK.fetch_max(now, Relaxed);
+        // SAFETY: `l` is the caller's layout, which `GlobalAlloc::alloc` requires to be valid for `System.alloc`.
+        unsafe {
+            let p = System.alloc(l);
+            if !p.is_null() {
+                let now = CURRENT.fetch_add(l.size(), Relaxed) + l.size();
+                PEAK.fetch_max(now, Relaxed);
+            }
+            p
         }
-        p
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
-        System.dealloc(p, l);
-        CURRENT.fetch_sub(l.size(), Relaxed);
+        // SAFETY: the caller of `dealloc` promises `p` came from this allocator with layout `l`, and `System` made it.
+        unsafe {
+            System.dealloc(p, l);
+            CURRENT.fetch_sub(l.size(), Relaxed);
+        }
     }
     unsafe fn realloc(&self, p: *mut u8, l: Layout, new: usize) -> *mut u8 {
-        let q = System.realloc(p, l, new);
-        if !q.is_null() {
-            if new >= l.size() {
-                let now = CURRENT.fetch_add(new - l.size(), Relaxed) + (new - l.size());
-                PEAK.fetch_max(now, Relaxed);
-            } else {
-                CURRENT.fetch_sub(l.size() - new, Relaxed);
+        // SAFETY: the caller of `realloc` promises `p` came from this allocator with layout `l` and `new` is valid, and
+        // `System` made the block.
+        unsafe {
+            let q = System.realloc(p, l, new);
+            if !q.is_null() {
+                if new >= l.size() {
+                    let now = CURRENT.fetch_add(new - l.size(), Relaxed) + (new - l.size());
+                    PEAK.fetch_max(now, Relaxed);
+                } else {
+                    CURRENT.fetch_sub(l.size() - new, Relaxed);
+                }
             }
+            q
         }
-        q
     }
 }
 
@@ -132,7 +152,7 @@ async fn run(r: &mut R, line: &str) -> CliResult {
     reason = "the lock only keeps the measuring tests apart; the runtime has one thread"
 )]
 async fn catching_up_from_scratch_over_many_versions_stays_small() {
-    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let (store, c) = bucket().await;
     let mut a: R = Replica::new(LiveStorage::new());
     // 1,200 versions of one change each, the way a busy week of edits from several devices looks.
@@ -143,7 +163,7 @@ async fn catching_up_from_scratch_over_many_versions_stays_small() {
     }
     let mut b: R = Replica::new(LiveStorage::new());
     let mut s = server(&store, &c, SnapshotUrgency::None);
-    let (peak, held, _) = measure(async { b.sync(&mut s, true).await.unwrap() }).await;
+    let (peak, held, ()) = measure(async { b.sync(&mut s, true).await.unwrap() }).await;
     println!("cold start, 1200 versions: peak {peak:.1} MB, held afterwards {held:.1} MB");
     assert!(peak < 40.0, "a cold start took {peak:.1} MB");
 }
@@ -154,7 +174,7 @@ async fn catching_up_from_scratch_over_many_versions_stays_small() {
     reason = "the lock only keeps the measuring tests apart; the runtime has one thread"
 )]
 async fn restoring_a_snapshot_and_answering_requests_stay_small() {
-    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let (store, c) = bucket().await;
     let mut a: R = Replica::new(LiveStorage::new());
     for batch in 0..6 {
@@ -169,7 +189,7 @@ async fn restoring_a_snapshot_and_answering_requests_stay_small() {
 
     let mut b: R = Replica::new(LiveStorage::new());
     let mut s = server(&store, &c, SnapshotUrgency::None);
-    let (peak, held, _) = measure(async { b.sync(&mut s, true).await.unwrap() }).await;
+    let (peak, held, ()) = measure(async { b.sync(&mut s, true).await.unwrap() }).await;
     println!("cold start from a snapshot of 3001 tasks: peak {peak:.1} MB, held {held:.1} MB");
     assert!(peak < 60.0, "restoring a snapshot took {peak:.1} MB");
 
@@ -211,7 +231,7 @@ fn big_file(n: usize) -> String {
     reason = "the lock only keeps the measuring tests apart; the runtime has one thread"
 )]
 async fn importing_the_most_tasks_one_import_takes_stays_small() {
-    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(|p| p.into_inner());
+    let _alone = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let n = tc_core::import::MAX_TASKS;
     let file = big_file(n);
     println!("an import of {n} tasks is a file of {:.1} MB", file.len() as f64 / MB);
@@ -251,7 +271,7 @@ async fn importing_the_most_tasks_one_import_takes_stays_small() {
         (with - CURRENT.load(Relaxed)) as f64 / MB
     );
     let mut s = server(&store, &c, SnapshotUrgency::None);
-    let (peak, _, _) = measure(async { a.sync(&mut s, true).await.unwrap() }).await;
+    let (peak, _, ()) = measure(async { a.sync(&mut s, true).await.unwrap() }).await;
     println!("pushing it: peak {peak:.1} MB");
     assert!(peak < 60.0, "pushing an import took {peak:.1} MB");
 

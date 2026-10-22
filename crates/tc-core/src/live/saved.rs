@@ -28,7 +28,11 @@ impl Saver {
     }
 
     pub fn take(&self) -> Option<Vec<u8>> {
-        self.0.out.lock().unwrap_or_else(|p| p.into_inner()).take()
+        self.0
+            .out
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 }
 
@@ -112,7 +116,12 @@ impl LiveStorage {
     pub(super) fn save_if_asked(&self) {
         if self.saver.0.wanted.swap(false, Ordering::AcqRel) {
             if let Ok(bytes) = self.save() {
-                *self.saver.0.out.lock().unwrap_or_else(|p| p.into_inner()) = Some(bytes);
+                *self
+                    .saver
+                    .0
+                    .out
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(bytes);
             }
         }
     }

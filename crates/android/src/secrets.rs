@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn secrets_are_sealed_on_disk_and_only_names_are_listed() {
         let dir = std::env::temp_dir().join(format!("tc-android-secrets-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::remove_dir_all(&dir).ok();
         let secrets = Secrets::new(&dir, &[7; KEY_LEN]);
         assert!(secrets.names().unwrap().is_empty());
         secrets.set("jira", "tok-123").unwrap();
@@ -112,6 +112,6 @@ mod tests {
         assert!(secrets.set("ok", "").is_err());
         secrets.delete("jira").unwrap();
         assert_eq!(secrets.names().unwrap(), ["slack"]);
-        let _ = std::fs::remove_dir_all(dir);
+        std::fs::remove_dir_all(dir).ok();
     }
 }

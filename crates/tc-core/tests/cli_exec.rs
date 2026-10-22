@@ -1,4 +1,12 @@
 //! Real command lines against a real taskchampion `Replica` (in-memory storage).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use taskchampion::Replica;
 use tc_core::cli::{execute, load_facts, Ask, CliResult, ConfirmItem, Options, UndoStack};
@@ -1584,7 +1592,7 @@ async fn ready_leaves_out_waiting_and_scheduled_ahead() {
         panic!()
     };
     let mut got: Vec<&str> = o.rows.iter().map(|x| x.facts.description.as_str()).collect();
-    got.sort();
+    got.sort_unstable();
     assert_eq!(got, ["plain", "schedpast", "waitpast"]);
 }
 
@@ -2860,9 +2868,12 @@ mod aliases_and_abbreviations {
         let f = load_facts(&mut r).await.unwrap();
         assert_eq!(f[0].annotations[0].text, "rm");
         // After `--` a typed line keeps the word too.
-        let args: Vec<String> = ["1", "annotate", "--", "rm"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["1", "annotate", "--", "rm"]
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         assert_eq!(tc_core::cli::expand_aliases(&args, &cfg), args);
-        let args: Vec<String> = ["rm", "1"].iter().map(|s| s.to_string()).collect();
+        let args: Vec<String> = ["rm", "1"].iter().map(std::string::ToString::to_string).collect();
         assert_eq!(tc_core::cli::expand_aliases(&args, &cfg), ["delete", "1"]);
     }
 

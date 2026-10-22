@@ -44,7 +44,8 @@ or a TUI around `task`? Layer 2.
 Format, lint and test, in that order. CI runs the same checks and fails on any of them.
 
 ```bash
-npm run format                # cargo fmt (rustfmt.toml, 120 columns) and Prettier (.prettierrc.json): fixes in place
+npm run format                # clippy --fix (the fixes it can make itself), cargo fmt (rustfmt.toml, 120 columns) and
+                              # Prettier (.prettierrc.json): fixes in place. `fix:rust` is the clippy half
 npm run lint                  # Rust: rustfmt check + clippy -D warnings (engine, and the Worker and browser engine for wasm32)
                               # JS/TS/Svelte: Prettier check + ESLint (eslint.config.js)
 cargo test                    # engine, end-to-end command tests, sync cost, memory budgets
@@ -58,8 +59,17 @@ cargo check -p tc-browser --target wasm32-unknown-unknown
 `npm run lint:rust` and `npm run lint:js` run each half alone. Everything is formatted and linted, Rust and web alike:
 run `npm run format` after editing any code, not just at the end.
 
-- Clippy is clean; keep it so. Fix a warning rather than allowing it. An `#[allow]` needs a reason (the existing
-  `too_many_arguments` ones are for the async command functions that thread the replica and its context).
+- Clippy is clean; keep it so. Fix a warning rather than allowing it. An `#[allow]` needs a reason, written as
+  `reason = "..."` (the existing `too_many_arguments` ones are for the async command functions that thread the replica
+  and its context).
+- The lints are set once for the workspace (`[workspace.lints]` in `Cargo.toml`, inherited by each crate with
+  `[lints] workspace = true`; `clippy.toml` keeps `#[test]` code out of the panic-family lints) and CI makes every one an
+  error. Beyond clippy's defaults they forbid `unwrap`, `expect`, `panic!`, `todo!`, `dbg!`, printing, and `let _ =` on a
+  `#[must_use]` value in code that ships: return the error, or fall back as the function already does, and where a
+  value truly cannot be missing say so with a pattern (`let Some(x) = .. else`) rather than a panic. An integration test
+  file under `tests/` opens with one `#![allow(.., reason = "test code: a failure is the point")]`. To ignore a result
+  on purpose use `.ok();` with a comment saying why. Add to the list when a new lint earns its place; don't remove one to
+  get a change through.
 - ESLint is clean too. Fix a finding rather than disabling it; a `// eslint-disable-next-line` needs a reason after `--`.
   Two Svelte rules are off in `eslint.config.js`, each with the reason beside it (`prefer-svelte-reactivity`,
   `no-unused-svelte-ignore`); don't add to that list to get a change through.

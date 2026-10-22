@@ -183,10 +183,11 @@ impl<S: ObjectStore> CloudServer<S> {
             return Ok(position);
         };
         self.seen.head = Some(head);
-        if self.seen.index.is_none() {
-            self.seen.index = Some(self.load_index().await?);
-        }
-        let index = self.seen.index.as_ref().expect("index was just loaded");
+        let index = match self.seen.index.take() {
+            Some(index) => index,
+            None => self.load_index().await?,
+        };
+        let index = &*self.seen.index.insert(index);
         // (Inserted one by one: collecting into a map sorts first, which is more code.)
         let mut parent_of: BTreeMap<VersionId, VersionId> = BTreeMap::new();
         for (parent, children) in index {
@@ -195,11 +196,13 @@ impl<S: ObjectStore> CloudServer<S> {
             }
         }
         let mut back = vec![head];
-        while let Some(parent) = parent_of.get(back.last().expect("it starts with the head")) {
+        let mut at = head;
+        while let Some(&parent) = parent_of.get(&at) {
             if back.len() > parent_of.len() {
                 break; // a cycle; not something a real bucket has
             }
-            back.push(*parent);
+            back.push(parent);
+            at = parent;
         }
         for (steps, version) in back.iter().enumerate() {
             position.insert(*version, back.len() - steps);
@@ -388,11 +391,14 @@ impl<S: ObjectStore> CloudServer<S> {
         // listing predates the version we need (a writer got in after it), list again once.
         let mut listed_now = false;
         let version = loop {
-            if self.seen.index.is_none() {
-                self.seen.index = Some(self.load_index().await?);
-                listed_now = true;
-            }
-            let index = self.seen.index.as_ref().expect("index was just loaded");
+            let index = match self.seen.index.take() {
+                Some(index) => index,
+                None => {
+                    listed_now = true;
+                    self.load_index().await?
+                }
+            };
+            let index = &*self.seen.index.insert(index);
             if let Some(v) = next_on_chain(index, parent, head) {
                 break v;
             }
@@ -459,7 +465,7 @@ impl<S: ObjectStore> Server for CloudServer<S> {
         if let (AddVersionResult::Ok(_), Some(now)) = (&res, self.clock) {
             if random_bytes::<1>().is_ok_and(|b| b[0] < self.cleanup_odds) {
                 // Best effort: the push has happened, and a cleanup that fails is only tried again later.
-                let _ = self.cleanup(now()).await;
+                self.cleanup(now()).await.ok();
                 self.seen = Seen::default();
             }
         }
@@ -481,7 +487,7 @@ impl<S: ObjectStore> Server for CloudServer<S> {
         // version was never sent, and it would send it again. So problems are not reported.
         let wrote = self.store.put(&names::snapshot_name(version_id), &sealed).await.is_ok();
         if wrote {
-            let _ = self.drop_superseded_snapshots(version_id).await;
+            self.drop_superseded_snapshots(version_id).await.ok();
         }
         self.seen = Seen::default();
         Ok(())

@@ -1,5 +1,13 @@
 //! What the cloud server deletes after a push, as TaskChampion's own does: versions that lost a race, all but the
 //! newest snapshot, and versions older than 180 days that a snapshot covers.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use taskchampion::server::{AddVersionResult, SnapshotUrgency, VersionId};
 use taskchampion::{Operations, Replica, Server, Status};
@@ -20,7 +28,7 @@ async fn server(store: &MemStore) -> S {
 async fn push(s: &mut S, parent: VersionId) -> VersionId {
     match s.add_version(parent, b"[]".to_vec()).await.unwrap().0 {
         AddVersionResult::Ok(v) => v,
-        other => panic!("{other:?}"),
+        other @ AddVersionResult::ExpectedParentVersion(_) => panic!("{other:?}"),
     }
 }
 

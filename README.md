@@ -374,7 +374,7 @@ npm run build:android         # the Android app (SDK, NDK and cargo-ndk needed):
 npm test                      # cargo test + the web unit tests + the deploy-script tests
 npm run check                 # svelte-check (types, accessibility)
 npm run lint                  # rustfmt + clippy (warnings are errors) + Prettier + ESLint; `lint:rust`, `lint:js` for one half
-npm run format                # cargo fmt and Prettier, fixing in place
+npm run format                # clippy --fix, cargo fmt and Prettier, fixing in place
 npm run test:auth             # Cloudflare Access: forged, expired, wrong-audience tokens... all refused
 ./scripts/interop-local.sh    # real `task` ⇄ the Worker against one local S3 bucket, both directions
 ```

@@ -215,7 +215,7 @@ impl<T: Transport> Server for RemoteServer<T> {
 
     async fn add_snapshot(&mut self, version: Uuid, snapshot: Vec<u8>) -> TcResult<()> {
         // A snapshot only makes the next cold start shorter; not having stored one is not worth failing a sync for.
-        let _ = self.transport.put_snapshot(version, snapshot).await;
+        self.transport.put_snapshot(version, snapshot).await.ok();
         Ok(())
     }
 

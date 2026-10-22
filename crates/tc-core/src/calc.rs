@@ -827,7 +827,7 @@ fn mul(l: &V, r: &V) -> R {
         (V::Bool(a), V::Real(b)) => V::Real(f64::from(u8::from(*a)) * b),
         (V::Bool(a), V::Str(_)) => V::Str(if *a { rs(r) } else { String::new() }),
         (V::Bool(a), V::Dur(b)) => V::Dur(i64::from(*a) * b),
-        (V::Bool(_), V::Date(_)) | (V::Int(_), V::Date(_)) | (V::Real(_), V::Date(_)) | (V::Date(_), _) => {
+        (V::Bool(_) | V::Int(_) | V::Real(_), V::Date(_)) | (V::Date(_), _) => {
             return err("Cannot multiply date values")
         }
         (V::Int(a), V::Bool(_) | V::Int(_)) => V::Int(a * as_int(r)),
@@ -953,7 +953,7 @@ fn modulo(l: &V, r: &V) -> R {
 fn pow(l: &V, r: &V) -> R {
     Ok(match (l, r) {
         (V::Bool(_), _) | (_, V::Bool(_)) => return err("Cannot exponentiate Booleans"),
-        (V::Int(a), V::Int(b)) => V::Int((*a as f64).powf(*b as f64) as i32 as i64),
+        (V::Int(a), V::Int(b)) => V::Int(i64::from((*a as f64).powf(*b as f64) as i32)),
         (V::Int(_) | V::Real(_), V::Real(_)) => return err("Cannot exponentiate to a non-integer power"),
         (V::Real(a), V::Int(b)) => V::Real(a.powf(*b as f64)),
         (V::Str(_), _) | (_, V::Str(_)) => return err("Cannot exponentiate strings"),
@@ -1126,7 +1126,7 @@ impl DomSource<'_> {
         }
     }
 
-    fn date(&self, ts: Option<i64>) -> Dom {
+    fn date(ts: Option<i64>) -> Dom {
         match ts.filter(|t| *t != 0) {
             Some(t) => Dom::Date(t),
             None => Dom::Text(String::new()),
@@ -1156,14 +1156,14 @@ impl DomSource<'_> {
                     ("description", _) => Dom::Text(t.description.clone()),
                     ("project", _) => Dom::Text(t.project.clone().unwrap_or_default()),
                     ("priority", _) => Dom::Text(t.priority.clone().unwrap_or_default()),
-                    ("entry", _) => self.date(t.entry),
-                    ("start", _) => self.date(t.start),
-                    ("end", _) => self.date(t.end),
-                    ("due", _) => self.date(t.due),
-                    ("wait", _) => self.date(t.wait),
-                    ("scheduled", _) => self.date(t.scheduled),
-                    ("until", _) => self.date(t.until),
-                    ("modified", _) => self.date(t.modified),
+                    ("entry", _) => Self::date(t.entry),
+                    ("start", _) => Self::date(t.start),
+                    ("end", _) => Self::date(t.end),
+                    ("due", _) => Self::date(t.due),
+                    ("wait", _) => Self::date(t.wait),
+                    ("scheduled", _) => Self::date(t.scheduled),
+                    ("until", _) => Self::date(t.until),
+                    ("modified", _) => Self::date(t.modified),
                     ("recur", _) => Dom::Dur(t.recur.as_deref().and_then(crate::dates::parse_duration).unwrap_or(0)),
                     ("parent", _) => Dom::Text(t.parent.map(|p| p.to_string()).unwrap_or_default()),
                     ("depends", _) => Dom::Text(t.depends.iter().map(Uuid::to_string).collect::<Vec<_>>().join(",")),
@@ -1175,7 +1175,7 @@ impl DomSource<'_> {
                         };
                         match self.cfg.udas.get(name).map(|u| u.ty) {
                             Some(UdaType::Numeric) => Dom::Real(raw.trim().parse().unwrap_or(0.0)),
-                            Some(UdaType::Date) => self.date(raw.trim().parse().ok()),
+                            Some(UdaType::Date) => Self::date(raw.trim().parse().ok()),
                             Some(UdaType::Duration) => Dom::Dur(crate::dates::parse_duration(raw).unwrap_or(0)),
                             _ => Dom::Text(raw.clone()),
                         }

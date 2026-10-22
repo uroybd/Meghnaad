@@ -1,5 +1,13 @@
 //! Phones and a TaskChampion sync server: the engine syncs through the real client against a server that keeps the protocol
 //! (`/v1/client/…`, `X-Client-Id`, a single chain of versions, snapshots on request), kept in this process.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -271,13 +279,15 @@ fn something_that_is_not_a_sync_server_says_so_when_there_is_something_to_send()
         for stream in listener.incoming().flatten() {
             let mut stream = stream;
             let mut buf = [0; 4096];
-            let _ = stream.read(&mut buf);
+            // The request itself is of no interest to this canned answer.
+            let _request_len = stream.read(&mut buf).unwrap_or(0);
             let page = "<html>Not found</html>";
-            let _ = write!(
+            write!(
                 stream,
                 "HTTP/1.1 404 X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
                 page.len()
-            );
+            )
+            .ok();
         }
     });
     let mut a = engine();

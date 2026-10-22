@@ -9,6 +9,9 @@ description = "Cloudflare Worker exposing a TaskChampion replica (backed by R2) 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait = "0.1"
 base64 = "0.22"

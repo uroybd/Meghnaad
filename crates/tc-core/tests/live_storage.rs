@@ -1,5 +1,13 @@
 //! `LiveStorage` against TaskChampion's own `InMemoryStorage`: the same random writes, commits and abandoned
 //! transactions go to both, and every answer either gives (and the whole state after each transaction) must match.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use taskchampion::chrono::{TimeZone, Utc};
 use taskchampion::storage::inmemory::InMemoryStorage;

@@ -1,5 +1,13 @@
 //! How many object-store calls a sync costs. Each call is a network round trip to R2 from the
 //! Worker, so these numbers are the request latency (and, on the free plan, the subrequest budget).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

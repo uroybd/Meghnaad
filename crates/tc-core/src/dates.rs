@@ -3,7 +3,8 @@
 //! caller's timezone (a fixed UTC offset), since a Worker has no ambient local zone.
 
 use taskchampion::chrono::{
-    DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Weekday,
+    DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
+    Weekday,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,14 +312,14 @@ impl Clock {
     }
 
     pub fn tz(&self) -> FixedOffset {
-        FixedOffset::east_opt(self.tz_offset).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap())
+        FixedOffset::east_opt(self.tz_offset).unwrap_or(Utc.fix())
     }
 
     fn local(&self, ts: i64) -> DateTime<FixedOffset> {
         self.tz()
             .timestamp_opt(ts, 0)
             .single()
-            .unwrap_or_else(|| self.tz().timestamp_opt(0, 0).unwrap())
+            .unwrap_or_else(|| DateTime::UNIX_EPOCH.with_timezone(&self.tz()))
     }
 
     fn timestamp_of(&self, dt: NaiveDateTime) -> Option<i64> {
@@ -326,6 +327,13 @@ impl Clock {
             LocalResult::Single(t) | LocalResult::Ambiguous(t, _) => Some(t.timestamp()),
             LocalResult::None => None,
         }
+    }
+
+    /// Midnight at the start of the local day `y`-`m`-`d`, or `fallback` if there is no such day (or no such midnight).
+    fn midnight_of(&self, y: i32, m: u32, d: u32, fallback: i64) -> i64 {
+        NaiveDate::from_ymd_opt(y, m, d)
+            .and_then(|day| self.timestamp_of(day.and_time(NaiveTime::MIN)))
+            .unwrap_or(fallback)
     }
 
     /// Midnight at the start of the local day containing `ts`.
@@ -341,20 +349,19 @@ impl Clock {
         } else {
             d.weekday().num_days_from_sunday()
         };
-        let start = d - Duration::days(back as i64);
-        self.timestamp_of(start.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        d.checked_sub_signed(Duration::days(i64::from(back)))
+            .and_then(|start| self.timestamp_of(start.and_time(NaiveTime::MIN)))
+            .unwrap_or(ts)
     }
 
     pub fn start_of_month(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
-        let first = NaiveDate::from_ymd_opt(d.year(), d.month(), 1).unwrap();
-        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.midnight_of(d.year(), d.month(), 1, ts)
     }
 
     pub fn start_of_quarter(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
-        let first = NaiveDate::from_ymd_opt(d.year(), (d.month0() / 3) * 3 + 1, 1).unwrap();
-        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.midnight_of(d.year(), (d.month0() / 3) * 3 + 1, 1, ts)
     }
 
     pub fn start_of_next_quarter(&self, ts: i64) -> i64 {
@@ -365,14 +372,12 @@ impl Clock {
         } else {
             (d.year(), (q + 1) * 3 + 1)
         };
-        let first = NaiveDate::from_ymd_opt(y, m, 1).unwrap();
-        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.midnight_of(y, m, 1, ts)
     }
 
     pub fn start_of_year(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
-        let first = NaiveDate::from_ymd_opt(d.year(), 1, 1).unwrap();
-        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.midnight_of(d.year(), 1, 1, ts)
     }
 
     pub fn start_of_next_month(&self, ts: i64) -> i64 {
@@ -382,14 +387,12 @@ impl Clock {
         } else {
             (d.year(), d.month() + 1)
         };
-        let first = NaiveDate::from_ymd_opt(y, m, 1).unwrap();
-        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.midnight_of(y, m, 1, ts)
     }
 
     pub fn start_of_next_year(&self, ts: i64) -> i64 {
         let d = self.local(ts).date_naive();
-        let first = NaiveDate::from_ymd_opt(d.year() + 1, 1, 1).unwrap();
-        self.timestamp_of(first.and_time(NaiveTime::MIN)).unwrap_or(ts)
+        self.midnight_of(d.year() + 1, 1, 1, ts)
     }
 
     pub fn same_day(&self, a: i64, b: i64) -> bool {
@@ -604,7 +607,7 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
 
     if let Some(wd) = weekday_from(&s) {
         let today = clock.local(now).date_naive().weekday();
-        let mut ahead = (wd.num_days_from_monday() as i64 - today.num_days_from_monday() as i64).rem_euclid(7);
+        let mut ahead = (i64::from(wd.num_days_from_monday()) - i64::from(today.num_days_from_monday())).rem_euclid(7);
         if ahead == 0 {
             ahead = 7;
         }

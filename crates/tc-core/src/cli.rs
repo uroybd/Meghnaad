@@ -87,6 +87,10 @@ pub enum Kind {
     Get,
 }
 
+#[allow(
+    clippy::enum_glob_use,
+    reason = "the command table and the matches on it name every kind, so they use the bare names"
+)]
 use Kind::*;
 
 /// Command name, kind, whether the words after it are modifications (vs. more filter).
@@ -526,11 +530,7 @@ fn parse_command_inner(args: &[String], cfg: &Config, allow_default: bool) -> Re
     if !allow_default {
         return Err("no command given".into());
     }
-    let default = cfg
-        .settings
-        .get("default.command")
-        .map(String::as_str)
-        .unwrap_or("next");
+    let default = cfg.settings.get("default.command").map_or("next", String::as_str);
     let mut dflt = split_words(default);
     if dflt.is_empty() {
         dflt.push("next".into());
@@ -970,7 +970,7 @@ fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut dyn FnMut(&Facts)
             continue;
         }
         for b in blocked {
-            let deps = &mut state.get_mut(&b).expect("just listed").1;
+            let Some((_, deps)) = state.get_mut(&b) else { continue };
             deps.retain(|d| *d != t.uuid);
             for r in &blocking {
                 if *r != b && !deps.contains(r) {
@@ -1113,6 +1113,18 @@ fn add_note(task: &mut Task, text: &str, now: i64, ops: &mut Operations) -> Resu
         ops,
     )
     .map_err(|e| e.to_string())
+}
+
+/// What `modify` changes in `f`. A `modify` always has its changes read from the command, so none is a command that
+/// cannot have got here.
+fn modify_plan(
+    mods: Option<&modify::Mods>,
+    f: &Facts,
+    ctx: &EvalCtx,
+    all: &[Facts],
+) -> Result<Vec<modify::Change>, String> {
+    let mods = mods.ok_or("modify has nothing to change")?;
+    modify::plan(mods, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)
 }
 
 pub(crate) fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Operations) -> Result<(), String> {
@@ -2519,9 +2531,9 @@ async fn write_selected<S: Storage>(
             }
         }
         let changes = match kind {
-            Modify => match modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(f), ctx, all) {
+            Modify => match modify_plan(mods.as_ref(), f, ctx, all) {
                 Ok(c) => !c.is_empty(),
-                Err(e) => return error(e.0),
+                Err(e) => return error(e),
             },
             _ => acts(f),
         };
@@ -2852,8 +2864,7 @@ async fn write_selected<S: Storage>(
                     task.set_description(new, &mut ops).map_err(e)?;
                 }
                 Modify => {
-                    let changes =
-                        modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
+                    let changes = modify_plan(mods.as_ref(), f, ctx, all)?;
                     apply_changes(&mut task, &changes, &mut ops)?;
                 }
                 _ => unreachable!(),
@@ -2876,8 +2887,7 @@ async fn write_selected<S: Storage>(
                     };
                     match kind {
                         Modify => {
-                            let changes = modify::plan(mods.as_ref().unwrap(), Mode::Modify, Some(c), ctx, all)
-                                .map_err(|e| e.0)?;
+                            let changes = modify_plan(mods.as_ref(), c, ctx, all)?;
                             apply_changes(&mut other, &changes, &mut ops)?;
                         }
                         Annotate => add_note(&mut other, &text, ctx.clock.now, &mut ops)?,

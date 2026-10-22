@@ -304,7 +304,7 @@ pub fn aggregate(tasks: &str, query: &Query, ctx: &Ctx) -> Result<Answer, String
         return Err(p.into());
     }
     match query.by.as_ref().map(|b| (&b.field, &b.time)) {
-        None | Some((None, None)) | Some((Some(_), Some(_))) => {}
+        None | Some((None, None) | (Some(_), Some(_))) => {}
         Some((Some(field), None)) => {
             for (t, v) in tasks.iter().zip(&values) {
                 let keys: Vec<String> = match t.get(field) {
@@ -801,7 +801,7 @@ mod tests {
     #[test]
     fn one_way_to_group_is_asked_for() {
         for by in [
-            r#"{}"#,
+            r"{}",
             r#"{"field":""}"#,
             r#"{"field":"project","time":{"field":"due","step":"day"}}"#,
         ] {

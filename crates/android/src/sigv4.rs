@@ -15,6 +15,10 @@ pub fn sha256_hex(data: &[u8]) -> String {
 }
 
 fn hmac(key: &[u8], data: &str) -> Vec<u8> {
+    #[allow(
+        clippy::expect_used,
+        reason = "HMAC takes a key of any length: `new_from_slice` cannot fail for it"
+    )]
     let mut mac = HmacSha256::new_from_slice(key).expect("HMAC takes a key of any length");
     mac.update(data.as_bytes());
     mac.finalize().into_bytes().to_vec()

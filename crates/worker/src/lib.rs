@@ -244,7 +244,7 @@ async fn get_config(ctx: RouteContext<()>) -> RouteResult {
     json(&tc_core::webapi::config_response(
         &cfg,
         has_previous,
-        session::config_error(),
+        session::config_error().as_deref(),
     ))
 }
 
@@ -295,7 +295,8 @@ async fn fetch_text(link: &str) -> Result<String, ApiError> {
         .map_err(|_| bad("fetching is not available"))?
         .unchecked_into();
     let options = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&options, &"redirect".into(), &"manual".into());
+    js_sys::Reflect::set(&options, &"redirect".into(), &"manual".into())
+        .map_err(|_| bad("fetching is not available"))?;
     let mut url = tc_core::rc_url::source_url(link).map_err(ApiError::BadRequest)?;
     for _ in 0..=MAX_REDIRECTS {
         let promise = fetch

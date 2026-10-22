@@ -55,18 +55,17 @@ impl Period {
     /// The start of the period before the one starting at `ts`.
     fn before(self, clock: &Clock, ts: i64) -> i64 {
         let (y, m, d, ..) = clock.ymd_hms(ts);
-        let date = NaiveDate::from_ymd_opt(y, m, d).expect("a real day");
-        let back = match self {
-            Period::Daily => date - Duration::days(1),
-            Period::Weekly => date - Duration::days(7),
+        // A date at the edge of what can be written has no period before it: the period stays where it is.
+        let back = NaiveDate::from_ymd_opt(y, m, d).and_then(|date| match self {
+            Period::Daily => date.checked_sub_signed(Duration::days(1)),
+            Period::Weekly => date.checked_sub_signed(Duration::days(7)),
             Period::Monthly => {
                 let (py, pm) = if m == 1 { (y - 1, 12) } else { (y, m - 1) };
-                NaiveDate::from_ymd_opt(py, pm, 1).expect("a real month")
+                NaiveDate::from_ymd_opt(py, pm, 1)
             }
-            Period::Annual => NaiveDate::from_ymd_opt(y - 1, 1, 1).expect("a real year"),
-        };
-        clock
-            .from_ymd_hms(back.year(), back.month(), back.day(), 0, 0, 0)
+            Period::Annual => NaiveDate::from_ymd_opt(y - 1, 1, 1),
+        });
+        back.and_then(|back| clock.from_ymd_hms(back.year(), back.month(), back.day(), 0, 0, 0))
             .unwrap_or(ts)
     }
 
@@ -76,11 +75,10 @@ impl Period {
         match self {
             Period::Daily => (MONTH_ABBR[m as usize - 1].to_owned(), format!("{d:02}")),
             Period::Weekly => {
-                let date = NaiveDate::from_ymd_opt(y, m, d).expect("a real day");
-                (
-                    y.to_string(),
-                    format!("{:02}", week_number(date, clock.week_starts_monday)),
-                )
+                // (`y`, `m` and `d` come from a real date, so there is always a week to number.)
+                let week =
+                    NaiveDate::from_ymd_opt(y, m, d).map_or(0, |date| week_number(date, clock.week_starts_monday));
+                (y.to_string(), format!("{week:02}"))
             }
             Period::Monthly => (y.to_string(), format!("{m:02}")),
             Period::Annual => (String::new(), format!("{:02}", y.rem_euclid(100))),
@@ -156,7 +154,7 @@ pub fn axis_top(n: i64) -> i64 {
         half *= 10;
         full *= 10;
     }
-    u32::MAX as i64
+    i64::from(u32::MAX)
 }
 
 /// `tasks` are the tasks the filter picked, in any status. `cumulative` is `burndown.cumulative`.
@@ -291,7 +289,7 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
         let since_peak = clock.now - peak_day;
         if peak_count > current && since_peak > 3 * 86_400 {
             let per_second = (peak_count - current) as f64 / since_peak as f64;
-            net_fix_rate = Some((per_second * 86_400.0) as f32 as f64);
+            net_fix_rate = Some(f64::from((per_second * 86_400.0) as f32));
             let in_secs = (current as f64 / per_second) as i64;
             completion = Some(Completion {
                 epoch: clock.now + in_secs,

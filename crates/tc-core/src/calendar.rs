@@ -119,8 +119,10 @@ fn mode<'a>(cfg: &'a Config, key: &str, default: &'a str) -> &'a str {
 
 pub fn days_in_month(y: i32, m: u32) -> u32 {
     let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
-    let first = NaiveDate::from_ymd_opt(y, m, 1).expect("a valid month");
-    NaiveDate::from_ymd_opt(ny, nm, 1).map_or(31, |n| (n - first).num_days() as u32)
+    match (NaiveDate::from_ymd_opt(y, m, 1), NaiveDate::from_ymd_opt(ny, nm, 1)) {
+        (Some(first), Some(next)) => u32::try_from((next - first).num_days()).unwrap_or(31),
+        _ => 31,
+    }
 }
 
 /// The week number Taskwarrior prints: ISO weeks when weeks start on Monday, and `strftime("%U")`
@@ -135,7 +137,7 @@ pub fn week_number(date: NaiveDate, monday: bool) -> u32 {
 }
 
 /// Easter Sunday of `year`, by the same arithmetic as Taskwarrior.
-pub fn easter(year: i32) -> NaiveDate {
+pub fn easter(year: i32) -> Option<NaiveDate> {
     let a = year % 19;
     let b = year / 100;
     let c = year % 100;
@@ -150,7 +152,7 @@ pub fn easter(year: i32) -> NaiveDate {
     let m = (a + 11 * h + 22 * l) / 451;
     let month = (h + l - 7 * m + 114) / 31;
     let day = (h + l - 7 * m + 114) % 31 + 1;
-    NaiveDate::from_ymd_opt(year, month as u32, day as u32).expect("Easter is a real date")
+    NaiveDate::from_ymd_opt(year, u32::try_from(month).ok()?, u32::try_from(day).ok()?)
 }
 
 /// A date written in a `dateformat.holiday` pattern. Only the numeric parts (`Y y M m D d`) and
@@ -211,12 +213,12 @@ pub fn holiday_date(value: &str, format: &str, clock: &Clock) -> Option<i64> {
     let midnight = |d: NaiveDate| clock.from_ymd_hms(d.year(), d.month(), d.day(), 0, 0, 0);
     if let Some(offset) = offset {
         let (year, ..) = clock.ymd_hms(clock.now);
-        let mut date = easter(year);
+        let mut date = easter(year)?;
         // Already past this year: the one next year.
         if midnight(date)? < clock.now {
-            date = easter(year + 1);
+            date = easter(year + 1)?;
         }
-        return midnight(date + Duration::days(offset));
+        return midnight(date.checked_add_signed(Duration::days(offset))?);
     }
     let (y, m, d) = parse_with_format(value, if format.is_empty() { "YMD" } else { format })?;
     midnight(NaiveDate::from_ymd_opt(y, m, d)?)
@@ -332,7 +334,7 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
         .filter(|m| *m > 0)
         .unwrap_or(DEFAULT_MONTHS);
     let (ty, tm, td, ..) = clock.ymd_hms(clock.now);
-    let today = NaiveDate::from_ymd_opt(ty, tm, td).expect("today exists");
+    let today = NaiveDate::from_ymd_opt(ty, tm, td).ok_or("Today is outside the dates that can be shown.")?;
 
     let mut months_to_show = months_per_line;
     let (mut m_from, mut y_from) = (tm as i32, ty);
@@ -431,7 +433,7 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
             days: vec![None; 7],
         };
         for d in 1..=days_in_month(y, m) {
-            let date = NaiveDate::from_ymd_opt(y, m, d).expect("a real day");
+            let date = NaiveDate::from_ymd_opt(y, m, d).ok_or_else(|| format!("{y}-{m:02}-{d:02} is not a date."))?;
             let dow = date.weekday().num_days_from_sunday();
             let col = if monday { (dow + 6) % 7 } else { dow } as usize;
             let midnight = clock.from_ymd_hms(y, m, d, 0, 0, 0).unwrap_or(0);
@@ -478,8 +480,13 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
     } else {
         (first.0, first.1 - 1)
     };
-    let after = NaiveDate::from_ymd_opt(py, pm, days_in_month(py, pm)).expect("a real day");
-    let before = NaiveDate::from_ymd_opt(y, m, 1).expect("a real day"); // (y, m) is already the month after the last shown
+    // (`y`, `m`) is already the month after the last shown.
+    let (Some(after), Some(before)) = (
+        NaiveDate::from_ymd_opt(py, pm, days_in_month(py, pm)),
+        NaiveDate::from_ymd_opt(y, m, 1),
+    ) else {
+        return Err("Those months are outside the dates that can be shown.".to_owned());
+    };
     let iso = |d: NaiveDate| format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day());
     let stamp = |d: NaiveDate| clock.from_ymd_hms(d.year(), d.month(), d.day(), 0, 0, 0).unwrap_or(0);
 
@@ -515,7 +522,7 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
                         });
                     }
                 }
-                _ => {}
+                Holiday::On(..) => {}
             }
         }
         rows.sort_by_key(|r| r.date);
@@ -843,10 +850,10 @@ mod tests {
 
     #[test]
     fn easter_and_the_days_around_it_are_the_next_ones() {
-        assert_eq!(easter(2026), NaiveDate::from_ymd_opt(2026, 4, 5).unwrap());
-        assert_eq!(easter(2027), NaiveDate::from_ymd_opt(2027, 3, 28).unwrap());
-        assert_eq!(easter(2024), NaiveDate::from_ymd_opt(2024, 3, 31).unwrap());
-        assert_eq!(easter(2038), NaiveDate::from_ymd_opt(2038, 4, 25).unwrap());
+        assert_eq!(easter(2026), NaiveDate::from_ymd_opt(2026, 4, 5));
+        assert_eq!(easter(2027), NaiveDate::from_ymd_opt(2027, 3, 28));
+        assert_eq!(easter(2024), NaiveDate::from_ymd_opt(2024, 3, 31));
+        assert_eq!(easter(2038), NaiveDate::from_ymd_opt(2038, 4, 25));
         let c = utc(); // October 2026: this year's Easter has passed, so it is next year's.
         assert_eq!(holiday_date("easter", "YMD", &c), Some(midnight(2027, 3, 28)));
         assert_eq!(holiday_date("goodfriday", "YMD", &c), Some(midnight(2027, 3, 26)));

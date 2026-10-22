@@ -220,7 +220,7 @@ pub fn reorder(cells: &[Cell], id: &str, delta: i32) -> Vec<Cell> {
     let Some(at) = order.iter().position(|&i| cells[i].id == id) else {
         return cells.to_vec();
     };
-    let to = at as i64 + delta as i64;
+    let to = at as i64 + i64::from(delta);
     if to < 0 || to >= order.len() as i64 {
         return cells.to_vec();
     }

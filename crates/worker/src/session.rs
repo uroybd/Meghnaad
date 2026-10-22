@@ -56,6 +56,10 @@ fn now_secs() -> i64 {
     (js_sys::Date::now() / 1000.0) as i64
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function, which hands the error over"
+)]
 fn rust_err(e: impl ToString) -> worker::Error {
     worker::Error::RustError(e.to_string())
 }

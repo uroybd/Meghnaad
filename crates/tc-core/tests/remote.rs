@@ -2,6 +2,14 @@
 //! `pull` and `push` on the other, the bytes in between encoded and decoded as they are over HTTP) must end up exactly
 //! where one that reaches the bucket directly does: the same tasks, pulling runs of versions longer than one batch,
 //! pushing, losing a race to another replica, and starting from a snapshot.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use async_trait::async_trait;
 use std::cell::RefCell;

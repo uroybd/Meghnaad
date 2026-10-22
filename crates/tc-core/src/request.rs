@@ -33,6 +33,10 @@ struct Request {
 }
 
 /// An answer that says the request was not one, or could not be carried out.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "callers hand over a message of any type: a string, an error"
+)]
 pub fn failure(message: impl ToString) -> String {
     serde_json::json!({ "error": message.to_string() }).to_string()
 }

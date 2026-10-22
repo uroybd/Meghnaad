@@ -1,3 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 #![cfg(feature = "lua")]
 //! What a script may do with the network and secrets, against a fake host: the allowlist it declares itself, https, the
 //! request limits, a secret's value kept out of everything the script prints or returns, and a script that waits on a
@@ -63,6 +71,11 @@ impl Net for FakeNet {
     }
 }
 
+#[allow(
+    clippy::unnecessary_wraps,
+    clippy::needless_pass_by_value,
+    reason = "the answer a `FakeNet` handler gives is a `Result`, and the body is built in each call"
+)]
 fn ok_json(body: Value) -> Result<HttpResponse, String> {
     Ok(HttpResponse {
         status: 201,
@@ -72,7 +85,7 @@ fn ok_json(body: Value) -> Result<HttpResponse, String> {
 }
 
 fn runner(script: &str, net: Option<Rc<FakeNet>>) -> LuaRunner {
-    let net: Option<Rc<dyn Net>> = net.map(|n| n as Rc<dyn Net>);
+    let net: Option<Rc<dyn Net>> = net.map(|n| -> Rc<dyn Net> { n });
     LuaRunner::load_with(script, Clock::utc(1_791_799_200), net).unwrap_or_else(|p| panic!("{p:?}"))
 }
 

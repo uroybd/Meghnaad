@@ -52,8 +52,8 @@ pub struct Report {
     pub skipped: Vec<String>,
 }
 
-fn hash(bytes: &Option<Vec<u8>>) -> Option<String> {
-    bytes.as_deref().map(sha256_hex)
+fn hash(bytes: Option<&[u8]>) -> Option<String> {
+    bytes.map(sha256_hex)
 }
 
 /// Whether what the bucket holds is something this app would have accepted from a person: it loads, and a settings file
@@ -103,7 +103,7 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
             Some((b, t)) => (Some(b), Some(t)),
             None => (None, None),
         };
-        let (mh, th) = (hash(&mine), hash(&their_bytes));
+        let (mh, th) = (hash(mine.as_deref()), hash(their_bytes.as_deref()));
         let base = state.0.get(key).cloned();
         if mh == th {
             if let Some(h) = mh {
@@ -121,7 +121,10 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
             _ => modified(remote, key).await >= modified(local, key).await,
         };
         if pull {
-            let bytes = their_bytes.expect("pulling needs the bucket's copy");
+            let Some(bytes) = their_bytes else {
+                report.skipped.push(format!("{key}: the bucket's copy is gone"));
+                continue;
+            };
             if let Err(why) = acceptable(key, &bytes) {
                 report.skipped.push(format!("{key}: not taken from the bucket ({why})"));
                 continue;
@@ -133,7 +136,10 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
             state.0.insert(key.to_owned(), sha256_hex(&bytes));
             report.pulled.push(key.to_owned());
         } else {
-            let bytes = mine.expect("pushing needs this phone's copy");
+            let Some(bytes) = mine else {
+                report.skipped.push(format!("{key}: this phone's copy is gone"));
+                continue;
+            };
             if let Err(why) = acceptable(key, &bytes) {
                 report.skipped.push(format!("{key}: not sent to the bucket ({why})"));
                 continue;

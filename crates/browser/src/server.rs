@@ -9,6 +9,10 @@ use uuid::Uuid;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function, which hands the error over"
+)]
 fn js(e: JsValue) -> Error {
     Error::Server(e.as_string().unwrap_or_else(|| format!("{e:?}")))
 }

@@ -1,6 +1,14 @@
 //! A replica saved and loaded again (what the browser keeps between visits) must be the replica that was saved: the
 //! same tasks, the same working-set numbers, the same changes still waiting to be pushed, and it must carry on the
 //! same way, including syncing with the server.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use taskchampion::server::SnapshotUrgency;
 use taskchampion::Replica;

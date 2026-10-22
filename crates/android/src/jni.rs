@@ -2,7 +2,7 @@
 //! in JSON, so a failure is an `error` in the answer and never an exception thrown across the boundary.
 
 use crate::engine::Engine;
-use jni::objects::{JByteArray, JClass, JString};
+use jni::objects::{JByteArray, JClass, JPrimitiveArray, JString};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
 use serde_json::{json, Value};
@@ -15,9 +15,13 @@ fn text(env: &mut JNIEnv, s: &JString) -> String {
     env.get_string(s).map(Into::into).unwrap_or_default()
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "callers hand over a message of any type: a string, an error"
+)]
 fn answer(env: &JNIEnv, value: impl ToString) -> jstring {
     env.new_string(value.to_string())
-        .map_or(std::ptr::null_mut(), |s| s.into_raw())
+        .map_or(std::ptr::null_mut(), JString::into_raw)
 }
 
 /// The engine behind a handle, locked for the length of one call.
@@ -27,10 +31,14 @@ fn with_engine<T>(handle: jlong, f: impl FnOnce(&mut Engine) -> T) -> Result<T, 
     }
     // SAFETY: the handle came from `nativeNew` and has not been freed; Kotlin frees it once, after its last call.
     let engine: &Handle = unsafe { &*(handle as *const Handle) };
-    let mut guard = engine.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = engine.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     catch_unwind(AssertUnwindSafe(|| f(&mut guard))).map_err(|_| "the engine failed unexpectedly".to_owned())
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "callers hand over a message of any type: a string, an error"
+)]
 fn error(message: impl ToString) -> String {
     json!({ "error": message.to_string() }).to_string()
 }
@@ -114,7 +122,7 @@ pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeSave(
     match with_engine(handle, Engine::save) {
         Ok(Ok(bytes)) => env
             .byte_array_from_slice(&bytes)
-            .map_or(std::ptr::null_mut(), |a| a.into_raw()),
+            .map_or(std::ptr::null_mut(), JPrimitiveArray::into_raw),
         _ => std::ptr::null_mut(),
     }
 }
@@ -183,9 +191,9 @@ pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeHelper(
 /// A duration the way Taskwarrior writes it: `3d`, `2w`, `1.5y`.
 #[no_mangle]
 pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeVague(
-    _env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     secs: jlong,
 ) -> jstring {
-    answer(&_env, crate::helpers::vague(secs))
+    answer(&env, crate::helpers::vague(secs))
 }

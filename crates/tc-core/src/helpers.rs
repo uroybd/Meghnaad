@@ -441,7 +441,7 @@ mod tests {
     fn a_word_is_quoted_only_when_it_has_to_be() {
         assert_eq!(shell_quote("project:Home"), "project:Home");
         assert_eq!(shell_quote("two words"), "'two words'");
-        assert_eq!(shell_quote("it's"), r#"'it'\''s'"#);
+        assert_eq!(shell_quote("it's"), r"'it'\''s'");
         assert_eq!(shell_quote(""), "''");
         assert_eq!(shell_quote("+tag"), "+tag");
         assert_eq!(call("split_words", r#"["a 'b c' d"]"#), r#"["a","b c","d"]"#);

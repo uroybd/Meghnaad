@@ -130,7 +130,7 @@ pub fn toggle(text: &str, line: usize) -> Option<String> {
             'x' | 'X' => " ",
             _ => return None,
         };
-        out.push_str(&l[..at + 1]);
+        out.push_str(&l[..=at]);
         out.push_str(flipped);
         out.push_str(&l[at + 1 + inside.len_utf8()..]);
     }
@@ -328,7 +328,10 @@ fn blocks(lines: &[Line], depth: usize, budget: &Cell<usize>) -> Vec<Node> {
 
 /// The list that starts at `lines[at]`, pushed on `out`; the line after it.
 fn list(lines: &[Line], at: usize, depth: usize, budget: &Cell<usize>, out: &mut Vec<Node>) -> usize {
-    let first = marker(&lines[at].text).expect("a list starts at a marker");
+    // (The caller found a marker on this line, so there is one.)
+    let Some(first) = marker(&lines[at].text) else {
+        return at + 1;
+    };
     let (base, number, bullet) = (first.indent, first.number, first.bullet);
     let mut items = Vec::new();
     let mut i = at;

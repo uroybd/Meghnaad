@@ -128,7 +128,7 @@ impl Config {
         let mut c = self.clone();
         for (k, v) in &ctx.rc {
             // Checked when the taskrc was imported; a value that can't be applied is skipped.
-            let _ = apply_override(&mut c, k, v);
+            apply_override(&mut c, k, v).ok();
         }
         std::borrow::Cow::Owned(c)
     }
@@ -1064,7 +1064,7 @@ pub fn parse(text: &str) -> Parsed {
                 labels,
                 sort: attrs.get("sort").cloned(),
                 filter: attrs.get("filter").cloned(),
-                context: attrs.get("context").map(|v| truthy(v)).unwrap_or(true),
+                context: attrs.get("context").is_none_or(|v| truthy(v)),
                 dateformat: attrs.get("dateformat").cloned(),
             },
         );
@@ -1081,7 +1081,7 @@ pub fn parse(text: &str) -> Parsed {
 mod tests {
     use super::*;
 
-    const SAMPLE: &str = r#"
+    const SAMPLE: &str = r"
 # comment
 data.location=~/.task
 include dark-256.theme
@@ -1106,7 +1106,7 @@ urgency.user.tag.next.coefficient=15.0
 urgency.age.max=oops
 default.command=mine
 verbose=nothing
-"#;
+";
 
     #[test]
     fn parses_udas() {
@@ -1440,7 +1440,7 @@ verbose=nothing
 mod persistence_tests {
     use super::*;
 
-    const FULL: &str = r#"
+    const FULL: &str = r"
 uda.estimate.type=string
 uda.estimate.label=Size Estimate
 uda.estimate.values=huge,large,small,
@@ -1467,7 +1467,7 @@ journal.time.start.annotation=Clock in
 default.command=mine
 due=14
 dateformat.report=Y-M-D H:N
-"#;
+";
 
     #[test]
     fn render_then_parse_gives_back_the_same_config() {

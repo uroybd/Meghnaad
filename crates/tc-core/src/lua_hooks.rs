@@ -143,6 +143,10 @@ fn problem_of(text: &str) -> Problem {
     }
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function, which hands the error over"
+)]
 fn lua_err(e: omnilua::Error) -> Problem {
     problem_of(&e.to_string())
 }

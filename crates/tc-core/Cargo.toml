@@ -14,6 +14,9 @@ save = []
 # Hooks written in Lua (`lua_hooks`), run in a sandbox. The browser engine has them; the Worker does not (yet).
 lua = ["dep:omnilua"]
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait = "0.1"
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }

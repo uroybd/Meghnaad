@@ -119,7 +119,7 @@ impl SyncServer {
     }
 
     /// The answer if it is a success; otherwise why not, in words that say what to change.
-    fn ok(&self, what: &str, r: Reply) -> Result<Reply, Error> {
+    fn ok(what: &str, r: Reply) -> Result<Reply, Error> {
         if (200..300).contains(&r.status) {
             return Ok(r);
         }
@@ -145,15 +145,12 @@ fn refusal(what: &str, status: u16, body: &str) -> String {
         .replace(" .", ".")
 }
 
-fn uuid_header(what: &str, value: &Option<String>, name: &str) -> Result<Uuid, Error> {
-    value
-        .as_deref()
-        .and_then(|v| Uuid::parse_str(v.trim()).ok())
-        .ok_or_else(|| {
-            Error::Store(format!(
-                "{what}: the answer has no valid {name} header: this does not look like a TaskChampion sync server"
-            ))
-        })
+fn uuid_header(what: &str, value: Option<&str>, name: &str) -> Result<Uuid, Error> {
+    value.and_then(|v| Uuid::parse_str(v.trim()).ok()).ok_or_else(|| {
+        Error::Store(format!(
+            "{what}: the answer has no valid {name} header: this does not look like a TaskChampion sync server"
+        ))
+    })
 }
 
 /// Whether an answer is a web page, which is what a server that does not know the paths gives.
@@ -188,11 +185,11 @@ impl Server for SyncServer {
             sealed,
         )?;
         if r.status == 409 {
-            let parent = uuid_header(what, &r.parent, "X-Parent-Version-Id")?;
+            let parent = uuid_header(what, r.parent.as_deref(), "X-Parent-Version-Id")?;
             return Ok((AddVersionResult::ExpectedParentVersion(parent), SnapshotUrgency::None));
         }
-        let r = self.ok(what, r)?;
-        let version = uuid_header(what, &r.version, "X-Version-Id")?;
+        let r = Self::ok(what, r)?;
+        let version = uuid_header(what, r.version.as_deref(), "X-Version-Id")?;
         let urgency = match r.snapshot_request.as_deref() {
             Some("urgency=low") => SnapshotUrgency::Low,
             Some("urgency=high") => SnapshotUrgency::High,
@@ -214,10 +211,10 @@ impl Server for SyncServer {
             // 404 page is another matter.
             return Ok(GetVersionResult::NoSuchVersion);
         }
-        let r = self.ok(what, r)?;
+        let r = Self::ok(what, r)?;
         expect_type(what, &r, HISTORY_SEGMENT)?;
-        let version_id = uuid_header(what, &r.version, "X-Version-Id")?;
-        let parent = uuid_header(what, &r.parent, "X-Parent-Version-Id")?;
+        let version_id = uuid_header(what, r.version.as_deref(), "X-Version-Id")?;
+        let parent = uuid_header(what, r.parent.as_deref(), "X-Parent-Version-Id")?;
         Ok(GetVersionResult::Version {
             version_id,
             parent_version_id: parent,
@@ -233,7 +230,7 @@ impl Server for SyncServer {
             Some(SNAPSHOT),
             sealed,
         )?;
-        self.ok("sending a snapshot to the sync server", r)?;
+        Self::ok("sending a snapshot to the sync server", r)?;
         Ok(())
     }
 
@@ -243,9 +240,9 @@ impl Server for SyncServer {
         if r.status == 404 && !is_page(&r) {
             return Ok(None);
         }
-        let r = self.ok(what, r)?;
+        let r = Self::ok(what, r)?;
         expect_type(what, &r, SNAPSHOT)?;
-        let version = uuid_header(what, &r.version, "X-Version-Id")?;
+        let version = uuid_header(what, r.version.as_deref(), "X-Version-Id")?;
         Ok(Some((version, self.cryptor.unseal(version, &r.body)?)))
     }
 }

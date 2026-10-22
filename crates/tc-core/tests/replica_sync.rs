@@ -1,5 +1,13 @@
 //! Two independent TaskChampion replicas syncing through our `CloudServer` over one shared
 //! in-memory bucket.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use taskchampion::{Operations, Replica, Server, Status};
 use tc_core::LiveStorage;

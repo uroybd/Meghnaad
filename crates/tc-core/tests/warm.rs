@@ -2,6 +2,14 @@
 //! would. Four ways of looking: a long random run of commands and writes with the answer compared to a rebuild after
 //! every step; a replica that pulls what another one pushed; the change counter itself (reads, writes, abandoned
 //! transactions, a sync with nothing to do); and the same questions asked with and without the cache.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a failure is the point"
+)]
 
 use taskchampion::chrono::{TimeZone, Utc};
 use taskchampion::server::SnapshotUrgency;

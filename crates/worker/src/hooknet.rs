@@ -17,6 +17,10 @@ pub struct WorkerNet {
 }
 
 /// What went wrong, as the words of the JavaScript error and not its debug form.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function, which hands the error over"
+)]
 fn js(e: JsValue) -> String {
     if let Some(text) = e.as_string() {
         return text;

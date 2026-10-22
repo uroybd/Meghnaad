@@ -26,6 +26,10 @@ use crate::hooks::RemoteHooks;
 use tc_core::{save_replica, LiveStorage, Saver};
 use wasm_bindgen::prelude::*;
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function, which hands the error over"
+)]
 fn js_error(e: impl ToString) -> JsValue {
     JsValue::from_str(&e.to_string())
 }

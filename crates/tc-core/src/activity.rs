@@ -284,7 +284,7 @@ pub fn history_graph_coloured(
     )]];
     for (cells, (c, bars)) in g.dates.iter().zip(&g.rows) {
         // A count right-aligned in its bar, or nothing when there are none.
-        let seg = |n: i64, w: usize| if n > 0 { format!("{:>w$}", n) } else { String::new() };
+        let seg = |n: i64, w: usize| if n > 0 { format!("{n:>w$}") } else { String::new() };
         let a = seg(c.added, bars[0]);
         let mut line = vec![
             Span::plain(g.label(cells)),

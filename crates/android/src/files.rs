@@ -9,6 +9,10 @@ pub struct FileStore {
     dir: PathBuf,
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function, which hands the error over"
+)]
 fn err(e: std::io::Error) -> Error {
     Error::Store(e.to_string())
 }
@@ -109,7 +113,7 @@ mod tests {
 
     fn dir() -> PathBuf {
         let d = std::env::temp_dir().join(format!("tc-android-files-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
+        fs::remove_dir_all(&d).ok();
         d
     }
 
@@ -134,6 +138,6 @@ mod tests {
             assert!(store.put("/etc/passwd", b"x").await.is_err());
             assert!(store.get("web//a").await.is_err());
         });
-        let _ = fs::remove_dir_all(root);
+        fs::remove_dir_all(root).ok();
     }
 }

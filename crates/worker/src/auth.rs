@@ -78,8 +78,12 @@ thread_local! {
     static KEYS: RefCell<KeyCache> = RefCell::new(KeyCache::default());
 }
 
-fn js_err(e: JsValue) -> AuthError {
-    let _ = e;
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "used as a `map_err` function, which hands the error over"
+)]
+fn js_err(_: JsValue) -> AuthError {
+    // What the runtime said is left out of the answer: it could say more than a caller should hear.
     AuthError::Rejected("crypto operation failed")
 }
 
@@ -88,13 +92,13 @@ fn subtle() -> Result<SubtleCrypto, AuthError> {
     Ok(crypto.unchecked_into::<web_sys::Crypto>().subtle())
 }
 
-fn algo(with_hash: bool) -> Object {
+fn algo(with_hash: bool) -> Result<Object, AuthError> {
     let a = Object::new();
-    let _ = Reflect::set(&a, &"name".into(), &"RSASSA-PKCS1-v1_5".into());
+    Reflect::set(&a, &"name".into(), &"RSASSA-PKCS1-v1_5".into()).map_err(js_err)?;
     if with_hash {
-        let _ = Reflect::set(&a, &"hash".into(), &"SHA-256".into());
+        Reflect::set(&a, &"hash".into(), &"SHA-256".into()).map_err(js_err)?;
     }
-    a
+    Ok(a)
 }
 
 async fn refresh_keys(team_domain: &str) -> Result<(), AuthError> {
@@ -121,7 +125,7 @@ async fn refresh_keys(team_domain: &str) -> Result<(), AuthError> {
         let jwk_obj = js_sys::JSON::parse(&jwk.to_string()).map_err(js_err)?;
         let usages = Array::of1(&"verify".into());
         let promise = subtle
-            .import_key_with_object("jwk", jwk_obj.unchecked_ref(), &algo(true), false, &usages)
+            .import_key_with_object("jwk", jwk_obj.unchecked_ref(), &algo(true)?, false, &usages)
             .map_err(js_err)?;
         let key: CryptoKey = JsFuture::from(promise).await.map_err(js_err)?.unchecked_into();
         keys.insert(kid.to_owned(), key);
@@ -170,11 +174,7 @@ fn setting(env: &Env, name: &str) -> Option<String> {
 /// Local development only. Even if `DEV_AUTH_BYPASS` is set by mistake on a deployed Worker, it
 /// has no effect unless the request really is addressed to a loopback host.
 fn dev_bypass(req: &Request, env: &Env) -> bool {
-    if !env
-        .var("DEV_AUTH_BYPASS")
-        .map(|v| v.to_string() == "1")
-        .unwrap_or(false)
-    {
+    if !env.var("DEV_AUTH_BYPASS").is_ok_and(|v| v.to_string() == "1") {
         return false;
     }
     let host = req
@@ -236,7 +236,7 @@ pub async fn verify(req: &Request, env: &Env) -> Result<Identity, AuthError> {
     let signing_input = format!("{h}.{p}");
     let verified = JsFuture::from(
         subtle()?
-            .verify_with_object_and_u8_array_and_u8_array(&algo(false), &key, &signature, signing_input.as_bytes())
+            .verify_with_object_and_u8_array_and_u8_array(&algo(false)?, &key, &signature, signing_input.as_bytes())
             .map_err(js_err)?,
     )
     .await

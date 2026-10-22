@@ -30,7 +30,7 @@ pub fn is_local_host(host: &str) -> bool {
 pub fn origin_allowed(origin_header: Option<&str>, request_origin: &str) -> bool {
     match origin_header.map(str::trim) {
         None => true,
-        Some("") | Some("null") => false,
+        Some("" | "null") => false,
         Some(o) => o
             .trim_end_matches('/')
             .eq_ignore_ascii_case(request_origin.trim_end_matches('/')),
