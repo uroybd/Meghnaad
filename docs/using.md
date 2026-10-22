@@ -45,6 +45,10 @@ The header also has the running **timer**, the **bell** (reminders) and **Settin
 other: take the chip away and finished tasks come in too, tinted green (completed) or red (deleted), so a project or tag stays listed after
 its last task is done. Any other filter works as well (`project:Home`, `due.before:eow`, `+work`).
 
+**A long report draws in steps.** A report of hundreds of tasks takes a while to lay out, so the table draws the first 200
+at once and more (300 at a time) as you scroll towards the end, or when you press **Show more** or **Show all** under it.
+It is still the whole report: the select-all box, the count and the sort are about every task, drawn or not.
+
 **Tag chips are buttons.** In the table on the Tasks page, clicking a tag chip toggles `+tag` in that report's filter (a
 pressed chip means it is in the filter; click it again to take it out), exactly as typing `+tag` would. Anywhere else (a
 report printed in the Console, the task detail, the Projects page, a task on the Tags page itself) it opens that tag's entry

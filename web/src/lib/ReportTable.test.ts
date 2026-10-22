@@ -276,3 +276,67 @@ describe('a task card on a phone', () => {
     ]);
   });
 });
+
+describe('a report of many tasks', () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => row(`task ${i}`, null));
+  const drawn = () => document.querySelectorAll('tbody tr').length;
+  const button = (text: RegExp) =>
+    [...document.querySelectorAll<HTMLButtonElement>('button.more')].find((b) => text.test(b.textContent ?? ''));
+
+  it('draws the top at once and says how many are shown, when there are more than a screenful of hundreds', () => {
+    draw(many(650));
+    expect(drawn()).toBe(200);
+    expect(document.querySelector('.count')?.textContent).toMatch(/650 tasks\s+· 200 shown so far/);
+  });
+
+  it('draws more when asked, a step at a time or all of it', () => {
+    draw(many(650));
+    button(/Show 300 more/)!.click();
+    flushSync();
+    expect(drawn()).toBe(500);
+    button(/Show all/)!.click();
+    flushSync();
+    expect(drawn()).toBe(650);
+    // Nothing is left to ask for.
+    expect(document.querySelector('button.more')).toBeNull();
+    expect(document.querySelector('.count')?.textContent).not.toMatch(/shown so far/);
+  });
+
+  it('is all there when it is not many, with nothing to ask for', () => {
+    draw(many(200));
+    expect(drawn()).toBe(200);
+    expect(document.querySelector('button.more')).toBeNull();
+  });
+
+  it('still selects every task of the report, drawn or not', () => {
+    draw(many(650), {}, true);
+    const all = document.querySelector<HTMLInputElement>('thead input[type=checkbox]')!;
+    expect(all.getAttribute('aria-label')).toBe('Select all 650 tasks');
+    all.click();
+    flushSync();
+    expect(selection.has('task 649')).toBe(true);
+    expect(selection.has('task 0')).toBe(true);
+  });
+
+  it('draws as far as it asks for when the window is not yet full, as the end comes near', () => {
+    // The browser tells when the end of the table is near; here, always, until nothing is left.
+    let watched = 0;
+    class Near {
+      constructor(private fn: (seen: { isIntersecting: boolean }[]) => void) {}
+      observe() {
+        watched++;
+        queueMicrotask(() => this.fn([{ isIntersecting: true }]));
+      }
+      disconnect() {}
+    }
+    vi.stubGlobal('IntersectionObserver', Near);
+    draw(many(650));
+    return Promise.resolve()
+      .then(() => new Promise((r) => setTimeout(r, 20)))
+      .then(() => {
+        flushSync();
+        expect(drawn()).toBe(650);
+        expect(watched).toBeGreaterThan(1);
+      });
+  });
+});

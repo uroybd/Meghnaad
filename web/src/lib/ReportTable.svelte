@@ -176,6 +176,46 @@
 
   const isOpen = (row: Row) => row.status === 'pending';
 
+  // A report of thousands of tasks takes over a second to lay out (about 0.4 ms a row), and the page does not answer
+  // meanwhile. The top of the table is drawn at once, and more as the end of it nears the window or when asked. It is
+  // still the whole report: the select-all box, the counts and the sort are about every row, drawn or not.
+  const FIRST_ROWS = 200;
+  const MORE_ROWS = 300;
+  let drawn = $state(FIRST_ROWS);
+  const total = $derived(result.rows.length);
+  const rows = $derived(drawn >= total ? result.rows : result.rows.slice(0, drawn));
+  // Only another report (or another sort) starts over at the top; the same one drawn again keeps what was drawn.
+  let drawnFor = '';
+  $effect.pre(() => {
+    const table = `${result.report}\0${result.sort ?? ''}`;
+    untrack(() => {
+      if (table !== drawnFor) {
+        drawnFor = table;
+        drawn = FIRST_ROWS;
+      }
+    });
+  });
+  const drawMore = () => (drawn = Math.min(total, drawn + MORE_ROWS));
+  /** What the table scrolls in: the page scrolls inside its main area, and a margin around the window only reaches past it. */
+  function scroller(el: HTMLElement): HTMLElement | null {
+    for (let up = el.parentElement; up; up = up.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(up).overflowY)) return up;
+    }
+    return null;
+  }
+  let tail = $state<HTMLElement>();
+  $effect(() => {
+    void drawn; // watched again after each step, so a window still not filled asks for the next
+    const el = tail;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const watch = new IntersectionObserver((seen) => seen.some((s) => s.isIntersecting) && drawMore(), {
+      root: scroller(el),
+      rootMargin: '1200px 0px',
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  });
+
   // The select-all box: ticked when every row is, half when some are.
   const allUuids = $derived(result.rows.map((r) => r.uuid));
   const ticked = $derived(allUuids.filter((u) => selection.has(u)).length);
@@ -285,7 +325,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each result.rows as row, i (row.uuid)}
+        {#each rows as row, i (row.uuid)}
           {#if heads[i]}
             <tr class="grouphead"
               ><th colspan={shown.length + 1 + (selectable ? 1 : 0)} scope="colgroup">{heads[i]}</th></tr
@@ -437,10 +477,16 @@
       </tbody>
     </table>
   </div>
-  <p class="dim count">
+  <p class="dim count" bind:this={tail}>
     {result.rows.length === result.matched
       ? `${result.matched} ${result.matched === 1 ? 'task' : 'tasks'}`
       : `showing ${result.rows.length} of ${result.matched}`}
+    {#if drawn < total}
+      · {drawn} shown so far
+      <button type="button" class="ghost more" onclick={drawMore}>Show {Math.min(MORE_ROWS, total - drawn)} more</button
+      >
+      <button type="button" class="ghost more" onclick={() => (drawn = total)}>Show all</button>
+    {/if}
   </p>
 {/if}
 
@@ -712,6 +758,10 @@
   .empty,
   .count {
     margin: 8px 0;
+  }
+  .more {
+    margin-left: 6px;
+    text-decoration: underline;
   }
   .sortbar {
     display: none;
