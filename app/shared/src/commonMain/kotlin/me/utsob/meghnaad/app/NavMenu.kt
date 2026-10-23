@@ -61,7 +61,7 @@ private fun Item(icon: String, label: String, on: Boolean, state: String? = null
 }
 
 /**
- * The menu: Tasks, which opens into the list of reports (closed to begin with: it is a long list, and the pages should not sit
+ * The menu: Home, Tasks, which opens into the list of reports (closed to begin with: it is a long list, and the pages should not sit
  * below it), then the pages, then Review, Reminders and Settings. On a wide window only the list of reports shows, always open
  * (the pages are in the top bar). Mirrors NavMenu.svelte.
  */
@@ -72,6 +72,10 @@ fun NavMenu(store: Store, onNavigate: () -> Unit, pages: Boolean = true) {
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (pages) {
+            Item("house", "Home", false) {
+                store.goHome(force = true)
+                onNavigate()
+            }
             Item(
                 "list-checks", "Tasks", store.view == View.Tasks,
                 state = if (store.view == View.Tasks) store.report else null,

@@ -82,6 +82,13 @@ class BoardsStoreTest {
         store.view = View.Summary
         store.goHome(force = true)
         assertEquals(View.Tasks to "next", store.view to store.report)
+
+        // Going home leaves a board draft and the menu.
+        store.saveHomepage(Homepage(board = "week"))
+        store.boardEditor = BoardEditor(store, store.boards.first())
+        store.menuOpen = true
+        store.goHome(force = true)
+        assertEquals(Triple(null, false, View.Boards), Triple(store.boardEditor, store.menuOpen, store.view))
     }
 
     @Test

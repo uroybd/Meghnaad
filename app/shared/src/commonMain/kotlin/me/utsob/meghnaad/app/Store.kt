@@ -515,7 +515,13 @@ class Store(
      */
     fun goHome(force: Boolean = false) {
         if (!force && (view != View.Tasks || detail != null || homepage == null)) return
-        if (force) detail = null
+        if (force) {
+            // Going home leaves whatever is open over the page: a task, an unsaved board draft, a selection, the menu.
+            detail = null
+            boardEditor = null
+            selection.clear()
+            menuOpen = false
+        }
         val home = homepage
         when {
             home?.board != null && boards.any { it.id == home.board } -> {

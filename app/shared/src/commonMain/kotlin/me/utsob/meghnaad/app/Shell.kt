@@ -132,8 +132,15 @@ private fun WideTopBar(store: Store, labels: Boolean, buttonLabels: Boolean) {
     }
     Column(Modifier.fillMaxWidth().background(colors.surfaceContainer)) {
         Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            Logo(28.dp, Modifier.padding(end = 8.dp))
-            Text("Meghnaad", Modifier.padding(end = 14.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Row(
+                Modifier.heightIn(min = 36.dp).clip(ControlShape).clickable { store.goHome(force = true) }
+                    .semantics { contentDescription = "Meghnaad, home page" }.padding(end = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Logo(28.dp)
+                Text("Meghnaad", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            }
             for (t in TABS) Button(t.icon, t.label, store.view == t.view, labels) { store.view = t.view }
             Box(Modifier.weight(1f))
             TimerChip(store, Modifier)
@@ -182,7 +189,7 @@ private fun PhoneShell(store: Store) {
     }
 }
 
-/** The bar over every page: the menu button and the name; the pages are in the menu (TopBar of App.svelte, phone widths). */
+/** The bar over every page: the menu button and the name (which goes to the home page); the pages are in the menu (TopBar of App.svelte, phone widths). */
 @Composable
 private fun TopBar(store: Store, onMenu: () -> Unit) {
     Row(
@@ -191,8 +198,15 @@ private fun TopBar(store: Store, onMenu: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         IconAction("menu", "Menu", onMenu, size = 22.dp)
-        Logo(28.dp)
-        Text("Meghnaad", Modifier.padding(horizontal = 6.dp), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        Row(
+            Modifier.heightIn(min = 48.dp).clip(ControlShape).clickable { store.goHome(force = true) }
+                .semantics { contentDescription = "Meghnaad, home page" }.padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Logo(28.dp)
+            Text("Meghnaad", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        }
         Box(Modifier.weight(1f))
         TimerChip(store, Modifier.weight(3f, fill = false))
         store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(end = 8.dp), background = extras.warn, color = contextText(), bold = true) }
