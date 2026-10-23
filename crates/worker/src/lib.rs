@@ -4,8 +4,10 @@ mod session;
 mod store;
 
 use serde::Deserialize;
+use store::R2Store;
 use tc_core::appsettings;
-use tc_core::taskrc::{self, MAX_TASKRC_BYTES};
+use tc_core::taskrc::MAX_TASKRC_BYTES;
+use tc_core::webapi::WebSettings;
 use worker::{event, Context, Env, Request, Response, RouteContext, Router};
 
 type RouteResult = Result<Response, ApiError>;
@@ -105,12 +107,17 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
     let mut res = Router::new()
         .get_async("/api/health", |_, ctx| wrap(health(ctx)))
         .get_async("/api/config", |_, ctx| wrap(get_config(ctx)))
-        .get_async("/api/config/taskrc", |_, ctx| wrap(get_taskrc(ctx)))
-        .put_async("/api/config/taskrc", |req, ctx| wrap(put_taskrc(req, ctx)))
+        .get_async("/api/config/taskrc", |req, ctx| wrap(config_route(req, ctx)))
+        .put_async("/api/config/taskrc", |req, ctx| wrap(config_route(req, ctx)))
         .post_async("/api/config/taskrc/url", |req, ctx| wrap(import_taskrc_url(req, ctx)))
-        .post_async("/api/config/taskrc/restore", |_, ctx| wrap(restore_taskrc(ctx)))
-        .put_async("/api/config/urgency", |req, ctx| wrap(put_urgency(req, ctx)))
-        .put_async("/api/config/engine", |req, ctx| wrap(put_engine_config(req, ctx)))
+        .post_async("/api/config/taskrc/restore", |req, ctx| wrap(config_route(req, ctx)))
+        .put_async("/api/config/urgency", |req, ctx| wrap(config_route(req, ctx)))
+        .put_async("/api/config/engine", |req, ctx| wrap(config_route(req, ctx)))
+        .get_async("/api/config/files", |req, ctx| wrap(config_route(req, ctx)))
+        .post_async("/api/config/files/import", |req, ctx| wrap(config_route(req, ctx)))
+        .get_async("/api/config/files/*path", |req, ctx| wrap(config_route(req, ctx)))
+        .put_async("/api/config/files/*path", |req, ctx| wrap(config_route(req, ctx)))
+        .delete_async("/api/config/files/*path", |req, ctx| wrap(config_route(req, ctx)))
         .get_async("/api/settings", |_, ctx| wrap(get_app_settings(ctx)))
         .put_async("/api/settings", |req, ctx| wrap(put_app_settings(req, ctx)))
         .get_async("/api/tc/pull", |req, ctx| wrap(tc_pull(req, ctx)))
@@ -248,29 +255,24 @@ async fn get_config(ctx: RouteContext<()>) -> RouteResult {
     ))
 }
 
-/// The saved settings rendered as a taskrc: what the UI actually holds, to edit and import again.
-async fn get_taskrc(ctx: RouteContext<()>) -> RouteResult {
-    let cfg = session::config(&ctx.env).await?;
-    let mut res = Response::ok(taskrc::render(&cfg))?;
-    res.headers_mut().set("content-type", "text/plain; charset=utf-8")?;
-    Ok(res)
-}
-
-/// Accepts a taskrc, keeps only the allowlisted subset, and reports what was dropped by *name*.
-/// The text itself is never stored, logged, or echoed; what comes back is the sanitised rendering.
-async fn put_taskrc(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
-    let text = req.text().await?;
-    if text.len() > MAX_TASKRC_BYTES {
-        return Err(ApiError::TooLarge);
+/// The taskrc and its files (`tc_core::webapi`): kept as written, less any sync or credential line, which is removed
+/// and reported by *name*. The Worker only hosts them; what a route means is the same on the phone.
+async fn config_route(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
+    let method = req.method().to_string();
+    let path = req.path();
+    let body = req.bytes().await?;
+    let web = WebSettings::new(R2Store(ctx.env.bucket("TASKS")?));
+    let reply = web
+        .handle(&method, &path, &body)
+        .await
+        .ok_or_else(|| ApiError::BadRequest("no such route".into()))?;
+    if method != "GET" {
+        // Other instances trust their copy for a few seconds; this one must not.
+        session::forget_config();
     }
-    save_taskrc_text(&ctx, text).await
-}
-
-async fn save_taskrc_text(ctx: &RouteContext<()>, text: String) -> RouteResult {
-    let parsed = taskrc::parse(&text);
-    drop(text);
-    session::save_config(&ctx.env, parsed.config.clone()).await?;
-    json(&tc_core::webapi::taskrc_summary(&parsed))
+    let mut res = Response::from_bytes(reply.body)?.with_status(reply.status);
+    res.headers_mut().set("content-type", reply.content_type)?;
+    Ok(res)
 }
 
 /// Fetch a taskrc from a link (a dotfiles repository, a gist) and import it as a pasted one is. The Worker
@@ -278,7 +280,13 @@ async fn save_taskrc_text(ctx: &RouteContext<()>, text: String) -> RouteResult {
 /// The link is never logged or echoed: it may carry an access token.
 async fn import_taskrc_url(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let text = fetch_text(&req.text().await?).await?;
-    save_taskrc_text(&ctx, text).await
+    let reply = WebSettings::new(R2Store(ctx.env.bucket("TASKS")?))
+        .put_root(&text)
+        .await;
+    session::forget_config();
+    let mut res = Response::from_bytes(reply.body)?.with_status(reply.status);
+    res.headers_mut().set("content-type", reply.content_type)?;
+    Ok(res)
 }
 
 /// Redirects followed (a `github.com/.../raw/...` link answers with one); each is checked like the first link.
@@ -341,36 +349,6 @@ async fn fetch_text(link: &str) -> Result<String, ApiError> {
         return Ok(text);
     }
     Err(bad("that address redirects too many times"))
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct UrgencyRequest {
-    /// Every urgency setting that differs from Taskwarrior's built-in value. Anything left out
-    /// goes back to its default.
-    urgency: std::collections::BTreeMap<String, f64>,
-    /// `urgency.inherit`: blocking tasks take the highest urgency of what they block.
-    inherit: bool,
-}
-
-/// Save the urgency settings edited in the app, into the same stored settings the taskrc import uses
-/// (so they show in the taskrc editor and can be restored with the same one-step backup).
-async fn put_urgency(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
-    let body: UrgencyRequest = req
-        .json()
-        .await
-        .map_err(|e| ApiError::BadRequest(format!("invalid request body: {e}")))?;
-    let current = session::config(&ctx.env).await?;
-    if session::config_error().is_some() {
-        // The stored settings are unreadable, so `current` is only the defaults: saving would bury them.
-        return Err(ApiError::BadRequest(
-            "the saved settings can't be read; fix them in the taskrc dialog first".into(),
-        ));
-    }
-    let mut cfg = (*current).clone();
-    taskrc::set_urgency(&mut cfg, body.urgency, body.inherit).map_err(ApiError::BadRequest)?;
-    session::save_config(&ctx.env, cfg).await?;
-    json(&serde_json::json!({ "ok": true }))
 }
 
 // Hooks: a Lua script kept here (`web/hooks.lua`), run for the browser's engine one hook call at a time.
@@ -529,28 +507,6 @@ async fn put_hooks(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     json(&serde_json::json!({ "ok": true, "defined": defined }))
 }
 
-/// What a `config` command changed, as the engine in the page worked it out: the settings, saved as the taskrc dialog
-/// saves them (the previous version is kept for a restore). Nothing sync- or credential-like is ever stored.
-async fn put_engine_config(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
-    // Read the way the saved settings are (one deserialiser compiled in, not two: it is about 6 KB compressed).
-    let cfg =
-        session::decode(&req.bytes().await?).map_err(|e| ApiError::BadRequest(format!("invalid request body: {e}")))?;
-    if cfg.settings.keys().any(|name| taskrc::is_sensitive(name)) {
-        return Err(ApiError::BadRequest(
-            "sync settings and anything that looks like a credential can't be saved here".into(),
-        ));
-    }
-    // Reading them sets whether they are readable at all: saving over unreadable ones would bury them.
-    session::config(&ctx.env).await?;
-    if session::config_error().is_some() {
-        return Err(ApiError::BadRequest(
-            "the saved settings can't be read; fix them in the taskrc dialog first".into(),
-        ));
-    }
-    session::save_config(&ctx.env, cfg).await?;
-    json(&serde_json::json!({ "ok": true }))
-}
-
 /// The app's own `settings.json`: stored as written and returned as is (`{}` before the first save).
 async fn get_app_settings(ctx: RouteContext<()>) -> RouteResult {
     let bytes = session::app_settings(&ctx.env).await?.unwrap_or_else(|| b"{}".to_vec());
@@ -568,15 +524,4 @@ async fn put_app_settings(mut req: Request, ctx: RouteContext<()>) -> RouteResul
     appsettings::check(&text).map_err(ApiError::BadRequest)?;
     session::save_app_settings(&ctx.env, text.as_bytes()).await?;
     json(&serde_json::json!({ "ok": true }))
-}
-
-/// Go back to the settings from before the last import (and again, to undo that).
-async fn restore_taskrc(ctx: RouteContext<()>) -> RouteResult {
-    match session::restore_config(&ctx.env).await? {
-        None => Err(ApiError::BadRequest("there are no earlier settings to restore".into())),
-        Some(config) => json(&tc_core::webapi::taskrc_summary(&taskrc::Parsed {
-            config,
-            ..Default::default()
-        })),
-    }
 }

@@ -10,7 +10,11 @@
   type Tab = 'general' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
     { id: 'general', label: 'General', hint: 'Where the app opens' },
-    { id: 'taskrc', label: 'taskrc', hint: 'UDAs, reports, contexts, colours and the rest of your taskrc' },
+    {
+      id: 'taskrc',
+      label: 'taskrc',
+      hint: 'Your taskrc as a folder of files: UDAs, reports, contexts, holidays, colours and includes',
+    },
     { id: 'tasksh', label: 'tasksh', hint: 'What tasksh review needs: the reviewed UDA and the _reviewed report' },
     { id: 'commands', label: 'Commands', hint: 'Words that stand for a command line, and show under ⋯ on a task' },
     {

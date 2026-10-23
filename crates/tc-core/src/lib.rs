@@ -30,6 +30,7 @@ pub mod names;
 pub(crate) mod ordered;
 pub mod preview;
 pub mod rc_url;
+pub mod rcfiles;
 pub mod recur;
 pub mod report;
 pub mod request;

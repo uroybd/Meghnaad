@@ -83,6 +83,9 @@ describe('every page has an address', () => {
     { page: 'boards', board: 'weekly' },
     { page: 'settings', tab: null },
     ...SETTINGS_TABS.map((tab) => ({ page: 'settings', tab }) as Place),
+    { page: 'settings', tab: 'taskrc', file: 'taskrc' },
+    { page: 'settings', tab: 'taskrc', file: 'holidays/en-US.rc' },
+    { page: 'settings', tab: 'taskrc', file: 'my notes/a b%.rc' },
     { page: 'task', prefix: '1a2b3c4d' },
   ];
 
@@ -97,6 +100,15 @@ describe('every page has an address', () => {
     expect(placePath({ page: 'settings', tab: 'hooks' })).toBe('/settings/hooks');
     expect(parsePath('/report/list/')).toEqual({ page: 'tasks', report: 'list' });
     expect(parsePath('/settings/')).toEqual({ page: 'settings', tab: null });
+    expect(placePath({ page: 'settings', tab: 'taskrc', file: 'holidays/en-US.rc' })).toBe(
+      '/settings/taskrc/holidays/en-US.rc',
+    );
+    expect(placePath({ page: 'settings', tab: 'taskrc', file: 'my notes.rc' })).toBe('/settings/taskrc/my%20notes.rc');
+    expect(parsePath('/settings/taskrc/holidays/en-US.rc/')).toEqual({
+      page: 'settings',
+      tab: 'taskrc',
+      file: 'holidays/en-US.rc',
+    });
   });
 
   it('is nothing for the front page and for what is not a page', () => {
@@ -109,6 +121,11 @@ describe('every page has an address', () => {
       '/report/%E0%A4%A',
       '/settings/nope',
       '/settings/hooks/x',
+      '/settings/taskrc/../x',
+      '/settings/taskrc/a//b',
+      '/settings/taskrc/a/./b',
+      '/settings/taskrc/%2E%2E/x',
+      '/settings/taskrc/%E0%A4%A',
       '/projects/x',
       '/Projects',
       '/api/config',

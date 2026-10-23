@@ -43,6 +43,12 @@ describe('where the app is', () => {
     store.view = 'settings';
     store.settingsTab = 'hooks';
     expect(placePath(store.place)).toBe('/settings/hooks');
+    store.settingsTab = 'taskrc';
+    expect(placePath(store.place)).toBe('/settings/taskrc');
+    store.settingsFile = 'holidays/en-US.rc';
+    expect(placePath(store.place)).toBe('/settings/taskrc/holidays/en-US.rc');
+    store.settingsTab = 'urgency';
+    expect(placePath(store.place)).toBe('/settings/urgency');
   });
 
   it('is the task in the drawer, when there is one', () => {
@@ -67,6 +73,10 @@ describe('following an address', () => {
     expect([store.view, store.settingsTab]).toEqual(['settings', 'urgency']);
     await go('/settings');
     expect([store.view, store.settingsTab]).toEqual(['settings', 'urgency']);
+    await go('/settings/taskrc/holidays/en-US.rc');
+    expect([store.view, store.settingsTab, store.settingsFile]).toEqual(['settings', 'taskrc', 'holidays/en-US.rc']);
+    await go('/settings/taskrc');
+    expect(store.settingsFile).toBeNull();
   });
 
   it('closes the drawer', async () => {

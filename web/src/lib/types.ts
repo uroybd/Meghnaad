@@ -398,6 +398,33 @@ export interface TaskrcResponse {
   blocked: string[];
   ignored: string[];
   warnings: string[];
-  /** The settings as now saved, rendered as a taskrc (nothing blocked is ever in it). */
+  /** Lines kept but commented out, because this app can't use them: the file, the line (from 1) and why. */
+  commented: { file?: string; line: number; message: string }[];
+  /** The file as now saved (nothing blocked is ever in it). */
   text: string;
+}
+
+/** An `include` line of a file. */
+export interface RcInclude {
+  line: number;
+  target: string;
+  /** The file in the folder it names, if there is one. */
+  found: string | null;
+}
+
+/** A file of the taskrc folder. */
+export interface RcFile {
+  path: string;
+  bytes: number;
+  includes: RcInclude[];
+  /** Whether the main taskrc reaches it through includes (or it is the main taskrc). */
+  used: boolean;
+}
+
+export interface RcFiles {
+  root: string;
+  files: RcFile[];
+  /** Includes that could not be followed. */
+  problems: { file: string; line: number; message: string }[];
+  limits: { files: number; file_bytes: number; total_bytes: number };
 }

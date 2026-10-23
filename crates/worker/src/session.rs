@@ -13,6 +13,7 @@ use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::dates::Clock;
 use tc_core::lua_hooks::{LuaRunner, Net, Problem};
 use tc_core::taskrc::Config;
+use tc_core::webapi::WebSettings;
 use tc_core::{load_salt, CloudServer, ObjectStore};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -21,15 +22,11 @@ use worker::Env;
 use crate::hooknet::WorkerNet;
 use crate::store::R2Store;
 
-pub use tc_core::webapi::{decode, APP_SETTINGS_KEY, CONFIG_KEY, CORRUPT_KEY, HOOKS_KEY, HOOKS_PREV_KEY, PREV_KEY};
+pub use tc_core::webapi::{decode, APP_SETTINGS_KEY, CONFIG_KEY, HOOKS_KEY, HOOKS_PREV_KEY};
 /// How long one Worker instance trusts its copy of the script.
 const HOOKS_TTL_MS: f64 = 5_000.0;
 /// How long one Worker instance trusts its copy; other instances see an import within this time.
 const CONFIG_TTL_MS: f64 = 5_000.0;
-
-fn encode(cfg: &Config) -> worker::Result<Vec<u8>> {
-    tc_core::webapi::encode(cfg).map_err(worker::Error::RustError)
-}
 
 /// The hooks script this instance has loaded, and the VM it is loaded into (built once, used for every call).
 struct LoadedHooks {
@@ -289,59 +286,18 @@ pub async fn save_app_settings(env: &Env, text: &[u8]) -> worker::Result<()> {
     store.put(APP_SETTINGS_KEY, text).await.map_err(rust_err)
 }
 
-/// Whether there are earlier (readable) settings to restore.
+/// Whether there are earlier (readable) settings or files to restore.
 pub async fn has_previous(env: &Env) -> worker::Result<bool> {
-    let store = R2Store(env.bucket("TASKS")?);
-    Ok(store
-        .get(PREV_KEY)
+    WebSettings::new(R2Store(env.bucket("TASKS")?))
+        .has_previous()
         .await
-        .map_err(rust_err)?
-        .is_some_and(|b| decode(&b).is_ok()))
+        .map_err(rust_err)
 }
 
-fn remember(cfg: Config) {
-    CONFIG.with(|c| *c.borrow_mut() = Some((js_sys::Date::now(), Rc::new(cfg))));
+/// Drop this instance's copy of the settings, after something changed them.
+pub fn forget_config() {
+    CONFIG.with(|c| *c.borrow_mut() = None);
     CONFIG_ERROR.with(|e| *e.borrow_mut() = None);
-}
-
-/// Save new settings, keeping what was there as the "previous" version.
-pub async fn save_config(env: &Env, cfg: Config) -> worker::Result<()> {
-    let store = R2Store(env.bucket("TASKS")?);
-    let bytes = encode(&cfg)?;
-    // Back up first: if we are interrupted between the two writes the worst case is that the
-    // backup equals the current settings, never that settings are lost.
-    if let Some(old) = store.get(CONFIG_KEY).await.map_err(rust_err)? {
-        if decode(&old).is_ok() {
-            store.put(PREV_KEY, &old).await.map_err(rust_err)?;
-        } else {
-            // Not a valid restore point, but don't destroy it either.
-            store.put(CORRUPT_KEY, &old).await.map_err(rust_err)?;
-        }
-    }
-    store.put(CONFIG_KEY, &bytes).await.map_err(rust_err)?;
-    remember(cfg);
-    Ok(())
-}
-
-/// Swap the current and previous settings. Returns the restored config, or `None` if there is
-/// nothing to restore.
-pub async fn restore_config(env: &Env) -> worker::Result<Option<Config>> {
-    let store = R2Store(env.bucket("TASKS")?);
-    let Some(prev) = store.get(PREV_KEY).await.map_err(rust_err)? else {
-        return Ok(None);
-    };
-    let Ok(cfg) = decode(&prev) else {
-        return Ok(None); // unreadable: nothing usable to restore
-    };
-    // Swap rather than overwrite, so restoring twice gets you back where you were.
-    if let Some(cur) = store.get(CONFIG_KEY).await.map_err(rust_err)? {
-        if decode(&cur).is_ok() {
-            store.put(PREV_KEY, &cur).await.map_err(rust_err)?;
-        }
-    }
-    store.put(CONFIG_KEY, &encode(&cfg)?).await.map_err(rust_err)?;
-    remember(cfg.clone());
-    Ok(Some(cfg))
 }
 
 /// PBKDF2-HMAC-SHA256 through the runtime's Web Crypto, which is native code. The result is the

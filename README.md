@@ -43,8 +43,10 @@ tasks on the phone and syncs straight with your bucket.
   calendar, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `purge`, `duplicate`, `context`,
   `calc` and the confirmations are ported from the source and checked against the real `task` 3.5.0. Settings removed
   before 3.5.0 are not supported.
-- **Your `taskrc`, safely.** Paste it, upload it or import it from a link (your dotfiles repository). UDAs, reports,
-  contexts and settings are kept; sync settings and credentials are blocked ([what is read](docs/taskrc-support.md)).
+- **Your `taskrc`, safely.** Paste it, upload it, import a whole folder of files or import it from a link (your dotfiles
+  repository). It is kept as you wrote it, `include` works, and the files are listed in Settings to add, edit, delete and
+  include. UDAs, reports, contexts, holidays and settings are read; a line the app can't use is commented out, and sync
+  settings and credentials are removed ([what is read](docs/taskrc-support.md)).
 - **tasksh's `review`.** Walk the tasks you have not looked at lately and mark each reviewed, skip, edit, change, finish or
   delete it, from the top bar's Review button (a card) or the Console (`review`), with keys as in tasksh. It sets up the
   `reviewed` attribute and `_reviewed` report itself.
@@ -217,7 +219,7 @@ flowchart TB
 - **The browser keeps a copy** in IndexedDB, so a visit starts from where the last one ended and only pulls what is new.
   It syncs after every write, when you come back to the tab, and every 30 seconds while you look at it; other tabs are
   told when one pushes.
-- **Imported taskrc settings** are stored in the bucket, so they survive restarts and follow you between devices.
+- **Imported taskrc files** are stored in the bucket (as written, less sync and credential lines), so they survive restarts and follow you between devices.
   The app's own `settings.json` (task commands, so far) is stored beside them; the Worker keeps its text as it is and
   only the browser reads it.
 

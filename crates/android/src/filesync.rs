@@ -1,5 +1,5 @@
-//! Keeping a few of the app's own files the same as the bucket's: the settings (`web/config.json`, `web/settings.json`)
-//! and the hooks script (`web/hooks.lua`) that the web app keeps there, so that an edit on either side reaches the other.
+//! Keeping a few of the app's own files the same as the bucket's: the settings (the taskrc files under `web/rc/`, the
+//! `web/config.json` they add up to, and `web/settings.json`) and the hooks script (`web/hooks.lua`) that the web app keeps there, so that an edit on either side reaches the other.
 //! The secrets of hooks are never among them.
 //!
 //! Each file is compared with what it was at the last sync (kept as a hash): the side that changed wins, and when both
@@ -7,12 +7,16 @@
 
 use crate::sigv4::sha256_hex;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use tc_core::rcfiles;
 use tc_core::webapi;
 use tc_core::{ObjectStore, Result};
 
 /// The files a phone may share with the bucket, and which of its two options each belongs to.
-pub const SETTINGS: &[&str] = &[webapi::CONFIG_KEY, webapi::APP_SETTINGS_KEY];
+///
+/// A key that ends in `/` stands for every file under it (the taskrc folder), on either side. Those go first, and the
+/// settings they add up to are worked out again before `web/config.json` is looked at.
+pub const SETTINGS: &[&str] = &[webapi::RC_PREFIX, webapi::CONFIG_KEY, webapi::APP_SETTINGS_KEY];
 pub const HOOKS: &[&str] = &[webapi::HOOKS_KEY];
 
 /// Where each file's previous version is kept (the web app's own restore points).
@@ -60,10 +64,19 @@ fn hash(bytes: Option<&[u8]>) -> Option<String> {
 /// holds nothing that looks like a credential.
 fn acceptable(key: &str, bytes: &[u8]) -> std::result::Result<(), String> {
     let text = String::from_utf8_lossy(bytes);
+    if let Some(path) = key.strip_prefix(webapi::RC_PREFIX) {
+        rcfiles::clean_path(path)?;
+        if bytes.len() > tc_core::taskrc::MAX_TASKRC_BYTES {
+            return Err("it is too large for a taskrc".into());
+        }
+        if !rcfiles::sanitize(&text).blocked.is_empty() {
+            return Err("it holds a setting that looks like a credential".into());
+        }
+        return Ok(());
+    }
     match key {
         webapi::CONFIG_KEY => {
-            let cfg = webapi::decode(bytes)?;
-            if cfg.settings.keys().any(|name| tc_core::taskrc::is_sensitive(name)) {
+            if webapi::decode(bytes)?.has_sensitive() {
                 return Err("it holds a setting that looks like a credential".into());
             }
             Ok(())
@@ -88,6 +101,32 @@ async fn modified<S: ObjectStore>(store: &S, key: &str) -> i64 {
         .unwrap_or(0)
 }
 
+/// `keys` with each folder (a key that ends in `/`) replaced by the files in it on either side.
+async fn expand<L: ObjectStore, R: ObjectStore>(local: &L, remote: &R, keys: &[&str]) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for &key in keys {
+        if key.ends_with('/') {
+            let mut names = BTreeSet::new();
+            names.extend(local.list(key).await?);
+            names.extend(remote.list(key).await?);
+            out.extend(names);
+        } else {
+            out.push(key.to_owned());
+        }
+    }
+    Ok(out)
+}
+
+/// The taskrc files in `store` as one object, to go back to: made once, before the first of them changes.
+async fn snapshot<S: ObjectStore>(store: &S) -> Result<()> {
+    if let Ok(tree) = webapi::read_tree(store).await {
+        if let Ok(bytes) = serde_json::to_vec(&tree) {
+            store.put(webapi::RC_PREV_KEY, &bytes).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Bring `keys` of `local` and `remote` into step.
 pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
     local: &L,
@@ -96,7 +135,16 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
     state: &mut State,
 ) -> Result<Report> {
     let mut report = Report::default();
-    for &key in keys {
+    let (mut kept_here, mut kept_there) = (false, false);
+    // Whether a taskrc file changed here and the settings they add up to are out of date.
+    let mut folder_changed = false;
+    for key in expand(local, remote, keys).await? {
+        let key = key.as_str();
+        let in_folder = key.starts_with(webapi::RC_PREFIX);
+        if folder_changed && !in_folder {
+            webapi::rebuild_config(local).await.map_err(tc_core::Error::Store)?;
+            folder_changed = false;
+        }
         let mine = local.get(key).await?;
         let theirs = remote.get_tagged(key).await?;
         let (their_bytes, tag) = match theirs {
@@ -108,8 +156,35 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
         if mh == th {
             if let Some(h) = mh {
                 state.0.insert(key.to_owned(), h);
+            } else {
+                state.0.remove(key);
             }
             continue;
+        }
+
+        // A taskrc file that one side deleted since the two last agreed, and the other left alone, goes on both.
+        if in_folder && base.is_some() {
+            if mine.is_none() && th == base {
+                if !kept_there {
+                    snapshot(remote).await?;
+                    kept_there = true;
+                }
+                remote.del(key).await?;
+                state.0.remove(key);
+                report.pushed.push(key.to_owned());
+                continue;
+            }
+            if their_bytes.is_none() && mh == base {
+                if !kept_here {
+                    snapshot(local).await?;
+                    kept_here = true;
+                }
+                local.del(key).await?;
+                state.0.remove(key);
+                folder_changed = true;
+                report.pulled.push(key.to_owned());
+                continue;
+            }
         }
 
         // Which way: what changed since the two last agreed, and for two changes, what is newer.
@@ -129,7 +204,13 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
                 report.skipped.push(format!("{key}: not taken from the bucket ({why})"));
                 continue;
             }
-            if let (Some(old), Some(prev)) = (&mine, previous(key)) {
+            if in_folder {
+                if !kept_here {
+                    snapshot(local).await?;
+                    kept_here = true;
+                }
+                folder_changed = true;
+            } else if let (Some(old), Some(prev)) = (&mine, previous(key)) {
                 local.put(prev, old).await?;
             }
             local.put(key, &bytes).await?;
@@ -145,7 +226,12 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
                 continue;
             }
             // Only if nobody has written since it was read; the next sync tries again.
-            if let (Some(old), Some(prev)) = (&their_bytes, previous(key)) {
+            if in_folder {
+                if !kept_there {
+                    snapshot(remote).await?;
+                    kept_there = true;
+                }
+            } else if let (Some(old), Some(prev)) = (&their_bytes, previous(key)) {
                 remote.put(prev, old).await?;
             }
             if remote.swap_tagged(key, tag.as_deref(), &bytes).await? {
@@ -157,6 +243,9 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
                     .push(format!("{key}: the bucket changed while it was being sent"));
             }
         }
+    }
+    if folder_changed {
+        webapi::rebuild_config(local).await.map_err(tc_core::Error::Store)?;
     }
     Ok(report)
 }
@@ -281,6 +370,84 @@ mod tests {
             assert_eq!(r.pulled, [webapi::CONFIG_KEY], "{r:?}");
             assert_eq!(get(&phone, webapi::CONFIG_KEY).await, Some(config(&["a", "theirs"])));
             assert_eq!(get(&phone, webapi::PREV_KEY).await, Some(config(&["a", "mine"])));
+        });
+    }
+
+    const FOLDER: &[&str] = &[webapi::RC_PREFIX, webapi::CONFIG_KEY];
+
+    #[test]
+    fn the_taskrc_folder_is_shared_file_by_file_and_the_settings_follow() {
+        pollster::block_on(async {
+            let (phone, bucket) = (MemStore::default(), MemStore::default());
+            let mut state = State::default();
+            put(&bucket, "web/rc/taskrc", b"# mine\nbulk=4 # four\ninclude lists/a.rc\n").await;
+            put(&bucket, "web/rc/lists/a.rc", b"weekstart=Monday\n").await;
+            let r = sync_files(&phone, &bucket, FOLDER, &mut state).await.unwrap();
+            assert_eq!(r.pulled, ["web/rc/lists/a.rc", "web/rc/taskrc"], "{r:?}");
+            // As written, comments and all; and the settings are what the files add up to.
+            assert_eq!(
+                get(&phone, "web/rc/taskrc").await,
+                Some(b"# mine\nbulk=4 # four\ninclude lists/a.rc\n".to_vec())
+            );
+            let cfg = webapi::decode(&get(&phone, webapi::CONFIG_KEY).await.unwrap()).unwrap();
+            assert_eq!(
+                (cfg.settings["bulk"].as_str(), cfg.settings["weekstart"].as_str()),
+                ("4", "Monday")
+            );
+
+            // Edited on the phone: it goes to the bucket, with the bucket's old files kept to go back to.
+            put(&phone, "web/rc/lists/a.rc", b"weekstart=Sunday\n").await;
+            let r = sync_files(&phone, &bucket, FOLDER, &mut state).await.unwrap();
+            assert_eq!(r.pushed, ["web/rc/lists/a.rc"], "{r:?}");
+            let before: std::collections::BTreeMap<String, String> =
+                serde_json::from_slice(&get(&bucket, webapi::RC_PREV_KEY).await.unwrap()).unwrap();
+            assert_eq!(before["lists/a.rc"], "weekstart=Monday\n");
+        });
+    }
+
+    #[test]
+    fn a_taskrc_file_deleted_on_one_side_is_deleted_on_the_other() {
+        pollster::block_on(async {
+            let (phone, bucket) = (MemStore::default(), MemStore::default());
+            let mut state = State::default();
+            put(&bucket, "web/rc/taskrc", b"include a.rc\ninclude b.rc\n").await;
+            put(&bucket, "web/rc/a.rc", b"bulk=1\n").await;
+            put(&bucket, "web/rc/b.rc", b"bulk=2\n").await;
+            sync_files(&phone, &bucket, FOLDER, &mut state).await.unwrap();
+
+            phone.del("web/rc/a.rc").await.unwrap();
+            bucket.del("web/rc/b.rc").await.unwrap();
+            let r = sync_files(&phone, &bucket, FOLDER, &mut state).await.unwrap();
+            // The settings the files now add up to follow the files (the bucket's has changed too, from its side).
+            assert_eq!(r.pushed, ["web/rc/a.rc", "web/config.json"], "{r:?}");
+            assert_eq!(r.pulled, ["web/rc/b.rc"], "{r:?}");
+            assert_eq!(get(&bucket, "web/rc/a.rc").await, None);
+            assert_eq!(get(&phone, "web/rc/b.rc").await, None);
+            // Nothing comes back on the next round.
+            assert_eq!(
+                sync_files(&phone, &bucket, FOLDER, &mut state).await.unwrap(),
+                Report::default()
+            );
+        });
+    }
+
+    #[test]
+    fn a_taskrc_file_with_a_credential_in_it_is_not_taken_or_sent() {
+        pollster::block_on(async {
+            let (phone, bucket) = (MemStore::default(), MemStore::default());
+            let mut state = State::default();
+            put(&bucket, "web/rc/taskrc", b"# sync.encryption_secret=hunter2\n").await;
+            put(&bucket, "web/rc/../x", b"bulk=1\n").await;
+            let r = sync_files(&phone, &bucket, FOLDER, &mut state).await.unwrap();
+            assert!(r.pulled.is_empty(), "{r:?}");
+            assert_eq!(r.skipped.len(), 2, "{r:?}");
+            assert!(r.skipped.iter().any(|m| m.contains("looks like a credential")));
+            assert_eq!(get(&phone, "web/rc/taskrc").await, None);
+
+            put(&phone, "web/rc/mine.rc", b"password=hunter2\n").await;
+            let r = sync_files(&phone, &bucket, FOLDER, &mut state).await.unwrap();
+            assert!(r.pushed.is_empty(), "{r:?}");
+            assert_eq!(get(&bucket, "web/rc/mine.rc").await, None);
         });
     }
 }

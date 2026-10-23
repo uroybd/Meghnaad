@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
-import { getAppSettings, getConfig, getTaskrcText, putAppSettings, runCli } from './api';
+import { getAppSettings, getConfig, getRcFiles, getTaskrcText, putAppSettings, runCli } from './api';
 import { parseSettings } from './appsettings';
 import SettingsPage from './SettingsPage.svelte';
 import { store } from './store.svelte';
@@ -12,6 +12,7 @@ vi.mock('./api', async (original) => ({
   runCli: vi.fn(),
   getConfig: vi.fn(),
   getTaskrcText: vi.fn(),
+  getRcFiles: vi.fn(),
   getAppSettings: vi.fn(),
   putAppSettings: vi.fn(),
 }));
@@ -35,6 +36,12 @@ const tick = async () => {
 let app: ReturnType<typeof mount> | null = null;
 beforeEach(() => {
   vi.mocked(getTaskrcText).mockResolvedValue('');
+  vi.mocked(getRcFiles).mockResolvedValue({
+    root: 'taskrc',
+    files: [{ path: 'taskrc', bytes: 0, includes: [], used: true }],
+    problems: [],
+    limits: { files: 64, file_bytes: 262144, total_bytes: 1048576 },
+  });
   vi.mocked(getConfig).mockResolvedValue(bare());
   vi.mocked(runCli).mockResolvedValue(ok as never);
   vi.mocked(getAppSettings).mockResolvedValue({});

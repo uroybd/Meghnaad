@@ -52,7 +52,7 @@ cannot: reminders that come with the app closed, and the widgets.
   engine says whether the draft is valid and **Save** waits until it is. Boards are in `settings.json`, which syncs with the bucket: a
   board saved on one device is on the others after the next sync.
 - **Links.** Every page has a `meghnaad://` link, which opens it from a note or a message (and which the web's addresses mirror):
-  `meghnaad://report/<name>`, `meghnaad://board/<slug>`, `meghnaad://boards`, `meghnaad://settings/<tab>`, the pages
+  `meghnaad://report/<name>`, `meghnaad://board/<slug>`, `meghnaad://boards`, `meghnaad://settings/<tab>` (and `meghnaad://settings/taskrc/<path>` for a file of the taskrc folder), the pages
   (`projects`, `tags`, `summary`, `calendar`, `burndown`, `console`) and `meghnaad://task/<8 characters>`. A board has a button that
   copies its link. A link to a report or board that is not there says so and opens the home page.
 
@@ -186,13 +186,14 @@ phone with no tasks goes to another place without asking.
 
 - **Settings are on the phone**, unless you turn sharing on. The taskrc subset, the app's settings, the hooks script and
   the secrets for hooks live in the app's private storage. Under **Settings → Sync** (when connected) you can keep **the
-  settings** (`web/config.json`, `web/settings.json`) and/or **the hooks** (`web/hooks.lua`) in step with the bucket: they
-  are the files the web app keeps there, so an edit on either side reaches the other at the next sync. What changed since
-  the last sync wins; when both did, the newer one does and the other is kept as the web app's restore point
-  (`config.prev.json`, `hooks.prev.lua`). A file that would not load, or a settings file holding a credential, is not taken
+  settings** (the taskrc files under `web/rc/`, `web/config.json`, `web/settings.json`) and/or **the hooks** (`web/hooks.lua`)
+  in step with the bucket: they are the files the web app keeps there, so an edit on either side reaches the other at the
+  next sync. What changed since the last sync wins; when both did, the newer one does and the other is kept as the web
+  app's restore point (`config.prev.json`, `hooks.prev.lua`; for the taskrc files, `rc.prev.json`, all of them together). A taskrc
+  file deleted on one side and left alone on the other is deleted on both. A file that would not load, or a settings or taskrc file holding a credential, is not taken
   from the bucket. **The secrets for hooks are never synced.** The two switches are this phone's own choice, kept on the
-  phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (paste it, or import it from a link
-  or a file).
+  phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (paste it, import it from a link,
+  or choose files or a whole folder: **Add files**, **Import folder**).
 - **Settings → Sync** shows where the phone syncs to (the endpoint, the bucket, the region and a hint of the access key's
   name, or the sync server and a hint of the client ID; never a secret) and changes it: blank fields keep their value, so the address can be corrected without typing the
   keys again, and the change is tried with a sync first. A change that does not work is not kept.

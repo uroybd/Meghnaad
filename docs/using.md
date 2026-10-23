@@ -33,6 +33,7 @@ a new tab, and the browser's back button goes where you were:
 | `/projects` `/tags` `/summary` `/calendar` `/burndown` `/console` | those pages |
 | `/boards`, `/board/<slug>` | the list of boards, and one board (its slug is its address; see [Boards](#boards)) |
 | `/settings`, `/settings/<tab>` | Settings, and one of its tabs: `general` `taskrc` `tasksh` `commands` `hooks` `urgency` |
+| `/settings/taskrc/<path>` | one file of the taskrc folder, in the taskrc tab (`/settings/taskrc/holidays/en-US.rc`) |
 | `/task/<8 characters>` | a task's detail, over the page behind it (the first 8 characters of its uuid) |
 
 An address for a report or a board that is not there says so and opens your home page. A filter you typed is not in the address.
@@ -322,7 +323,7 @@ in purple; overdue in red) or scheduled, and holidays. It takes Taskwarrior's ar
 `calendar 3 2027`, `calendar march 2027`) in the page's box, and has buttons for earlier, later, today, a year and
 "from the first due date". A filter-shaped word (`project:Work`) narrows which tasks colour the days. Click a day to see
 what is due in the `list` report. Holidays are defined in the taskrc as `holiday.<id>.name` and `.date` (or `.start`
-and `.end`).
+and `.end`), in the taskrc itself or in a file it includes (`include holidays/en-US.rc`).
 
 **Burndown** charts pending, started and done over time with the net fix rate and an estimated completion date, by day,
 week, month or year. It counts as Taskwarrior does, quirks included (checked bar by bar). `burndown.cumulative=0`
@@ -493,18 +494,39 @@ different: it is the command a line runs when it names none.)
 
 ![The Settings page, on its taskrc tab: the saved settings as text to edit, with a colour theme picker and import from a file or a link](screenshots/settings-taskrc.png)
 
+(The screenshot predates the list of files beside the text, described under [Your taskrc](#your-taskrc).)
+
 ## Your taskrc
 
-UDAs, custom reports, contexts and your other settings live in `~/.taskrc`, not in your synced data, so the app keeps
-its own copy. Open **Settings**, then its **taskrc** tab, paste or choose your file, and **Apply**. Only an allowlist of settings is kept (the full
-list, with what each does, is [taskrc support](taskrc-support.md)).
+UDAs, custom reports, contexts, holidays and your other settings live in `~/.taskrc`, not in your synced data, so the app
+keeps its own copy: **a folder of files**, kept as you wrote them. Open **Settings**, then its **taskrc** tab. On the left
+are the files (the main one, `taskrc`, first); choose one to edit it on the right, then **Apply**. Only an allowlist of
+settings is read (the full list, with what each does, is [taskrc support](taskrc-support.md)).
 
-- **Sync settings and anything credential-like are blocked** (`sync.*`, `taskd.*`, names containing `secret`,
-  `password`, `token`, …). Only the *names* of what was dropped are shown; the raw text is never stored.
-- What is saved is shown back, so each import edits it instead of replacing it. **Restore previous** undoes the last save.
-- `include` lines can't be followed; paste the included files too.
+- **Text is kept as written**: comments, blank lines, order and spacing stay. Two things change on the way in. **A line the
+  app can't use is commented out** (`# [unsupported] some.key=1`) instead of being dropped, and the result says which lines
+  and why. **Sync settings and anything credential-like are removed** (`sync.*`, `taskd.*`, names containing `secret`,
+  `password`, `token`, …), a commented-out one included: they are never stored, logged, shown or synced, and only the
+  *names* of what was removed are reported.
+- **`include` works as in Taskwarrior**: `include holidays/en-US.rc` reads that file where the line stands, so later lines
+  win, with the path written from the file that has the line (`include ../taskrc` from inside a folder), nested up to ten
+  levels. An include that points nowhere, outside the folder or at an absolute path is reported with its file and line,
+  and the rest is still read. `include dark-256.theme` (Taskwarrior's own themes) becomes that theme's lines when you
+  apply. A file no include reaches is kept but marked *unused*.
+- **Add a file** by typing its name (`holidays/en-US.rc`) and **Add**, or **Add files** to upload several. **Import
+  folder** uploads a whole folder (your dotfiles checkout): `.taskrc` or `taskrc` at its top becomes the main taskrc, hidden
+  files and folders (`.git`), binary files and anything over 256 KB are left out and listed, and up to 64 files or 1 MB are
+  taken. It adds to what is here; tick **Replace what is here** to make the folder the whole of it (it needs a `taskrc`).
+  One import is one step, so **Restore previous** undoes all of it.
+- **Include this file in…** (on any file but the main one) adds `include <path>` to the file you choose, written from that
+  file, and shows it; **Apply** keeps it. **Delete file** removes one (the main taskrc can't be deleted, only emptied).
+- **`config` and the settings pages write to the main taskrc**, as `task config` does: a line that starts with `name=`
+  changes in place and keeps its comment, a new setting goes on the end, removing one deletes those lines. A setting an
+  included file defines is not edited there: the new line overrides it, or, to remove it, you edit that file.
+- **Restore previous** undoes the last save, import or delete (all the files together).
 - **Import from a link** keeps your dotfiles repository as the source: paste the address of the file (a GitHub or GitLab
-  file page works, as does a raw link or a gist's) and choose **Import**. The Worker fetches it, so the site's CORS
+  file page works, as does a raw link or a gist's) and choose **Import**. It brings the main taskrc only; files it
+  includes are not fetched, so add them (they show as *not found* until you do). The Worker fetches it, so the site's CORS
   rules don't matter, and keeps what a pasted file would keep; the file itself never reaches the browser. It saves
   straight away (**Restore previous** undoes it) and does not remember the link, so import again to refresh. Only
   `https://` links to public web sites are followed (no addresses, ports or user names in the link; the same for any

@@ -191,6 +191,8 @@ class Store(
     // ---- What is on screen
     var view by mutableStateOf(View.Tasks)
     var settingsTab by mutableStateOf(SettingsTab.Taskrc)
+    /** The file of the taskrc folder the taskrc tab shows (null: the main taskrc). */
+    var settingsFile by mutableStateOf<String?>(null)
 
     /** The board the Boards page shows (null: the list of boards). */
     var boardId by mutableStateOf<String?>(null)
@@ -798,7 +800,7 @@ class Store(
         get() = detail?.let { AppPlace.TaskAt(it.uuid.take(8)) } ?: when (view) {
             View.Tasks -> AppPlace.Report(report)
             View.Boards -> AppPlace.Boards(boardId)
-            View.Settings -> AppPlace.SettingsAt(settingsTab)
+            View.Settings -> AppPlace.SettingsAt(settingsTab, settingsFile.takeIf { settingsTab == SettingsTab.Taskrc })
             else -> AppPlace.Page(view)
         }
 
@@ -822,7 +824,10 @@ class Store(
                 notify("There is no board called ${place.slug}.", bad = true)
                 goHome(force = true)
             }
-            is AppPlace.SettingsAt -> openSettings(place.tab ?: settingsTab)
+            is AppPlace.SettingsAt -> {
+                if (place.tab != null) settingsFile = place.file
+                openSettings(place.tab ?: settingsTab)
+            }
         }
     }
 

@@ -354,9 +354,30 @@ data class TaskrcResponse(
     val blocked: List<String> = emptyList(),
     val ignored: List<String> = emptyList(),
     val warnings: List<String> = emptyList(),
-    /** The settings as now saved, rendered as a taskrc (nothing blocked is ever in it). */
+    /** Lines kept but commented out, because the app can't use them: the file, the line (from 1) and why. */
+    val commented: List<Commented> = emptyList(),
+    /** The file as now saved (nothing blocked is ever in it). */
     val text: String = "",
 )
+
+@Serializable
+data class Commented(val file: String? = null, val line: Int, val message: String)
+
+/** An `include` line of a file of the taskrc folder. */
+@Serializable
+data class RcInclude(val line: Int, val target: String, val found: String? = null)
+
+/** A file of the taskrc folder. [used] is whether the main taskrc reaches it through includes. */
+@Serializable
+data class RcFile(val path: String, val bytes: Int = 0, val includes: List<RcInclude> = emptyList(), val used: Boolean = true)
+
+/** An include that could not be followed. */
+@Serializable
+data class RcProblem(val file: String, val line: Int, val message: String)
+
+/** The files of the taskrc folder (`GET /api/config/files`). */
+@Serializable
+data class RcFiles(val root: String = "taskrc", val files: List<RcFile> = emptyList(), val problems: List<RcProblem> = emptyList())
 
 /** The report names the settings define, for choosing one. */
 @Serializable

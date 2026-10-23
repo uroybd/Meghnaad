@@ -113,6 +113,8 @@ class Store {
   boardRanges = $state<Record<string, Record<string, { start: string; end: string }>>>({});
   /** The tab the Settings page shows. */
   settingsTab = $state<SettingsTab>('taskrc');
+  /** The file of the taskrc folder the taskrc tab shows (`null`: the main taskrc). */
+  settingsFile = $state<string | null>(null);
   /** The app's own `settings.json`, read (null until it has been). */
   appSettings = $state<ParsedSettings | null>(null);
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
@@ -305,7 +307,9 @@ class Store {
         : this.view === 'boards'
           ? { page: 'boards', board: this.boardId }
           : this.view === 'settings'
-            ? { page: 'settings', tab: this.settingsTab }
+            ? this.settingsTab === 'taskrc' && this.settingsFile
+              ? { page: 'settings', tab: 'taskrc', file: this.settingsFile }
+              : { page: 'settings', tab: this.settingsTab }
             : { page: this.view },
   );
 
@@ -836,7 +840,10 @@ class Store {
         this.view = 'boards';
         return place.board === null ? undefined : placePath(place);
       case 'settings':
-        if (place.tab) this.settingsTab = place.tab;
+        if (place.tab) {
+          this.settingsTab = place.tab;
+          this.settingsFile = place.file ?? null;
+        }
         this.view = 'settings';
         return undefined;
       case 'task':

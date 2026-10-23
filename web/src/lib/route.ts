@@ -4,7 +4,7 @@
 //   /report/<name>      Tasks, as that report (a report is its own slug: `next`, `list`, `_reviewed`, one of yours)
 //   /projects /tags /summary /calendar /burndown /console
 //   /boards             the list of boards;  /board/<slug>  one of them
-//   /settings           Settings;  /settings/<tab>  one of its tabs
+//   /settings           Settings;  /settings/<tab>  one of its tabs;  /settings/taskrc/<path>  one file of the taskrc folder
 //   /task/<8 characters>  a task's detail drawer (the first 8 characters of its uuid; the numbers `task 3` uses differ
 //                       from one replica to the next and change as tasks finish)
 //
@@ -23,7 +23,7 @@ export type Place =
   | { page: 'tasks'; report: string }
   | { page: PlainPage }
   | { page: 'boards'; board: string | null }
-  | { page: 'settings'; tab: SettingsTab | null }
+  | { page: 'settings'; tab: SettingsTab | null; file?: string }
   | { page: 'task'; prefix: string };
 
 /** The place an address names, or `null` for the front page and for an address that is nothing. */
@@ -43,6 +43,11 @@ export function parsePath(path: string): Place | null {
     }
     return null;
   }
+  const file = /^\/settings\/taskrc\/(.+?)\/?$/.exec(path);
+  if (file) {
+    const name = rcFileFromPath(file[1]);
+    return name ? { page: 'settings', tab: 'taskrc', file: name } : null;
+  }
   const settings = /^\/settings(?:\/([a-z]+))?\/?$/.exec(path);
   if (settings) {
     const tab = settings[1] as SettingsTab | undefined;
@@ -61,6 +66,8 @@ export function placePath(p: Place): string {
     case 'boards':
       return p.board === null ? BOARDS_PATH : boardPath(p.board);
     case 'settings':
+      if (p.tab === 'taskrc' && p.file)
+        return `/settings/taskrc/${p.file.split('/').map(encodeURIComponent).join('/')}`;
       return p.tab ? `/settings/${p.tab}` : '/settings';
     case 'task':
       return `/task/${p.prefix}`;
@@ -117,4 +124,16 @@ export function boardFromPath(path: string): string | null {
 /** Whether the address is the list of boards. */
 export function isBoardsPath(path: string): boolean {
   return /^\/boards\/?$/.test(path);
+}
+
+// One file of the taskrc folder has an address too, `/settings/taskrc/<path>` (`/settings/taskrc/holidays/en-US.rc`),
+// written in the folder's own way: parts joined by `/`, none empty, `.` or `..`.
+
+function rcFileFromPath(raw: string): string | null {
+  try {
+    const parts = raw.split('/').map(decodeURIComponent);
+    return parts.some((p) => p === '' || p === '.' || p === '..' || p.includes('\\')) ? null : parts.join('/');
+  } catch {
+    return null; // a broken %-escape
+  }
 }

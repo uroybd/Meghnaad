@@ -222,7 +222,15 @@ impl Engine {
             .iter()
             .chain(filesync::HOOKS)
             .copied()
-            .filter(|k| s.files.iter().any(|f| f == k))
+            // The taskrc files go with the settings they add up to.
+            .filter(|k| {
+                let k = if *k == tc_core::webapi::RC_PREFIX {
+                    tc_core::webapi::CONFIG_KEY
+                } else {
+                    k
+                };
+                s.files.iter().any(|f| f == k)
+            })
             .collect();
         let for_files = match (&s.files_bucket, &s.tasks) {
             _ if files.is_empty() => None,

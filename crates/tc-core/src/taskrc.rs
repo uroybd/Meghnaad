@@ -95,6 +95,19 @@ pub struct Config {
 }
 
 impl Config {
+    /// Whether any name in it is sync- or credential-like: a setting, an urgency coefficient, a UDA, a report, a
+    /// context or a setting of a context. None can be stored, however it got here.
+    pub fn has_sensitive(&self) -> bool {
+        self.settings.keys().any(|k| is_sensitive(k))
+            || self.urgency.keys().any(|k| is_sensitive(k))
+            || self.udas.keys().any(|k| is_sensitive(k))
+            || self.reports.keys().any(|k| is_sensitive(k))
+            || self
+                .contexts
+                .iter()
+                .any(|(n, c)| is_sensitive(n) || c.rc.keys().any(|k| is_sensitive(k)))
+    }
+
     /// `weekstart`: weeks start on Monday if the taskrc says so; otherwise on Sunday, which is
     /// Taskwarrior's default (`weekstart=sunday`).
     pub fn week_starts_monday(&self) -> bool {
@@ -768,14 +781,21 @@ pub fn set_urgency(cfg: &mut Config, urgency: BTreeMap<String, f64>, inherit: bo
 /// import again. Parsing the result gives back the same config (see the round-trip test).
 /// Never contains anything that was blocked, since that was never stored.
 pub fn render(cfg: &Config) -> String {
-    let one_line = |s: &str| s.replace(['\n', '\r'], " ");
     let mut out = String::new();
-    let mut line = |k: String, v: &str| {
+    for (k, v) in render_pairs(cfg) {
         out.push_str(&k);
         out.push('=');
-        out.push_str(&one_line(v));
+        out.push_str(&v);
         out.push('\n');
-    };
+    }
+    out
+}
+
+/// Each setting [`render`] writes, as a name and a one-line value, in the order it writes them.
+pub fn render_pairs(cfg: &Config) -> Vec<(String, String)> {
+    let one_line = |s: &str| s.replace(['\n', '\r'], " ");
+    let mut out = Vec::new();
+    let mut line = |k: String, v: &str| out.push((k, one_line(v)));
 
     for u in cfg.udas.values() {
         let n = &u.name;
@@ -840,175 +860,225 @@ pub fn render(cfg: &Config) -> String {
     out
 }
 
-pub fn parse(text: &str) -> Parsed {
-    let mut p = Parsed::default();
-    let mut includes = 0usize;
-    let mut raw_uda: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-    let mut raw_report: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+/// What one line of a taskrc turned out to be.
+enum Step {
+    Blank,
+    Include,
+    /// Not blank, not a comment, not an `include`, and has no `=`.
+    Malformed,
+    Done,
+}
 
-    for line in text.lines() {
-        // A `#` starts a comment, anywhere in the line, as in Taskwarrior (`bulk=5 # five` is 5).
-        let line = line.split('#').next().unwrap_or("").trim();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("include") {
-            if rest.starts_with(char::is_whitespace) {
-                includes += 1;
-                continue;
-            }
-        }
-        let Some((name, value)) = line.split_once('=') else {
-            continue;
-        };
-        let name = name.trim();
-        // Value is only used after the key passes both gates below.
-        let value = value.trim();
+type RawAttrs = BTreeMap<String, BTreeMap<String, String>>;
 
-        if is_sensitive(name) {
-            p.blocked.push(name.to_owned());
-            continue;
-        }
+fn parse_one(p: &mut Parsed, raw_uda: &mut RawAttrs, raw_report: &mut RawAttrs, line: &str) -> Step {
+    // A `#` starts a comment, anywhere in the line, as in Taskwarrior (`bulk=5 # five` is 5).
+    let line = line.split('#').next().unwrap_or("").trim();
+    if line.is_empty() {
+        return Step::Blank;
+    }
+    if include_target(line).is_some() {
+        return Step::Include;
+    }
+    let Some((name, value)) = line.split_once('=') else {
+        return Step::Malformed;
+    };
+    let name = name.trim();
+    // Value is only used after the key passes both gates below.
+    let value = value.trim();
 
-        let parts: Vec<&str> = name.split('.').collect();
-        match parts.as_slice() {
-            ["uda", n, attr]
-                if valid_ident(n) && matches!(*attr, "type" | "label" | "values" | "default" | "indicator") =>
-            {
-                raw_uda
-                    .entry((*n).to_owned())
-                    .or_default()
-                    .insert((*attr).to_owned(), unescape(value));
-            }
-            // `timesheet` is a command, not a report with columns: only its filter and context are settings.
-            ["report", "timesheet", "filter" | "context"] => {
-                p.config.settings.insert(name.to_owned(), unescape(value));
-            }
-            ["report", n, attr]
-                if valid_ident(n)
-                    && matches!(
-                        *attr,
-                        "description" | "columns" | "labels" | "sort" | "filter" | "context" | "dateformat"
-                    ) =>
-            {
-                raw_report
-                    .entry((*n).to_owned())
-                    .or_default()
-                    .insert((*attr).to_owned(), unescape(value));
-            }
-            // A context's own settings. The key goes through the same checks as one typed on a command
-            // line, and anything credential-like is refused by name, never stored.
-            ["context", n, "rc", key @ ..] if valid_ident(n) && !key.is_empty() => {
-                let key = key.join(".");
-                if is_sensitive(&key) {
-                    p.blocked.push(name.to_owned());
-                    continue;
-                }
-                match check_context_rc(&key, value) {
-                    Ok(()) => {
-                        let c = p.config.contexts.entry((*n).to_owned()).or_insert_with(|| ContextDef {
-                            name: (*n).to_owned(),
-                            ..Default::default()
-                        });
-                        c.rc.insert(key, unescape(value));
-                    }
-                    Err(RcProblem::Unused) => p.ignored.push(name.to_owned()),
-                    Err(RcProblem::Bad(why)) => p.warnings.push(format!("{name}: {why}")),
-                }
-            }
-            ["context", n, attr] if valid_ident(n) && matches!(*attr, "read" | "write") => {
-                let c = p.config.contexts.entry((*n).to_owned()).or_insert_with(|| ContextDef {
-                    name: (*n).to_owned(),
-                    ..Default::default()
-                });
-                let v = Some(unescape(value));
-                if *attr == "read" {
-                    c.read = v;
-                } else {
-                    c.write = v;
-                }
-            }
-            ["context"] => {
-                p.config.active_context = (!value.is_empty()).then(|| value.to_owned());
-            }
-            // Defaults for new tasks. An empty value means "none", and a date that can't be read is
-            // dropped with a warning (Taskwarrior skips it silently when a task is added).
-            ["default", "project"] => {
-                if !value.is_empty() {
-                    p.config.settings.insert(name.to_owned(), unescape(value));
-                }
-            }
-            ["default", "due" | "scheduled"] => {
-                if value.is_empty() {
-                    // unset
-                } else if crate::dates::parse_date_expr(value, &crate::dates::Clock::utc(0)).is_some() {
-                    p.config.settings.insert(name.to_owned(), value.to_owned());
-                } else {
-                    p.warnings
-                        .push(format!("{name}: '{value}' is not a date or duration, ignored"));
-                }
-            }
-            // The order the colour rules apply in, and whether they blend.
-            ["rule", "precedence", "color"] | ["rule", "color", "merge"] => {
-                p.config.settings.insert(name.to_owned(), unescape(value));
-            }
-            // A colour rule or a chart colour: the value is a colour specification, which is checked here.
-            // An empty one is allowed; it switches the default rule off.
-            ["color", rest @ ..] if !rest.is_empty() => match crate::color::parse_style(&unescape(value)) {
-                Ok(_) => {
-                    p.config.settings.insert(name.to_owned(), unescape(value));
-                }
-                Err(why) => p.warnings.push(format!("{name}: {why}")),
-            },
-            // `alias.<name>=<words>`: the name is everything after `alias.` (it may hold dots, as
-            // `burndown.weekly` does). An empty value is allowed: it makes the word vanish.
-            ["alias", rest @ ..] if !rest.is_empty() && !rest.join(".").contains(char::is_whitespace) => {
-                p.config.settings.insert(name.to_owned(), unescape(value));
-            }
-            // `holiday.<id>.name`, and `.date` or `.start` and `.end`, for the calendar.
-            ["holiday", id, attr] if valid_ident(id) && matches!(*attr, "name" | "date" | "start" | "end") => {
-                p.config.settings.insert(name.to_owned(), unescape(value));
-            }
-            // Taskwarrior refuses to start with anything but Sunday or Monday here.
-            ["weekstart"] => {
-                if matches!(value.trim().to_ascii_lowercase().as_str(), "sunday" | "monday") {
-                    p.config.settings.insert(name.to_owned(), value.trim().to_owned());
-                } else {
-                    p.warnings
-                        .push(format!("weekstart: '{value}' is not Sunday or Monday, ignored"));
-                }
-            }
-            ["limit"] => {
-                // Taskwarrior reads anything that isn't a number as 0, which is "no limit". Say so
-                // here instead, since a typo there silently shows everything.
-                if crate::filter::parse_limit(value).is_some() {
-                    p.config.settings.insert(name.to_owned(), value.to_owned());
-                } else {
-                    p.warnings
-                        .push(format!("limit: '{value}' is not a number, 'page' or 'none', ignored"));
-                }
-            }
-            ["urgency", "inherit"] => {
-                p.config.settings.insert(name.to_owned(), unescape(value));
-            }
-            ["urgency", ..] => match value.parse::<f64>() {
-                Ok(f) if f.is_finite() => {
-                    p.config.urgency.insert(name.to_owned(), f);
-                }
-                _ => p.warnings.push(format!("{name}: not a number, ignored")),
-            },
-            _ if SCALAR_SETTINGS.contains(&name) => {
-                p.config.settings.insert(name.to_owned(), unescape(value));
-            }
-            _ => p.ignored.push(name.to_owned()),
-        }
+    if is_sensitive(name) {
+        p.blocked.push(name.to_owned());
+        return Step::Done;
     }
 
+    let parts: Vec<&str> = name.split('.').collect();
+    match parts.as_slice() {
+        ["uda", n, attr]
+            if valid_ident(n) && matches!(*attr, "type" | "label" | "values" | "default" | "indicator") =>
+        {
+            raw_uda
+                .entry((*n).to_owned())
+                .or_default()
+                .insert((*attr).to_owned(), unescape(value));
+        }
+        // `timesheet` is a command, not a report with columns: only its filter and context are settings.
+        ["report", "timesheet", "filter" | "context"] => {
+            p.config.settings.insert(name.to_owned(), unescape(value));
+        }
+        ["report", n, attr]
+            if valid_ident(n)
+                && matches!(
+                    *attr,
+                    "description" | "columns" | "labels" | "sort" | "filter" | "context" | "dateformat"
+                ) =>
+        {
+            raw_report
+                .entry((*n).to_owned())
+                .or_default()
+                .insert((*attr).to_owned(), unescape(value));
+        }
+        // A context's own settings. The key goes through the same checks as one typed on a command
+        // line, and anything credential-like is refused by name, never stored.
+        ["context", n, "rc", key @ ..] if valid_ident(n) && !key.is_empty() => {
+            let key = key.join(".");
+            if is_sensitive(&key) {
+                p.blocked.push(name.to_owned());
+                return Step::Done;
+            }
+            match check_context_rc(&key, value) {
+                Ok(()) => {
+                    let c = p.config.contexts.entry((*n).to_owned()).or_insert_with(|| ContextDef {
+                        name: (*n).to_owned(),
+                        ..Default::default()
+                    });
+                    c.rc.insert(key, unescape(value));
+                }
+                Err(RcProblem::Unused) => p.ignored.push(name.to_owned()),
+                Err(RcProblem::Bad(why)) => p.warnings.push(format!("{name}: {why}")),
+            }
+        }
+        ["context", n, attr] if valid_ident(n) && matches!(*attr, "read" | "write") => {
+            let c = p.config.contexts.entry((*n).to_owned()).or_insert_with(|| ContextDef {
+                name: (*n).to_owned(),
+                ..Default::default()
+            });
+            let v = Some(unescape(value));
+            if *attr == "read" {
+                c.read = v;
+            } else {
+                c.write = v;
+            }
+        }
+        ["context"] => {
+            p.config.active_context = (!value.is_empty()).then(|| value.to_owned());
+        }
+        // Defaults for new tasks. An empty value means "none", and a date that can't be read is
+        // dropped with a warning (Taskwarrior skips it silently when a task is added).
+        ["default", "project"] => {
+            if !value.is_empty() {
+                p.config.settings.insert(name.to_owned(), unescape(value));
+            }
+        }
+        ["default", "due" | "scheduled"] => {
+            if value.is_empty() {
+                // unset
+            } else if crate::dates::parse_date_expr(value, &crate::dates::Clock::utc(0)).is_some() {
+                p.config.settings.insert(name.to_owned(), value.to_owned());
+            } else {
+                p.warnings
+                    .push(format!("{name}: '{value}' is not a date or duration, ignored"));
+            }
+        }
+        // The order the colour rules apply in, and whether they blend.
+        ["rule", "precedence", "color"] | ["rule", "color", "merge"] => {
+            p.config.settings.insert(name.to_owned(), unescape(value));
+        }
+        // A colour rule or a chart colour: the value is a colour specification, which is checked here.
+        // An empty one is allowed; it switches the default rule off.
+        ["color", rest @ ..] if !rest.is_empty() => match crate::color::parse_style(&unescape(value)) {
+            Ok(_) => {
+                p.config.settings.insert(name.to_owned(), unescape(value));
+            }
+            Err(why) => p.warnings.push(format!("{name}: {why}")),
+        },
+        // `alias.<name>=<words>`: the name is everything after `alias.` (it may hold dots, as
+        // `burndown.weekly` does). An empty value is allowed: it makes the word vanish.
+        ["alias", rest @ ..] if !rest.is_empty() && !rest.join(".").contains(char::is_whitespace) => {
+            p.config.settings.insert(name.to_owned(), unescape(value));
+        }
+        // `holiday.<id>.name`, and `.date` or `.start` and `.end`, for the calendar.
+        ["holiday", id, attr] if valid_ident(id) && matches!(*attr, "name" | "date" | "start" | "end") => {
+            p.config.settings.insert(name.to_owned(), unescape(value));
+        }
+        // Taskwarrior refuses to start with anything but Sunday or Monday here.
+        ["weekstart"] => {
+            if matches!(value.trim().to_ascii_lowercase().as_str(), "sunday" | "monday") {
+                p.config.settings.insert(name.to_owned(), value.trim().to_owned());
+            } else {
+                p.warnings
+                    .push(format!("weekstart: '{value}' is not Sunday or Monday, ignored"));
+            }
+        }
+        ["limit"] => {
+            // Taskwarrior reads anything that isn't a number as 0, which is "no limit". Say so
+            // here instead, since a typo there silently shows everything.
+            if crate::filter::parse_limit(value).is_some() {
+                p.config.settings.insert(name.to_owned(), value.to_owned());
+            } else {
+                p.warnings
+                    .push(format!("limit: '{value}' is not a number, 'page' or 'none', ignored"));
+            }
+        }
+        ["urgency", "inherit"] => {
+            p.config.settings.insert(name.to_owned(), unescape(value));
+        }
+        ["urgency", ..] => match value.parse::<f64>() {
+            Ok(f) if f.is_finite() => {
+                p.config.urgency.insert(name.to_owned(), f);
+            }
+            _ => p.warnings.push(format!("{name}: not a number, ignored")),
+        },
+        _ if SCALAR_SETTINGS.contains(&name) => {
+            p.config.settings.insert(name.to_owned(), unescape(value));
+        }
+        _ => p.ignored.push(name.to_owned()),
+    }
+    Step::Done
+}
+
+/// What became of one line of a taskrc.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    /// Read and kept; or a comment, or blank.
+    Kept,
+    /// A sync or credential-like setting: refused, and never stored.
+    Blocked,
+    /// A setting this app does not read, a value it refused, or a line that is not a setting at all.
+    Unsupported,
+    /// An `include` line.
+    Include,
+}
+
+/// The file named by an `include <file>` line (comments cut off), or `None` if it is not one.
+pub fn include_target(line: &str) -> Option<&str> {
+    let line = line.split('#').next().unwrap_or("").trim();
+    let rest = line.strip_prefix("include")?;
+    rest.starts_with(char::is_whitespace).then(|| rest.trim())
+}
+
+pub fn parse(text: &str) -> Parsed {
+    let lines: Vec<&str> = text.lines().collect();
+    let (mut p, _) = parse_lines(&lines);
+    let includes = lines.iter().filter(|l| include_target(l).is_some()).count();
     if includes > 0 {
         p.warnings.push(format!(
             "{includes} include directive(s) skipped: includes can't be resolved here; \
              paste the included files' contents too"
         ));
+    }
+    p
+}
+
+/// Parse lines (an `include` among them is not followed), and say what became of each. Warnings that belong to a
+/// definition rather than a line (a UDA with no type) are not tied to any line.
+pub fn parse_lines(lines: &[&str]) -> (Parsed, Vec<Verdict>) {
+    let mut p = Parsed::default();
+    let mut raw_uda: RawAttrs = BTreeMap::new();
+    let mut raw_report: RawAttrs = BTreeMap::new();
+    let mut verdicts = Vec::with_capacity(lines.len());
+
+    for line in lines {
+        let before = (p.blocked.len(), p.ignored.len(), p.warnings.len());
+        let step = parse_one(&mut p, &mut raw_uda, &mut raw_report, line);
+        verdicts.push(match step {
+            Step::Blank => Verdict::Kept,
+            Step::Include => Verdict::Include,
+            Step::Malformed => Verdict::Unsupported,
+            Step::Done if p.blocked.len() > before.0 => Verdict::Blocked,
+            Step::Done if p.ignored.len() > before.1 || p.warnings.len() > before.2 => Verdict::Unsupported,
+            Step::Done => Verdict::Kept,
+        });
     }
 
     for (name, attrs) in raw_uda {
@@ -1074,7 +1144,7 @@ pub fn parse(text: &str) -> Parsed {
     p.blocked.dedup();
     p.ignored.sort_unstable();
     p.ignored.dedup();
-    p
+    (p, verdicts)
 }
 
 #[cfg(test)]

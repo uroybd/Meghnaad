@@ -1,5 +1,5 @@
 import { engine, engineAvailable } from '../engine/client.svelte';
-import type { CliResponse, ConfigResponse, ImportReport, TaskrcResponse } from './types';
+import type { CliResponse, ConfigResponse, ImportReport, RcFiles, TaskrcResponse } from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -172,12 +172,13 @@ export async function runCli(input: CliInput): Promise<CliResponse> {
   const { config, ...response } = res;
   if (config) {
     try {
-      await request('/api/config/engine', {
+      const saved = await request<{ config?: unknown }>('/api/config/engine', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(config),
       });
-      await engine.setConfig(JSON.stringify(config));
+      // What is in force can differ from what was asked for: an included file may still say otherwise.
+      await engine.setConfig(JSON.stringify(saved.config ?? config));
     } catch {
       return {
         ...response,
@@ -255,7 +256,7 @@ export function getConfig(reuse = false): Promise<ConfigResponse> {
   return reading;
 }
 
-/** The saved settings, rendered as a taskrc to edit and import again. */
+/** The main taskrc as saved, to edit and import again. */
 export async function getTaskrcText(): Promise<string> {
   let res: Response;
   try {
@@ -277,6 +278,51 @@ export function putTaskrc(text: string): Promise<TaskrcResponse> {
     method: 'PUT',
     headers: { 'content-type': 'text/plain' },
     body: text,
+  });
+}
+
+const filePath = (path: string) => `/api/config/files/${path.split('/').map(encodeURIComponent).join('/')}`;
+
+/** The files of the taskrc folder, what each includes, and the includes that could not be followed. */
+export function getRcFiles(): Promise<RcFiles> {
+  return request<RcFiles>('/api/config/files');
+}
+
+/** One file of the folder, as saved. */
+export async function getRcFile(path: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(filePath(path));
+  } catch {
+    throw new ApiError('Could not reach the server.', 0);
+  }
+  if (!res.ok)
+    throw new ApiError(res.status === 404 ? 'There is no such file.' : `Server error (${res.status}).`, res.status);
+  return res.text();
+}
+
+/** Save one file (it is made if it is new). */
+export function putRcFile(path: string, text: string): Promise<TaskrcResponse> {
+  return request<TaskrcResponse>(filePath(path), {
+    method: 'PUT',
+    headers: { 'content-type': 'text/plain' },
+    body: text,
+  });
+}
+
+export function deleteRcFile(path: string): Promise<TaskrcResponse> {
+  return request<TaskrcResponse>(filePath(path), { method: 'DELETE' });
+}
+
+/** Add files to the folder, or (`replace`) make them the whole folder, in one step. */
+export function importRcFiles(
+  files: { path: string; text: string }[],
+  mode: 'merge' | 'replace',
+): Promise<TaskrcResponse> {
+  return request<TaskrcResponse>('/api/config/files/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ files, mode }),
   });
 }
 

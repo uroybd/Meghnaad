@@ -103,7 +103,11 @@ class Tw(private val port: EnginePort, private val clock: Clock) {
         return try {
             val saved = api("PUT", "/api/config/engine", config.toString())
             if ((saved["status"]?.jsonPrimitive?.content?.toIntOrNull() ?: 200) !in 200..299) error("not saved")
-            engineJson.parseToJsonElement(port.call("config", config.toString())).jsonObject["error"]?.let { error(it.jsonPrimitive.content) }
+            // What is in force can differ from what was asked for: an included file may still say otherwise.
+            val inForce = saved["body"]?.jsonPrimitive?.content
+                ?.let { runCatching { engineJson.parseToJsonElement(it).jsonObject["config"] }.getOrNull() }
+                ?.takeIf { it !is kotlinx.serialization.json.JsonNull } ?: config
+            engineJson.parseToJsonElement(port.call("config", inForce.toString())).jsonObject["error"]?.let { error(it.jsonPrimitive.content) }
             CliResponse(got.wrote, got.feedback, got.result, got.command, null)
         } catch (e: Exception) {
             CliResponse(got.wrote, got.feedback, CliResult.Error(ErrorResult("The settings could not be saved. Nothing was changed.")), got.command, null)

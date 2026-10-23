@@ -4,8 +4,8 @@ Which of Taskwarrior's `taskrc` options Meghnaad handles, and which it doesn't.
 
 The list of options comes from the `taskrc(5)` man page of Taskwarrior **3.5.0**; the status of each one comes from
 reading this repository's code. [Using Meghnaad](using.md#your-taskrc) explains how the taskrc is imported. In short: you paste or choose your
-`~/.taskrc`, only an allowlist of settings is kept, and the result is saved in your bucket (`web/config.json`), not in
-your desktop file. The app's own settings (task commands, so far) are not taskrc options: they are in a `settings.json`
+`~/.taskrc` (or a folder of files, with `include` followed), the text is kept as written in your bucket (`web/rc/…`), only an allowlist of
+settings is read from it (and what they add up to is kept in `web/config.json`), not in your desktop file. Lines that can't be used are commented out; sync and credential lines are removed. The app's own settings (task commands, so far) are not taskrc options: they are in a `settings.json`
 of their own, described in [Using Meghnaad](using.md#commands).
 
 **Scope.** This tracks Taskwarrior **3.5.0 and newer**, and only that. Settings that were removed or deprecated before
@@ -30,7 +30,7 @@ Each row below counts once, even where a row covers several related options.
 
 | Area | Done | Partial | Not done | N/A | Blocked |
 | --- | --- | --- | --- | --- | --- |
-| Files, hooks and environment | 2 | 1 | 2 | 5 | 0 |
+| Files, hooks and environment | 3 | 1 | 1 | 5 | 0 |
 | Terminal | 1 | 0 | 0 | 2 | 0 |
 | Commands, aliases and matching | 4 | 1 | 0 | 0 | 0 |
 | Confirmations and safety | 3 | 0 | 0 | 0 | 0 |
@@ -47,7 +47,7 @@ Each row below counts once, even where a row covers several related options.
 | User defined attributes | 6 | 0 | 0 | 0 | 0 |
 | Context | 4 | 0 | 0 | 0 | 0 |
 | Sync | 0 | 0 | 0 | 0 | 1 |
-| **Total** | **90** | **4** | **2** | **15** | **1** |
+| **Total** | **91** | **4** | **1** | **15** | **1** |
 
 ## Files, hooks and environment
 
@@ -55,10 +55,10 @@ Each row below counts once, even where a row covers several related options.
 | --- | --- | --- |
 | `rc.<key>:<value>` on a command line | Done | Typed in the console, for one command. Held to the same allowlist as the taskrc, so `rc.sync.*` and credential-like keys are refused. Harmless unknown ones (`rc.verbose`) are accepted and ignored, as the real `task` does |
 | `rc.report.<name>.<attr>:<value>` | Done | Changes one attribute of a report for one command. The header sort in the table uses this |
-| `include <file>` | Not done | A file can't be read from a browser. The line is skipped with a warning; paste the included file's contents too |
+| `include <file>` | Done | Followed in the app's own folder of files (Settings → taskrc), as Taskwarrior does: the path is relative to the file that has the line, later lines win, and files nest to ten levels. A file that is missing or outside the folder is reported with its file and line (Taskwarrior stops with an error; the app reports and goes on). Absolute paths, `~` and `$VAR` are not followed, since there is no file system to read; Taskwarrior's own `*.theme` files are expanded when you apply. Taskwarrior also looks in the current directory, which has no meaning here |
 | `purge.on-sync` | Not done | The app only purges when you run `purge`; it never purges deleted tasks by itself on a sync. Leave that to your CLI |
 | `data.location`, `TASKDATA` | N/A | Data lives in the R2 bucket |
-| `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; settings are saved in the bucket |
+| `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; its place is a folder of files saved in the bucket (`web/rc/`), the main one being `taskrc` |
 | `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A browser can't run scripts, so the hooks are functions in a Lua script kept in the bucket and edited in Settings: `on_launch`, `on_add`, `on_modify` and `on_exit`. See [Hooks](using.md#hooks) |
 | `hooks.location`, `debug.hooks` | N/A | There is no hooks directory to look in, and no scripts to trace |
 | `gc` | N/A | Working-set ids are computed by the app, not stored |
@@ -144,7 +144,7 @@ The `calendar` command is supported, with Taskwarrior's arguments (`calendar`, `
 | `weekstart` | Done | Sunday (the default, as in Taskwarrior) or Monday. Decides what `sow`/`eow` and the other week-based dates mean, how the calendar's weeks start, and which week numbers it shows. `rc.weekstart:monday` works for one command |
 | `due` | Done | How many days ahead counts as due (`+DUE`). Default 7 |
 | `dateformat.edit` | N/A | There is no `task edit` text file; the editor form has date pickers |
-| `dateformat.holiday`, `holiday.<name>.name`, `.date`, `.start`, `.end` | Done | A holiday is one `date`, or a stretch from `start` to `end`. Dates are read in `dateformat.holiday` (default `YMD`; the numeric parts `Y y M m D d` and separators are understood). `easter`, `goodfriday`, `eastermonday`, `ascension` and `pentecost` work too, and, as in Taskwarrior, mean the *next* one from today. `include holidays.en-US.rc` is not followed (see Files): paste the holidays into the Settings page's taskrc tab |
+| `dateformat.holiday`, `holiday.<name>.name`, `.date`, `.start`, `.end` | Done | A holiday is one `date`, or a stretch from `start` to `end`. Dates are read in `dateformat.holiday` (default `YMD`; the numeric parts `Y y M m D d` and separators are understood). `easter`, `goodfriday`, `eastermonday`, `ascension` and `pentecost` work too, and, as in Taskwarrior, mean the *next* one from today. `include holidays.en-US.rc` works: add that file to the folder (Settings → taskrc) and include it from the main taskrc |
 | `calendar.details` | Done | `sparse` (the default) colours the days that have something due or scheduled; `full` also lists what is due in the months shown, using `calendar.details.report`; `none` turns the colouring off |
 | `calendar.details.report` | Done | The report that list uses (default `list`) |
 | `calendar.holidays` | Done | `none` (the default), `sparse` (colour the holiday days) or `full` (also list them) |
@@ -281,9 +281,8 @@ twenty it deletes versions that lost a race, older snapshots, and versions over 
 
 ## What is left
 
-Two "Not done" rows remain, and neither can change in a browser:
+One "Not done" row remains, and it can't change in a browser:
 
-1. `include <file>`: a browser can't read a file, so this stays a paste-in step.
-2. `purge.on-sync`: the app purges only when you run `purge`, never by itself on a sync; that is left to the CLI.
+1. `purge.on-sync`: the app purges only when you run `purge`, never by itself on a sync; that is left to the CLI.
 
 Beyond the taskrc, the commands `edit` and `import-v2` are not in the app.
