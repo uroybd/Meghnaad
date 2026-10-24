@@ -519,17 +519,29 @@ settings is read (the full list, with what each does, is [taskrc support](taskrc
   files and folders (`.git`), binary files and anything over 256 KB are left out and listed, and up to 64 files or 1 MB are
   taken. It adds to what is here; tick **Replace what is here** to make the folder the whole of it (it needs a `taskrc`).
   One import is one step, so **Restore previous** undoes all of it.
-- **Add holidays** gets a country's public holidays from [Holidata](https://holidata.net) (the data behind Taskwarrior's
-  own holiday files) and saves them as `holidays/<locale>.rc` (`holidays/en-US.rc`). Choose the country (42 locales in 34
-  countries; the language too where a country has several), the years (last year to two years ahead to begin with) and
-  **Find holidays**. It shows how many it found; holidays that belong to one region only (Massachusetts' Patriots' Day,
-  a Swiss canton's) are left out unless you tick that region. **Save** writes the file and, unless they are there already,
-  adds `include holidays/<locale>.rc` and `calendar.holidays=sparse` to the main taskrc, which you can untick. If the main
-  taskrc has edits you have not applied, the lines go into its box instead and **Apply** keeps them. A file made this
-  way says which country and regions it is for, so **Update holidays**, on that file, fetches it again for the years now
-  (Holidata has data up to some years ahead and none for the far future; a year without data is named). Saving again
-  replaces that file; **Restore previous** undoes it. The fetch goes from your browser (or phone) to holidata.net, which
-  learns your IP address and the country and years you asked for, and nothing else.
+- **Add holidays** makes a file of a country's public holidays, from one of three places, and shows the list it found before
+  anything is saved:
+  - **Holidata** ([holidata.net](https://holidata.net), the data behind Taskwarrior's own holiday files): 42 locales in 34
+    countries, the language too where a country has several. Saved as `holidays/<locale>.rc` (`holidays/en-US.rc`).
+  - **Nager.Date** ([date.nager.at](https://date.nager.at)): 200 or so countries, saved as `holidays/nager-<code>.rc`
+    (`holidays/nager-BD.rc`). For some countries it lists only the holidays that fall on the same date every year, so the
+    ones that follow the moon (Eid) can be missing: look the list over.
+  - **Calendar link (.ics)**: a public calendar feed, such as Google's holiday calendars (their addresses look like
+    `https://calendar.google.com/calendar/ical/en.bd%23holiday%40group.v.calendar.google.com/public/basic.ics`; `webcal://`
+    works too). The Worker fetches it for the page, under the rules the taskrc link import has (https, a public host, up to
+    1 MB). All-day events become holidays, one that lasts several days a stretch (`.start` and `.end`), and a plain yearly
+    repeat is carried over the years. A calendar's **Keep** list has every name in it; what the calendar calls an
+    observance (Valentine's Day) is unticked to begin with. The file is named after the calendar unless you give a name.
+  Pick the country (or paste the link), the years (last year to two years ahead to begin with) and **Find holidays**.
+  Holidays that belong to one region only (Massachusetts' Patriots' Day, a Swiss canton's) are left out unless you tick the
+  region. **Save** writes the file and, unless they are there already, adds `include holidays/<file>.rc` and
+  `calendar.holidays=sparse` to the main taskrc, which you can untick. If the main taskrc has edits you have not applied,
+  the lines go into its box instead and **Apply** keeps them. A file made this way says where it came from, so **Update
+  holidays**, on that file, fetches it again for the years now with the same regions and names (a year the source has no
+  data for is named; a calendar's link is remembered only when it has no `?` in it, since such a link can hold a secret).
+  Saving again replaces that file; **Restore previous** undoes it. Holidata and Nager.Date are asked from your browser (or
+  phone), and learn your IP address and the country and years you asked for, nothing else; the calendar's host learns the
+  Worker's (or the phone's) address and the link.
 - **Include this file in…** (on any file but the main one) adds `include <path>` to the file you choose, written from that
   file, and shows it; **Apply** keeps it. **Delete file** removes one (the main taskrc can't be deleted, only emptied).
 - **`config` and the settings pages write to the main taskrc**, as `task config` does: a line that starts with `name=`

@@ -341,17 +341,18 @@ the Worker; the engine in the browser is unaffected.
   (RS256 signature, issuer, audience, expiry, not-before) and refuses forged, `alg: none` and cookie-only tokens.
   Misconfiguration means `403`, never open. `npm run test:auth` proves it against a mock Access.
 - **Cross-site requests:** writes from another `Origin` are refused, responses are `no-store`, and the app has a strict
-  Content-Security-Policy. It lets the page connect to two other hosts, `cdn.jsdelivr.net` to read icon files and `holidata.net` to read
-  holiday lists (both below); scripts, images and styles still come from the app alone.
+  Content-Security-Policy. It lets the page connect to two other hosts, `cdn.jsdelivr.net` to read icon files and `holidata.net` and `date.nager.at` to read
+  holiday lists (below); scripts, images and styles still come from the app alone.
 - **Icons from a CDN:** a task command can use any [Lucide](https://lucide.dev) icon. The few the app uses are bundled; any
   other is fetched as a small SVG file from jsdelivr at a pinned Lucide version, and only a short list of plain shapes
   is kept from it, so what arrives is drawn and never run. Fetching one tells that host your IP address and the icon's
   name, nothing else. Without the network those you have used are remembered by the browser, and the rest show a
   terminal icon.
-- **Holidays from Holidata:** Add holidays in Settings reads one public file of dates per year from
-  [holidata.net](https://holidata.net). Fetching it tells that host your IP address and the country and years you
-  asked for, nothing else; what arrives is text turned into `holiday.*` lines and checked like any other file of your
-  taskrc.
+- **Holidays from outside:** Add holidays in Settings reads one public file of dates per year from
+  [holidata.net](https://holidata.net) or [date.nager.at](https://date.nager.at), or a public calendar (`.ics`) from a link
+  you give (the Worker fetches that one, under the same rules as the taskrc link import). Fetching tells that host your IP
+  address (the Worker's, for a calendar) and the country and years you asked for, nothing else; what arrives is text
+  turned into `holiday.*` lines and checked like any other file of your taskrc.
 - **Encryption** is TaskChampion's (PBKDF2-HMAC-SHA256, then ChaCha20-Poly1305). The Worker holds the secret and opens
   and seals what passes between the bucket and your browser, so whoever can read Worker secrets in your Cloudflare
   account can read your tasks. It is not end-to-end encrypted from Cloudflare. The Worker uses an R2 binding and holds

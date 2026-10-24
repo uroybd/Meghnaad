@@ -19,7 +19,9 @@ pub mod helpers;
 pub mod highlight;
 pub mod history;
 pub mod holidata;
+pub mod holidays;
 pub mod hooks;
+pub mod ics;
 pub mod import;
 pub mod live;
 #[cfg(feature = "lua")]
@@ -27,6 +29,7 @@ pub mod lua_hooks;
 pub mod markdown;
 pub mod model;
 pub mod modify;
+pub mod nager;
 pub mod names;
 pub(crate) mod ordered;
 pub mod preview;

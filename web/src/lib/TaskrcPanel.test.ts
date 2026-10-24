@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
-import { deleteRcFile, getRcFile, getRcFiles, getTaskrcText, importRcFiles, putRcFile } from './api';
+import { deleteRcFile, fetchCalendar, getRcFile, getRcFiles, getTaskrcText, importRcFiles, putRcFile } from './api';
 import { store } from './store.svelte';
 import TaskrcPanel from './TaskrcPanel.svelte';
 import type { RcFiles, TaskrcResponse } from './types';
@@ -14,6 +14,7 @@ vi.mock('./api', async (original) => ({
   putRcFile: vi.fn(),
   deleteRcFile: vi.fn(),
   importRcFiles: vi.fn(),
+  fetchCalendar: vi.fn(),
   restoreTaskrc: vi.fn(),
   importTaskrcUrl: vi.fn(),
 }));
@@ -342,5 +343,103 @@ describe('adding holidays', () => {
     await tick();
     vi.unstubAllGlobals();
     expect(document.body.textContent).toContain('Include it in');
+  });
+
+  const source = async (id: string) => {
+    const radio = document.querySelector(`input[name=holiday-source][value=${id}]`) as HTMLInputElement;
+    radio.click();
+    await tick();
+  };
+
+  it('saves a calendar link’s holidays, leaving out what the calendar calls an observance', async () => {
+    vi.mocked(putRcFile).mockImplementation((_p, t) => Promise.resolve(saved(t)));
+    vi.mocked(fetchCalendar).mockResolvedValue(
+      [
+        'BEGIN:VCALENDAR',
+        'X-WR-CALNAME:Holidays in Bangladesh',
+        'BEGIN:VEVENT',
+        'DTSTART;VALUE=DATE:20260326',
+        'SUMMARY:Independence Day',
+        'DESCRIPTION:Public holiday',
+        'END:VEVENT',
+        'BEGIN:VEVENT',
+        'DTSTART;VALUE=DATE:20260214',
+        "SUMMARY:Valentine's Day",
+        'DESCRIPTION:Observance',
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('\r\n'),
+    );
+    await start();
+    await source('ics');
+    await type(
+      document.querySelector('.holidays input[type=url]') as HTMLInputElement,
+      'webcal://calendar.example.org/bd.ics',
+    );
+    const years = document.querySelectorAll('.holidays input[type=number]');
+    await type(years[0] as HTMLInputElement, '2026');
+    await type(years[1] as HTMLInputElement, '2026');
+    button('Find holidays').click();
+    await tick();
+    expect(fetchCalendar).toHaveBeenCalledWith('https://calendar.example.org/bd.ics');
+    const kept = [...document.querySelectorAll('.names input[type=checkbox]')].map(
+      (c) => (c as HTMLInputElement).checked,
+    );
+    expect(kept).toEqual([true, false]); // Independence Day, Valentine's Day
+    expect(document.body.textContent?.replace(/\s+/g, ' ')).toContain('1 holiday in Holidays in Bangladesh');
+    button(/Save/).click();
+    await tick();
+    const calls = vi.mocked(putRcFile).mock.calls;
+    expect(calls[0][0]).toBe('holidays/holidays-in-bangladesh.rc');
+    expect(calls[0][1]).toContain('name=Independence Day');
+    expect(calls[0][1]).not.toContain('name=Valentine');
+    expect(calls[1][0]).toBe('taskrc');
+    expect(calls[1][1]).toContain('include holidays/holidays-in-bangladesh.rc');
+  });
+
+  it('says what is wrong with a link that cannot be used, without fetching it', async () => {
+    await start();
+    await source('ics');
+    await type(document.querySelector('.holidays input[type=url]') as HTMLInputElement, 'http://example.org/a.ics');
+    button('Find holidays').click();
+    await tick();
+    expect(fetchCalendar).not.toHaveBeenCalled();
+    expect(document.querySelector('.holidays [role=alert]')?.textContent).toContain('https://');
+  });
+
+  it('lists Nager.Date’s countries once chosen and fetches the one picked', async () => {
+    const get = vi.fn((url: string) =>
+      Promise.resolve(
+        new Response(
+          String(url).endsWith('AvailableCountries')
+            ? JSON.stringify([{ countryCode: 'BD', name: 'Bangladesh' }])
+            : JSON.stringify([
+                { date: '2026-02-21', name: 'Language Day', global: true, counties: null, types: ['Public'] },
+              ]),
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', get);
+    await start();
+    (document.querySelector('.holidays') as HTMLDetailsElement).open = true;
+    await source('nager');
+    await tick();
+    const select = document.querySelector('.holidays select') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'BD']);
+    select.value = 'BD';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    const years = document.querySelectorAll('.holidays input[type=number]');
+    await type(years[0] as HTMLInputElement, '2026');
+    await type(years[1] as HTMLInputElement, '2026');
+    button('Find holidays').click();
+    await tick();
+    vi.unstubAllGlobals();
+    expect(get).toHaveBeenCalledWith(
+      'https://date.nager.at/api/v3/PublicHolidays/2026/BD',
+      expect.objectContaining({ credentials: 'omit' }),
+    );
+    expect(document.body.textContent).toContain('Language Day');
+    expect(document.body.textContent).toContain('may not have the holidays that move with the moon');
   });
 });

@@ -335,6 +335,23 @@ export function importTaskrcUrl(url: string): Promise<TaskrcResponse> {
   });
 }
 
+/** A calendar (`.ics`) from a link, for Add holidays. The Worker fetches it, so the calendar host's CORS rules don't matter. */
+export async function fetchCalendar(url: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch('/api/config/holidays/calendar', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: url,
+    });
+  } catch {
+    throw new ApiError('Could not reach the server.', 0);
+  }
+  if (res.ok) return res.text();
+  const body = (await res.json().catch(() => null)) as { error?: string } | null;
+  throw new ApiError(body?.error ?? `Server error (${res.status}).`, res.status);
+}
+
 /** The app's own `settings.json`, as saved (`{}` before the first save). */
 export function getAppSettings(): Promise<unknown> {
   const asked = takeEarly<unknown>('settings');

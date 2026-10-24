@@ -6,6 +6,7 @@
 //!
 //! The fetching is the front end's; this is the conversion, so the page and the phone cannot disagree on it.
 
+use crate::holidays::{clean_name, compose, entry_key, Built, Meta};
 use std::collections::BTreeSet;
 
 /// Where a year of a locale lives, or `None` when the locale is not the `ll-LL` shape Holidata uses (so nothing odd is put
@@ -71,31 +72,6 @@ pub const LOCALES: &[(&str, &str)] = &[
     ("es-US", "United States (Spanish)"),
 ];
 
-/// A file made from Holidata's answers.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Built {
-    /// The text of the rc file.
-    pub text: String,
-    /// How many holidays it holds.
-    pub count: usize,
-    /// Every region the data names, whether chosen or not, so a screen can offer them.
-    pub regions: Vec<String>,
-    /// Lines of the data that were not a holiday and were passed over.
-    pub skipped: usize,
-}
-
-impl Built {
-    /// As the JSON the front ends read: `{text, count, regions: [{name, count}], skipped}`.
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "text": self.text,
-            "count": self.count,
-            "regions": self.regions,
-            "skipped": self.skipped,
-        })
-    }
-}
-
 /// One line of Holidata's file: the date, the name and the region it is for (empty for the whole country).
 fn record(line: &str) -> Option<(String, String, String)> {
     let v: serde_json::Value = serde_json::from_str(line).ok()?;
@@ -107,19 +83,8 @@ fn record(line: &str) -> Option<(String, String, String)> {
     ))
 }
 
-/// A name as one taskrc value: a `#` would start a comment, and a newline would end the line.
-fn clean_name(s: &str) -> String {
-    s.chars()
-        .filter(|c| *c != '#')
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 /// `2026-01-19` as `20260119`, if it is a date written that way.
-fn compact_date(s: &str) -> Option<String> {
+pub fn compact_date(s: &str) -> Option<String> {
     let b = s.as_bytes();
     let ok = b.len() == 10
         && b[4] == b'-'
@@ -135,7 +100,6 @@ fn compact_date(s: &str) -> Option<String> {
 pub fn build(locale: &str, bodies: &[String], regions: &[String]) -> Built {
     let mut skipped = 0;
     let mut seen_regions: BTreeSet<String> = BTreeSet::new();
-    // `<date>\t<name>`: in date order, and one of each.
     let mut kept: BTreeSet<String> = BTreeSet::new();
     for line in bodies.iter().flat_map(|b| b.lines()).filter(|l| !l.trim().is_empty()) {
         let Some((date, description, region)) = record(line) else {
@@ -154,52 +118,30 @@ pub fn build(locale: &str, bodies: &[String], regions: &[String]) -> Built {
                 continue;
             }
         }
-        kept.insert(format!("{date}\t{name}"));
+        kept.insert(entry_key(&date, None, &name));
     }
-    let mut text =
-        format!("# International holiday data from Holidata.net (https://holidata.net).\n# locale: {locale}\n");
-    let chosen: Vec<&str> = regions
-        .iter()
-        .map(String::as_str)
-        .filter(|r| seen_regions.contains(*r))
-        .collect();
-    if !chosen.is_empty() {
-        text.push_str(&format!("# regions: {}\n", chosen.join(", ")));
-    }
-    if let (Some(first), Some(last)) = (kept.first(), kept.last()) {
-        text.push_str(&format!("# years: {}-{}\n", &first[..4], &last[..4]));
-    }
-    text.push_str("# Made by Add holidays in Settings; adding them again replaces this file.\n\n");
-    for (i, entry) in kept.iter().enumerate() {
-        let (date, name) = entry.split_once('\t').unwrap_or_default();
-        let id = format!("{locale}{}", i + 1);
-        text.push_str(&format!("holiday.{id}.name={name}\nholiday.{id}.date={date}\n"));
-    }
-    Built {
-        text,
-        count: kept.len(),
-        regions: seen_regions.into_iter().collect(),
+    let meta = Meta {
+        source: "holidata",
+        about: "International holiday data from Holidata.net (https://holidata.net).",
+        key: locale,
+        prefix: locale,
+        path: format!("holidays/{locale}.rc"),
+        regions: regions
+            .iter()
+            .map(String::as_str)
+            .filter(|r| seen_regions.contains(*r))
+            .collect(),
+        skip: &[],
+        link: None,
+    };
+    compose(
+        &meta,
+        &kept,
+        seen_regions.into_iter().collect(),
         skipped,
-    }
-}
-
-/// The locale and regions a file made by [`build`] says it was made for, so adding holidays again can start from them; `None`
-/// when the file is not one of ours.
-pub fn settings_of(text: &str) -> Option<(String, Vec<String>)> {
-    let mut locale = None;
-    let mut regions = Vec::new();
-    for line in text.lines().take_while(|l| l.trim().is_empty() || l.starts_with('#')) {
-        if let Some(v) = line.strip_prefix("# locale: ") {
-            locale = Some(v.trim().to_owned()).filter(|l| valid_locale(l));
-        } else if let Some(v) = line.strip_prefix("# regions: ") {
-            regions = v
-                .split(',')
-                .map(|r| r.trim().to_owned())
-                .filter(|r| !r.is_empty())
-                .collect();
-        }
-    }
-    locale.map(|l| (l, regions))
+        Vec::new(),
+        String::new(),
+    )
 }
 
 #[cfg(test)]
@@ -255,7 +197,11 @@ mod tests {
             .text
             .contains("holiday.en-US3.name=Patriots' Day\nholiday.en-US3.date=20260420\n"));
         assert!(b.text.contains("# regions: MA\n"));
-        assert_eq!(settings_of(&b.text), Some(("en-US".to_owned(), vec!["MA".to_owned()])));
+        let s = crate::holidays::settings_of(&b.text).unwrap_or_else(|| unreachable!());
+        assert_eq!(
+            (s.source.as_str(), s.key.as_str(), s.regions),
+            ("holidata", "en-US", vec!["MA".to_owned()])
+        );
     }
 
     #[test]
@@ -289,10 +235,5 @@ not json
         assert_eq!(get("holiday.en-US2.date"), Some("20260119"));
         // Nothing is refused, left out or warned about, and our own comment lines are only comments.
         assert!(parsed.blocked.is_empty() && parsed.ignored.is_empty() && parsed.warnings.is_empty());
-    }
-
-    #[test]
-    fn a_file_that_is_not_ours_has_no_settings() {
-        assert_eq!(settings_of("holiday.x.name=A\n"), None);
     }
 }

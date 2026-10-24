@@ -110,6 +110,9 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .get_async("/api/config/taskrc", |req, ctx| wrap(config_route(req, ctx)))
         .put_async("/api/config/taskrc", |req, ctx| wrap(config_route(req, ctx)))
         .post_async("/api/config/taskrc/url", |req, ctx| wrap(import_taskrc_url(req, ctx)))
+        .post_async("/api/config/holidays/calendar", |req, ctx| {
+            wrap(fetch_calendar(req, ctx))
+        })
         .post_async("/api/config/taskrc/restore", |req, ctx| wrap(config_route(req, ctx)))
         .put_async("/api/config/urgency", |req, ctx| wrap(config_route(req, ctx)))
         .put_async("/api/config/engine", |req, ctx| wrap(config_route(req, ctx)))
@@ -279,7 +282,7 @@ async fn config_route(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
 /// does the fetch, so the file never reaches the browser unfiltered and the site's CORS rules don't matter.
 /// The link is never logged or echoed: it may carry an access token.
 async fn import_taskrc_url(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
-    let text = fetch_text(&req.text().await?).await?;
+    let text = fetch_text(&req.text().await?, MAX_TASKRC_BYTES).await?;
     let reply = WebSettings::new(R2Store(ctx.env.bucket("TASKS")?))
         .put_root(&text)
         .await;
@@ -289,12 +292,24 @@ async fn import_taskrc_url(mut req: Request, ctx: RouteContext<()>) -> RouteResu
     Ok(res)
 }
 
+/// The most a calendar of holidays may be (a few years of a country's, or a long personal one).
+const MAX_CALENDAR_BYTES: usize = 1024 * 1024;
+
+/// Fetch a calendar (`.ics`) from a link and hand its text back, for Add holidays to read. Fetched here for the same reasons
+/// as a taskrc, under the same rules; nothing is saved by this. The link is never logged or echoed.
+async fn fetch_calendar(mut req: Request, _ctx: RouteContext<()>) -> RouteResult {
+    let text = fetch_text(&req.text().await?, MAX_CALENDAR_BYTES).await?;
+    let mut res = Response::from_bytes(text.into_bytes())?;
+    res.headers_mut().set("content-type", "text/calendar; charset=utf-8")?;
+    Ok(res)
+}
+
 /// Redirects followed (a `github.com/.../raw/...` link answers with one); each is checked like the first link.
 const MAX_REDIRECTS: usize = 3;
 
 /// The page's own `fetch` is used directly (it takes the redirect mode as an option), which costs a fraction
 /// of what the `worker` crate's request types add to the module.
-async fn fetch_text(link: &str) -> Result<String, ApiError> {
+async fn fetch_text(link: &str, max: usize) -> Result<String, ApiError> {
     use wasm_bindgen::JsCast;
     use wasm_bindgen_futures::JsFuture;
     let bad = |m: &str| ApiError::BadRequest(m.to_owned());
@@ -331,8 +346,8 @@ async fn fetch_text(link: &str) -> Result<String, ApiError> {
             return Err(bad("that link is a web page, not the file; use its raw link"));
         }
         let declared = res.headers().get("content-length").ok().flatten();
-        if declared.and_then(|n| n.parse::<usize>().ok()).unwrap_or(0) > MAX_TASKRC_BYTES {
-            return Err(bad("that file is too large for a taskrc"));
+        if declared.and_then(|n| n.parse::<usize>().ok()).unwrap_or(0) > max {
+            return Err(bad("that file is too large"));
         }
         let body = res.text().map_err(|_| bad("could not read that address"))?;
         let text = JsFuture::from(body)
@@ -340,8 +355,8 @@ async fn fetch_text(link: &str) -> Result<String, ApiError> {
             .map_err(|_| bad("could not read that address"))?
             .as_string()
             .ok_or_else(|| bad("that file is not text"))?;
-        if text.len() > MAX_TASKRC_BYTES {
-            return Err(bad("that file is too large for a taskrc"));
+        if text.len() > max {
+            return Err(bad("that file is too large"));
         }
         if tc_core::rc_url::looks_like_html(&text) {
             return Err(bad("that link is a web page, not the file; use its raw link"));

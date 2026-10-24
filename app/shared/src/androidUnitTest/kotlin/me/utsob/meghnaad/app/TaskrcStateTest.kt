@@ -109,22 +109,34 @@ class TaskrcStateTest {
 {"date":"2026-04-20","description":"Patriots' Day","region":"MA"}
 """
 
-    @Test
-    fun holidaysFromHolidataAreSavedIncludedAndShown() = runBlocking {
-        if (!library()) return@runBlocking
+    private val calendar = listOf(
+        "BEGIN:VCALENDAR", "X-WR-CALNAME:Holidays in Bangladesh",
+        "BEGIN:VEVENT", "DTSTART;VALUE=DATE:20260326", "DTEND;VALUE=DATE:20260327", "SUMMARY:Independence Day", "DESCRIPTION:Public holiday", "END:VEVENT",
+        "BEGIN:VEVENT", "DTSTART;VALUE=DATE:20260214", "DTEND;VALUE=DATE:20260215", "SUMMARY:Valentine's Day", "DESCRIPTION:Observance", "END:VEVENT",
+        "END:VCALENDAR",
+    ).joinToString("\r\n")
+
+    private suspend fun newState(): Pair<Store, TaskrcState> {
         val store = store()
         store.loadConfig()
         val st = TaskrcState(store)
         st.load()
         st.text = "bulk=3\n"
         st.save()
+        return store to st
+    }
+
+    @Test
+    fun holidaysFromHolidataAreSavedIncludedAndShown() = runBlocking {
+        if (!library()) return@runBlocking
+        val (store, st) = newState()
 
         val asked = mutableListOf<String>()
-        val get: suspend (String) -> HttpAnswer = { url ->
+        val get: HolidayGet = { url, _ ->
             asked += url
             if ("/2026.json" in url) HttpAnswer(200, newYear) else HttpAnswer(404, "")
         }
-        st.hLocale = "en-US"
+        st.hHolidata = "en-US"
         st.hFirst = "2026"
         st.hLast = "2027"
         st.findHolidays(get)
@@ -147,20 +159,85 @@ class TaskrcStateTest {
 
         // The file knows what it was made for, so it can be fetched again.
         st.open("holidays/en-US.rc", force = true)
-        assertEquals("en-US", st.made?.first)
+        assertEquals("en-US", st.made?.key)
         st.hChosen = emptyList()
         st.updateHolidays(get)
-        assertEquals("en-US", st.hLocale)
+        assertEquals("en-US", st.hHolidata)
         assertEquals(1, st.hBuilt?.count)
     }
 
     @Test
-    fun holidataIsNotReachedForAnythingButALocale() = runBlocking {
+    fun aCalendarsHolidaysAreSavedWithoutItsObservances() = runBlocking {
         if (!library()) return@runBlocking
-        val failure = runCatching { fetchHolidays("../x", 2026, 2026) { error("must not be asked") } }.exceptionOrNull()
-        assertTrue(failure?.message?.contains("not a year Holidata can have") == true, failure?.message)
-        val offline = runCatching { fetchHolidays("en-US", 2026, 2026) { throw java.io.IOException("down") } }.exceptionOrNull()
+        val (store, st) = newState()
+        val get: HolidayGet = { url, _ ->
+            assertEquals("https://calendar.example.org/bd.ics", url)
+            HttpAnswer(200, calendar)
+        }
+        st.hSource = HolidaySource.Ics
+        st.hLink = "webcal://calendar.example.org/bd.ics"
+        st.hFirst = "2026"
+        st.hLast = "2026"
+        st.findHolidays(get)
+        assertEquals(null, st.hError, st.hError)
+        assertEquals(listOf("Independence Day"), st.hBuilt?.entries?.map { it.name })
+        assertEquals(listOf(true, false), st.hBuilt?.names?.map { !it.skip }) // Independence Day, Valentine's Day
+
+        st.toggleName("Valentine's Day", keep = true)
+        assertEquals(2, st.hBuilt?.count)
+        st.toggleName("Valentine's Day", keep = false)
+        st.addHolidays()
+        assertEquals(null, st.error, st.error)
+        assertEquals("holidays/holidays-in-bangladesh.rc", st.current)
+        assertEquals("Independence Day", store.config?.config?.settings?.get("holiday.ics-holidays-in-bangladesh1.name"))
+        assertEquals("holidays/holidays-in-bangladesh.rc", st.made?.let { "holidays/${it.key}.rc" })
+        assertEquals("https://calendar.example.org/bd.ics", st.made?.link)
+    }
+
+    @Test
+    fun nagerDateCountriesAreListedAndTheOnePickedIsFetched() = runBlocking {
+        if (!library()) return@runBlocking
+        val (_, st) = newState()
+        val get: HolidayGet = { url, _ ->
+            HttpAnswer(
+                200,
+                if (url.endsWith("AvailableCountries")) """[{"countryCode":"BD","name":"Bangladesh"}]"""
+                else """[{"date":"2026-02-21","name":"Language Day","global":true,"counties":null,"types":["Public"]}]""",
+            )
+        }
+        st.hSource = HolidaySource.Nager
+        st.loadNagerPlaces(get)
+        assertEquals(listOf("BD"), st.nagerPlaces?.map { it.id })
+        st.hNager = "BD"
+        st.hFirst = "2026"
+        st.hLast = "2026"
+        st.findHolidays(get)
+        assertEquals(listOf("Language Day"), st.hBuilt?.entries?.map { it.name })
+        assertEquals("holidays/nager-BD.rc", st.hBuilt?.path)
+    }
+
+    @Test
+    fun linksAndLocalesAreCheckedBeforeAnythingIsFetched() = runBlocking {
+        if (!library()) return@runBlocking
+        val none: HolidayGet = { _, _ -> error("must not be asked") }
+        val bad = runCatching { fetchHolidata("../x", 2026, 2026, none) }.exceptionOrNull()
+        assertTrue(bad?.message?.contains("not a year that can be asked for") == true, bad?.message)
+        val offline = runCatching { fetchHolidata("en-US", 2026, 2026) { _, _ -> throw java.io.IOException("down") } }.exceptionOrNull()
         assertTrue(offline?.message?.contains("Couldn't reach holidata.net") == true, offline?.message)
+        val plain = runCatching { fetchCalendar("http://example.org/a.ics", none) }.exceptionOrNull()
+        assertTrue(plain?.message?.contains("https://") == true, plain?.message)
+        val private = runCatching { fetchCalendar("https://127.0.0.1/a.ics", none) }.exceptionOrNull()
+        assertTrue(private != null)
+        // A redirect is followed, and checked like the first link.
+        var hops = 0
+        val text = fetchCalendar("https://example.org/a") { url, _ ->
+            hops++
+            if (url == "https://example.org/a") HttpAnswer(302, "", "/b.ics") else HttpAnswer(200, calendar)
+        }
+        assertEquals(2, hops)
+        assertTrue(text.startsWith("BEGIN:VCALENDAR"))
+        val away = runCatching { fetchCalendar("https://example.org/a") { _, _ -> HttpAnswer(302, "", "http://example.org/x") } }.exceptionOrNull()
+        assertTrue(away != null)
         assertEquals("a=1\n", withSetting("", "a", "1"))
         assertEquals("x=2\nb=1\n", withSetting("x=1\nb=1\n", "x", "2"))
     }

@@ -217,7 +217,37 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<Vec<String>>(2)?,
         )
         .to_json(),
-        "holidata_settings" => json!(crate::holidata::settings_of(&a.req::<String>(0)?)),
+        "nager_countries_url" => json!(crate::nager::COUNTRIES_URL),
+        "nager_countries" => json!(crate::nager::countries(&a.req::<String>(0)?)
+            .iter()
+            .map(|(code, name)| json!({ "code": code, "name": name }))
+            .collect::<Vec<_>>()),
+        "nager_url" => json!(crate::nager::url(&a.req::<String>(0)?, a.req::<i32>(1)?)),
+        "nager_rc" => crate::nager::build(
+            &a.req::<String>(0)?,
+            &a.req::<Vec<String>>(1)?,
+            &a.req::<Vec<String>>(2)?,
+        )
+        .to_json(),
+        "ics_rc" => crate::ics::build(
+            &a.req::<String>(0)?,
+            &a.req::<String>(1)?,
+            a.req::<i32>(2)?,
+            a.req::<i32>(3)?,
+            a.opt::<Vec<String>>(4)?.as_deref(),
+            a.opt::<String>(5)?.as_deref(),
+        )
+        .to_json(),
+        "holidays_settings" => json!(crate::holidays::settings_of(&a.req::<String>(0)?).map(|s| s.to_json())),
+        // A calendar link a front end may fetch, as the Worker is held to for a taskrc: the address to use, or what is wrong.
+        "holiday_link" => match crate::rc_url::source_url(&a.req::<String>(0)?) {
+            Ok(link) => json!({ "link": link }),
+            Err(problem) => json!({ "problem": problem }),
+        },
+        "holiday_follow" => match crate::rc_url::follow(&a.req::<String>(0)?, &a.req::<String>(1)?) {
+            Ok(link) => json!({ "link": link }),
+            Err(problem) => json!({ "problem": problem }),
+        },
         "markdown" => json!(a
             .req::<Vec<String>>(0)?
             .iter()
