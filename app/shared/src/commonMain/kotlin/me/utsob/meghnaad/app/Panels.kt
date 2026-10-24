@@ -189,8 +189,15 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
 
     // A tap on a day with something due shows those tasks in the Tasks view, always in the built-in `list` report (the report in
     // focus might filter or order them differently, or not exist any more).
+    // A tap on a holiday with nothing due says which holiday it is; tapping it again hides that.
+    var picked by remember { mutableStateOf<Triple<String, String, List<String>>?>(null) }
+
     fun show(m: CalendarMonth, d: CalendarDay) {
-        if (d.due == null && !d.scheduled) return
+        if (d.due == null && !d.scheduled) {
+            val at = "${m.year}-${m.month}-${d.day}"
+            picked = if (d.holidays.isNotEmpty() && picked?.first != at) Triple(at, "${m.name} ${d.day}", d.holidays) else null
+            return
+        }
         val day = "${m.year}-${m.month.toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
         store.focusReport("list", listOf(if (d.due != null) "due:$day" else "scheduled:$day"))
     }
@@ -198,7 +205,7 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
     fun describe(m: CalendarMonth, d: CalendarDay): String {
         val bits = buildList {
             if (d.today) add("today")
-            if (d.holiday) add("holiday")
+            if (d.holiday) add(if (d.holidays.isEmpty()) "holiday" else d.holidays.joinToString(", "))
             if (d.due == "overdue") add("overdue")
             if (d.due == "due-today") add("due later today")
             if (d.due == "due") add("something is due")
@@ -246,7 +253,7 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
                                 else -> null
                             }
                             val strong = d.due != null || d.today || style?.bold == true
-                            val clickable = d.due != null || d.scheduled
+                            val clickable = d.due != null || d.scheduled || d.holidays.isNotEmpty()
                             Box(
                                 Modifier.weight(1f).aspectRatio(1f).padding(2.dp).clip(RoundedCornerShape(8.dp)).background(wash ?: Color.Transparent)
                                     .semantics { contentDescription = describe(m, d) }
@@ -267,6 +274,9 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
         repeat(cols - group.size) { Box(Modifier.weight(1f)) }
         }
         }
+        }
+        picked?.let { (_, label, names) ->
+            Text("$label: ${names.joinToString(", ")}", fontSize = 13.5.sp)
         }
         if (result.legend) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {

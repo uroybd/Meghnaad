@@ -3,6 +3,7 @@
   import SuggestInput from './SuggestInput.svelte';
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
+  import { clashOf } from './holidayClash';
   import { udaLabel } from './format';
   import type { FormSeed } from './addPreview';
   import { newlineOnEnter, submitOnEnter } from './multiline';
@@ -80,6 +81,9 @@
   let scheduled = $state(init.scheduled);
   /* svelte-ignore state_referenced_locally */
   let until = $state(init.until);
+  // A due or scheduled date on a holiday is flagged (the engine resolves `eod`, `som` and the like first).
+  const dueClash = $derived(clashOf('due', due));
+  const scheduledClash = $derived(clashOf('scheduled', scheduled));
   /* svelte-ignore state_referenced_locally */
   let tags = $state(init.tags);
   // Repeat: a preset, or "custom" with a free-text period (`3d`, `P2W`, ...). The server validates it.
@@ -210,13 +214,18 @@
 
     <div class="pair dates">
       <div class="cell">
-        <label for="te-due">Due</label><DateField id="te-due" label="Due" bind:value={due} />
+        <label for="te-due">Due</label><DateField id="te-due" label="Due" bind:value={due} warn={dueClash?.message} />
       </div>
       <div class="cell">
         <label for="te-wait">Wait</label><DateField id="te-wait" label="Wait" bind:value={wait} />
       </div>
       <div class="cell">
-        <label for="te-sched">Scheduled</label><DateField id="te-sched" label="Scheduled" bind:value={scheduled} />
+        <label for="te-sched">Scheduled</label><DateField
+          id="te-sched"
+          label="Scheduled"
+          bind:value={scheduled}
+          warn={scheduledClash?.message}
+        />
       </div>
       <div class="cell">
         <label for="te-until">Until</label><DateField id="te-until" label="Until" bind:value={until} />

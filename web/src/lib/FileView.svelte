@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { saveAs } from './download';
   import { Download } from './icons';
   import type { FileResult } from './types';
 
@@ -19,16 +20,7 @@
         : `${(size / 1024 / 1024).toFixed(1)} MB`,
   );
 
-  function download() {
-    const url = URL.createObjectURL(new Blob([result.text], { type: result.mime }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = result.name;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
+  const download = () => saveAs(result.name, result.text, result.mime);
 </script>
 
 <div class="file">

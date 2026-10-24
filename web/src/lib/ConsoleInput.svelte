@@ -4,8 +4,9 @@
   import type { Statement } from './compound';
   import { COMMAND_NAMES } from './completion';
   import CompletionMenu from './CompletionMenu.svelte';
-  import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil, X } from './icons';
+  import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil, TriangleAlert, X } from './icons';
   import { highlightPieces } from './highlight';
+  import { clashMarks } from './holidayClash';
   import ReviewBar from './ReviewBar.svelte';
   import { review } from './review.svelte';
   import { store } from './store.svelte';
@@ -45,7 +46,26 @@
   const commands = $derived(
     new Set([...COMMAND_NAMES, ...store.vocab.reports.map((r) => r.name), ...store.taskCommands.map((c) => c.name)]),
   );
-  const coloured = $derived(highlightPieces(line, commands));
+  // A due or scheduled date on a holiday is drawn in yellow, and says so on hover, or when the caret is in it (a tap puts it there).
+  const marks = $derived(clashMarks(line, commands));
+  const coloured = $derived(highlightPieces(line, commands, marks));
+  let mirror: HTMLElement | undefined = $state();
+  let caret = $state(0);
+  let hover = $state<string | null>(null);
+  const warning = $derived(hover ?? marks.find((m) => caret >= m.start && caret <= m.end)?.message ?? null);
+  const watchCaret = () => (caret = el?.selectionStart ?? 0);
+  // The field is over the drawn line and takes the pointer, so which date word is under it is found from where they are drawn.
+  function overDate(e: PointerEvent) {
+    let found: string | null = null;
+    for (const span of mirror?.querySelectorAll<HTMLElement>('.hl-warn') ?? []) {
+      for (const r of span.getClientRects()) {
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom)
+          found = span.dataset.warn ?? null;
+      }
+    }
+    hover = found;
+    el.title = found ?? '';
+  }
   // The field is as tall as its text: a long command wraps, and all of it can be seen.
   $effect(() => {
     void line;
@@ -327,6 +347,7 @@
   </div>
   {#if review.captures}<ReviewBar />{/if}
   <CompletionMenu {completer} placement="above" onpick={(i) => edit(completer.pick(i))} />
+  {#if warning}<p class="clash" role="status"><TriangleAlert size={14} /> {warning}</p>{/if}
   <label class="row">
     <!-- In a context the prompt names it and turns amber, as the pill in the top bar does (a phone has no room for the name). -->
     <span
@@ -339,18 +360,31 @@
     >
     <span class="sr-only">Command</span>
     <span class="field grow">
-      <span class="mirror mono" aria-hidden="true"
-        >{#each coloured as piece, i (i)}<span class="hl-{piece.kind}">{piece.text}</span>{/each}</span
+      <span class="mirror mono" aria-hidden="true" bind:this={mirror}
+        >{#each coloured as piece, i (i)}<span
+            class="hl-{piece.kind}"
+            class:hl-warn={!!piece.warn}
+            data-warn={piece.warn}>{piece.text}</span
+          >{/each}</span
       >
       <textarea
         bind:this={el}
         bind:value={line}
         {onkeydown}
+        onkeyup={watchCaret}
+        onclick={watchCaret}
+        onselect={watchCaret}
+        onpointermove={overDate}
+        onpointerleave={() => {
+          hover = null;
+          el.title = '';
+        }}
         onblur={() => completer.close()}
         oninput={() => {
           // A line of commands has no line breaks: a pasted one becomes spaces.
           if (line.includes('\n')) line = line.replace(/\r?\n/g, ' ');
           cursor = -1;
+          watchCaret();
           if (review.captures) completer.close();
           else completer.suggest(line, el.selectionStart ?? line.length, store.vocab);
         }}
@@ -496,6 +530,19 @@
   .mirror :global(.hl-op) {
     color: var(--err);
     font-weight: 600;
+  }
+  .mirror :global(.hl-warn) {
+    background: color-mix(in srgb, var(--warn) 26%, transparent);
+    box-shadow: inset 0 -2px var(--warn);
+    border-radius: 2px;
+  }
+  .clash {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: var(--warn);
   }
   .mirror :global(.hl-str) {
     color: var(--hl-str);

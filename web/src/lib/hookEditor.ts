@@ -13,6 +13,7 @@ import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { linter, lintGutter, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view';
+import { editorTheme as theme } from './editorTheme';
 import { tags } from '@lezer/highlight';
 
 export interface HookEditor {
@@ -23,20 +24,6 @@ export interface HookEditor {
   focus(): void;
   destroy(): void;
 }
-
-// Colours come from the page's own variables, so the editor follows the light and dark schemes.
-const theme = EditorView.theme({
-  '&': { color: 'var(--text)', backgroundColor: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '6px' },
-  '&.cm-focused': { outline: '2px solid var(--accent)' },
-  '.cm-content': { fontFamily: 'var(--mono, ui-monospace, monospace)', fontSize: '13px', caretColor: 'var(--text)' },
-  '.cm-gutters': { backgroundColor: 'transparent', color: 'var(--dim)', border: 'none' },
-  '.cm-activeLine': { backgroundColor: 'color-mix(in srgb, var(--accent) 7%, transparent)' },
-  '.cm-activeLineGutter': { backgroundColor: 'transparent' },
-  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)',
-  },
-  '.cm-scroller': { maxHeight: '60vh', minHeight: '260px', overflow: 'auto' },
-});
 
 const highlight = HighlightStyle.define([
   { tag: tags.keyword, color: 'var(--accent)', fontWeight: '600' },

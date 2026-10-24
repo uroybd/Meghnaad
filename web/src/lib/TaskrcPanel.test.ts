@@ -2,10 +2,42 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { deleteRcFile, fetchCalendar, getRcFile, getRcFiles, getTaskrcText, importRcFiles, putRcFile } from './api';
+import { saveAs } from './download';
 import { store } from './store.svelte';
 import TaskrcPanel from './TaskrcPanel.svelte';
 import type { RcFiles, TaskrcResponse } from './types';
 
+vi.mock('./download', () => ({ saveAs: vi.fn() }));
+
+/** A stand-in for CodeMirror, which does not need to be exercised here: a textarea that holds the text, and the marks. */
+const editor = vi.hoisted(() => ({
+  marks: [] as { line: number; message: string }[],
+  hint: '',
+  shown: [] as string[],
+}));
+vi.mock('./rcEditor', () => ({
+  createRcEditor: (parent: HTMLElement, onChange: (t: string) => void) => {
+    const box = document.createElement('textarea');
+    parent.append(box);
+    box.addEventListener('input', () => onChange(box.value));
+    return {
+      text: () => box.value,
+      show: (name: string, text: string, hint: string) => {
+        if (editor.shown.at(-1) !== name) editor.shown.push(name);
+        editor.hint = hint;
+        if (box.value !== text) box.value = text;
+      },
+      mark: (p: { line: number; message: string }[]) => {
+        editor.marks = p;
+      },
+      setEditable: (on: boolean) => {
+        box.disabled = !on;
+      },
+      focus: () => {},
+      destroy: () => box.remove(),
+    };
+  },
+}));
 vi.mock('./api', async (original) => ({
   ...(await original<typeof import('./api')>()),
   getTaskrcText: vi.fn(),
@@ -279,6 +311,55 @@ describe('adding a file', () => {
   });
 });
 
+describe('the editor', () => {
+  it('shows each file as its own, with the hint for an empty one, and marks the lines the engine flags', async () => {
+    editor.shown = [];
+    vi.mocked(getRcFiles).mockImplementation(() =>
+      Promise.resolve({
+        ...folder(),
+        problems: [{ file: 'taskrc', line: 2, message: 'no such file' }],
+      } as RcFiles),
+    );
+    await start();
+    expect(editor.shown).toEqual(['taskrc']);
+    expect(editor.marks).toEqual([{ line: 2, message: 'no such file' }]);
+    expect(editor.hint).toBe('Nothing saved yet. Paste your taskrc here.');
+    (document.querySelectorAll('.file-row')[2] as HTMLButtonElement).click();
+    await tick();
+    expect(editor.shown).toEqual(['taskrc', 'lonely.rc']);
+    expect(editor.hint).toBe('An empty file.');
+    expect(editor.marks).toEqual([]);
+  });
+});
+
+describe('downloading', () => {
+  it('downloads the saved file under its own name, not the edits in the box', async () => {
+    await start();
+    await type(box(), 'bulk=9\n');
+    button('Download').click();
+    await tick();
+    expect(saveAs).toHaveBeenCalledWith('taskrc', FILES.taskrc);
+    (document.querySelectorAll('.file-row')[1] as HTMLButtonElement).click();
+    await tick();
+    button('Download').click();
+    await tick();
+    expect(saveAs).toHaveBeenLastCalledWith('en.rc', FILES['holidays/en.rc']);
+  });
+
+  it('downloads every file in one zip that keeps the folders', async () => {
+    await start();
+    button(/Download all/).click();
+    await tick();
+    const [name, blob] = vi.mocked(saveAs).mock.calls[0] as [string, Blob];
+    expect(name).toBe('taskrc.zip');
+    expect(blob.type).toBe('application/zip');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const text = new TextDecoder().decode(bytes);
+    for (const path of ['taskrc', 'holidays/en.rc', 'lonely.rc']) expect(text).toContain(path);
+    expect(text).toContain(FILES['holidays/en.rc']);
+  });
+});
+
 describe('adding holidays', () => {
   const US = '{"date":"2026-01-01","description":"New Year\'s Day","region":""}\n';
   const fetched = () =>
@@ -311,7 +392,7 @@ describe('adding holidays', () => {
     expect(calls[0][1]).toContain('holiday.en-US1.date=20260101');
     expect(calls[1]).toEqual([
       'taskrc',
-      'bulk=3\ninclude holidays/en.rc\ninclude holidays/en-US.rc\ncalendar.holidays=sparse\n',
+      'bulk=3\ninclude holidays/en.rc\ninclude holidays/en-US.rc\ncalendar.holidays=full\n',
     ]);
     expect(document.querySelector('h3')?.textContent).toBe('holidays/en-US.rc');
   });
@@ -330,7 +411,7 @@ describe('adding holidays', () => {
     expect(vi.mocked(putRcFile).mock.calls.map((c) => c[0])).toEqual(['holidays/en-US.rc']);
     (document.querySelector('.file-row') as HTMLButtonElement).click();
     await tick();
-    expect(box().value).toBe('bulk=9\ninclude holidays/en-US.rc\ncalendar.holidays=sparse\n');
+    expect(box().value).toBe('bulk=9\ninclude holidays/en-US.rc\ncalendar.holidays=full\n');
     expect(document.body.textContent).toContain('Apply there keeps them');
   });
 

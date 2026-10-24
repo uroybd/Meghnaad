@@ -6,7 +6,7 @@
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts } from './dates';
   import { store } from './store.svelte';
-  import { Calendar, X } from './icons';
+  import { Calendar, TriangleAlert, X } from './icons';
 
   /**
    * A date, shown as a button that opens a small panel to choose it in. The panel has a field to type it (a date as Taskwarrior
@@ -20,7 +20,16 @@
     id = undefined,
     placeholder = 'Set date',
     invalid = false,
-  }: { value?: string; label: string; id?: string; placeholder?: string; invalid?: boolean } = $props();
+    warn = '',
+  }: {
+    value?: string;
+    label: string;
+    id?: string;
+    placeholder?: string;
+    invalid?: boolean;
+    /** Something to look at in the date (it is on a holiday): the field is outlined in yellow and says it on hover or tap. */
+    warn?: string;
+  } = $props();
 
   const KEYWORDS = ['now', 'today', 'tomorrow', 'eod', 'sow', 'eow', 'som', 'eom'];
 
@@ -128,13 +137,14 @@
     class:mono={!!value}
     aria-haspopup="dialog"
     aria-expanded={open}
-    aria-label={value ? `${label}: ${value}` : label}
+    aria-label={(value ? `${label}: ${value}` : label) + (warn ? `. ${warn}` : '')}
     class:invalid
-    title={label}
+    class:warn={!!warn}
+    title={warn || label}
     onclick={() => (open ? close() : void show())}
   >
     <span class="text">{value || placeholder}</span>
-    <Calendar size={14} />
+    {#if warn}<TriangleAlert size={14} />{:else}<Calendar size={14} />{/if}
   </button>
   {#if open}
     <div
@@ -197,6 +207,7 @@
           oninput={(e) => (value = fromParts({ date, time: e.currentTarget.value }))}
         />
       </div>
+      {#if warn}<p class="warn-note" role="status"><TriangleAlert size={13} /> {warn}</p>{/if}
       {#if expression}<p class="dim hint">Typed as a date expression; pick a day to replace it.</p>{/if}
       <div class="foot">
         <button type="button" class="ghost" disabled={!value} onclick={() => (value = '')}><X size={13} /> Clear</button
@@ -226,6 +237,21 @@
   }
   .trigger.invalid {
     border-color: var(--err);
+  }
+  .trigger.warn {
+    border-color: var(--warn);
+    box-shadow: 0 0 0 1px var(--warn);
+  }
+  .trigger.warn :global(svg) {
+    color: var(--warn);
+  }
+  .warn-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--warn);
   }
   .panel {
     position: fixed;

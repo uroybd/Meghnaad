@@ -190,10 +190,14 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                         FieldCell("Project", 2f) { SuggestField(st.project, { st.project = it }, store.projects, "project", placeholder = "none") },
                         FieldCell("Priority", 1f) { Choice(st.priority.ifEmpty { "none" }, listOf("none") + st.priorityValues) { i -> st.priority = if (i == 0) "" else st.priorityValues[i - 1] } },
                     ))
+                    // A due or scheduled date on a holiday is flagged (the engine resolves `eod`, `som` and the like first).
+                    val clashConfig = store.config?.config
+                    val dueClash = remember(st.due, clashConfig) { runCatching { holidayClash("due", st.due, clashConfig, store.now, store.utcOffset) }.getOrNull() }
+                    val scheduledClash = remember(st.scheduled, clashConfig) { runCatching { holidayClash("scheduled", st.scheduled, clashConfig, store.now, store.utcOffset) }.getOrNull() }
                     FieldGrid(150.dp, listOf(
-                        FieldCell("Due") { DateTimeInput(st.due, { st.due = it }, "Due", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
+                        FieldCell("Due") { DateTimeInput(st.due, { st.due = it }, "Due", store.now, store.utcOffset, Modifier.fillMaxWidth(), warn = dueClash?.message) },
                         FieldCell("Wait") { DateTimeInput(st.wait, { st.wait = it }, "Wait", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
-                        FieldCell("Scheduled") { DateTimeInput(st.scheduled, { st.scheduled = it }, "Scheduled", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
+                        FieldCell("Scheduled") { DateTimeInput(st.scheduled, { st.scheduled = it }, "Scheduled", store.now, store.utcOffset, Modifier.fillMaxWidth(), warn = scheduledClash?.message) },
                         FieldCell("Until") { DateTimeInput(st.until, { st.until = it }, "Until", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
                     ))
                     FieldGrid(240.dp, listOf(

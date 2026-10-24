@@ -187,6 +187,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<String>(0)?,
             &a.req::<Vec<String>>(1)?.into_iter().collect()
         )),
+        "taskrc_highlight" => json!(crate::rc_highlight::highlight(&a.req::<String>(0)?)),
         "describe_urgency_key" => json!(urgency_settings::describe(&a.req::<String>(0)?)),
         "urgency_terms" => json!(urgency_settings::TERMS
             .iter()
@@ -296,6 +297,21 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<crate::taskrc::Config>(1)?,
             a.req::<i64>(2)?,
             a.opt::<i32>(3)?.unwrap_or(0)
+        )),
+        "holiday_clash" => json!(crate::clash::value(
+            &a.req::<String>(0)?,
+            &a.req::<String>(1)?,
+            &a.req::<crate::taskrc::Config>(2)?,
+            a.req::<i64>(3)?,
+            a.opt::<i32>(4)?.unwrap_or(0)
+        )),
+        "holiday_marks" => json!(crate::clash::line(
+            &a.req::<String>(0)?,
+            &a.req::<Vec<String>>(1)?.into_iter().collect(),
+            a.req::<bool>(2)?,
+            &a.req::<crate::taskrc::Config>(3)?,
+            a.req::<i64>(4)?,
+            a.opt::<i32>(5)?.unwrap_or(0)
         )),
         "board_normalize" => json!(crate::board::normalize(&a.req::<serde_json::Value>(0)?)),
         "board_aggregate" => json!(crate::board::aggregate::aggregate(

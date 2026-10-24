@@ -7,7 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.TooltipBox
@@ -58,13 +62,16 @@ fun DateTimeInput(
     modifier: Modifier = Modifier,
     placeholder: String = "Set date",
     invalid: Boolean = false,
+    /** Something to look at in the date (it is on a holiday): the button is outlined in yellow, and the panel a tap opens says it. */
+    warn: String? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     OutlinedButton(
         onClick = { open = true },
-        modifier,
+        modifier.semantics { if (warn != null) stateDescription = warn },
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        border = if (warn != null) BorderStroke(2.dp, extras.warn) else null,
     ) {
         Text(
             value.ifEmpty { placeholder },
@@ -74,14 +81,14 @@ fun DateTimeInput(
             maxLines = 1,
         )
         Spacer(Modifier.width(8.dp))
-        LucideIcon("calendar", size = 14.dp)
+        if (warn != null) LucideIcon("triangle-alert", size = 14.dp, tint = extras.warn) else LucideIcon("calendar", size = 14.dp)
     }
-    if (open) DatePanel(value, onChange, label, now, offset, invalid) { open = false }
+    if (open) DatePanel(value, onChange, label, now, offset, invalid, warn) { open = false }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun DatePanel(value: String, onChange: (String) -> Unit, label: String, now: Long, offset: Int, invalid: Boolean, onClose: () -> Unit) {
+private fun DatePanel(value: String, onChange: (String) -> Unit, label: String, now: Long, offset: Int, invalid: Boolean, warn: String?, onClose: () -> Unit) {
     val date = if (Regex("^\\d{4}-\\d{2}-\\d{2}").containsMatchIn(value)) value.take(10) else ""
     val time = if (date.isNotEmpty() && Regex("^.{10}[T ]\\d{2}:\\d{2}").containsMatchIn(value)) value.substring(11, 16) else ""
     val words = remember(value) { runCatching { dateWords(value) }.getOrDefault(emptyList()) }
@@ -94,6 +101,7 @@ private fun DatePanel(value: String, onChange: (String) -> Unit, label: String, 
         title = { Text(label, fontSize = 16.sp) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                warn?.let { Text(it, color = extras.warn, fontSize = 13.sp) }
                 OutlinedTextField(
                     value, onChange, Modifier.fillMaxWidth(),
                     singleLine = true, isError = invalid,

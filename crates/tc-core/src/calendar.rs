@@ -37,12 +37,32 @@ const DAYS: [&str; 7] = [
 /// How many months a bare `calendar` shows when `calendar.monthsperline` doesn't say.
 pub const DEFAULT_MONTHS: usize = 3;
 
+/// The names of the holidays on the day `ts` falls in (each day of a stretch counts), whatever `calendar.holidays` says: the
+/// holidays are defined, and a date can be checked against them without drawing the calendar.
+pub fn holidays_on(cfg: &Config, clock: &Clock, ts: i64) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for h in holidays(cfg, clock) {
+        let (on, name) = match h {
+            Holiday::On(d, n) => (clock.same_day(d, ts), n),
+            Holiday::Span(s, e, n) => (s <= ts && ts <= e, n),
+        };
+        if on && !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct DayOut {
     pub day: u32,
     pub today: bool,
     pub weekend: bool,
     pub holiday: bool,
+    /// The names of the holidays on this day, for a tooltip or a tap: only with `calendar.holidays=full` (as the list of them
+    /// under the months is), so empty, and left out of the JSON, otherwise.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub holidays: Vec<String>,
     /// A pending task is scheduled for this day.
     pub scheduled: bool,
     /// The most pressing due task on this day: `overdue`, `due-today` or `due`.
@@ -417,11 +437,16 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
         }
     }
 
-    let is_holiday = |ts: i64| {
-        holiday_list.iter().any(|h| match h {
-            Holiday::On(d, _) => clock.same_day(*d, ts),
-            Holiday::Span(s, e, _) => *s <= ts && ts <= *e,
-        })
+    // Every holiday on a day, by name (a holiday with an empty name still colours the day).
+    let holidays_on = |ts: i64| -> Vec<&str> {
+        holiday_list
+            .iter()
+            .filter_map(|h| match h {
+                Holiday::On(d, n) => clock.same_day(*d, ts).then_some(n),
+                Holiday::Span(s, e, n) => (*s <= ts && ts <= *e).then_some(n),
+            })
+            .map(String::as_str)
+            .collect()
     };
 
     let mut shown = Vec::with_capacity(months_to_show);
@@ -438,11 +463,19 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
             let col = if monday { (dow + 6) % 7 } else { dow } as usize;
             let midnight = clock.from_ymd_hms(y, m, d, 0, 0, 0).unwrap_or(0);
             week.number = Some(week_number(date, monday));
+            let on = holidays_on(midnight);
+            let mut names: Vec<String> = Vec::new();
+            for n in on.iter().filter(|n| holiday_mode == "full" && !n.is_empty()) {
+                if !names.iter().any(|x| x == n) {
+                    names.push((*n).to_owned());
+                }
+            }
             week.days[col] = Some(DayOut {
                 day: d,
                 today: date == today,
                 weekend: dow == 0 || dow == 6,
-                holiday: is_holiday(midnight),
+                holiday: !on.is_empty(),
+                holidays: names,
                 due: due_on.get(&(y, m, d)).copied(),
                 scheduled: scheduled_on.contains(&(y, m, d)) && !due_on.contains_key(&(y, m, d)),
             });
@@ -804,6 +837,13 @@ mod tests {
         let p = cal("", rc, &[]);
         assert!(p.out.holiday_colours);
         assert!(day(&p, 1, 11).holiday && !day(&p, 1, 12).holiday);
+        assert_eq!(day(&p, 1, 11).holidays, ["Day of the towel"]);
+        assert_eq!(
+            day(&p, 2, 2).holidays,
+            ["SysAdmin week"],
+            "every day of a stretch carries its name"
+        );
+        assert!(day(&p, 1, 12).holidays.is_empty());
         assert!(day(&p, 2, 1).holiday && day(&p, 2, 2).holiday && day(&p, 2, 3).holiday && !day(&p, 2, 4).holiday);
         let rows = p.out.holidays.unwrap();
         assert_eq!(
@@ -818,8 +858,24 @@ mod tests {
         // Sparse colours but lists nothing; none does neither.
         let sparse = cal("", &rc.replace("full", "sparse"), &[]);
         assert!(day(&sparse, 1, 11).holiday && sparse.out.holidays.is_none());
+        assert!(
+            day(&sparse, 1, 11).holidays.is_empty(),
+            "sparse colours the day and says no more, as task does"
+        );
         let none = cal("", &rc.replace("full", "none"), &[]);
         assert!(!day(&none, 1, 11).holiday && none.out.holidays.is_none() && !none.out.holiday_colours);
+    }
+
+    #[test]
+    fn a_day_with_two_holidays_lists_both_once() {
+        let rc = "calendar.holidays=full\n\
+                  holiday.a.name=Eid\nholiday.a.date=20261111\n\
+                  holiday.b.name=Day of the towel\nholiday.b.date=20261111\n\
+                  holiday.c.name=Eid\nholiday.c.date=20261111\n";
+        let p = cal("", rc, &[]);
+        assert_eq!(day(&p, 1, 11).holidays, ["Eid", "Day of the towel"]);
+        let json = serde_json::to_value(day(&p, 1, 12)).unwrap_or_default();
+        assert!(json.get("holidays").is_none(), "a day with none leaves the field out");
     }
 
     #[test]

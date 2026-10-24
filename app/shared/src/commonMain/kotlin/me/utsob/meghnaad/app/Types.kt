@@ -154,6 +154,8 @@ data class CalendarDay(
     val today: Boolean = false,
     val weekend: Boolean = false,
     val holiday: Boolean = false,
+    /** The holidays on this day. */
+    val holidays: List<String> = emptyList(),
     val scheduled: Boolean = false,
     /** overdue | due-today | due */
     val due: String? = null,

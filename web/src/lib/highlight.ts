@@ -1,6 +1,7 @@
 // Syntax highlighting for a line of Taskwarrior syntax: what each piece is is the engine's, and the pieces to draw are made here.
 
 import { callHelper } from '../engine/helpers';
+import type { ClashMark } from './holidayClash';
 
 export type Hl = 'keyword' | 'command' | 'attr' | 'punct' | 'value' | 'str' | 'tag' | 'id' | 'op' | 'config' | 'text';
 
@@ -21,12 +22,28 @@ export function highlight(line: string, commands: ReadonlySet<string>): HlToken[
 }
 
 /** The whole line as pieces to draw: each coloured word and the plain text between them, so that nothing is lost or added. */
-export function highlightPieces(line: string, commands: ReadonlySet<string>): { text: string; kind: Hl }[] {
-  const out: { text: string; kind: Hl }[] = [];
+export interface Piece {
+  text: string;
+  kind: Hl;
+  /** What is wrong with a date word that is on a holiday (a piece the engine's `clash` marks). */
+  warn?: string;
+}
+
+export function highlightPieces(
+  line: string,
+  commands: ReadonlySet<string>,
+  marks: readonly ClashMark[] = [],
+): Piece[] {
+  const out: Piece[] = [];
   let at = 0;
+  const warning = (t: HlToken) =>
+    t.kind === 'value' || t.kind === 'str'
+      ? marks.find((m) => t.start >= m.start && t.end <= m.end)?.message
+      : undefined;
   for (const t of highlight(line, commands)) {
     if (t.start > at) out.push({ text: line.slice(at, t.start), kind: 'text' });
-    out.push({ text: line.slice(t.start, t.end), kind: t.kind });
+    const warn = warning(t);
+    out.push({ text: line.slice(t.start, t.end), kind: t.kind, ...(warn ? { warn } : {}) });
     at = t.end;
   }
   if (at < line.length) out.push({ text: line.slice(at), kind: 'text' });

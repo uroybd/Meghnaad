@@ -102,3 +102,23 @@ describe('a date field', () => {
     expect(document.querySelector('[role=dialog]')).toBeNull();
   });
 });
+
+describe('a date with something to look at', () => {
+  it('is outlined, says it in its tooltip, and again in the panel a tap opens', () => {
+    const props = reactive({ value: '2026-12-25', label: 'Due', warn: 'due is 2026-12-25, a holiday: Christmas Day' });
+    app = mount(DateField, { target: document.body, props });
+    flushSync();
+    expect(trigger().classList.contains('warn')).toBe(true);
+    expect(trigger().title).toBe(props.warn);
+    expect(trigger().getAttribute('aria-label')).toContain('Christmas Day');
+    expect(document.querySelector('.warn-note')).toBeNull();
+    trigger().click();
+    flushSync();
+    expect(document.querySelector('.warn-note')?.textContent).toContain('Christmas Day');
+    props.warn = '';
+    flushSync();
+    expect(trigger().classList.contains('warn')).toBe(false);
+    expect(trigger().title).toBe('Due');
+    expect(document.querySelector('.warn-note')).toBeNull();
+  });
+});

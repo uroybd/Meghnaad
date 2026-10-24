@@ -14,6 +14,7 @@ afterEach(() => {
   store.promptRequest = null;
   store.promptLine = '';
   store.appSettings = null;
+  store.config = null;
   vi.restoreAllMocks();
 });
 
@@ -347,5 +348,45 @@ describe('the active context at the prompt', () => {
     store.config = { reports: [], config: { settings: {}, contexts: {}, active_context: null } } as never;
     flushSync();
     expect(run().classList.contains('in-context')).toBe(false);
+  });
+});
+
+describe('a date on a holiday', () => {
+  const type = (text: string) => {
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    return input;
+  };
+  const settings = { 'holiday.xmas.name': 'Christmas Day', 'holiday.xmas.date': '20261225' };
+
+  it('is drawn in yellow, and said when the caret is in it', () => {
+    store.config = { config: { settings } } as never;
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const input = type('add Party due:2026-12-25 +fun');
+    expect([...document.querySelectorAll('.hl-warn')].map((e) => e.textContent)).toEqual(['2026-12-25']);
+    // The caret is at the end of the line, not in the date: nothing is said yet.
+    expect(document.querySelector('.clash')).toBeNull();
+    input.setSelectionRange(18, 18);
+    input.dispatchEvent(new Event('select', { bubbles: true }));
+    flushSync();
+    expect(document.querySelector('.clash')?.textContent).toContain('Christmas Day');
+    input.setSelectionRange(2, 2);
+    input.dispatchEvent(new Event('select', { bubbles: true }));
+    flushSync();
+    expect(document.querySelector('.clash')).toBeNull();
+  });
+
+  it('says nothing about a filter, or when there are no holidays', () => {
+    store.config = { config: { settings } } as never;
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    type('list due:2026-12-25');
+    expect(document.querySelector('.hl-warn')).toBeNull();
+    store.config = { config: { settings: {} } } as never;
+    type('add Party due:2026-12-25 ');
+    expect(document.querySelector('.hl-warn')).toBeNull();
   });
 });

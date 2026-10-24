@@ -10,13 +10,27 @@
     putRcFile,
     restoreTaskrc,
   } from './api';
+  import { saveAs } from './download';
   import HolidaysForm from './HolidaysForm.svelte';
   import { settingsOf, withSetting, type Choice } from './holidays';
-  import { CalendarDays, FileText, Folder, Link, Plus, RotateCcw, Trash2, TriangleAlert, Upload } from './icons';
+  import {
+    CalendarDays,
+    Download,
+    FileText,
+    Folder,
+    Link,
+    Plus,
+    RotateCcw,
+    Trash2,
+    TriangleAlert,
+    Upload,
+  } from './icons';
   import { includeLine, listing, ROOT, uploadFiles, withInclude, type Picked } from './rcpaths';
   import { applyTheme, colourOff, expandIncludes, fetchTheme, THEMES, withColour } from './themes';
   import { store } from './store.svelte';
+  import type { RcEditor } from './rcEditor';
   import type { RcFiles, TaskrcResponse } from './types';
+  import { zipFiles } from './zip';
 
   /** There are edits not yet applied (the tab shows a dot). */
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
@@ -41,6 +55,41 @@
   let note = $state<string | null>(null);
   /** A holiday file to update, when its button was pressed. */
   let updating = $state<{ path: string; text: string } | null>(null);
+
+  // The text is edited in CodeMirror (line numbers, colour for what each line is, markers for lines with a problem), which loads
+  // with this tab. The drafts stay the one place the text is kept: the editor shows the file shown, and tells what is typed.
+  let host: HTMLElement | undefined = $state();
+  let editor = $state.raw<RcEditor>();
+  $effect(() => {
+    if (!host) return;
+    let alive = true;
+    const parent = host;
+    void import('./rcEditor').then(({ createRcEditor }) => {
+      if (alive) editor = createRcEditor(parent, (t) => setText(t));
+    });
+    return () => {
+      alive = false;
+      editor?.destroy();
+      editor = undefined;
+    };
+  });
+  $effect(() => {
+    if (!editor || !draft) return;
+    const hint = isRoot ? 'Nothing saved yet. Paste your taskrc here.' : 'An empty file.';
+    const [name, now] = [current, text];
+    untrack(() => editor?.show(name, now, hint));
+  });
+  $effect(() => {
+    editor?.setEditable(!loading && !!draft);
+  });
+  // What the engine says of lines of the file shown (an include with no file); drawn again whenever another file is shown.
+  $effect(() => {
+    void current;
+    void draft?.saved;
+    const ed = editor;
+    const problems = mine.map((p) => ({ line: p.line, message: p.message }));
+    untrack(() => ed?.mark(problems));
+  });
 
   const draft = $derived(drafts[current]);
   const text = $derived(draft?.text ?? '');
@@ -248,7 +297,7 @@
         const before = root ? root.text : await getTaskrcText();
         let next = before;
         if (c.include) next = withInclude(next, ROOT, c.path);
-        if (c.calendar) next = withSetting(next, 'calendar.holidays', 'sparse');
+        if (c.calendar) next = withSetting(next, 'calendar.holidays', 'full');
         if (next !== before && root && root.text !== root.saved) {
           root.text = next;
           note = 'The lines for the holidays are in the taskrc box; Apply there keeps them.';
@@ -303,6 +352,17 @@
       await store.settingsChanged();
     });
   }
+
+  // A download holds what is saved, never the edits in a box that are not applied (nothing unsafe is in what is saved).
+  const downloadFile = () => run(async () => saveAs(current.split('/').pop() ?? current, await fetchFile(current)));
+
+  // The whole folder, laid out as it is: unzipped, it is a folder Import folder takes back.
+  const downloadAll = () =>
+    run(async () => {
+      const list = await getRcFiles();
+      const files = await Promise.all(list.files.map(async (f) => ({ path: f.path, text: await fetchFile(f.path) })));
+      saveAs('taskrc.zip', new Blob([zipFiles(files)], { type: 'application/zip' }));
+    });
 
   $effect(() => {
     ondirty?.(anyEdited);
@@ -381,6 +441,12 @@
         <label class="check"
           ><input type="checkbox" bind:checked={replace} /> Replace what is here (needs a <code>taskrc</code>)</label
         >
+        <button
+          class="ghost btn"
+          onclick={downloadAll}
+          disabled={busy}
+          title="Every file, in a zip that keeps the folders"><Download size={14} /> Download all (.zip)</button
+        >
       </div>
     </nav>
 
@@ -441,16 +507,7 @@
         </form>
       {/if}
 
-      <label for="rc-text" class="sr-only">Text of {current}</label>
-      <textarea
-        id="rc-text"
-        value={text}
-        oninput={(e) => setText(e.currentTarget.value)}
-        rows="14"
-        class="mono"
-        disabled={loading || !draft}
-        placeholder={loading ? 'Loading…' : isRoot ? 'Nothing saved yet. Paste your taskrc here.' : 'An empty file.'}
-        spellcheck="false"></textarea>
+      <div class="rc-editor" bind:this={host} aria-busy={loading}></div>
 
       {#if !isRoot && others.length}
         <div class="include">
@@ -518,6 +575,12 @@
             {confirmRestore ? 'Click again to restore' : 'Restore previous'}
           </button>
         {/if}
+        <button
+          class="ghost btn"
+          onclick={downloadFile}
+          disabled={busy || loading || !draft}
+          title="Download the saved file"><Download size={14} /> Download</button
+        >
         {#if !isRoot}
           <button class="ghost btn danger" onclick={removeFile} disabled={busy} title="Delete this file">
             <Trash2 size={14} />
@@ -559,8 +622,7 @@
     font-size: 14px;
     overflow-wrap: anywhere;
   }
-  textarea {
-    width: 100%;
+  .rc-editor {
     margin: 8px 0;
   }
   .browser {
@@ -732,10 +794,6 @@
   @media (max-width: 760px) {
     .files {
       flex-basis: 100%;
-    }
-    textarea {
-      min-height: 40vh;
-      font-size: 14px;
     }
   }
 </style>

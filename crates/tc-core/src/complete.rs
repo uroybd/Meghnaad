@@ -457,6 +457,11 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
         return done("", matching(&word, pool, false));
     }
 
+    // Where in the line the word is: a command is said once, so with one already there (before or after the caret) another is
+    // not offered, and a bare number is a task id only in front of the command, not in what follows it (a description).
+    let after: String = chars[caret_c..].iter().skip_while(|c| **c != ' ').collect();
+    let around = Around::of(&before[..start_c].iter().collect::<String>(), &after, v);
+
     let first = word.chars().next().unwrap_or(' ');
     // +tag / -tag, including virtual tags.
     if first == '+' || first == '-' {
@@ -472,7 +477,7 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
     }
 
     // A bare number is a task id; list ids whose digits start with it.
-    if is_digits(&word) {
+    if is_digits(&word) && !around.command_before {
         let ids: Vec<Choice> = task_options(v).into_iter().filter(|o| is_digits(&o.value)).collect();
         return done("", matching(&word, ids, false));
     }
@@ -530,13 +535,16 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
         return none;
     }
 
-    // Command, report, or attribute name.
-    let mut pool: Vec<Choice> = COMMANDS.iter().map(|(c, h)| choice(c, Some(h))).collect();
-    pool.extend(
-        v.reports
-            .iter()
-            .map(|r| choice(&r.name, Some(r.description.as_deref().unwrap_or("report")))),
-    );
+    // Command, report, or attribute name; with a command in the line, only the attributes.
+    let mut pool: Vec<Choice> = Vec::new();
+    if !around.has_command() {
+        pool.extend(COMMANDS.iter().map(|(c, h)| choice(c, Some(h))));
+        pool.extend(
+            v.reports
+                .iter()
+                .map(|r| choice(&r.name, Some(r.description.as_deref().unwrap_or("report")))),
+        );
+    }
     pool.extend(ATTRS.iter().map(|(n, h)| choice(&format!("{n}:"), Some(h))));
     pool.extend(
         v.udas
@@ -551,6 +559,28 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
         end,
         options,
         common: if common.is_empty() { word } else { common },
+    }
+}
+
+/// What the rest of the line has: whether a command (or a report) is among the words before the one being completed, and
+/// whether one is after it.
+struct Around {
+    command_before: bool,
+    command_after: bool,
+}
+
+impl Around {
+    fn of(before: &str, after: &str, v: &Vocab) -> Self {
+        // A command is a bare word that names one: not an attribute (`due:eod`), a tag, an id, a quoted or an `rc.` word.
+        let is_command = |w: &str| COMMANDS.iter().any(|(c, _)| *c == w) || v.reports.iter().any(|r| r.name == w);
+        Around {
+            command_before: before.split(' ').any(is_command),
+            command_after: after.split(' ').any(is_command),
+        }
+    }
+
+    fn has_command(&self) -> bool {
+        self.command_before || self.command_after
     }
 }
 
@@ -816,6 +846,35 @@ mod tests {
         eq("mo", &["modify"]);
         eq("mi", &["mine"]);
         eq("3 do", &["done"]);
+    }
+
+    #[test]
+    fn a_command_is_said_once_so_none_is_offered_beside_one() {
+        // After a command (or a report) only attributes: not `calendar` or `summary`, not another report.
+        eq("add Buy milk ca", &[]);
+        eq("add Buy milk su", &[]);
+        eq("modify s", &["scheduled:", "ship:", "start:", "status:"]);
+        eq("3 modify pr", &["priority:", "project:"]);
+        eq("list li", &["limit:"]);
+        eq("next ", &[]);
+        eq("done mi", &[]);
+        // And before the command, when one is already further along the line: a filter is being typed.
+        eq("pr", &["prepend", "priority:", "project:", "projects"]);
+        assert_eq!(
+            complete("pr add Buy", 2, &vocab())
+                .options
+                .iter()
+                .map(|o| o.value.as_str())
+                .collect::<Vec<_>>(),
+            ["priority:", "project:"],
+        );
+        // With no command anywhere they are all there, as before.
+        eq("project:Home ca", &["calc", "calendar"]);
+        eq("+errand sum", &["summary"]);
+        // A number before the command is a task id; after it, it is part of what is typed.
+        eq("3", &["3", "30"]);
+        eq("modify 3", &[]);
+        eq("add buy 3", &[]);
     }
 
     #[test]

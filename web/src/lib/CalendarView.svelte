@@ -14,8 +14,16 @@
 
   // A click on a day with something due shows those tasks in the Tasks view, always in the built-in
   // `list` report (the report in focus might filter or order them differently, or not exist any more).
+  // A tap on a holiday with nothing due says which holiday it is (hovering does too, but a phone cannot hover).
+  let picked = $state<{ at: string; label: string; names: string[] } | null>(null);
+
   function show(m: CalendarMonth, d: CalendarDay) {
-    if (!d.due && !d.scheduled) return;
+    if (!d.due && !d.scheduled) {
+      const names = d.holidays ?? [];
+      const at = `${m.year}-${pad(m.month)}-${pad(d.day)}`;
+      picked = names.length && picked?.at !== at ? { at, label: `${m.name} ${d.day}`, names } : null;
+      return;
+    }
     const day = `${m.year}-${pad(m.month)}-${pad(d.day)}`;
     store.focusReport('list', [d.due ? `due:${day}` : `scheduled:${day}`]);
   }
@@ -23,7 +31,7 @@
   function describe(m: CalendarMonth, d: CalendarDay): string {
     const bits: string[] = [];
     if (d.today) bits.push('today');
-    if (d.holiday) bits.push('holiday');
+    if (d.holiday) bits.push(d.holidays?.length ? d.holidays.join(', ') : 'holiday');
     if (d.due === 'overdue') bits.push('overdue');
     if (d.due === 'due-today') bits.push('due later today');
     if (d.due === 'due') bits.push('something is due');
@@ -49,7 +57,7 @@
               {#if result.week_numbers}<td class="wk">{week.number ?? ''}</td>{/if}
               {#each week.days as d, _i (_i)}
                 {#if d}
-                  {@const clickable = !!(d.due || d.scheduled)}
+                  {@const clickable = !!(d.due || d.scheduled || d.holidays?.length)}
                   <td
                     class="day"
                     class:today={d.today}
@@ -79,6 +87,10 @@
     </section>
   {/each}
 </div>
+
+{#if picked}
+  <p class="picked" role="status"><strong>{picked.label}</strong>: {picked.names.join(', ')}</p>
+{/if}
 
 {#if result.legend}
   <p class="legend dim" aria-label="Legend">
@@ -214,6 +226,10 @@
     font-weight: 700;
   }
 
+  .picked {
+    margin: 6px 0 0;
+    font-size: 13.5px;
+  }
   .legend {
     display: flex;
     flex-wrap: wrap;

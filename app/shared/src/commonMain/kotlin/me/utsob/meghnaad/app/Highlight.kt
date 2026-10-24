@@ -40,13 +40,13 @@ fun highlight(line: String, commands: Set<String>): List<HlToken> =
 
 /** The colours of the pieces: the same wherever the line is drawn, lighter on a dark page. */
 class HlPalette(dark: Boolean) {
-    private val command = if (dark) Color(0xFF79C0FF) else Color(0xFF0969DA)
-    private val attr = if (dark) Color(0xFFD2A8FF) else Color(0xFF8250DF)
+    internal val command = if (dark) Color(0xFF79C0FF) else Color(0xFF0969DA)
+    internal val attr = if (dark) Color(0xFFD2A8FF) else Color(0xFF8250DF)
     private val tag = if (dark) Color(0xFF56D364) else Color(0xFF1A7F37)
     private val id = if (dark) Color(0xFFFFA657) else Color(0xFFBC4C00)
-    private val op = if (dark) Color(0xFFFF7B72) else Color(0xFFCF222E)
-    private val str = if (dark) Color(0xFFA5D6FF) else Color(0xFF0A3069)
-    private val dim = if (dark) Color(0xFF8B949E) else Color(0xFF6E7781)
+    internal val op = if (dark) Color(0xFFFF7B72) else Color(0xFFCF222E)
+    internal val str = if (dark) Color(0xFFA5D6FF) else Color(0xFF0A3069)
+    internal val dim = if (dark) Color(0xFF8B949E) else Color(0xFF6E7781)
 
     fun style(kind: Hl): SpanStyle? = when (kind) {
         Hl.Command -> SpanStyle(color = command, fontWeight = FontWeight.SemiBold)
@@ -63,12 +63,21 @@ class HlPalette(dark: Boolean) {
 }
 
 /** The line coloured, character for character (so the cursor and the selection stay where they are). */
-class HighlightTransformation(private val commands: Set<String>, private val palette: HlPalette) : VisualTransformation {
+class HighlightTransformation(
+    private val commands: Set<String>,
+    private val palette: HlPalette,
+    /** Date words on a holiday: drawn with a yellow wash and an underline. */
+    private val marks: List<ClashMark> = emptyList(),
+    private val warn: Color = Color(0xFFE3B341),
+) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val line = text.text
         val coloured = buildAnnotatedString {
             append(line)
             for (t in highlight(line, commands)) palette.style(t.kind)?.let { addStyle(it, t.start, t.end) }
+            for (m in marks) {
+                if (m.end <= line.length) addStyle(SpanStyle(background = warn.copy(alpha = 0.3f), textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline), m.start, m.end)
+            }
         }
         return TransformedText(coloured, OffsetMapping.Identity)
     }

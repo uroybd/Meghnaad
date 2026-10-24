@@ -17,6 +17,9 @@ interface FileHost {
     /** Offer [text] as a file called [name] to keep; false when it was not kept. */
     suspend fun save(name: String, mime: String, text: String): Boolean
 
+    /** Offer [bytes] as a file called [name] to keep (a zip); false when it was not kept or this build can't. */
+    suspend fun saveBytes(name: String, mime: String, bytes: ByteArray): Boolean = false
+
     /** Ask for several files; none when none were chosen. */
     suspend fun pickMany(): List<PickedFile> = emptyList()
 

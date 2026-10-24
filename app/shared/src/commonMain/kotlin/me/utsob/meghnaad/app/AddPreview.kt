@@ -31,11 +31,10 @@ data class AddPreview(
 // The engine reads the whole of a UDA, so the defaults a screen leaves out of its copy are written.
 private val configJson = Json { encodeDefaults = true }
 
-/** The task [line] would add (what comes after `task add`), at [now] in the zone [tz] seconds east of UTC. */
-fun previewAdd(line: String, config: ConfigBody?, now: Long, tz: Int): AddPreview {
+/** The part of the settings the engine's date and `add` helpers read: the reports are the engine's own and stay out. */
+internal fun addConfig(config: ConfigBody?): JsonElement {
     val body = config ?: ConfigBody()
-    // Only what `add` reads: the reports are the engine's own and stay out.
-    val cfg: JsonElement = JsonObject(
+    return JsonObject(
         mapOf(
             "udas" to configJson.encodeToJsonElement(body.udas),
             "contexts" to configJson.encodeToJsonElement(body.contexts),
@@ -43,6 +42,11 @@ fun previewAdd(line: String, config: ConfigBody?, now: Long, tz: Int): AddPrevie
             "settings" to configJson.encodeToJsonElement(body.settings),
         ),
     )
+}
+
+/** The task [line] would add (what comes after `task add`), at [now] in the zone [tz] seconds east of UTC. */
+fun previewAdd(line: String, config: ConfigBody?, now: Long, tz: Int): AddPreview {
+    val cfg = addConfig(config)
     return engineJson.decodeFromJsonElement(AddPreview.serializer(), callHelper("add_preview", JsonPrimitive(line), cfg, JsonPrimitive(now), JsonPrimitive(tz)))
 }
 

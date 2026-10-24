@@ -38,7 +38,7 @@ fn is_space(c: char) -> bool {
 }
 
 /// The words of the line as `[start, end)` in characters: split at spaces, except inside quotes, and after a backslash.
-fn words(chars: &[char]) -> Vec<(usize, usize)> {
+pub(crate) fn words(chars: &[char]) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < chars.len() {
@@ -102,7 +102,7 @@ fn is_uuid(w: &str) -> bool {
 }
 
 /// `name:value` or `name=value`: the length of the name, when the word is one.
-fn attribute_name(w: &str) -> Option<usize> {
+pub(crate) fn attribute_name(w: &str) -> Option<usize> {
     let mut it = w.char_indices();
     let (_, first) = it.next()?;
     if !(first.is_ascii_alphabetic() || first == '_') {

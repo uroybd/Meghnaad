@@ -32,7 +32,7 @@ class TaskrcStateTest {
         return listOf("libtc_android.dylib", "libtc_android.so", "tc_android.dll").any { File(dir, it).exists() }
     }
 
-    private fun store(): Store {
+    private fun store(files: FileHost? = null): Store {
         val clock = object : Clock {
             override fun utcOffsetSeconds() = 0
 
@@ -42,7 +42,7 @@ class TaskrcStateTest {
         }
         val engine = LocalEngine(Files.createTempDirectory("meghnaad-taskrc").toFile(), vault)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-        return Store(Tw(engine, clock), engine, vault, SyncController(engine, scope, clock), scope, clock)
+        return Store(Tw(engine, clock), engine, vault, SyncController(engine, scope, clock), scope, clock, files = files)
     }
 
     @Test
@@ -105,6 +105,62 @@ class TaskrcStateTest {
         assertEquals(emptyList(), st.folder?.problems)
     }
 
+    @Test
+    fun theZipIsOneAnyReaderOpens() {
+        val files = listOf("taskrc" to "bulk=3\ninclude holidays/en-US.rc\n", "holidays/en-US.rc" to "holiday.en-US1.name=Fête\n", "empty.rc" to "")
+        // 2026-10-24 12:30:10 UTC
+        val zip = RcZip.zip(files, 1_792_845_010L)
+        val read = java.util.zip.ZipInputStream(zip.inputStream())
+        val got = generateSequence { read.nextEntry }.map { it.name to read.readBytes().decodeToString() }.toList()
+        assertEquals(files, got)
+        assertEquals(java.util.zip.CRC32().also { it.update("123456789".encodeToByteArray()) }.value.toInt(), RcZip.crc32("123456789".encodeToByteArray()))
+        assertEquals(22, RcZip.zip(emptyList(), 0L).size)
+    }
+
+    @Test
+    fun theFolderAndAFileAreHandedToTheFilesHostAsSaved() = runBlocking {
+        if (!library()) return@runBlocking
+        val kept = mutableListOf<Triple<String, String, ByteArray>>()
+        val host = object : FileHost {
+            override suspend fun pick(): PickedFile? = null
+
+            override suspend fun save(name: String, mime: String, text: String): Boolean {
+                kept += Triple(name, mime, text.encodeToByteArray())
+                return true
+            }
+
+            override suspend fun saveBytes(name: String, mime: String, bytes: ByteArray): Boolean {
+                kept += Triple(name, mime, bytes)
+                return true
+            }
+        }
+        val store = store(host)
+        store.loadConfig()
+        val st = TaskrcState(store)
+        st.load()
+        st.upload(listOf(
+            PickedFile("taskrc", 0, "bulk=4\ninclude holidays/en.rc\n", "dots/taskrc"),
+            PickedFile("en.rc", 0, "holiday.towel.name=Towel day\nholiday.towel.date=20260525\n", "dots/holidays/en.rc"),
+        ))
+        // What is typed and not applied is not in a download.
+        st.open("holidays/en.rc")
+        st.text = "holiday.towel.name=Edited\n"
+        st.downloadFile()
+        assertEquals(null, st.error, st.error)
+        assertEquals(Triple("en.rc", "text/plain", "holiday.towel.name=Towel day\nholiday.towel.date=20260525\n"), kept[0].let { Triple(it.first, it.second, it.third.decodeToString()) })
+        assertEquals("Saved.", st.kept)
+
+        st.downloadAll()
+        assertEquals(null, st.error, st.error)
+        val (name, mime, zip) = kept[1]
+        assertEquals("taskrc.zip" to "application/zip", name to mime)
+        val read = java.util.zip.ZipInputStream(zip.inputStream())
+        val got = generateSequence { read.nextEntry }.associate { it.name to read.readBytes().decodeToString() }
+        assertEquals(setOf("taskrc", "holidays/en.rc"), got.keys)
+        assertEquals("bulk=4\ninclude holidays/en.rc\n", got["taskrc"])
+        assertEquals("holiday.towel.name=Towel day\nholiday.towel.date=20260525\n", got["holidays/en.rc"])
+    }
+
     private val newYear = """{"date":"2026-01-01","description":"New Year's Day","region":""}
 {"date":"2026-04-20","description":"Patriots' Day","region":"MA"}
 """
@@ -153,7 +209,7 @@ class TaskrcStateTest {
         assertTrue("holiday.en-US1.date=20260101" in st.text, st.text)
         // The main taskrc includes it and the calendar shows holidays, and the settings are in force.
         st.open(RC_ROOT, force = true)
-        assertEquals("bulk=3\ninclude holidays/en-US.rc\ncalendar.holidays=sparse\n", st.text)
+        assertEquals("bulk=3\ninclude holidays/en-US.rc\ncalendar.holidays=full\n", st.text)
         assertEquals("New Year's Day", store.config?.config?.settings?.get("holiday.en-US1.name"))
         assertEquals(emptyList(), st.folder?.problems)
 

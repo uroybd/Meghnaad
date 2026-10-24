@@ -132,7 +132,19 @@ fun AddPreviewCard(store: Store, preview: AddPreview?) {
                     Text(value, fontSize = 13.sp)
                 }
                 preview.project?.let { Fact("folder", null, it) }
-                for ((name, ts) in preview.dates) Fact("calendar", name, formatMoment(ts, store.offsetAt(ts), fmt))
+                for ((name, ts) in preview.dates) {
+                    // A due or scheduled date on a holiday says so (a phone has no tooltip, so it is written out below).
+                    val clash = if (name == "due" || name == "scheduled") {
+                        runCatching { holidayClash(name, fromParts(toParts(ts, store.offsetAt(ts))), store.config?.config, store.now, store.utcOffset) }.getOrNull()
+                    } else null
+                    if (clash != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            LucideIcon("triangle-alert", size = 13.dp, tint = extras.warn); Text(" ")
+                            Text(name, fontSize = 13.sp, color = extras.warn); Text(" ")
+                            Text(formatMoment(ts, store.offsetAt(ts), fmt), fontSize = 13.sp, color = extras.warn)
+                        }
+                    } else Fact("calendar", name, formatMoment(ts, store.offsetAt(ts), fmt))
+                }
                 preview.recur?.let { Fact("repeat", null, describeRecur(it)) }
                 for ((name, value) in preview.udas) {
                     val def = defs[name]
@@ -140,6 +152,11 @@ fun AddPreviewCard(store: Store, preview: AddPreview?) {
                 }
                 if (preview.depends.isNotEmpty()) Fact("link", null, "depends on " + preview.depends.joinToString(", "))
                 for (t in preview.tags) Pill(t, background = colors.primary.copy(alpha = 0.12f), color = colors.primary)
+            }
+            for ((name, ts) in preview.dates) {
+                if (name != "due" && name != "scheduled") continue
+                runCatching { holidayClash(name, fromParts(toParts(ts, store.offsetAt(ts))), store.config?.config, store.now, store.utcOffset) }.getOrNull()
+                    ?.let { Text(it.message, color = extras.warn, fontSize = 12.sp) }
             }
         }
     }

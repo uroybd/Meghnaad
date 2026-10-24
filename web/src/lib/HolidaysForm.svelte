@@ -308,7 +308,7 @@
     {#if !calendarOn}
       <label class="check"
         ><input type="checkbox" bind:checked={wantCalendar} /> Show holidays in the calendar
-        <span class="dim">(<code>calendar.holidays=sparse</code>)</span></label
+        <span class="dim">(<code>calendar.holidays=full</code>)</span></label
       >
     {/if}
     <button class="primary" onclick={save} disabled={busy || built.count === 0}>Save <code>{built.path}</code></button>

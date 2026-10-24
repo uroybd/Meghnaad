@@ -17,6 +17,27 @@ vi.mock('./api', async (original) => ({
   putAppSettings: vi.fn(),
 }));
 
+/** A stand-in for CodeMirror, which does not need to be exercised here: a textarea that holds the text. */
+vi.mock('./rcEditor', () => ({
+  createRcEditor: (parent: HTMLElement, onChange: (t: string) => void) => {
+    const box = document.createElement('textarea');
+    parent.append(box);
+    box.addEventListener('input', () => onChange(box.value));
+    return {
+      text: () => box.value,
+      show: (_name: string, text: string) => {
+        if (box.value !== text) box.value = text;
+      },
+      mark: () => {},
+      setEditable: (on: boolean) => {
+        box.disabled = !on;
+      },
+      focus: () => {},
+      destroy: () => box.remove(),
+    };
+  },
+}));
+
 /** A taskrc with neither tasksh part. */
 function bare(): ConfigResponse {
   return {
@@ -103,6 +124,8 @@ describe('the Settings page', () => {
     expect(apply('taskrc').disabled).toBe(true);
     expect(tab('taskrc').querySelector('.dot')).toBeNull();
 
+    // The editor is loaded when the tab is.
+    await vi.waitFor(() => expect(panel('taskrc').querySelector('textarea')).not.toBeNull());
     const text = panel('taskrc').querySelector('textarea') as HTMLTextAreaElement;
     text.value = 'bulk=9';
     text.dispatchEvent(new Event('input', { bubbles: true }));

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { formatFor } from './dateformat';
-  import { formatMoment } from './dates';
+  import { formatMoment, fromParts, toParts } from './dates';
+  import { clashOf } from './holidayClash';
   import { udaLabel } from './format';
-  import { Calendar, Folder, Link, Repeat } from './icons';
+  import { Calendar, Folder, Link, Repeat, TriangleAlert } from './icons';
   import { describeRecur } from './recurrence';
   import { store } from './store.svelte';
   import type { AddPreview } from './addPreview';
@@ -12,7 +13,14 @@
 
   const fmt = $derived(formatFor('info', store.config?.config.settings));
   const defs = $derived(store.config?.config.udas ?? {});
-  const dates = $derived(Object.entries(preview?.dates ?? {}));
+  // A due or scheduled date on a holiday says so, beside the date.
+  const dates = $derived(
+    Object.entries(preview?.dates ?? {}).map(([name, ts]) => ({
+      name,
+      ts,
+      warn: name === 'due' || name === 'scheduled' ? clashOf(name, fromParts(toParts(ts)))?.message : undefined,
+    })),
+  );
   const udas = $derived(
     Object.entries(preview?.udas ?? {}).map(([name, value]) => ({
       label: defs[name] ? udaLabel(defs[name]) : name,
@@ -34,9 +42,11 @@
     {#if preview.project || preview.tags.length || dates.length || preview.recur || udas.length || preview.depends.length}
       <div class="facts">
         {#if preview.project}<span class="fact"><Folder size={13} /> {preview.project}</span>{/if}
-        {#each dates as [name, ts] (name)}
-          <span class="fact"
-            ><Calendar size={13} /> <span class="dim">{name}</span> {formatMoment(ts, undefined, fmt)}</span
+        {#each dates as d (d.name)}
+          <span class="fact" class:warn={!!d.warn} title={d.warn}
+            >{#if d.warn}<TriangleAlert size={13} />{:else}<Calendar size={13} />{/if}
+            <span class="dim">{d.name}</span>
+            {formatMoment(d.ts, undefined, fmt)}{#if d.warn}<span class="sr-only"> {d.warn}</span>{/if}</span
           >
         {/each}
         {#if preview.recur}<span class="fact"><Repeat size={13} /> {describeRecur(preview.recur)}</span>{/if}
@@ -85,6 +95,10 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+  }
+  .fact.warn {
+    color: var(--warn);
+    border-bottom: 1px dotted var(--warn);
   }
   .tagpill {
     margin: 0;

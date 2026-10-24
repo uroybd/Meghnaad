@@ -126,8 +126,8 @@ fun Button(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean 
     androidx.compose.material3.Button(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, colors = colors, contentPadding = contentPadding, content = content)
 
 @Composable
-fun OutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.ContentPadding, content: @Composable RowScope.() -> Unit) =
-    androidx.compose.material3.OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, contentPadding = contentPadding, content = content)
+fun OutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.ContentPadding, border: BorderStroke? = null, content: @Composable RowScope.() -> Unit) =
+    androidx.compose.material3.OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled, shape = ControlShape, contentPadding = contentPadding, border = border ?: ButtonDefaults.outlinedButtonBorder(enabled), content = content)
 
 @Composable
 fun TextButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding, content: @Composable RowScope.() -> Unit) =

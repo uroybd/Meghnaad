@@ -193,7 +193,7 @@ phone with no tasks goes to another place without asking.
   file deleted on one side and left alone on the other is deleted on both. A file that would not load, or a settings or taskrc file holding a credential, is not taken
   from the bucket. **The secrets for hooks are never synced.** The two switches are this phone's own choice, kept on the
   phone, and are not synced themselves. Without sharing, import your taskrc again in **Settings** (paste it, import it from a link,
-  or choose files or a whole folder: **Add files**, **Import folder**). **Add holidays** (same tab) fetches a country's holidays from
+  or choose files or a whole folder: **Add files**, **Import folder**; **Download** and **Download all (.zip)** keep a file or the whole folder through the save dialog). **Add holidays** (same tab) fetches a country's holidays from
   holidata.net or date.nager.at, or a calendar (`.ics`) from a link, with a plain HTTPS request from the phone (a calendar's link
   and every redirect are held to the rules the Worker applies to a taskrc link) and saves them as a file of the taskrc folder.
 - **Settings → Sync** shows where the phone syncs to (the endpoint, the bucket, the region and a hint of the access key's

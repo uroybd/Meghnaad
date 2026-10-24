@@ -109,6 +109,8 @@ fun CompletingField(
     /** The menu above the field (a prompt at the bottom of the screen) instead of under it. */
     menuAbove: Boolean = false,
     mono: Boolean = true,
+    /** Told where the cursor is each time it or the text changes (a tap moves it). */
+    onCaret: ((Int) -> Unit)? = null,
 ) {
     var tfv by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
     // An outside change (history, a request to put text here): take it, with the cursor after it.
@@ -143,6 +145,7 @@ fun CompletingField(
                 val it = if (!singleLine && '\n' in typed.text) typed.copy(text = typed.text.replace('\n', ' ')) else typed
                 val changed = it.text != tfv.text
                 tfv = it
+                onCaret?.invoke(it.selection.end)
                 if (changed) {
                     completer.close()
                     onValueChange(it.text)

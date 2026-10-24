@@ -169,6 +169,9 @@ commands · `Esc` closes a menu · `Ctrl+L` clears the console.
 `and` / `or` and brackets red, `rc.` settings grey and italic, and quoted text its own colour. After `add` and `log` the rest is
 a description, so `and` there is only a word. A command that is longer than the line wraps, so all of it can be read.
 Suggestions open as you type, under the filter boxes and above the prompt; Tab or a tap takes one.
+They know where the word is: a command is said once, so with `add`, `modify` or a report already in the line (before the word or after it) only attributes are offered,
+not `calendar`, `summary` or another report; and a bare number is a task id only in front of the command, not in a
+description that follows it.
 
 **Abbreviations and aliases.** A command, report or attribute name may be shortened to `abbreviation.minimum`
 characters (default 2): `proj:Home`, `ann 3 text`. `alias.<name>=<words>` in the taskrc makes a typed word stand for
@@ -324,7 +327,19 @@ in purple; overdue in red) or scheduled, and holidays. It takes Taskwarrior's ar
 "from the first due date". A filter-shaped word (`project:Work`) narrows which tasks colour the days. Click a day to see
 what is due in the `list` report. Holidays are defined in the taskrc as `holiday.<id>.name` and `.date` (or `.start`
 and `.end`), in the taskrc itself or in a file it includes (`include holidays/en-US.rc`). **Settings → taskrc → Add
-holidays** makes that file for you (below).
+holidays** makes that file for you (below). With `calendar.holidays=full` (what Add holidays turns on), the holidays are
+also listed under the months, hovering over one shows its name (several, if there are several), and on a phone a tap shows
+it under the months (tap again to hide it). `sparse` only colours the days, as `task calendar` does. A holiday that is
+also due or scheduled opens those tasks as before, with the holiday's name in its tooltip.
+
+**A due or scheduled date on a holiday is flagged**, wherever you set it, as long as the taskrc defines holidays (whatever
+`calendar.holidays` says, since that only chooses how the calendar draws them). The date is worked out first, so `eod`,
+`som` or `eow-2d` are checked as the day they come to. In the task form the **Due** or **Scheduled** field gets a yellow
+outline and a warning icon; hover it for the reason, or tap it: the panel it opens says it too ("due (eod) is 2026-12-25, a
+holiday: Christmas Day"). In the console (and the Android prompt) the date word itself turns yellow when a command that sets
+it (`add`, `log`, `modify`, `duplicate`) has it; hover it, or put the cursor in it (a tap does), and the reason shows above
+the line. A filter such as `list due:2026-12-25` is not flagged, since it only asks which tasks are due then. The quick add's
+preview card flags a date the same way. It is only a warning: nothing is changed or refused.
 
 **Burndown** charts pending, started and done over time with the net fix rate and an estimated completion date, by day,
 week, month or year. It counts as Taskwarrior does, quirks included (checked bar by bar). `burndown.cumulative=0`
@@ -504,6 +519,12 @@ keeps its own copy: **a folder of files**, kept as you wrote them. Open **Settin
 are the files (the main one, `taskrc`, first); choose one to edit it on the right, then **Apply**. Only an allowlist of
 settings is read (the full list, with what each does, is [taskrc support](taskrc-support.md)).
 
+- **The editor** numbers the lines and colours what each one is: a setting's name, its value, a comment, `include` and the
+  file it names, the `[unsupported]` the app writes where it commented a line out. A line that is no setting at all is
+  underlined (it is commented out when you Apply), and a credential-like name is struck through (it is removed). A line the
+  engine has a warning for (an `include` that points nowhere) is marked in the line numbers. On the web it is CodeMirror
+  (loaded with this tab; Tab indents, Ctrl+Z undoes within one file), on the phone a text box with the same colours and
+  numbers; the engine says what each piece is, so both agree.
 - **Text is kept as written**: comments, blank lines, order and spacing stay. Two things change on the way in. **A line the
   app can't use is commented out** (`# [unsupported] some.key=1`) instead of being dropped, and the result says which lines
   and why. **Sync settings and anything credential-like are removed** (`sync.*`, `taskd.*`, names containing `secret`,
@@ -519,6 +540,10 @@ settings is read (the full list, with what each does, is [taskrc support](taskrc
   files and folders (`.git`), binary files and anything over 256 KB are left out and listed, and up to 64 files or 1 MB are
   taken. It adds to what is here; tick **Replace what is here** to make the folder the whole of it (it needs a `taskrc`).
   One import is one step, so **Restore previous** undoes all of it.
+- **Download** keeps the file shown (under its own name, `en-US.rc`) and **Download all (.zip)** every file in one zip that
+  keeps the folders (`taskrc`, `holidays/en-US.rc`). They hold what is *saved*, not edits in a box you haven't applied, so
+  they never carry a credential (those were removed on the way in). Unzip it and **Import folder** takes it back. On the
+  phone, the system's save dialog asks where to keep it.
 - **Add holidays** makes a file of a country's public holidays, from one of three places, and shows the list it found before
   anything is saved:
   - **Holidata** ([holidata.net](https://holidata.net), the data behind Taskwarrior's own holiday files): 42 locales in 34
@@ -535,7 +560,7 @@ settings is read (the full list, with what each does, is [taskrc support](taskrc
   Pick the country (or paste the link), the years (last year to two years ahead to begin with) and **Find holidays**.
   Holidays that belong to one region only (Massachusetts' Patriots' Day, a Swiss canton's) are left out unless you tick the
   region. **Save** writes the file and, unless they are there already, adds `include holidays/<file>.rc` and
-  `calendar.holidays=sparse` to the main taskrc, which you can untick. If the main taskrc has edits you have not applied,
+  `calendar.holidays=full` to the main taskrc, which you can untick. If the main taskrc has edits you have not applied,
   the lines go into its box instead and **Apply** keeps them. A file made this way says where it came from, so **Update
   holidays**, on that file, fetches it again for the years now with the same regions and names (a year the source has no
   data for is named; a calendar's link is remembered only when it has no `?` in it, since such a link can hold a secret).

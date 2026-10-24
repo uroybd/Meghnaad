@@ -64,6 +64,9 @@ class TaskrcState(private val store: Store) {
     var includeIn by mutableStateOf(RC_ROOT)
     var note by mutableStateOf<String?>(null)
 
+    /** What the last download came to (null before one). */
+    var kept by mutableStateOf<String?>(null)
+
     // Add holidays (HolidaysForm.svelte): where from, a country or a link and the years, then what was found, then the file it makes.
     private fun currentYear() = civil(store.clockNow(), store.utcOffset).year
 
@@ -145,6 +148,7 @@ class TaskrcState(private val store: Store) {
         current = path
         store.settingsFile = path.takeIf { it != RC_ROOT }
         confirmDelete = false
+        kept = null
         if (drafts[path] != null && !force) return
         loading = true
         try {
@@ -193,6 +197,22 @@ class TaskrcState(private val store: Store) {
         } catch (e: Exception) {
             error = e.message ?: e.toString()
         }
+    }
+
+    // A download holds what is saved, never the edits in a box that are not applied (nothing unsafe is in what is saved).
+    suspend fun downloadFile() = run {
+        val host = store.files ?: return@run
+        val ok = host.save(current.substringAfterLast('/'), "text/plain", store.request("GET", rcRoute(current)))
+        kept = if (ok) "Saved." else "Not saved."
+    }
+
+    /** The whole folder in one zip that keeps the folders: unzipped, it is a folder Import folder takes back. */
+    suspend fun downloadAll() = run {
+        val host = store.files ?: return@run
+        refreshList()
+        val files = (folder?.files?.map { it.path } ?: listOf(RC_ROOT)).map { it to store.request("GET", rcRoute(it)) }
+        val zip = RcZip.zip(files, store.clockNow() + store.utcOffset)
+        kept = if (host.saveBytes("taskrc.zip", "application/zip", zip)) "Saved." else "Not saved."
     }
 
     private suspend fun run(block: suspend () -> Unit) {
@@ -374,7 +394,7 @@ class TaskrcState(private val store: Store) {
             val before = root?.text ?: store.request("GET", rcRoute(RC_ROOT))
             var next = before
             if (wantInclude) next = withInclude(next, RC_ROOT, path)
-            if (wantCalendar) next = withSetting(next, "calendar.holidays", "sparse")
+            if (wantCalendar) next = withSetting(next, "calendar.holidays", "full")
             if (next != before && root != null && root.edited) {
                 root.text = next
                 note = "The lines for the holidays are in the taskrc box; Apply there keeps them."
@@ -485,6 +505,10 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
                 Checkbox(checked = st.replace, onCheckedChange = { st.replace = it })
                 Text("Replace what is here (needs a taskrc)", fontSize = 13.sp)
             }
+            OutlinedButton(enabled = !st.busy, onClick = { store.go { st.downloadAll() } }) {
+                LucideIcon("download", size = 14.dp)
+                Text("  Download all (.zip)", fontSize = 13.sp)
+            }
         }
 
         HolidaysSection(store, st)
@@ -522,11 +546,11 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
             Dim("Fetched and saved straight away (Restore previous undoes it). GitHub and GitLab file pages work too. A public link; keep it free of passwords. Files it includes are not fetched: add them above.", size = 12)
         }
 
-        OutlinedTextField(
-            st.text, { st.text = it }, Modifier.fillMaxWidth(), enabled = !st.loading && st.draft != null, minLines = 12,
-            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-            placeholder = { Text(if (st.loading) "Loading…" else if (st.isRoot) "Nothing saved yet. Paste your taskrc here." else "An empty file.", fontSize = 13.sp) },
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
+        RcTextField(
+            st.text, { st.text = it }, enabled = !st.loading && st.draft != null,
+            placeholder = if (st.loading) "Loading…" else if (st.isRoot) "Nothing saved yet. Paste your taskrc here." else "An empty file.",
+            problems = st.problems.map { it.line }.toSet(),
+            modifier = Modifier.fillMaxWidth(),
         )
 
         if (!st.isRoot && st.others.isNotEmpty()) {
@@ -542,6 +566,7 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
         st.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
         st.note?.let { Dim(it, size = 13) }
         if (st.skipped.isNotEmpty()) Text("Left out: ${st.skipped.joinToString(", ")}", color = extras.warn, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+        st.kept?.let { Dim(it, size = 12) }
         st.result?.let { r ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Saved ${r.udas} UDA${if (r.udas == 1) "" else "s"}, ${r.reports} report${if (r.reports == 1) "" else "s"}, ${r.contexts} context${if (r.contexts == 1) "" else "s"}.", color = extras.ok, fontSize = 13.sp)
@@ -567,6 +592,12 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
                 TextButton(onClick = { store.go { st.restore() } }, enabled = !st.busy) {
                     LucideIcon("rotate-ccw", size = 14.dp)
                     Text("  " + if (st.confirmRestore) "Tap again to restore" else "Restore previous", fontSize = 13.sp)
+                }
+            }
+            if (store.files != null) {
+                TextButton(onClick = { store.go { st.downloadFile() } }, enabled = !st.busy && !st.loading && st.draft != null) {
+                    LucideIcon("download", size = 14.dp)
+                    Text("  Download", fontSize = 13.sp)
                 }
             }
             if (!st.isRoot) {
@@ -704,7 +735,7 @@ private fun HolidaysSection(store: Store, st: TaskrcState) {
             if (!st.calendarOn) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = st.hShow, onCheckedChange = { st.hShow = it })
-                    Text("Show holidays in the calendar (calendar.holidays=sparse)", fontSize = 13.sp)
+                    Text("Show holidays in the calendar (calendar.holidays=full)", fontSize = 13.sp)
                 }
             }
             Button(enabled = !st.busy && built.count > 0, onClick = { store.go { st.addHolidays() } }) { Text("Save ${built.path}") }

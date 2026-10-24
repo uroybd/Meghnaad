@@ -208,7 +208,14 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
         val commands = remember(store.reports, store.taskCommands) {
             COMMAND_NAMES.toSet() + store.reports.map { it.name } + store.taskCommands.map { it.name }
         }
-        val colouring = remember(commands, dark) { HighlightTransformation(commands, HlPalette(dark)) }
+        // A due or scheduled date on a holiday is drawn in yellow, and said when the cursor is in it (a tap puts it there).
+        val config = store.config?.config
+        val marks = remember(line, commands, config) { runCatching { holidayMarks(line, commands, false, config, store.now, store.utcOffset) }.getOrDefault(emptyList()) }
+        var caret by remember { mutableStateOf(0) }
+        val warning = marks.firstOrNull { caret in it.start..it.end }
+        val warnColour = extras.warn
+        val colouring = remember(commands, dark, marks, warnColour) { HighlightTransformation(commands, HlPalette(dark), marks, warnColour) }
+        warning?.let { Text(it.message, color = warnColour, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp)) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             BesideField(oneLine) {
                 PromptLabel(store.activeContext)
@@ -231,6 +238,7 @@ fun ConsoleInput(store: Store, modifier: Modifier = Modifier) {
                 menuAbove = true,
                 singleLine = false,
                 visualTransformation = colouring,
+                onCaret = { caret = it },
                 onSize = { if (oneLine == 0 || it.height < oneLine) oneLine = it.height },
                 onKey = { e, _ ->
                     when {

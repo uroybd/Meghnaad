@@ -44,13 +44,15 @@ class ActivityFiles(private val activity: ComponentActivity) : FileHost {
         }
     }
 
-    override suspend fun save(name: String, mime: String, text: String): Boolean {
+    override suspend fun save(name: String, mime: String, text: String) = saveBytes(name, mime, text.encodeToByteArray())
+
+    override suspend fun saveBytes(name: String, mime: String, bytes: ByteArray): Boolean {
         val asked = CompletableDeferred<Uri?>().also { writing = it }
         create.launch(name)
         val uri = asked.await() ?: return false
         return withContext(Dispatchers.IO) {
             try {
-                activity.contentResolver.openOutputStream(uri)?.use { it.write(text.encodeToByteArray()) } != null
+                activity.contentResolver.openOutputStream(uri)?.use { it.write(bytes) } != null
             } catch (_: Exception) {
                 false
             }

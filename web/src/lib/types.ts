@@ -171,6 +171,8 @@ export interface CalendarDay {
   today: boolean;
   weekend: boolean;
   holiday: boolean;
+  /** The holidays on this day (left out when there are none). */
+  holidays?: string[];
   scheduled: boolean;
   due: DueState | null;
 }
