@@ -500,7 +500,7 @@ fn dequote(s: &str) -> &str {
 }
 
 /// C++'s default `double` output (`%g`): six significant digits, no trailing zeros.
-fn fmt_real(x: f64) -> String {
+pub(crate) fn fmt_real(x: f64) -> String {
     if x == 0.0 {
         return "0".into();
     }

@@ -7,7 +7,7 @@
 //! The dates are worked out here, in the page's zone and week, and put in the filter as the moment they are, so what Taskwarrior reads is never the text typed (which may hold a space).
 
 use super::aggregate::{bucket, Ctx, Step};
-use crate::dates::{parse_date_expr, Clock};
+use crate::dates::{parse_date_expr_in, Clock};
 use crate::export::iso;
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +49,7 @@ pub fn problem(r: &Range) -> Option<String> {
         if text.trim().is_empty() {
             return Some(format!("needs {a} {what}"));
         }
-        if parse_date_expr(text, &clock).is_none() {
+        if parse_date_expr_in(text, &clock, true).is_none() {
             return Some(format!("the {what} '{}' is not a date", text.trim()));
         }
     }
@@ -58,7 +58,10 @@ pub fn problem(r: &Range) -> Option<String> {
 
 fn one(r: &Range, ctx: &Ctx) -> Resolved {
     let clock = ctx.clock();
-    let (start, end) = (parse_date_expr(&r.start, &clock), parse_date_expr(&r.end, &clock));
+    let (start, end) = (
+        parse_date_expr_in(&r.start, &clock, true),
+        parse_date_expr_in(&r.end, &clock, true),
+    );
     let error = match (start, end) {
         (None, _) => Some(format!("the start '{}' is not a date", r.start.trim())),
         (_, None) => Some(format!("the end '{}' is not a date", r.end.trim())),
@@ -397,7 +400,7 @@ mod tests {
             (range("1st", "sow", "eow"), "needs a name"),
             (range("r", "", "eow"), "needs a start"),
             (range("r", "sow", " "), "needs an end"),
-            (range("r", "sow", "later"), "the end 'later' is not a date"),
+            (range("r", "sow", "soonish"), "the end 'soonish' is not a date"),
         ] {
             assert!(problem(&r).is_some_and(|p| p.contains(said)), "{r:?}");
         }

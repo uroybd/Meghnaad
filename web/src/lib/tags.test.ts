@@ -13,6 +13,19 @@ describe('toggleTag', () => {
   });
   it('replaces a contradicting -tag instead of keeping both', () => {
     expect(toggleTag('-work due:today', 'work')).toBe('due:today +work');
+    expect(toggleTag('+a -b', 'b')).toBe('( +a or +b )');
+  });
+  it('joins a second tag to the first with or, and a third into the same group', () => {
+    expect(toggleTag('project:Home +a', 'b')).toBe('project:Home ( +a or +b )');
+    expect(toggleTag('project:Home ( +a or +b )', 'c')).toBe('project:Home ( +a or +b or +c )');
+  });
+  it('takes a tag out of the group, and the group away when one is left', () => {
+    expect(toggleTag('( +a or +b or +c )', 'b')).toBe('( +a or +c )');
+    expect(toggleTag('x ( +a or +b ) y', 'b')).toBe('x +a y');
+    expect(toggleTag('( +a or +b )', 'a')).toBe('+b');
+  });
+  it('adds to the tags the person wrote together, which all have to be there, with and', () => {
+    expect(toggleTag('+a +b', 'c')).toBe('+a +b +c');
   });
   it('keeps words with spaces quoted', () => {
     expect(toggleTag("'/two words/'", 'a')).toBe("'/two words/' +a");
@@ -22,6 +35,9 @@ describe('toggleTag', () => {
 describe('activeTags', () => {
   it('lists only the required tags', () => {
     expect(activeTags('+a -b project:X +c.d')).toEqual(['a', 'c.d']);
+  });
+  it('lists the tags of a group', () => {
+    expect(activeTags('project:X ( +a or +b ) -c')).toEqual(['a', 'b']);
   });
 });
 

@@ -137,7 +137,7 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
             LaunchedEffect(asking) {
                 if (!asking) return@LaunchedEffect
                 try {
-                    val r = store.query(listOf("status:pending", "depends.has:${task.uuid}", "all"))
+                    val r = store.query(listOf("(", "status:pending", "or", "status:waiting", ")", "depends.has:${task.uuid}", "all"))
                     if (r is CliResult.Report) blockers = r.value.rows else failure = "The tasks could not be read."
                 } catch (e: Exception) {
                     failure = e.message ?: e.toString()

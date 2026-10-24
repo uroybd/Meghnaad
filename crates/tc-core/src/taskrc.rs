@@ -1341,10 +1341,10 @@ verbose=nothing
         assert_eq!(p.config.settings["default.scheduled"], "2d");
         assert_eq!(parse(&render(&p.config)).config, p.config, "round-trips");
         // Empty means none; an unreadable date is reported and not kept.
-        let p = parse("default.project=\ndefault.due=\ndefault.scheduled=someday\n");
+        let p = parse("default.project=\ndefault.due=\ndefault.scheduled=soonish\n");
         assert!(p.config.settings.is_empty());
         assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
-        assert!(p.warnings[0].contains("default.scheduled") && p.warnings[0].contains("someday"));
+        assert!(p.warnings[0].contains("default.scheduled") && p.warnings[0].contains("soonish"));
     }
 
     #[test]

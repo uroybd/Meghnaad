@@ -127,7 +127,9 @@
     askingBlockers = true;
     blockersError = null;
     try {
-      const { result } = await runCli({ args: ['status:pending', `depends.has:${task.uuid}`, 'all'] });
+      const { result } = await runCli({
+        args: ['(', 'status:pending', 'or', 'status:waiting', ')', `depends.has:${task.uuid}`, 'all'],
+      });
       if (result.kind === 'report') blockers = result.rows;
       else blockersError = result.kind === 'error' ? result.message : 'The tasks could not be read.';
     } catch (e) {

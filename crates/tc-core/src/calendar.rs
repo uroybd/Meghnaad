@@ -216,13 +216,10 @@ fn parse_with_format(value: &str, format: &str) -> Option<(i32, u32, u32)> {
     Some((year?, month?, day?))
 }
 
-/// A holiday's date: one of Taskwarrior's computed names (`easter`, `goodfriday`, `eastermonday`,
-/// `ascension`, `pentecost`), or a date in `dateformat.holiday` (default `YMD`).
-///
-/// The computed names are, as in Taskwarrior, the *next* one from today.
-pub fn holiday_date(value: &str, format: &str, clock: &Clock) -> Option<i64> {
-    let word = value.trim().to_ascii_lowercase();
-    let offset = match word.as_str() {
+/// One of Taskwarrior's computed holidays (`easter`, `goodfriday`, `eastermonday`, `ascension`, `pentecost`,
+/// `midsommar`, `midsommarafton` or `juhannus`), as the *next* one from now, and nothing for any other word.
+pub fn named_holiday(word: &str, clock: &Clock) -> Option<i64> {
+    let easter_offset = match word {
         "goodfriday" => Some(-2),
         "easter" => Some(0),
         "eastermonday" => Some(1),
@@ -231,8 +228,8 @@ pub fn holiday_date(value: &str, format: &str, clock: &Clock) -> Option<i64> {
         _ => None,
     };
     let midnight = |d: NaiveDate| clock.from_ymd_hms(d.year(), d.month(), d.day(), 0, 0, 0);
-    if let Some(offset) = offset {
-        let (year, ..) = clock.ymd_hms(clock.now);
+    let (year, ..) = clock.ymd_hms(clock.now);
+    if let Some(offset) = easter_offset {
         let mut date = easter(year)?;
         // Already past this year: the one next year.
         if midnight(date)? < clock.now {
@@ -240,6 +237,34 @@ pub fn holiday_date(value: &str, format: &str, clock: &Clock) -> Option<i64> {
         }
         return midnight(date.checked_add_signed(Duration::days(offset))?);
     }
+    // The Saturday on or after 20 June, and the Friday on or after 19 June, by Taskwarrior's arithmetic.
+    let (day, weekday) = match word {
+        "midsommar" => (20, 6),
+        "midsommarafton" | "juhannus" => (19, 5),
+        _ => return None,
+    };
+    let of_year = |year: i32| {
+        let june = NaiveDate::from_ymd_opt(year, 6, day)?;
+        june.checked_add_signed(Duration::days(
+            weekday - i64::from(june.weekday().num_days_from_sunday()),
+        ))
+    };
+    let mut date = of_year(year)?;
+    if midnight(date)? < clock.now {
+        date = of_year(year + 1)?;
+    }
+    midnight(date)
+}
+
+/// A holiday's date: one of Taskwarrior's computed names (see [`named_holiday`]), or a date in `dateformat.holiday`
+/// (default `YMD`).
+///
+/// The computed names are, as in Taskwarrior, the *next* one from today.
+pub fn holiday_date(value: &str, format: &str, clock: &Clock) -> Option<i64> {
+    if let Some(ts) = named_holiday(&value.trim().to_ascii_lowercase(), clock) {
+        return Some(ts);
+    }
+    let midnight = |d: NaiveDate| clock.from_ymd_hms(d.year(), d.month(), d.day(), 0, 0, 0);
     let (y, m, d) = parse_with_format(value, if format.is_empty() { "YMD" } else { format })?;
     midnight(NaiveDate::from_ymd_opt(y, m, d)?)
 }

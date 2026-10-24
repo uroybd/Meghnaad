@@ -54,7 +54,7 @@ private fun saveSeen(prefs: Prefs, seen: Map<String, Long>) = prefs.put(SEEN_KEY
 
 /** Tasks with a due or wait date, plus anything running: `_remind` sends only what is read here. */
 suspend fun fetchReminders(tw: Tw): List<Reminder> =
-    when (val r = tw.run(args = listOf("(", "due.any:", "or", "wait.any:", "or", "+ACTIVE", ")", "status:pending", "_remind")).result) {
+    when (val r = tw.run(args = listOf("(", "due.any:", "or", "wait.any:", "or", "+ACTIVE", ")", "(", "status:pending", "or", "status:waiting", ")", "_remind")).result) {
         is CliResult.Json -> engineJson.decodeFromJsonElement(ListSerializer(Reminder.serializer()), r.value)
         is CliResult.Error -> throw EngineError(r.value.message)
         else -> emptyList()

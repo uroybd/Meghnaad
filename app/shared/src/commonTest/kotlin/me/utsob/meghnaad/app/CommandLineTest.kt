@@ -44,4 +44,16 @@ class CommandLineTest {
         assertEquals("", toggleTag("+work", "work"))
         assertEquals("project:Home +work", toggleTag("project:Home -work", "work"))
     }
+
+    @Test
+    fun tagsPickedOneAfterTheOtherAreJoinedWithOr() {
+        assertEquals("project:Home ( +a or +b )", toggleTag("project:Home +a", "b"))
+        assertEquals("project:Home ( +a or +b or +c )", toggleTag("project:Home ( +a or +b )", "c"))
+        assertEquals("( +a or +c )", toggleTag("( +a or +b or +c )", "b"))
+        assertEquals("x +a y", toggleTag("x ( +a or +b ) y", "b"))
+        assertEquals("+b", toggleTag("( +a or +b )", "a"))
+        assertEquals("( +a or +b )", toggleTag("+a -b", "b"))
+        assertEquals("+a +b +c", toggleTag("+a +b", "c"))
+        assertEquals(listOf("a", "b"), activeTags("project:X ( +a or +b ) -c"))
+    }
 }

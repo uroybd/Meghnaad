@@ -2,7 +2,7 @@
 //! from, so none of that logic needs a live `taskchampion::Task` (and tests can build facts by
 //! hand). Virtual tags are transcribed from Taskwarrior's `Task::hasTag`.
 
-use crate::dates::{Clock, DAY};
+use crate::dates::{parse_date, Clock, DAY};
 use crate::taskrc::Config;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -193,7 +193,8 @@ impl Facts {
     }
 
     pub fn has_uda(&self, cfg: &Config) -> bool {
-        cfg.udas.keys().any(|k| self.extra.contains_key(k))
+        // `priority` is a user defined attribute in Taskwarrior, one every installation has.
+        self.priority.is_some() || cfg.udas.keys().any(|k| self.extra.contains_key(k))
     }
 
     /// The work sessions recorded by `journal.time`: each start marker paired with the next stop
@@ -256,6 +257,10 @@ impl Facts {
                 .map(|d| Self::date_state(d, cfg, clock))
         };
         let due_between = |lo: i64, hi: i64| self.due.is_some_and(|d| self.open() && d >= lo && d <= hi);
+        let due_between_words = |from: &str, to: &str| match (parse_date(from, clock), parse_date(to, clock)) {
+            (Some(lo), Some(hi)) => due_between(lo.ts, hi.ts),
+            _ => false,
+        };
         let now = clock.now;
         Some(match name {
             "BLOCKED" => self.blocked,
@@ -279,10 +284,11 @@ impl Facts {
                 self.status != "recurring"
                     && matches!(due_state(), Some(DateState::EarlierToday | DateState::BeforeToday))
             }
-            "WEEK" => due_between(clock.start_of_week(now), clock.start_of_week(now) + 7 * DAY - 1),
-            "MONTH" => due_between(clock.start_of_month(now), clock.start_of_next_month(now) - 1),
-            "QUARTER" => due_between(clock.start_of_quarter(now), clock.start_of_next_quarter(now) - 1),
-            "YEAR" => due_between(clock.start_of_year(now), clock.start_of_next_year(now) - 1),
+            // Taskwarrior asks for `sow` to `eow` and the like, and its weeks start on Monday whatever `weekstart` says.
+            "WEEK" => due_between_words("sow", "eow"),
+            "MONTH" => due_between_words("som", "eom"),
+            "QUARTER" => due_between_words("soq", "eoq"),
+            "YEAR" => due_between_words("soy", "eoy"),
             "ACTIVE" => self.start.is_some(),
             "SCHEDULED" => self.scheduled.is_some(),
             "UNTIL" => self.until.is_some(),
@@ -292,7 +298,7 @@ impl Facts {
             // Taskwarrior: a template is a task that has a mask (i.e. has had instances made).
             "PARENT" | "TEMPLATE" => self.mask.is_some(),
             "WAITING" => self.is_waiting(clock),
-            "PENDING" => self.status == "pending",
+            "PENDING" => self.status == "pending" && !self.is_waiting(clock),
             "COMPLETED" => self.status == "completed",
             "DELETED" => self.status == "deleted",
             "UDA" => self.has_uda(cfg),

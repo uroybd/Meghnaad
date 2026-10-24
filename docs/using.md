@@ -42,7 +42,7 @@ Summary, Calendar, Burndown, Projects and Tags have the same filter box as Tasks
 helpers are below it) and it is focused when you open the page (not on a phone, where that would raise the keyboard).
 The header also has the running **timer**, the **bell** (reminders) and **Settings** (the taskrc, tasksh, commands, hooks and urgency, below). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
 
-**Projects and Tags start as your pending tasks** (a `status:pending` chip in their filter box). That is a filter like any
+**Projects and Tags start as your pending tasks** (a `status:pending` chip in their filter box; as in Taskwarrior 3 that leaves out a task that is waiting on its `wait` date). That is a filter like any
 other: take the chip away and finished tasks come in too, tinted green (completed) or red (deleted), so a project or tag stays listed after
 its last task is done. Any other filter works as well (`project:Home`, `due.before:eow`, `+work`).
 
@@ -51,7 +51,7 @@ at once and more (300 at a time) as you scroll towards the end, or when you pres
 It is still the whole report: the select-all box, the count and the sort are about every task, drawn or not.
 
 **Tag chips are buttons.** In the table on the Tasks page, clicking a tag chip toggles `+tag` in that report's filter (a
-pressed chip means it is in the filter; click it again to take it out), exactly as typing `+tag` would. Anywhere else (a
+pressed chip means it is in the filter; click it again to take it out), as typing `+tag` would. Clicking a second tag joins it to the first with `or` (`( +a or +b )`, the tasks with either), and a third goes into the same parentheses; click one again to take it out. Tags you typed side by side, which all have to be there, get the next one added the same way. Anywhere else (a
 report printed in the Console, the task detail, the Projects page, a task on the Tags page itself) it opens that tag's entry
 on the **Tags** page, expanded and highlighted. A tag no pending task has still gets its entry, so a chip from a report of
 finished tasks works too. **Open in Tasks** on an entry filters the Tasks page by that tag.
@@ -79,9 +79,9 @@ help
 | | |
 | --- | --- |
 | **Write** | `add` `log` `duplicate` `import` `purge` `modify` `done` `delete` `start` `stop` `annotate` `denotate` `append` `prepend` `undo` |
-| **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `stats` `udas` `columns` `reports` `context` `show` `config` `export` `ids` `uuids` `calc` `commands` `_get` `_projects` `_tags` |
-| **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes (several side by side, `1 3` or two uuids, pick all of them, and the rest of the filter narrows that group); `and` `or` `not` and parentheses |
-| **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`) |
+| **Read** | `info` (or `information`) `count` `projects` `tags` `summary` `calendar` `burndown.daily` `.weekly` `.monthly` `.annual` `history.daily` `.weekly` `.monthly` `.annual` `ghistory.daily` `.weekly` `.monthly` `.annual` `timesheet` `stats` `udas` `columns` `reports` `context` `show` `config` `export` `ids` `uuids` `calc` `commands` `_get` `_projects` `_tags`, and the other lists Taskwarrior makes for shell completion: `_commands` `_aliases` `_columns` `_config` `_context` `_ids` `_show` `_udas` `_unique <attribute>` `_urgency` `_uuids` `_version` `_zshids` `_zshuuids` `_zshcommands` `_zshattributes`. `ids` squeezes runs into ranges (`1 3-5`) and `uuids` is one line |
+| **Filters** | `attr:value` with modifiers (`.is .not .has .startswith .before .after .by .none .any …`), or compared as `due < eom`, `urgency>5`, `project != Home`, `description ~ ^Pay` (`= == != !== < <= > >= ~ !~`, with or without spaces; `priority` goes H, M, L and a task with none is below them all); `+tag` / `-tag`; virtual tags (`+OVERDUE +DUETODAY +READY +ACTIVE +BLOCKED …`); plain words and `/pattern/`; ids (`3`, `1-4,7`) and uuid prefixes (several side by side, `1 3` or two uuids, pick all of them, and the rest of the filter narrows that group); `and` `or` `xor` and parentheses, `!(…)` to reverse a group. As in Taskwarrior, `tags` is one string (sorted, joined by commas: `tags:a` is the start of it and `tags.is:a,b` all of it; ask for a tag with `+a`), `not` is a word to find, and a `!` with no parenthesis takes only the value next to it (`! project:Work` is false for every task) |
+| **Dates** | `today tomorrow eow som eoy monday 3d 2w`, `2026-12-25`, `2026-12-25T08:30`, `now+2h`, and anything your `dateformat` describes (`12/25/2026` with `m/d/Y`). Also as Taskwarrior reads them: the start and end of the previous, this and next day, week, work week, month, quarter and year (`sopw eonm soq eoww`), `later` and `someday`, month names (`jan`) and any three letters of a day, `22nd`, `10am` or `14:30`, ISO weeks (`2026-W44`) and days of the year (`2026-300`), `easter` `goodfriday` `eastermonday` `ascension` `pentecost` `midsommar` |
 
 **History and the timesheet** answer in the Console, and typed in the bar under another page they switch to it.
 `history.monthly` (also `.daily`, `.weekly`, `.annual`) counts the tasks added, completed and deleted in each period, with
@@ -93,6 +93,13 @@ the net change and the averages; `ghistory.*` draws the same as a bar of `+` (ad
 **`export` gives you a file.** It prints a summary and a **Download** button; the file is Taskwarrior's own JSON, the
 same as `task export` (ids and urgency included), so `task import` reads it. It takes a filter (`project:Home export`) and
 a report's name (`export next` uses that report's filter and sort), and `json.array=off` makes it one task per line.
+
+**`modify` and `add` take `tags:` and `status:` too.** `tags:a,b` makes those the task's tags and no others (`tags:` none), and
+`status:completed` or `status:deleted` finishes the task, with an `end` of now, and `status:pending` takes it back. An `end:`
+on a task that is still pending is refused (`modify`) or left out (`add`), as in Taskwarrior; `rtype:`, `mask:`, `imask:`,
+`uuid:`, `id:` and `urgency:` are refused with "The 'rtype' attribute does not allow a value of 'periodic'". A dependency that is
+taken away (`depends:-3`) has to be one the task has. Not done: a tag Taskwarrior keeps but the replica cannot (`+URGENT` in capitals,
+`+a:b`) is refused, and so is an empty description.
 
 **Changes beside a command.** What follows `done`, `delete`, `start`, `stop`, `annotate`, `append` and `prepend` can carry
 changes, as in Taskwarrior: `3 done end:-2h` (finished two hours ago), `3 start due:eow +urgent`,
@@ -276,7 +283,7 @@ command would actually change are listed. A single task is a plain yes/no. The d
   on a touch screen the first tap shows the card and **Open task** opens it.
 - **Around a task, in the detail view.** *Depends on* lists the tasks this one waits for, one line each. Tap a line to
   open a card of that task, fetched then if the page does not already have it, with **Open task**. A task that others
-  wait on shows a *Blocking* line; **Show the tasks waiting on this** looks them up (`status:pending depends.has:<uuid>`)
+  wait on shows a *Blocking* line; **Show the tasks waiting on this** looks them up (`( status:pending or status:waiting ) depends.has:<uuid>`)
   when you ask, so the detail does not search for them every time. The project there is clickable too, each part of it
   (`Home`, then `Kitchen`): it opens that project on the **Projects** page, with the projects above it expanded and the
   entry highlighted, as a tag chip does on the Tags page.

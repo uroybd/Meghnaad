@@ -42,6 +42,8 @@ pub struct EvalCtx<'a> {
     pub clock: Clock,
     /// Working-set ids (task number -> uuid) that `task 3 ...` refers to.
     pub ids: &'a BTreeMap<Uuid, u32>,
+    /// The largest task number, which `+LATEST` is the task of.
+    latest: u32,
     coef: BTreeMap<String, f64>,
     /// Urgency of blocking tasks under `urgency.inherit`; empty when that is off.
     inherited: BTreeMap<Uuid, f64>,
@@ -55,6 +57,7 @@ impl<'a> EvalCtx<'a> {
             cfg,
             clock,
             ids,
+            latest: ids.values().copied().max().unwrap_or(0),
             coef: coefficients(cfg),
             inherited: BTreeMap::new(),
             rules: crate::color::Rules::from_config(cfg),
@@ -199,7 +202,7 @@ impl Attr {
                 | Core::Scheduled
                 | Core::Until
                 | Core::Modified => Ty::Date,
-                Core::Depends | Core::Tags | Core::Annotation => Ty::Many,
+                Core::Depends | Core::Annotation => Ty::Many,
                 _ => Ty::Str,
             },
             Attr::Uda(_, UdaType::Numeric) => Ty::Num,
@@ -271,6 +274,51 @@ enum Op {
     By,
     None,
     Any,
+    /// `<`, `<=`, `>` and `>=` between an attribute and a value; there is no dotted modifier for these.
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+/// The comparison operators Taskwarrior reads between an attribute and a value (`due < eom`, `urgency>=5`,
+/// `project !~ ^Work`), each as the `Op` an `attribute.modifier:value` pair would use. `=`, `==`, `!=` and `!==` are
+/// partial equal, equal, not partial equal and not equal; `~` and `!~` are the regular expression match.
+const INFIX: &[(&str, Op)] = &[
+    ("!==", Op::Isnt),
+    ("==", Op::Is),
+    ("!=", Op::Not),
+    ("<=", Op::Le),
+    (">=", Op::Ge),
+    ("!~", Op::Hasnt),
+    ("<", Op::Lt),
+    (">", Op::Gt),
+    ("~", Op::Has),
+    ("=", Op::Partial),
+];
+
+/// Whether the word is one of the comparison operators, standing apart from the names it compares.
+pub(crate) fn is_infix_op(word: &str) -> bool {
+    infix_op(word).is_some()
+}
+
+fn infix_op(word: &str) -> Option<Op> {
+    INFIX.iter().find(|(w, _)| *w == word).map(|(_, op)| *op)
+}
+
+/// `due<2026-10-28`, `project!=Work`: an attribute name, a comparison operator and a value in one word. `=` and `==`
+/// stay with `split_pair`, which reads `project=Work` as `project:Work` (and `project==Work` as the value `=Work`, as
+/// Taskwarrior's lexer does).
+fn split_infix(tok: &str) -> Option<(&str, Op, &str)> {
+    let name_end = tok.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))?;
+    let (name, rest) = tok.split_at(name_end);
+    if name.is_empty() {
+        return None;
+    }
+    INFIX
+        .iter()
+        .filter(|(w, _)| !matches!(*w, "=" | "=="))
+        .find_map(|(w, op)| rest.strip_prefix(w).map(|value| (name, *op, value)))
 }
 
 fn parse_modifier(m: &str) -> Result<Op, FilterError> {
@@ -305,7 +353,6 @@ enum Term {
         op: Op,
         value: String,
         date: Option<i64>,
-        day: bool,
         num: Option<f64>,
         /// The pattern behind `.has`, `.startswith`, `.endswith`, `.word` and their negations, when
         /// `regex` is on. Taskwarrior turns each into a `~` match: `^value`, `value$`, `\bvalue\b`.
@@ -322,6 +369,10 @@ enum Expr {
     All,
     Term(Term),
     Not(Box<Expr>),
+    /// A term with `!` before it and no parenthesis: Taskwarrior's `!` takes the one value next to it, so
+    /// `! project:Work` is `(!project) = 'Work'`, the truth of the project compared with the word. The number is how
+    /// many `!` there are.
+    Bang(u8, Term),
     And(Box<Expr>, Box<Expr>),
     Or(Box<Expr>, Box<Expr>),
     Xor(Box<Expr>, Box<Expr>),
@@ -390,11 +441,39 @@ fn tokenize(args: &[String]) -> Vec<String> {
     out
 }
 
+/// `true` as a filter that selects everything, `false` as one that selects nothing.
+fn constant(truth: bool) -> Expr {
+    if truth {
+        Expr::All
+    } else {
+        Expr::Not(Box::new(Expr::All))
+    }
+}
+
+/// Whether Taskwarrior counts a word as true: it is not empty, `0` or `0.0`.
+fn truth_of_word(word: &str) -> bool {
+    !(word.is_empty() || word == "0" || word == "0.0")
+}
+
+/// A word that stands for something Taskwarrior cannot work out.
+const BROKEN: &str = "\0";
+
 fn peel(args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for a in args {
         let mut s = a.as_str();
         let mut tail = 0;
+        // `!(+a or +b)`: the `!` stands apart from the parenthesis, as it does in Taskwarrior.
+        // A `!` stands apart from what follows unless it begins `!=`, `!==` or `!~`.
+        while let Some(r) = s.strip_prefix('!').filter(|r| !r.starts_with(['=', '~'])) {
+            out.push("!".to_owned());
+            s = r;
+            // `!+a` is no tag: with nothing between them the `+` is an operator, and the filter cannot be worked out.
+            if s.len() > 1 && s.starts_with(['+', '-']) && s[1..].starts_with(|c: char| c.is_alphabetic()) {
+                out.push(BROKEN.to_owned());
+                s = "";
+            }
+        }
         while let Some(r) = s.strip_prefix('(') {
             out.push("(".to_owned());
             s = r;
@@ -508,6 +587,11 @@ impl Parser<'_, '_> {
                     self.pos += 1;
                     explicit = true;
                 }
+                // No `and` is put before a `!`, and then two values are left with nothing between them.
+                // (An override of a setting before it is no value.)
+                Some("!") if !explicit && parts.iter().any(|p| *p != Expr::All) => {
+                    return err("The value is not an expression.")
+                }
                 Some(_) => {} // implicit and
             }
             parts.push(self.unary()?);
@@ -531,13 +615,56 @@ impl Parser<'_, '_> {
     }
 
     fn unary(&mut self) -> Result<Expr, FilterError> {
-        match self.peek() {
-            Some("not" | "!") => {
-                self.pos += 1;
-                Ok(Expr::Not(Box::new(self.unary()?)))
-            }
-            _ => self.primary(),
+        let mut bangs = 0u8;
+        while self.peek() == Some("!") {
+            self.pos += 1;
+            bangs = bangs.saturating_add(1);
         }
+        if bangs == 0 {
+            return self.primary();
+        }
+        // Before a parenthesis `!` reverses the whole group. Before anything else it takes only that one value.
+        let Some(next) = self.peek().map(str::to_owned) else {
+            return err("The expression could not be evaluated.");
+        };
+        let mut e = if next == "(" {
+            self.primary()?
+        } else {
+            if matches!(next.as_str(), ")" | "and" | "or" | "xor" | "&&" | "||" | BROKEN) {
+                return err("The expression could not be evaluated.");
+            }
+            self.pos += 1;
+            let term = match self.infix(&next)? {
+                Some(t) => Some(t),
+                None => self.term(&next)?,
+            };
+            match term {
+                None => Expr::All,
+                // `+tag` is `tags _hastag_ tag`, which looks at the task and not at what `!` made of `tags`.
+                Some(t @ Term::Tag { .. }) => return Ok(Expr::Term(t)),
+                // A task number or uuid stands in a parenthesis of its own.
+                // A word that is no pattern and no attribute (`! alpha`) is a value of its own: the truth of the word.
+                // So is a task number that follows an operator (`! 1`), which is a number there and not a task.
+                Some(Term::Text(_)) if !next.starts_with('/') => {
+                    return Ok(constant(truth_of_word(&next) != (bangs % 2 == 1)))
+                }
+                Some(Term::Ids(ranges)) if next.bytes().all(|b| b.is_ascii_digit()) && ranges.len() == 1 => {
+                    return Ok(constant(truth_of_word(&next) != (bangs % 2 == 1)));
+                }
+                Some(t @ (Term::Ids(_) | Term::Uuid(_))) => {
+                    let mut e = Expr::Term(t);
+                    for _ in 0..bangs {
+                        e = Expr::Not(Box::new(e));
+                    }
+                    return Ok(e);
+                }
+                Some(t) => return Ok(Expr::Bang(bangs, t)),
+            }
+        };
+        for _ in 0..bangs {
+            e = Expr::Not(Box::new(e));
+        }
+        Ok(e)
     }
 
     fn primary(&mut self) -> Result<Expr, FilterError> {
@@ -555,12 +682,54 @@ impl Parser<'_, '_> {
                 Ok(e)
             }
             ")" => err("unexpected closing parenthesis in filter"),
+            BROKEN => err("The expression could not be evaluated."),
             "and" | "or" | "xor" | "&&" | "||" => err(format!("operator '{tok}' needs a term on both sides")),
-            _ => self.term(&tok).map(|t| match t {
-                Some(t) => Expr::Term(t),
-                None => Expr::All,
-            }),
+            _ => {
+                if let Some(t) = self.infix(&tok)? {
+                    return Ok(Expr::Term(t));
+                }
+                self.term(&tok).map(|t| match t {
+                    Some(t) => Expr::Term(t),
+                    None => Expr::All,
+                })
+            }
         }
+    }
+
+    /// An attribute, a comparison operator and a value, written `due<eom` or `due < eom`. Anything else is not one.
+    fn infix(&mut self, tok: &str) -> Result<Option<Term>, FilterError> {
+        let ctx = self.ctx;
+        let missing = || err("The expression could not be evaluated.");
+        if let Some((name, op, value)) = split_infix(tok) {
+            let Some(attr) = canonicalize(name, ctx.cfg) else {
+                return Ok(None);
+            };
+            let value = if value.is_empty() {
+                let Some(next) = self.peek().map(str::to_owned) else {
+                    return missing();
+                };
+                self.pos += 1;
+                next
+            } else {
+                value.to_owned()
+            };
+            return self.attr_term(attr, op, &value).map(Some);
+        }
+        let Some(op) = self.peek().and_then(infix_op) else {
+            return Ok(None);
+        };
+        let Some(attr) = canonicalize(tok, ctx.cfg) else {
+            return Ok(None);
+        };
+        // Written apart (`tags != a`), `tags` is a list in the expression, and Taskwarrior cannot compare a list.
+        if attr == Attr::Core(Core::Tags) {
+            return missing();
+        }
+        let Some(value) = self.toks.get(self.pos + 1).cloned() else {
+            return missing();
+        };
+        self.pos += 2;
+        self.attr_term(attr, op, &value).map(Some)
     }
 
     /// `Ok(None)` for directives that match everything (`limit:`).
@@ -620,12 +789,17 @@ impl Parser<'_, '_> {
     }
 
     fn attr_term(&self, attr: Attr, op: Op, value: &str) -> Result<Term, FilterError> {
-        let (mut date, mut day, mut num) = (None, false, None);
-        let needs_value = !matches!(op, Op::None | Op::Any);
+        let (mut date, mut num) = (None, None);
+        // The value is read as a date only where the date itself is compared: `.has` and its kin take text.
+        let text_op = matches!(
+            op,
+            Op::Has | Op::Hasnt | Op::StartsWith | Op::EndsWith | Op::Word | Op::NoWord
+        );
+        let needs_value = !matches!(op, Op::None | Op::Any) && !(text_op && attr.ty() == Ty::Date);
         if needs_value && !value.is_empty() {
             match attr.ty() {
                 Ty::Date => match parse_date_expr(value, &self.ctx.clock) {
-                    Some(p) => (date, day) = (Some(p.ts), p.day),
+                    Some(p) => date = Some(p.ts),
                     None => return err(format!("'{value}' is not a valid date")),
                 },
                 Ty::Num => match value.parse::<f64>() {
@@ -644,7 +818,7 @@ impl Parser<'_, '_> {
             _ => None,
         };
         let rx = match pattern {
-            Some(p) if self.ctx.regex_enabled() && !matches!(attr.ty(), Ty::Date | Ty::Num) => Some(
+            Some(p) if self.ctx.regex_enabled() && attr.ty() != Ty::Num => Some(
                 Rx::new(&p, self.ctx.case_sensitive())
                     .map_err(|why| FilterError(format!("'{value}' is not a valid regular expression: {why}")))?,
             ),
@@ -655,7 +829,6 @@ impl Parser<'_, '_> {
             op,
             value: value.to_owned(),
             date,
-            day,
             num,
             rx,
         })
@@ -726,6 +899,7 @@ fn eval(e: &Expr, f: &Facts, ctx: &EvalCtx) -> bool {
     match e {
         Expr::All => true,
         Expr::Not(x) => !eval(x, f, ctx),
+        Expr::Bang(n, t) => eval_bang(*n, t, f, ctx),
         Expr::And(a, b) => eval(a, f, ctx) && eval(b, f, ctx),
         Expr::Or(a, b) => eval(a, f, ctx) || eval(b, f, ctx),
         Expr::Xor(a, b) => eval(a, f, ctx) != eval(b, f, ctx),
@@ -767,7 +941,14 @@ fn edge_matches(hay: &str, needle: &str, end: bool) -> bool {
 
 fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
     match t {
-        Term::Tag { name, present } => f.has_tag(name, ctx.cfg, &ctx.clock) == *present,
+        Term::Tag { name, present } => {
+            let has = if name == "LATEST" {
+                ctx.ids.get(&f.uuid).is_some_and(|id| *id == ctx.latest)
+            } else {
+                f.has_tag(name, ctx.cfg, &ctx.clock)
+            };
+            has == *present
+        }
         Term::Text(m) => m.is_match(&f.description) || f.annotations.iter().any(|a| m.is_match(&a.text)),
         Term::Uuid(prefix) => {
             let (mut simple, mut hyphen) = ([0u8; 32], [0u8; 36]);
@@ -786,10 +967,9 @@ fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
             op,
             value,
             date,
-            day,
             num,
             rx,
-        } => eval_attr(attr, *op, value, *date, *day, *num, rx.as_ref(), f, ctx),
+        } => eval_attr(attr, *op, value, *date, *num, rx.as_ref(), f, ctx),
     }
 }
 
@@ -829,7 +1009,12 @@ fn attr_value<'a>(attr: &Attr, f: &'a Facts, ctx: &EvalCtx) -> Val<'a> {
             Core::Until => d(f.until),
             Core::Modified => d(f.modified),
             Core::Urgency => Val::Num(ctx.urgency(f)),
-            Core::Tags => Val::Many(f.tags.iter().map(|t| Cow::Borrowed(t.as_str())).collect()),
+            // The tags are one string, sorted and joined by commas, as Taskwarrior reads them: `tags:a` is the start of it,
+            // and `tags.is:a` is a task with that one tag and no other. `+a` is how to ask for a tag.
+            Core::Tags if f.tags.is_empty() => Val::Unset,
+            Core::Tags => Val::Str(Cow::Owned(
+                f.tags.iter().map(String::as_str).collect::<Vec<_>>().join(","),
+            )),
             Core::Depends => Val::Many(f.depends.iter().map(|d| Cow::Owned(d.to_string())).collect()),
             Core::Annotation => Val::Many(f.annotations.iter().map(|a| Cow::Borrowed(a.text.as_str())).collect()),
         },
@@ -910,7 +1095,120 @@ fn str_op(have: &str, op: Op, want: &str, status: bool, cs: bool) -> bool {
         Op::Before => have < want,
         Op::After => have > want,
         Op::By => have <= want,
+        Op::Lt | Op::Le | Op::Gt | Op::Ge => holds(
+            op,
+            if cs {
+                have.cmp(want)
+            } else {
+                have.to_lowercase().cmp(&want.to_lowercase())
+            },
+        ),
         Op::None | Op::Any => unreachable!("handled by caller"),
+    }
+}
+
+/// Whether `op` (`<`, `<=`, `>`, `>=`) holds when the attribute's value compares to the wanted one as `order`.
+fn holds(op: Op, order: std::cmp::Ordering) -> bool {
+    use std::cmp::Ordering::{Greater, Less};
+    match op {
+        Op::Lt => order == Less,
+        Op::Le => order != Greater,
+        Op::Gt => order == Greater,
+        Op::Ge => order != Less,
+        _ => false,
+    }
+}
+
+/// The values a string attribute may take, highest first, when they have an order of their own: `priority` (H, M, L
+/// unless the taskrc redefines it) and a UDA with a `values` list. A comparison then follows that order, as
+/// `priority > L` finding H and M, and a task with no value is below all of them.
+fn value_order(attr: &Attr, cfg: &Config) -> Option<Vec<String>> {
+    let name = match attr {
+        Attr::Core(Core::Priority) => "priority",
+        Attr::Uda(name, UdaType::String) => name.as_str(),
+        _ => return None,
+    };
+    match cfg.udas.get(name) {
+        Some(d) if !d.values.is_empty() => Some(d.values.clone()),
+        None if name == "priority" => Some(["H", "M", "L"].map(String::from).to_vec()),
+        _ => None,
+    }
+}
+
+/// Where `value` stands in `order`, 0 for none (or one that is not listed) and more for each step up.
+fn rank(order: &[String], value: Option<&str>) -> usize {
+    value
+        .and_then(|v| order.iter().rev().position(|o| o == v))
+        .map_or(0, |i| i + 1)
+}
+
+/// Whether a value counts as true when Taskwarrior casts it to a boolean: not empty, not `0` or `0.0`, not zero.
+fn truthy(v: &Val) -> bool {
+    match v {
+        Val::Unset => false,
+        Val::Str(s) => !(s.is_empty() || s == "0" || s == "0.0"),
+        Val::Num(n) => *n != 0.0,
+        Val::Date(d) => *d != 0,
+        Val::Many(items) => !items.is_empty(),
+    }
+}
+
+/// A term with `!` right before it (see [`Expr::Bang`]). What is compared is the *truth* of the attribute, `true` or
+/// `false`, turned into the other side's kind the way Taskwarrior's `Variant` does: the word `true` or `false` for a
+/// string, 1 or 0 for a number or a date.
+fn eval_bang(bangs: u8, term: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
+    let negate = bangs % 2 == 1;
+    match term {
+        Term::Text(m) => {
+            let said = truthy(&Val::Str(Cow::Borrowed(&f.description))) != negate;
+            m.is_match(if said { "true" } else { "false" })
+        }
+        Term::Attr {
+            attr,
+            op,
+            value,
+            date,
+            num,
+            rx,
+        } => {
+            let b = truthy(&attr_value(attr, f, ctx)) != negate;
+            let (word, n) = (if b { "true" } else { "false" }, i64::from(b));
+            let cs = ctx.case_sensitive();
+            let order = |op: Op| match attr.ty() {
+                Ty::Num => num.map(|w| holds(op, (n as f64).total_cmp(&w))),
+                Ty::Date => date.map(|w| holds(op, n.cmp(&w))),
+                Ty::Str | Ty::Many => Some(holds(op, word.cmp(value.as_str()))),
+            };
+            let equal = |partial: bool| match attr.ty() {
+                Ty::Num => num.is_some_and(|w| n as f64 == w),
+                Ty::Date => date.is_some_and(|w| if partial { ctx.clock.same_day(n, w) } else { n == w }),
+                Ty::Str | Ty::Many => word == value,
+            };
+            let matches = |negated: bool| {
+                let hit = match rx {
+                    Some(rx) => rx.is_match(word),
+                    None => contains(word, value, cs),
+                };
+                hit != negated
+            };
+            match op {
+                Op::Partial => equal(true),
+                Op::Not => !equal(true),
+                Op::Is => equal(false),
+                Op::Isnt => !equal(false),
+                Op::Has | Op::StartsWith | Op::EndsWith | Op::Word => matches(false),
+                Op::Hasnt | Op::NoWord => matches(true),
+                Op::Before | Op::Lt => order(Op::Lt).unwrap_or(false),
+                Op::After | Op::Gt => order(Op::Gt).unwrap_or(false),
+                Op::By | Op::Le => order(Op::Le).unwrap_or(false),
+                Op::Ge => order(Op::Ge).unwrap_or(false),
+                // `.none:` and `.any:` are `== ''` and `!== ''`, which a `true` or `false` never equals.
+                Op::None => false,
+                Op::Any => true,
+            }
+        }
+        // A tag, a task number or a uuid is not taken apart by `!`.
+        other => eval_term(other, f, ctx),
     }
 }
 
@@ -920,7 +1218,6 @@ fn eval_attr(
     op: Op,
     value: &str,
     date: Option<i64>,
-    day: bool,
     num: Option<f64>,
     rx: Option<&Rx>,
     f: &Facts,
@@ -948,6 +1245,27 @@ fn eval_attr(
         return !unset;
     }
 
+    // `.has`, `.startswith` and the others on a date read it as text, `2026-10-30T00:00:00` in the clock's zone, whatever
+    // `dateformat` says; a date that is not there is the empty text.
+    if attr.ty() == Ty::Date
+        && matches!(
+            op,
+            Op::Has | Op::Hasnt | Op::StartsWith | Op::EndsWith | Op::Word | Op::NoWord
+        )
+    {
+        let text = match have {
+            Val::Date(ts) => {
+                let (y, mo, d, h, mi, s) = ctx.clock.ymd_hms(ts);
+                format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}")
+            }
+            _ => String::new(),
+        };
+        return match rx {
+            Some(rx) => rx.is_match(&text) != matches!(op, Op::Hasnt | Op::NoWord),
+            None => str_op(&text, op, value, false, cs),
+        };
+    }
+
     // Text operations as patterns. On the description, annotations count too, as in Taskwarrior.
     if let Some(rx) = rx {
         let negated = matches!(op, Op::Hasnt | Op::NoWord);
@@ -968,6 +1286,24 @@ fn eval_attr(
         return f.is_waiting(&ctx.clock);
     }
 
+    // Nor is a waiting task pending: Taskwarrior 3 reads a pending task with a `wait` in the future as `waiting`.
+    if attr.is_status()
+        && value.eq_ignore_ascii_case("pending")
+        && matches!(op, Op::Partial | Op::Is | Op::Not | Op::Isnt)
+    {
+        let pending = f.status == "pending" && !f.is_waiting(&ctx.clock);
+        return pending == matches!(op, Op::Partial | Op::Is);
+    }
+    if matches!(op, Op::Lt | Op::Le | Op::Gt | Op::Ge) {
+        if let Some(order) = value_order(attr, ctx.cfg) {
+            let have = match &have {
+                Val::Str(s) => Some(s.as_ref()),
+                _ => None,
+            };
+            return holds(op, rank(&order, have).cmp(&rank(&order, Some(value))));
+        }
+    }
+
     match have {
         Val::Unset => matches!(op, Op::Not | Op::Isnt | Op::Hasnt | Op::NoWord),
         Val::Str(h) => str_op(&h, op, value, attr.is_status(), cs),
@@ -976,9 +1312,10 @@ fn eval_attr(
             match op {
                 Op::Partial | Op::Is => h == w,
                 Op::Not | Op::Isnt => h != w,
-                Op::Before => h < w,
-                Op::After => h > w,
-                Op::By => h <= w,
+                Op::Before | Op::Lt => h < w,
+                Op::After | Op::Gt => h > w,
+                Op::By | Op::Le => h <= w,
+                Op::Ge => h >= w,
                 _ => false,
             }
         }
@@ -987,23 +1324,13 @@ fn eval_attr(
             match op {
                 Op::Partial => ctx.clock.same_day(h, w),
                 Op::Not => !ctx.clock.same_day(h, w),
-                Op::Is => {
-                    if day {
-                        ctx.clock.same_day(h, w)
-                    } else {
-                        h == w
-                    }
-                }
-                Op::Isnt => {
-                    if day {
-                        !ctx.clock.same_day(h, w)
-                    } else {
-                        h != w
-                    }
-                }
-                Op::Before => h < w,
-                Op::After => h > w,
-                Op::By => h <= w,
+                // `is` and `isnt` are the instant, where `:` is the day.
+                Op::Is => h == w,
+                Op::Isnt => h != w,
+                Op::Before | Op::Lt => h < w,
+                Op::After | Op::Gt => h > w,
+                Op::By | Op::Le => h <= w,
+                Op::Ge => h >= w,
                 _ => false,
             }
         }
@@ -1136,9 +1463,9 @@ mod tests {
         assert!(!h.m("status:waiting", &t));
         t.wait = Some(NOW + DAY);
         assert!(h.m("status:waiting", &t));
-        // pending still matches pending: the stored status is unchanged.
-        assert!(h.m("status:pending", &t));
-        assert!(!h.m("status:pending -WAITING", &t));
+        // A waiting task is not pending, as Taskwarrior 3 reads its status.
+        assert!(!h.m("status:pending", &t) && !h.m("+PENDING", &t));
+        assert!(h.m("status.not:pending", &t) && h.m("status.isnt:pending", &t));
     }
 
     #[test]
@@ -1148,7 +1475,14 @@ mod tests {
         t.tags.insert("work".into());
         assert!(h.m("+work", &t) && !h.m("-work", &t) && h.m("-home", &t));
         assert!(h.m("+TAGGED +PENDING", &t));
-        assert!(h.m("tags:work", &t) && h.m("tags.has:wor", &t) && !h.m("tags:wor", &t));
+        assert!(h.m("tags:work", &t) && h.m("tags.has:wor", &t));
+        // The tags are one string, sorted and joined by commas: `:` finds its start and `.is` all of it.
+        t.tags.insert("alpha".into());
+        assert!(
+            h.m("tags:alpha", &t) && !h.m("tags:work", &t) && h.m("tags.is:alpha,work", &t) && !h.m("tags.is:work", &t)
+        );
+        assert!(h.m("tags.has:work", &t) && h.m("tags.word:work", &t) && h.m("tags~^alpha,w", &t));
+        t.tags.remove("alpha");
         assert!(h.m("tags.any:", &t) && !h.m("tags.none:", &t));
         assert!(h.m("tags.not:home", &t));
     }
@@ -1167,8 +1501,19 @@ mod tests {
         let mut z = task("z");
         z.tags.insert("z".into());
         assert!(h.m("+x +y or +z", &z) && !h.m("+x +y or +z", &a));
-        assert!(h.m("(+x or +y) and not +z", &a));
-        assert!(h.m("not +x", &b));
+        assert!(h.m("(+x or +y) and !(+z)", &a));
+        assert!(h.m("!(+x)", &b));
+        // `not` is no operator in Taskwarrior: it is a word to find in the description.
+        assert!(
+            !h.m("not +x", &b)
+                && h.m(
+                    "not +x",
+                    &Facts {
+                        tags: a.tags.clone(),
+                        ..task("do not stop")
+                    }
+                )
+        );
         assert!(h.m("+x xor +y", &a) && !h.m("+x xor +x", &a));
         assert!(h.m("(+x or +y) -z", &a));
         assert!(h.m("(+x)", &a)); // parens glued to the word
@@ -1196,13 +1541,203 @@ mod tests {
     }
 
     #[test]
+    fn comparison_operators_between_an_attribute_and_a_value() {
+        let h = H::new();
+        let mut t = task("x");
+        t.due = Some(NOW + DAY); // 2026-10-08 12:30
+                                 // Written together or apart, they read the same.
+        for f in [
+            "due<2026-10-09",
+            "due < 2026-10-09",
+            "due<=2026-10-08T12:30",
+            "due>2026-10-08",
+            "due >= 2026-10-08",
+        ] {
+            assert!(h.m(f, &t), "{f}");
+        }
+        for f in [
+            "due<2026-10-08",
+            "due>2026-10-09",
+            "due<2026-10-08T12:30",
+            "due>2026-10-08T12:30",
+        ] {
+            assert!(!h.m(f, &t), "{f}");
+        }
+        assert!(h.m("due<eom and due>=today", &t));
+        // A task without the attribute is on neither side of a string or date comparison.
+        assert!(!h.m("wait<2030-01-01", &t) && !h.m("project>a", &t) && !h.m("project<z", &t));
+        assert!(h.m("urgency>-100", &t) && !h.m("urgency>100", &t) && h.m("urgency <= 100", &t));
+        // Strings go by their bytes, as the search does.
+        let p = proj("Work");
+        assert!(
+            h.m("project>Home", &p)
+                && h.m("project >= Work", &p)
+                && !h.m("project<Work", &p)
+                && h.m("project<=Work", &p)
+        );
+        assert!(h.m("project<work", &p) && !h.m("project>work", &p));
+        // The equals family: `=` is the partial match `:` is, `==` and `!==` the whole value, `!=` the partial match's other side.
+        assert!(h.m("project = Wor", &p) && h.m("project == Work", &p) && !h.m("project == Wor", &p));
+        assert!(h.m("project != Home", &p) && !h.m("project != Wor", &p) && h.m("project !== Wor", &p));
+        assert!(h.m("project!=Home", &p) && h.m("project!==Wor", &p) && !h.m("project!==Work", &p));
+        // `~` and `!~` take a regular expression.
+        assert!(h.m("project ~ ^Wo", &p) && h.m("project~rk$", &p) && !h.m("project ~ ^k", &p));
+        assert!(h.m("project !~ ^k", &p) && h.m("project!~^k", &p) && !h.m("project !~ ^Wo", &p));
+        assert!(h.m("description ~ x", &t) && !h.m("description !~ x", &t));
+        // Nothing to compare with is an error, not a filter that selects nothing.
+        assert!(h.parse_err("due <").contains("could not be evaluated"));
+        assert!(h.parse_err("due>").contains("could not be evaluated"));
+        // A word that is no attribute stays a word.
+        assert!(h.m("a>b", &task("is a>b ok")) && h.m("a < b", &task("is a < b ok")));
+    }
+
+    #[test]
+    fn priority_and_uda_values_compare_in_their_own_order() {
+        let h = H::new();
+        let with = |p: &str| Facts {
+            priority: Some(p.into()),
+            ..task("x")
+        };
+        let (high, med, low, none) = (with("H"), with("M"), with("L"), task("x"));
+        assert!(h.m("priority>M", &high) && !h.m("priority>M", &med) && !h.m("priority>M", &low));
+        assert!(h.m("priority >= M", &med) && h.m("priority < M", &low) && h.m("priority<=L", &low));
+        // A task with none is below them all.
+        assert!(h.m("priority<L", &none) && h.m("priority <= M", &none) && !h.m("priority>L", &none));
+    }
+
+    #[test]
+    fn latest_is_the_task_with_the_largest_number_and_uda_includes_priority() {
+        let mut h = H::new();
+        let (a, b) = (
+            task("a"),
+            Facts {
+                uuid: Uuid::from_u128(2),
+                ..task("b")
+            },
+        );
+        h.ids.insert(a.uuid, 1);
+        h.ids.insert(b.uuid, 2);
+        assert!(h.m("+LATEST", &b) && !h.m("+LATEST", &a) && h.m("-LATEST", &a));
+        // `priority` is a user defined attribute in Taskwarrior.
+        let high = Facts {
+            priority: Some("H".into()),
+            ..task("c")
+        };
+        assert!(h.m("+UDA", &high) && !h.m("+UDA", &a));
+    }
+
+    #[test]
+    fn this_week_counts_from_monday_whatever_weekstart_says() {
+        // 2026-10-07 is a Wednesday; Sunday 2026-10-04 is before Monday 2026-10-05.
+        let h = H::with_rc("weekstart=Sunday\n");
+        let sunday = Facts {
+            due: Some(NOW - 3 * DAY),
+            ..task("x")
+        };
+        assert!(
+            !h.m("+WEEK", &sunday)
+                && h.m(
+                    "+WEEK",
+                    &Facts {
+                        due: Some(NOW + 4 * DAY),
+                        ..task("y")
+                    }
+                )
+        );
+        assert!(!h.m(
+            "+WEEK",
+            &Facts {
+                due: Some(NOW + 5 * DAY),
+                ..task("z")
+            }
+        ));
+    }
+
+    #[test]
+    fn a_bang_without_a_parenthesis_takes_one_value_as_taskwarrior_does() {
+        let h = H::new();
+        let mut t = task("x");
+        t.project = Some("Work".into());
+        t.tags.insert("a".into());
+        // `! project:Work` is `(!project) = 'Work'`: `false` against `Work`, for a task with a project or without.
+        assert!(!h.m("! project:Work", &t) && !h.m("! project:Work", &task("x")));
+        // `! +a` is `(!tags) _hastag_ a`, and that looks at the tags of the task: the `!` does nothing.
+        for (f, want) in [("! +a", true), ("! +b", false), ("! -b", true), ("!! +a", true)] {
+            assert_eq!(h.m(f, &t), want, "{f}");
+        }
+        // The truth of the project, as a word: `false` for a project, `true` for none.
+        assert!(!h.m("! project ~ false", &task("x")) && h.m("! project ~ true", &task("x")));
+        assert!(h.m("! project = true", &task("x")) && !h.m("! project = true", &t));
+        assert!(h.m("!! project = true", &t) && !h.m("!! project = true", &task("x")));
+        // A pattern is looked for in `true` or `false`; any other word is a value of its own, true because it is
+        // not empty, so that `! word` is false for every task and `!! word` true. Likewise a number after `!`.
+        assert!(
+            h.m("! /fal/", &t)
+                && !h.m("! /tru/", &t)
+                && h.m(
+                    "! /tru/",
+                    &Facts {
+                        description: String::new(),
+                        ..task("")
+                    }
+                )
+        );
+        assert!(!h.m("! fal", &t) && !h.m("! 1", &t) && h.m("!! fal", &t) && h.m("!! 1", &t) && h.m("! 0", &t));
+        // Glued to the next word the `!` still stands apart, but `+a` after it is no tag.
+        assert!(!h.m("!project:Work", &t) && h.parse_err("!+a").contains("could not be evaluated"));
+        // No `and` goes in front of a `!`, so two values are left side by side.
+        assert!(h.parse_err("+a ! project:Work").contains("not an expression"));
+        assert!(!h.m("+a and ! project:Work", &t));
+        // With a parenthesis it reverses the group, and a number or uuid is in a group of its own.
+        assert!(h.m("!(project:Work)", &task("x")) && !h.m("!(project:Work)", &t));
+        assert!(h.parse_err("!").contains("could not be evaluated") && h.parse_err("+a and !").contains("could not"));
+        assert!(h.parse_err("! and +a").contains("could not be evaluated"));
+    }
+
+    #[test]
+    fn a_bang_stands_apart_from_its_parenthesis() {
+        let h = H::new();
+        let mut t = task("x");
+        t.tags.insert("a".into());
+        assert!(!h.m("!(+a)", &t) && h.m("!(+b)", &t) && h.m("+a and !(+b or +c)", &t));
+    }
+
+    #[test]
+    fn text_operators_on_a_date_read_it_as_iso_text() {
+        let h = H::new();
+        let mut t = task("x");
+        t.due = Some(NOW + DAY); // 2026-10-08T12:30:00
+        for f in [
+            "due.has:10-08",
+            "due.startswith:2026-10",
+            "due.endswith:30:00",
+            "due.word:2026",
+            "due~T12:30",
+            "due.hasnt:11-",
+        ] {
+            assert!(h.m(f, &t), "{f}");
+        }
+        for f in [
+            "due.has:11-08",
+            "due.startswith:10",
+            "due.hasnt:10-08",
+            "due.noword:2026",
+        ] {
+            assert!(!h.m(f, &t), "{f}");
+        }
+        // No date is the empty text: the empty pattern is in it and no word is.
+        assert!(h.m("due.has:", &task("y")) && h.m("due.hasnt:10", &task("y")) && !h.m("due.has:1", &task("y")));
+    }
+
+    #[test]
     fn exact_date_is_with_time() {
         let h = H::new();
         let mut t = task("x");
         t.due = Some(NOW - NOW % 60 + DAY); // 12:30:00 tomorrow
         assert!(h.m("due.is:2026-10-08T12:30", &t));
         assert!(!h.m("due.is:2026-10-08T12:31", &t));
-        assert!(h.m("due.is:2026-10-08", &t)); // date-only is: whole-day
+        assert!(h.m("due:2026-10-08", &t)); // date-only `:` is the whole day
+        assert!(!h.m("due.is:2026-10-08", &t)); // `is` is the instant: midnight
     }
 
     #[test]

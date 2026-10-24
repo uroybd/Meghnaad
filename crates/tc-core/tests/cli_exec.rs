@@ -1450,7 +1450,8 @@ async fn read_commands() {
     assert_eq!(message(&run(&mut r, &cfg, "count").await.0), "3");
     assert_eq!(message(&run(&mut r, &cfg, "project:Home count").await.0), "2");
     assert_eq!(message(&run(&mut r, &cfg, "+x +y count").await.0), "1");
-    assert_eq!(message(&run(&mut r, &cfg, "ids").await.0), "1 2 3");
+    assert_eq!(message(&run(&mut r, &cfg, "ids").await.0), "1-3");
+    assert_eq!(message(&run(&mut r, &cfg, "1 3 ids").await.0), "1 3");
 
     let (CliResult::Table(t), _) = run(&mut r, &cfg, "projects").await else {
         panic!()
@@ -1492,9 +1493,17 @@ async fn bad_input_gives_errors_not_changes() {
         ("add x priority:Z", "priority"),
         ("project:Home add x", "not a filter"),
         ("list due:garbage", "valid date"),
-        ("1 modify depends:99", "no task with id 99"),
+        (
+            "1 modify depends:99",
+            "Could not create a dependency on task 99 - not found.",
+        ),
         ("1 modify recur:weekly", "due date"),
-        ("1 modify status:completed", "can't be set"),
+        ("1 modify status:xyz", "The status 'xyz' is not valid."),
+        ("1 modify rtype:periodic", "does not allow a value of"),
+        (
+            "1 modify end:2026-01-01",
+            "You cannot set an end date on a pending task.",
+        ),
         ("99 done", "No matches"),
     ] {
         let (res, wrote) = run(&mut r, &cfg, line).await;
@@ -1621,7 +1630,7 @@ async fn bulk_commands_from_the_bar_change_exactly_the_selected_tasks() {
         uuid_of(&mut r, "c").await,
         uuid_of(&mut r, "d").await,
     );
-    assert_eq!(lines.len(), 5);
+    assert_eq!(lines[0].split(' ').count(), 5);
     let yes = |uuids: &[&String]| Options {
         approved: Some(uuids.iter().map(|u| (*u).clone()).collect()),
         confirmed: true,
@@ -1963,7 +1972,7 @@ mod overrides_and_journal {
 
         // Starting an active task is a no-op: no second journal entry.
         let (res, wrote) = run(&mut r, &cfg, "1 start").await;
-        assert!(!wrote && message(&res).contains("already active"), "{}", message(&res));
+        assert!(!wrote && message(&res).contains("already started"), "{}", message(&res));
         assert_eq!(notes(&only(&mut r).await), ["Started task"]);
 
         run(&mut r, &cfg, "1 stop").await;
@@ -1972,7 +1981,7 @@ mod overrides_and_journal {
         assert!(f.start.is_none());
 
         let (res, wrote) = run(&mut r, &cfg, "1 stop").await;
-        assert!(!wrote && message(&res).contains("not active"), "{}", message(&res));
+        assert!(!wrote && message(&res).contains("not started"), "{}", message(&res));
         assert_eq!(notes(&only(&mut r).await).len(), 2);
     }
 
@@ -2289,7 +2298,11 @@ mod recurrence {
         let tpl = template(&all(&mut r).await).uuid.to_string();
         let tpl = tpl.as_str();
         let (res, _) = run(&mut r, &cfg, &format!("{tpl} done")).await;
-        assert!(message(&res).contains("not pending"), "{}", message(&res));
+        assert!(
+            message(&res).contains("is neither pending nor waiting"),
+            "{}",
+            message(&res)
+        );
         assert_eq!(template(&all(&mut r).await).status, "recurring");
         let (res, _) = run(&mut r, &cfg, &format!("{tpl} modify priority:H")).await;
         assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
@@ -5196,7 +5209,10 @@ mod commands_and_get {
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
-        assert_eq!(names[0], "_get");
+        assert_eq!(names[0], "_aliases");
+        for internal in ["_commands", "_ids", "_show", "_urgency", "_zshids"] {
+            assert!(names.contains(&internal), "{internal}");
+        }
         for gone in ["edit", "import-v2", "info", "_rows", "sync"] {
             assert!(!names.contains(&gone), "{gone}");
         }
@@ -6046,7 +6062,7 @@ mod names_and_reminders {
         let mut r = world(&cfg).await;
         run(&mut r, &cfg, "1 start").await;
         run(&mut r, &cfg, "1 annotate a note").await;
-        let filter = "( due.any: or wait.any: or +ACTIVE ) status:pending";
+        let filter = "( due.any: or wait.any: or +ACTIVE ) ( status:pending or status:waiting )";
         // Both are asked at one moment, so the tracked time is the same to the second.
         let at = taskchampion::chrono::Utc::now().timestamp() + 3600;
         let rows = run_at(&mut r, &cfg, at, &format!("{filter} _rows")).await;
@@ -6169,4 +6185,97 @@ async fn rc_context_overrides_the_active_context_for_one_command() {
     let cfg = parse("context.cy.read=+y\n").config;
     let (res, _) = run(&mut r, &cfg, "rc.context=cy count").await;
     assert_eq!(message(&res), "2");
+}
+
+mod status_and_tags_by_assignment {
+    use super::*;
+
+    #[tokio::test]
+    async fn status_and_tags_are_set_as_taskwarrior_sets_them() {
+        let cfg = Config::default();
+        let mut r = replica();
+        run(&mut r, &cfg, "add a +x +y").await;
+        run(&mut r, &cfg, "add b").await;
+        // `tags:` is the whole list.
+        run(&mut r, &cfg, "/a/ modify tags:p,q").await;
+        let a = only_task(&mut r, "a").await;
+        assert_eq!(a.tags.iter().cloned().collect::<Vec<_>>(), ["p", "q"]);
+        run(&mut r, &cfg, "/a/ modify tags:").await;
+        let a = only_task(&mut r, "a").await;
+        assert!(a.tags.is_empty());
+        // `status:completed` finishes the task, and so ends it now; `pending` starts it over without an end.
+        run(&mut r, &cfg, "/a/ modify status:completed").await;
+        let a = only_task(&mut r, "a").await;
+        assert!(a.status == "completed" && a.end.is_some());
+        run(&mut r, &cfg, "/a/ modify status:pending").await;
+        let a = only_task(&mut r, "a").await;
+        assert!(a.status == "pending" && a.end.is_none());
+        // On `add` too, and an end date is only kept for a task that is finished.
+        run(&mut r, &cfg, "add c status:deleted").await;
+        run(&mut r, &cfg, "add d end:2026-01-01").await;
+        let c = only_task(&mut r, "c").await;
+        assert!(c.status == "deleted" && c.end.is_some());
+        let d = only_task(&mut r, "d").await;
+        assert!(d.status == "pending" && d.end.is_none());
+    }
+}
+
+mod completion_lists {
+    use super::*;
+
+    async fn lines(r: &mut R, cfg: &Config, line: &str) -> Vec<String> {
+        let (CliResult::Text { lines }, _) = run(r, cfg, line).await else {
+            panic!("{line}")
+        };
+        lines
+    }
+
+    #[tokio::test]
+    async fn the_underscore_commands_list_what_taskwarrior_lists() {
+        let cfg = parse("alias.rm2=delete\ncontext.work.read=+work\nuda.size.type=numeric\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add one project:Work priority:H +a").await;
+        run(&mut r, &cfg, "add two project:Home +a +b").await;
+        run(&mut r, &cfg, "add three: with colon").await;
+        run(&mut r, &cfg, "/two/ done").await;
+        assert_eq!(lines(&mut r, &cfg, "_version").await, ["3.5.0"]);
+        assert_eq!(lines(&mut r, &cfg, "_unique project").await, ["Home", "Work"]);
+        assert_eq!(lines(&mut r, &cfg, "_unique tags").await, ["a", "b"]);
+        assert_eq!(lines(&mut r, &cfg, "_unique priority").await, ["H"]);
+        assert_eq!(lines(&mut r, &cfg, "+a _unique project").await, ["Home", "Work"]);
+        assert_eq!(lines(&mut r, &cfg, "_context").await, ["work"]);
+        assert_eq!(lines(&mut r, &cfg, "_udas").await, ["priority", "size"]);
+        let aliases = lines(&mut r, &cfg, "_aliases").await;
+        assert!(
+            aliases.contains(&"rm2".to_owned()) && aliases.contains(&"history".to_owned()),
+            "{aliases:?}"
+        );
+        let columns = lines(&mut r, &cfg, "_columns").await;
+        assert!(
+            columns.contains(&"due".to_owned())
+                && columns.contains(&"size".to_owned())
+                && columns.contains(&"priority".to_owned())
+        );
+        let commands = lines(&mut r, &cfg, "_commands").await;
+        assert!(
+            commands.contains(&"next".to_owned())
+                && commands.contains(&"add".to_owned())
+                && !commands.contains(&"_rows".to_owned())
+        );
+        assert!(lines(&mut r, &cfg, "_config").await.contains(&"bulk".to_owned()));
+        assert!(lines(&mut r, &cfg, "_show").await.contains(&"bulk=3".to_owned()));
+        // Only tasks that are not finished have an id to list; `ids` squeezes a run of them into a range.
+        let ids = lines(&mut r, &cfg, "_ids").await;
+        assert_eq!(ids.len(), 2);
+        let zsh = lines(&mut r, &cfg, "_zshids").await;
+        assert!(zsh.iter().any(|l| l.ends_with(":three\\: with colon")), "{zsh:?}");
+        assert_eq!(lines(&mut r, &cfg, "_uuids").await.len(), 3);
+        let urgency = lines(&mut r, &cfg, "_urgency").await;
+        assert!(
+            urgency
+                .iter()
+                .all(|l| l.starts_with("task ") && l.contains(" urgency ")),
+            "{urgency:?}"
+        );
+    }
 }

@@ -4,7 +4,6 @@
 
 use taskchampion::chrono::{
     DateTime, Datelike, Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone, Utc,
-    Weekday,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -566,20 +565,286 @@ impl Clock {
     }
 }
 
-fn weekday_from(s: &str) -> Option<Weekday> {
-    Some(match s {
-        "monday" | "mon" => Weekday::Mon,
-        "tuesday" | "tue" | "tues" => Weekday::Tue,
-        "wednesday" | "wed" => Weekday::Wed,
-        "thursday" | "thu" | "thur" | "thurs" => Weekday::Thu,
-        "friday" | "fri" => Weekday::Fri,
-        "saturday" | "sat" => Weekday::Sat,
-        "sunday" | "sun" => Weekday::Sun,
+const DAY_NAMES: [&str; 7] = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+];
+const MONTH_NAMES: [&str; 12] = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+];
+
+/// A word that is at least three letters of `name` from its start (`mon`, `wedn`, `sept`), as Taskwarrior reads day and
+/// month names.
+fn abbreviates(word: &str, name: &str, shortest: usize) -> bool {
+    word.len() >= shortest && name.starts_with(word)
+}
+
+/// The day of the week a name stands for, 0 for Sunday.
+fn weekday_from(s: &str) -> Option<u32> {
+    DAY_NAMES.iter().position(|n| abbreviates(s, n, 3)).map(|i| i as u32)
+}
+
+/// Taskwarrior's named dates that are worked out from today, in its own terms: the start (`sod`, `sow`, `som`, `soq`,
+/// `soy`) and end (`eod`, ...) of the previous (`sop`/`eop`), current and next (`son`/`eon`) day, week, work week, month,
+/// quarter and year. An end is the last second before the next period starts. A week runs from Monday whatever
+/// `weekstart` says, as in Taskwarrior, whose code counts days back from Monday.
+fn named_period(s: &str, clock: &Clock, by_weekstart: bool) -> Option<ParsedDate> {
+    let today = clock.local(clock.now).date_naive();
+    let day = |n: i64| today.checked_add_signed(Duration::days(n));
+    let midnight = |d: Option<NaiveDate>| clock.timestamp_of(d?.and_time(NaiveTime::MIN));
+    let sunday_based = i64::from(today.weekday().num_days_from_sunday());
+    // The days since the week began: Monday, unless the caller asks for the week the user's `weekstart` makes.
+    let monday_based = if by_weekstart && !clock.week_starts_monday {
+        sunday_based
+    } else {
+        i64::from(today.weekday().num_days_from_monday())
+    };
+    // The first day of the month `n` months from this one, and the same by quarters and by years.
+    let months = |n: i32| {
+        let index = today.year() * 12 + today.month0() as i32 + n;
+        NaiveDate::from_ymd_opt(index.div_euclid(12), index.rem_euclid(12) as u32 + 1, 1)
+    };
+    let quarters = |n: i32| months(-(today.month0() as i32 % 3) + 3 * n);
+    let years = |n: i32| NaiveDate::from_ymd_opt(today.year() + n, 1, 1);
+    // What kind of date, then the day it falls on (a start) or the day after it (an end).
+    let (end, first) = match s {
+        "sopd" => (false, day(-1)),
+        "sond" => (false, day(1)),
+        "eopd" => (true, day(0)),
+        "eod" => (true, day(1)),
+        "eond" => (true, day(2)),
+        "sopw" => (false, day(-monday_based - 7)),
+        "sow" => (false, day(-monday_based)),
+        "sonw" => (false, day(-monday_based + 7)),
+        "eopw" => (true, day(-monday_based)),
+        "eow" => (true, day(-monday_based + 7)),
+        "eonw" => (true, day(-monday_based + 14)),
+        // A work week is counted from Sunday as a 0, so on a Sunday these are the week to come.
+        "sopww" => (false, day(-6 - sunday_based)),
+        "soww" => (false, day(1 - sunday_based)),
+        "sonww" => (false, day(8 - sunday_based)),
+        "eopww" => (true, day(-sunday_based - 1)),
+        "eoww" => (true, day(6 - sunday_based)),
+        "eonww" => (true, day(13 - sunday_based)),
+        "sopm" => (false, months(-1)),
+        "som" => (false, months(0)),
+        "sonm" => (false, months(1)),
+        "eopm" => (true, months(0)),
+        "eom" => (true, months(1)),
+        "eonm" => (true, months(2)),
+        "sopq" => (false, quarters(-1)),
+        "soq" => (false, quarters(0)),
+        "sonq" => (false, quarters(1)),
+        "eopq" => (true, quarters(0)),
+        "eoq" => (true, quarters(1)),
+        "eonq" => (true, quarters(2)),
+        "sopy" => (false, years(-1)),
+        "soy" => (false, years(0)),
+        "sony" => (false, years(1)),
+        "eopy" => (true, years(0)),
+        "eoy" => (true, years(1)),
+        "eony" => (true, years(2)),
         _ => return None,
+    };
+    let ts = midnight(first)?;
+    Some(if end {
+        ParsedDate { ts: ts - 1, day: false }
+    } else {
+        ParsedDate { ts, day: true }
+    })
+}
+
+/// `1st`, `22nd`, `3rd`, `11th`: the next such day of the month, this month's if it is still to come and next month's
+/// from the day itself on.
+fn ordinal_day(s: &str, clock: &Clock) -> Option<ParsedDate> {
+    let digits = s.bytes().take_while(u8::is_ascii_digit).count();
+    let (number, suffix) = s.split_at(digits);
+    let n: i64 = number.parse().ok().filter(|n| (1..=31).contains(n))?;
+    let right = match (n % 100, n % 10) {
+        (11..=13, _) => "th",
+        (_, 1) => "st",
+        (_, 2) => "nd",
+        (_, 3) => "rd",
+        _ => "th",
+    };
+    if suffix != right {
+        return None;
+    }
+    let today = clock.local(clock.now).date_naive();
+    let (year, month) = if n <= i64::from(today.day()) {
+        if today.month() == 12 {
+            (today.year() + 1, 1)
+        } else {
+            (today.year(), today.month() + 1)
+        }
+    } else {
+        (today.year(), today.month())
+    };
+    // A 31st in a month of thirty days is the first of the month after, as `mktime` has it.
+    let date = NaiveDate::from_ymd_opt(year, month, 1)?.checked_add_signed(Duration::days(n - 1))?;
+    Some(ParsedDate {
+        ts: clock.timestamp_of(date.and_time(NaiveTime::MIN))?,
+        day: true,
+    })
+}
+
+/// `january` .. `december` or three letters or more of one: the first of that month, next year's if this year's has begun.
+fn month_name(s: &str, clock: &Clock) -> Option<ParsedDate> {
+    let month = MONTH_NAMES.iter().position(|n| abbreviates(s, n, 3))? as u32;
+    let today = clock.local(clock.now).date_naive();
+    let year = today.year() + i32::from(today.month0() >= month);
+    let date = NaiveDate::from_ymd_opt(year, month + 1, 1)?;
+    Some(ParsedDate {
+        ts: clock.timestamp_of(date.and_time(NaiveTime::MIN))?,
+        day: true,
+    })
+}
+
+/// `later` and `someday` (and `lat`, `some` ...): Taskwarrior's far-off date.
+fn far_off(s: &str, clock: &Clock) -> Option<ParsedDate> {
+    if !(abbreviates(s, "later", 3) || abbreviates(s, "someday", 4)) {
+        return None;
+    }
+    Some(ParsedDate {
+        ts: clock.timestamp_of(NaiveDate::from_ymd_opt(9999, 12, 30)?.and_time(NaiveTime::MIN))?,
+        day: true,
+    })
+}
+
+/// Time of day without a date: `8am`, `8:30pm`, `8a`, `8:30`, `8:30:15`. A bare number needs am or pm. It is today at
+/// that time, tomorrow's if today's has gone.
+fn informal_time(s: &str, clock: &Clock) -> Option<ParsedDate> {
+    let digits = |from: &str| from.bytes().take_while(u8::is_ascii_digit).count();
+    let n = digits(s);
+    if n == 0 || n > 2 {
+        return None;
+    }
+    let mut hours: i64 = s[..n].parse().ok()?;
+    let mut rest = &s[n..];
+    let (mut minutes, mut seconds) = (0, 0);
+    let mut clocked = false;
+    if let Some(r) = rest.strip_prefix(':') {
+        if digits(r) != 2 {
+            return None;
+        }
+        minutes = r[..2].parse().ok()?;
+        rest = &r[2..];
+        clocked = true;
+        if let Some(r) = rest.strip_prefix(':') {
+            let n = digits(r);
+            if n == 0 {
+                return None;
+            }
+            seconds = r[..n].parse().ok()?;
+            rest = &r[n..];
+        }
+    }
+    let designator = match rest {
+        "" => false,
+        "am" | "a" => {
+            if hours == 12 {
+                hours = 0;
+            }
+            true
+        }
+        "pm" | "p" => {
+            if hours != 12 {
+                hours += 12;
+            }
+            true
+        }
+        _ => return None,
+    };
+    if !(designator || clocked) || !(0..24).contains(&hours) || minutes >= 60 || seconds >= 60 {
+        return None;
+    }
+    let wanted = hours * 3600 + minutes * 60 + seconds;
+    let (_, _, _, h, m, sec) = clock.ymd_hms(clock.now);
+    let passed = wanted < i64::from(h * 3600 + m * 60 + sec);
+    Some(ParsedDate {
+        ts: clock.start_of_day(clock.now) + wanted + if passed { DAY } else { 0 },
+        day: false,
+    })
+}
+
+/// The ISO forms Taskwarrior reads beside a full date: a year and week (`2026-W44`, `2026-W44-3`), a year and day of
+/// the year (`2026-300`) and a year and month (`2026-10`). Weeks follow `weekstart`: from Monday they are ISO weeks;
+/// from Sunday they are counted by Taskwarrior's older rule, from the week with 4 January.
+fn iso_part_date(s: &str, clock: &Clock) -> Option<ParsedDate> {
+    let (year, rest) = s.split_once('-')?;
+    let year: i32 = (year.len() == 4)
+        .then(|| year.parse().ok())
+        .flatten()
+        .filter(|y| *y >= 1970)?;
+    let two = |t: &str| {
+        (t.len() == 2 && t.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| t.parse::<i64>().ok())
+            .flatten()
+    };
+    let jan1 = NaiveDate::from_ymd_opt(year, 1, 1)?;
+    let days_in_year = if NaiveDate::from_ymd_opt(year, 2, 29).is_some() {
+        366
+    } else {
+        365
+    };
+    let date = if let Some(w) = rest.strip_prefix('W') {
+        let (week, weekday) = match w.split_once('-') {
+            Some((week, d)) => (week, Some(d)),
+            None => (w, None),
+        };
+        let week = two(week).filter(|w| (1..=53).contains(w))?;
+        let first = i64::from(clock.week_starts_monday);
+        let last = if clock.week_starts_monday { 7 } else { 6 };
+        let weekday = match weekday {
+            None => first,
+            Some(d) => (d.len() == 1)
+                .then(|| d.parse::<i64>().ok())
+                .flatten()
+                .filter(|d| (first..=last).contains(d))?,
+        };
+        let jan4 = NaiveDate::from_ymd_opt(year, 1, 4)?;
+        let jan4_sunday_based = i64::from(jan4.weekday().num_days_from_sunday());
+        let julian = if clock.week_starts_monday {
+            week * 7 + weekday - (if jan4_sunday_based == 0 { 7 } else { jan4_sunday_based } + 3)
+        } else {
+            week * 7 + weekday - jan4_sunday_based - 3
+        };
+        jan1.checked_add_signed(Duration::days(julian - 1))?
+    } else if rest.len() == 3 && rest.bytes().all(|b| b.is_ascii_digit()) {
+        let julian: i64 = rest.parse().ok().filter(|j| (1..=days_in_year).contains(j))?;
+        jan1.checked_add_signed(Duration::days(julian - 1))?
+    } else {
+        NaiveDate::from_ymd_opt(year, two(rest).filter(|m| (1..=12).contains(m))? as u32, 1)?
+    };
+    Some(ParsedDate {
+        ts: clock.timestamp_of(date.and_time(NaiveTime::MIN))?,
+        day: true,
     })
 }
 
 pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
+    parse_date_in(input, clock, false)
+}
+
+/// [`parse_date`], with a week for `sow`, `eow` and the rest that starts on the day `weekstart` says when `by_weekstart`
+/// (a board's date range follows the week of its page) and on Monday otherwise, as in Taskwarrior.
+pub fn parse_date_in(input: &str, clock: &Clock, by_weekstart: bool) -> Option<ParsedDate> {
     let s = input.trim().to_ascii_lowercase();
     if s.is_empty() {
         return None;
@@ -594,24 +859,16 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
         "today" | "sod" => return day(sod),
         "yesterday" => return day(sod - DAY),
         "tomorrow" => return day(sod + DAY),
-        // End-of-period synonyms are the last second of the period.
-        "eod" => return exact(sod + DAY - 1),
-        "sow" => return day(clock.start_of_week(now)),
-        "eow" => return exact(clock.start_of_week(now) + 7 * DAY - 1),
-        "som" => return day(clock.start_of_month(now)),
-        "eom" => return exact(clock.start_of_next_month(now) - 1),
-        "soy" => return day(clock.start_of_year(now)),
-        "eoy" => return exact(clock.start_of_next_year(now) - 1),
         _ => {}
+    }
+    if let Some(d) = named_period(&s, clock, by_weekstart) {
+        return Some(d);
     }
 
     if let Some(wd) = weekday_from(&s) {
-        let today = clock.local(now).date_naive().weekday();
-        let mut ahead = (i64::from(wd.num_days_from_monday()) - i64::from(today.num_days_from_monday())).rem_euclid(7);
-        if ahead == 0 {
-            ahead = 7;
-        }
-        return day(sod + ahead * DAY);
+        let ahead =
+            (i64::from(wd) - i64::from(clock.local(now).date_naive().weekday().num_days_from_sunday())).rem_euclid(7);
+        return day(sod + if ahead == 0 { 7 } else { ahead } * DAY);
     }
 
     // The user's `dateformat` first, as Taskwarrior does (default `Y-M-D`).
@@ -662,19 +919,39 @@ pub fn parse_date(input: &str, clock: &Clock) -> Option<ParsedDate> {
         }
     }
 
+    if clock.iso {
+        if let Some(d) = iso_part_date(input.trim(), clock) {
+            return Some(d);
+        }
+    }
+    // The rest of Taskwarrior's named dates, which it tries last.
+    if let Some(d) = ordinal_day(&s, clock)
+        .or_else(|| month_name(&s, clock))
+        .or_else(|| far_off(&s, clock))
+        .or_else(|| crate::calendar::named_holiday(&s, clock).map(|ts| ParsedDate { ts, day: true }))
+        .or_else(|| informal_time(&s, clock))
+    {
+        return Some(d);
+    }
+
     // Relative: now +/- duration.
     parse_duration(&s).and_then(|d| exact(now + d))
 }
 
 /// Date value, optionally with `+`/`-` arithmetic on a synonym: `now+1d`, `eow-2d`.
 pub fn parse_date_expr(value: &str, clock: &Clock) -> Option<ParsedDate> {
-    if let Some(d) = parse_date(value, clock) {
+    parse_date_expr_in(value, clock, false)
+}
+
+/// [`parse_date_expr`] with the weeks of [`parse_date_in`].
+pub fn parse_date_expr_in(value: &str, clock: &Clock, by_weekstart: bool) -> Option<ParsedDate> {
+    if let Some(d) = parse_date_in(value, clock, by_weekstart) {
         return Some(d);
     }
     for (i, c) in value.char_indices().skip(1) {
         if c == '+' || c == '-' {
             let (l, r) = (&value[..i], &value[i + 1..]);
-            if let (Some(base), Some(d)) = (parse_date(l, clock), parse_duration(r)) {
+            if let (Some(base), Some(d)) = (parse_date_in(l, clock, by_weekstart), parse_duration(r)) {
                 let d = if c == '+' { d } else { -d };
                 return Some(ParsedDate {
                     ts: base.ts + d,
@@ -723,12 +1000,171 @@ mod tests {
     }
 
     #[test]
-    fn sunday_week_start() {
-        let c = Clock {
+    fn weeks_run_from_monday_as_in_taskwarrior_unless_asked_to_follow_weekstart() {
+        let sunday = Clock {
             week_starts_monday: false,
             ..utc()
         };
-        assert_eq!(parse_date("sow", &c).unwrap().ts, ts(2026, 10, 4, 0, 0, 0));
+        // Taskwarrior counts back to Monday whatever `weekstart` says.
+        assert_eq!(parse_date("sow", &sunday).unwrap().ts, ts(2026, 10, 5, 0, 0, 0));
+        assert_eq!(parse_date("eow", &sunday).unwrap().ts, ts(2026, 10, 11, 23, 59, 59));
+        // A board's range follows the week of its page.
+        assert_eq!(
+            parse_date_in("sow", &sunday, true).unwrap().ts,
+            ts(2026, 10, 4, 0, 0, 0)
+        );
+        assert_eq!(
+            parse_date_in("eow", &sunday, true).unwrap().ts,
+            ts(2026, 10, 10, 23, 59, 59)
+        );
+        assert_eq!(parse_date_in("sow", &utc(), true).unwrap().ts, ts(2026, 10, 5, 0, 0, 0));
+    }
+
+    #[test]
+    fn periods_before_and_after_this_one() {
+        let c = utc(); // Wednesday 2026-10-07 12:30
+        let at = |w: &str| parse_date(w, &c).unwrap().ts;
+        let (day, last) = (|d| ts(2026, 10, d, 0, 0, 0), |d| ts(2026, 10, d, 23, 59, 59));
+        assert_eq!((at("sopd"), at("sond")), (day(6), day(8)));
+        assert_eq!((at("eopd"), at("eond")), (last(6), last(8)));
+        assert_eq!((at("sopw"), at("sonw")), (ts(2026, 9, 28, 0, 0, 0), day(12)));
+        assert_eq!((at("eopw"), at("eonw")), (last(4), last(18)));
+        // Work weeks count from Sunday as 0.
+        assert_eq!(
+            (at("sopww"), at("soww"), at("sonww")),
+            (ts(2026, 9, 28, 0, 0, 0), day(5), day(12))
+        );
+        assert_eq!(
+            (at("eopww"), at("eoww"), at("eonww")),
+            (ts(2026, 10, 2, 23, 59, 59), last(9), last(16))
+        );
+        assert_eq!(
+            (at("sopm"), at("sonm")),
+            (ts(2026, 9, 1, 0, 0, 0), ts(2026, 11, 1, 0, 0, 0))
+        );
+        assert_eq!(
+            (at("eopm"), at("eonm")),
+            (ts(2026, 9, 30, 23, 59, 59), ts(2026, 11, 30, 23, 59, 59))
+        );
+        assert_eq!(
+            (at("sopq"), at("soq"), at("sonq")),
+            (ts(2026, 7, 1, 0, 0, 0), day(1), ts(2027, 1, 1, 0, 0, 0))
+        );
+        assert_eq!(
+            (at("eopq"), at("eoq"), at("eonq")),
+            (
+                ts(2026, 9, 30, 23, 59, 59),
+                ts(2026, 12, 31, 23, 59, 59),
+                ts(2027, 3, 31, 23, 59, 59)
+            )
+        );
+        assert_eq!(
+            (at("sopy"), at("sony")),
+            (ts(2025, 1, 1, 0, 0, 0), ts(2027, 1, 1, 0, 0, 0))
+        );
+        assert_eq!(
+            (at("eopy"), at("eony")),
+            (ts(2025, 12, 31, 23, 59, 59), ts(2027, 12, 31, 23, 59, 59))
+        );
+        // January looks back into the year before.
+        let january = Clock::utc(ts(2026, 1, 15, 9, 0, 0));
+        assert_eq!(parse_date("sopm", &january).unwrap().ts, ts(2025, 12, 1, 0, 0, 0));
+        assert_eq!(parse_date("sopq", &january).unwrap().ts, ts(2025, 10, 1, 0, 0, 0));
+    }
+
+    #[test]
+    fn ordinals_month_names_and_far_off_dates() {
+        let c = utc(); // Wednesday 2026-10-07 12:30
+        let at = |w: &str| parse_date(w, &c).map(|d| d.ts);
+        // The day still to come this month; from the day itself on, next month's.
+        assert_eq!(at("8th"), Some(ts(2026, 10, 8, 0, 0, 0)));
+        assert_eq!(at("22nd"), Some(ts(2026, 10, 22, 0, 0, 0)));
+        assert_eq!(at("7th"), Some(ts(2026, 11, 7, 0, 0, 0)));
+        assert_eq!(at("1st"), Some(ts(2026, 11, 1, 0, 0, 0)));
+        assert_eq!(at("31st"), Some(ts(2026, 10, 31, 0, 0, 0)));
+        assert_eq!(
+            (at("11th"), at("12th"), at("13th"), at("23rd")),
+            (at("11th"), at("12th"), at("13th"), at("23rd"))
+        );
+        assert!(at("11th").is_some() && at("12th").is_some() && at("13th").is_some() && at("23rd").is_some());
+        assert!(at("1th").is_none() && at("11st").is_none() && at("32nd").is_none() && at("0th").is_none());
+        // A month name is the first of that month, next year's if this year's has begun.
+        assert_eq!(at("nov"), Some(ts(2026, 11, 1, 0, 0, 0)));
+        assert_eq!(at("december"), Some(ts(2026, 12, 1, 0, 0, 0)));
+        assert_eq!(at("oct"), Some(ts(2027, 10, 1, 0, 0, 0)));
+        assert_eq!(at("jan"), Some(ts(2027, 1, 1, 0, 0, 0)));
+        assert!(at("ju").is_none() && at("janx").is_none());
+        // Day names take any three letters or more.
+        assert_eq!(at("wedn"), Some(ts(2026, 10, 14, 0, 0, 0)));
+        assert_eq!(at("sat"), Some(ts(2026, 10, 10, 0, 0, 0)));
+        let far = Some(ts(9999, 12, 30, 0, 0, 0));
+        assert_eq!(
+            (at("later"), at("lat"), at("someday"), at("some")),
+            (far, far, far, far)
+        );
+        assert!(at("la").is_none() && at("som2").is_none());
+    }
+
+    #[test]
+    fn a_time_of_day_is_today_or_tomorrow() {
+        let c = utc(); // Wednesday 2026-10-07 12:30:00
+        let at = |w: &str| parse_date(w, &c).map(|d| d.ts);
+        assert_eq!(at("2pm"), Some(ts(2026, 10, 7, 14, 0, 0)));
+        assert_eq!(at("10am"), Some(ts(2026, 10, 8, 10, 0, 0)));
+        assert_eq!(at("10:30pm"), Some(ts(2026, 10, 7, 22, 30, 0)));
+        assert_eq!(at("12am"), Some(ts(2026, 10, 8, 0, 0, 0)));
+        assert_eq!(at("12pm"), Some(ts(2026, 10, 8, 12, 0, 0)));
+        assert_eq!(at("8a"), Some(ts(2026, 10, 8, 8, 0, 0)));
+        assert_eq!(at("15:45"), Some(ts(2026, 10, 7, 15, 45, 0)));
+        assert_eq!(at("10:00:30"), Some(ts(2026, 10, 8, 10, 0, 30)));
+        // Hours and minutes out of range are not a time, nor is a bare hour number without am or pm.
+        assert!(at("25:00").is_none() && at("10:75").is_none() && at("13pm").is_none());
+        assert!(informal_time("10", &c).is_none());
+    }
+
+    #[test]
+    fn iso_weeks_days_of_the_year_and_months() {
+        let monday = utc();
+        let sunday = Clock {
+            week_starts_monday: false,
+            ..utc()
+        };
+        let at = |w: &str, c: &Clock| parse_date(w, c).map(|d| d.ts);
+        // From Monday: ISO weeks, with days 1 to 7.
+        assert_eq!(at("2026-W44", &monday), Some(ts(2026, 10, 26, 0, 0, 0)));
+        assert_eq!(at("2026-W44-7", &monday), Some(ts(2026, 11, 1, 0, 0, 0)));
+        assert_eq!(at("2027-W01", &monday), Some(ts(2027, 1, 4, 0, 0, 0)));
+        assert_eq!(at("2026-W01-1", &monday), Some(ts(2025, 12, 29, 0, 0, 0)));
+        assert_eq!(at("2026-W53", &monday), Some(ts(2026, 12, 28, 0, 0, 0)));
+        // From Sunday: Taskwarrior's older count, days 0 to 6.
+        assert_eq!(at("2026-W44", &sunday), Some(ts(2026, 11, 1, 0, 0, 0)));
+        assert_eq!(at("2026-W44-1", &sunday), Some(ts(2026, 11, 2, 0, 0, 0)));
+        assert_eq!(at("2026-W01-1", &sunday), Some(ts(2026, 1, 5, 0, 0, 0)));
+        assert_eq!(at("2026-W44-7", &sunday), None);
+        assert_eq!(at("2026-W54", &monday), None);
+        assert_eq!(at("2026-300", &monday), Some(ts(2026, 10, 27, 0, 0, 0)));
+        assert_eq!(at("2026-366", &monday), None);
+        assert_eq!(at("2026-10", &monday), Some(ts(2026, 10, 1, 0, 0, 0)));
+        assert_eq!(at("2026-13", &monday), None);
+    }
+
+    #[test]
+    fn holiday_names_are_the_next_one() {
+        let c = utc(); // 2026-10-07
+        let at = |w: &str| parse_date(w, &c).map(|d| d.ts);
+        assert_eq!(at("easter"), Some(ts(2027, 3, 28, 0, 0, 0)));
+        assert_eq!(at("goodfriday"), Some(ts(2027, 3, 26, 0, 0, 0)));
+        assert_eq!(at("pentecost"), Some(ts(2027, 5, 16, 0, 0, 0)));
+        assert_eq!(at("midsommar"), Some(ts(2027, 6, 26, 0, 0, 0)));
+        let june = Clock::utc(ts(2026, 6, 1, 0, 0, 0));
+        assert_eq!(
+            parse_date("midsommar", &june).map(|d| d.ts),
+            Some(ts(2026, 6, 20, 0, 0, 0))
+        );
+        assert_eq!(
+            parse_date("midsommarafton", &june).map(|d| d.ts),
+            Some(ts(2026, 6, 19, 0, 0, 0))
+        );
     }
 
     #[test]

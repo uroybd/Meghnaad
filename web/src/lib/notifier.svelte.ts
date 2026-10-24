@@ -67,7 +67,21 @@ class Notifier {
       // Tasks with a due or wait date, plus anything running. `_remind` sends only what is read here: a full row for
       // every task (`_rows`) was the dearest request the page made.
       const res = await runCli({
-        args: ['(', 'due.any:', 'or', 'wait.any:', 'or', '+ACTIVE', ')', 'status:pending', '_remind'],
+        args: [
+          '(',
+          'due.any:',
+          'or',
+          'wait.any:',
+          'or',
+          '+ACTIVE',
+          ')',
+          '(',
+          'status:pending',
+          'or',
+          'status:waiting',
+          ')',
+          '_remind',
+        ],
       });
       if (res.result.kind === 'json' && Array.isArray(res.result.value)) {
         this.#rows = res.result.value as Reminder[];

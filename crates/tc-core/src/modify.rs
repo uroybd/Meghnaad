@@ -58,23 +58,27 @@ const SETTABLE: &[&str] = &[
     "entry",
     "depends",
     "recur",
+    "tags",
+    "status",
+    // Taskwarrior takes it and stamps its own time over it.
+    "modified",
 ];
+/// Attributes Taskwarrior refuses a value for: "The 'rtype' attribute does not allow a value of 'periodic'."
 const READ_ONLY: &[&str] = &[
     "id",
     "uuid",
-    "status",
-    "tags",
     "annotation",
     "urgency",
-    "modified",
     "parent",
+    "mask",
+    "imask",
+    "rtype",
 ];
 
+/// What `+name` may name: anything without a space, as in Taskwarrior (whether the replica can keep it is
+/// another matter, and said when it is applied).
 fn tag_ok(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '@' | '/'))
+    !name.is_empty() && !name.starts_with(['+', '-']) && !name.contains(char::is_whitespace)
 }
 
 fn parse_subst(a: &str) -> Option<Subst> {
@@ -121,7 +125,7 @@ pub fn parse_mods(args: &[String], cfg: &Config) -> Result<Mods, ModError> {
             if looks_like_name {
                 if let Some((canon, is_uda)) = canonical_attr_name(name, cfg) {
                     if !is_uda && READ_ONLY.contains(&canon.as_str()) {
-                        return err(format!("'{canon}' can't be set directly"));
+                        return err(format!("The '{canon}' attribute does not allow a value of '{value}'."));
                     }
                     if is_uda || SETTABLE.contains(&canon.as_str()) {
                         m.attrs.push((canon, value.to_owned()));
@@ -157,6 +161,10 @@ pub enum Change {
     },
     AddTag(String),
     RemoveTag(String),
+    /// `tags:a,b`: these tags and no others.
+    SetTags(Vec<String>),
+    /// `status:completed`: the status itself (`pending`, `completed` or `deleted`).
+    Status(String),
     AddDep(Uuid),
     RemoveDep(Uuid),
     ClearDeps,
@@ -369,6 +377,30 @@ pub fn plan(
                 }
                 out.push(Change::Priority((!v.is_empty()).then(|| v.to_owned())));
             }
+            "modified" => {}
+            "tags" => out.push(Change::SetTags(
+                v.split(',').filter(|t| !t.is_empty()).map(str::to_owned).collect(),
+            )),
+            "status" => {
+                let status = match v.to_ascii_lowercase().as_str() {
+                    "pending" | "waiting" => "pending",
+                    "completed" => "completed",
+                    "deleted" => "deleted",
+                    "recurring" => {
+                        return err("A task is made recurring by giving it a `recur` and a `due`, not a status.")
+                    }
+                    _ => return err(format!("The status '{v}' is not valid.")),
+                };
+                out.push(Change::Status(status.to_owned()));
+                // A finished task ends now; one made pending again has no end.
+                if !m.attrs.iter().any(|(n, _)| n == "end") {
+                    let end = (status != "pending").then_some(ctx.clock.now);
+                    out.push(Change::Timestamp {
+                        name: "end",
+                        value: end,
+                    });
+                }
+            }
             "depends" => {
                 if v.is_empty() {
                     out.push(Change::ClearDeps);
@@ -379,9 +411,14 @@ pub fn plan(
                         Some(t) => (true, t),
                         None => (false, tok.strip_prefix('+').unwrap_or(tok)),
                     };
-                    let target = resolve_task(tok, ctx.ids, all)?;
+                    let what = if remove { "delete" } else { "create" };
+                    let target = resolve_task(tok, ctx.ids, all)
+                        .map_err(|_| ModError(format!("Could not {what} a dependency on task {tok} - not found.")))?;
                     if current.is_some_and(|c| c.uuid == target) {
                         return err("a task can't depend on itself");
+                    }
+                    if remove && current.is_some_and(|c| !c.depends.contains(&target)) {
+                        return err(format!("Could not delete a dependency on task {tok} - not found."));
                     }
                     out.push(if remove {
                         Change::RemoveDep(target)
@@ -649,11 +686,18 @@ mod tests {
     #[test]
     fn read_only_attributes_are_rejected() {
         let cfg = Config::default();
-        for bad in ["status:completed", "uuid:abc", "urgency:5", "id:3", "modified:today"] {
+        for bad in ["uuid:abc", "urgency:5", "id:3", "rtype:periodic", "mask:++", "imask:3"] {
             assert!(
-                parse_mods(&words(bad), &cfg).unwrap_err().0.contains("can't be set"),
+                parse_mods(&words(bad), &cfg)
+                    .unwrap_err()
+                    .0
+                    .contains("attribute does not allow a value of"),
                 "{bad}"
             );
+        }
+        // `status`, `tags` and `modified` are taken, as Taskwarrior takes them.
+        for ok in ["status:completed", "tags:a,b", "modified:today"] {
+            assert!(parse_mods(&words(ok), &cfg).is_ok(), "{ok}");
         }
         // Recurrence is supported now: `recur:` parses like any other attribute.
         assert_eq!(parse_mods(&words("recur:weekly"), &cfg).unwrap().attrs[0].0, "recur");
@@ -779,6 +823,7 @@ mod tests {
         let h = H::new("");
         let me = Facts {
             uuid: Uuid::from_u128(9),
+            depends: vec![h.all[1].uuid],
             ..task("me")
         };
         let c = h
@@ -795,12 +840,22 @@ mod tests {
             .plan(Mode::Modify, "depends:99", Some(&me))
             .unwrap_err()
             .0
-            .contains("no task with id 99"));
+            .contains("Could not create a dependency on task 99 - not found."));
         assert!(h
             .plan(Mode::Modify, "depends:zzzz", Some(&me))
             .unwrap_err()
             .0
-            .contains("no task matches"));
+            .contains("Could not create a dependency on task zzzz - not found."));
+        // Taking away one it does not have is an error too.
+        let none = Facts {
+            uuid: Uuid::from_u128(8),
+            ..task("none")
+        };
+        assert!(h
+            .plan(Mode::Modify, "depends:-2", Some(&none))
+            .unwrap_err()
+            .0
+            .contains("Could not delete a dependency on task 2 - not found."));
         let first = h.all[0].clone();
         assert!(h
             .plan(Mode::Modify, "depends:1", Some(&first))

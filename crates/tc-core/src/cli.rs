@@ -85,6 +85,23 @@ pub enum Kind {
     Config,
     Commands,
     Get,
+    /// The `_` commands that list names for shell completion, as Taskwarrior's do.
+    ListCommands,
+    ListAliases,
+    ListColumns,
+    ListConfig,
+    ListContexts,
+    ListIds,
+    ListShow,
+    ListUdas,
+    Unique,
+    UrgencyList,
+    ListUuids,
+    ListVersion,
+    ZshCommands,
+    ZshAttributes,
+    ZshIds,
+    ZshUuids,
 }
 
 #[allow(
@@ -155,6 +172,22 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
     ("config", Config, false),
     ("commands", Commands, false),
     ("_get", Get, false),
+    ("_commands", ListCommands, false),
+    ("_aliases", ListAliases, false),
+    ("_columns", ListColumns, false),
+    ("_config", ListConfig, false),
+    ("_context", ListContexts, false),
+    ("_ids", ListIds, false),
+    ("_show", ListShow, false),
+    ("_udas", ListUdas, false),
+    ("_unique", Unique, false),
+    ("_urgency", UrgencyList, false),
+    ("_uuids", ListUuids, false),
+    ("_version", ListVersion, false),
+    ("_zshcommands", ZshCommands, false),
+    ("_zshattributes", ZshAttributes, false),
+    ("_zshids", ZshIds, false),
+    ("_zshuuids", ZshUuids, false),
 ];
 
 /// What `commands` says about each command (except the reports, which are all alike): its name, category,
@@ -162,7 +195,88 @@ const COMMANDS: &[(&str, Kind, bool)] = &[
 /// recurrence), `C` (follows the context), `F` (takes a filter), `M` (takes modifications) and `S` (takes
 /// other words). The wording is Taskwarrior's.
 const COMMAND_INFO: &[(&str, &str, &str, &str)] = &[
+    (
+        "_aliases",
+        "internal",
+        "",
+        "Generates a list of all aliases, for autocompletion purposes",
+    ),
+    ("_columns", "internal", "", "Displays only a list of supported columns"),
+    (
+        "_commands",
+        "internal",
+        "",
+        "Generates a list of all commands, for autocompletion purposes",
+    ),
+    (
+        "_config",
+        "internal",
+        "",
+        "Lists all supported configuration variables, for completion purposes",
+    ),
+    (
+        "_context",
+        "internal",
+        "",
+        "Lists all supported contexts, for completion purposes",
+    ),
     ("_get", "internal", "S", "DOM Accessor"),
+    (
+        "_ids",
+        "internal",
+        "IGRF",
+        "Shows the IDs of matching tasks, in the form of a list",
+    ),
+    (
+        "_show",
+        "internal",
+        "G",
+        "Shows all configuration settings in a machine-readable format",
+    ),
+    (
+        "_udas",
+        "internal",
+        "",
+        "Shows the defined UDAs for completion purposes",
+    ),
+    (
+        "_unique",
+        "internal",
+        "IGFS",
+        "Generates lists of unique attribute values",
+    ),
+    ("_urgency", "internal", "GF", "Displays the urgency measure of a task"),
+    (
+        "_uuids",
+        "internal",
+        "GRF",
+        "Shows the UUIDs of matching tasks, as a list",
+    ),
+    ("_version", "internal", "", "Shows only the Taskwarrior version number"),
+    (
+        "_zshattributes",
+        "internal",
+        "",
+        "Generates a list of all attributes, for zsh autocompletion purposes",
+    ),
+    (
+        "_zshcommands",
+        "internal",
+        "",
+        "Generates a list of all commands, for zsh autocompletion purposes",
+    ),
+    (
+        "_zshids",
+        "internal",
+        "IGRF",
+        "Shows the IDs and descriptions of matching tasks",
+    ),
+    (
+        "_zshuuids",
+        "internal",
+        "GRF",
+        "Shows the UUIDs and descriptions of matching tasks",
+    ),
     (
         "_projects",
         "internal",
@@ -397,7 +511,7 @@ pub struct Parsed {
 }
 
 fn is_connective(a: &str) -> bool {
-    matches!(a, "and" | "or" | "xor" | "not" | "!" | "(" | ")" | "&&" | "||")
+    matches!(a, "and" | "or" | "xor" | "!" | "(" | ")" | "&&" | "||")
 }
 
 /// Words that clearly belong to a filter, never a command name.
@@ -410,6 +524,7 @@ fn filter_shaped(a: &str) -> bool {
         || a.starts_with("rc.")
         || a.contains(':')
         || a.contains('=')
+        || crate::filter::is_infix_op(a)
         || a.chars().next().is_some_and(|c| c.is_ascii_digit())
 }
 
@@ -491,7 +606,8 @@ fn parse_command_inner(args: &[String], cfg: &Config, allow_default: bool) -> Re
     };
 
     for (i, a) in args.iter().enumerate() {
-        if filter_shaped(a) {
+        // A word before a comparison (`project = Work`) names an attribute, whatever commands it begins.
+        if filter_shaped(a) || args.get(i + 1).is_some_and(|n| crate::filter::is_infix_op(n)) {
             continue;
         }
         if let Some((cmd, takes_mods)) = match_command(a, cfg)? {
@@ -877,6 +993,17 @@ fn verb_of(kind: Kind) -> &'static str {
     }
 }
 
+/// What Taskwarrior says of a task `kind` had nothing to do with.
+fn passed_over(kind: Kind) -> Option<&'static str> {
+    match kind {
+        Start => Some("already started"),
+        Stop => Some("not started"),
+        Done => Some("is neither pending nor waiting"),
+        Delete => Some("is not deletable"),
+        _ => None,
+    }
+}
+
 /// How a task is named in a message: its id, or the start of its uuid when it has none.
 fn ident(ctx: &EvalCtx, f: &Facts) -> String {
     ctx.ids
@@ -1124,7 +1251,18 @@ fn modify_plan(
     all: &[Facts],
 ) -> Result<Vec<modify::Change>, String> {
     let mods = mods.ok_or("modify has nothing to change")?;
-    modify::plan(mods, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)
+    let changes = modify::plan(mods, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
+    // A task that is not finished has no end to give it, unless the same command sets its status.
+    if f.status == "pending"
+        && mods.attrs.iter().any(|(n, v)| n == "end" && !v.is_empty())
+        && !changes.iter().any(|c| matches!(c, Change::Status(_)))
+    {
+        return Err(format!(
+            "Could not modify task {}. You cannot set an end date on a pending task.",
+            ident(ctx, f)
+        ));
+    }
+    Ok(changes)
 }
 
 pub(crate) fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Operations) -> Result<(), String> {
@@ -1145,6 +1283,28 @@ pub(crate) fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Opera
             Change::RemoveTag(t) => {
                 let tag = Tag::from_str(t).map_err(|_| format!("invalid tag '{t}'"))?;
                 task.remove_tag(&tag, ops).map_err(e)?;
+            }
+            Change::SetTags(list) => {
+                let have: Vec<Tag> = task.get_tags().filter(|t| !t.is_synthetic()).collect();
+                for t in &have {
+                    if !list.iter().any(|l| l == &t.to_string()) {
+                        task.remove_tag(t, ops).map_err(e)?;
+                    }
+                }
+                for l in list {
+                    if !have.iter().any(|t| &t.to_string() == l) {
+                        let tag = Tag::from_str(l).map_err(|_| format!("invalid tag '{l}'"))?;
+                        task.add_tag(&tag, ops).map_err(e)?;
+                    }
+                }
+            }
+            Change::Status(status) => {
+                let status = match status.as_str() {
+                    "completed" => Status::Completed,
+                    "deleted" => Status::Deleted,
+                    _ => Status::Pending,
+                };
+                task.set_status(status, ops).map_err(e)?;
             }
             Change::AddDep(u) => task.add_dependency(*u, ops).map_err(e)?,
             Change::RemoveDep(u) => task.remove_dependency(*u, ops).map_err(e)?,
@@ -1789,6 +1949,15 @@ async fn add<S: Storage>(
         Ok(c) => c,
         Err(e) => return e.into(),
     };
+    // `add` leaves out an end date: a task that has not been finished has none.
+    let mut changes = changes;
+    if !log
+        && !changes
+            .iter()
+            .any(|c| matches!(c, Change::Status(st) if st != "pending"))
+    {
+        changes.retain(|c| !matches!(c, Change::Timestamp { name: "end", .. }));
+    }
     // A finished task has nothing to repeat and nothing to wait for.
     let sets = |n: &str| {
         changes.iter().any(|c| match c {
@@ -1866,8 +2035,207 @@ async fn builtin<S: Storage>(
             lines: vec!["Syncing is automatic in the web UI; there is nothing to do.".into()],
         }),
         Version => ok(CliResult::Text {
-            lines: vec![format!("taskwarrior-web (tc-core {})", env!("CARGO_PKG_VERSION"))],
+            lines: [
+                "",
+                "task 3.5.0 built for the web",
+                "Copyright (C) 2006 - 2026 T. Babej, P. Beckingham, F. Hernandez.",
+                "",
+                "Taskwarrior may be copied only under the terms of the MIT license, which may be found in the Taskwarrior source kit.",
+                "",
+                "Documentation for Taskwarrior can be found using 'man task', 'man taskrc', 'man task-color', 'man task-sync' or at https://taskwarrior.org",
+                "",
+                concat!("This is Meghnaad's engine (tc-core ", env!("CARGO_PKG_VERSION"), ")."),
+            ]
+            .map(String::from)
+            .to_vec(),
         }),
+        ListVersion => ok(CliResult::Text {
+            lines: vec!["3.5.0".into()],
+        }),
+        ListCommands | ListAliases | ListColumns | ListConfig | ListContexts | ListUdas | ListShow | ZshCommands
+        | ZshAttributes => {
+            let mut lines: Vec<String> = match kind {
+                ListCommands | ZshCommands => {
+                    let mut names: Vec<String> = COMMAND_INFO.iter().map(|i| i.0.to_owned()).collect();
+                    names.extend(report::names(cfg));
+                    names.sort_unstable();
+                    names.dedup();
+                    if kind == ZshCommands {
+                        names
+                            .into_iter()
+                            .map(|n| {
+                                let info = COMMAND_INFO.iter().find(|i| i.0 == n);
+                                let described = info.map_or_else(
+                                    || ("report", report::resolve(cfg, &n).and_then(|r| r.description).unwrap_or_default()),
+                                    |i| (i.1, i.3.to_owned()),
+                                );
+                                format!("{n}:{}:{}", described.0, described.1.replace(':', "\\:"))
+                            })
+                            .collect()
+                    } else {
+                        names
+                    }
+                }
+                ListAliases => cfg.aliases().keys().cloned().collect(),
+                ListColumns | ZshAttributes => {
+                    let mut names: Vec<String> = [
+                        "depends", "description", "due", "end", "entry", "id", "imask", "last", "mask", "modified",
+                        "parent", "priority", "project", "recur", "rtype", "scheduled", "start", "status", "tags",
+                        "template", "until", "urgency", "uuid", "wait",
+                    ]
+                    .map(String::from)
+                    .to_vec();
+                    names.extend(cfg.udas.keys().cloned());
+                    names.sort_unstable();
+                    names.dedup();
+                    if kind == ZshAttributes {
+                        names.into_iter().map(|n| format!("{n}:{n}")).collect()
+                    } else {
+                        names
+                    }
+                }
+                ListUdas => {
+                    let mut names: Vec<String> = cfg.udas.keys().cloned().collect();
+                    names.push("priority".into());
+                    names.sort_unstable();
+                    names.dedup();
+                    names
+                }
+                ListContexts => cfg.contexts.keys().cloned().collect(),
+                // ListConfig and ListShow: the settings, from what `show` lists.
+                _ => {
+                    let rows = match crate::settings::show(cfg, &[]) {
+                        CliResult::Table(t) => t.rows,
+                        _ => Vec::new(),
+                    };
+                    let rows = rows.into_iter().filter(|r| !r[0].starts_with(' '));
+                    if kind == ListShow {
+                        rows.map(|r| format!("{}={}", r[0], r[1])).collect()
+                    } else {
+                        // The settings of Taskwarrior's that mean nothing in a browser are named too.
+                        const TERMINAL: &[&str] = &[
+                            "_forcecolor", "annotation.info", "avoidlastcolumn", "column.padding", "data.location",
+                            "dateformat.edit", "debug", "default.timesheet.filter", "defaultheight", "defaultwidth",
+                            "dependency.reminder", "detection", "exit.on.missing.db", "fontunderline", "gc",
+                            "hyphenate", "indent.annotation", "indent.report", "nag", "news.version", "obfuscate",
+                            "purge.on-sync", "reserved.lines", "row.padding", "sugar", "urgency.inherit", "verbose",
+                            "xterm.title",
+                        ];
+                        let mut names: Vec<String> = rows.map(|r| r[0].clone()).collect();
+                        names.extend(TERMINAL.iter().map(|n| (*n).to_owned()));
+                        names.sort_unstable();
+                        names.dedup();
+                        names
+                    }
+                }
+            };
+            if kind == ListShow || kind == ListConfig {
+                lines.sort_unstable();
+            }
+            ok(CliResult::Text { lines })
+        }
+        ListIds | ListUuids | UrgencyList | ZshIds | ZshUuids | Unique => {
+            // `_unique` is given the attribute it lists as a word among the filter's.
+            let mut filter = p.filter.clone();
+            let attribute = (kind == Unique)
+                .then(|| {
+                    let at = filter
+                        .iter()
+                        .position(|w| !w.contains([':', '=']) && crate::filter::canonical_attr_name(w, cfg).is_some())?;
+                    let name = filter.remove(at);
+                    crate::filter::canonical_attr_name(&name, cfg).map(|(n, _)| n)
+                })
+                .flatten();
+            let (sel, _) = match selected(all, ctx, cfg, &filter) {
+                Ok(s) => s,
+                Err(e) => return e.into(),
+            };
+            let open = |f: &&&Facts| f.status != "completed" && f.status != "deleted";
+            let mut lines: Vec<String> = Vec::new();
+            match kind {
+                ListIds | ZshIds => {
+                    let mut ids: Vec<(u32, &Facts)> = sel
+                        .iter()
+                        .filter(open)
+                        .filter_map(|f| ctx.ids.get(&f.uuid).map(|id| (*id, *f)))
+                        .collect();
+                    ids.sort_unstable_by_key(|(id, _)| *id);
+                    lines = ids
+                        .into_iter()
+                        .map(|(id, f)| {
+                            if kind == ZshIds {
+                                format!("{id}:{}", f.description.replace(':', "\\:"))
+                            } else {
+                                id.to_string()
+                            }
+                        })
+                        .collect();
+                }
+                ListUuids => lines = sel.iter().map(|f| f.uuid.to_string()).collect(),
+                ZshUuids => {
+                    let mut tasks: Vec<&&Facts> = sel.iter().collect();
+                    tasks.sort_by_key(|f| std::cmp::Reverse(ctx.ids.get(&f.uuid).copied().unwrap_or(0)));
+                    lines = tasks
+                        .into_iter()
+                        .map(|f| format!("{}:{}", f.uuid, f.description.replace(':', "\\:")))
+                        .collect();
+                }
+                UrgencyList => {
+                    let mut urgent: Vec<(f64, String)> = sel
+                        .iter()
+                        .map(|f| (ctx.urgency(f), format!("task {} urgency ", ident(ctx, f))))
+                        .collect();
+                    urgent.sort_by(|a, b| a.0.total_cmp(&b.0));
+                    lines = urgent
+                        .into_iter()
+                        .map(|(u, text)| format!("{text}{}", crate::calc::fmt_real(u)))
+                        .collect();
+                }
+                _ => {
+                    let Some(name) = attribute else {
+                        return ok(CliResult::Text { lines });
+                    };
+                    let mut values: BTreeSet<String> = BTreeSet::new();
+                    for f in &sel {
+                        match name.as_str() {
+                            "project" => values.extend(f.project.clone()),
+                            "priority" => values.extend(f.priority.clone()),
+                            "status" => {
+                                values.insert(f.status.clone());
+                            }
+                            "description" => {
+                                values.insert(f.description.clone());
+                            }
+                            "recur" => values.extend(f.recur.clone()),
+                            "rtype" => values.extend(f.rtype.clone()),
+                            "mask" => values.extend(f.mask.clone()),
+                            "parent" => values.extend(f.parent.map(|u| u.to_string())),
+                            "uuid" => {
+                                values.insert(f.uuid.to_string());
+                            }
+                            "tags" => values.extend(f.tags.iter().cloned()),
+                            "depends" => values.extend(f.depends.iter().map(Uuid::to_string)),
+                            "due" | "wait" | "scheduled" | "until" | "start" | "end" | "entry" | "modified" => {
+                                let ts = match name.as_str() {
+                                    "due" => f.due,
+                                    "wait" => f.wait,
+                                    "scheduled" => f.scheduled,
+                                    "until" => f.until,
+                                    "start" => f.start,
+                                    "end" => f.end,
+                                    "entry" => f.entry,
+                                    _ => f.modified,
+                                };
+                                values.extend(ts.map(|t| crate::helpers::format_date("YMDTHNSZ", t, 0, false)));
+                            }
+                            uda => values.extend(f.extra.get(uda).cloned()),
+                        }
+                    }
+                    lines = values.into_iter().collect();
+                }
+            }
+            ok(CliResult::Text { lines })
+        }
         Help => ok(CliResult::Text { lines: help(cfg) }),
         Reports => ok(CliResult::Table(TableOut {
             footer: vec![],
@@ -1883,33 +2251,80 @@ async fn builtin<S: Storage>(
                 })
                 .collect(),
         })),
-        Udas => ok(CliResult::Table(TableOut {
-            footer: vec![],
-            highlight: vec![],
-            right: vec![],
-            title: None,
-            headers: ["Name", "Type", "Label", "Values", "Default"]
-                .map(String::from)
-                .to_vec(),
-            rows: cfg
-                .udas
-                .values()
-                .map(|u| {
-                    vec![
-                        u.name.clone(),
-                        format!("{:?}", u.ty).to_lowercase(),
-                        u.label.clone().unwrap_or_default(),
-                        u.values
-                            .iter()
-                            .filter(|v| !v.is_empty())
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join(","),
-                        u.default.clone().unwrap_or_default(),
-                    ]
+        Udas => {
+            // `priority` is a user defined attribute that every installation has, unless the taskrc redefines it.
+            let mut names: Vec<&str> = cfg.udas.keys().map(String::as_str).collect();
+            if !cfg.udas.contains_key("priority") {
+                names.push("priority");
+            }
+            names.sort_unstable();
+            let rows: Vec<Vec<String>> = names
+                .iter()
+                .map(|name| {
+                    let def = cfg.udas.get(*name);
+                    let count = all
+                        .iter()
+                        .filter(|f| {
+                            if *name == "priority" {
+                                f.priority.is_some()
+                            } else {
+                                f.extra.contains_key(*name)
+                            }
+                        })
+                        .count();
+                    let (ty, label, values, default) = match def {
+                        Some(u) => (
+                            format!("{:?}", u.ty).to_lowercase(),
+                            u.label.clone().unwrap_or_else(|| (*name).to_owned()),
+                            u.values.join(","),
+                            u.default.clone().unwrap_or_default(),
+                        ),
+                        None => ("string".into(), "Priority".into(), "H,M,L,".into(), String::new()),
+                    };
+                    vec![(*name).to_owned(), ty, label, values, default, count.to_string()]
                 })
-                .collect(),
-        })),
+                .collect();
+            let mut footer = vec![if rows.len() == 1 {
+                format!("{} UDA defined", rows.len())
+            } else {
+                format!("{} UDAs defined", rows.len())
+            }];
+            // Attributes of tasks that the taskrc does not define, and how many tasks have each.
+            let mut orphans: BTreeMap<&str, usize> = BTreeMap::new();
+            for f in all {
+                for key in f.orphan_keys(cfg) {
+                    if let Some((k, _)) = f.extra.get_key_value(&key) {
+                        *orphans.entry(k.as_str()).or_insert(0) += 1;
+                    }
+                }
+            }
+            if !orphans.is_empty() {
+                footer.push(format!(
+                    "Orphan UDA: {}",
+                    orphans
+                        .iter()
+                        .map(|(k, n)| format!("{k} ({n})"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+                // (Taskwarrior's own word for it follows the number of defined UDAs, not of orphans.)
+                footer.push(format!(
+                    "{} Orphan UDA{}",
+                    orphans.len(),
+                    if rows.len() == 1 { "" } else { "s" }
+                ));
+            }
+            ok(CliResult::Table(TableOut {
+                footer,
+                highlight: vec![],
+                right: vec![5],
+                title: None,
+                headers: ["Name", "Type", "Label", "Allowed Values", "Default", "Usage Count"]
+                    .map(String::from)
+                    .to_vec(),
+                rows,
+            }))
+        }
         // `show`, `config` and `context` are answered before the tasks are loaded (see `settings_command`).
         Commands => {
             let mut rows: Vec<Vec<String>> = COMMAND_INFO
@@ -1985,17 +2400,126 @@ async fn builtin<S: Storage>(
         }
         Show | Config | Context | Journal => error("this command is handled before the tasks are read"),
         Columns => {
-            let mut rows: Vec<Vec<String>> = COLUMN_NAMES
-                .iter()
-                .map(|n| vec![(*n).into(), "built-in".into()])
-                .collect();
-            rows.extend(cfg.udas.keys().map(|n| vec![n.clone(), "uda".into()]));
+            // What `task columns` lists: each column, its type, whether it can be set, and the formats it can be
+            // written in, the first being the default; with an example of each.
+            let sample = ctx.clock.now - 125;
+            let date_examples = || -> Vec<(&'static str, String)> {
+                vec![
+                    ("formatted", ctx.clock.format.format(sample, &ctx.clock)),
+                    ("julian", format!("{:.5}", sample as f64 / 86_400.0 + 2_440_587.5)),
+                    ("epoch", sample.to_string()),
+                    ("iso", crate::helpers::format_date("YMDTHNSZ", sample, 0, false)),
+                    ("age", crate::helpers::vague(ctx.clock.now - sample)),
+                    ("relative", crate::helpers::vague(sample - ctx.clock.now)),
+                    ("remaining", String::new()),
+                    ("countdown", crate::helpers::vague(sample - ctx.clock.now)),
+                ]
+            };
+            let uuid = "f30cb9c3-3fc0-483f-bfb2-3bf134f00694";
+            let text = "Move your clothes down on to the lower peg";
+            type Column = (&'static str, &'static str, bool, Vec<(&'static str, String)>);
+            let plain = |name, ty, modifiable, formats: &[(&'static str, &str)]| -> Column {
+                (
+                    name,
+                    ty,
+                    modifiable,
+                    formats.iter().map(|(f, e)| (*f, (*e).to_owned())).collect(),
+                )
+            };
+            let date = |name| -> Column { (name, "date", true, date_examples()) };
+            let mut start = date("start");
+            start.3.push(("active", "*".to_owned()));
+            let columns: Vec<Column> = vec![
+                plain(
+                    "depends",
+                    "string",
+                    true,
+                    &[("list", "1 2 10"), ("count", "[3]"), ("indicator", "D")],
+                ),
+                plain(
+                    "description",
+                    "string",
+                    true,
+                    &[
+                        ("combined", text),
+                        ("desc", text),
+                        ("oneline", text),
+                        ("truncated", "Move your clothes do..."),
+                        ("count", "Move your clothes down on to the lower peg [4]"),
+                        ("truncated_count", "Move your clothes do... [4]"),
+                    ],
+                ),
+                date("due"),
+                date("end"),
+                date("entry"),
+                plain("id", "numeric", false, &[("number", "123")]),
+                plain("imask", "numeric", false, &[("number", "12")]),
+                plain("last", "numeric", false, &[("number", "12")]),
+                plain("mask", "string", false, &[("default", "++++---")]),
+                date("modified"),
+                plain("parent", "string", false, &[("long", uuid), ("short", &uuid[..8])]),
+                plain("priority", "string", true, &[("default", ""), ("indicator", "")]),
+                plain(
+                    "project",
+                    "string",
+                    true,
+                    &[
+                        ("full", "home.garden"),
+                        ("parent", "home"),
+                        ("indented", "  home.garden"),
+                    ],
+                ),
+                plain("recur", "string", true, &[("duration", "weekly"), ("indicator", "R")]),
+                plain(
+                    "rtype",
+                    "string",
+                    false,
+                    &[("default", "periodic"), ("indicator", "chained")],
+                ),
+                date("scheduled"),
+                start,
+                plain("status", "string", true, &[("long", "Pending"), ("short", "P")]),
+                plain(
+                    "tags",
+                    "string",
+                    true,
+                    &[("list", "home @chore next"), ("indicator", "+"), ("count", "[2]")],
+                ),
+                plain("template", "string", false, &[("long", uuid), ("short", &uuid[..8])]),
+                date("until"),
+                plain("urgency", "numeric", false, &[("real", "4.6"), ("integer", "4")]),
+                plain("uuid", "string", false, &[("long", uuid), ("short", &uuid[..8])]),
+                date("wait"),
+                plain("<uda>", "<type>", true, &[("default", ""), ("indicator", "")]),
+            ];
+            let mut rows: Vec<Vec<String>> = Vec::new();
+            for (name, ty, modifiable, formats) in columns {
+                for (n, (format, example)) in formats.into_iter().enumerate() {
+                    let first = n == 0;
+                    rows.push(vec![
+                        if first { name.to_owned() } else { String::new() },
+                        if first { ty.to_owned() } else { String::new() },
+                        if first {
+                            (if modifiable { "Modifiable" } else { "Read Only" }).to_owned()
+                        } else {
+                            String::new()
+                        },
+                        if first { format!("{format}*") } else { format.to_owned() },
+                        example,
+                    ]);
+                }
+            }
             ok(CliResult::Table(TableOut {
                 title: None,
-                footer: vec![],
+                footer: vec![
+                    "* Means default format, and therefore optional.  For example, 'due' and 'due.formatted' are equivalent."
+                        .into(),
+                ],
                 highlight: vec![],
                 right: vec![],
-                headers: vec!["Column".into(), "Kind".into()],
+                headers: ["Columns", "Type", "Modifiable", "Supported Formats", "Example"]
+                    .map(String::from)
+                    .to_vec(),
                 rows,
             }))
         }
@@ -2366,16 +2890,31 @@ async fn builtin<S: Storage>(
                         value: serde_json::Value::Array(items),
                     })
                 }
-                Ids => ok(CliResult::Text {
-                    lines: vec![sel
-                        .iter()
-                        .filter_map(|f| ctx.ids.get(&f.uuid))
-                        .map(u32::to_string)
-                        .collect::<Vec<_>>()
-                        .join(" ")],
-                }),
+                // The numbers in order, a run of them as `3-5`: `1 3-5 7`.
+                Ids => {
+                    let mut ids: Vec<u32> = sel.iter().filter_map(|f| ctx.ids.get(&f.uuid).copied()).collect();
+                    ids.sort_unstable();
+                    let mut parts: Vec<String> = Vec::new();
+                    let mut i = 0;
+                    while i < ids.len() {
+                        let mut end = i;
+                        while end + 1 < ids.len() && ids[end] + 1 == ids[end + 1] {
+                            end += 1;
+                        }
+                        parts.push(if end > i {
+                            format!("{}-{}", ids[i], ids[end])
+                        } else {
+                            ids[i].to_string()
+                        });
+                        i = end + 1;
+                    }
+                    ok(CliResult::Text {
+                        lines: vec![parts.join(" ")],
+                    })
+                }
+                // All on one line, with a space between.
                 _ => ok(CliResult::Text {
-                    lines: sel.iter().map(|f| f.uuid.to_string()).collect(),
+                    lines: vec![sel.iter().map(|f| f.uuid.to_string()).collect::<Vec<_>>().join(" ")],
                 }),
             }
         }
@@ -2726,6 +3265,7 @@ async fn write_selected<S: Storage>(
     }
     let mut ops = Operations::new();
     let mut touched = Vec::new();
+    let mut passed: Vec<String> = Vec::new();
     if kind == Purge {
         // Only the deleted tasks, and the instances of a template that goes.
         targets.clear();
@@ -2926,7 +3466,12 @@ async fn write_selected<S: Storage>(
         match outcome {
             Err(m) => return error(m),
             Ok(true) => touched.push(f.uuid),
-            Ok(false) => {}
+            Ok(false) => {
+                // Taskwarrior says which tasks it passed over, when it did something to others.
+                if let Some(why) = passed_over(kind) {
+                    passed.push(format!("Task {} '{}' {why}.", ident(ctx, f), f.description));
+                }
+            }
         }
     }
 
@@ -2965,19 +3510,24 @@ async fn write_selected<S: Storage>(
                 ],
             });
         }
-        let why = match kind {
-            Start => "already active",
-            Stop => "not active",
-            Done => "not pending",
-            Delete => "already deleted",
-            _ => "nothing to change",
+        // Taskwarrior names each task it passed over and why, then counts none done.
+        let why = passed_over(kind);
+        let past = match kind {
+            Start => "Started",
+            Stop => "Stopped",
+            Done => "Completed",
+            Delete => "Deleted",
+            _ => "Modified",
         };
-        return ok(CliResult::Text {
-            lines: vec![format!(
-                "No changes: the task{} {why}.",
-                if sel.len() == 1 { " is" } else { "s are" }
-            )],
-        });
+        let mut lines: Vec<String> = Vec::new();
+        if let Some(why) = why {
+            lines.extend(
+                sel.iter()
+                    .map(|f| format!("Task {} '{}' {why}.", ident(ctx, f), f.description)),
+            );
+        }
+        lines.push(format!("{past} 0 tasks."));
+        return ok(CliResult::Text { lines });
     }
 
     undo.push(&ops);
@@ -2997,6 +3547,9 @@ async fn write_selected<S: Storage>(
         _ => "Modified",
     };
     let mut message = format!("{past} {}.", plural(touched.len(), "task"));
+    for n in &passed {
+        message.push_str(&format!(" {n}"));
+    }
     for n in &notes {
         message.push_str(&format!(" {n}"));
     }

@@ -211,7 +211,8 @@ fn date_cell(ts: Option<i64>, format: Option<&str>, ctx: &Ctx) -> Cell {
         Some("remaining") => String::new(),
         Some("age") => vague(ctx.now - ts),
         Some("epoch") => ts.to_string(),
-        Some("iso") => format_date("Y-M-DTH:N:SZ", ts, 0, false),
+        // Taskwarrior's `iso` is the compact form, `20261030T040000Z`.
+        Some("iso") => format_date("YMDTHNSZ", ts, 0, false),
         Some("julian") => format!("{:.5}", ts as f64 / 86_400.0 + 2_440_587.5),
         _ => ctx.written(ts, ctx.dates.report.as_ref()),
     })
@@ -487,7 +488,7 @@ mod tests {
         assert_eq!(text("due.remaining", json!({ "due": NOW - DAY })), "");
         assert_eq!(text("entry.age", json!({ "entry": NOW - 2 * DAY })), "2d");
         assert_eq!(text("due.epoch", due.clone()), (NOW + 3 * DAY).to_string());
-        assert_eq!(text("entry.iso", json!({ "entry": NOW })), "2026-10-07T12:30:00Z");
+        assert_eq!(text("entry.iso", json!({ "entry": NOW })), "20261007T123000Z");
         assert_eq!(text("entry.julian", json!({ "entry": 0 })), "2440587.50000");
         assert_eq!(text("due", json!({ "due": null })), "");
         // The date, and the time only when there is one.

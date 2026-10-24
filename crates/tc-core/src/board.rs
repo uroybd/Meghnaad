@@ -450,7 +450,7 @@ mod tests {
             { "name": " week ", "start": " sow ", "end": "eow" },
             { "name": "week", "start": "som", "end": "eom" },
             { "name": "Bad", "start": "som", "end": "eom" },
-            { "name": "late", "start": "som", "end": "someday" },
+            { "name": "late", "start": "som", "end": "soonish" },
             { "name": "open", "start": "", "end": "eom" },
             { "start": "som" } ] }]));
         let kept = &n.boards[0].ranges;

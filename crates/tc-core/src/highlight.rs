@@ -29,7 +29,7 @@ pub struct Token {
     pub kind: Hl,
 }
 
-const OPERATORS: &[&str] = &["and", "or", "xor", "not", "!"];
+const OPERATORS: &[&str] = &["and", "or", "xor", "!"];
 /// After these the rest of the line is a description, where `and` is a word and not an operator.
 const DESCRIBING: &[&str] = &["add", "log", "annotate"];
 

@@ -131,7 +131,15 @@ describe('the tasks around this one', () => {
 
     (document.querySelector('button.ask') as HTMLButtonElement).click();
     await settle();
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).args).toEqual(['status:pending', `depends.has:${me}`, 'all']);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).args).toEqual([
+      '(',
+      'status:pending',
+      'or',
+      'status:waiting',
+      ')',
+      `depends.has:${me}`,
+      'all',
+    ]);
     const line = document.querySelector('button.line') as HTMLButtonElement;
     expect(line.textContent).toContain('Send the invitations');
     line.click();

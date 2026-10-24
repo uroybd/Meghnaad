@@ -89,7 +89,7 @@ describe('where it is used', () => {
   });
   it('other column formats ignore the pattern', () => {
     expect(cell(col('due', 'epoch'), row, ctx).text).toBe(String(WED));
-    expect(cell(col('due', 'iso'), row, ctx).text).toBe('2026-10-07T12:30:00Z');
+    expect(cell(col('due', 'iso'), row, ctx).text).toBe('20261007T123000Z');
   });
   it('recurrence.indicator', () => {
     const r = { ...col('recur', 'indicator'), kind: 'string' as const };
