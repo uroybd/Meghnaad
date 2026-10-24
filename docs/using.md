@@ -329,8 +329,9 @@ what is due in the `list` report. Holidays are defined in the taskrc as `holiday
 and `.end`), in the taskrc itself or in a file it includes (`include holidays/en-US.rc`). **Settings → taskrc → Add
 holidays** makes that file for you (below). With `calendar.holidays=full` (what Add holidays turns on), the holidays are
 also listed under the months, hovering over one shows its name (several, if there are several), and on a phone a tap shows
-it under the months (tap again to hide it). `sparse` only colours the days, as `task calendar` does. A holiday that is
-also due or scheduled opens those tasks as before, with the holiday's name in its tooltip.
+it under the months (tap again to hide it). `sparse` only colours the days, as `task calendar` does. On a holiday that is also
+due or scheduled, the first tap says which holiday it is and the second opens those tasks (a day with only tasks opens them
+at once).
 
 **A due or scheduled date on a holiday is flagged**, wherever you set it, as long as the taskrc defines holidays (whatever
 `calendar.holidays` says, since that only chooses how the calendar draws them). The date is worked out first, so `eod`,

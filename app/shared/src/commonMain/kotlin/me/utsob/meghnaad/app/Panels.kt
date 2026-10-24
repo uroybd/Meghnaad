@@ -178,6 +178,9 @@ fun SummaryView(store: Store, result: SummaryResult) {
     }
 }
 
+/** The holiday a tap named: the day it is on, how to say it, and whether the day has tasks too (then the next tap opens them). */
+private class HolidayPick(val at: String, val label: String, val names: List<String>, val tasks: Boolean)
+
 /** `calendar`: months laid out the way `task calendar` prints them, drawn rather than typed (CalendarView.svelte). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -189,17 +192,19 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
 
     // A tap on a day with something due shows those tasks in the Tasks view, always in the built-in `list` report (the report in
     // focus might filter or order them differently, or not exist any more).
-    // A tap on a holiday with nothing due says which holiday it is; tapping it again hides that.
-    var picked by remember { mutableStateOf<Triple<String, String, List<String>>?>(null) }
+    // A tap on a holiday says which holiday it is. On a day that also has something due that is the first tap, and the tasks open on
+    // the next; a holiday with nothing due is shown, and hidden by the next.
+    var picked by remember { mutableStateOf<HolidayPick?>(null) }
 
     fun show(m: CalendarMonth, d: CalendarDay) {
-        if (d.due == null && !d.scheduled) {
-            val at = "${m.year}-${m.month}-${d.day}"
-            picked = if (d.holidays.isNotEmpty() && picked?.first != at) Triple(at, "${m.name} ${d.day}", d.holidays) else null
+        val tasks = d.due != null || d.scheduled
+        val day = "${m.year}-${m.month.toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
+        if (d.holidays.isNotEmpty() && picked?.at != day) {
+            picked = HolidayPick(day, "${m.name} ${d.day}", d.holidays, tasks)
             return
         }
-        val day = "${m.year}-${m.month.toString().padStart(2, '0')}-${d.day.toString().padStart(2, '0')}"
-        store.focusReport("list", listOf(if (d.due != null) "due:$day" else "scheduled:$day"))
+        picked = null
+        if (tasks) store.focusReport("list", listOf(if (d.due != null) "due:$day" else "scheduled:$day"))
     }
 
     fun describe(m: CalendarMonth, d: CalendarDay): String {
@@ -275,8 +280,8 @@ fun CalendarView(store: Store, entry: Entry?, result: CalendarResult) {
         }
         }
         }
-        picked?.let { (_, label, names) ->
-            Text("$label: ${names.joinToString(", ")}", fontSize = 13.5.sp)
+        picked?.let { p ->
+            Text("${p.label}: ${p.names.joinToString(", ")}" + if (p.tasks) " · tap the day again for what is due" else "", fontSize = 13.5.sp)
         }
         if (result.legend) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {

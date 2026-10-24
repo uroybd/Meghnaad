@@ -14,18 +14,20 @@
 
   // A click on a day with something due shows those tasks in the Tasks view, always in the built-in
   // `list` report (the report in focus might filter or order them differently, or not exist any more).
-  // A tap on a holiday with nothing due says which holiday it is (hovering does too, but a phone cannot hover).
-  let picked = $state<{ at: string; label: string; names: string[] } | null>(null);
+  // A tap on a holiday says which holiday it is (hovering does too, but a phone cannot hover). On a day that also has something
+  // due that is the first tap, and the tasks open on the next; a holiday with nothing due is shown, and hidden by the next.
+  let picked = $state<{ at: string; label: string; names: string[]; tasks: boolean } | null>(null);
 
   function show(m: CalendarMonth, d: CalendarDay) {
-    if (!d.due && !d.scheduled) {
-      const names = d.holidays ?? [];
-      const at = `${m.year}-${pad(m.month)}-${pad(d.day)}`;
-      picked = names.length && picked?.at !== at ? { at, label: `${m.name} ${d.day}`, names } : null;
+    const tasks = !!(d.due || d.scheduled);
+    const names = d.holidays ?? [];
+    const day = `${m.year}-${pad(m.month)}-${pad(d.day)}`;
+    if (names.length && picked?.at !== day) {
+      picked = { at: day, label: `${m.name} ${d.day}`, names, tasks };
       return;
     }
-    const day = `${m.year}-${pad(m.month)}-${pad(d.day)}`;
-    store.focusReport('list', [d.due ? `due:${day}` : `scheduled:${day}`]);
+    picked = null;
+    if (tasks) store.focusReport('list', [d.due ? `due:${day}` : `scheduled:${day}`]);
   }
 
   function describe(m: CalendarMonth, d: CalendarDay): string {
@@ -89,7 +91,10 @@
 </div>
 
 {#if picked}
-  <p class="picked" role="status"><strong>{picked.label}</strong>: {picked.names.join(', ')}</p>
+  <p class="picked" role="status">
+    <strong>{picked.label}</strong>: {picked.names.join(', ')}{#if picked.tasks}
+      <span class="dim"> · tap the day again for what is due</span>{/if}
+  </p>
 {/if}
 
 {#if result.legend}

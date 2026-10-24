@@ -62,12 +62,28 @@ describe('holidays on the calendar', () => {
     expect(document.querySelectorAll('td.day button')).toHaveLength(1);
   });
 
-  it('keeps a tap on a due day for its tasks', () => {
+  it('says the holiday first on a day that is also due, and opens the tasks on the next tap', () => {
     const focus = vi.spyOn(store, 'focusReport').mockImplementation(() => undefined);
     show([day(25, { holiday: true, holidays: ['Christmas Day'], due: 'due' })]);
+    const tap = () => {
+      document.querySelector<HTMLButtonElement>('td.day button')?.click();
+      flushSync();
+    };
+    tap();
+    expect(focus).not.toHaveBeenCalled();
+    expect(document.querySelector('.picked')?.textContent).toContain('Christmas Day');
+    expect(document.querySelector('.picked')?.textContent).toContain('tap the day again');
+    tap();
+    expect(focus).toHaveBeenCalledWith('list', ['due:2026-12-25']);
+    expect(document.querySelector('.picked')).toBeNull();
+  });
+
+  it('goes straight to the tasks on a due day that is no holiday', () => {
+    const focus = vi.spyOn(store, 'focusReport').mockImplementation(() => undefined);
+    show([day(24, { due: 'due' })]);
     document.querySelector<HTMLButtonElement>('td.day button')?.click();
     flushSync();
-    expect(focus).toHaveBeenCalledWith('list', ['due:2026-12-25']);
+    expect(focus).toHaveBeenCalledWith('list', ['due:2026-12-24']);
     expect(document.querySelector('.picked')).toBeNull();
   });
 });
