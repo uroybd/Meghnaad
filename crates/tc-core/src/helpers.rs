@@ -206,6 +206,18 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<String>(2)?,
             a.req::<f64>(3)?
         )),
+        "holidata_locales" => json!(crate::holidata::LOCALES
+            .iter()
+            .map(|(locale, label)| json!({ "locale": locale, "label": label }))
+            .collect::<Vec<_>>()),
+        "holidata_url" => json!(crate::holidata::url(&a.req::<String>(0)?, a.req::<i32>(1)?)),
+        "holidata_rc" => crate::holidata::build(
+            &a.req::<String>(0)?,
+            &a.req::<Vec<String>>(1)?,
+            &a.req::<Vec<String>>(2)?,
+        )
+        .to_json(),
+        "holidata_settings" => json!(crate::holidata::settings_of(&a.req::<String>(0)?)),
         "markdown" => json!(a
             .req::<Vec<String>>(0)?
             .iter()

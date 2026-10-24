@@ -276,3 +276,16 @@ async fn settings_saved_before_the_folder_existed_are_still_there() {
         .await;
     assert_eq!(api.store.list(RC_PREFIX).await.unwrap(), ["web/rc/taskrc"]);
 }
+
+// Taskwarrior's own holiday files (and the ones Add holidays makes) number their holidays `en-US1`, with a dash.
+#[tokio::test(flavor = "current_thread")]
+async fn a_holiday_file_with_locale_ids_is_read_through_an_include() {
+    let api = Api::new();
+    let data = r#"{"date":"2026-01-01","description":"New Year's Day","region":""}"#;
+    let built = tc_core::holidata::build("en-US", &[data.to_owned()], &[]);
+    api.put("/api/config/files/holidays/en-US.rc", &built.text).await;
+    api.put("/api/config/taskrc", "include holidays/en-US.rc\n").await;
+    let config: Value = serde_json::from_str(&api.ok("GET", "/api/config", "").await).unwrap();
+    assert_eq!(config["config"]["settings"]["holiday.en-US1.name"], "New Year's Day");
+    assert_eq!(config["config"]["settings"]["holiday.en-US1.date"], "20260101");
+}

@@ -277,3 +277,70 @@ describe('adding a file', () => {
     expect(document.querySelector('h3')?.textContent).toBe('holidays/de.rc');
   });
 });
+
+describe('adding holidays', () => {
+  const US = '{"date":"2026-01-01","description":"New Year\'s Day","region":""}\n';
+  const fetched = () =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(String(url).includes('/2026.json') ? new Response(US) : new Response('', { status: 404 })),
+      ),
+    );
+  const pickCountry = async (code: string) => {
+    const select = document.querySelector('.holidays select') as HTMLSelectElement;
+    select.value = code;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+  };
+
+  it('saves the holiday file, includes it in the main taskrc and turns the calendar on', async () => {
+    vi.mocked(putRcFile).mockImplementation((_p, t) => Promise.resolve(saved(t)));
+    fetched();
+    await start();
+    await pickCountry('en-US');
+    button('Find holidays').click();
+    await tick();
+    expect(document.body.textContent).toContain('1 holiday');
+    button(/Save/).click();
+    await tick();
+    vi.unstubAllGlobals();
+    const calls = vi.mocked(putRcFile).mock.calls;
+    expect(calls[0][0]).toBe('holidays/en-US.rc');
+    expect(calls[0][1]).toContain('holiday.en-US1.date=20260101');
+    expect(calls[1]).toEqual([
+      'taskrc',
+      'bulk=3\ninclude holidays/en.rc\ninclude holidays/en-US.rc\ncalendar.holidays=sparse\n',
+    ]);
+    expect(document.querySelector('h3')?.textContent).toBe('holidays/en-US.rc');
+  });
+
+  it('puts the lines in the box, not over it, when the main taskrc has unapplied edits', async () => {
+    vi.mocked(putRcFile).mockImplementation((_p, t) => Promise.resolve(saved(t)));
+    fetched();
+    await start();
+    await type(box(), 'bulk=9\n');
+    await pickCountry('en-US');
+    button('Find holidays').click();
+    await tick();
+    button(/Save/).click();
+    await tick();
+    vi.unstubAllGlobals();
+    expect(vi.mocked(putRcFile).mock.calls.map((c) => c[0])).toEqual(['holidays/en-US.rc']);
+    (document.querySelector('.file-row') as HTMLButtonElement).click();
+    await tick();
+    expect(box().value).toBe('bulk=9\ninclude holidays/en-US.rc\ncalendar.holidays=sparse\n');
+    expect(document.body.textContent).toContain('Apply there keeps them');
+  });
+
+  it('is not asked to include a file the taskrc already includes', async () => {
+    fetched();
+    await start();
+    await pickCountry('en-US');
+    // en-US is not included in the fixture; a locale whose file is can't be tested without one, so tick it off instead.
+    button('Find holidays').click();
+    await tick();
+    vi.unstubAllGlobals();
+    expect(document.body.textContent).toContain('Include it in');
+  });
+});

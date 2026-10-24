@@ -10,7 +10,9 @@
     putRcFile,
     restoreTaskrc,
   } from './api';
-  import { FileText, Folder, Link, Plus, RotateCcw, Trash2, TriangleAlert, Upload } from './icons';
+  import HolidaysForm from './HolidaysForm.svelte';
+  import { settingsOf, withSetting, type Choice } from './holidays';
+  import { CalendarDays, FileText, Folder, Link, Plus, RotateCcw, Trash2, TriangleAlert, Upload } from './icons';
   import { includeLine, listing, ROOT, uploadFiles, withInclude, type Picked } from './rcpaths';
   import { applyTheme, colourOff, expandIncludes, fetchTheme, THEMES, withColour } from './themes';
   import { store } from './store.svelte';
@@ -36,6 +38,9 @@
   let newName = $state('');
   let replace = $state(false);
   let includeIn = $state(ROOT);
+  let note = $state<string | null>(null);
+  /** A holiday file to update, when its button was pressed. */
+  let updating = $state<{ path: string; text: string } | null>(null);
 
   const draft = $derived(drafts[current]);
   const text = $derived(draft?.text ?? '');
@@ -47,6 +52,8 @@
   const others = $derived(paths.filter((p) => p !== current));
   const mine = $derived(folder?.problems.filter((p) => p.file === current) ?? []);
   const isRoot = $derived(current === ROOT);
+  const made = $derived(draft && !edited && settingsOf(draft.saved) ? draft.saved : null);
+  const calendarOn = $derived((store.config?.config?.settings?.['calendar.holidays'] ?? 'none') !== 'none');
 
   async function fetchFile(path: string): Promise<string> {
     return path === ROOT ? getTaskrcText() : getRcFile(path);
@@ -228,6 +235,32 @@
       await refreshList();
     });
   };
+
+  // Holidays made by Add holidays: the file is saved, and the main taskrc gets the lines that use it. If the main taskrc has
+  // edits that are not applied, the lines go into its box instead of over them.
+  const addHolidays = (c: Choice) =>
+    run(async () => {
+      note = null;
+      const saved = await putRcFile(c.path, c.text);
+      applied(saved, c.path);
+      if (c.include || c.calendar) {
+        const root = drafts[ROOT];
+        const before = root ? root.text : await getTaskrcText();
+        let next = before;
+        if (c.include) next = withInclude(next, ROOT, c.path);
+        if (c.calendar) next = withSetting(next, 'calendar.holidays', 'sparse');
+        if (next !== before && root && root.text !== root.saved) {
+          root.text = next;
+          note = 'The lines for the holidays are in the taskrc box; Apply there keeps them.';
+        } else if (next !== before) {
+          applied(await putRcFile(ROOT, next), ROOT);
+        }
+      }
+      result = saved;
+      await store.settingsChanged();
+      await refreshList();
+      await open(c.path, true);
+    });
 
   // `include <this file>` goes into another file's box (Apply keeps it), which is then shown.
   async function include() {
@@ -432,6 +465,7 @@
       {/if}
 
       {#if error}<p class="err" role="alert">{error}</p>{/if}
+      {#if note}<p class="dim" role="status">{note}</p>{/if}
 
       {#if skipped.length}
         <p class="warn" role="status">
@@ -490,6 +524,13 @@
             {confirmDelete ? 'Click again to delete' : 'Delete file'}
           </button>
         {/if}
+        {#if made}
+          <button
+            class="ghost btn"
+            onclick={() => (updating = { path: current, text: made })}
+            title="Fetch these holidays again, for the current years"><CalendarDays size={14} /> Update holidays</button
+          >
+        {/if}
         {#if edited}
           <button class="ghost" onclick={() => setText(draft?.saved ?? '')}>Revert edits</button>
         {/if}
@@ -498,6 +539,14 @@
       </footer>
     </div>
   </div>
+
+  <HolidaysForm
+    {busy}
+    {calendarOn}
+    again={updating}
+    included={(p) => !!folder?.files.find((f) => f.path === ROOT)?.includes.some((i) => i.found === p)}
+    onsave={addHolidays}
+  />
 </section>
 
 <style>

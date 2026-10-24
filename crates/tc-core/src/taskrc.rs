@@ -455,6 +455,11 @@ pub fn valid_ident(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// The id in `holiday.<id>.name`: Taskwarrior's own files use `en-US1`, so a dash is as good as a letter.
+fn valid_holiday_id(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// Taskwarrior accepts JSON-style `\uNNNN` escapes in values.
 fn unescape(v: &str) -> String {
     let mut out = String::with_capacity(v.len());
@@ -988,7 +993,7 @@ fn parse_one(p: &mut Parsed, raw_uda: &mut RawAttrs, raw_report: &mut RawAttrs, 
             p.config.settings.insert(name.to_owned(), unescape(value));
         }
         // `holiday.<id>.name`, and `.date` or `.start` and `.end`, for the calendar.
-        ["holiday", id, attr] if valid_ident(id) && matches!(*attr, "name" | "date" | "start" | "end") => {
+        ["holiday", id, attr] if valid_holiday_id(id) && matches!(*attr, "name" | "date" | "start" | "end") => {
             p.config.settings.insert(name.to_owned(), unescape(value));
         }
         // Taskwarrior refuses to start with anything but Sunday or Monday here.

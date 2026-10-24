@@ -323,7 +323,8 @@ in purple; overdue in red) or scheduled, and holidays. It takes Taskwarrior's ar
 `calendar 3 2027`, `calendar march 2027`) in the page's box, and has buttons for earlier, later, today, a year and
 "from the first due date". A filter-shaped word (`project:Work`) narrows which tasks colour the days. Click a day to see
 what is due in the `list` report. Holidays are defined in the taskrc as `holiday.<id>.name` and `.date` (or `.start`
-and `.end`), in the taskrc itself or in a file it includes (`include holidays/en-US.rc`).
+and `.end`), in the taskrc itself or in a file it includes (`include holidays/en-US.rc`). **Settings → taskrc → Add
+holidays** makes that file for you (below).
 
 **Burndown** charts pending, started and done over time with the net fix rate and an estimated completion date, by day,
 week, month or year. It counts as Taskwarrior does, quirks included (checked bar by bar). `burndown.cumulative=0`
@@ -518,6 +519,17 @@ settings is read (the full list, with what each does, is [taskrc support](taskrc
   files and folders (`.git`), binary files and anything over 256 KB are left out and listed, and up to 64 files or 1 MB are
   taken. It adds to what is here; tick **Replace what is here** to make the folder the whole of it (it needs a `taskrc`).
   One import is one step, so **Restore previous** undoes all of it.
+- **Add holidays** gets a country's public holidays from [Holidata](https://holidata.net) (the data behind Taskwarrior's
+  own holiday files) and saves them as `holidays/<locale>.rc` (`holidays/en-US.rc`). Choose the country (42 locales in 34
+  countries; the language too where a country has several), the years (last year to two years ahead to begin with) and
+  **Find holidays**. It shows how many it found; holidays that belong to one region only (Massachusetts' Patriots' Day,
+  a Swiss canton's) are left out unless you tick that region. **Save** writes the file and, unless they are there already,
+  adds `include holidays/<locale>.rc` and `calendar.holidays=sparse` to the main taskrc, which you can untick. If the main
+  taskrc has edits you have not applied, the lines go into its box instead and **Apply** keeps them. A file made this
+  way says which country and regions it is for, so **Update holidays**, on that file, fetches it again for the years now
+  (Holidata has data up to some years ahead and none for the far future; a year without data is named). Saving again
+  replaces that file; **Restore previous** undoes it. The fetch goes from your browser (or phone) to holidata.net, which
+  learns your IP address and the country and years you asked for, and nothing else.
 - **Include this file in…** (on any file but the main one) adds `include <path>` to the file you choose, written from that
   file, and shows it; **Apply** keeps it. **Delete file** removes one (the main taskrc can't be deleted, only emptied).
 - **`config` and the settings pages write to the main taskrc**, as `task config` does: a line that starts with `name=`

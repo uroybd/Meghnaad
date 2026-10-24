@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
@@ -61,6 +62,22 @@ class TaskrcState(private val store: Store) {
     var newName by mutableStateOf("")
     var replace by mutableStateOf(false)
     var includeIn by mutableStateOf(RC_ROOT)
+    var note by mutableStateOf<String?>(null)
+
+    // Add holidays (HolidaysForm.svelte): a country and the years, then what Holidata has, then the file it makes.
+    private fun currentYear() = civil(store.clockNow(), store.utcOffset).year
+
+    val locales by lazy { holidayLocales() }
+    var holidaysOpen by mutableStateOf(false)
+    var hLocale by mutableStateOf("")
+    var hFirst by mutableStateOf((currentYear() - 1).toString())
+    var hLast by mutableStateOf((currentYear() + 2).toString())
+    var hFetched by mutableStateOf<HolidayYears?>(null)
+    var hChosen by mutableStateOf<List<String>>(emptyList())
+    var hInclude by mutableStateOf(true)
+    var hCalendar by mutableStateOf(true)
+    var hLoading by mutableStateOf(false)
+    var hError by mutableStateOf<String?>(null)
 
     private var started = false
 
@@ -83,6 +100,15 @@ class TaskrcState(private val store: Store) {
     val others get() = paths.filter { it != current }
     val problems get() = folder?.problems?.filter { it.file == current } ?: emptyList()
     val isRoot get() = current == RC_ROOT
+
+    /** What the years' files make, with the regions chosen. */
+    val hBuilt get() = hFetched?.takeIf { hLocale.isNotEmpty() }?.let { buildHolidays(hLocale, it.bodies, hChosen) }
+    val hPath get() = holidayPath(hLocale)
+    val hIncluded get() = folder?.files?.firstOrNull { it.path == RC_ROOT }?.includes?.any { it.found == hPath } == true
+    val calendarOn get() = (store.config?.config?.settings?.get("calendar.holidays") ?: "none") != "none"
+
+    /** The file shown was made by Add holidays and has no edits: it can be fetched again. */
+    val made get() = draft?.takeIf { !it.edited }?.let { holidaySettings(it.saved) }
 
     private suspend fun refreshList() {
         try {
@@ -241,6 +267,78 @@ class TaskrcState(private val store: Store) {
         open(target)
     }
 
+    /** The country or the years changed: what was fetched is no longer what was asked for. */
+    fun holidaysAsked() {
+        hFetched = null
+        hError = null
+    }
+
+    suspend fun findHolidays(get: suspend (String) -> HttpAnswer = ::httpGet) {
+        val first = hFirst.trim().toIntOrNull()
+        val last = hLast.trim().toIntOrNull()
+        if (hLocale.isEmpty() || hLoading) return
+        if (first == null || last == null) {
+            hError = "The years are numbers, like ${currentYear()}."
+            return
+        }
+        hLoading = true
+        hError = null
+        try {
+            hFetched = fetchHolidays(hLocale, minOf(first, last), maxOf(first, last), get)
+        } catch (e: Exception) {
+            hFetched = null
+            hError = e.message ?: e.toString()
+        } finally {
+            hLoading = false
+        }
+    }
+
+    /** Fetch the holidays of the file shown again, for the years now, with the regions it was made with. */
+    suspend fun updateHolidays(get: suspend (String) -> HttpAnswer = ::httpGet) {
+        val (locale, regions) = made ?: return
+        holidaysOpen = true
+        hLocale = locale
+        hChosen = regions
+        hFetched = null
+        findHolidays(get)
+    }
+
+    fun toggleRegion(name: String, on: Boolean) {
+        hChosen = if (on) hChosen + name else hChosen - name
+    }
+
+    /**
+     * Save the holiday file, and the lines of the main taskrc that use it. If the main taskrc has edits that are not applied, the lines go
+     * into its box instead of over them.
+     */
+    suspend fun addHolidays() = run {
+        val built = hBuilt ?: return@run
+        val path = hPath
+        note = null
+        applied(store.request("PUT", rcRoute(path), built.text), path)
+        val saved = result
+        val wantInclude = hInclude && !hIncluded
+        val wantCalendar = hCalendar && !calendarOn
+        if (wantInclude || wantCalendar) {
+            val root = drafts[RC_ROOT]
+            val before = root?.text ?: store.request("GET", rcRoute(RC_ROOT))
+            var next = before
+            if (wantInclude) next = withInclude(next, RC_ROOT, path)
+            if (wantCalendar) next = withSetting(next, "calendar.holidays", "sparse")
+            if (next != before && root != null && root.edited) {
+                root.text = next
+                note = "The lines for the holidays are in the taskrc box; Apply there keeps them."
+            } else if (next != before) {
+                applied(store.request("PUT", rcRoute(RC_ROOT), next), RC_ROOT)
+            }
+        }
+        result = saved
+        hFetched = null
+        store.settingsChanged()
+        refreshList()
+        open(path, force = true)
+    }
+
     /** Add the files picked, or make them the whole folder: one step, one version to go back to. */
     suspend fun upload(picked: List<PickedFile>) {
         val up = uploadFiles(picked.map { Picked(it.name, it.relative, it.text) })
@@ -339,6 +437,8 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
             }
         }
 
+        HolidaysSection(store, st)
+
         // The file shown.
         Text(st.current, fontSize = 14.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
         st.info?.takeIf { it.includes.isNotEmpty() }?.let { i ->
@@ -390,6 +490,7 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
         }
 
         st.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
+        st.note?.let { Dim(it, size = 13) }
         if (st.skipped.isNotEmpty()) Text("Left out: ${st.skipped.joinToString(", ")}", color = extras.warn, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
         st.result?.let { r ->
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -424,8 +525,93 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
                     Text("  " + if (st.confirmDelete) "Tap again to delete" else "Delete file", fontSize = 13.sp, color = colors.error)
                 }
             }
+            if (st.made != null) {
+                TextButton(onClick = { store.go { st.updateHolidays() } }, enabled = !st.busy && !st.hLoading) {
+                    LucideIcon("calendar-days", size = 14.dp)
+                    Text("  Update holidays", fontSize = 13.sp)
+                }
+            }
             if (st.fileEdited) TextButton(onClick = { st.draft?.let { it.text = it.saved } }) { Text("Revert edits") }
             Button(onClick = { store.go { st.save() } }, enabled = !st.busy && !st.loading && st.fileEdited) { Text("Apply") }
+        }
+    }
+}
+
+/** Add holidays: a country and the years, what Holidata has for them, and the file that makes. */
+@Composable
+private fun HolidaysSection(store: Store, st: TaskrcState) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().clickable { st.holidaysOpen = !st.holidaysOpen }.padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        LucideIcon("calendar-days", size = 14.dp)
+        Text("Add holidays", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        LucideIcon(if (st.holidaysOpen) "chevron-down" else "chevron-right", size = 14.dp)
+    }
+    if (!st.holidaysOpen) return
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Dim(
+            "Public holidays for a country, from Holidata (holidata.net), the data behind Taskwarrior's own holiday files. " +
+                "They are saved as a file here and shown in the calendar.",
+            size = 12,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Dim("Country")
+            val names = st.locales.map { it.label }
+            Choice(st.locales.firstOrNull { it.locale == st.hLocale }?.label ?: "choose…", names) {
+                st.hLocale = st.locales[it].locale
+                st.holidaysAsked()
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Dim("From")
+            OutlinedTextField(
+                st.hFirst, { st.hFirst = it; st.holidaysAsked() }, Modifier.width(96.dp), singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+            Dim("to")
+            OutlinedTextField(
+                st.hLast, { st.hLast = it; st.holidaysAsked() }, Modifier.width(96.dp), singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+        }
+        OutlinedButton(enabled = st.hLocale.isNotEmpty() && !st.hLoading && !st.busy, onClick = { store.go { st.findHolidays() } }) {
+            Text(if (st.hLoading) "Fetching…" else "Find holidays")
+        }
+        st.hError?.let { Text(it, color = colors.error, fontSize = 13.sp) }
+        val built = st.hBuilt
+        val fetched = st.hFetched
+        if (built != null && fetched != null) {
+            Text(
+                "${built.count} holiday${if (built.count == 1) "" else "s"}" +
+                    (if (fetched.missing.isNotEmpty()) " (Holidata has none for ${fetched.missing.joinToString(", ")})" else "") + ".",
+                fontSize = 13.sp,
+            )
+            if (built.regions.isNotEmpty()) {
+                Dim("Also the holidays of", size = 12)
+                for (r in built.regions) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = r in st.hChosen, onCheckedChange = { st.toggleRegion(r, it) })
+                        Text(r, fontSize = 13.sp)
+                    }
+                }
+            }
+            if (!st.hIncluded) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = st.hInclude, onCheckedChange = { st.hInclude = it })
+                    Text("Include it in taskrc", fontSize = 13.sp)
+                }
+            }
+            if (!st.calendarOn) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = st.hCalendar, onCheckedChange = { st.hCalendar = it })
+                    Text("Show holidays in the calendar (calendar.holidays=sparse)", fontSize = 13.sp)
+                }
+            }
+            Button(enabled = !st.busy && built.count > 0, onClick = { store.go { st.addHolidays() } }) { Text("Save ${st.hPath}") }
+            Dim("Replaces that file if it is there; Restore previous undoes it.", size = 12)
         }
     }
 }

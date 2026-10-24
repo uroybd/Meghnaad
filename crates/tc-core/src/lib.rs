@@ -18,6 +18,7 @@ pub mod guard;
 pub mod helpers;
 pub mod highlight;
 pub mod history;
+pub mod holidata;
 pub mod hooks;
 pub mod import;
 pub mod live;

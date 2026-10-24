@@ -104,4 +104,64 @@ class TaskrcStateTest {
         assertTrue("holidays/de.rc" in st.paths, st.paths.toString())
         assertEquals(emptyList(), st.folder?.problems)
     }
+
+    private val newYear = """{"date":"2026-01-01","description":"New Year's Day","region":""}
+{"date":"2026-04-20","description":"Patriots' Day","region":"MA"}
+"""
+
+    @Test
+    fun holidaysFromHolidataAreSavedIncludedAndShown() = runBlocking {
+        if (!library()) return@runBlocking
+        val store = store()
+        store.loadConfig()
+        val st = TaskrcState(store)
+        st.load()
+        st.text = "bulk=3\n"
+        st.save()
+
+        val asked = mutableListOf<String>()
+        val get: suspend (String) -> HttpAnswer = { url ->
+            asked += url
+            if ("/2026.json" in url) HttpAnswer(200, newYear) else HttpAnswer(404, "")
+        }
+        st.hLocale = "en-US"
+        st.hFirst = "2026"
+        st.hLast = "2027"
+        st.findHolidays(get)
+        assertEquals(null, st.hError, st.hError)
+        assertEquals(listOf("https://holidata.net/en-US/2026.json", "https://holidata.net/en-US/2027.json"), asked)
+        assertEquals(listOf(2027), st.hFetched?.missing)
+        // National holidays only until a region is asked for.
+        assertEquals(1, st.hBuilt?.count)
+        assertEquals(listOf("MA"), st.hBuilt?.regions)
+
+        st.addHolidays()
+        assertEquals(null, st.error, st.error)
+        assertEquals("holidays/en-US.rc", st.current)
+        assertTrue("holiday.en-US1.date=20260101" in st.text, st.text)
+        // The main taskrc includes it and the calendar shows holidays, and the settings are in force.
+        st.open(RC_ROOT, force = true)
+        assertEquals("bulk=3\ninclude holidays/en-US.rc\ncalendar.holidays=sparse\n", st.text)
+        assertEquals("New Year's Day", store.config?.config?.settings?.get("holiday.en-US1.name"))
+        assertEquals(emptyList(), st.folder?.problems)
+
+        // The file knows what it was made for, so it can be fetched again.
+        st.open("holidays/en-US.rc", force = true)
+        assertEquals("en-US", st.made?.first)
+        st.hChosen = emptyList()
+        st.updateHolidays(get)
+        assertEquals("en-US", st.hLocale)
+        assertEquals(1, st.hBuilt?.count)
+    }
+
+    @Test
+    fun holidataIsNotReachedForAnythingButALocale() = runBlocking {
+        if (!library()) return@runBlocking
+        val failure = runCatching { fetchHolidays("../x", 2026, 2026) { error("must not be asked") } }.exceptionOrNull()
+        assertTrue(failure?.message?.contains("not a year Holidata can have") == true, failure?.message)
+        val offline = runCatching { fetchHolidays("en-US", 2026, 2026) { throw java.io.IOException("down") } }.exceptionOrNull()
+        assertTrue(offline?.message?.contains("Couldn't reach holidata.net") == true, offline?.message)
+        assertEquals("a=1\n", withSetting("", "a", "1"))
+        assertEquals("x=2\nb=1\n", withSetting("x=1\nb=1\n", "x", "2"))
+    }
 }
