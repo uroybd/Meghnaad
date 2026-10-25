@@ -77,31 +77,38 @@ class CalendarWidgetService : RemoteViewsService() {
             val row = RemoteViews(context.packageName, R.layout.widget_calendar_day)
             if (cell.day == null) {
                 row.setTextViewText(R.id.day, "")
+                for (mark in listOf(R.id.today, R.id.selected, R.id.dot)) row.setViewVisibility(mark, android.view.View.GONE)
                 return row
             }
             row.setTextViewText(R.id.day, cell.day.toString())
             palette.setTextColor(row, R.id.day, if (cell.today) Palette.WHITE else Palette.TEXT)
+            // Everything is set every time: the home screen draws a cell over the views of another day, and what is not set stays
+            // as it was.
             // A day of another month is quieter by being fainter, which is the same in both themes.
-            if (cell.dim && !cell.today) row.setFloat(R.id.day, "setAlpha", 0.55f)
-            if (cell.today) {
-                row.setViewVisibility(R.id.today, android.view.View.VISIBLE)
-                palette.setTint(row, R.id.today, Palette.ACCENT)
-            } else if (cell.date == selected) {
-                // The day whose tasks are shown, when it is not today (which is marked already).
-                row.setViewVisibility(R.id.selected, android.view.View.VISIBLE)
-                palette.setTint(row, R.id.selected, Palette.ACCENT)
-            }
+            row.setFloat(R.id.day, "setAlpha", if (cell.dim && !cell.today) 0.55f else 1f)
+            row.setViewVisibility(R.id.today, if (cell.today) android.view.View.VISIBLE else android.view.View.GONE)
+            // The day whose tasks are shown, when it is not today (which is marked already).
+            val picked = !cell.today && cell.date == selected
+            row.setViewVisibility(R.id.selected, if (picked) android.view.View.VISIBLE else android.view.View.GONE)
+            if (cell.today) palette.setTint(row, R.id.today, Palette.ACCENT)
+            else if (picked) palette.setTint(row, R.id.selected, Palette.ACCENT)
             val dot = when (cell.due) {
                 "overdue" -> Palette.OVERDUE
                 "due-today" -> Palette.DUE_TODAY
                 "due" -> Palette.DUE
                 else -> if (cell.scheduled) Palette.DIM else null
             }
+            row.setViewVisibility(R.id.dot, if (dot != null) android.view.View.VISIBLE else android.view.View.GONE)
             if (dot != null) {
-                row.setViewVisibility(R.id.dot, android.view.View.VISIBLE)
                 // The dots that differ between the themes are drawables with their colour from a resource (see Palette.set).
-                if (!cell.today && dot === Palette.OVERDUE) row.setImageViewResource(R.id.dot, R.drawable.circle_overdue)
-                else if (!cell.today && dot === Palette.DIM) row.setImageViewResource(R.id.dot, R.drawable.circle_dim)
+                row.setImageViewResource(
+                    R.id.dot,
+                    when {
+                        !cell.today && dot === Palette.OVERDUE -> R.drawable.circle_overdue
+                        !cell.today && dot === Palette.DIM -> R.drawable.circle_dim
+                        else -> R.drawable.circle_filled
+                    },
+                )
                 palette.setTint(row, R.id.dot, if (cell.today) Palette.WHITE else dot)
             }
             // A tap selects the day (the widget answers it); the app opens from the day's own pane.

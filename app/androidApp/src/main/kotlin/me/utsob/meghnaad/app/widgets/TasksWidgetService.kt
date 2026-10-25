@@ -55,14 +55,17 @@ class TasksWidgetService : RemoteViewsService() {
             val row = RemoteViews(context.packageName, R.layout.widget_task_item)
             val palette = Palette(context, WidgetPrefs.look(context, widgetId))
             row.setTextViewText(R.id.description, task.description)
-            // An overdue task's line is the red one, which takes its colour from a resource (see Palette.set).
+            // An overdue task's line is the red one, which takes its colour from a resource (see Palette.set). Both lines are set
+            // every time: the home screen draws a row over the views of another task, and what is not set stays as it was.
             val line = if (task.overdue) R.id.detail_overdue else R.id.detail
+            val other = if (task.overdue) R.id.detail else R.id.detail_overdue
             row.setTextViewText(line, task.detail)
+            row.setTextViewText(other, "")
             palette.setTextColor(row, R.id.description, Palette.TEXT)
             palette.setTextColor(row, line, if (task.overdue) Palette.OVERDUE else Palette.DIM)
             palette.setTint(row, R.id.done, Palette.DIM)
             row.setViewVisibility(line, if (task.detail.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
-            if (task.overdue) row.setViewVisibility(R.id.detail, android.view.View.GONE)
+            row.setViewVisibility(other, android.view.View.GONE)
             row.setOnClickFillInIntent(R.id.done, fill("done", task.uuid))
             row.setOnClickFillInIntent(R.id.text, fill("open", task.uuid))
             return row
