@@ -33,7 +33,13 @@ pub fn defaults() -> BTreeMap<String, String> {
     let mut d: BTreeMap<String, String> =
         crate::ordered::map_of(SETTING_DEFAULTS.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
     for (k, v) in crate::urgency::defaults() {
-        d.insert(k, format!("{v:?}"));
+        // Taskwarrior writes the maximum age as the whole number it is, and every coefficient with its decimal.
+        let text = if k == crate::urgency_settings::AGE_MAX {
+            format!("{v}")
+        } else {
+            format!("{v:?}")
+        };
+        d.insert(k, text);
     }
     for name in crate::report::BUILTIN_NAMES {
         let Some(r) = crate::report::resolve(&Config::default(), name) else {

@@ -156,14 +156,139 @@ fn iso_date(s: &[u8]) -> Option<usize> {
                 n += 1;
             }
         }
-        return is_boundary(&s[n..]).then_some(n);
+        return (!digits(n, 1)).then_some(n);
     }
     // 20261225T100000(Z)
     if digits(0, 8) && s.get(8) == Some(&b'T') && digits(9, 6) {
         let n = if s.get(15) == Some(&b'Z') { 16 } else { 15 };
-        return is_boundary(&s[n..]).then_some(n);
+        return (!digits(n, 1)).then_some(n);
     }
     None
+}
+
+/// The other ISO date forms at the start of `s`: a week (`2023-W01`, `2023-W01-3`), a day of the year (`2023-100`) and a
+/// month (`2023-10`), and the length. `valid` says whether the text is a real date, as `2023-366` is not.
+fn iso_date_other(s: &[u8], valid: &dyn Fn(&str) -> bool) -> Option<usize> {
+    let digits = |from: usize, n: usize| s.get(from..from + n).is_some_and(|p| p.iter().all(u8::is_ascii_digit));
+    if !(digits(0, 4) && s.get(4) == Some(&b'-')) {
+        return None;
+    }
+    // Only a digit after a week or a day of the year spoils it, and a dash or a digit after a month.
+    let mut candidates: Vec<(usize, bool)> = Vec::new();
+    if s.get(5) == Some(&b'W') && digits(6, 2) {
+        if s.get(8) == Some(&b'-') && digits(9, 1) {
+            candidates.push((10, false));
+        }
+        candidates.push((8, false));
+    } else if digits(5, 3) {
+        candidates.push((8, false));
+    } else if digits(5, 2) {
+        candidates.push((7, true));
+    }
+    candidates
+        .into_iter()
+        .find(|&(n, month)| {
+            !digits(n, 1) && !(month && s.get(n) == Some(&b'-')) && std::str::from_utf8(&s[..n]).is_ok_and(valid)
+        })
+        .map(|(n, _)| n)
+}
+
+/// A set of numbers at the start of `s` (`5-3`, `1,2`, `1-3,5`): integers joined by `-` and `,`, two or more of them,
+/// as Taskwarrior's lexer reads one before it reads a number. It is a word to `calc`, printed as typed. Its length.
+fn set(s: &[u8]) -> Option<usize> {
+    // An integer has no leading zero unless it is zero.
+    let integer = |i: usize| -> Option<usize> {
+        let n = s.get(i..)?.iter().take_while(|c| c.is_ascii_digit()).count();
+        (n > 0 && !(s[i] == b'0' && n > 1)).then_some(n)
+    };
+    let (mut i, mut count) = (0, 0);
+    loop {
+        i += integer(i)?;
+        count += 1;
+        if s.get(i) == Some(&b'-') {
+            i += 1 + integer(i + 1)?;
+            count += 1;
+        }
+        if s.get(i) == Some(&b',') {
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    let paren = |c: Option<&u8>| matches!(c, Some(b'(' | b')'));
+    let ends = s.get(i).is_none_or(u8::is_ascii_whitespace)
+        || paren(s.get(i))
+        || s.get(i + 1).is_none()
+        || paren(s.get(i + 1));
+    (count > 1 && ends).then_some(i)
+}
+
+/// `/pattern/` or `/from/to/g` at the start of `s`, up to a space or the end: Taskwarrior's lexer reads them as one
+/// word, and `calc` has no use for them. Its length.
+fn slash_word(s: &[u8]) -> Option<usize> {
+    if s.first() != Some(&b'/') {
+        return None;
+    }
+    let mut slashes = Vec::new();
+    let mut i = 1;
+    while i < s.len() {
+        match s[i] {
+            b'\\' => i += 1,
+            b'/' => slashes.push(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    let ends = |at: usize| s.get(at).is_none_or(u8::is_ascii_whitespace);
+    let first = *slashes.first()?;
+    // A pattern ends at its closing slash; a substitution has a second one, and may be followed by a `g`.
+    if ends(first + 1) {
+        return Some(first + 1);
+    }
+    let second = *slashes.get(1)?;
+    let end = if s.get(second + 1) == Some(&b'g') {
+        second + 2
+    } else {
+        second + 1
+    };
+    ends(end).then_some(end)
+}
+
+/// A number at the start of `s` the way Taskwarrior's lexer reads one: digits (no leading zero before another digit), an
+/// optional fraction (`5.` too) and exponent, and then a space, an operator or the end. Its length and whether it is a
+/// real (it has a fraction or an exponent).
+fn number(s: &[u8]) -> Option<(usize, bool)> {
+    let digit = |i: usize| s.get(i).is_some_and(u8::is_ascii_digit);
+    if !digit(0) || (s[0] == b'0' && digit(1)) {
+        return None;
+    }
+    let mut j = 1;
+    while digit(j) {
+        j += 1;
+    }
+    let mut real = false;
+    if s.get(j) == Some(&b'.') {
+        real = true;
+        j += 1;
+        while digit(j) {
+            j += 1;
+        }
+    }
+    if matches!(s.get(j), Some(b'e' | b'E')) {
+        // The `e`, its sign and digits are taken whether or not there are digits (`1e` reads as 1).
+        real = true;
+        j += 1;
+        if matches!(s.get(j), Some(b'+' | b'-')) {
+            j += 1;
+        }
+        while digit(j) {
+            j += 1;
+        }
+    }
+    let ends = s
+        .get(j)
+        .is_none_or(|c| c.is_ascii_whitespace() || b"+-*/()<>^!%=~".contains(c));
+    ends.then_some((j, real))
 }
 
 /// An ISO 8601 duration (`P1D`, `PT90M`, `P1Y2M3DT4H5M6S`) at the start of `s`, in seconds.
@@ -214,7 +339,21 @@ fn dom_ref(s: &[u8]) -> Option<usize> {
     }
     // Whatever looks like `<hex>.<word>` is one word; whether it names a task is for the lookup to
     // say (a uuid needs eight characters), and when it doesn't it is just text.
-    let is_ref = j > 0 && s.get(j) == Some(&b'.') && s.get(j + 1).is_some_and(u8::is_ascii_alphabetic);
+    // What comes first is a task number or the start of a uuid (`xxxxxxxx-xxxx-…`, so `2023-01-01` is neither).
+    let head = &s[..j];
+    let uuid = head.len() >= 8
+        && head.len() <= 36
+        && head.iter().enumerate().all(|(i, c)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                *c == b'-'
+            } else {
+                c.is_ascii_hexdigit()
+            }
+        });
+    let is_ref = j > 0
+        && (head.iter().all(u8::is_ascii_digit) || uuid)
+        && s.get(j) == Some(&b'.')
+        && s.get(j + 1).is_some_and(u8::is_ascii_alphabetic);
     if !is_ref {
         return None;
     }
@@ -225,7 +364,7 @@ fn dom_ref(s: &[u8]) -> Option<usize> {
     Some(end)
 }
 
-fn tokenize(src: &str) -> Vec<Tok> {
+fn tokenize(src: &str, clock: &Clock) -> Vec<Tok> {
     let b = src.as_bytes();
     let mut out: Vec<Tok> = Vec::new();
     let mut i = 0;
@@ -257,25 +396,44 @@ fn tokenize(src: &str) -> Vec<Tok> {
             i += n;
             continue;
         }
+        if let Some(n) = iso_date_other(rest, &|t| parse_date(t, clock).is_some()) {
+            out.push((src[i..i + n].to_owned(), T::Date));
+            i += n;
+            continue;
+        }
         if let Some((n, _)) = iso_duration(rest) {
             out.push((src[i..i + n].to_owned(), T::Dur));
             i += n;
             continue;
         }
-        if c.is_ascii_digit() || (c == b'.' && rest.get(1).is_some_and(u8::is_ascii_digit)) {
+        if let Some(n) = slash_word(rest) {
+            out.push((src[i..i + n].to_owned(), T::Ident));
+            i += n;
+            continue;
+        }
+        // `--` is a word of its own, ahead of the minus.
+        if rest.starts_with(b"--") {
+            out.push(("--".to_owned(), T::Ident));
+            i += 2;
+            continue;
+        }
+        if c.is_ascii_digit() {
+            if let Some(n) = set(rest) {
+                out.push((src[i..i + n].to_owned(), T::Ident));
+                i += n;
+                continue;
+            }
+            // A number and a unit, with or without a space between, is a duration.
             let mut j = 0;
             while j < rest.len() && rest[j].is_ascii_digit() {
                 j += 1;
             }
-            let mut real = false;
             if rest.get(j) == Some(&b'.') && rest.get(j + 1).is_some_and(u8::is_ascii_digit) {
-                real = true;
                 j += 1;
                 while j < rest.len() && rest[j].is_ascii_digit() {
                     j += 1;
                 }
             }
-            // A number and a unit, with or without a space between, is a duration.
             let mut k = j;
             while rest.get(k) == Some(&b' ') {
                 k += 1;
@@ -290,11 +448,26 @@ fn tokenize(src: &str) -> Vec<Tok> {
                 i += end;
                 continue;
             }
-            let text = &src[i..i + j];
-            // Nine digits or more are an epoch time (Taskwarrior reads them as dates).
-            let kind = if !real && j >= 9 { T::Date } else { T::Number };
-            out.push((text.to_owned(), kind));
-            i += j;
+            if let Some((n, real)) = number(rest) {
+                let text = &src[i..i + n];
+                // A whole number between 1980 and the year 9999 is an epoch time (Taskwarrior reads it as a date).
+                let epoch = !real
+                    && text
+                        .parse::<i64>()
+                        .is_ok_and(|v| (315_532_800..253_402_293_599).contains(&v));
+                out.push((text.to_owned(), if epoch { T::Date } else { T::Number }));
+                i += n;
+                continue;
+            }
+        }
+        // Not a number after all (`3x`, `1,5`, `1.2.3`, `007`, `.5`): a word, up to a space, a parenthesis or an operator.
+        if c.is_ascii_digit() || c == b'.' {
+            let n = rest
+                .iter()
+                .position(|x| x.is_ascii_whitespace() || b"+-*/()<>^!%=~".contains(x))
+                .unwrap_or(rest.len());
+            out.push((src[i..i + n].to_owned(), T::Ident));
+            i += n;
             continue;
         }
         // Operators, longest first.
@@ -312,6 +485,10 @@ fn tokenize(src: &str) -> Vec<Tok> {
             let mut j = 0;
             while j < rest.len() && (rest[j].is_ascii_alphanumeric() || rest[j] == b'_' || rest[j] == b'.') {
                 j += 1;
+            }
+            // A named date ends at its dot: `tomorrow.year` is the date and a word `.year`, which is no expression.
+            if let Some((date, _)) = src[i..i + j].split_once('.').filter(|(d, _)| NAMED_DATES.contains(d)) {
+                j = date.len();
             }
             let word = &src[i..i + j];
             let kind = match word {
@@ -640,13 +817,12 @@ fn literal(tok: &Tok, clock: &Clock, dom: DomFn) -> Result<V, String> {
         T::Op => return Err("Operator expected.".into()),
         T::Number => {
             if text.bytes().all(|c| c.is_ascii_digit()) {
-                V::Int(
-                    text.parse()
-                        .map_err(|_| "The expression could not be evaluated.".to_owned())?,
-                )
+                // Too big for 64 bits stays at the largest, as in Taskwarrior.
+                V::Int(text.parse().unwrap_or(i64::MAX))
             } else {
                 V::Real(
                     text.parse()
+                        .or_else(|_| text.trim_end_matches(['e', 'E', '+', '-']).parse())
                         .map_err(|_| "The expression could not be evaluated.".to_owned())?,
                 )
             }
@@ -962,6 +1138,25 @@ fn pow(l: &V, r: &V) -> R {
     })
 }
 
+/// Taskwarrior's `trivial` values (zero, empty, no date): ordering one against a string, a date or a duration is false
+/// whichever way, so a task with no `due` is neither before nor after anything. Two equal strings are still equal.
+fn spoils_order(l: &V, r: &V) -> bool {
+    let trivial = |v: &V| match v {
+        V::Int(i) => *i == 0,
+        V::Real(x) => *x == 0.0,
+        V::Str(t) => dequote(t).is_empty(),
+        V::Date(d) => *d == 0,
+        V::Dur(d) => *d == 0,
+        V::Bool(_) => false,
+    };
+    let checked = match (l, r) {
+        (V::Str(a), V::Str(b)) => dequote(a) != dequote(b),
+        (V::Str(_), V::Date(_) | V::Dur(_)) | (V::Date(_) | V::Dur(_), _) => true,
+        _ => false,
+    };
+    checked && (trivial(l) || trivial(r))
+}
+
 /// `=`: a string matches by prefix; anything else is equality.
 fn partial_equal(l: &V, r: &V, clock: &Clock) -> bool {
     if let (V::Str(a), V::Str(b)) = (l, r) {
@@ -1003,14 +1198,17 @@ fn run_postfix(tokens: &[Tok], clock: &Clock, dom: DomFn) -> Result<V, String> {
                 let l = stack.pop().ok_or_else(could_not)?;
                 let ord =
                     |want: &[std::cmp::Ordering]| V::Bool(compare(&l, &r, clock).is_some_and(|o| want.contains(&o)));
+                let before = |want: &[std::cmp::Ordering]| {
+                    V::Bool(!spoils_order(&l, &r) && compare(&l, &r, clock).is_some_and(|o| want.contains(&o)))
+                };
                 stack.push(match op {
                     "and" | "&&" => V::Bool(truthy(&l) && truthy(&r)),
                     "or" | "||" => V::Bool(truthy(&l) || truthy(&r)),
                     "xor" => V::Bool(truthy(&l) != truthy(&r)),
-                    "<" => ord(&[Less]),
-                    "<=" => ord(&[Less, Equal]),
-                    ">" => ord(&[Greater]),
-                    ">=" => ord(&[Greater, Equal]),
+                    "<" => before(&[Less]),
+                    "<=" => before(&[Less, Equal]),
+                    ">" => before(&[Greater]),
+                    ">=" => before(&[Greater, Equal]),
                     "==" => ord(&[Equal]),
                     "!==" => V::Bool(compare(&l, &r, clock) != Some(Equal)),
                     "=" => V::Bool(partial_equal(&l, &r, clock)),
@@ -1033,8 +1231,29 @@ fn run_postfix(tokens: &[Tok], clock: &Clock, dom: DomFn) -> Result<V, String> {
 }
 
 /// Evaluate `expression`, read as infix (`1 + 2`) or, with `postfix`, as `1 2 +`.
+/// The words an expression is made of, as `calc` reads them: `urgency*2>10` is `urgency`, `*`, `2`, `>` and `10`.
+pub fn words(expression: &str, clock: &Clock) -> Vec<String> {
+    tokenize(expression, clock).into_iter().map(|(text, _)| text).collect()
+}
+
+/// An expression worked out ahead of time (a filter's `urgency * 2 > 10`), to be run against each task.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Compiled(Vec<Tok>);
+
+/// Read an infix expression for [`truth`]; its errors are the ones `calc` gives.
+pub fn compile(expression: &str, clock: &Clock) -> Result<Compiled, String> {
+    let mut tokens = tokenize(expression, clock);
+    Parse(&mut tokens, 0).logical();
+    Ok(Compiled(to_postfix(tokens)?))
+}
+
+/// Whether the expression comes to true, with `dom` giving what a name stands for (a task's attributes).
+pub fn truth(code: &Compiled, clock: &Clock, dom: DomFn) -> Result<bool, String> {
+    run_postfix(&code.0, clock, dom).map(|v| truthy(&v))
+}
+
 pub fn calc(expression: &str, postfix: bool, clock: &Clock, dom: DomFn) -> Result<String, String> {
-    let mut tokens = tokenize(expression);
+    let mut tokens = tokenize(expression, clock);
     if !postfix {
         Parse(&mut tokens, 0).logical();
         tokens = to_postfix(tokens)?;
@@ -1096,6 +1315,13 @@ impl DomSource<'_> {
         self.general(name)
     }
 
+    /// What a name stands for in a filter's expression: an attribute of the task (`due`, `urgency`, `tags.work`,
+    /// `due.year`), or nothing.
+    pub fn attribute(&self, t: &Facts, name: &str) -> Option<Dom> {
+        let parts: Vec<&str> = name.split('.').collect();
+        self.of_task(t, &parts)
+    }
+
     /// Settings, the program and the system: nothing to do with a task.
     fn general(&self, name: &str) -> Option<Dom> {
         let text = |s: &str| Some(Dom::Text(s.to_owned()));
@@ -1104,15 +1330,8 @@ impl DomSource<'_> {
             let held = crate::taskrc::render(self.cfg);
             let found = held
                 .lines()
-                .find_map(|l| l.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| v));
-            return found
-                .or_else(|| {
-                    crate::taskrc::SETTING_DEFAULTS
-                        .iter()
-                        .find(|(k, _)| *k == key)
-                        .map(|(_, v)| *v)
-                })
-                .and_then(text);
+                .find_map(|l| l.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| v.to_owned()));
+            return found.or_else(|| crate::settings::defaults().remove(key)).map(Dom::Text);
         }
         match name {
             "tw.syncneeded" => Some(Dom::Int(i64::from(self.sync_needed))),
@@ -1139,7 +1358,9 @@ impl DomSource<'_> {
         let canonical = |name: &str| -> Option<(String, bool)> {
             crate::filter::canonical_attr_name(name, self.cfg)
                 .filter(|(n, _)| n == name)
-                .or_else(|| matches!(name, "mask" | "imask" | "rtype").then(|| (name.to_owned(), false)))
+                .or_else(|| {
+                    matches!(name, "mask" | "imask" | "rtype" | "last" | "template").then(|| (name.to_owned(), false))
+                })
         };
         if let (1 | 2, Some((attr, is_uda))) = (rest.len(), canonical(rest[0])) {
             if rest.len() == 1 {
@@ -1169,6 +1390,10 @@ impl DomSource<'_> {
                     ("depends", _) => Dom::Text(t.depends.iter().map(Uuid::to_string).collect::<Vec<_>>().join(",")),
                     ("mask", _) => Dom::Text(t.mask.clone().unwrap_or_default()),
                     ("imask", _) => Dom::Real(t.imask.map_or(0.0, |i| i as f64)),
+                    ("rtype", _) => Dom::Text(t.rtype.clone().unwrap_or_default()),
+                    // The older names of a recurrence's bookkeeping, which are in the task only when something wrote them.
+                    ("last", _) => Dom::Int(t.extra.get("last").and_then(|v| v.parse().ok()).unwrap_or(0)),
+                    ("template", _) => Dom::Text(t.extra.get("template").cloned().unwrap_or_default()),
                     (name, true) => {
                         let Some(raw) = t.extra.get(name) else {
                             return Some(Dom::Text(String::new()));
@@ -1445,6 +1670,84 @@ mod tests {
             ("now - now", "PT0S"),
             ("today - today", "PT0S"),
             ("now > 2000-01-01", "true"),
+            // Weeks, days of the year and months are dates too.
+            ("2023-W01-3", "2023-01-04T00:00:00"),
+            ("2023-100", "2023-04-10T00:00:00"),
+            ("2023-10", "2023-10-01T00:00:00"),
+            ("2023-10 + 1d", "2023-10-02T00:00:00"),
+        ] {
+            assert_eq!(c(e), want, "{e}");
+        }
+    }
+
+    #[test]
+    fn sets_separators_and_patterns_are_words_to_the_lexer() {
+        for (e, want) in [
+            // Integers joined by `-` or `,` are one word when nothing else touches them.
+            ("5-3", "5-3"),
+            ("1,2", "1,2"),
+            ("1-3,5", "1-3,5"),
+            ("5 - 3", "2"),
+            ("5 -3", "2"),
+            ("5-3 + 1", "5-31"),
+            ("4+5-3", "45-3"),
+            ("10-2-1", "! Cannot subtract strings"),
+            ("2023-366", "2023-366"),
+            // `--` is a word, `/ 10 /` a pattern: each is a value with no operator between.
+            ("1 -- 3", "! The value is not an expression."),
+            ("--3", "! The value is not an expression."),
+            ("100 / 10 / 5", "! The value is not an expression."),
+            ("100/10/5", "2"),
+            ("8 / 2 + 1", "5"),
+            // The exponent takes its sign even with no digits after it.
+            ("1e", "1"),
+            ("1e3x", "1e3x"),
+            // A named date ends at its dot, and a date at what is not a digit.
+            ("tomorrow.year", "! The value is not an expression."),
+            ("2023-01-01.year", "! The value is not an expression."),
+            ("2023-10-05T", "! The value is not an expression."),
+            ("2023-10-5", "! Cannot subtract strings"),
+        ] {
+            assert_eq!(c(e), want, "{e}");
+        }
+    }
+
+    #[test]
+    fn ordering_against_nothing_is_false() {
+        for (e, want) in [
+            ("0s < 1h", "false"),
+            ("0s >= 0s", "false"),
+            ("1h > 0s", "false"),
+            ("0s == 0s", "true"),
+            ("'' < 'a'", "false"),
+            ("'' <= ''", "true"),
+            ("'a' < 'b'", "true"),
+        ] {
+            assert_eq!(c(e), want, "{e}");
+        }
+    }
+
+    #[test]
+    fn numbers_are_read_as_taskwarriors_lexer_reads_them() {
+        for (e, want) in [
+            ("1e3", "1000"),
+            ("1.5e2 + 1", "151"),
+            ("1e-3", "0.001"),
+            ("1e18", "1e+18"),
+            ("5.", "5"),
+            ("5. + 1", "6"),
+            // Too big for 64 bits stays at the largest; a whole number that is not an epoch time stays a number.
+            ("12345678901234567890", "9223372036854775807"),
+            ("9999999999999999", "9999999999999999"),
+            ("315532799", "315532799"),
+            ("315532800", "1980-01-01T00:00:00"),
+            // Anything that is not a number is a word, printed as typed.
+            ("3x", "3x"),
+            ("1,5", "1,5"),
+            ("1.2.3", "1.2.3"),
+            ("007", "007"),
+            (".5", ".5"),
+            (".5 + .5", ".5.5"),
         ] {
             assert_eq!(c(e), want, "{e}");
         }

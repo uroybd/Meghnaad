@@ -49,6 +49,9 @@ pub struct EvalCtx<'a> {
     inherited: BTreeMap<Uuid, f64>,
     /// The colour rules in force; `None` when `color` is off.
     rules: Option<crate::color::Rules>,
+    /// The first thing an expression in the filter could not work out on a task (`due - now`): Taskwarrior stops
+    /// there, so whoever ran the filter asks for it afterwards ([`EvalCtx::take_error`]).
+    error: std::cell::RefCell<Option<String>>,
 }
 
 impl<'a> EvalCtx<'a> {
@@ -61,7 +64,16 @@ impl<'a> EvalCtx<'a> {
             coef: coefficients(cfg),
             inherited: BTreeMap::new(),
             rules: crate::color::Rules::from_config(cfg),
+            error: std::cell::RefCell::new(None),
         }
+    }
+
+    /// What went wrong in the expressions of a filter run against tasks, if anything.
+    pub fn take_error(&self) -> Result<(), FilterError> {
+        self.error
+            .borrow_mut()
+            .take()
+            .map_or(Ok(()), |why| Err(FilterError(why)))
     }
 
     /// The colour the rules give a task, or none.
@@ -385,6 +397,10 @@ enum Term {
         /// `regex` is on. Taskwarrior turns each into a `~` match: `^value`, `value$`, `\bvalue\b`.
         rx: Option<Rx>,
     },
+    /// An expression with arithmetic, or with an attribute on either side of a comparison (`due < now + 3d`,
+    /// `urgency * 2 > 10`): worked out for each task by the evaluator `calc` uses, which reads a name as that task's
+    /// attribute.
+    Calc(crate::calc::Compiled),
     /// A plain word or `/pattern/`; found in the description or in any annotation.
     Text(TextMatch),
     Uuid(String),
@@ -454,7 +470,7 @@ pub fn split_words(s: &str) -> Vec<String> {
 /// it, such as `"+a or (due:today and +b)"` in quotes, is a whole filter and is read again as one, as Taskwarrior does;
 /// unless it starts with a `name:value`, which then takes all of it (`project:Home and +a` is one project, as it is there), or is
 /// one `/pattern/`.
-fn tokenize(args: &[String]) -> Vec<String> {
+fn tokenize(args: &[String], ctx: &EvalCtx) -> Vec<String> {
     let mut out = Vec::new();
     for a in args {
         let first = a.split_whitespace().next().unwrap_or_default();
@@ -463,6 +479,64 @@ fn tokenize(args: &[String]) -> Vec<String> {
             out.extend(peel(&split_words(a)));
         } else {
             out.extend(peel(std::slice::from_ref(a)));
+        }
+    }
+    out.into_iter().flat_map(|t| explode(t, ctx)).collect()
+}
+
+/// Taskwarrior's lexer ends an attribute's name at an operator, so `urgency*2>10` is `urgency * 2 > 10` and
+/// `now-entry<1h` is `now - entry < 1h`. A word that begins with an attribute name or a date word, goes on with an
+/// arithmetic operator and is not a `name:value` is read that way.
+fn explode(word: String, ctx: &EvalCtx) -> Vec<String> {
+    const DATE_WORDS: &[&str] = &[
+        "now",
+        "today",
+        "yesterday",
+        "tomorrow",
+        "sod",
+        "eod",
+        "sow",
+        "eow",
+        "som",
+        "eom",
+        "soy",
+        "eoy",
+    ];
+    let head: String = word
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    let arithmetic = word[head.len()..].contains(['+', '-', '*', '/', '%', '^']);
+    let named = is_attribute_name(&head, ctx.cfg) || DATE_WORDS.contains(&head.as_str());
+    if head.is_empty()
+        || !named
+        || !arithmetic
+        || !word[head.len()..].starts_with(['+', '-', '*', '/', '%', '^', '<', '>', '=', '!'])
+        || split_pair(&word).is_some()
+        || word.contains(':')
+    {
+        return vec![word];
+    }
+    // A sign that follows an operator belongs to the number after it (`urgency>-5`).
+    let mut out: Vec<String> = Vec::new();
+    let mut sign = false;
+    for piece in crate::calc::words(&word, &ctx.clock) {
+        let after_operator = out.last().is_none_or(|p| {
+            matches!(
+                p.as_str(),
+                "<" | "<=" | ">" | ">=" | "=" | "==" | "!=" | "!==" | "+" | "-" | "*" | "/" | "%" | "^" | "("
+            )
+        });
+        if sign {
+            if let Some(last) = out.last_mut() {
+                last.push_str(&piece);
+            }
+            sign = false;
+        } else if matches!(piece.as_str(), "-" | "+") && after_operator && !out.is_empty() {
+            out.push(piece);
+            sign = true;
+        } else {
+            out.push(piece);
         }
     }
     out
@@ -767,6 +841,15 @@ impl Parser<'_, '_> {
         let Some(tok) = self.peek().map(str::to_owned) else {
             return err("filter ended where a term was expected");
         };
+        if self.value_not == 0 {
+            if let Some(term) = self.expression()? {
+                return Ok(Expr::Term(term));
+            }
+        }
+        // `=~` is no operator: a `=` and then a `~` with nothing to compare.
+        if tok == "=~" || self.toks.get(self.pos + 1).is_some_and(|t| t == "=~") {
+            return err("The expression could not be evaluated.");
+        }
         self.pos += 1;
         match tok.as_str() {
             "(" => {
@@ -850,6 +933,84 @@ impl Parser<'_, '_> {
         operator_led(&attr, &value)?;
         self.pos += 2;
         self.attr_term(attr, op, &value).map(Some)
+    }
+
+    /// A run of values joined by arithmetic and comparison operators standing apart (`due < now + 3d`,
+    /// `urgency * 2 > 10`, `now > due`, `(urgency + 1) * 2 > 5`) is an expression for Taskwarrior's evaluator, with
+    /// each attribute name standing for what the task holds. The ones that are an attribute, one comparison and a value
+    /// stay with [`Parser::infix`]. `self.pos` is where it would begin; `Ok(None)` when there is none.
+    fn expression(&mut self) -> Result<Option<Term>, FilterError> {
+        const ARITH: &[&str] = &["+", "-", "*", "/", "%", "^"];
+        const COMPARE: &[&str] = &["<", "<=", ">", ">=", "=", "==", "!=", "!=="];
+        let is_op = |t: &str| ARITH.contains(&t) || COMPARE.contains(&t);
+        let ctx = self.ctx;
+        let (start, mut i) = (self.pos, self.pos);
+        let (mut ops, mut operands, mut group) = (Vec::new(), Vec::new(), false);
+        loop {
+            let Some(t) = self.toks.get(i).map(String::as_str) else {
+                return Ok(None);
+            };
+            if t == "(" {
+                let mut depth = 0;
+                loop {
+                    match self.toks.get(i).map(String::as_str) {
+                        None => return Ok(None),
+                        Some("(") => depth += 1,
+                        Some(")") => depth -= 1,
+                        Some(_) => {}
+                    }
+                    i += 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                group = true;
+            } else if is_op(t)
+                || matches!(t, ")" | "and" | "or" | "xor" | "&&" | "||" | "!" | BROKEN)
+                || split_pair(t).is_some()
+                // `-urgency` is a tag, not a minus.
+                || (t.len() > 1 && t.starts_with(['+', '-']) && t[1..].starts_with(|c: char| c.is_alphabetic() || c == '_'))
+            {
+                return Ok(None);
+            } else {
+                operands.push(t);
+                i += 1;
+            }
+            match self.toks.get(i).map(String::as_str) {
+                Some(t) if is_op(t) => {
+                    ops.push(t);
+                    i += 1;
+                }
+                _ => break,
+            }
+        }
+        if ops.is_empty() {
+            return Ok(None);
+        }
+        let names = |t: &str| is_attribute_name(t, ctx.cfg);
+        let calc = ops.iter().any(|o| ARITH.contains(o))
+            || group
+            || !operands
+                .first()
+                .is_some_and(|l| names(l) || canonicalize(l, ctx.cfg).is_some())
+            || operands.iter().skip(1).any(|o| names(o));
+        if !calc {
+            return Ok(None);
+        }
+        let text = self.toks[start..i]
+            .iter()
+            .map(|t| {
+                if t.contains(char::is_whitespace) {
+                    format!("\"{t}\"")
+                } else {
+                    t.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let code = crate::calc::compile(&text, &ctx.clock).map_err(FilterError)?;
+        self.pos = i;
+        Ok(Some(Term::Calc(code)))
     }
 
     /// `Ok(None)` for directives that match everything (`limit:`).
@@ -946,7 +1107,14 @@ impl Parser<'_, '_> {
                 Ty::Num if truth.is_some() => num = Some(f64::from(u8::from(truth == Some(true)))),
                 Ty::Date => match parse_date_expr(value, &self.ctx.clock) {
                     Some(p) => date = Some(p.ts),
-                    None => return err(format!("'{value}' is not a valid date")),
+                    // A longer expression is worked out as `calc` would: `(now + 1d)`, `eow-2d+1h`, `now*2` (an error).
+                    None => match date_of_expression(value, &self.ctx.clock)? {
+                        Some(ts) => date = Some(ts),
+                        None => {
+                            let format = self.ctx.cfg.settings.get("dateformat").map_or("Y-M-D", String::as_str);
+                            return err(format!("'{value}' is not a valid date in the '{format}' format."));
+                        }
+                    },
                 },
                 Ty::Num => match value.parse::<f64>() {
                     Ok(n) => num = Some(n),
@@ -992,7 +1160,7 @@ impl Filter {
 
     /// Parse already-split arguments (e.g. from the command-line parser).
     pub fn parse(args: &[String], ctx: &EvalCtx) -> Result<Filter, FilterError> {
-        let toks = tokenize(args);
+        let toks = tokenize(args, ctx);
         if toks.is_empty() {
             return Ok(Filter::match_all());
         }
@@ -1089,6 +1257,25 @@ fn edge_matches(hay: &str, needle: &str, end: bool) -> bool {
 fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
     match t {
         Term::Truth(attr) => truthy(&attr_value(attr, f, ctx)),
+        Term::Calc(code) => {
+            let urgency = |x: &Facts| ctx.urgency(x);
+            let source = crate::calc::DomSource {
+                tasks: &[],
+                ids: ctx.ids,
+                cfg: ctx.cfg,
+                clock: &ctx.clock,
+                urgency: &urgency,
+                args: String::new(),
+                sync_needed: false,
+            };
+            match crate::calc::truth(code, &ctx.clock, &|name| source.attribute(f, name)) {
+                Ok(b) => b,
+                Err(why) => {
+                    ctx.error.borrow_mut().get_or_insert(why);
+                    false
+                }
+            }
+        }
         Term::Tag { name, present } => {
             let has = if name == "LATEST" {
                 ctx.ids.get(&f.uuid).is_some_and(|id| *id == ctx.latest)
@@ -1360,6 +1547,18 @@ fn eval_bang(bangs: u8, term: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
     }
 }
 
+/// The date an expression with operators or parentheses comes to, `None` when it is not one that comes to a date (or
+/// has none), and Taskwarrior's words when it cannot be worked out (`now*2`).
+fn date_of_expression(value: &str, clock: &Clock) -> Result<Option<i64>, FilterError> {
+    if !value.contains(['+', '-', '*', '/', '%', '^', '(']) {
+        return Ok(None);
+    }
+    match crate::calc::calc(value, false, clock, &|_| None) {
+        Ok(text) => Ok(crate::dates::parse_date(&text, clock).map(|p| p.ts)),
+        Err(why) => Err(FilterError(why)),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn eval_attr(
     attr: &Attr,
@@ -1442,8 +1641,15 @@ fn eval_attr(
         let pending = f.status == "pending" && !f.is_waiting(&ctx.clock);
         return pending == matches!(op, Op::Partial | Op::Is);
     }
-    if matches!(op, Op::Lt | Op::Le | Op::Gt | Op::Ge) {
+    if matches!(op, Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::Before | Op::After | Op::By) {
         if let Some(order) = value_order(attr, ctx.cfg) {
+            // `.before`, `.after` and `.by` are `<`, `>` and `<=`.
+            let op = match op {
+                Op::Before => Op::Lt,
+                Op::After => Op::Gt,
+                Op::By => Op::Le,
+                other => other,
+            };
             let have = match &have {
                 Val::Str(s) => Some(s.as_ref()),
                 _ => None,
@@ -1687,6 +1893,10 @@ mod tests {
         assert!(h.m("due.by:2d", &t));
         assert!(h.m("due.before:now+2d", &t));
         assert!(h.m("due.after:eod-1d", &t));
+        // A longer expression is worked out as `calc` does.
+        assert!(h.m("due.before:(now+2d)", &t) && !h.m("due.before:(now+1h)", &t));
+        assert!(h.m("due.before:now+1d+1d", &t) && !h.m("due.before:now+1d-1d", &t));
+        assert!(h.parse_err("due.before:now*2").contains("Cannot multiply date values"));
         assert!(h.m("due:2026-10-08", &t));
         assert!(h.m("due:2026-10-08T12:30", &t)); // partial = same day
                                                   // NOW is exactly 12:30:00, so tomorrow's due is exactly 2026-10-08T12:30:00.
@@ -1756,6 +1966,8 @@ mod tests {
         assert!(h.m("priority>M", &high) && !h.m("priority>M", &med) && !h.m("priority>M", &low));
         assert!(h.m("priority >= M", &med) && h.m("priority < M", &low) && h.m("priority<=L", &low));
         // A task with none is below them all.
+        assert!(h.m("priority.before:M", &low) && !h.m("priority.before:M", &med) && h.m("priority.after:L", &high));
+        assert!(h.m("priority.by:M", &med) && !h.m("priority.by:M", &high) && h.m("priority.under:L", &none));
         assert!(h.m("priority<L", &none) && h.m("priority <= M", &none) && !h.m("priority>L", &none));
     }
 
@@ -2021,6 +2233,67 @@ mod tests {
         assert!(h.parse_err("points:abc").contains("not a number"));
         // Undefined UDAs aren't attributes: the text becomes a description word.
         assert!(!h.m("unknown:large", &t));
+    }
+
+    #[test]
+    fn an_expression_may_have_arithmetic_and_attributes_on_either_side() {
+        let h = H::new();
+        let mut t = task("x");
+        t.due = Some(NOW + DAY); // tomorrow, 12:30
+        t.entry = Some(NOW - 3600);
+        // An urgency of exactly 6: the priority H and nothing else.
+        let mut u = task("y");
+        u.priority = Some("H".into());
+        for f in [
+            "urgency * 2 > 10",
+            "urgency + 1 > 5",
+            "urgency / 2 == 3",
+            "urgency ^ 2 > 30",
+            "urgency % 4 == 2",
+            "( urgency + 1 ) * 2 > 13",
+            "urgency*2>10",
+            "urgency+1>5",
+            "urgency>-5",
+        ] {
+            assert!(h.m(f, &u), "{f}");
+        }
+        assert!(!h.m("urgency * 2 > 12", &u) && !h.m("-urgency < -5", &u));
+        for f in [
+            "due < now + 3d",
+            "due > now - 1d",
+            "now > entry",
+            "now - entry > 30min",
+            "now - entry < 2h",
+            "entry + 2h > now",
+            // Glued, the same.
+            "due<now+3d",
+            "now-entry<2h",
+            "urgency > 0 and due < now + 3d",
+            "urgency * 2 > 1 and -y",
+            "due.year == 2026",
+            "project == project",
+        ] {
+            assert!(h.m(f, &t), "{f}");
+        }
+        for f in [
+            "due < now + 1h",
+            "now < entry",
+            "now - entry > 2h",
+            "wait < now + 1d",
+            "wait > now - 1d",
+        ] {
+            assert!(!h.m(f, &t), "{f}");
+        }
+        // A task with no date is on neither side of a comparison with one.
+        assert!(!h.m("now > wait", &t) && !h.m("now < wait", &t));
+        // What cannot be worked out is an error, said when the filter is run.
+        let ctx = h.ctx();
+        let f = Filter::parse_str("due - now < 3d", &ctx).unwrap();
+        assert!(f.matches(&t, &ctx) && ctx.take_error().is_ok());
+        assert!(!f.matches(&u, &ctx));
+        assert_eq!(ctx.take_error().unwrap_err().0, "Cannot subtract strings");
+        // `=~` is no operator.
+        assert!(h.parse_err("project =~ Home").contains("could not be evaluated"));
     }
 
     #[test]

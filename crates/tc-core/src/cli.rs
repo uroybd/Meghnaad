@@ -465,9 +465,7 @@ const COLUMN_NAMES: [&str; 20] = [
 ];
 
 /// Attributes of a recurring task that a DOM reference can name too, though no report has a column for them.
-/// (`rtype`, `last` and `template` are named by Taskwarrior as well, but the task view here doesn't hold them, so
-/// they would read as empty where `task` has a value: they are refused instead.)
-const DOM_ONLY: [&str; 2] = ["mask", "imask"];
+const DOM_ONLY: [&str; 5] = ["mask", "imask", "rtype", "last", "template"];
 
 /// One row of `commands`: the name and category, then what the command does and takes.
 fn command_row(name: &str, category: &str, flags: &str, description: &str) -> Vec<String> {
@@ -1702,7 +1700,9 @@ async fn pending_matching<S: Storage>(
     let ctx = EvalCtx::new(cfg, clock, &ids).with_inheritance(&all);
     let f = Filter::parse(filter, &ctx).map_err(|e| e.0)?;
     let pending = |x: &&Facts| matches!(x.status.as_str(), "pending" | "recurring");
-    Ok(all.iter().filter(pending).filter(|x| f.matches(x, &ctx)).count())
+    let n = all.iter().filter(pending).filter(|x| f.matches(x, &ctx)).count();
+    ctx.take_error().map_err(|e| e.0)?;
+    Ok(n)
 }
 
 /// `tasks` are the tasks as they are now, if the caller has just read them.
@@ -1862,6 +1862,7 @@ fn select_from<'a>(
     let combined = conjoin(&[context, user_filter.to_vec()]);
     let f = Filter::parse(&combined, ctx)?;
     let mut v: Vec<&Facts> = pool.iter().copied().filter(|x| f.matches(x, ctx)).collect();
+    ctx.take_error()?;
     v.sort_unstable_by_key(|x| {
         (
             ctx.ids.get(&x.uuid).copied().unwrap_or(u32::MAX),
@@ -2384,7 +2385,10 @@ async fn builtin<S: Storage>(
         Get => {
             let is_override = |w: &str| w.starts_with("rc.") && w.contains([':', '=']);
             let words: Vec<&String> = p.filter.iter().filter(|w| !is_override(w)).collect();
-            let attribute = |a: &str| COLUMN_NAMES.contains(&a) || DOM_ONLY.contains(&a) || cfg.udas.contains_key(a);
+            // `annotations` is a column but no DOM attribute: only `annotations.count` and `annotations.<N>.…` are.
+            let attribute = |a: &str| {
+                (COLUMN_NAMES.contains(&a) && a != "annotations") || DOM_ONLY.contains(&a) || cfg.udas.contains_key(a)
+            };
             let date = |a: &str| run::kind_of(a, cfg) == "date";
             let urgency = |f: &Facts| ctx.urgency(f);
             let dom = crate::calc::DomSource {
@@ -2737,7 +2741,8 @@ async fn builtin<S: Storage>(
             let expression = p
                 .filter
                 .iter()
-                .filter(|w| !is_override(w))
+                // A word of just `--` ends the options of the command line and is no part of the expression.
+                .filter(|w| !is_override(w) && w.as_str() != "--")
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(" ");

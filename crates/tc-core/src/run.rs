@@ -564,6 +564,7 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
             id: ids.get(&f.uuid).copied(),
         })
         .collect();
+    ctx.take_error()?;
     items.sort_by_key(|i| {
         (
             i.id.map_or((1, 0), |n| (0, n)),

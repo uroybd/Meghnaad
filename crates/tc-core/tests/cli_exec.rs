@@ -2327,6 +2327,54 @@ mod recurrence {
     }
 
     #[tokio::test]
+    async fn get_answers_with_taskwarriors_default_when_the_taskrc_is_silent() {
+        let cfg = Config::default();
+        let mut r = replica();
+        for (name, want) in [
+            ("rc.urgency.due.coefficient", "12.0"),
+            ("rc.urgency.age.max", "365"),
+            ("rc.report.next.filter", "+PENDING -WAITING limit:page"),
+            ("rc.gc", "1"),
+            ("rc.alias.rm", "delete"),
+            ("rc.nosuch", ""),
+        ] {
+            let (res, _) = run(&mut r, &cfg, &format!("_get {name}")).await;
+            assert_eq!(message(&res), want, "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_filter_may_do_arithmetic_with_the_attributes_of_each_task() {
+        let cfg = Config::default();
+        let mut r = replica();
+        run(&mut r, &cfg, "add soon due:1d").await;
+        run(&mut r, &cfg, "add later due:30d").await;
+        for (filter, want) in [
+            ("due < now + 3d", "1"),
+            ("due<now+3d", "1"),
+            ("due - now < 3d", "1"),
+            ("now - entry < 1h", "2"),
+            ("urgency * 2 > 1", "2"),
+            ("due.before:(now+3d)", "1"),
+            ("due > now + 3d", "1"),
+        ] {
+            let (res, _) = run(&mut r, &cfg, &format!("{filter} count")).await;
+            assert_eq!(message(&res).trim(), want, "{filter}");
+        }
+        // A task with no due cannot be taken from a date, and the command says so, as Taskwarrior does.
+        run(&mut r, &cfg, "add never").await;
+        let (res, _) = run(&mut r, &cfg, "due - now < 3d count").await;
+        assert_eq!(message(&res), "ERROR: Cannot subtract strings");
+        let (res, _) = run(&mut r, &cfg, "project =~ Home count").await;
+        assert_eq!(message(&res), "ERROR: The expression could not be evaluated.");
+        // The DOM names the attributes of a recurrence even when a task has none.
+        let (res, _) = run(&mut r, &cfg, "_get 1.rtype").await;
+        assert_eq!(message(&res), "");
+        let (res, _) = run(&mut r, &cfg, "_get 1.annotations").await;
+        assert_eq!(message(&res), "ERROR: '1.annotations' is not a DOM reference.");
+    }
+
+    #[tokio::test]
     async fn a_tag_is_kept_whatever_it_is_called() {
         let cfg = Config::default();
         let mut r = replica();
