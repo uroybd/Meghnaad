@@ -10,8 +10,9 @@
 
   /**
    * The filter box of the Projects and Tags pages, and the tasks it selects (`task <filter> export`, any status).
-   * Like Summary and Burndown the filter is the user's: they start with `status:pending`, and taking that chip
-   * away brings finished tasks in, so a project or tag stays listed after its last task is done.
+   * The filter is the user's: the pages start with open tasks, waiting ones included (`status.not:completed
+   * status.not:deleted status.not:recurring`), and taking a chip away brings finished tasks in, so a project or tag stays
+   * listed after its last task is done.
    */
   let {
     filter = $bindable(''),

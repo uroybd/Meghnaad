@@ -123,8 +123,8 @@ class Store {
   projectFocus = $state<{ project: string; n: number } | null>(null);
   /** The filter on each of the Summary, Calendar and Burndown pages (Taskwarrior filter syntax). */
   /** The filter on the Projects and Tags pages. They start as the pending tasks; taking that away brings in finished ones. */
-  projectsFilter = $state('status:pending');
-  tagsFilter = $state('status:pending');
+  projectsFilter = $state('status.not:completed status.not:deleted status.not:recurring');
+  tagsFilter = $state('status.not:completed status.not:deleted status.not:recurring');
   summaryFilter = $state('');
   calendarFilter = $state('');
   burndownFilter = $state('');

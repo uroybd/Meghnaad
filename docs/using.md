@@ -42,8 +42,9 @@ Summary, Calendar, Burndown, Projects and Tags have the same filter box as Tasks
 helpers are below it) and it is focused when you open the page (not on a phone, where that would raise the keyboard).
 The header also has the running **timer**, the **bell** (reminders) and **Settings** (the taskrc, tasksh, commands, hooks and urgency, below). Every page except Console has the prompt in a bar at the bottom; the Console has it inside.
 
-**Projects and Tags start as your pending tasks** (a `status:pending` chip in their filter box; as in Taskwarrior 3 that leaves out a task that is waiting on its `wait` date). That is a filter like any
-other: take the chip away and finished tasks come in too, tinted green (completed) or red (deleted), so a project or tag stays listed after
+**Projects and Tags start as your open tasks**, waiting ones included (three chips in their filter box: `status.not:completed`,
+`status.not:deleted` and `status.not:recurring`, which leaves out finished tasks and recurring templates). That is a filter like any
+other: take the `completed` or `deleted` chip away and those tasks come in too, tinted green (completed) or red (deleted), so a project or tag stays listed after
 its last task is done. Any other filter works as well (`project:Home`, `due.before:eow`, `+work`).
 
 **A long report draws in steps.** A report of hundreds of tasks takes a while to lay out, so the table draws the first 200

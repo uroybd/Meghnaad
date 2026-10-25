@@ -213,8 +213,8 @@ class Store(
     val panels = mutableStateMapOf<Panel, Entry>()
 
     /** The filter on the Projects and Tags pages. They start as the pending tasks; taking that away brings in finished ones. */
-    var projectsFilter by mutableStateOf("status:pending")
-    var tagsFilter by mutableStateOf("status:pending")
+    var projectsFilter by mutableStateOf("status.not:completed status.not:deleted status.not:recurring")
+    var tagsFilter by mutableStateOf("status.not:completed status.not:deleted status.not:recurring")
     var summaryFilter by mutableStateOf("")
     var calendarFilter by mutableStateOf("")
     var burndownFilter by mutableStateOf("")
