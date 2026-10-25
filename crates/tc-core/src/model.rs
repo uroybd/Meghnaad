@@ -124,11 +124,7 @@ impl Facts {
             description: t.get_description().to_owned(),
             project: t.get_value("project").and_then(nonempty),
             priority: nonempty(t.get_priority()),
-            tags: t
-                .get_tags()
-                .filter(taskchampion::Tag::is_user)
-                .map(|g| g.to_string())
-                .collect(),
+            tags: crate::cli::tag_names(t).into_iter().collect(),
             annotations,
             entry: ts("entry"),
             modified: ts("modified"),

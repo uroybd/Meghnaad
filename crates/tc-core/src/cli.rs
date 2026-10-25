@@ -16,11 +16,10 @@ use crate::taskrc::Config;
 use crate::warm::Warm;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use std::str::FromStr;
 use std::sync::Arc;
 use taskchampion::chrono::{DateTime, TimeZone, Utc};
 use taskchampion::storage::Storage;
-use taskchampion::{Annotation, Operation, Operations, Replica, Status, Tag, Task};
+use taskchampion::{Annotation, Operation, Operations, Replica, Status, Task};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -545,8 +544,12 @@ fn match_command(word: &str, cfg: &Config) -> Result<Option<(Cmd, bool)>, String
     if let Some((_, c, m)) = names.iter().find(|(n, ..)| n == word) {
         return Ok(Some((c.clone(), *m)));
     }
-    // Shorter than `abbreviation.minimum` it is not an abbreviation at all, just a word.
-    if word.len() < cfg.abbreviation_minimum().max(1) || !word.chars().all(|c| c.is_ascii_lowercase()) {
+    // Shorter than `abbreviation.minimum` it is not an abbreviation at all, just a word. Nor is the whole name of an
+    // attribute (`project` is no `projects`).
+    if word.len() < cfg.abbreviation_minimum().max(1)
+        || !word.chars().all(|c| c.is_ascii_lowercase())
+        || crate::filter::is_attribute_name(word, cfg)
+    {
         return Ok(None);
     }
     let hits: Vec<&(String, Cmd, bool)> = names.iter().filter(|(n, ..)| n.starts_with(word)).collect();
@@ -1265,6 +1268,18 @@ fn modify_plan(
     Ok(changes)
 }
 
+/// The tags of a task: every `tag_<name>` key, whatever the name (the library's `get_tags` drops `URGENT` and `a:b`).
+pub(crate) fn tag_names(task: &Task) -> Vec<String> {
+    #[allow(
+        deprecated,
+        reason = "TaskData::properties would need a clone of the task; the map is what it reads"
+    )]
+    let map = task.get_taskmap();
+    map.keys()
+        .filter_map(|k| k.strip_prefix("tag_").map(str::to_owned))
+        .collect()
+}
+
 pub(crate) fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Operations) -> Result<(), String> {
     let e = |e: taskchampion::Error| e.to_string();
     for c in changes {
@@ -1276,25 +1291,26 @@ pub(crate) fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Opera
                 let ts = value.and_then(|v| Utc.timestamp_opt(v, 0).single());
                 task.set_timestamp(name, ts, ops).map_err(e)?;
             }
+            // A tag is the key `tag_<name>`, as `Task::addTag` writes it: any name, however it is spelled (the
+            // typed `Tag` of the library would refuse `URGENT` and `a:b`, which Taskwarrior keeps).
             Change::AddTag(t) => {
-                let tag = Tag::from_str(t).map_err(|_| format!("invalid tag '{t}'"))?;
-                task.add_tag(&tag, ops).map_err(e)?;
+                task.set_value(format!("tag_{t}"), Some(String::new()), ops)
+                    .map_err(e)?;
             }
             Change::RemoveTag(t) => {
-                let tag = Tag::from_str(t).map_err(|_| format!("invalid tag '{t}'"))?;
-                task.remove_tag(&tag, ops).map_err(e)?;
+                task.set_value(format!("tag_{t}"), None, ops).map_err(e)?;
             }
             Change::SetTags(list) => {
-                let have: Vec<Tag> = task.get_tags().filter(|t| !t.is_synthetic()).collect();
+                let have = tag_names(task);
                 for t in &have {
-                    if !list.iter().any(|l| l == &t.to_string()) {
-                        task.remove_tag(t, ops).map_err(e)?;
+                    if !list.contains(t) {
+                        task.set_value(format!("tag_{t}"), None, ops).map_err(e)?;
                     }
                 }
                 for l in list {
-                    if !have.iter().any(|t| &t.to_string() == l) {
-                        let tag = Tag::from_str(l).map_err(|_| format!("invalid tag '{l}'"))?;
-                        task.add_tag(&tag, ops).map_err(e)?;
+                    if !have.contains(l) {
+                        task.set_value(format!("tag_{l}"), Some(String::new()), ops)
+                            .map_err(e)?;
                     }
                 }
             }
@@ -3546,10 +3562,12 @@ async fn write_selected<S: Storage>(
         Purge => "Purged",
         _ => "Modified",
     };
-    let mut message = format!("{past} {}.", plural(touched.len(), "task"));
+    // The tasks it passed over are named as it goes, before the count.
+    let mut message = String::new();
     for n in &passed {
-        message.push_str(&format!(" {n}"));
+        message.push_str(&format!("{n} "));
     }
+    message.push_str(&format!("{past} {}.", plural(touched.len(), "task")));
     for n in &notes {
         message.push_str(&format!(" {n}"));
     }

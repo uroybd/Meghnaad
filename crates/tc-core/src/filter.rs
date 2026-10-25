@@ -242,6 +242,11 @@ fn canonicalize(name: &str, cfg: &Config) -> Option<Attr> {
     }
 }
 
+/// Whether the word is the whole name of an attribute (a UDA too), not an abbreviation of one.
+pub(crate) fn is_attribute_name(name: &str, cfg: &Config) -> bool {
+    CORE_NAMES.iter().any(|(n, _)| *n == name) || cfg.udas.values().any(|u| u.name == name)
+}
+
 /// Canonical attribute name for `name` (unique abbreviations allowed), and whether it is a UDA.
 pub(crate) fn canonical_attr_name(name: &str, cfg: &Config) -> Option<(String, bool)> {
     canonicalize(name, cfg).map(|a| match a {
@@ -297,6 +302,26 @@ const INFIX: &[(&str, Op)] = &[
     ("=", Op::Partial),
 ];
 
+/// A value that begins with an arithmetic operator is not a value to Taskwarrior's lexer: `description ~ ^x` is
+/// `description ^ x` and then a `~` with nothing to its left, and the `^` fails first, on what the attribute holds.
+fn operator_led(attr: &Attr, value: &str) -> Result<(), FilterError> {
+    let Some(sign) = value.chars().next().filter(|c| matches!(c, '^' | '*' | '%')) else {
+        return Ok(());
+    };
+    let rest = &value[1..];
+    let unsolved = "The expression could not be evaluated.";
+    err(match (attr.ty(), sign) {
+        (Ty::Date, '^') => "Cannot exponentiate dates",
+        (Ty::Date, '*') => "Cannot multiply date values",
+        (Ty::Date, _) => "Cannot modulo date values",
+        (Ty::Num, '^') if rest.parse::<f64>().is_err() && !rest.is_empty() => "Cannot exponentiate strings",
+        (Ty::Num, _) => unsolved,
+        (_, '^') => "Cannot exponentiate strings",
+        (_, '*') => "Cannot multiply strings by strings",
+        (_, _) => "Cannot modulo string values",
+    })
+}
+
 /// Whether the word is one of the comparison operators, standing apart from the names it compares.
 pub(crate) fn is_infix_op(word: &str) -> bool {
     infix_op(word).is_some()
@@ -348,6 +373,8 @@ enum Term {
         name: String,
         present: bool,
     },
+    /// An attribute's name standing alone beside a `!` (`priority !`): what it holds, as true or false.
+    Truth(Attr),
     Attr {
         attr: Attr,
         op: Op,
@@ -455,6 +482,8 @@ fn truth_of_word(word: &str) -> bool {
     !(word.is_empty() || word == "0" || word == "0.0")
 }
 
+const MISMATCHED: &str = "Mismatched parentheses in expression";
+
 /// A word that stands for something Taskwarrior cannot work out.
 const BROKEN: &str = "\0";
 
@@ -478,19 +507,37 @@ fn peel(args: &[String]) -> Vec<String> {
             out.push("(".to_owned());
             s = r;
         }
-        while let Some(r) = s.strip_suffix(')') {
-            // Don't split a ')' that closes something opened inside the word.
-            if s.matches('(').count() >= s.matches(')').count() {
-                break;
+        if s.starts_with('/') || split_pair(s).is_some() {
+            while let Some(r) = s.strip_suffix(')') {
+                // Don't split a ')' that closes something opened inside the word.
+                if s.matches('(').count() >= s.matches(')').count() {
+                    break;
+                }
+                tail += 1;
+                s = r;
             }
-            tail += 1;
-            s = r;
-        }
-        if !s.is_empty() {
-            out.push(s.to_owned());
-        }
-        for _ in 0..tail {
-            out.push(")".to_owned());
+            if !s.is_empty() {
+                out.push(s.to_owned());
+            }
+            for _ in 0..tail {
+                out.push(")".to_owned());
+            }
+        } else {
+            // Taskwarrior's lexer breaks any other word at every parenthesis: `not(+a)` is `not`, `(`, `+a`, `)`.
+            let mut word = String::new();
+            for c in s.chars() {
+                if matches!(c, '(' | ')') {
+                    if !word.is_empty() {
+                        out.push(std::mem::take(&mut word));
+                    }
+                    out.push(c.to_string());
+                } else {
+                    word.push(c);
+                }
+            }
+            if !word.is_empty() {
+                out.push(word);
+            }
         }
     }
     out
@@ -547,6 +594,9 @@ struct Parser<'a, 'c> {
     ctx: &'a EvalCtx<'c>,
     limit: Limit,
     limit_set: bool,
+    /// How many `!` stood after the term being read again (`+a !`): the value in it is made the truth of itself (see
+    /// [`Parser::trailing_bang`]).
+    value_not: u8,
 }
 
 impl Parser<'_, '_> {
@@ -577,8 +627,11 @@ impl Parser<'_, '_> {
     }
 
     fn and_expr(&mut self) -> Result<Expr, FilterError> {
+        let mut last_start = self.pos;
         let mut parts = vec![self.unary()?];
         let mut explicit = false;
+        // A `!` after a term was the last thing read: no term may follow it without an `and` or `or`.
+        let mut banged = false;
         loop {
             match self.peek() {
                 None | Some(")") => break,
@@ -586,14 +639,22 @@ impl Parser<'_, '_> {
                 Some("and" | "&&") => {
                     self.pos += 1;
                     explicit = true;
+                    banged = false;
+                }
+                // A `!` after a term belongs to the term (`+a !`).
+                Some("!") if parts.last().is_some_and(|p| *p != Expr::All) => {
+                    let e = self.trailing_bang(last_start, parts.pop().unwrap_or(Expr::All))?;
+                    parts.push(e);
+                    banged = true;
+                    continue;
                 }
                 // No `and` is put before a `!`, and then two values are left with nothing between them.
                 // (An override of a setting before it is no value.)
-                Some("!") if !explicit && parts.iter().any(|p| *p != Expr::All) => {
-                    return err("The value is not an expression.")
-                }
+                Some("!") if parts.iter().any(|p| *p != Expr::All) => return err("The value is not an expression."),
+                Some(_) if banged => return err("The value is not an expression."),
                 Some(_) => {} // implicit and
             }
+            last_start = self.pos;
             parts.push(self.unary()?);
         }
         // Task numbers and uuids named side by side pick a group, as in Taskwarrior: `task 1 3 done` is task 1 or
@@ -612,6 +673,38 @@ impl Parser<'_, '_> {
         Ok(parts
             .into_iter()
             .fold(first, |left, right| Expr::And(Box::new(left), Box::new(right))))
+    }
+
+    /// `!` after a term, written `+a !` or `project:Work !`. Taskwarrior's `!` takes the one value before it as well as
+    /// the one after it, so what is turned into its truth is the *value* in the term (`+a !` is `+a` with the tag
+    /// `false`, `project:Work !` is `project:false`). A group in parentheses, a task number or a uuid is a whole
+    /// expression of its own, and `!` reverses it. `last` is what was read from `start`.
+    fn trailing_bang(&mut self, start: usize, last: Expr) -> Result<Expr, FilterError> {
+        let after = self.pos;
+        let mut bangs = 0u8;
+        while self.peek() == Some("!") {
+            self.pos += 1;
+            bangs = bangs.saturating_add(1);
+        }
+        let end = self.pos;
+        let head = self.toks.get(start).map_or("", String::as_str);
+        let whole = head == "(" || matches!(last, Expr::Term(Term::Ids(_) | Term::Uuid(_)));
+        if whole {
+            return Ok((0..bangs).fold(last, |e, _| Expr::Not(Box::new(e))));
+        }
+        if head == "!" || head == BROKEN {
+            return err("The value is not an expression.");
+        }
+        self.pos = start;
+        self.value_not = bangs;
+        let again = self.unary();
+        self.value_not = 0;
+        let e = again?;
+        if self.pos != after {
+            return err("The value is not an expression.");
+        }
+        self.pos = end;
+        Ok(e)
     }
 
     fn unary(&mut self) -> Result<Expr, FilterError> {
@@ -636,7 +729,10 @@ impl Parser<'_, '_> {
             self.pos += 1;
             let term = match self.infix(&next)? {
                 Some(t) => Some(t),
-                None => self.term(&next)?,
+                None => match canonicalize(&next, self.ctx.cfg) {
+                    Some(attr) => Some(Term::Truth(attr)),
+                    None => self.term(&next)?,
+                },
             };
             match term {
                 None => Expr::All,
@@ -651,7 +747,7 @@ impl Parser<'_, '_> {
                 Some(Term::Ids(ranges)) if next.bytes().all(|b| b.is_ascii_digit()) && ranges.len() == 1 => {
                     return Ok(constant(truth_of_word(&next) != (bangs % 2 == 1)));
                 }
-                Some(t @ (Term::Ids(_) | Term::Uuid(_))) => {
+                Some(t @ (Term::Ids(_) | Term::Uuid(_) | Term::Truth(_))) => {
                     let mut e = Expr::Term(t);
                     for _ in 0..bangs {
                         e = Expr::Not(Box::new(e));
@@ -674,25 +770,47 @@ impl Parser<'_, '_> {
         self.pos += 1;
         match tok.as_str() {
             "(" => {
+                if self.peek() == Some(")") {
+                    return err("No expression to evaluate.");
+                }
                 let e = self.expr()?;
                 if self.peek() != Some(")") {
-                    return err("missing closing parenthesis in filter");
+                    return err(MISMATCHED);
                 }
                 self.pos += 1;
                 Ok(e)
             }
-            ")" => err("unexpected closing parenthesis in filter"),
-            BROKEN => err("The expression could not be evaluated."),
-            "and" | "or" | "xor" | "&&" | "||" => err(format!("operator '{tok}' needs a term on both sides")),
+            ")" => err(MISMATCHED),
+            BROKEN | "and" | "or" | "xor" | "&&" | "||" => err("The expression could not be evaluated."),
             _ => {
                 if let Some(t) = self.infix(&tok)? {
-                    return Ok(Expr::Term(t));
+                    return Ok(self.wrap(t));
                 }
-                self.term(&tok).map(|t| match t {
-                    Some(t) => Expr::Term(t),
+                if self.value_not > 0 {
+                    if let Some(attr) = canonicalize(&tok, self.ctx.cfg) {
+                        let truth = Expr::Term(Term::Truth(attr));
+                        return Ok((0..self.value_not).fold(truth, |e, _| Expr::Not(Box::new(e))));
+                    }
+                }
+                Ok(match self.term(&tok)? {
+                    // `x !`: the word is a value of its own, and the truth of it is what is left.
+                    Some(Term::Text(_)) if self.value_not > 0 && !tok.starts_with('/') => {
+                        constant(truth_of_word(&tok) != (self.value_not % 2 == 1))
+                    }
+                    Some(t) => self.wrap(t),
                     None => Expr::All,
                 })
             }
+        }
+    }
+
+    /// A term as an expression. After `!`, `.any:` and `.none:` have the truth of their empty value to compare with,
+    /// which every task has and none has.
+    fn wrap(&self, term: Term) -> Expr {
+        match term {
+            Term::Attr { op: Op::Any, .. } if self.value_not > 0 => Expr::All,
+            Term::Attr { op: Op::None, .. } if self.value_not > 0 => constant(false),
+            t => Expr::Term(t),
         }
     }
 
@@ -713,6 +831,7 @@ impl Parser<'_, '_> {
             } else {
                 value.to_owned()
             };
+            operator_led(&attr, &value)?;
             return self.attr_term(attr, op, &value).map(Some);
         }
         let Some(op) = self.peek().and_then(infix_op) else {
@@ -728,6 +847,7 @@ impl Parser<'_, '_> {
         let Some(value) = self.toks.get(self.pos + 1).cloned() else {
             return missing();
         };
+        operator_led(&attr, &value)?;
         self.pos += 2;
         self.attr_term(attr, op, &value).map(Some)
     }
@@ -745,19 +865,31 @@ impl Parser<'_, '_> {
             return Ok(None);
         }
 
-        let tag_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '@' | '/');
+        // The lexer's tag: a sign, a letter (or one of `@ # $ _`, or anything beyond ASCII), then anything up to a space.
+        let tag_word = |name: &str| {
+            let mut chars = name.chars();
+            chars
+                .next()
+                .is_some_and(|c| !c.is_ascii() || c.is_ascii_alphabetic() || matches!(c, '@' | '#' | '$' | '_'))
+                && !name.contains(char::is_whitespace)
+        };
+        // After `+a !` the tag is the truth of the word: `false`.
+        let tag_name = |name: &str| match self.value_not {
+            0 => name.to_owned(),
+            n => (truth_of_word(name) != (n % 2 == 1)).to_string(),
+        };
         if let Some(name) = tok.strip_prefix('+') {
-            if !name.is_empty() && name.chars().all(tag_char) {
+            if tag_word(name) {
                 return Ok(Some(Term::Tag {
-                    name: name.to_owned(),
+                    name: tag_name(name),
                     present: true,
                 }));
             }
         }
         if let Some(name) = tok.strip_prefix('-') {
-            if name.chars().next().is_some_and(char::is_alphabetic) && name.chars().all(tag_char) {
+            if tag_word(name) {
                 return Ok(Some(Term::Tag {
-                    name: name.to_owned(),
+                    name: tag_name(name),
                     present: false,
                 }));
             }
@@ -771,7 +903,14 @@ impl Parser<'_, '_> {
         }
 
         if tok.len() > 2 && tok.starts_with('/') && tok.ends_with('/') {
-            return self.text(&tok[1..tok.len() - 1]).map(|m| Some(Term::Text(m)));
+            let pattern = &tok[1..tok.len() - 1];
+            // `/x/ !` is `description ~ x` with the truth of `x`.
+            if self.value_not > 0 {
+                return self
+                    .attr_term(Attr::Core(Core::Description), Op::Has, pattern)
+                    .map(Some);
+            }
+            return self.text(pattern).map(|m| Some(Term::Text(m)));
         }
         if is_uuidish(tok) {
             return Ok(Some(Term::Uuid(tok.to_ascii_lowercase())));
@@ -790,6 +929,11 @@ impl Parser<'_, '_> {
 
     fn attr_term(&self, attr: Attr, op: Op, value: &str) -> Result<Term, FilterError> {
         let (mut date, mut num) = (None, None);
+        // `project:Work !`: the value is its own truth, as the word `false` or the number 0 that the attribute is
+        // compared with.
+        let truth = (self.value_not > 0 && !matches!(op, Op::None | Op::Any))
+            .then(|| truth_of_word(value) != (self.value_not % 2 == 1));
+        let value = &truth.map_or_else(|| value.to_owned(), |t| t.to_string());
         // The value is read as a date only where the date itself is compared: `.has` and its kin take text.
         let text_op = matches!(
             op,
@@ -798,6 +942,8 @@ impl Parser<'_, '_> {
         let needs_value = !matches!(op, Op::None | Op::Any) && !(text_op && attr.ty() == Ty::Date);
         if needs_value && !value.is_empty() {
             match attr.ty() {
+                Ty::Date if truth.is_some() => date = Some(i64::from(truth == Some(true))),
+                Ty::Num if truth.is_some() => num = Some(f64::from(u8::from(truth == Some(true)))),
                 Ty::Date => match parse_date_expr(value, &self.ctx.clock) {
                     Some(p) => date = Some(p.ts),
                     None => return err(format!("'{value}' is not a valid date")),
@@ -856,11 +1002,12 @@ impl Filter {
             ctx,
             limit: Limit::None,
             limit_set: false,
+            value_not: 0,
         };
         let expr = p.expr()?;
         if p.pos < p.toks.len() {
             return if p.toks[p.pos] == ")" {
-                err("unexpected closing parenthesis in filter")
+                err(MISMATCHED)
             } else {
                 err(format!("unexpected '{}' in filter", p.toks[p.pos]))
             };
@@ -941,6 +1088,7 @@ fn edge_matches(hay: &str, needle: &str, end: bool) -> bool {
 
 fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
     match t {
+        Term::Truth(attr) => truthy(&attr_value(attr, f, ctx)),
         Term::Tag { name, present } => {
             let has = if name == "LATEST" {
                 ctx.ids.get(&f.uuid).is_some_and(|id| *id == ctx.latest)
@@ -1305,6 +1453,12 @@ fn eval_attr(
     }
 
     match have {
+        // After `!` the number or date is 0 or 1 and its word `false` or `true` (see `attr_term`); a task without one
+        // is the empty text, which sorts before that word.
+        Val::Unset if matches!(attr.ty(), Ty::Num | Ty::Date) && matches!(value, "true" | "false") => matches!(
+            op,
+            Op::Not | Op::Isnt | Op::Hasnt | Op::NoWord | Op::Before | Op::Lt | Op::By | Op::Le
+        ),
         Val::Unset => matches!(op, Op::Not | Op::Isnt | Op::Hasnt | Op::NoWord),
         Val::Str(h) => str_op(&h, op, value, attr.is_status(), cs),
         Val::Num(h) => {
@@ -1481,7 +1635,7 @@ mod tests {
         assert!(
             h.m("tags:alpha", &t) && !h.m("tags:work", &t) && h.m("tags.is:alpha,work", &t) && !h.m("tags.is:work", &t)
         );
-        assert!(h.m("tags.has:work", &t) && h.m("tags.word:work", &t) && h.m("tags~^alpha,w", &t));
+        assert!(h.m("tags.has:work", &t) && h.m("tags.word:work", &t) && h.m("tags~alpha,w", &t));
         t.tags.remove("alpha");
         assert!(h.m("tags.any:", &t) && !h.m("tags.none:", &t));
         assert!(h.m("tags.not:home", &t));
@@ -1581,8 +1735,8 @@ mod tests {
         assert!(h.m("project != Home", &p) && !h.m("project != Wor", &p) && h.m("project !== Wor", &p));
         assert!(h.m("project!=Home", &p) && h.m("project!==Wor", &p) && !h.m("project!==Work", &p));
         // `~` and `!~` take a regular expression.
-        assert!(h.m("project ~ ^Wo", &p) && h.m("project~rk$", &p) && !h.m("project ~ ^k", &p));
-        assert!(h.m("project !~ ^k", &p) && h.m("project!~^k", &p) && !h.m("project !~ ^Wo", &p));
+        assert!(h.m("project ~ Wo", &p) && h.m("project~rk$", &p) && !h.m("project ~ zz", &p));
+        assert!(h.m("project !~ zz", &p) && h.m("project!~zz", &p) && !h.m("project !~ Wo", &p));
         assert!(h.m("description ~ x", &t) && !h.m("description !~ x", &t));
         // Nothing to compare with is an error, not a filter that selects nothing.
         assert!(h.parse_err("due <").contains("could not be evaluated"));
@@ -1703,6 +1857,89 @@ mod tests {
     }
 
     #[test]
+    fn a_bang_after_a_term_makes_its_value_the_truth_of_it() {
+        let h = H::new();
+        let with_tags = |tags: &[&str]| {
+            let mut t = task("x");
+            t.tags = tags.iter().map(|s| (*s).to_owned()).collect();
+            t
+        };
+        // `+a !` is `tags _hastag_ (!a)`: the tag `false`; `!!` makes it `true`.
+        let (falsy, truthy) = (with_tags(&["a", "false"]), with_tags(&["a", "true"]));
+        assert!(h.m("+a !", &falsy) && !h.m("+a !", &truthy) && h.m("+a !!", &truthy) && h.m("+a ! !", &truthy));
+        assert!(h.m("-a !", &truthy) && !h.m("-a !", &falsy));
+        // The same for the value of an attribute, a pattern, a spaced comparison and a modifier.
+        let (mut falsy, mut truthy) = (proj("false"), proj("true"));
+        falsy.description = "x".into();
+        truthy.description = "x".into();
+        assert!(h.m("project:Work !", &falsy) && !h.m("project:Work !", &truthy) && h.m("project:Work !!", &truthy));
+        assert!(
+            h.m("project.is:Work !", &falsy) && h.m("project = Work !", &falsy) && h.m("project == Work !", &falsy)
+        );
+        assert!(h.m("description ~ x !", &task("false")) && !h.m("description ~ x !", &task("x")));
+        assert!(h.m("/x/ !", &task("false")) && !h.m("/x/ !", &task("x")));
+        // A number or a date is compared with 0 or 1, and a task that has none is the empty text, which comes first.
+        let mut due = task("x");
+        due.due = Some(NOW + DAY);
+        assert!(h.m("due > 2026-10-01 !", &due) && !h.m("due < 2026-10-30 !", &due));
+        assert!(
+            h.m("due.before:eom !", &task("x"))
+                && !h.m("due.before:eom !", &due)
+                && !h.m("due.after:eom !", &task("x"))
+        );
+        assert!(h.m("urgency > 5 !", &proj("Work")) && !h.m("urgency < 5 !", &proj("Work")));
+        // `.any:` and `.none:` have the truth of an empty value to compare with: every task, and none.
+        assert!(h.m("due.any: !", &task("x")) && h.m("due.any: !", &due) && !h.m("due.none: !", &due));
+        // A word that is no pattern is a value of its own, an attribute's name is what it holds.
+        assert!(!h.m("x !", &task("x")) && h.m("x !!", &task("x")) && !h.m("x !", &task("y")));
+        assert!(h.m("project !", &task("x")) && !h.m("project !", &proj("Work")) && h.m("project !!", &proj("Work")));
+        assert!(!h.m("description !", &task("x")) && h.m("! project", &task("x")));
+        // A group is reversed, and what follows a `!` needs an `and` or an `or`.
+        assert!(!h.m("( +a ) !", &with_tags(&["a"])) && h.m("( +a ) !", &with_tags(&["b"])));
+        assert!(h.m("( +a ! ) or +b", &with_tags(&["b"])) && h.m("+a ! or +b", &with_tags(&["b"])));
+        assert!(!h.m("+a ! and +b", &with_tags(&["b"])) && !h.m("+a ! and +b", &falsy));
+        assert!(
+            h.parse_err("+a ! +b").contains("not an expression") && h.parse_err("x ! y").contains("not an expression")
+        );
+    }
+
+    #[test]
+    fn a_word_is_broken_at_each_parenthesis_inside_it() {
+        let h = H::new();
+        let mut t = task("not now");
+        t.tags.insert("a".into());
+        // `not(+a)` is `not` and the group `(+a)`, which an implicit `and` puts together.
+        assert!(h.m("not(+a)", &t) && !h.m("not(+b)", &t) && h.m("(not)(+a)", &t) && h.m("not( +a )", &t));
+        assert!(h.m("no(w)", &t) && !h.m("no(zz)", &t) && h.m("(not)now", &t));
+        // A name and its value keep theirs.
+        assert!(h.m("description:not(now)", &task("not(now)")) && !h.m("description:not(now)", &t));
+        assert!(h.parse_err("not(+a").contains("Mismatched parentheses"));
+    }
+
+    #[test]
+    fn a_value_that_begins_with_an_operator_is_an_expression_that_fails() {
+        let h = H::new();
+        // `^` is the power operator to Taskwarrior's lexer, so a pattern anchored with it written apart is an error.
+        for (f, why) in [
+            ("description ~ ^x", "Cannot exponentiate strings"),
+            ("description !~ ^x", "Cannot exponentiate strings"),
+            ("description ~ ^ x", "Cannot exponentiate strings"),
+            ("project != ^W", "Cannot exponentiate strings"),
+            ("project~^W", "Cannot exponentiate strings"),
+            ("due ~ ^2026", "Cannot exponentiate dates"),
+            ("description = *x", "Cannot multiply strings by strings"),
+            ("description = %x", "Cannot modulo string values"),
+            ("due > *x", "Cannot multiply date values"),
+            ("urgency > ^2", "could not be evaluated"),
+            ("urgency > ^x", "Cannot exponentiate strings"),
+        ] {
+            assert!(h.parse_err(f).contains(why), "{f}: {}", h.parse_err(f));
+        }
+        // Together with the name by `:` or in a modifier it is a value like any other.
+        assert!(h.m("description.has:^x", &task("x y")) && !h.m("description:^x", &task("x")));
+    }
+
+    #[test]
     fn text_operators_on_a_date_read_it_as_iso_text() {
         let h = H::new();
         let mut t = task("x");
@@ -1747,10 +1984,11 @@ mod tests {
         assert!(h
             .parse_err("due.bogus:today")
             .contains("unrecognized attribute modifier"));
-        assert!(h.parse_err("(+a").contains("closing"));
-        assert!(h.parse_err("+a)").contains("unexpected closing"));
+        assert!(h.parse_err("(+a").contains("Mismatched parentheses"));
+        assert!(h.parse_err("+a)").contains("Mismatched parentheses"));
+        assert!(h.parse_err("( )").contains("No expression to evaluate"));
         assert!(h.parse_err("+a and").contains("expected"));
-        assert!(h.parse_err("and +a").contains("needs a term"));
+        assert!(h.parse_err("and +a").contains("could not be evaluated"));
         assert!(h.parse_err("limit:abc").contains("invalid limit"));
     }
 

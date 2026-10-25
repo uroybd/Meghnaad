@@ -2310,6 +2310,54 @@ mod recurrence {
     }
 
     #[tokio::test]
+    async fn a_task_passed_over_is_named_before_the_count() {
+        let cfg = parse("recurrence.confirmation=no\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add epsilon due:eom recur:monthly").await;
+        run(&mut r, &cfg, "list").await;
+        // The template and its instance both match; the template cannot be completed, the instance can.
+        let (res, wrote) = run(&mut r, &cfg, "/epsilon/ done").await;
+        let said = message(&res);
+        assert!(wrote, "{said}");
+        let (passed, count) = (
+            said.find("is neither pending nor waiting"),
+            said.find("Completed 1 task"),
+        );
+        assert!(passed.is_some() && passed < count, "{said}");
+    }
+
+    #[tokio::test]
+    async fn a_tag_is_kept_whatever_it_is_called() {
+        let cfg = Config::default();
+        let mut r = replica();
+        // The typed tag of the library refuses these; Taskwarrior stores `tag_<name>` for any name.
+        run(&mut r, &cfg, "add one +URGENT +a:b +Mixed +x").await;
+        for (filter, n) in [("+URGENT", 1), ("+a:b", 1), ("+Mixed", 1), ("+mixed", 0), ("+x", 1)] {
+            let (res, _) = run(&mut r, &cfg, &format!("{filter} count")).await;
+            assert_eq!(message(&res).trim(), n.to_string(), "{filter}");
+        }
+        let (res, _) = run(&mut r, &cfg, "export").await;
+        let CliResult::File { text, .. } = &res else {
+            panic!("{res:?}")
+        };
+        let v: serde_json::Value = serde_json::from_str(text).expect("JSON");
+        assert_eq!(v[0]["tags"], serde_json::json!(["Mixed", "URGENT", "a:b", "x"]));
+        // They go the same way they came, one by one or by `tags:`.
+        run(&mut r, &cfg, "1 modify -URGENT -a:b").await;
+        let (res, _) = run(&mut r, &cfg, "tags").await;
+        let said = message(&res);
+        assert!(
+            said.contains("Mixed") && !said.contains("URGENT") && !said.contains("a:b"),
+            "{said}"
+        );
+        run(&mut r, &cfg, "1 modify tags:A,b:c").await;
+        let (res, _) = run(&mut r, &cfg, "+b:c count").await;
+        assert_eq!(message(&res).trim(), "1");
+        let (res, _) = run(&mut r, &cfg, "+x count").await;
+        assert_eq!(message(&res).trim(), "0");
+    }
+
+    #[tokio::test]
     async fn editing_the_template_updates_its_pending_instances_but_not_their_dates() {
         let cfg = parse("recurrence=on\nrecurrence.confirmation=yes\n").config;
         let mut r = replica();
@@ -2918,6 +2966,26 @@ mod aliases_and_abbreviations {
         }
         let (res, _) = run(&mut r, &at(4), "proj:home count").await;
         assert_eq!(message(&res), "1");
+    }
+
+    #[tokio::test]
+    async fn the_whole_name_of_an_attribute_is_a_filter_word_and_no_command() {
+        let mut r = replica();
+        let cfg = Config::default();
+        run(&mut r, &cfg, "add Pay rent project:home").await;
+        run(&mut r, &cfg, "add Walk").await;
+        // Checked against task 3.5.0: `proj` is `projects`, `project` is a word (and a truth, after `!`).
+        let (res, _) = run(&mut r, &cfg, "proj").await;
+        assert!(format!("{res:?}").contains("home"), "{res:?}");
+        let (res, _) = run(&mut r, &cfg, "project ! count").await;
+        assert_eq!(message(&res), "1");
+        let (res, _) = run(&mut r, &cfg, "! project count").await;
+        assert_eq!(message(&res), "1");
+        // `!` after a value works on the value: `project:home !` is `project:false`.
+        let (res, _) = run(&mut r, &cfg, "project:home ! count").await;
+        assert_eq!(message(&res), "0");
+        let (res, _) = run(&mut r, &cfg, "description ~ ^Pay count").await;
+        assert!(message(&res).contains("Cannot exponentiate strings"), "{res:?}");
     }
 }
 

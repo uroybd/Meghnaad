@@ -20,10 +20,9 @@ use crate::taskrc::Config;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
-use std::str::FromStr;
 use std::sync::Arc;
 use taskchampion::storage::Storage;
-use taskchampion::{Operations, Replica, Status, Tag};
+use taskchampion::{Operations, Replica, Status};
 use uuid::Uuid;
 
 /// The most tasks one import takes, and the most it lists in its report.
@@ -137,7 +136,7 @@ fn convert(
             "id" | "urgency" | "uuid" => {}
             "tags" => {
                 for tag in value.as_array().into_iter().flatten().filter_map(Value::as_str) {
-                    if Tag::from_str(tag).is_ok() {
+                    if !tag.is_empty() {
                         props.insert(format!("tag_{tag}"), String::new());
                     }
                 }
