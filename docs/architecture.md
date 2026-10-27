@@ -174,6 +174,16 @@ Kotlin over JNI, and it syncs straight with the bucket, signing S3 requests itse
 same server code the Worker runs over R2) or with a TaskChampion sync server (`syncserver.rs`, the same sealed versions over
 HTTP, keyed by the client id). See [the Android app](android.md).
 
+**With the real `task`** (`crates/hook-shim`, the program `meghnaad-hook`) the same Lua script runs for the CLI on a computer.
+`task` runs an executable per hook from `<data>/hooks/`; `install` links this one program there as `on-add.meghnaad` and so
+on, for the hooks the script defines, and it picks the hook to run from the name it was called by. It speaks `task`'s hook
+protocol (a line of JSON in, a line out, feedback lines, a non-zero exit to refuse), converting `task`'s JSON to the engine's
+task (`convert.rs`) so that the script is given exactly what `task_to_json` gives the Worker, and turning what comes back
+into `tc_core::hooks::diff`'s changes, applied to the JSON `task` sent: the same checks, so a field the script may not touch
+cannot be changed here either. It is a `LuaRunner` and a `Net` of its own (`net.rs`: `ureq`, the script's timeout, no
+redirects, a 1 MB cap; `secret(name)` is the environment variable of that exact name). The clock is the computer's zone and
+the taskrc's `dateformat`, `date.iso` and `weekstart`. Nothing about Taskwarrior is decided here.
+
 **The app** (`app/`, Kotlin and Compose) draws that engine natively, not in a WebView: `shared` holds the
 engine's JSON types and API (mirroring `web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's store, and the
 screens; `androidApp` holds the activity, the reminder alarm's receiver and the widgets. Taskwarrior behaviour stays in
@@ -454,6 +464,7 @@ dates each `date.iso`/`dateformat` combination accepts.
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
 | `tests/lua_net.rs` | `http` and `secret()` against a fake host: the allowlist (exact, wildcard, no user-info tricks), https only, request limits, a failed request as `nil` and a reason, a secret's value kept out of everything, and a second call while one waits on the network |
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
+| `crates/hook-shim/tests/protocol.rs` | `meghnaad-hook` as `task` runs it, from a task on standard input to what it prints and exits with: each hook, the changes written back in `task`'s form, refusing, a script that does not load, secrets by exact name, `http` against a local server, the zone, `install` and `uninstall` |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
 | `board` unit tests (and `a_board_reads_what_export_writes`, `finished_tasks_split_into_succeeded_and_failed_by_a_uda` and `spans_over_an_export_are_what_the_weekly_burndown_counts` in `cli_exec`, which feed the real `export` to the aggregation, the last checking pending, started and done against `burndown.weekly` week by week) | Grid placement (the moved section wins, the overlapped are pushed down, everything floats up, clamping, the two-column minimum, keyboard steps, reading order, the phone's flow and resizing in its columns), the saved format (what is valid, what is dropped and named), counts, sums, averages and comparisons of numbers and durations, grouping by value, by each tag, and by a date in each step, in each zone and week start, with empty periods kept, and the refusals (a word is not a duration, too many periods) |

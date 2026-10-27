@@ -230,7 +230,7 @@ flowchart TB
 | Offline        | Works                      | Changes work and are kept; they go up when the connection is back. The page itself needs a connection to load |
 | Encryption key | Only on your machine       | In a Worker secret; the Worker opens and seals what passes through it                                         |
 | Task ids       | Local to that replica      | Computed separately, so they differ                                                                           |
-| Hooks | Scripts in `~/.task/hooks` | Lua functions in a script kept in the bucket, edited in Settings; they run on the Worker |
+| Hooks | Scripts in `~/.task/hooks` | Lua functions in a script kept in the bucket, edited in Settings; they run on the Worker (or with `task`, through `meghnaad-hook`) |
 
 More in [Architecture](docs/architecture.md).
 
@@ -334,6 +334,9 @@ The Lua runs in a sandbox (`string`, `table` and `math` only; no files) and is s
 on the Worker, a script can call other services (`http.post(...)`, to hosts it declares, over https) and read named secrets
 (`secret("jira")`) that are kept apart from the script and never reach the page. The Lua adds about 305 KB (compressed) to
 the Worker; the engine in the browser is unaffected.
+
+The same script runs with the real `task` on your computer through `meghnaad-hook`, which `task` calls as an ordinary hook
+(secrets there are environment variables); see [the same script with the real `task`](docs/using.md#the-same-script-with-the-real-task).
 
 ## Security
 

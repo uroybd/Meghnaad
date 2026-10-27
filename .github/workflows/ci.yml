@@ -53,6 +53,10 @@ jobs:
       - name: Clippy (engine for Android)
         run: cargo clippy -p tc-android --all-targets -- -D warnings
 
+      # The program that runs the hooks script for the real `task` (native, with its own HTTP client).
+      - name: Clippy (hooks for the real task)
+        run: cargo clippy -p tc-hook --all-targets -- -D warnings
+
   web:
     name: Web app and scripts (format, lint, tests, type check)
     runs-on: ubuntu-latest

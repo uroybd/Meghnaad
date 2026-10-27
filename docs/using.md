@@ -799,8 +799,8 @@ Taskwarrior runs your scripts when a command starts, when a task is added or cha
 run `~/.task/hooks/on-add.*`, so here a hook is a function in a **Lua script** that you write in **Settings → Hooks**.
 The script lives in your bucket (as `web/hooks.lua`, beside your settings), not in the app: change it and the next
 command uses it, with no rebuild or deploy. It runs on the server, behind your sign-in, so a script can later hold
-secrets that never reach the page. Your desktop's hooks are separate: they only fire for commands run there, and these
-only for commands run here.
+secrets that never reach the page. Your desktop's own hooks are separate: they only fire for commands run there, and these
+only for commands run here, unless you run this same script on the desktop too ([below](#the-same-script-with-the-real-task)).
 
 Define any of four functions, each at most once:
 
@@ -905,6 +905,42 @@ Each hook that runs is a request to the server, so only the hooks your script de
 none of them is as fast as before. If the server can't be reached the hook is skipped with a warning that says so, and
 the command carries on (your own `refuse` or error still stops it). The time a hook spends waiting on the network is not
 CPU time, but it is time your command waits.
+
+### The same script with the real `task`
+
+`meghnaad-hook` runs the script for the `task` on your computer, with the same Lua, the same library (`task:in_project`,
+`date("friday")`, `say`, `refuse`) and the same `http`, so a script written in Settings → Hooks works there unchanged and the
+other way round. `task` runs an executable per hook from `<data>/hooks/`; `meghnaad-hook` is that executable, linked under
+the names `task` looks for.
+
+```sh
+cargo install --path crates/hook-shim          # once; puts meghnaad-hook on your PATH
+meghnaad-hook check ~/hooks.lua                # which hooks the script defines, or the line that is wrong
+meghnaad-hook install ~/hooks.lua              # ~/.task/hooks.lua -> your script; ~/.task/hooks/on-add.meghnaad -> the program, …
+```
+
+- **Where things are.** The data directory is `--data DIR`, else `$TASKDATA`, else `~/.task`. The script is
+  `$MEGHNAAD_HOOKS`, else `<data>/hooks.lua`; `install SCRIPT` makes that a link to SCRIPT, so the script can live in a
+  dotfiles repository. `install` links only the hooks the script defines (a `task` command starts one process per hook file,
+  so an undefined one would be wasted) and removes the links of ones it no longer defines: run it again after adding a
+  function. `meghnaad-hook uninstall` removes them all, which is also the way back to ordinary hook executables.
+- **What it does.** `on-add` and `on-modify` give the script the task and print it back; what the script cannot change
+  (uuid, status, annotations, recurrence) is refused as in the web app, and anything it did not touch, `id` and `urgency`
+  included, goes back as `task` wrote it. `refuse("why")`, an error in the script, or a script that does not load stops the
+  command and shows the message (`task` exits 4). `say` and `warn` print under the command's result; a `warn` starts with
+  `Warning:`. `on-exit` can only talk. `on-launch` is given the command line without `task`. `hooks=off` in the taskrc turns
+  them off, as for any hook.
+- **Dates** are read and written in this computer's time zone and your taskrc's `dateformat`, `date.iso` and `weekstart`.
+  `rc.` overrides on the command line and `include`d rc files are not seen.
+- **The network** works as on the server: `allow_hosts{…}` at the top, https only (`http://localhost` for testing), at most
+  five requests a call and ten seconds each, redirects are the script's to follow.
+- **Secrets** are environment variables: `secret("JIRA_TOKEN")` is the variable `JIRA_TOKEN`, by that exact name and no
+  other (the environment is shared with every other program, so no prefix is added or guessed), and a missing one is an
+  error that stops the hook. Its value is replaced by `***` in anything the script prints, fails with or returns. Set them
+  where `task` is started from (your shell profile, or `launchctl setenv` for a GUI); the Worker's secrets and the app's are
+  separate.
+- **Differences.** `task.blocked` and `task.blocking` are always false (`task` does not send them and a hook cannot ask it,
+  as it holds the data). A date UDA reads and writes as seconds, as everywhere in the script.
 
 ## Time tracking and reminders
 
