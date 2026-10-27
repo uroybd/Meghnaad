@@ -913,13 +913,21 @@ CPU time, but it is time your command waits.
 other way round. `task` runs an executable per hook from `<data>/hooks/`; `meghnaad-hook` is that executable, linked under
 the names `task` looks for.
 
+First get the program, once, in either of two ways. Neither needs a clone of this repository.
+
+- **Prebuilt** (no Rust): download `meghnaad-hook-<version>-<platform>.tar.gz` from the
+  [latest release](https://github.com/uroybd/Meghnaad/releases/latest) (Linux or macOS, x86_64 or arm64) and put the
+  `meghnaad-hook` inside where you keep programs, for example `~/.local/bin`. On macOS, if it is blocked for coming from the
+  internet, `xattr -d com.apple.quarantine ~/.local/bin/meghnaad-hook` (or fetch it with `curl`, which does not mark it).
+- **From source** (needs Rust): `cargo install --git https://github.com/uroybd/Meghnaad tc-hook --locked`, which puts it in
+  `~/.cargo/bin`. Add `--tag v<version>` for a release rather than the latest commit.
+
 ```sh
-cargo install --path crates/hook-shim          # once; puts meghnaad-hook on your PATH
 meghnaad-hook check ~/hooks.lua                # which hooks the script defines, or the line that is wrong
 meghnaad-hook install ~/hooks.lua              # ~/.task/hooks.lua -> your script; ~/.task/hooks/on-add.meghnaad -> the program, …
 ```
 
-To try it, save the first example above (the one that tags Work tasks) as `~/hooks.lua`, run the three commands, then:
+To try it, save the first example above (the one that tags Work tasks) as `~/hooks.lua`, run the two commands, then:
 
 ```console
 $ task add Write report project:Work
