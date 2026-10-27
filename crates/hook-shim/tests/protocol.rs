@@ -183,8 +183,24 @@ fn a_script_can_call_a_web_service_it_declared() {
     let port = server.local_addr().unwrap().port();
     let seen = std::thread::spawn(move || {
         let (mut conn, _) = server.accept().unwrap();
+        // The whole request, body included: closing with some of it unread resets the connection under the client.
         let mut request = [0u8; 4096];
-        let n = conn.read(&mut request).unwrap();
+        let mut n = 0;
+        loop {
+            n += conn.read(&mut request[n..]).unwrap();
+            let text = String::from_utf8_lossy(&request[..n]).to_ascii_lowercase();
+            let Some((head, body)) = text.split_once("\r\n\r\n") else {
+                continue;
+            };
+            let length = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length: "))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            if body.len() >= length {
+                break;
+            }
+        }
         let body = r#"{"key":"PAY-7"}"#;
         write!(
             conn,
