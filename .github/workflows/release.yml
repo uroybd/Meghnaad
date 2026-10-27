@@ -1,7 +1,8 @@
 # Builds the app once and publishes it, versioned, for both ways of using it:
 #   - the web app, ready to deploy with no Rust or build needed: the `release` branch holds the built files (it is what the
 #     Deploy to Cloudflare button points at), and a tag also attaches them to a GitHub release as a .tar.gz;
-#   - the Android app, as an APK: attached to the release for a tag, or kept as the run's artifact.
+#   - the Android app, as an APK: attached to the release for a tag, or kept as the run's artifact;
+#   - meghnaad-hook, the Lua hooks script for the real `task`, as a program for Linux and macOS (x86_64 and arm64), the same way.
 # The version is the one in package.json. To release: change it there, commit, then tag that commit `v<version>` and push
 # the tag (git tag v0.2.0 && git push origin v0.2.0). A tag that does not match package.json is refused. A run by hand
 # (Actions > "Release" > Run workflow) builds the same things as `<version>-dev.<commit>` and publishes only the branch.
@@ -115,12 +116,69 @@ jobs:
           cat > "$RUNNER_TEMP/notes.md" <<NOTES
           **Web app**: deploy it with the [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/${GITHUB_REPOSITORY}/tree/release) button, or with \`npm run setup\` from the \`release\` branch ([Deploying](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deploy.md)). \`meghnaad-$VERSION.tar.gz\` is the same built package.
 
+          **Hooks with the real \`task\`**: \`meghnaad-hook-$VERSION-<platform>.tar.gz\` is the program that runs your Lua hooks script for \`task\` ([the same script with the real task](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/using.md#the-same-script-with-the-real-task)); the builds are added to this release when they finish.
+
           **Android app**: install \`meghnaad-$VERSION.apk\` ([the Android app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/android.md)); it is added to this release when its build finishes.
 
           NOTES
           sed -i 's/^          //' "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "Meghnaad $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
+
+  # meghnaad-hook (the Lua hooks script for the real `task`) as a program per platform, so that it installs with no Rust:
+  # `meghnaad-hook-<version>-<target>.tar.gz`, attached to a tag's release or kept as the run's artifact.
+  hook:
+    needs: release
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-14, target: aarch64-apple-darwin }
+          - { os: macos-14, target: x86_64-apple-darwin }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build and package
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          declared="$(node scripts/version.mjs)"
+          if [ "$REF_TYPE" = tag ]; then version="$declared"; else version="$declared-dev.${GITHUB_SHA::7}"; fi
+          cargo build --release --locked -p tc-hook --target "$TARGET"
+          name="meghnaad-hook-$version-$TARGET"
+          mkdir "$name"
+          cp "target/$TARGET/release/meghnaad-hook" "$name/"
+          tar -czf "$name.tar.gz" "$name"
+          echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meghnaad-hook-${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+      - name: Attach to the GitHub release
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" "$ARCHIVE" --clobber
 
   # After the release exists, so that a tag's APK can be added to it.
   android:
