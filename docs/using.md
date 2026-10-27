@@ -946,7 +946,8 @@ reinstall after you move it or build a new one somewhere else.
   dotfiles repository. `install` links only the hooks the script defines (a `task` command starts one process per hook file,
   so an undefined one would be wasted) and removes the links of ones it no longer defines: run it again after adding a
   function. `meghnaad-hook uninstall` removes the `*.meghnaad` links (and only those, so your own hook executables stay;
-  `hooks.lua` stays too). Links go in `<data>/hooks`, so a `hooks.location` in the taskrc is not followed.
+  `hooks.lua` stays too). Links go in `<data>/hooks`. The taskrc's `hooks.location` is not read (it may be in an
+  `include`d file), so if you set one, give that directory to `install` and `uninstall` as `--hooks DIR`.
   `meghnaad-hook check` with no argument checks the script it would use. A hook that finds no script at that place prints
   `meghnaad-hook: there is no script at …` and lets the command carry on.
 - **What it does.** `on-add` and `on-modify` give the script the task and print it back; what the script cannot change

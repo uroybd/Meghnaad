@@ -17,12 +17,13 @@ use std::process::ExitCode;
 const USAGE: &str = "meghnaad-hook: your Meghnaad hooks script, as hooks for `task`
 
   meghnaad-hook check [SCRIPT]                 say which hooks a script defines, or what is wrong with it
-  meghnaad-hook install [SCRIPT] [--data DIR]  link the hooks the script defines into DIR/hooks
-  meghnaad-hook uninstall [--data DIR]         remove those links
+  meghnaad-hook install [SCRIPT] [--data DIR] [--hooks HOOKS]  link the hooks the script defines into HOOKS
+  meghnaad-hook uninstall [--data DIR] [--hooks HOOKS]         remove those links
 
-The script is SCRIPT, else $MEGHNAAD_HOOKS, else DIR/hooks.lua. DIR is --data, else $TASKDATA, else ~/.task.
-`install SCRIPT` makes DIR/hooks.lua a link to SCRIPT, so the script can live anywhere. Run install again after the
-script defines another hook. In a script, secret(\"NAME\") is the environment variable NAME.";
+The script is SCRIPT, else $MEGHNAAD_HOOKS, else DIR/hooks.lua. DIR is --data, else $TASKDATA, else ~/.task, which
+is `data.location`. HOOKS is --hooks, else DIR/hooks: give it when the taskrc sets `hooks.location`, which is not read
+here. `install SCRIPT` makes DIR/hooks.lua a link to SCRIPT, so the script can live anywhere. Run install again after
+the script defines another hook. In a script, secret(\"NAME\") is the environment variable NAME.";
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
@@ -74,19 +75,34 @@ fn moment() -> (i64, i32) {
     (now.timestamp(), now.offset().local_minus_utc())
 }
 
-/// `--data DIR` taken out of the arguments, and the rest.
-fn split_data<'a>(args: &[&'a str]) -> Result<(Option<PathBuf>, Vec<&'a str>), String> {
-    let mut data = None;
-    let mut rest = Vec::new();
+/// `--data DIR` and `--hooks DIR` taken out of the arguments, and the rest.
+#[derive(Default)]
+struct Options<'a> {
+    data: Option<PathBuf>,
+    hooks: Option<PathBuf>,
+    rest: Vec<&'a str>,
+}
+
+impl Options<'_> {
+    /// The directory `task` runs hooks from: `--hooks`, else `hooks` in the data directory.
+    fn hooks_dir(&self) -> PathBuf {
+        self.hooks
+            .clone()
+            .unwrap_or_else(|| data_dir(self.data.as_deref()).join("hooks"))
+    }
+}
+
+fn split_options<'a>(args: &[&'a str]) -> Result<Options<'a>, String> {
+    let mut options = Options::default();
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        if *a == "--data" {
-            data = Some(PathBuf::from(it.next().ok_or("--data needs a directory")?));
-        } else {
-            rest.push(*a);
+        match *a {
+            "--data" => options.data = Some(PathBuf::from(it.next().ok_or("--data needs a directory")?)),
+            "--hooks" => options.hooks = Some(PathBuf::from(it.next().ok_or("--hooks needs a directory")?)),
+            other => options.rest.push(other),
         }
     }
-    Ok((data, rest))
+    Ok(options)
 }
 
 fn read(script: &Path) -> Result<String, String> {
@@ -134,11 +150,11 @@ fn ours(hooks_dir: &Path) -> Vec<PathBuf> {
 }
 
 fn install(args: &[&str]) -> Result<Vec<String>, String> {
-    let (data, rest) = split_data(args)?;
-    let data = data_dir(data.as_deref());
+    let options = split_options(args)?;
+    let data = data_dir(options.data.as_deref());
     let mut lines = Vec::new();
     let place = data.join("hooks.lua");
-    let script = match rest.first() {
+    let script = match options.rest.first() {
         None => std::env::var_os("MEGHNAAD_HOOKS").map_or(place.clone(), PathBuf::from),
         Some(given) => {
             let given = std::fs::canonicalize(given).map_err(|e| format!("{given}: {e}"))?;
@@ -161,7 +177,7 @@ fn install(args: &[&str]) -> Result<Vec<String>, String> {
     let me = std::env::current_exe()
         .and_then(std::fs::canonicalize)
         .map_err(|e| format!("cannot find this program: {e}"))?;
-    let dir = data.join("hooks");
+    let dir = options.hooks_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let wanted: Vec<PathBuf> = hooks
         .iter()
@@ -186,8 +202,7 @@ fn install(args: &[&str]) -> Result<Vec<String>, String> {
 }
 
 fn uninstall(args: &[&str]) -> Result<Vec<String>, String> {
-    let (data, _) = split_data(args)?;
-    let dir = data_dir(data.as_deref()).join("hooks");
+    let dir = split_options(args)?.hooks_dir();
     let links = ours(&dir);
     for link in &links {
         std::fs::remove_file(link).map_err(|e| format!("{}: {e}", link.display()))?;

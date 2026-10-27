@@ -289,3 +289,40 @@ fn install_links_the_hooks_the_script_defines_and_uninstall_removes_them() {
     assert!(run_cli(&["uninstall"]).status.success());
     assert_eq!(std::fs::read_dir(data.join("hooks")).unwrap().count(), 0);
 }
+
+#[test]
+fn install_follows_a_hooks_directory_that_is_not_in_the_data_directory() {
+    let (data, _) = setup("install-hooks-dir", "", "stale");
+    std::fs::remove_dir_all(data.join("hooks")).unwrap();
+    std::fs::remove_file(data.join("hooks.lua")).unwrap();
+    let hooks = data.join("elsewhere");
+    std::fs::create_dir_all(&hooks).unwrap();
+    std::fs::write(hooks.join("on-add.mine"), "not ours").unwrap();
+    let script = data.join("mine.lua");
+    std::fs::write(&script, "function on_modify(old, new) end").unwrap();
+    let run_cli = |args: &[&str]| {
+        Command::new(BIN)
+            .args(args)
+            .arg("--data")
+            .arg(&data)
+            .arg("--hooks")
+            .arg(&hooks)
+            .env_remove("MEGHNAAD_HOOKS")
+            .output()
+            .unwrap()
+    };
+    let o = run_cli(&["install", script.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", out(&o));
+    let mut names: Vec<_> = std::fs::read_dir(&hooks)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["on-add.mine", "on-modify.meghnaad"]);
+    assert!(
+        !data.join("hooks").exists(),
+        "the data directory's own hooks are left alone"
+    );
+    assert!(run_cli(&["uninstall"]).status.success());
+    assert_eq!(std::fs::read_dir(&hooks).unwrap().count(), 1, "only ours are removed");
+}
