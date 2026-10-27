@@ -919,11 +919,28 @@ meghnaad-hook check ~/hooks.lua                # which hooks the script defines,
 meghnaad-hook install ~/hooks.lua              # ~/.task/hooks.lua -> your script; ~/.task/hooks/on-add.meghnaad -> the program, …
 ```
 
+To try it, save the first example above (the one that tags Work tasks) as `~/hooks.lua`, run the three commands, then:
+
+```console
+$ task add Write report project:Work
+Created task 1.
+Tagged +office.
+The project 'Work' has changed.  Project 'Work' is 0% complete (1 task remaining).
+$ task diag | grep -A4 Hooks         # Active: on-add.meghnaad (executable) (symlink)
+```
+
+From then on, edit the script and the next `task` command uses it; nothing needs installing again unless the script
+defines a hook it did not before (or stops defining one). The `meghnaad-hook` links point at the program's own path, so
+reinstall after you move it or build a new one somewhere else.
+
 - **Where things are.** The data directory is `--data DIR`, else `$TASKDATA`, else `~/.task`. The script is
   `$MEGHNAAD_HOOKS`, else `<data>/hooks.lua`; `install SCRIPT` makes that a link to SCRIPT, so the script can live in a
   dotfiles repository. `install` links only the hooks the script defines (a `task` command starts one process per hook file,
   so an undefined one would be wasted) and removes the links of ones it no longer defines: run it again after adding a
-  function. `meghnaad-hook uninstall` removes them all, which is also the way back to ordinary hook executables.
+  function. `meghnaad-hook uninstall` removes the `*.meghnaad` links (and only those, so your own hook executables stay;
+  `hooks.lua` stays too). Links go in `<data>/hooks`, so a `hooks.location` in the taskrc is not followed.
+  `meghnaad-hook check` with no argument checks the script it would use. A hook that finds no script at that place prints
+  `meghnaad-hook: there is no script at …` and lets the command carry on.
 - **What it does.** `on-add` and `on-modify` give the script the task and print it back; what the script cannot change
   (uuid, status, annotations, recurrence) is refused as in the web app, and anything it did not touch, `id` and `urgency`
   included, goes back as `task` wrote it. `refuse("why")`, an error in the script, or a script that does not load stops the

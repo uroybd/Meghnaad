@@ -59,7 +59,7 @@ Each row below counts once, even where a row covers several related options.
 | `purge.on-sync` | Not done | The app only purges when you run `purge`; it never purges deleted tasks by itself on a sync. Leave that to your CLI |
 | `data.location`, `TASKDATA` | N/A | Data lives in the R2 bucket |
 | `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; its place is a folder of files saved in the bucket (`web/rc/`), the main one being `taskrc` |
-| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A browser can't run scripts, so the hooks are functions in a Lua script kept in the bucket and edited in Settings: `on_launch`, `on_add`, `on_modify` and `on_exit`. See [Hooks](using.md#hooks) |
+| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A browser can't run scripts, so the hooks are functions in a Lua script kept in the bucket and edited in Settings: `on_launch`, `on_add`, `on_modify` and `on_exit`. The same script also runs with the real `task` through `meghnaad-hook`, and `hooks=off` turns it off there too. See [Hooks](using.md#hooks) |
 | `hooks.location`, `debug.hooks` | N/A | There is no hooks directory to look in, and no scripts to trace |
 | `gc` | N/A | Working-set ids are computed by the app, not stored |
 | `exit.on.missing.db` | N/A | There is no local database |
