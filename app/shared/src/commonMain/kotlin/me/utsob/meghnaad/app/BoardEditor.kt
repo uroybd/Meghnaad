@@ -76,14 +76,14 @@ private fun BoardRangesEditor(store: Store, ranges: List<DateRange>, onChange: (
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ranges.forEachIndexed { i, r ->
                 fun set(now: DateRange) = onChange(ranges.mapIndexed { j, x -> if (j == i) now else x })
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextBox("Name", r.name, { set(r.copy(name = it.trim().lowercase())) }, Modifier.weight(1f), mono = true)
-                    IconAction("trash-2", "Remove ${r.name.ifEmpty { "date range ${i + 1}" }}", { onChange(ranges.filterIndexed { j, _ -> j != i }) }, size = 18.dp, tint = MaterialTheme.colorScheme.error)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    DateTimeInput(r.start, { set(r.copy(start = it)) }, "Start of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "sow")
-                    Dim("–")
-                    DateTimeInput(r.end, { set(r.copy(end = it)) }, "End of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "eow")
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextBox("Name of date range ${i + 1}", r.name, { set(r.copy(name = it.trim().lowercase())) }, mono = true)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DateTimeInput(r.start, { set(r.copy(start = it)) }, "Start of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "sow")
+                        Dim("–")
+                        DateTimeInput(r.end, { set(r.copy(end = it)) }, "End of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "eow")
+                    }
+                    TextButton({ onChange(ranges.filterIndexed { j, _ -> j != i }) }) { Text("Remove date range ${i + 1}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
                 }
             }
             OutlinedButton({
