@@ -344,7 +344,7 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
 
     Column(Modifier.fillMaxWidth().border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(8.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Series", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        Dim("Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With none, the chart is the one measure above. When they are stacked, the first is at the bottom and the next on it: Move changes the order. In a heatmap with rows a series is a colour and a grid of its own, or, stacked, they are added into one.", size = 11)
+        Dim("Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With none, the chart is the one measure above. When they are stacked, the first is at the bottom and the next on it: Move changes the order. In a heatmap with rows a series is a colour and a grid of its own, or, stacked, they are added into one; with no rows a series is a row, and stacked they are one row.", size = 11)
         s.series.forEachIndexed { i, x ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextBox("Name of series ${i + 1}", x.label, { v -> patch(i) { it.copy(label = v) } })
@@ -374,7 +374,7 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton({ setSeries(s.series + Series("Series ${s.series.size + 1}")) }, enabled = s.series.size < MAX_SERIES) { Text("+ Add series", fontSize = 12.sp) }
-            if ((s.series.size > 1 || s.stacked == true) && (s.type != "heatmap" || s.rows != null)) {
+            if (s.series.size > 1 || s.stacked == true) {
                 Row(Modifier.clickable { onChange(s.copy(stacked = if (s.stacked == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(s.stacked == true, onCheckedChange = null)
                     Text("Stacked", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))

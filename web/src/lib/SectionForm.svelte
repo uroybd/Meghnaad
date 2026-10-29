@@ -323,7 +323,7 @@
         Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With
         none, the chart is the one measure above. When they are stacked, the first is at the bottom and the next on it:
         the arrows change the order. In a heatmap with rows a series is a colour and a grid of its own, or, stacked,
-        they are added into one.
+        they are added into one; with no rows a series is a row, and stacked they are one row.
       </p>
       {#each series as x, i (i)}
         <div class="series-item">
@@ -406,7 +406,7 @@
       {/each}
       <div class="row-series">
         <button onclick={addSeries} disabled={series.length >= MAX_SERIES}><Plus size={14} /> Add series</button>
-        {#if (series.length > 1 || section.stacked) && (section.type !== 'heatmap' || section.rows)}
+        {#if series.length > 1 || section.stacked}
           <label class="check">
             <input
               type="checkbox"

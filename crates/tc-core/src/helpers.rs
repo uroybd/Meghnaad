@@ -341,7 +341,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             json!(crate::board::heat::heat(
                 &a.req::<Vec<crate::board::aggregate::SeriesInput>>(0)?,
                 &by,
-                &a.req::<crate::board::heat::Rows>(2)?,
+                a.opt::<crate::board::heat::Rows>(2)?.as_ref(),
                 a.opt::<bool>(3)?.unwrap_or(false),
                 &ctx
             )?)

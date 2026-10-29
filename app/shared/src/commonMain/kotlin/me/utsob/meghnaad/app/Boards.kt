@@ -364,8 +364,8 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, ranges: List<DateRa
 
 class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?)
 
-/** A heatmap with rows: a grid for each series (one, when they are stacked), the columns the same in each. */
-fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows, stacked: Boolean, zone: Zone, ranges: List<DateRange> = emptyList()): List<BoardChart> {
+/** A heatmap: a grid for each series (one, when they are stacked), the columns the same in each. With no rows a series is a row, and stacked they are one row. */
+fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows?, stacked: Boolean, zone: Zone, ranges: List<DateRange> = emptyList()): List<BoardChart> {
     val series = JsonArray(
         inputs.map {
             buildJsonObject {
@@ -377,7 +377,7 @@ fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows, stacked: Boolean, 
         },
     )
     val got = callHelper(
-        "board_heatmap", series, boardsJson.encodeToJsonElement(By.serializer(), by), boardsJson.encodeToJsonElement(Rows.serializer(), rows),
+        "board_heatmap", series, boardsJson.encodeToJsonElement(By.serializer(), by), rows?.let { boardsJson.encodeToJsonElement(Rows.serializer(), it) } ?: JsonNull,
         JsonPrimitive(stacked), zone.toJson(), rangesJson(ranges),
     )
     return boardsJson.decodeFromJsonElement(ListSerializer(BoardChart.serializer()), got)
@@ -495,12 +495,11 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
                         inputs += SeriesInput(x.label, text, x.measure ?: s.measure, x.span)
                         sources += Source(x.label, filter, text)
                     }
-                    val rows = s.rows
                     val by = s.by
                     if (failure != null) SectionData.Failed(failure)
-                    else if (s.type == "heatmap" && rows != null && by != null) {
-                        // A heatmap with rows: a grid for each series, the columns the same in each.
-                        val grids = layHeatmap(inputs, by, rows, s.stacked == true, zone, board.ranges)
+                    else if (s.type == "heatmap" && by != null) {
+                        // A heatmap: a grid for each series (one when stacked), the columns the same in each.
+                        val grids = layHeatmap(inputs, by, s.rows, s.stacked == true, zone, board.ranges)
                         SectionData.Chart(grids.first(), sources, keepOf(s.limit, board.ranges, zone), grids)
                     } else SectionData.Chart(layChart(inputs, s.by, zone, board.ranges), sources, keepOf(s.limit, board.ranges, zone))
                 }

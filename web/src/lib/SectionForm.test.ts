@@ -92,6 +92,20 @@ describe('the rows of a heatmap', () => {
     expect(changed.mock.calls[2][0].rows).toBeUndefined();
   });
 
+  it('can be stacked with a row for each series too: the series are then one row', () => {
+    const changed = vi.fn();
+    const older = { ...heat, rows: undefined, series: [{ label: 'A' }, { label: 'B' }] };
+    app = mount(SectionForm, { target: document.body, props: { section: older, onchange: changed } });
+    flushSync();
+    const box = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((b) =>
+      b.parentElement?.textContent?.includes('Stacked'),
+    )!;
+    expect(box.disabled).toBe(false);
+    box.checked = true;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changed.mock.calls[0][0].stacked).toBe(true);
+  });
+
   it('can be stacked now, and a section that is not a heatmap has none', () => {
     const changed = vi.fn();
     const two = { ...heat, series: [{ label: 'A' }, { label: 'B' }] };

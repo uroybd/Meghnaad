@@ -677,9 +677,11 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
         sources.push({ label: x.label, filter, text: got.text });
       }
       const limit = keepOf(s.limit, board.ranges ?? [], zone);
-      if (s.type === 'heatmap' && s.rows && s.by) {
-        // A heatmap with rows: a grid for each series (one, when they are stacked), the columns the same in each.
-        const grids = callHelper<Chart[]>('board_heatmap', inputs, s.by, s.rows, !!s.stacked, zone, board.ranges ?? []);
+      if (s.type === 'heatmap' && s.by) {
+        // A heatmap: a grid for each series (one, when they are stacked), the columns the same in each. With no rows a series is
+        // a row, and stacked they are one row.
+        const rows = s.rows ?? null;
+        const grids = callHelper<Chart[]>('board_heatmap', inputs, s.by, rows, !!s.stacked, zone, board.ranges ?? []);
         return [s.id, { kind: 'chart', chart: grids[0], grids, sources, limit }];
       }
       return [

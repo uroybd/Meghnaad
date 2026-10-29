@@ -127,10 +127,33 @@ fn row_keys(task: &Value, rows: &Rows, ctx: &Ctx) -> Result<Vec<String>, String>
     Ok(if keys.is_empty() { vec![String::new()] } else { keys })
 }
 
+/// Add `other`'s cells to `row`'s: a cell with nothing in either has nothing, as in a stacked chart.
+fn add_into(row: &mut Dataset, other: &Dataset) {
+    let sum = |a: Option<f64>, b: Option<f64>| match (a, b) {
+        (None, None) => None,
+        (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
+    };
+    for (v, o) in row.data.iter_mut().zip(&other.data) {
+        *v = sum(*v, *o);
+    }
+    for (c, o) in row.counts.iter_mut().zip(&other.counts) {
+        *c += o;
+    }
+    row.total = sum(row.total, other.total);
+    row.tasks += other.tasks;
+}
+
 /// The grids of a heatmap: one for each series, or one of them added up when `stacked`. `series` carry their own tasks (and
-/// span, and measure) as in `chart`; `by` is the columns and `rows` the rows.
-pub fn heat(series: &[SeriesInput], by: &By, rows: &Rows, stacked: bool, ctx: &Ctx) -> Result<Vec<Grid>, String> {
-    if let Some(p) = rows.problem() {
+/// span, and measure) as in `chart`; `by` is the columns and `rows` the rows. With no `rows` a series is a row, in the one grid;
+/// stacked, they are added into a single row (a heatmap along the columns only).
+pub fn heat(
+    series: &[SeriesInput],
+    by: &By,
+    rows: Option<&Rows>,
+    stacked: bool,
+    ctx: &Ctx,
+) -> Result<Vec<Grid>, String> {
+    if let Some(p) = rows.and_then(Rows::problem) {
         return Err(p.into());
     }
     if by.time.is_none() && by.field.is_none() {
@@ -139,6 +162,24 @@ pub fn heat(series: &[SeriesInput], by: &By, rows: &Rows, stacked: bool, ctx: &C
     if series.is_empty() {
         return Err("a heatmap needs a series".into());
     }
+    let Some(rows) = rows else {
+        let laid = chart(series, Some(by), ctx)?;
+        let mut datasets = laid.datasets;
+        if stacked && datasets.len() > 1 {
+            let mut sum = datasets.remove(0);
+            for d in &datasets {
+                sum.label = format!("{} + {}", sum.label, d.label);
+                add_into(&mut sum, d);
+            }
+            datasets = vec![sum];
+        }
+        return Ok(vec![Grid {
+            label: String::new(),
+            unit: laid.unit,
+            labels: laid.labels,
+            datasets,
+        }]);
+    };
     // Each series' tasks, cut into rows.
     let mut parsed: Vec<Vec<Value>> = Vec::with_capacity(series.len());
     for s in series {
@@ -214,20 +255,7 @@ pub fn heat(series: &[SeriesInput], by: &By, rows: &Rows, stacked: bool, ctx: &C
         for g in &grids {
             sum.label = format!("{} + {}", sum.label, g.label);
             for (row, other) in sum.datasets.iter_mut().zip(&g.datasets) {
-                for (v, o) in row.data.iter_mut().zip(&other.data) {
-                    *v = match (*v, *o) {
-                        (None, None) => None,
-                        (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
-                    };
-                }
-                for (c, o) in row.counts.iter_mut().zip(&other.counts) {
-                    *c += o;
-                }
-                row.total = match (row.total, other.total) {
-                    (None, None) => None,
-                    (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
-                };
-                row.tasks += other.tasks;
+                add_into(row, other);
             }
         }
         grids = vec![sum];
@@ -270,6 +298,11 @@ mod tests {
         {"end":"20261012T090000Z","project":"A"},
         {"project":"B"}
     ]"#;
+
+    // The tests mostly have rows; `heat_without` is the one with a row for each series.
+    fn heat(series: &[SeriesInput], by: &By, rows: &Rows, stacked: bool, ctx: &Ctx) -> Result<Vec<Grid>, String> {
+        super::heat(series, by, Some(rows), stacked, ctx)
+    }
 
     fn grid_of(g: &Grid) -> Vec<(String, Vec<Option<f64>>)> {
         g.datasets.iter().map(|d| (d.label.clone(), d.data.clone())).collect()
@@ -391,6 +424,34 @@ mod tests {
         assert_eq!(one[0].datasets[0].data, [Some(3.0), Some(1.0)]);
         assert_eq!(one[0].datasets[1].data, [Some(2.0), Some(0.0)]);
         assert_eq!(one[0].datasets[0].counts, [3, 1]);
+    }
+
+    #[test]
+    fn with_no_rows_a_series_is_a_row_and_stacked_they_are_one_row() {
+        let more = r#"[{"end":"20261005T100000Z"},{"end":"20261006T100000Z"}]"#;
+        let two = [series("Done", TASKS), series("Failed", more)];
+        let b = by(r#"{"time":{"field":"end","step":"week"}}"#);
+        let apart = super::heat(&two, &b, None, false, &ctx(true)).unwrap();
+        assert_eq!(apart.len(), 1);
+        assert_eq!(
+            grid_of(&apart[0]),
+            [
+                ("Done".to_owned(), vec![Some(3.0), Some(1.0)]),
+                ("Failed".to_owned(), vec![Some(2.0), Some(0.0)])
+            ]
+        );
+        // Stacked, they are added into one row along the columns.
+        let piled = super::heat(&two, &b, None, true, &ctx(true)).unwrap();
+        assert_eq!(piled.len(), 1);
+        assert_eq!(
+            grid_of(&piled[0]),
+            [("Done + Failed".to_owned(), vec![Some(5.0), Some(1.0)])]
+        );
+        assert_eq!(piled[0].datasets[0].counts, [5, 1]);
+        // One series stacked is itself.
+        let one = super::heat(&two[..1], &b, None, true, &ctx(true)).unwrap();
+        assert_eq!(one[0].datasets.len(), 1);
+        assert_eq!(one[0].datasets[0].label, "Done");
     }
 
     #[test]

@@ -564,7 +564,13 @@ describe('a series of states', () => {
       { label: 'A', filter: 'project:A' },
       { label: 'B', filter: 'project:B' },
     ];
-    const b = board([heat('one'), heat('two', { series: two }), heat('piled', { series: two, stacked: true })]);
+    const b = board([
+      heat('one'),
+      heat('two', { series: two }),
+      heat('piled', { series: two, stacked: true }),
+      heat('flat', { series: two, rows: undefined }),
+      heat('line', { series: two, rows: undefined, stacked: true }),
+    ]);
     const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
     if (data.one.kind !== 'chart' || data.two.kind !== 'chart' || data.piled.kind !== 'chart') throw new Error('no');
     // The columns are the weeks, the rows the days of the week from Monday.
@@ -578,6 +584,13 @@ describe('a series of states', () => {
     // (The test's tasks come the same for every filter, so the two series are each what the one was.)
     expect(data.piled.grids?.[0].datasets[0].data).toEqual([4, 2]);
     expect(data.two.grids?.[1].datasets[0].data).toEqual([2, 1]);
+    // With no rows a series is a row of one grid, and stacked the series are one row.
+    if (data.flat.kind !== 'chart' || data.line.kind !== 'chart') throw new Error('no');
+    expect(data.flat.grids).toHaveLength(1);
+    expect(data.flat.chart.datasets.map((d) => d.label)).toEqual(['A', 'B']);
+    expect(data.line.chart.datasets.map((d) => d.label)).toEqual(['A + B']);
+    // Three tasks in the first week and one in the second, in each of the two series.
+    expect(data.line.chart.datasets[0].data).toEqual([6, 2]);
   });
 
   it('is sent to the engine with its span, and counts what is open at the end of each week', async () => {
