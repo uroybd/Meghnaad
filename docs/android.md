@@ -119,6 +119,20 @@ and `ANDROID_KEY_PASSWORD`. Without them the workflow still builds, but a debug-
 updated in place by the next one. Do not commit the keystore. Locally, `npm run build:android -- --release` signs with
 the same variables set in the environment (`ANDROID_KEYSTORE_FILE` is the path).
 
+### Updates
+
+The app looks for a newer version by itself: when it opens (at most once a day) it asks GitHub for the latest release of the
+repository that built it, and says **"Meghnaad 0.6.36 is out"** once for each new version. **Settings** has an **Updates**
+section at the bottom of every tab, with **Check for updates** (any time), **Download the APK** when a newer one is out (it
+opens the release's APK in the phone's browser, which downloads it and offers to install it over this app; Android asks once to
+allow the browser to install apps) and **What's new** (the release page). The tasks and the connection stay, as long as the
+APK is signed with the same key (above). Only `https` addresses from the release are ever opened, and nothing is sent to
+GitHub but the request for the release.
+
+A build knows where its releases are only when it was told: the Release workflow passes `ANDROID_UPDATE_REPO` (its own
+repository, so a fork's APK looks at the fork's releases). A build made by hand leaves it empty, and shows no **Updates**
+section; set `ANDROID_UPDATE_REPO=owner/name` when building to try it.
+
 ## First run
 
 The app asks where your tasks sync: **an S3 bucket** or **a sync server**.

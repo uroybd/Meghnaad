@@ -217,6 +217,8 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           REF_TYPE: ${{ github.ref_type }}
+          # Where the app looks for a newer version: this repository's latest release.
+          ANDROID_UPDATE_REPO: ${{ github.repository }}
         run: |
           declared="$(node scripts/version.mjs)"
           if [ "$REF_TYPE" = tag ]; then version="$declared"; else version="$declared-dev.${GITHUB_SHA::7}"; fi

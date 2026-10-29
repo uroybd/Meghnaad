@@ -147,6 +147,9 @@ class Store(
     /** What the phone does with files, when it can: pick one to read, keep one. */
     val files: FileHost? = null,
 ) {
+    /** Whether a newer version of the app is out (Updates.kt). */
+    val updates = UpdateState(prefs, clock)
+
     /** Reminders: the options, the running task, and what is due while the app is open (the phone's alarm does the rest). */
     val notifier = Notifier(this, tw, prefs, scope, clock, reminders)
 
@@ -349,6 +352,8 @@ class Store(
     /** Decide what comes first: the connection screen, or the tasks. */
     fun begin() {
         if (vault.connection() == null && !vault.localOnly) setup = Setup.NeedsConnection else boot()
+        // Once a day, and said once for each new version; Settings has the way to download it.
+        scope.launch { updates.checkWhenDue()?.let { notify("Meghnaad ${it.version} is out: Settings has the download.") } }
     }
 
     /**

@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         // Draw under the system bars (the app pads for them), as a phone's apps do.
         enableEdgeToEdge()
         APP_VERSION = packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        UPDATE_REPO = getString(R.string.update_repo)
         APP_LOGO = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.logo)?.asImageBitmap()
         val vault = AppEngine.vault(this)
         engine = AppEngine.get(this)

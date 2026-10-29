@@ -23,6 +23,9 @@ android {
         targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersionName
+        // Where this build's releases are published (the Release workflow passes its own repository): the app looks there for a newer
+        // version. A build made by hand leaves it empty and does not check.
+        resValue("string", "update_repo", System.getenv("ANDROID_UPDATE_REPO") ?: "")
         // The engine is Rust (crates/android), built for these by scripts/build-android.mjs.
         ndk { abiFilters += (System.getenv("ANDROID_ABIS") ?: "arm64-v8a,x86_64").split(",") }
     }

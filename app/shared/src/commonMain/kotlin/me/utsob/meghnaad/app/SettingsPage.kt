@@ -72,6 +72,7 @@ fun SettingsPage(store: Store, state: SettingsState) {
                 SettingsTab.Urgency -> UrgencyPanel(store, state.urgency)
                 SettingsTab.Sync -> SyncPanel(store)
             }
+            UpdateRow(store.updates)
             if (APP_VERSION.isNotEmpty()) Dim("Meghnaad $APP_VERSION", Modifier.padding(vertical = 16.dp), 12)
             // Room under the last control, so the floating + never covers it (the web's 72 px under every page).
             Box(Modifier.height(72.dp))
