@@ -45,7 +45,8 @@ export interface Entry {
 
 export interface Toast {
   text: string;
-  kind: 'ok' | 'err';
+  /** `busy` is something still going on (it stays until the work says how it went). */
+  kind: 'ok' | 'err' | 'busy';
 }
 
 let nextId = 1;
@@ -442,6 +443,33 @@ class Store {
     this.toast = { text, kind };
     clearTimeout(this.#toastTimer);
     this.#toastTimer = setTimeout(() => (this.toast = null), kind === 'err' ? 7000 : 3500);
+  }
+
+  /**
+   * Wait for `work`, which a form is waiting on too. A hook can make it slow, so after `after` ms the form is let go
+   * (`release`) and a toast says `text` until the work ends and tells how it went in the usual way. `released` says whether
+   * the form was let go, in which case it is for the caller to bring it back if the work was refused.
+   */
+  async waitOrRelease<T>(
+    work: Promise<T>,
+    release: () => void,
+    text: string,
+    after = 1000,
+  ): Promise<{ value: T; released: boolean }> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), after)));
+    const first = await Promise.race([work.then((value) => ({ value })), slow]);
+    clearTimeout(timer);
+    if (first) return { value: first.value, released: false };
+    release();
+    clearTimeout(this.#toastTimer);
+    this.toast = { text, kind: 'busy' };
+    try {
+      return { value: await work, released: true };
+    } finally {
+      // The outcome has usually replaced it by now; if the work said nothing, it does not stay.
+      if (this.toast?.kind === 'busy' && this.toast.text === text) this.toast = null;
+    }
   }
 
   /** Learn project, tag and task names from rows we've seen, for completion and helpers. */

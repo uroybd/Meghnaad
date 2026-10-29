@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runCli } from './api';
 vi.mock('./api', async (original) => ({ ...(await original<typeof import('./api')>()), runCli: vi.fn() }));
 
@@ -266,5 +266,58 @@ describe('a page running in a context of its own', () => {
     await store.runLive({ args: ['next'] });
     expect(store.liveContext).toBe('none');
     expect(sent()).toMatchObject({ args: ['rc.context=none', 'next'] });
+  });
+});
+
+describe('waitOrRelease', () => {
+  const deferred = <T>() => {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    store.toast = null;
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('lets a quick piece of work finish with the form still there, and says nothing', async () => {
+    const release = vi.fn();
+    const w = deferred<string>();
+    const got = store.waitOrRelease(w.promise, release, 'Creating…');
+    await vi.advanceTimersByTimeAsync(300);
+    w.resolve('done');
+    expect(await got).toEqual({ value: 'done', released: false });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(release).not.toHaveBeenCalled();
+    expect(store.toast).toBeNull();
+  });
+
+  it('lets the form go after a second, says so, and takes it back when the work ends in silence', async () => {
+    const release = vi.fn();
+    const w = deferred<string>();
+    const got = store.waitOrRelease(w.promise, release, 'Creating…');
+    await vi.advanceTimersByTimeAsync(999);
+    expect(release).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(store.toast).toEqual({ text: 'Creating…', kind: 'busy' });
+    // The busy toast does not time out on its own.
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(store.toast?.kind).toBe('busy');
+    w.resolve('late');
+    expect(await got).toEqual({ value: 'late', released: true });
+    expect(store.toast).toBeNull();
+  });
+
+  it('leaves the outcome the work announced in place of the busy toast', async () => {
+    const w = deferred<string>();
+    const got = store.waitOrRelease(w.promise, () => {}, 'Creating…');
+    await vi.advanceTimersByTimeAsync(1000);
+    store.notify('Created task 7.');
+    w.resolve('ok');
+    await got;
+    expect(store.toast).toEqual({ text: 'Created task 7.', kind: 'ok' });
   });
 });

@@ -31,9 +31,13 @@
     e.preventDefault();
     if (!ready || busy) return;
     busy = true;
-    const res = await store.act(from, addArgs(text));
+    const mine = text;
+    const { value: res, released } = await store.waitOrRelease(store.act(from, addArgs(mine)), onclose, 'Creating…');
     busy = false;
-    if (res && res.result.kind !== 'error') onclose();
+    // A slow add let the form go; if the engine then refuses it, the line comes back to be put right.
+    if (released) {
+      if (!res || res.result.kind === 'error') store.quickAdd(mine);
+    } else if (res && res.result.kind !== 'error') onclose();
   }
 
   function more() {

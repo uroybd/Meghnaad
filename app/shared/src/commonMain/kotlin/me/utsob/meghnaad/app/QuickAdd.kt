@@ -58,9 +58,11 @@ fun QuickAdd(store: Store, from: Entry?, line: String, onClose: () -> Unit) {
         if (!ready || busy) return
         busy = true
         store.go {
-            val res = act(from, addArgs(typed))
+            // A slow add (a hook) lets the form go after a second; if the engine then refuses it, the line comes back to be put right.
+            val (res, released) = waitOrRelease("Creating…", onClose) { act(from, addArgs(typed)) }
             busy = false
-            if (res != null && res.result !is CliResult.Error) onClose()
+            val ok = res != null && res.result !is CliResult.Error
+            if (released) { if (!ok) quickAdd(typed) } else if (ok) onClose()
         }
     }
 

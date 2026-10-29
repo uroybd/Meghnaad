@@ -138,17 +138,31 @@ class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = nul
         get() = if (adding) (listOf("add") + changes()).joinToString(" ") + (if (startNow) "  then: start" else "")
         else "${row!!.uuid.take(8)} modify ${changes().joinToString(" ")}"
 
-    /** Save, then [done] with whether the form should close (false: "add another" keeps it open, fresh). */
-    suspend fun save(from: Entry?): Boolean {
+    /**
+     * Save; true when the form should now close (false: "add another" keeps it open, fresh). A new task does not hold the page up: a slow one (a
+     * hook) calls [release] after a second, which does what closing would, and a toast says it is being made. Then this is false, and if the engine
+     * refuses the task it comes back as the one-line add with what was typed.
+     */
+    suspend fun save(from: Entry?, release: () -> Unit): Boolean {
         busy = true
-        val res = store.act(from, if (adding) listOf("add") + changes() else listOf(row!!.uuid, "modify") + changes())
-        val made = (res?.result as? CliResult.Changed)?.value?.tasks?.firstOrNull()
-        if (adding && made != null) {
-            if (startNow) store.act(from, listOf(made.uuid, "start"))
-            if (note.trim().isNotEmpty()) store.act(from, listOf(made.uuid, "annotate", note.trim()))
+        val words = changes()
+        val work: suspend () -> CliResponse? = {
+            val res = store.act(from, if (adding) listOf("add") + words else listOf(row!!.uuid, "modify") + words)
+            val made = (res?.result as? CliResult.Changed)?.value?.tasks?.firstOrNull()
+            if (adding && made != null) {
+                if (startNow) store.act(from, listOf(made.uuid, "start"))
+                if (note.trim().isNotEmpty()) store.act(from, listOf(made.uuid, "annotate", note.trim()))
+            }
+            res
         }
+        val (res, released) = if (adding) store.waitOrRelease("Creating…", release, work = work) else Released(work(), false)
         busy = false
-        return res != null && res.result !is CliResult.Error
+        val ok = res != null && res.result !is CliResult.Error
+        if (released) {
+            if (!ok) store.quickAdd(words.joinToString(" ") { shellQuote(it) })
+            return false
+        }
+        return ok
     }
 }
 
@@ -163,7 +177,8 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                 // What the form's own Enter does on the web: save, or add, when there is something to save.
                 fun submit() {
                     if (st.busy || !st.dirty) return
-                    store.go { if (st.save(from)) { if (st.adding) onAdded(false) else onClose() } }
+                    val done = { if (st.adding) onAdded(false) else onClose() }
+                    store.go { if (st.save(from, done)) done() }
                 }
                 // Ctrl+Enter (or Cmd+Enter) saves from a field where Enter adds a line (multiline.ts: newlineOnEnter).
                 val saveOnCtrlEnter = Modifier.onPreviewKeyEvent { e ->
@@ -327,9 +342,9 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = onClose) { Text("Cancel") }
                         if (st.adding) {
-                            OutlinedButton(enabled = !st.busy && st.dirty, onClick = { store.go { if (st.save(from)) onAdded(true) } }) { Text("Add & another") }
+                            OutlinedButton(enabled = !st.busy && st.dirty, onClick = { val again = { onAdded(true) }; store.go { if (st.save(from, again)) again() } }) { Text("Add & another") }
                         }
-                        Button(enabled = !st.busy && st.dirty, onClick = { store.go { if (st.save(from)) { if (st.adding) onAdded(false) else onClose() } } }) {
+                        Button(enabled = !st.busy && st.dirty, onClick = { val done = { if (st.adding) onAdded(false) else onClose() }; store.go { if (st.save(from, done)) done() } }) {
                             Text(if (st.adding) "Add task" else "Save")
                         }
                     }

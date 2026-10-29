@@ -8,8 +8,10 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonArray
@@ -64,7 +66,11 @@ class Entry(val id: Int, input: CliInput, title: String, /** The page it belongs
     var chained by mutableStateOf(false)
 }
 
-class Toast(val text: String, val bad: Boolean = false)
+/** [busy] is something still going on: it stays until the work says how it went. */
+class Toast(val text: String, val bad: Boolean = false, val busy: Boolean = false)
+
+/** What [Store.waitOrRelease] came to: the work's answer, and whether the form had let go of it by then. */
+data class Released<T>(val value: T, val released: Boolean)
 
 /** A question put to the person, answered by a dialog: `yes` is what the engine's `confirmation` wants. */
 class Ask(val message: String, val yes: String = "Yes", val no: String = "No", val answer: CompletableDeferred<Boolean> = CompletableDeferred())
@@ -711,6 +717,26 @@ class Store(
         toastJob = scope.launch {
             delay(if (bad) 7000 else 3500)
             if (toast === t) toast = null
+        }
+    }
+
+    /**
+     * Run [work], which a form is waiting on too (waitOrRelease in store.svelte.ts). A hook can make it slow, so after [afterMs] the form is let go
+     * ([release]) and a toast says [text] until the work ends and tells how it went in the usual way. The work goes on in the store's own scope, so
+     * it outlives the form. [Released.released] says whether the form was let go, in which case it is for the caller to bring it back if the work was refused.
+     */
+    suspend fun <T> waitOrRelease(text: String, release: () -> Unit, afterMs: Long = 1000, work: suspend () -> T): Released<T> {
+        val job = scope.async { work() }
+        if (withTimeoutOrNull(afterMs) { job.join(); true } == true) return Released(job.await(), false)
+        release()
+        toastJob?.cancel()
+        val busy = Toast(text, busy = true)
+        toast = busy
+        try {
+            return Released(job.await(), true)
+        } finally {
+            // The outcome has usually replaced it by now; if the work said nothing, it does not stay.
+            if (toast === busy) toast = null
         }
     }
 

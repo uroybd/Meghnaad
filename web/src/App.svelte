@@ -347,7 +347,15 @@
     {#if store.view !== 'console'}<div class="dock" bind:clientHeight={dockHeight}><ConsoleInput /></div>{/if}
 
     {#if store.toast}
-      <div class="toast" class:bad={store.toast.kind === 'err'} role="status">{store.toast.text}</div>
+      <div
+        class="toast"
+        class:bad={store.toast.kind === 'err'}
+        class:busy={store.toast.kind === 'busy'}
+        role="status"
+        aria-busy={store.toast.kind === 'busy'}
+      >
+        {store.toast.text}
+      </div>
     {/if}
   </div>
 
@@ -499,6 +507,10 @@
   }
   .toast.bad {
     border-color: var(--err);
+  }
+  .toast.busy {
+    border-color: var(--border);
+    color: var(--dim);
   }
 
   /* The round mark that follows a pull down; it sits just under the top bar. */

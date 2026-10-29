@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { shellQuote } from './cmdline';
   import DateField from './DateField.svelte';
-  import SuggestInput from './SuggestInput.svelte';
   import { priorityValues as priorityLevels } from './priority';
+  import SuggestInput from './SuggestInput.svelte';
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
   import { clashOf } from './holidayClash';
@@ -149,17 +150,26 @@
   async function save(again = false) {
     if (!dirty) return onclose();
     busy = true;
-    const res = await store.act(from, adding ? ['add', ...changes()] : [row!.uuid, 'modify', ...changes()]);
-    if (adding && res?.result.kind === 'changed') {
-      const uuid = res.result.tasks[0].uuid;
-      if (startNow) await store.act(from, [uuid, 'start']);
-      if (note.trim()) await store.act(from, [uuid, 'annotate', note.trim()]);
-    }
+    const words = changes();
+    const work = (async () => {
+      const res = await store.act(from, adding ? ['add', ...words] : [row!.uuid, 'modify', ...words]);
+      if (adding && res?.result.kind === 'changed') {
+        const uuid = res.result.tasks[0].uuid;
+        if (startNow) await store.act(from, [uuid, 'start']);
+        if (note.trim()) await store.act(from, [uuid, 'annotate', note.trim()]);
+      }
+      return res;
+    })();
+    const done = () => (adding && onadded ? onadded(again) : onclose());
+    // A new task does not hold the page up: a slow one (a hook) lets the form go, and a toast says it is being made.
+    const { value: res, released } = adding
+      ? await store.waitOrRelease(work, done, 'Creating…')
+      : { value: await work, released: false };
     busy = false;
-    if (res && res.result.kind !== 'error') {
-      if (adding && onadded) onadded(again);
-      else onclose();
-    }
+    if (released) {
+      // The form has gone; if the engine refuses the task, it comes back as the one-line add with what was typed.
+      if (!res || res.result.kind === 'error') store.quickAdd(words.map(shellQuote).join(' '));
+    } else if (res && res.result.kind !== 'error') done();
   }
 
   async function annotate() {

@@ -314,11 +314,11 @@ private fun ToastHost(store: Store) {
     Box(Modifier.fillMaxSize().padding(bottom = 96.dp, start = 16.dp, end = 16.dp), Alignment.BottomCenter) {
         Surface(
             shape = PanelShape,
-            color = if (t.bad) colors.errorContainer else colors.inverseSurface,
+            color = if (t.bad) colors.errorContainer else if (t.busy) colors.surfaceContainerHighest else colors.inverseSurface,
             shadowElevation = 6.dp,
             modifier = Modifier.clickable { store.dismissToast() },
         ) {
-            Text(t.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (t.bad) colors.onErrorContainer else colors.inverseOnSurface, fontSize = 14.sp)
+            Text(t.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = if (t.bad) colors.onErrorContainer else if (t.busy) colors.onSurfaceVariant else colors.inverseOnSurface, fontSize = 14.sp)
         }
     }
 }

@@ -88,3 +88,53 @@ describe('the one-line add', () => {
     });
   });
 });
+
+describe('a slow add (a hook)', () => {
+  const submit = () => document.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    store.toast = null;
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('waits for a quick one with the form open, so a refusal can be put right there', async () => {
+    let finish!: (v: never) => void;
+    act.mockReturnValue(new Promise((r) => (finish = r)) as never);
+    const onclose = open();
+    type('Buy milk');
+    submit();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(onclose).not.toHaveBeenCalled();
+    finish({ result: { kind: 'error', message: 'No.' } } as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onclose).not.toHaveBeenCalled();
+    expect(store.adding).toBeNull();
+  });
+
+  it('lets the page go after a second, and tells that the task is being created', async () => {
+    let finish!: (v: never) => void;
+    act.mockReturnValue(new Promise((r) => (finish = r)) as never);
+    const onclose = open();
+    type('Buy milk');
+    submit();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onclose).toHaveBeenCalledTimes(1);
+    expect(store.toast).toEqual({ text: 'Creating…', kind: 'busy' });
+    finish({ result: { kind: 'changed', tasks: [] } } as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.adding).toBeNull();
+  });
+
+  it('brings the line back when the engine refuses a task the form had let go', async () => {
+    let finish!: (v: never) => void;
+    act.mockReturnValue(new Promise((r) => (finish = r)) as never);
+    open();
+    type('Buy milk +home');
+    submit();
+    await vi.advanceTimersByTimeAsync(1000);
+    finish({ result: { kind: 'error', message: 'A hook said no.' } } as never);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.adding).toMatchObject({ quick: true, line: 'Buy milk +home' });
+  });
+});

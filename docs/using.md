@@ -805,6 +805,12 @@ command uses it, with no rebuild or deploy. It runs on the server, behind your s
 secrets that never reach the page. Your desktop's own hooks are separate: they only fire for commands run there, and these
 only for commands run here, unless you run this same script on the desktop too ([below](#the-same-script-with-the-real-task)).
 
+A hook is a request to the server, and a command waits for each one in turn (`add` asks for `on_launch`, `on_add` and `on_exit`),
+as `task` waits for its scripts. A new task does not hold the page up for that: the **+** and the full form wait a second as
+before, so a refusal comes back to the form it was typed in; after that they close, and a **Creating…** notice stays until the
+task is made, when the usual notice (or what a hook said) takes its place. If a hook then refuses it, the one-line add opens
+again with what you typed.
+
 Define any of four functions, each at most once:
 
 | Hook | Runs | It can |
