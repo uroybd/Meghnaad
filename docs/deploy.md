@@ -180,6 +180,15 @@ engine (`app/`), the scripts and a `wrangler.jsonc` without a build step; a GitH
 holding the same files as `meghnaad-<version>.tar.gz`; and the Android APK, added to that release when its build
 finishes ([signing it](android.md#releases-and-signing)). The branch only gains commits; nothing is force-pushed.
 
+**A Homebrew tap.** The release can also keep the formula of `meghnaad-hook` up to date in a tap, so people install it
+with `brew install <owner>/tap/meghnaad-hook`. It is off until the repository says where: set the repository **variable**
+`HOMEBREW_TAP` to the tap (`owner/homebrew-tap`) and add the **secret** `HOMEBREW_TAP_TOKEN`, a fine-grained token with
+**Contents: read and write** on that one repository (the workflow's own token cannot push to another). For a release
+version (not `1.2.3-rc.1`) the `tap` job waits for the four builds of the hook program, writes `Formula/meghnaad-hook.rb`
+(`scripts/homebrew-formula.mjs`: the URL and sha256 of each platform's archive on the release) and pushes it as
+"Update meghnaad-hook to v<version>". If a platform's build fails, no formula is written; re-run the failed jobs and it
+follows. Without the token it only warns.
+
 **Actions → Release → Run workflow** builds the same things as `<version>-dev.<commit>` and only updates the `release`
 branch (and keeps the APK as the run's artifact), which is how to try a build before tagging. `scripts/package-release.mjs`
 makes the web package from a finished build, so `node scripts/build.mjs && node scripts/package-release.mjs` produces

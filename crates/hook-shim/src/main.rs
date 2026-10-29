@@ -174,9 +174,13 @@ fn install(args: &[&str]) -> Result<Vec<String>, String> {
         }
     };
     let hooks = defined(&script)?;
-    let me = std::env::current_exe()
+    let real = std::env::current_exe()
         .and_then(std::fs::canonicalize)
         .map_err(|e| format!("cannot find this program: {e}"))?;
+    // Under Homebrew the real path has the version in it, and an upgrade removes it: link by the name that stays.
+    let me = homebrew_opt(&real)
+        .filter(|opt| std::fs::canonicalize(opt).ok().as_ref() == Some(&real))
+        .unwrap_or(real);
     let dir = options.hooks_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let wanted: Vec<PathBuf> = hooks
@@ -201,6 +205,21 @@ fn install(args: &[&str]) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
+/// Where Homebrew keeps a keg's program under a name that survives an upgrade: `<prefix>/opt/<formula>/bin/<program>` for
+/// `<prefix>/Cellar/<formula>/<version>/bin/<program>`. None for a program that is not in a keg.
+fn homebrew_opt(real: &Path) -> Option<PathBuf> {
+    let parts: Vec<_> = real.components().collect();
+    let cellar = parts.iter().position(|c| c.as_os_str() == "Cellar")?;
+    let formula = parts.get(cellar + 1)?;
+    // After the version.
+    let inside = parts.get(cellar + 3..).filter(|rest| !rest.is_empty())?;
+    let mut opt: PathBuf = parts[..cellar].iter().collect();
+    opt.push("opt");
+    opt.push(formula);
+    opt.extend(inside);
+    Some(opt)
+}
+
 fn uninstall(args: &[&str]) -> Result<Vec<String>, String> {
     let dir = split_options(args)?.hooks_dir();
     let links = ours(&dir);
@@ -208,4 +227,32 @@ fn uninstall(args: &[&str]) -> Result<Vec<String>, String> {
         std::fs::remove_file(link).map_err(|e| format!("{}: {e}", link.display()))?;
     }
     Ok(vec![format!("removed {} link(s) from {}.", links.len(), dir.display())])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_keg_is_reached_by_its_opt_name_and_nothing_else_is() {
+        let opt = |p: &str| homebrew_opt(Path::new(p));
+        assert_eq!(
+            opt("/opt/homebrew/Cellar/meghnaad-hook/0.6.38/bin/meghnaad-hook"),
+            Some(PathBuf::from("/opt/homebrew/opt/meghnaad-hook/bin/meghnaad-hook"))
+        );
+        assert_eq!(
+            opt("/home/linuxbrew/.linuxbrew/Cellar/meghnaad-hook/0.6.38/bin/meghnaad-hook"),
+            Some(PathBuf::from(
+                "/home/linuxbrew/.linuxbrew/opt/meghnaad-hook/bin/meghnaad-hook"
+            ))
+        );
+        for plain in [
+            "/usr/local/bin/meghnaad-hook",
+            "/home/me/.cargo/bin/meghnaad-hook",
+            "/opt/homebrew/Cellar",
+            "/opt/homebrew/Cellar/meghnaad-hook/0.6.38",
+        ] {
+            assert_eq!(opt(plain), None, "{plain}");
+        }
+    }
 }

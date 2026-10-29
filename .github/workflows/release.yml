@@ -2,7 +2,8 @@
 #   - the web app, ready to deploy with no Rust or build needed: the `release` branch holds the built files (it is what the
 #     Deploy to Cloudflare button points at), and a tag also attaches them to a GitHub release as a .tar.gz;
 #   - the Android app, as an APK: attached to the release for a tag, or kept as the run's artifact;
-#   - meghnaad-hook, the Lua hooks script for the real `task`, as a program for Linux and macOS (x86_64 and arm64), the same way.
+#   - meghnaad-hook, the Lua hooks script for the real `task`, as a program for Linux and macOS (x86_64 and arm64), the same way,
+#     and, when the repository names a Homebrew tap (docs/deploy.md), its formula there.
 # The version is the one in package.json. To release: change it there, commit, then tag that commit `v<version>` and push
 # the tag (git tag v0.2.0 && git push origin v0.2.0). A tag that does not match package.json is refused. A run by hand
 # (Actions > "Release" > Run workflow) builds the same things as `<version>-dev.<commit>` and publishes only the branch.
@@ -179,6 +180,54 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: gh release upload "$TAG" "$ARCHIVE" --clobber
+
+  # meghnaad-hook in a Homebrew tap, so `brew install <owner>/tap/meghnaad-hook` installs it: the formula is rewritten for the tag
+  # from the builds above (so it waits for all four, and a partial release makes none). It runs only for a release version
+  # (not `1.2.3-rc.1`), in a repository that says which tap (the variable HOMEBREW_TAP, `owner/homebrew-tap`) and has a token
+  # that can push to it (the secret HOMEBREW_TAP_TOKEN: a fine-grained token with Contents read and write on that repository).
+  tap:
+    needs: hook
+    if: ${{ github.ref_type == 'tag' && vars.HOMEBREW_TAP != '' && !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAP: ${{ vars.HOMEBREW_TAP }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Check there is a token
+        if: ${{ env.TAP_TOKEN == '' }}
+        run: |
+          echo "::warning::HOMEBREW_TAP is $TAP but there is no HOMEBREW_TAP_TOKEN secret: the formula is not updated"
+
+      - uses: actions/checkout@v4
+        if: ${{ env.TAP_TOKEN != '' }}
+
+      - uses: actions/setup-node@v4
+        if: ${{ env.TAP_TOKEN != '' }}
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        if: ${{ env.TAP_TOKEN != '' }}
+        with:
+          pattern: meghnaad-hook-*
+          path: hook
+          merge-multiple: true
+
+      - name: Update the formula
+        if: ${{ env.TAP_TOKEN != '' }}
+        run: |
+          version="$(node scripts/version.mjs)"
+          git clone --depth 1 "https://x-access-token:$TAP_TOKEN@github.com/$TAP.git" tap
+          mkdir -p tap/Formula
+          node scripts/homebrew-formula.mjs --repo "$GITHUB_REPOSITORY" --version "$version" hook > tap/Formula/meghnaad-hook.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/meghnaad-hook.rb
+          if git diff --cached --quiet; then echo "The formula is already for $version."; exit 0; fi
+          git commit -m "Update meghnaad-hook to v$version"
+          git push
 
   # After the release exists, so that a tag's APK can be added to it.
   android:

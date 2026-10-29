@@ -291,6 +291,41 @@ fn install_links_the_hooks_the_script_defines_and_uninstall_removes_them() {
 }
 
 #[test]
+fn a_program_in_a_homebrew_keg_is_linked_by_the_name_that_survives_an_upgrade() {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("brew");
+    std::fs::remove_dir_all(&root).ok(); // left over from an earlier run, or not there
+    let keg = root.join("Cellar/meghnaad-hook/1.0.0");
+    std::fs::create_dir_all(keg.join("bin")).unwrap();
+    std::fs::copy(BIN, keg.join("bin/meghnaad-hook")).unwrap();
+    std::fs::create_dir_all(root.join("opt")).unwrap();
+    std::os::unix::fs::symlink(&keg, root.join("opt/meghnaad-hook")).unwrap();
+    let script = root.join("hooks.lua");
+    std::fs::write(&script, "function on_add(task) end").unwrap();
+    let data = root.join("data");
+    let o = Command::new(keg.join("bin/meghnaad-hook"))
+        .args(["install", script.to_str().unwrap(), "--data", data.to_str().unwrap()])
+        .env_remove("MEGHNAAD_HOOKS")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", out(&o));
+    let linked = std::fs::read_link(data.join("hooks/on-add.meghnaad")).unwrap();
+    // The path of the keg changes with the version, so the link is to `opt`, which is the same program whichever version it is.
+    assert_eq!(
+        linked,
+        std::fs::canonicalize(&root)
+            .unwrap()
+            .join("opt/meghnaad-hook/bin/meghnaad-hook")
+    );
+    std::fs::remove_dir_all(&keg).unwrap();
+    std::fs::create_dir_all(root.join("Cellar/meghnaad-hook/2.0.0/bin")).unwrap();
+    std::fs::copy(BIN, root.join("Cellar/meghnaad-hook/2.0.0/bin/meghnaad-hook")).unwrap();
+    std::fs::remove_file(root.join("opt/meghnaad-hook")).unwrap();
+    std::os::unix::fs::symlink(root.join("Cellar/meghnaad-hook/2.0.0"), root.join("opt/meghnaad-hook")).unwrap();
+    // After an upgrade the link still leads to a program.
+    assert!(std::fs::metadata(data.join("hooks/on-add.meghnaad")).is_ok());
+}
+
+#[test]
 fn install_follows_a_hooks_directory_that_is_not_in_the_data_directory() {
     let (data, _) = setup("install-hooks-dir", "", "stale");
     std::fs::remove_dir_all(data.join("hooks")).unwrap();

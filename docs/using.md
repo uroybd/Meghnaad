@@ -939,8 +939,11 @@ CPU time, but it is time your command waits.
 other way round. `task` runs an executable per hook from `<data>/hooks/`; `meghnaad-hook` is that executable, linked under
 the names `task` looks for.
 
-First get the program, once, in either of two ways. Neither needs a clone of this repository.
+First get the program, once, in any of three ways. None needs a clone of this repository.
 
+- **Homebrew** (macOS and Linux): `brew install uroybd/tap/meghnaad-hook`, and `brew upgrade` for a newer one. The
+  links `install` makes (below) point at Homebrew's `opt` path, which stays the same program through an upgrade, so nothing
+  needs installing again.
 - **Prebuilt** (no Rust): download `meghnaad-hook-<version>-<platform>.tar.gz` from the
   [latest release](https://github.com/uroybd/Meghnaad/releases/latest) (Linux or macOS, x86_64 or arm64) and put the
   `meghnaad-hook` inside where you keep programs, for example `~/.local/bin`. On macOS, if it is blocked for coming from the
@@ -965,7 +968,7 @@ $ task diag | grep -A4 Hooks         # Active: on-add.meghnaad (executable) (sym
 
 From then on, edit the script and the next `task` command uses it; nothing needs installing again unless the script
 defines a hook it did not before (or stops defining one). The `meghnaad-hook` links point at the program's own path, so
-reinstall after you move it or build a new one somewhere else.
+reinstall after you move it or build a new one somewhere else (a Homebrew upgrade is not one: see above).
 
 - **Where things are.** The data directory is `--data DIR`, else `$TASKDATA`, else `~/.task`. The script is
   `$MEGHNAAD_HOOKS`, else `<data>/hooks.lua`; `install SCRIPT` makes that a link to SCRIPT, so the script can live in a
