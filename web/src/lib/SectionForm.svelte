@@ -102,6 +102,26 @@
   };
   const addSeries = () => setSeries([...series, { label: `Series ${series.length + 1}` }]);
 
+  /** The grouping by a date with some of it changed; what is not changed (the range of the axis) stays. */
+  const setTime = (patch: Partial<NonNullable<NonNullable<Section['by']>['time']>>) =>
+    set({ by: { time: { field: 'entry', step: 'week', ...section.by?.time, ...patch } } });
+  /** What the axis covers, as the choice it is in the list: none, a range of the board, or dates of its own. */
+  const overKind = $derived.by(() => {
+    const r = section.by?.time?.range;
+    return r === undefined ? '' : typeof r === 'string' ? `range:${r}` : 'own';
+  });
+  function pickOver(v: string) {
+    const time = { field: 'entry', step: 'week', ...section.by?.time };
+    delete time.range;
+    if (v === '') set({ by: { time } });
+    else if (v === 'own') set({ by: { time: { ...time, range: { start: 'sow', end: 'eow' } } } });
+    else set({ by: { time: { ...time, range: v.slice('range:'.length) } } });
+  }
+  const setOwn = (patch: Partial<{ start: string; end: string }>) => {
+    const r = section.by?.time?.range;
+    if (typeof r === 'object') setTime({ range: { ...r, ...patch } });
+  };
+
   const num = (v: string) => (v.trim() === '' ? undefined : Math.max(0, Math.floor(Number(v))) || undefined);
   /** What is typed for Keep: a number, or the count of a date range as text (the engine says if it is not one the board has). */
   const keep = (v: string) => (/^\s*\d*\s*$/.test(v) ? num(v) : v.trim());
@@ -166,27 +186,53 @@
     {#if section.by?.time}
       <label>
         Date
-        <select
-          value={section.by.time.field}
-          onchange={(e) =>
-            set({ by: { time: { field: e.currentTarget.value, step: section.by?.time?.step ?? 'week' } } })}
-        >
+        <select value={section.by.time.field} onchange={(e) => setTime({ field: e.currentTarget.value })}>
           {#each DATES as d (d)}<option value={d}>{d}</option>{/each}
         </select>
       </label>
       <label>
         Per
-        <select
-          value={section.by.time.step}
-          onchange={(e) =>
-            set({ by: { time: { field: section.by?.time?.field ?? 'entry', step: e.currentTarget.value } } })}
-        >
+        <select value={section.by.time.step} onchange={(e) => setTime({ step: e.currentTarget.value })}>
           {#each STEPS as s (s)}<option value={s}>{s}</option>{/each}
           {#each ranges as r (r.name)}
             <option value="${r.name}.lg_group.name">{groupLabel(r.name)}</option>
           {/each}
         </select>
       </label>
+      <label>
+        Over
+        <select value={overKind} onchange={(e) => pickOver(e.currentTarget.value)}>
+          <option value="">As far as the tasks go</option>
+          {#each ranges as r (r.name)}
+            <option value="range:{r.name}">{rangeLabel(r.name)} (the board’s date range)</option>
+          {/each}
+          <option value="own">Dates of its own…</option>
+        </select>
+      </label>
+      {#if typeof section.by.time.range === 'object'}
+        <label>
+          From
+          <input
+            class="mono"
+            placeholder="sow, 2026-10-01"
+            spellcheck="false"
+            autocomplete="off"
+            value={section.by.time.range.start}
+            oninput={(e) => setOwn({ start: e.currentTarget.value })}
+          />
+        </label>
+        <label>
+          To
+          <input
+            class="mono"
+            placeholder="eow, 2026-10-31"
+            spellcheck="false"
+            autocomplete="off"
+            value={section.by.time.range.end}
+            oninput={(e) => setOwn({ end: e.currentTarget.value })}
+          />
+        </label>
+      {/if}
     {:else}
       <label>
         Attribute

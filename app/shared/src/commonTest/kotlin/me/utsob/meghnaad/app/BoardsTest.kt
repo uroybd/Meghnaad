@@ -129,6 +129,37 @@ class BoardsTest {
     }
 
     @Test
+    fun aChartMayCoverARangeOfTheBoardOrOneOfItsOwn() {
+        val ranges = listOf(DateRange("week", "sow", "eow"))
+        val named = By(time = TimeBy("end", "day", AxisRange.Named("week")))
+        val own = By(time = TimeBy("end", "day", AxisRange.Own("2026-10-05", "2026-10-06T23:59")))
+        // Written as the engine reads them (a name, or two dates), and read again the same.
+        for (by in listOf(named, own)) {
+            val board = Board("b", "B", ranges = ranges, sections = listOf(sec("a", "line") { it.copy(by = by) }))
+            val back = normalizeBoards(boardsToJson(listOf(board)))
+            assertEquals(emptyList(), back.errors)
+            assertEquals(by, back.boards[0].sections[0].by)
+        }
+        assertTrue("\"range\":\"week\"" in boardsToJson(listOf(Board("b", "B", ranges = ranges, sections = listOf(sec("a", "line") { it.copy(by = named) })))).toString())
+        // A range the board has not is refused.
+        val bad = Board("b", "B", sections = listOf(sec("a", "line") { it.copy(by = named) }))
+        assertEquals(1, normalizeBoards(boardsToJson(listOf(bad))).errors.size)
+
+        // Wednesday 2026-10-07: a burndown over the week has a day for each of its seven days, and nothing after today.
+        val z = Zone(0, true, 1_791_376_200L)
+        val tasks = """[{"entry":"20260930T100000Z","end":"20261006T100000Z"},{"entry":"20261006T150000Z"},{"entry":"20261007T090000Z"}]"""
+        val pending = SeriesInput("Pending", tasks, Measure("count"), StateSpan("entry", "end"))
+        val c = layChart(listOf(pending), named, z, ranges)
+        assertEquals(7, c.labels.size)
+        assertEquals(listOf(1.0, 1.0, 2.0, null, null, null, null), c.datasets[0].data)
+        assertEquals(listOf("2026-10-05", "2026-10-06"), layChart(listOf(pending), own, z).labels.map { it.label })
+        // The step the axis is resolved to keeps the range.
+        assertEquals(By(time = TimeBy("end", "day", AxisRange.Named("week"))), resolveBy(By(time = TimeBy("end", "\$week.lg_group.name", AxisRange.Named("week"))), ranges, z))
+        assertEquals("end, per day, over Week", describeBy(named))
+        assertEquals("end, per day, over 2026-10-05 to 2026-10-06T23:59", describeBy(own))
+    }
+
+    @Test
     fun aChartMayBeCutByTheLargestGroupOfARange() {
         val z = Zone(0, true, 1_791_376_200L)
         val week = listOf(DateRange("daterange", "sow", "eow"))

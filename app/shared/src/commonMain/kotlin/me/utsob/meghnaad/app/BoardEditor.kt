@@ -273,13 +273,32 @@ private fun SectionForm(store: Store, s: Section, ranges: List<DateRange>, onCha
                 onChange(s.copy(by = if (kind == "time") By(time = TimeBy("entry", "week")) else By(field = "project")))
             }
             if (time != null) {
-                Pick("Date", dates.map { it to it }, time.field) { onChange(s.copy(by = By(time = TimeBy(it ?: time.field, time.step)))) }
+                Pick("Date", dates.map { it to it }, time.field) { onChange(s.copy(by = By(time = time.copy(field = it ?: time.field)))) }
                 // The steps, and the largest group of each date range of the board, as it is now.
                 val groups = largestGroups(ranges, store.boardZone())
                 val perGroups = ranges.map { r ->
                     "\$${r.name}.lg_group.name" to "Largest group${if (ranges.size > 1) " of ${rangeLabel(r.name)}" else ""} (currently ${groups[r.name] ?: "not a date range yet"})"
                 }
-                Pick("Per", STEPS.map { it to it } + perGroups, time.step) { onChange(s.copy(by = By(time = TimeBy(time.field, it ?: time.step)))) }
+                Pick("Per", STEPS.map { it to it } + perGroups, time.step) { onChange(s.copy(by = By(time = time.copy(step = it ?: time.step)))) }
+                // What the axis covers: as far as the tasks go, a date range of the board, or two dates of its own.
+                val over = when (val r = time.range) {
+                    null -> ""
+                    is AxisRange.Named -> "range:${r.name}"
+                    is AxisRange.Own -> "own"
+                }
+                val overs = listOf("" to "As far as the tasks go") + ranges.map { "range:${it.name}" to "${rangeLabel(it.name)} (the board's date range)" } + ("own" to "Dates of its own…")
+                Pick("Over", overs, over) { v ->
+                    val range = when {
+                        v.isNullOrEmpty() -> null
+                        v == "own" -> AxisRange.Own("sow", "eow")
+                        else -> AxisRange.Named(v.removePrefix("range:"))
+                    }
+                    onChange(s.copy(by = By(time = time.copy(range = range))))
+                }
+                (time.range as? AxisRange.Own)?.let { r ->
+                    TextBox("From", r.start, { onChange(s.copy(by = By(time = time.copy(range = r.copy(start = it.trim()))))) }, mono = true, placeholder = "sow, 2026-10-01")
+                    TextBox("To", r.end, { onChange(s.copy(by = By(time = time.copy(range = r.copy(end = it.trim()))))) }, mono = true, placeholder = "eow, 2026-10-31")
+                }
             } else {
                 TextBox("Attribute", s.by?.field.orEmpty(), { onChange(s.copy(by = By(field = it.trim()))) })
                 Suggestions(groupableFields(udas)) { onChange(s.copy(by = By(field = it))) }

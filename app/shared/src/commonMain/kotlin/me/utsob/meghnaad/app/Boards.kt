@@ -33,8 +33,38 @@ import kotlinx.serialization.json.put
 @Serializable
 data class Measure(val fn: String, val field: String? = null)
 
+/** The range a chart's date axis covers: one of the board's by its name, or two dates of the chart's own (`tc_core::board::ranges::RangeRef`). */
+@Serializable(with = AxisRangeSerializer::class)
+sealed interface AxisRange {
+    data class Named(val name: String) : AxisRange
+
+    data class Own(val start: String, val end: String) : AxisRange
+}
+
+/** A name is written as text and two dates as an object, as the engine reads them. */
+object AxisRangeSerializer : KSerializer<AxisRange> {
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): AxisRange {
+        val e = (decoder as JsonDecoder).decodeJsonElement()
+        return if (e is JsonObject) AxisRange.Own(e["start"]?.jsonPrimitive?.content.orEmpty(), e["end"]?.jsonPrimitive?.content.orEmpty())
+        else AxisRange.Named(e.jsonPrimitive.content)
+    }
+
+    override fun serialize(encoder: Encoder, value: AxisRange) = (encoder as JsonEncoder).encodeJsonElement(
+        when (value) {
+            is AxisRange.Named -> JsonPrimitive(value.name)
+            is AxisRange.Own -> buildJsonObject {
+                put("start", value.start)
+                put("end", value.end)
+            }
+        },
+    )
+}
+
+/** With a [range] the axis is that range's periods, whatever the tasks are. */
 @Serializable
-data class TimeBy(val field: String, val step: String)
+data class TimeBy(val field: String, val step: String, val range: AxisRange? = null)
 
 /** One of the two: the value of an attribute, or a date cut into days, weeks, months, quarters or years. */
 @Serializable
@@ -252,7 +282,7 @@ class Zone(val tz: Int, val weekStartsMonday: Boolean, val now: Long) {
 fun boardZone(settings: Map<String, String>?, tz: Int, nowSeconds: Double): Zone =
     Zone(tz, settings?.get("weekstart")?.trim()?.lowercase() == "monday", nowSeconds.toLong())
 
-private fun rangesJson(ranges: List<DateRange>): JsonElement = boardsJson.encodeToJsonElement(ListSerializer(DateRange.serializer()), ranges)
+internal fun rangesJson(ranges: List<DateRange>): JsonElement = boardsJson.encodeToJsonElement(ListSerializer(DateRange.serializer()), ranges)
 
 /** What the board's date ranges are right now, each worked out in the zone and week of the page. */
 fun resolveRanges(ranges: List<DateRange>, zone: Zone): List<ResolvedRange> =
@@ -299,7 +329,7 @@ fun aggregateNumber(text: String, section: Section, zone: Zone): BoardAnswer {
 }
 
 /** What a chart section's series, laid on one axis. */
-fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone): BoardChart {
+fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, ranges: List<DateRange> = emptyList()): BoardChart {
     val series = JsonArray(
         inputs.map {
             buildJsonObject {
@@ -311,7 +341,7 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone): BoardChart {
         },
     )
     val byJson: JsonElement = by?.let { boardsJson.encodeToJsonElement(By.serializer(), it) } ?: JsonNull
-    return boardsJson.decodeFromJsonElement(BoardChart.serializer(), callHelper("board_chart", series, byJson, zone.toJson()))
+    return boardsJson.decodeFromJsonElement(BoardChart.serializer(), callHelper("board_chart", series, byJson, zone.toJson(), rangesJson(ranges)))
 }
 
 class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?)
@@ -403,7 +433,7 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
                         inputs += SeriesInput(x.label, text, x.measure ?: s.measure, x.span)
                         sources += Source(x.label, filter, text)
                     }
-                    if (failure != null) SectionData.Failed(failure) else SectionData.Chart(layChart(inputs, s.by, zone), sources, keepOf(s.limit, board.ranges, zone))
+                    if (failure != null) SectionData.Failed(failure) else SectionData.Chart(layChart(inputs, s.by, zone, board.ranges), sources, keepOf(s.limit, board.ranges, zone))
                 }
             }
         } catch (e: Exception) {
@@ -421,7 +451,14 @@ private val FN_WORDS = mapOf("count" to "Count", "sum" to "Sum", "avg" to "Avera
 fun describeMeasure(m: Measure): String = if (m.fn == "count") "Count of tasks" else "${FN_WORDS[m.fn] ?: m.fn} of ${m.field ?: "…"}"
 
 /** What a chart is grouped by, in words: "project", "end, per week"; null when it is not grouped. */
-fun describeBy(by: By?): String? = by?.time?.let { "${it.field}, per ${it.step}" } ?: by?.field?.takeIf { it.isNotEmpty() }
+fun describeBy(by: By?): String? = by?.time?.let {
+    val over = when (val r = it.range) {
+        null -> ""
+        is AxisRange.Named -> ", over ${rangeLabel(r.name)}"
+        is AxisRange.Own -> ", over ${r.start} to ${r.end}"
+    }
+    "${it.field}, per ${it.step}$over"
+} ?: by?.field?.takeIf { it.isNotEmpty() }
 
 /** The span in words: "open at the end of each period, from entry until end, unless start has passed". */
 fun describeSpan(span: StateSpan): String {

@@ -419,6 +419,14 @@ label in full and its figure; the labels along an axis are thinned so none is cu
   one for each range (with the range's name when there are several), so the chart regroups as the range changes, and **Keep** takes
   `$name.lg_group.count` to show exactly the range. The keyword buttons in the date panel say in a tooltip what each means and what
   it is now.
+- **A date range as the axis.** A chart grouped by a date goes, by default, from the first period any task falls in to the last.
+  **Over** makes the axis a range instead: **the board's date range** (by its name) or **dates of its own** (a **From** and a **To**,
+  written as a range's dates are). The axis is then every period of the range, **Per** day, week, month and so on, whether or not
+  a task falls in it, and a task outside the range has no place on it (the section's filter need not repeat the range). A burndown
+  over a week per day has its seven days; and a series that counts what is open at the end of each period (**Counts**) stops at
+  today, leaving the periods still to come empty, as `task burndown` stops. The periods are the range's (the same as its counts
+  above, so a range ending at midnight stops before it), the range moves with the dates typed above the board, and a chart of the
+  largest group (**Per**) of the same range gives exactly its whole periods.
 - **Measuring** a field works on numbers (`urgency`, a numeric UDA) and durations (a duration UDA, as `2h` or `PT2H`). A
   figure over a duration is shown the way Taskwarrior writes one (`2h`, `3d`). A task with no value for the field is left out of
   a sum, average or comparison, and a group in which no task has one shows `–` (not zero). Anything else is refused, saying so.
@@ -502,9 +510,11 @@ file first if you want to keep what was left out.
         { "id": "effort", "title": "Estimate by project", "x": 0, "y": 8, "w": 12, "h": 4, "type": "bar",
           "measure": { "fn": "sum", "field": "estimate" }, "by": { "field": "project" }, "limit": 10 },
         { "id": "days", "title": "Done per day, this range", "x": 0, "y": 12, "w": 12, "h": 4, "type": "bar",
-          "filter": "end.after:$daterange.start and end.before:$daterange.end",
-          "by": { "time": { "field": "end", "step": "$daterange.lg_group.name" } },
-          "limit": "$daterange.lg_group.count" }
+          "filter": "status:completed",
+          "by": { "time": { "field": "end", "step": "$daterange.lg_group.name", "range": "daterange" } } },
+        { "id": "own", "title": "Done in October, per week", "x": 0, "y": 16, "w": 12, "h": 4, "type": "bar",
+          "filter": "status:completed",
+          "by": { "time": { "field": "end", "step": "week", "range": { "start": "2026-10-01", "end": "2026-10-31T23:59" } } } }
       ]
     }
   ]

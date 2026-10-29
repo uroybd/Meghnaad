@@ -3,6 +3,7 @@
 //! end. A measure (count, sum, avg, min, max) is taken over the tasks, alone or per group; a group is the value of an
 //! attribute, or a day, week, month, quarter or year of a date.
 
+use super::ranges::{self, RangeRef};
 use crate::dates::{parse_duration, Clock, DAY};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -61,18 +62,43 @@ impl Step {
 /// A date to group by, and the step it is cut into. The step may be written as a date range's group of the board
 /// (`$week.lg_group.name`, see `ranges`), which the page works out before it asks for the numbers: it is then in `var`, and `step`
 /// means nothing until it has been.
+///
+/// With a `range` the axis is the periods of that range, whatever the tasks are (none of them has to be in a period, and a task
+/// outside the range has no place): the chart of a week per day has seven days. The range is worked out into `window` when the
+/// chart is asked for (`ranges::attach`), and `window` is not kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "TimeByWire", into = "TimeByWire")]
 pub struct TimeBy {
     pub field: String,
     pub step: Step,
     pub var: Option<String>,
+    pub range: Option<RangeRef>,
+    pub window: Option<(i64, i64)>,
+}
+
+impl TimeBy {
+    pub fn new(field: &str, step: Step) -> Self {
+        TimeBy {
+            field: field.to_owned(),
+            step,
+            var: None,
+            range: None,
+            window: None,
+        }
+    }
+
+    /// The first and last period the axis has, as the moments they begin, when it is a range's.
+    fn axis(&self, ctx: &Ctx) -> Option<(i64, i64)> {
+        self.window.map(|w| ranges::axis_bounds(w, self.step, ctx))
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 struct TimeByWire {
     field: String,
     step: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    range: Option<RangeRef>,
 }
 
 impl TryFrom<TimeByWire> for TimeBy {
@@ -82,14 +108,13 @@ impl TryFrom<TimeByWire> for TimeBy {
         let step = w.step.trim();
         match Step::parse(step) {
             Some(step) => Ok(TimeBy {
-                field: w.field,
-                step,
-                var: None,
+                range: w.range,
+                ..TimeBy::new(&w.field, step)
             }),
             None if step.starts_with('$') => Ok(TimeBy {
-                field: w.field,
-                step: Step::Day,
                 var: Some(step.to_owned()),
+                range: w.range,
+                ..TimeBy::new(&w.field, Step::Day)
             }),
             None => Err(format!("'{step}' is not day, week, month, quarter or year")),
         }
@@ -101,6 +126,7 @@ impl From<TimeBy> for TimeByWire {
         TimeByWire {
             step: t.var.unwrap_or_else(|| t.step.name().to_owned()),
             field: t.field,
+            range: t.range,
         }
     }
 }
@@ -274,8 +300,12 @@ impl Acc {
 
 /// A step still written as a date range's group has not been worked out, and cannot be counted by.
 fn unworked(by: Option<&By>) -> Result<(), String> {
-    match by.and_then(|b| b.time.as_ref()).and_then(|t| t.var.as_ref()) {
+    let time = by.and_then(|b| b.time.as_ref());
+    match time.and_then(|t| t.var.as_ref()) {
         Some(v) => Err(format!("{v} has to be worked out before the dates are grouped by it")),
+        None if time.is_some_and(|t| t.range.is_some() && t.window.is_none()) => {
+            Err("the range of the axis has to be worked out before the dates are grouped by it".into())
+        }
         None => Ok(()),
     }
 }
@@ -393,6 +423,7 @@ pub fn aggregate(tasks: &str, query: &Query, ctx: &Ctx) -> Result<Answer, String
         }
         Some((None, Some(time))) => {
             time_step = Some(time.step);
+            let axis = time.axis(ctx);
             let mut first: Option<i64> = None;
             let mut last: Option<i64> = None;
             for (t, v) in tasks.iter().zip(&values) {
@@ -405,6 +436,10 @@ pub fn aggregate(tasks: &str, query: &Query, ctx: &Ctx) -> Result<Answer, String
                 };
                 let Some(ts) = stamp else { continue };
                 let (start, _) = bucket(&clock, time.step, ts);
+                // A task outside the range the axis covers has no place on it.
+                if axis.is_some_and(|(lo, hi)| start < lo || start > hi) {
+                    continue;
+                }
                 first = Some(first.map_or(start, |f| f.min(start)));
                 last = Some(last.map_or(start, |l| l.max(start)));
                 groups
@@ -413,7 +448,11 @@ pub fn aggregate(tasks: &str, query: &Query, ctx: &Ctx) -> Result<Answer, String
                     .1
                     .add(*v);
             }
-            // A bucket nothing falls in is still a bucket, so a line runs on and a bar chart has no gaps.
+            // A bucket nothing falls in is still a bucket, so a line runs on and a bar chart has no gaps. A range's axis is all of
+            // its periods, whatever the tasks.
+            if let Some((lo, hi)) = axis {
+                (first, last) = (Some(lo), Some(hi));
+            }
             if let (Some(mut at), Some(last)) = (first, last) {
                 let mut count = 0;
                 while at <= last {
@@ -504,7 +543,9 @@ fn empty_value(func: Func) -> Option<f64> {
 }
 
 /// The `span` series over the periods from its first task to the current one (or to `until`, if a later period is on the axis).
-fn span_answer(s: &SeriesInput, span: &Span, step: Step, until: Option<i64>, ctx: &Ctx) -> Result<Answer, String> {
+/// On a range's axis it is every period of the range, and a period that has not begun yet has nothing: a burndown stops at today.
+fn span_answer(s: &SeriesInput, span: &Span, time: &TimeBy, until: Option<i64>, ctx: &Ctx) -> Result<Answer, String> {
+    let step = time.step;
     let tasks = read_tasks(&s.tasks)?;
     let measure = s.measure.clone().unwrap_or(Measure {
         func: Func::Count,
@@ -529,11 +570,21 @@ fn span_answer(s: &SeriesInput, span: &Span, step: Step, until: Option<i64>, ctx
         tasks: 0,
         groups: Vec::new(),
     };
-    let Some(&first) = from.iter().flatten().min() else {
-        return Ok(answer);
+    let axis = time.axis(ctx);
+    let (mut at, last) = match axis {
+        Some(bounds) => bounds,
+        None => {
+            let Some(&first) = from.iter().flatten().min() else {
+                return Ok(answer);
+            };
+            (
+                bucket(&clock, step, first).0,
+                bucket(&clock, step, ctx.now).0.max(until.unwrap_or(i64::MIN)),
+            )
+        }
     };
-    let last = bucket(&clock, step, ctx.now).0.max(until.unwrap_or(i64::MIN));
-    let mut at = bucket(&clock, step, first).0;
+    // The period whose state is the state now: the last, or on a range's axis the one today is in.
+    let mut current: Option<usize> = None;
     while at <= last {
         if answer.groups.len() >= MAX_BUCKETS {
             return Err(format!(
@@ -548,21 +599,25 @@ fn span_answer(s: &SeriesInput, span: &Span, step: Step, until: Option<i64>, ctx
                 && unless.as_ref().is_none_or(|u| u[j].is_none_or(|x| x >= end))
         };
         let mut acc = Acc::new();
-        for (j, v) in values.iter().enumerate() {
-            if holds(j) {
-                acc.add(*v);
+        let begun = axis.is_none() || at <= ctx.now;
+        if begun {
+            for (j, v) in values.iter().enumerate() {
+                if holds(j) {
+                    acc.add(*v);
+                }
             }
+            current = Some(answer.groups.len());
         }
         answer.groups.push(Group {
             key: at.to_string(),
             label: bucket_label(&clock, step, at),
-            value: acc.value(measure.func),
+            value: if begun { acc.value(measure.func) } else { None },
             count: acc.n,
         });
         at = end;
     }
-    // The state now: the last period's.
-    if let Some(g) = answer.groups.last() {
+    // The state now.
+    if let Some(g) = current.and_then(|i| answer.groups.get(i)) {
         answer.total = g.value;
         answer.tasks = g.count;
     }
@@ -607,7 +662,7 @@ pub fn chart(series: &[SeriesInput], by: Option<&By>, ctx: &Ctx) -> Result<Chart
         done.push(match (a, &s.span, &by.time) {
             (Some(a), _, _) => a,
             (None, Some(span), Some(time)) => {
-                span_answer(s, span, time.step, until, ctx).map_err(|e| format!("{}: {e}", s.label))?
+                span_answer(s, span, time, until, ctx).map_err(|e| format!("{}: {e}", s.label))?
             }
             _ => return Err(format!("{}: a series of states needs a date to group by", s.label)),
         });
@@ -637,7 +692,10 @@ pub fn chart(series: &[SeriesInput], by: Option<&By>, ctx: &Ctx) -> Result<Chart
                 .iter()
                 .flat_map(|a| a.groups.iter().filter_map(|g| g.key.parse::<i64>().ok()))
                 .collect();
-            if let (Some(&lo), Some(&hi)) = (starts.iter().min(), starts.iter().max()) {
+            let bounds = time
+                .axis(ctx)
+                .or_else(|| Some((*starts.iter().min()?, *starts.iter().max()?)));
+            if let Some((lo, hi)) = bounds {
                 let mut at = lo;
                 while at <= hi {
                     if labels.len() >= MAX_BUCKETS {
@@ -1117,5 +1175,163 @@ mod tests {
 
         let e = chart(&[s], Some(&super::tests::by(r#"{"field":"project"}"#)), &ctx).unwrap_err();
         assert!(e.contains("needs a date"), "{e}");
+    }
+
+    fn week_range() -> Vec<ranges::Range> {
+        vec![ranges::Range {
+            name: "week".into(),
+            start: "sow".into(),
+            end: "eow".into(),
+        }]
+    }
+
+    /// `by_json` with its range worked out for the week of `NOW` (Monday 2026-10-05 to Sunday 2026-10-11).
+    fn on_the_axis(by_json: &str) -> By {
+        let mut b = by(by_json);
+        ranges::attach(&mut b, &week_range(), &ctx()).unwrap();
+        b
+    }
+
+    #[test]
+    fn a_range_is_the_axis_whatever_the_tasks_are_and_a_task_outside_it_has_no_place() {
+        let tasks = r#"[
+            {"end":"20260920T100000Z"},
+            {"end":"20261006T100000Z"},
+            {"end":"20261006T120000Z"},
+            {"end":"20261009T100000Z"},
+            {"end":"20261020T100000Z"}
+        ]"#;
+        let b = on_the_axis(r#"{"time":{"field":"end","step":"day","range":"week"}}"#);
+        let c = chart(&[series("Done", tasks, r#"{"fn":"count"}"#)], Some(&b), &ctx()).unwrap();
+        let labels: Vec<_> = c.labels.iter().map(|l| l.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "2026-10-05",
+                "2026-10-06",
+                "2026-10-07",
+                "2026-10-08",
+                "2026-10-09",
+                "2026-10-10",
+                "2026-10-11"
+            ]
+        );
+        let seen: Vec<_> = c.datasets[0].data.iter().map(|v| v.unwrap_or(-1.0)).collect();
+        assert_eq!(seen, [0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        // Without the range the same tasks run from the first to the last day any has.
+        let free = chart(
+            &[series("Done", tasks, r#"{"fn":"count"}"#)],
+            Some(&by(r#"{"time":{"field":"end","step":"day"}}"#)),
+            &ctx(),
+        )
+        .unwrap();
+        assert!(free.labels.len() > 30);
+    }
+
+    #[test]
+    fn a_range_of_the_charts_own_with_no_task_in_it_is_still_an_axis() {
+        let b = on_the_axis(
+            r#"{"time":{"field":"end","step":"day","range":{"start":"2026-10-05","end":"2026-10-07T23:59"}}}"#,
+        );
+        let c = chart(&[series("Done", "[]", r#"{"fn":"count"}"#)], Some(&b), &ctx()).unwrap();
+        assert_eq!(c.labels.len(), 3);
+        assert_eq!(c.datasets[0].data, [Some(0.0); 3]);
+        // The step is the chart's: the same range in weeks is the one week it touches.
+        let weekly = on_the_axis(
+            r#"{"time":{"field":"end","step":"week","range":{"start":"2026-10-05","end":"2026-10-07T23:59"}}}"#,
+        );
+        let c = chart(&[series("Done", "[]", r#"{"fn":"count"}"#)], Some(&weekly), &ctx()).unwrap();
+        assert_eq!(c.labels.len(), 1);
+    }
+
+    #[test]
+    fn a_range_that_ends_at_midnight_does_not_touch_the_day_after() {
+        let b =
+            on_the_axis(r#"{"time":{"field":"end","step":"day","range":{"start":"2026-10-05","end":"2026-10-07"}}}"#);
+        let c = chart(&[series("Done", "[]", r#"{"fn":"count"}"#)], Some(&b), &ctx()).unwrap();
+        assert_eq!(c.labels.len(), 2);
+    }
+
+    #[test]
+    fn a_state_over_a_range_stops_at_today_and_the_periods_to_come_have_nothing() {
+        // a was entered before the week and done on Tuesday; b was entered on Tuesday; c today (Wednesday).
+        let tasks = r#"[
+            {"entry":"20260930T100000Z","end":"20261006T100000Z"},
+            {"entry":"20261006T150000Z"},
+            {"entry":"20261007T090000Z"}
+        ]"#;
+        let b = on_the_axis(r#"{"time":{"field":"entry","step":"day","range":"week"}}"#);
+        let pending = SeriesInput {
+            span: Some(Span {
+                from: "entry".into(),
+                to: Some("end".into()),
+                unless: None,
+            }),
+            ..series("Pending", tasks, r#"{"fn":"count"}"#)
+        };
+        let c = chart(&[pending], Some(&b), &ctx()).unwrap();
+        assert_eq!(c.labels.len(), 7);
+        let d = &c.datasets[0];
+        assert_eq!(
+            d.data,
+            [Some(1.0), Some(1.0), Some(2.0), None, None, None, None],
+            "Monday has a, Tuesday b (a is done), Wednesday b and c"
+        );
+        assert_eq!((d.total, d.tasks), (Some(2.0), 2));
+    }
+
+    #[test]
+    fn a_range_before_today_and_one_after_it() {
+        let tasks = r#"[{"entry":"20260901T100000Z"}]"#;
+        let pending = |b: &By| {
+            let s = SeriesInput {
+                span: Some(Span {
+                    from: "entry".into(),
+                    to: None,
+                    unless: None,
+                }),
+                ..series("Open", tasks, r#"{"fn":"count"}"#)
+            };
+            chart(&[s], Some(b), &ctx()).unwrap().datasets.remove(0)
+        };
+        let past = on_the_axis(
+            r#"{"time":{"field":"entry","step":"week","range":{"start":"2026-09-14","end":"2026-09-27T23:59"}}}"#,
+        );
+        assert_eq!(pending(&past).data, [Some(1.0), Some(1.0)]);
+        let ahead = on_the_axis(
+            r#"{"time":{"field":"entry","step":"week","range":{"start":"2026-11-02","end":"2026-11-15T23:59"}}}"#,
+        );
+        let d = pending(&ahead);
+        assert_eq!((d.data, d.total), (vec![None, None], None));
+    }
+
+    #[test]
+    fn a_range_has_to_be_worked_out_and_be_one() {
+        let b = by(r#"{"time":{"field":"end","step":"day","range":"week"}}"#);
+        let e = chart(&[series("Done", "[]", r#"{"fn":"count"}"#)], Some(&b), &ctx()).unwrap_err();
+        assert!(e.contains("range of the axis"), "{e}");
+        let mut nope = by(r#"{"time":{"field":"end","step":"day","range":"nope"}}"#);
+        let e = ranges::attach(&mut nope, &week_range(), &ctx()).unwrap_err();
+        assert!(e.contains("no date range called 'nope'"), "{e}");
+        let mut backwards = by(r#"{"time":{"field":"end","step":"day","range":{"start":"eow","end":"sow"}}}"#);
+        let e = ranges::attach(&mut backwards, &week_range(), &ctx()).unwrap_err();
+        assert!(e.contains("end is before the start"), "{e}");
+    }
+
+    #[test]
+    fn the_range_is_kept_as_it_was_written() {
+        for text in [
+            r#"{"time":{"field":"end","step":"day","range":"week"}}"#,
+            r#"{"time":{"field":"end","step":"$week.lg_group.name","range":{"start":"sow","end":"eow"}}}"#,
+        ] {
+            let got = serde_json::to_string(&by(text)).unwrap();
+            assert_eq!(got, text);
+        }
+        // A worked-out window is not part of what is saved.
+        let b = on_the_axis(r#"{"time":{"field":"end","step":"day","range":"week"}}"#);
+        assert_eq!(
+            serde_json::to_string(&b).unwrap(),
+            r#"{"time":{"field":"end","step":"day","range":"week"}}"#
+        );
     }
 }

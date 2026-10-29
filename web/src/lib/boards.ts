@@ -31,9 +31,16 @@ export interface Measure {
 /** One of the two: the value of an attribute, or a date cut into days, weeks, months, quarters or years. */
 export interface By {
   field?: string;
-  /** `step` may be a date range's largest group (`$week.lg_group.name`), which is worked out when the board is drawn. */
-  time?: { field: string; step: Step | string };
+  /**
+   * `step` may be a date range's largest group (`$week.lg_group.name`), which is worked out when the board is drawn. With a
+   * `range` the axis is that range's periods, whatever the tasks are: the name of one of the board's ranges, or two dates of the
+   * chart's own.
+   */
+  time?: { field: string; step: Step | string; range?: AxisRange };
 }
+
+/** The range a chart's date axis covers: a board range by its name, or two dates written as a range's are. */
+export type AxisRange = string | { start: string; end: string };
 
 export interface Rect {
   x: number;
@@ -606,7 +613,12 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
       const limit = keepOf(s.limit, board.ranges ?? [], zone);
       return [
         s.id,
-        { kind: 'chart', chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone), sources, limit },
+        {
+          kind: 'chart',
+          chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone, board.ranges ?? []),
+          sources,
+          limit,
+        },
       ];
     } catch (e) {
       return [section.id, { kind: 'error', message: e instanceof Error ? e.message : String(e) }];
@@ -682,6 +694,11 @@ export function describeMeasure(m: Measure): string {
 
 /** What a chart is grouped by, in words: "project", "end, per week"; null when it is not grouped. */
 export function describeBy(by: By | undefined): string | null {
-  if (by?.time) return `${by.time.field}, per ${by.time.step}`;
+  if (by?.time) {
+    const r = by.time.range;
+    const over =
+      r === undefined ? '' : typeof r === 'string' ? `, over ${rangeLabel(r)}` : `, over ${r.start} to ${r.end}`;
+    return `${by.time.field}, per ${by.time.step}${over}`;
+  }
   return by?.field || null;
 }

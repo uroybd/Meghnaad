@@ -319,11 +319,20 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<crate::board::aggregate::Query>(1)?,
             &a.req::<crate::board::aggregate::Ctx>(2)?
         )?),
-        "board_chart" => json!(crate::board::aggregate::chart(
-            &a.req::<Vec<crate::board::aggregate::SeriesInput>>(0)?,
-            a.opt::<crate::board::aggregate::By>(1)?.as_ref(),
-            &a.req::<crate::board::aggregate::Ctx>(2)?
-        )?),
+        "board_chart" => {
+            let ctx = a.req::<crate::board::aggregate::Ctx>(2)?;
+            // The board's date ranges, for a date axis that covers one of them.
+            let ranges = a.opt::<Vec<crate::board::ranges::Range>>(3)?.unwrap_or_default();
+            let mut by = a.opt::<crate::board::aggregate::By>(1)?;
+            if let Some(by) = by.as_mut() {
+                crate::board::ranges::attach(by, &ranges, &ctx)?;
+            }
+            json!(crate::board::aggregate::chart(
+                &a.req::<Vec<crate::board::aggregate::SeriesInput>>(0)?,
+                by.as_ref(),
+                &ctx
+            )?)
+        }
         "board_ranges" => json!(crate::board::ranges::resolve(
             &a.req::<Vec<crate::board::ranges::Range>>(0)?,
             &a.req::<crate::board::aggregate::Ctx>(1)?
@@ -578,6 +587,15 @@ mod tests {
         assert_eq!(got, r#"{"limit":null}"#);
         let got = call("board_limit", &format!(r#"["many",{ranges_w},{ctx}]"#));
         assert!(got.contains(r#""message""#), "{got}");
+
+        // A chart over one of the board's ranges has the range's periods for an axis.
+        let series = r#"[{"label":"Done","tasks":"[]"}]"#;
+        let by = r#"{"time":{"field":"end","step":"day","range":"week"}}"#;
+        let got: serde_json::Value =
+            serde_json::from_str(&call("board_chart", &format!("[{series},{by},{ctx},{ranges}]"))).unwrap();
+        assert_eq!(got["labels"].as_array().map(Vec::len), Some(7));
+        let got = call("board_chart", &format!("[{series},{by},{ctx}]"));
+        assert!(got.contains("no date range called 'week'"), "{got}");
 
         let cells = r#"[{"id":"a","x":0,"y":0,"w":6,"h":2},{"id":"b","x":6,"y":0,"w":6,"h":2}]"#;
         let placed: serde_json::Value = serde_json::from_str(&call(

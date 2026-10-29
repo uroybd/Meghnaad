@@ -6,7 +6,7 @@
 //! still gives at least two whole periods) and `$name.lg_group.count` how many of those the range touches.
 //! The dates are worked out here, in the page's zone and week, and put in the filter as the moment they are, so what Taskwarrior reads is never the text typed (which may hold a space).
 
-use super::aggregate::{bucket, Ctx, Step};
+use super::aggregate::{bucket, By, Ctx, Step};
 use crate::dates::{parse_date_expr_in, Clock};
 use crate::export::iso;
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,15 @@ pub struct Range {
     pub name: String,
     pub start: String,
     pub end: String,
+}
+
+/// The range a chart's date axis covers: one of the board's (by its name), or one of the chart's own (two dates, written as a
+/// range's are).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RangeRef {
+    Named(String),
+    Own { start: String, end: String },
 }
 
 /// A range worked out for now: its two moments, or why it cannot be.
@@ -44,8 +53,13 @@ pub fn problem(r: &Range) -> Option<String> {
     if !valid_name(&r.name) {
         return Some("needs a name of lower case letters, digits and _, starting with a letter".into());
     }
+    dates_problem(&r.start, &r.end)
+}
+
+/// Why `start` and `end` cannot be the two dates of a range, or `None`.
+fn dates_problem(start: &str, end: &str) -> Option<String> {
     let clock = Clock::utc(0);
-    for (what, a, text) in [("start", "a", &r.start), ("end", "an", &r.end)] {
+    for (what, a, text) in [("start", "a", start), ("end", "an", end)] {
         if text.trim().is_empty() {
             return Some(format!("needs {a} {what}"));
         }
@@ -130,6 +144,70 @@ pub fn substitute(filter: &str, ranges: &[Range], ctx: &Ctx) -> Result<String, S
     }
     out.push_str(rest);
     Ok(out)
+}
+
+/// Why `r` cannot be the range a chart's date axis covers on a board with these ranges, or `None`.
+pub fn axis_problem(r: &RangeRef, ranges: &[Range]) -> Option<String> {
+    match r {
+        RangeRef::Named(name) if name.trim().is_empty() => Some("axis: needs the name of a date range".into()),
+        RangeRef::Named(name) => ranges
+            .iter()
+            .all(|x| &x.name != name)
+            .then(|| format!("axis: this board has no date range called '{name}'")),
+        RangeRef::Own { start, end } => dates_problem(start, end).map(|p| format!("axis: {p}")),
+    }
+}
+
+/// The first moment of a range's axis and the moment its last period begins: the periods of `step` it touches, as
+/// `$name.day_count` counts them. The end is the last moment in the range (as `eod` is), so a range that ends at midnight
+/// does not touch the day after.
+pub fn axis_bounds(window: (i64, i64), step: Step, ctx: &Ctx) -> (i64, i64) {
+    let clock = ctx.clock();
+    let (start, end) = window;
+    (
+        bucket(&clock, step, start).0,
+        bucket(&clock, step, (end - 1).max(start)).0,
+    )
+}
+
+/// The two moments of the range a chart's axis covers, worked out now.
+pub fn window(r: &RangeRef, ranges: &[Range], ctx: &Ctx) -> Result<(i64, i64), String> {
+    let own;
+    let range = match r {
+        RangeRef::Named(name) => ranges
+            .iter()
+            .find(|x| &x.name == name)
+            .ok_or_else(|| format!("this board has no date range called '{name}'"))?,
+        RangeRef::Own { start, end } => {
+            own = Range {
+                name: String::new(),
+                start: start.clone(),
+                end: end.clone(),
+            };
+            &own
+        }
+    };
+    let got = one(range, ctx);
+    match (got.error, got.start, got.end) {
+        (Some(e), ..) => Err(match r {
+            RangeRef::Named(name) => format!("date range '{name}': {e}"),
+            RangeRef::Own { .. } => format!("axis: {e}"),
+        }),
+        (None, Some(a), Some(b)) => Ok((a, b)),
+        _ => Err("the range could not be worked out".into()),
+    }
+}
+
+/// Work out the range a chart groups by a date over, so the groups are the periods of the range and not those the tasks happen
+/// to fall in. A grouping with no range is left as it is.
+pub fn attach(by: &mut By, ranges: &[Range], ctx: &Ctx) -> Result<(), String> {
+    let Some(time) = by.time.as_mut() else {
+        return Ok(());
+    };
+    if let Some(r) = &time.range {
+        time.window = Some(window(r, ranges, ctx)?);
+    }
+    Ok(())
 }
 
 /// What a reference asks of a range: one of its two moments, or how many periods of a unit it covers.

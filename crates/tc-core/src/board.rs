@@ -214,6 +214,15 @@ fn section_problem(s: &Section, ranges: &[Range]) -> Option<String> {
             return Some(p);
         }
     }
+    if let Some(r) =
+        s.by.as_ref()
+            .and_then(|b| b.time.as_ref())
+            .and_then(|t| t.range.as_ref())
+    {
+        if let Some(p) = ranges::axis_problem(r, ranges) {
+            return Some(p);
+        }
+    }
     if s.kind.is_chart() && s.by.is_none() {
         return Some("a chart needs something to group by".into());
     }
@@ -496,6 +505,37 @@ mod tests {
             let n = board(bad);
             assert!(n.boards[0].sections.is_empty());
             assert!(n.errors[0].contains("Keep"), "{:?}", n.errors);
+        }
+    }
+
+    #[test]
+    fn a_chart_may_cover_a_range_of_the_board_or_one_of_its_own() {
+        let board = |range: Value| {
+            normalize(&json!([{ "id": "b", "name": "B",
+                "ranges": [{ "name": "week", "start": "sow", "end": "eow" }],
+                "sections": [{ "id": "c", "type": "line", "x": 0, "y": 0, "w": 6, "h": 4,
+                    "by": { "time": { "field": "end", "step": "day", "range": range } } }] }]))
+        };
+        for range in [json!("week"), json!({ "start": "2026-10-01", "end": "eom" })] {
+            let n = board(range.clone());
+            assert!(n.errors.is_empty(), "{:?}", n.errors);
+            // Written out as typed, and read again the same.
+            let out = serde_json::to_value(&n.boards).unwrap();
+            assert_eq!(out[0]["sections"][0]["by"]["time"]["range"], range);
+            assert_eq!(normalize(&out).boards, n.boards);
+        }
+        for (range, said) in [
+            (json!("nope"), "no date range called 'nope'"),
+            (json!(""), "needs the name"),
+            (
+                json!({ "start": "soonish", "end": "eom" }),
+                "the start 'soonish' is not a date",
+            ),
+            (json!({ "start": "sow", "end": "" }), "needs an end"),
+        ] {
+            let n = board(range);
+            assert!(n.boards[0].sections.is_empty(), "{said}");
+            assert!(n.errors.iter().any(|e| e.contains(said)), "{said}: {:?}", n.errors);
         }
     }
 

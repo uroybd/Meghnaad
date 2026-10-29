@@ -66,6 +66,49 @@ describe('grouping a chart by a date', () => {
     expect(changed.mock.calls[0][0].by).toEqual({ time: { field: 'end', step: '$daterange.lg_group.name' } });
   });
 
+  it('covers a range of the board or dates of its own, and keeps the range when the date or step changes', () => {
+    const changed = vi.fn();
+    const ranges = [{ name: 'sprint', start: 'sow', end: 'eow' }];
+    app = mount(SectionForm, { target: document.body, props: { section: dated, onchange: changed, ranges } });
+    flushSync();
+    const over = [...document.querySelectorAll<HTMLSelectElement>('select')].find((x) => x.value === '')!;
+    expect([...over.options].map((o) => o.value)).toEqual(['', 'range:sprint', 'own']);
+    expect(document.querySelector('input[placeholder="sow, 2026-10-01"]')).toBeNull();
+    const pick = (value: string) => {
+      over.value = value;
+      over.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    pick('range:sprint');
+    expect(changed.mock.calls[0][0].by).toEqual({ time: { field: 'end', step: 'week', range: 'sprint' } });
+    pick('own');
+    expect(changed.mock.calls[1][0].by.time.range).toEqual({ start: 'sow', end: 'eow' });
+    pick('');
+    expect(changed.mock.calls[2][0].by).toEqual({ time: { field: 'end', step: 'week' } });
+  });
+
+  it('has the dates of an own range typed in, and changing the step leaves the range', () => {
+    const changed = vi.fn();
+    const own: Section = {
+      ...dated,
+      by: { time: { field: 'end', step: 'week', range: { start: '2026-10-01', end: 'eom' } } },
+    };
+    app = mount(SectionForm, { target: document.body, props: { section: own, onchange: changed } });
+    flushSync();
+    const to = document.querySelector<HTMLInputElement>('input[placeholder="eow, 2026-10-31"]')!;
+    expect(to.value).toBe('eom');
+    to.value = 'eoy';
+    to.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(changed.mock.calls[0][0].by.time.range).toEqual({ start: '2026-10-01', end: 'eoy' });
+    const select = per();
+    select.value = 'month';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changed.mock.calls[1][0].by.time).toEqual({
+      field: 'end',
+      step: 'month',
+      range: { start: '2026-10-01', end: 'eom' },
+    });
+  });
+
   it('says whose group it is when there are several ranges, and offers none without ranges', () => {
     const ranges = [
       { name: 'sprint_week', start: 'som', end: 'eom' },

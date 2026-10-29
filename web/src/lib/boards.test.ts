@@ -30,6 +30,7 @@ import {
   resizeBy,
   stacked,
   zoneNow,
+  type AxisRange,
   type Board,
   type Chart,
   type Section,
@@ -505,6 +506,40 @@ describe('a series of states', () => {
   const file = (rows: object[]) =>
     respond({ kind: 'file', name: 't.json', mime: '', text: JSON.stringify(rows), count: rows.length });
 
+  it('draws a burndown over a range of the board, with a place for every day of it up to today', async () => {
+    const rows = [
+      { entry: '20260930T100000Z', end: '20261006T100000Z' },
+      { entry: '20261006T150000Z' },
+      { entry: '20260101T100000Z', end: '20260102T100000Z' },
+    ];
+    const run = async () => file(rows);
+    const [pending] = SPAN_PRESETS.map((p) => p.span);
+    const over = (id: string, range: AxisRange) =>
+      sec(id, 0, 0, 8, 5, {
+        type: 'line',
+        by: { time: { field: 'entry', step: 'day', range } },
+        series: [{ label: 'Pending', span: pending }],
+      });
+    const b = board(
+      [over('mine', 'week'), over('own', { start: '2026-10-05', end: '2026-10-06T23:59' }), over('nope', 'x')],
+      {
+        ranges: [{ name: 'week', start: 'sow', end: 'eow' }],
+      },
+    );
+    // Wednesday 2026-10-07.
+    const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
+    if (data.mine.kind !== 'chart' || data.own.kind !== 'chart') throw new Error('not charts');
+    expect(data.mine.chart.labels).toHaveLength(7);
+    expect(data.mine.chart.datasets[0].data).toEqual([1, 1, 1, null, null, null, null]);
+    expect(data.own.chart.labels.map((l) => l.label)).toEqual(['2026-10-05', '2026-10-06']);
+    expect(data.nope).toMatchObject({ kind: 'error', message: expect.stringContaining("no date range called 'x'") });
+    // The range typed on the page for the board moves the axis too.
+    const moved = viewed(b, undefined, { week: { start: '2026-10-12', end: '2026-10-14T23:59' } });
+    const next = await loadBoard(moved, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
+    if (next.mine.kind !== 'chart') throw new Error('not a chart');
+    expect(next.mine.chart.labels.map((l) => l.label)).toEqual(['2026-10-12', '2026-10-13', '2026-10-14']);
+  });
+
   it('is sent to the engine with its span, and counts what is open at the end of each week', async () => {
     const rows = [
       { entry: '20261006T100000Z', start: '20261008T100000Z', end: '20261014T100000Z' },
@@ -574,6 +609,12 @@ describe('what a card says about itself', () => {
     expect(describeMeasure({ fn: 'max', field: 'urgency' })).toBe('Largest of urgency');
     expect(describeBy({ field: 'project' })).toBe('project');
     expect(describeBy({ time: { field: 'end', step: 'week' } })).toBe('end, per week');
+    expect(describeBy({ time: { field: 'end', step: 'day', range: 'sprint_week' } })).toBe(
+      'end, per day, over Sprint week',
+    );
+    expect(describeBy({ time: { field: 'end', step: 'day', range: { start: 'sow', end: 'eow' } } })).toBe(
+      'end, per day, over sow to eow',
+    );
     expect(describeBy(undefined)).toBeNull();
   });
 });
