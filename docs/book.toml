@@ -1,0 +1,18 @@
+[book]
+title = "Meghnaad"
+authors = ["Utsob Roy"]
+description = "Taskwarrior 3 in your browser and on your phone."
+language = "en"
+src = "."
+
+[output.html]
+git-repository-url = "https://github.com/uroybd/Meghnaad"
+edit-url-template = "https://github.com/uroybd/Meghnaad/edit/main/docs/{path}"
+site-url = "/"
+additional-css = ["./theme/catppuccin.css"]
+additional-js = ["./theme/mermaid-init.js"]
+default-theme = "latte"
+preferred-dark-theme = "frappe"
+
+[output.html.search]
+enable = true

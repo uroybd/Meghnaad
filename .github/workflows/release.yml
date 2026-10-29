@@ -117,7 +117,7 @@ jobs:
           cat > "$RUNNER_TEMP/notes.md" <<NOTES
           **Web app**: deploy it with the [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/${GITHUB_REPOSITORY}/tree/release) button, or with \`npm run setup\` from the \`release\` branch ([Deploying](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deploy.md)). \`meghnaad-$VERSION.tar.gz\` is the same built package.
 
-          **Hooks with the real \`task\`**: \`meghnaad-hook-$VERSION-<platform>.tar.gz\` is the program that runs your Lua hooks script for \`task\` ([the same script with the real task](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/using.md#the-same-script-with-the-real-task)); the builds are added to this release when they finish.
+          **Hooks with the real \`task\`**: \`meghnaad-hook-$VERSION-<platform>.tar.gz\` is the program that runs your Lua hooks script for \`task\` ([the same script with the real task](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/using/hooks.md#the-same-script-with-the-real-task)); the builds are added to this release when they finish.
 
           **Android app**: install \`meghnaad-$VERSION.apk\` ([the Android app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/android.md)); it is added to this release when its build finishes.
 

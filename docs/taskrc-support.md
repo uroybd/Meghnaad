@@ -3,16 +3,16 @@
 Which of Taskwarrior's `taskrc` options Meghnaad handles, and which it doesn't.
 
 The list of options comes from the `taskrc(5)` man page of Taskwarrior **3.5.0**; the status of each one comes from
-reading this repository's code. [Using Meghnaad](using.md#your-taskrc) explains how the taskrc is imported. In short: you paste or choose your
+reading this repository's code. [Using Meghnaad](using/settings.md#your-taskrc) explains how the taskrc is imported. In short: you paste or choose your
 `~/.taskrc` (or a folder of files, with `include` followed), the text is kept as written in your bucket (`web/rc/…`), only an allowlist of
 settings is read from it (and what they add up to is kept in `web/config.json`), not in your desktop file. Lines that can't be used are commented out; sync and credential lines are removed. The app's own settings (task commands, so far) are not taskrc options: they are in a `settings.json`
-of their own, described in [Using Meghnaad](using.md#commands).
+of their own, described in [Using Meghnaad](using/settings.md#commands).
 
 **Scope.** This tracks Taskwarrior **3.5.0 and newer**, and only that. Settings that were removed or deprecated before
 3.5.0 are left out of this list and are not supported, even if an older taskrc still contains them.
 
 `show` and `config` (Console only) read and edit the same saved settings, under the same rules; see
-[Using Meghnaad](using.md#the-console).
+[Using Meghnaad](using/console.md#the-console).
 
 ## Status key
 
@@ -59,7 +59,7 @@ Each row below counts once, even where a row covers several related options.
 | `purge.on-sync` | Not done | The app only purges when you run `purge`; it never purges deleted tasks by itself on a sync. Leave that to your CLI |
 | `data.location`, `TASKDATA` | N/A | Data lives in the R2 bucket |
 | `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; its place is a folder of files saved in the bucket (`web/rc/`), the main one being `taskrc` |
-| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A browser can't run scripts, so the hooks are functions in a Lua script kept in the bucket and edited in Settings: `on_launch`, `on_add`, `on_modify` and `on_exit`. The same script also runs with the real `task` through `meghnaad-hook`, and `hooks=off` turns it off there too. See [Hooks](using.md#hooks) |
+| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A browser can't run scripts, so the hooks are functions in a Lua script kept in the bucket and edited in Settings: `on_launch`, `on_add`, `on_modify` and `on_exit`. The same script also runs with the real `task` through `meghnaad-hook`, and `hooks=off` turns it off there too. See [Hooks](using/hooks.md#hooks) |
 | `hooks.location`, `debug.hooks` | N/A | There is no hooks directory to look in, and no scripts to trace |
 | `gc` | N/A | Working-set ids are computed by the app, not stored |
 | `exit.on.missing.db` | N/A | There is no local database |
@@ -82,7 +82,7 @@ How a typed command line is read.
 | `abbreviation.minimum` | Done | The shortest abbreviation understood, default 2: for commands and report names (`ver` for `version` at 3), attribute and UDA names (`proj:`, `desc:`) and the words `calendar` takes (`due`, month names). Shorter than that, a word is not an abbreviation but just a word, as in Taskwarrior (checked against `task` 3.5.0 at 1 to 4). Modifiers (`.has`, `.before`) are never abbreviated. Differences: an abbreviation that fits two commands is reported as ambiguous here, where Taskwarrior treats it as plain text; the names of days and months in dates stay at three letters, which Taskwarrior does not tie to this setting |
 | `regex` | Partial | On by default, as in Taskwarrior. With it on, plain words, `/pattern/`, `.has`, `.hasnt`, `.startswith`, `.endswith`, `.word`, `.noword` and the `/from/to/` substitution in `modify` are regular expressions, and for the description the annotations are searched too. The syntax is ECMAScript, read byte by byte, as Taskwarrior's C++ `std::regex` does: `.` is one byte, and `\w`, `\d`, `\s`, `\b` and case folding are ASCII only. **Not supported: lookahead (`(?=…)`, `(?!…)`) and backreferences (`\1`)**, which ECMAScript has; a pattern that uses them is refused with a message that says so. So is syntax ECMAScript doesn't have (`(?i)`, lookbehind, named groups). Also different: `.` matches `\r` here and not there; a substitution edits the description only, not annotations; and a replacement that would cut a character in half is skipped. `regex=off` matches plain text, with a leading `^` or trailing `$` as an anchor |
 | `expressions` | Done | `expressions=postfix` makes `calc` read `1 2 +` instead of `1 + 2`; anything else is infix. `calc` is a port of Taskwarrior's evaluator (same grammar, shunting-yard, operator table and per-type rules, so `7 / 2` is 3, `1y` is 365 days and `2 ^ -1` can't be evaluated) over integers, reals, booleans, strings, dates and durations, with Taskwarrior's messages. References into Taskwarrior's DOM work too: `1.due`, `<uuid>.project` (a uuid may be cut short to eight characters or more), `1.due.year` and the other parts of a date, `1.tags.x`, `1.annotations.1.description`, `rc.<setting>` (the default when the taskrc is silent), `tw.version`, `system.version` and the rest; attribute names must be exact (`1.desc` is just a word, as in Taskwarrior). `~` and `!~` are refused with Taskwarrior's own message, since `calc` has no task to match against. Filters are always infix, as in Taskwarrior, where the setting only concerns `calc` |
-| `alias.<name>` | Done | A typed word that is an alias stands for the words it is set to (`alias.rm=delete`), up to ten rounds so one alias can use another and a loop ends. Taskwarrior's own `rm` (delete), `burndown` (burndown.weekly), `history` and `ghistory` are there without a taskrc, and the taskrc can change or empty them. Only typed lines expand: arguments from the buttons are taken as they are, and so is everything after `--`. `history.*` and `ghistory.*` commands don't exist here. For a word that stands for a whole command line (with a filter of its own, an icon, and a button), see *Commands* in the [user guide](using.md#commands): they are kept in the app's own `settings.json` and are not read from the taskrc |
+| `alias.<name>` | Done | A typed word that is an alias stands for the words it is set to (`alias.rm=delete`), up to ten rounds so one alias can use another and a loop ends. Taskwarrior's own `rm` (delete), `burndown` (burndown.weekly), `history` and `ghistory` are there without a taskrc, and the taskrc can change or empty them. Only typed lines expand: arguments from the buttons are taken as they are, and so is everything after `--`. `history.*` and `ghistory.*` commands don't exist here. For a word that stands for a whole command line (with a filter of its own, an icon, and a button), see *Commands* in the [user guide](using/settings.md#commands): they are kept in the app's own `settings.json` and are not read from the taskrc |
 
 ## Confirmations and safety
 
@@ -96,11 +96,11 @@ The questions Taskwarrior asks before it changes things. Taskwarrior asks yes / 
 
 ## Recurrence
 
-See [Recurring tasks](using.md#recurring-tasks) for how it behaves.
+See [Recurring tasks](using/recurring.md#recurring-tasks) for how it behaves.
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `recurrence` | Done | On by default, as in Taskwarrior; `recurrence=off` (or `0`, `no`) turns it off. Before the commands that `task commands` flags Recur (reports, `count`, `export`, ...) the app creates the instances that are due and expires tasks past `until`, the way `task` does. Taskwarrior itself advises one primary client with `recurrence=1` and `recurrence=0` on all the others when syncing several, because two that each make an instance before they have synced make two. Between this app's own clients that cannot happen: an instance's uuid is derived from its template and its index, so every client makes the same task and the replicas merge it. A real `task` on the same data still makes its own copy, so turn it off there. See [Recurring tasks](using.md#recurring-tasks) |
+| `recurrence` | Done | On by default, as in Taskwarrior; `recurrence=off` (or `0`, `no`) turns it off. Before the commands that `task commands` flags Recur (reports, `count`, `export`, ...) the app creates the instances that are due and expires tasks past `until`, the way `task` does. Taskwarrior itself advises one primary client with `recurrence=1` and `recurrence=0` on all the others when syncing several, because two that each make an instance before they have synced make two. Between this app's own clients that cannot happen: an instance's uuid is derived from its template and its index, so every client makes the same task and the replicas merge it. A real `task` on the same data still makes its own copy, so turn it off there. See [Recurring tasks](using/recurring.md#recurring-tasks) |
 | `recurrence.confirmation` | Done | Unset or `prompt` asks (the question appears in the app), a true-ish value is yes, anything else no. It governs `modify`, `append`, `prepend`, `annotate` and `delete` on a task of a series, and `purge` of a template |
 | `recurrence.indicator` | Done | |
 | `recurrence.limit` | Done | |
@@ -197,7 +197,7 @@ Where the app differs from the desktop: with no `color.*` lines the rows follow 
 
 ## Urgency
 
-All of these can also be edited in the app (**Settings**, then **Urgency**, in the header). See [Urgency](using.md#urgency) for the
+All of these can also be edited in the app (**Settings**, then **Urgency**, in the header). See [Urgency](using/settings.md#urgency) for the
 inheritance rules, which follow Taskwarrior's source.
 
 | Option | Status | Remark |

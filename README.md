@@ -56,7 +56,7 @@ tasks on the phone and syncs straight with your bucket.
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
 - **Boards.** Pages of your own made of numbers, tables and charts (bars, stacked or side by side, lines, areas, pies,
   donuts, radar, heatmaps: a sum of estimates by project, what you finish per week, split by outcome), each with its own filter, laid out on a 12-column grid that you drag and resize, and on 4 or 6 columns on a phone (several numbers to a row, resizable there too).
-  Kept in the app's own `settings.json` ([Boards](docs/using.md#boards)).
+  Kept in the app's own `settings.json` ([Boards](docs/using/boards.md#boards)).
 - **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions in a script you edit in Settings,
   kept in your bucket and run on the Worker, or on the phone in the Android app ([Hooks](#hooks)).
 - **Works on a phone.** The layout adapts (a menu for the pages, tasks as cards with their marks, time tracking, reminders,
@@ -129,6 +129,8 @@ tasks on the phone and syncs straight with your bucket.
 </table>
 
 ## Documentation
+
+The same pages are a searchable site at **[meghnaad.utsob.me](https://meghnaad.utsob.me)**.
 
 | | |
 | --- | --- |
@@ -319,7 +321,7 @@ Taskwarrior's four hooks are functions in a **Lua script** you edit in **Setting
 marked as you type. A hook gets the task (tags as a set, dates you can calculate with), returns it changed or refuses the
 command, and what it prints appears in the Console. The script is kept in your bucket and runs on the Worker, so changing
 it needs no rebuild or deploy and a script can hold secrets that never reach the page. See
-[Hooks](docs/using.md#hooks).
+[Hooks](docs/using/hooks.md#hooks).
 
 ```lua
 function on_add(task)
@@ -336,7 +338,7 @@ on the Worker, a script can call other services (`http.post(...)`, to hosts it d
 the Worker; the engine in the browser is unaffected.
 
 The same script runs with the real `task` on your computer through `meghnaad-hook`, which `task` calls as an ordinary hook
-(secrets there are environment variables); see [the same script with the real `task`](docs/using.md#the-same-script-with-the-real-task).
+(secrets there are environment variables); see [the same script with the real `task`](docs/using/hooks.md#the-same-script-with-the-real-task).
 
 ## Security
 
@@ -424,7 +426,7 @@ the browser and goes up when it works again.
 - **Dates you type** are read in your `dateformat`, then as ISO or words (`friday`, `3d`). ISO week and ordinal dates
   (`2026-W52`) aren't understood.
 - **Hooks** are Lua with no network or files, and each is a request to the server. `undo` doesn't run them
-  ([Hooks](docs/using.md#hooks)).
+  ([Hooks](docs/using/hooks.md#hooks)).
 - **Not every `taskrc` option applies:** terminal, colour and local-file options don't make sense here, and `include`
   and `purge.on-sync` aren't supported ([taskrc support](docs/taskrc-support.md)).
 - **The Android app** is for 64-bit ARM phones (not 32-bit ones), importing a taskrc from a link is not there yet, and

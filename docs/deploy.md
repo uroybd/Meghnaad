@@ -116,7 +116,7 @@ values into a git-ignored `wrangler.deploy.jsonc`.
 
 ## D. From GitHub Actions (manual)
 
-The repository has a workflow, [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml), that builds and
+The repository has a workflow, [`.github/workflows/deploy.yml`](https://github.com/uroybd/Meghnaad/blob/main/.github/workflows/deploy.yml), that builds and
 deploys the Worker when you start it: **Actions → Deploy → Run workflow**. It never runs on a push. Do route 0, A or C
 **once** first (the bucket and Access have to exist, and the first deploy is where you find out they work); after that,
 updating is one click. In your fork:
@@ -157,8 +157,8 @@ The encryption secret and the API token are, and are only handed to the steps th
 
 The workflow has one option when you run it: **Dry run** only prints the Worker config the settings would produce, which
 is the quickest way to check your variables, and builds and deploys nothing. It does not run the tests, because the
-[CI workflow](../.github/workflows/ci.yml) already runs them on every push and pull request: deploy a commit whose CI is
-green. Run it from the branch you want to deploy: for your own hooks that is your `my-hooks` branch ([keeping hooks across updates](using.md#keeping-your-hooks-across-updates)).
+[CI workflow](https://github.com/uroybd/Meghnaad/blob/main/.github/workflows/ci.yml) already runs them on every push and pull request: deploy a commit whose CI is
+green. Run it from the branch you want to deploy: for your own hooks that is your `my-hooks` branch ([keeping hooks across updates](using/hooks.md)).
 Runs are serialised, so two clicks never deploy at once.
 
 **Last step, whichever way:** open the URL, sign in, and import your `taskrc` (**Settings**, then the **taskrc** tab) to get your UDAs
@@ -186,7 +186,7 @@ with `brew install <owner>/tap/meghnaad-hook`. It is off until the repository sa
 **Contents: read and write** on that one repository (the workflow's own token cannot push to another). For a release
 version (not `1.2.3-rc.1`) the `tap` job waits for the four builds of the hook program, writes `Formula/meghnaad-hook.rb`
 (`scripts/homebrew-formula.mjs`: the URL and sha256 of each platform's archive on the release) and pushes it as
-"Update meghnaad-hook to v<version>". If a platform's build fails, no formula is written; re-run the failed jobs and it
+"Update meghnaad-hook to v`<version>`". If a platform's build fails, no formula is written; re-run the failed jobs and it
 follows. Without the token it only warns.
 
 **Actions → Release → Run workflow** builds the same things as `<version>-dev.<commit>` and only updates the `release`

@@ -13,7 +13,7 @@ cannot: reminders that come with the app closed, and the widgets.
 ## What you get
 
 - Everything in the web app: the console, the pages, review, urgency, recurrence, hooks, settings, with a layout made
-  for a phone: a menu for the pages, and tasks as cards ([On a phone](using.md#on-a-phone)). Review is a card with
+  for a phone: a menu for the pages, and tasks as cards ([On a phone](using/phone.md#on-a-phone)). Review is a card with
   buttons, which `review` in the console opens too.
 - **A table where there is room.** On a tablet, a foldable or a phone held wide (more than 760 dp across), a report is
   drawn as the web's table, not as cards: the report's own columns, headers that sort (a long press adds a tie-breaker,

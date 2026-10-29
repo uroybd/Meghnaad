@@ -13,3 +13,6 @@ web/src/engine/pkg
 
 # The engine for the phone, built by scripts/build-android.mjs.
 /app/androidApp/src/main/jniLibs/
+
+# The documentation site (mdBook): built into docs/book.
+/docs/book

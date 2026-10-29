@@ -86,8 +86,8 @@ run `npm run format` after editing any code, not just at the end.
 - **Follow Taskwarrior 3.5.0, not a lookalike.** For behaviour (filters, dates, reports, confirmations, `calc`, settings)
   read the C++ first and check against the real `task` run on a scratch `TASKRC` and data directory. Don't guess.
 - **Every page has an address** (`web/src/lib/route.ts`, `Place`): a new page or view adds its place, a round-trip test and a
-  row in the address table of `docs/using.md`, so it can be linked and the back button works.
-- **Docs move with the code.** A new or changed feature updates `docs/using.md`, and `docs/taskrc-support.md` for a
+  row in the address table of `docs/using/pages.md`, so it can be linked and the back button works.
+- **Docs move with the code.** A new or changed feature updates the guide in `docs/using/`, and `docs/taskrc-support.md` for a
   setting, `docs/architecture.md` for a module, and the README if it is user-visible. Keep the Mermaid diagram identical
   in the README and `docs/architecture.md`.
 - **Taskwarrior logic lives in `tc-core`**; the page only draws. The engine runs in the page (`crates/browser`); the
@@ -163,6 +163,14 @@ nobody; `web/src/engine/tc-engine.d.ts` types it by hand, so keep it in step wit
 helpers are different: they are the engine's WebAssembly called at once from the page's thread (`web/src/engine/helpers.ts`:
 dates in the user's `dateformat`), so the web tests load the built engine (`web/src/test-setup.ts`), and
 `npm --prefix web test` builds it first when it is out of date (CI installs the Rust toolchain before them for this).
+
+## The documentation site
+
+`docs/` is also an mdBook (`docs/book.toml`, contents in `docs/SUMMARY.md`), published to GitHub Pages by
+`.github/workflows/docs.yml` on a push to `main` that touches `docs/`. The pages are the same Markdown files the README
+links to, so a new page or chapter goes in `SUMMARY.md` as well. Build it with `mdbook build docs` (output in `docs/book`, git-ignored)
+and keep it free of warnings; a bare `<name>` outside backticks is read as an HTML tag and swallowed. The custom domain is
+the repository variable `DOCS_DOMAIN` (for the sitemap) and the Pages setting.
 
 ## Running things without disturbing the person using the app
 

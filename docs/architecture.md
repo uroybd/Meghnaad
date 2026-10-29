@@ -404,7 +404,7 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   `store.openFromAddress` goes where an address says (a page that needs the reports or the boards waits until they are read, and
   the start asks again); and one effect in `App.svelte` keeps the address in step with `store.place` the other way, pushing a
   history entry for each move but replacing the address when the front page finds where it is, when the drawer closes over the page
-  under it, and when Settings changes tab. A new page adds a `Place`, a test of its round trip, and a row in `docs/using.md`.
+  under it, and when Settings changes tab. A new page adds a `Place`, a test of its round trip, and a row in `docs/using/pages.md`.
 - **The home page** is a `homepage` key of `settings.json` (`{ report }` or `{ board }`, read by `parseHomepage`). `store.goHome()` runs once the settings have loaded, from the front page only, and does nothing for a task's address or a report or board that is gone. The General tab of Settings writes it.
 - **The info panel** of a card (`SectionInfo`, a modal `<dialog>`) is drawn from what the load already had: `loadBoard` keeps, beside each
   result, the filter each series ran and the `export` text it got, so the panel parses and lists the tasks only when it is opened.

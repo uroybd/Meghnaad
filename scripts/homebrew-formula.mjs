@@ -53,7 +53,7 @@ ${block('linux')}
       Point task at your script, once (and again when it defines a hook it did not before):
         meghnaad-hook check ~/hooks.lua
         meghnaad-hook install ~/hooks.lua
-      How it works: https://github.com/${repo}/blob/v${version}/docs/using.md#the-same-script-with-the-real-task
+      How it works: https://github.com/${repo}/blob/v${version}/docs/using/hooks.md#the-same-script-with-the-real-task
     EOS
   end
 

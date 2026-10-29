@@ -1,0 +1,66 @@
+# The documentation site (mdBook, from docs/), published to GitHub Pages. The custom domain is set in the repository's
+# Pages settings (docs/CNAME is not used by a workflow deploy); see docs/deploy.md.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mdBook
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
+
+      - name: Build
+        run: |
+          mdbook build docs
+          rm -f docs/book/book.toml
+
+      - name: Robots and sitemap
+        env:
+          DOMAIN: ${{ vars.DOCS_DOMAIN }}
+        run: |
+          set -euo pipefail
+          [ -n "$DOMAIN" ] || exit 0
+          {
+            echo '<?xml version="1.0" encoding="UTF-8"?>'
+            echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            echo "  <url><loc>https://${DOMAIN}/</loc></url>"
+            find docs/book -name '*.html' ! -name 'index.html' ! -name '404.html' ! -name 'print.html' ! -name 'toc.html' \
+              | sed 's#^docs/book/##' | sort | while read -r path; do echo "  <url><loc>https://${DOMAIN}/${path}</loc></url>"; done
+            echo '</urlset>'
+          } > docs/book/sitemap.xml
+          printf 'User-agent: *\nAllow: /\n\nSitemap: https://%s/sitemap.xml\n' "$DOMAIN" > docs/book/robots.txt
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
