@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  copyBoard,
+  copySection,
   effectiveFilter,
   describeBy,
   describeMeasure,
@@ -120,6 +122,28 @@ describe('the grid', () => {
     expect(newSection(b, 'number')).toMatchObject({ id: 'number-2', x: 3, y: 0, w: 3, h: 2 });
     expect(newSection(b, 'line').by).toEqual({ time: { field: 'entry', step: 'week' } });
     expect(newSection(b, 'table').report).toBe('next');
+  });
+
+  it('copies a section into the first free place, with an id and a title of its own', () => {
+    const original = { ...sec('bar', 0, 0, 6, 5), title: 'Open', by: { field: 'project' }, series: [{ label: 'a' }] };
+    const b = board([original]);
+    const copy = copySection(b, original as never);
+    expect(copy).toMatchObject({ id: 'bar-2', title: 'Open copy', x: 6, y: 0, w: 6, h: 5, by: { field: 'project' } });
+    // Nothing is shared with the original: changing the copy leaves it alone.
+    expect(copy.series).toEqual([{ label: 'a' }]);
+    expect(copy.series).not.toBe(original.series);
+    // A copy of a copy is `bar-3`, not `bar-2-2`.
+    const again = copySection(board([original, copy]), copy);
+    expect(again.id).toBe('bar-3');
+  });
+
+  it('copies a board with a name and an address of its own, and its sections as they are', () => {
+    const original = { ...board([sec('a', 0, 0, 6, 2)]), id: 'week', name: 'My week', filter: 'project:Home' };
+    const copy = copyBoard(original, [original]);
+    expect(copy).toMatchObject({ id: 'my-week-copy', name: 'My week copy', filter: 'project:Home' });
+    expect(copy.sections).toEqual(original.sections);
+    expect(copy.sections).not.toBe(original.sections);
+    expect(copyBoard(original, [original, copy]).id).toBe('my-week-copy-2');
   });
 
   it('is put in a new order, with the widths it had', () => {

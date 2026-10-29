@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Info, Move, Pencil, Trash2 } from './icons';
+  import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Copy, Info, Move, Pencil, Trash2 } from './icons';
   import MoreMenu, { type MenuAction } from './MoreMenu.svelte';
   import BoardSection from './BoardSection.svelte';
   import SectionInfo from './SectionInfo.svelte';
@@ -38,6 +38,7 @@
     onchange,
     onselect,
     onedit,
+    onduplicate,
     onremove,
   }: {
     board: Board;
@@ -46,6 +47,7 @@
     onchange?: (sections: Section[]) => void;
     onselect?: (id: string) => void;
     onedit?: (id: string) => void;
+    onduplicate?: (id: string) => void;
     onremove?: (id: string) => void;
   } = $props();
 
@@ -151,6 +153,7 @@
           onedit?.(s.id);
         },
       },
+      { label: 'Duplicate', icon: Copy, run: () => onduplicate?.(s.id) },
       { label: 'Remove', icon: Trash2, danger: true, run: () => onremove?.(s.id) },
     ];
   }
@@ -307,6 +310,9 @@
                 onselect?.(s.id);
                 onedit?.(s.id);
               }}><Pencil size={15} /></button
+            >
+            <button class="ghost" aria-label="Duplicate {s.title}" title="Duplicate" onclick={() => onduplicate?.(s.id)}
+              ><Copy size={15} /></button
             >
             <button class="ghost danger" aria-label="Remove {s.title}" title="Remove" onclick={() => onremove?.(s.id)}
               ><Trash2 size={15} /></button

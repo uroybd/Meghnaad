@@ -30,6 +30,26 @@ class BoardsEditTest {
     }
 
     @Test
+    fun aCopiedSectionTakesTheFirstFreePlaceAndAnIdAndATitleOfItsOwn() {
+        val original = Section(id = "bar", title = "Open", x = 0, y = 0, w = 6, h = 5, type = "bar", by = By(field = "project"), series = listOf(Series(label = "a")))
+        val copy = copySection(Board("b", "B", sections = listOf(original)), original)
+        assertEquals(listOf("bar-2", "Open copy", 6, 0, 6, 5), listOf(copy.id, copy.title, copy.x, copy.y, copy.w, copy.h))
+        assertEquals(original.by, copy.by)
+        assertEquals(original.series, copy.series)
+        // A copy of a copy is `bar-3`, not `bar-2-2`.
+        assertEquals("bar-3", copySection(Board("b", "B", sections = listOf(original, copy)), copy).id)
+    }
+
+    @Test
+    fun aCopiedBoardHasANameAndAnAddressOfItsOwnAndTheSameSections() {
+        val original = Board("week", "My week", filter = "project:Home", sections = listOf(sec("a")))
+        val copy = copyBoard(original, listOf(original))
+        assertEquals(listOf("my-week-copy", "My week copy", "project:Home"), listOf(copy.id, copy.name, copy.filter))
+        assertEquals(original.sections, copy.sections)
+        assertEquals("my-week-copy-2", copyBoard(original, listOf(original, copy)).id)
+    }
+
+    @Test
     fun tablesAndChartsStackOnAPhoneAndNumbersKeepTheirShare() {
         val home = listOf(
             Section(id = "table", x = 0, y = 0, w = 6, h = 8, type = "table"),

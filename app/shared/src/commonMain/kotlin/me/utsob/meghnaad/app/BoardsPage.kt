@@ -123,7 +123,9 @@ private fun BoardScreen(store: Store, board: Board) {
             IconAction("chevron-left", "All boards", { store.boardId = null })
             Text(board.name, Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             val clipboard = LocalClipboardManager.current
+            val scope = rememberCoroutineScope()
             IconAction("pencil", "Edit this board", { store.boardEditor = BoardEditor(store, board) }, size = 20.dp)
+            IconAction("copy", "Duplicate this board", { scope.launch { duplicateBoard(store, board) } }, size = 20.dp)
             IconAction("link", "Copy a link to this board", { clipboard.setText(AnnotatedString(placeLink(AppPlace.Boards(board.id)))); store.notify("Link copied.") }, size = 20.dp)
         }
         board.description?.let { Dim(it, Modifier.padding(horizontal = 12.dp)) }

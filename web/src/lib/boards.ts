@@ -341,6 +341,36 @@ export function newSection(board: Board, type: SectionType): Section {
   return base;
 }
 
+/** A copy that shares nothing with the original (a board or section may be a reactive proxy, which a clone refuses). */
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+/** A copy of `section`, in the first free place of `board`, with an id and a title of its own. */
+export function copySection(board: Board, section: Section): Section {
+  const { w, h } = section;
+  return {
+    ...clone(section),
+    id: freshId(
+      section.id.replace(/-\d+$/, ''),
+      board.sections.map((s) => s.id),
+    ),
+    title: section.title ? `${section.title} copy` : '',
+    ...firstFree(board.sections, w, h),
+  };
+}
+
+/** A copy of `board` with a name and an address of its own. */
+export function copyBoard(board: Board, boards: Board[]): Board {
+  const name = `${board.name} copy`;
+  return {
+    ...clone(board),
+    id: freshId(
+      name,
+      boards.map((b) => b.id),
+    ),
+    name,
+  };
+}
+
 export function newBoard(name: string, boards: Board[]): Board {
   return {
     id: freshId(

@@ -156,6 +156,7 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
                     IconAction("arrow-up", "Move ${picked.title} earlier", { editor.move(picked.id, -1) }, size = 18.dp, box = 44.dp)
                     IconAction("arrow-down", "Move ${picked.title} later", { editor.move(picked.id, 1) }, size = 18.dp, box = 44.dp)
                     IconAction("pencil", "Settings of ${picked.title}", { editor.opened = picked.id }, size = 18.dp, box = 44.dp)
+                    IconAction("copy", "Duplicate ${picked.title}", { editor.duplicate(picked.id) }, size = 18.dp, box = 44.dp)
                     IconAction("trash-2", "Remove ${picked.title}", { editor.remove(picked.id) }, size = 18.dp, box = 44.dp, tint = colors.error)
                 }
             }

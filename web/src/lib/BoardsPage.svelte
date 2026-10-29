@@ -4,11 +4,13 @@
   import Drawer from './Drawer.svelte';
   import FilterInput from './FilterInput.svelte';
   import type { Homepage } from './appsettings';
-  import { ChevronLeft, LayoutDashboard, Pencil, Plus, Trash2, TriangleAlert } from './icons';
+  import { ChevronLeft, Copy, LayoutDashboard, Pencil, Plus, Trash2, TriangleAlert } from './icons';
   import RangesEditor from './RangesEditor.svelte';
   import SectionForm from './SectionForm.svelte';
   import {
     SECTION_TYPES,
+    copyBoard,
+    copySection,
     newBoard,
     newSection,
     normalizeBoards,
@@ -139,6 +141,12 @@
     }
   }
 
+  async function duplicate() {
+    if (!board) return;
+    const made = copyBoard(board, store.boards);
+    await persist([...store.boards, made], undefined, made.id);
+  }
+
   async function remove() {
     if (!board) return;
     if (!confirmDelete) {
@@ -165,6 +173,13 @@
   const setSections = (sections: Section[]) => draft && (draft.sections = sections);
   const setSection = (next: Section) =>
     draft && (draft.sections = draft.sections.map((s) => (s.id === next.id ? next : s)));
+  function duplicateSection(id: string) {
+    const original = draft?.sections.find((s) => s.id === id);
+    if (!draft || !original) return;
+    const s = copySection(draft, original);
+    draft.sections = [...draft.sections, s];
+    selected = s.id;
+  }
   function removeSection(id: string) {
     if (!draft) return;
     draft.sections = draft.sections.filter((s) => s.id !== id);
@@ -236,6 +251,7 @@
         <button class="primary" onclick={save} disabled={busy || !valid}>Save</button>
       {:else}
         <button onclick={edit}><Pencil size={15} /> Edit</button>
+        <button onclick={duplicate} disabled={busy}><Copy size={15} /> Duplicate</button>
         <button class="danger" onclick={remove} disabled={busy}
           ><Trash2 size={15} /> {confirmDelete ? 'Really delete?' : 'Delete'}</button
         >
@@ -312,6 +328,7 @@
       onchange={setSections}
       onselect={(id) => (selected = id)}
       onedit={(id) => (opened = id)}
+      onduplicate={duplicateSection}
       onremove={removeSection}
     />
   {/if}

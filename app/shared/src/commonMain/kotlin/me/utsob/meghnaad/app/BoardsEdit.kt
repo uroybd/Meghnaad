@@ -79,6 +79,25 @@ fun freshId(base: String, taken: Collection<String>): String {
 
 fun newBoard(name: String, boards: List<Board>): Board = Board(freshId(name, boards.map { it.id }), name.trim())
 
+/** A copy of [section], in the first free place of [board], with an id and a title of its own (copySection in boards.ts). */
+fun copySection(board: Board, section: Section): Section {
+    val at = firstFree(board.sections, section.w, section.h)
+    return section.copy(
+        id = freshId(section.id.replace(Regex("-\\d+$"), ""), board.sections.map { it.id }),
+        title = if (section.title.isEmpty()) "" else "${section.title} copy",
+        x = at.x,
+        y = at.y,
+        w = at.w,
+        h = at.h,
+    )
+}
+
+/** A copy of [board] with a name and an address of its own (copyBoard in boards.ts). */
+fun copyBoard(board: Board, boards: List<Board>): Board {
+    val name = "${board.name} copy"
+    return board.copy(id = freshId(name, boards.map { it.id }), name = name)
+}
+
 /** The size, in the grid's columns and rows, a new section of each type has to begin with (as on the web). */
 private val DEFAULT_SIZE = mapOf(
     "number" to (3 to 2), "bar" to (6 to 5), "line" to (6 to 5), "area" to (6 to 5),
@@ -150,6 +169,13 @@ class BoardEditor(private val store: Store, original: Board) {
         opened = s.id
     }
 
+    fun duplicate(id: String) {
+        val original = draft.sections.firstOrNull { it.id == id } ?: return
+        val s = copySection(draft, original)
+        edit { it.copy(sections = it.sections + s) }
+        selected = s.id
+    }
+
     fun remove(id: String) {
         edit { b -> b.copy(sections = b.sections.filter { it.id != id }) }
         if (selected == id) selected = null
@@ -203,6 +229,19 @@ class BoardEditor(private val store: Store, original: Board) {
         } finally {
             busy = false
         }
+    }
+}
+
+/** Save a copy of [board] and show it; null with the reason in [Store.toast] when it could not be saved. */
+suspend fun duplicateBoard(store: Store, board: Board): Board? {
+    val made = copyBoard(board, store.boards)
+    return try {
+        store.saveBoards(store.boards + made)
+        store.boardId = made.id
+        made
+    } catch (e: Exception) {
+        store.notify(e.message ?: e.toString(), bad = true)
+        null
     }
 }
 

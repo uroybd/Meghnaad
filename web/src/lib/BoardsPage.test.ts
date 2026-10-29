@@ -147,6 +147,55 @@ describe('the boards page', () => {
     expect(store.boardId).toBe('my-week');
   });
 
+  it('duplicates a board, and shows the copy', async () => {
+    server({
+      boardsVersion: 1,
+      boards: [
+        {
+          id: 'week',
+          name: 'My week',
+          sections: [{ id: 'open', title: 'Open', x: 0, y: 0, w: 3, h: 2, type: 'number', measure: { fn: 'count' } }],
+        },
+      ],
+    });
+    store.boardId = 'week';
+    app = mount(BoardsPage, { target: document.body });
+    await settle();
+    await click(/Duplicate/);
+    const out = JSON.parse(puts[0]);
+    expect(out.boards.map((b: { id: string; name: string }) => [b.id, b.name])).toEqual([
+      ['week', 'My week'],
+      ['my-week-copy', 'My week copy'],
+    ]);
+    expect(out.boards[1].sections).toEqual(out.boards[0].sections);
+    expect(store.boardId).toBe('my-week-copy');
+  });
+
+  it('duplicates a section while editing, and saves it with the board', async () => {
+    server({
+      boardsVersion: 1,
+      boards: [
+        {
+          id: 'week',
+          name: 'My week',
+          sections: [{ id: 'open', title: 'Open', x: 0, y: 0, w: 3, h: 2, type: 'number', measure: { fn: 'count' } }],
+        },
+      ],
+    });
+    store.boardId = 'week';
+    app = mount(BoardsPage, { target: document.body });
+    await settle();
+    await click(/Edit/);
+    await click(/Duplicate Open/);
+    await click(/Save/);
+    const sections = JSON.parse(puts[0]).boards[0].sections;
+    expect(sections.map((s: { id: string; title: string }) => [s.id, s.title])).toEqual([
+      ['open', 'Open'],
+      ['open-2', 'Open copy'],
+    ]);
+    expect(sections[1]).toMatchObject({ x: 3, y: 0, w: 3, h: 2, type: 'number' });
+  });
+
   it('opens a section’s settings in a panel at the side, not among the board', async () => {
     server({
       boardsVersion: 1,

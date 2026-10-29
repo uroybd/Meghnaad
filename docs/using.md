@@ -365,7 +365,9 @@ A **board** is a page of your own made of **sections**, each a number, a table o
 Open **Boards**, type a name and press **New board**; **Edit** turns the layout and the sections into something you can change,
 and **Save** keeps it. Every board has a **slug**, the last part of its address (`/board/week`): one lower case word of
 letters, digits, `-` and `_`, made from the name when the board is created and yours to change under **Edit** → **Address**.
-It cannot be the same as another board's, and if the board is your home page, changing it moves the home page with it. A board is kept in the app's own `settings.json` (key `boards`), not in your taskrc, so it follows you
+It cannot be the same as another board's, and if the board is your home page, changing it moves the home page with it.
+**Duplicate** (next to **Edit**) saves a copy of the board with every section as it is, named "<name> copy", at an address made
+from that name, and shows it; the home page stays where it was. A board is kept in the app's own `settings.json` (key `boards`), not in your taskrc, so it follows you
 to every device that signs in to the same deployment. A board is not a Taskwarrior report: it is built from what
 `<filter> export` prints, so it sees every attribute of a task, your UDAs included, and runs nothing of its own.
 
@@ -456,8 +458,9 @@ label in full and its figure; the labels along an axis are thinned so none is cu
 **Laying out the board.** The page is 12 columns wide. In **Edit**, drag a section by its move handle (top right) to put it
 elsewhere, and its bottom right corner to make it wider or taller; it snaps to the grid. What it lands on is pushed down and
 everything floats up to the first free row, so there are never gaps or overlaps. No section is narrower than two columns.
-A card too narrow for its tools (about 280 px) shows one **⋯** instead of them, with Information, Move, Settings and Remove
-in the menu. Without a mouse, each handle takes the arrow keys (move, or resize) and says where the section is now. **Add** puts a new
+A card too narrow for its tools (about 280 px) shows one **⋯** instead of them, with Information, Move, Settings, Duplicate and Remove
+in the menu. **Duplicate** (two overlapping squares) puts a copy of a section, with its settings and the title "<title> copy", in the
+first free place, and picks it. Without a mouse, each handle takes the arrow keys (move, or resize) and says where the section is now. **Add** puts a new
 section in the first free place; **Settings** (the pencil) slides a panel in from the side with its filter, measure and
 grouping (a full-width one on a phone); the bin removes it. **Cancel** drops everything since **Edit**.
 

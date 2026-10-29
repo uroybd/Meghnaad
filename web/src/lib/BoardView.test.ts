@@ -223,8 +223,9 @@ describe('a card too narrow for its tools', () => {
     narrowCards(200);
     const onremove = vi.fn();
     const onedit = vi.fn();
+    const onduplicate = vi.fn();
     const onchange = vi.fn();
-    draw({ editing: true, onremove, onedit, onchange });
+    draw({ editing: true, onremove, onedit, onduplicate, onchange });
     flushSync();
     const more = () => document.querySelector<HTMLButtonElement>('.tools button[aria-haspopup=menu]')!;
     more().click();
@@ -237,6 +238,7 @@ describe('a card too narrow for its tools', () => {
       'Move left',
       'Move right',
       'Settings',
+      'Duplicate',
       'Remove',
     ]);
     const item = (name: string) =>
@@ -248,6 +250,11 @@ describe('a card too narrow for its tools', () => {
     flushSync();
     item('Settings').click();
     expect(onedit).toHaveBeenCalledWith('a');
+    more().click();
+    await vi.advanceTimersByTimeAsync(0);
+    flushSync();
+    item('Duplicate').click();
+    expect(onduplicate).toHaveBeenCalledWith('a');
     more().click();
     await vi.advanceTimersByTimeAsync(0);
     flushSync();
