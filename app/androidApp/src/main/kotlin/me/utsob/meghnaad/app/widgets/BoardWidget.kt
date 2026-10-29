@@ -12,6 +12,7 @@ import me.utsob.meghnaad.app.Tw
 import me.utsob.meghnaad.app.boardZone
 import me.utsob.meghnaad.app.loadBoard
 import me.utsob.meghnaad.app.orderChart
+import me.utsob.meghnaad.app.orderGrids
 import me.utsob.meghnaad.app.parseSettings
 import me.utsob.meghnaad.app.formatBoardValue
 import me.utsob.meghnaad.app.placeLink
@@ -42,10 +43,11 @@ class BoardWidget : ImageWidget() {
         fun draw(palette: Palette) = when (data) {
             is SectionData.Number -> BoardRenderer.number(formatBoardValue(data.answer.total, data.answer.unit), data.answer.tasks, width, height, palette)
             is SectionData.Chart -> {
-                val shown = orderChart(data.chart, section, data.limit)
+                val grids = data.grids?.let { orderGrids(it, section, data.limit) }
+                val shown = grids?.firstOrNull() ?: orderChart(data.chart, section, data.limit)
                 // A chart of the values of a UDA is in the colours the taskrc gives them, as in the app.
                 val own = valueColors(section.by?.field, shown.labels, colors, palette.dark, Color(palette.background))
-                BoardRenderer.chart(shown, section, width, height, palette, own)
+                BoardRenderer.chart(shown, section, width, height, palette, own, grids)
             }
             else -> null
         }

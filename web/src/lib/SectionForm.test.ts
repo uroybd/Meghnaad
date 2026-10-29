@@ -39,6 +39,17 @@ describe('the series of a chart', () => {
     expect(changed.mock.calls[0][0].series.map((x: { label: string }) => x.label)).toEqual(['One', 'Three']);
   });
 
+  it('each can be moved up or down, the first being at the bottom of a stack, and the ends cannot go further', () => {
+    const changed = vi.fn();
+    app = mount(SectionForm, { target: document.body, props: { section, onchange: changed } });
+    flushSync();
+    const button = (label: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+    expect(button('Move series 1 up').disabled).toBe(true);
+    expect(button('Move series 3 down').disabled).toBe(true);
+    button('Move series 2 down').click();
+    expect(changed.mock.calls[0][0].series.map((x: { label: string }) => x.label)).toEqual(['One', 'Three', 'Two']);
+  });
+
   it('removing the last one leaves a chart of the one measure', () => {
     const changed = vi.fn();
     const one = { ...section, series: [{ label: 'Only' }] };
@@ -46,6 +57,57 @@ describe('the series of a chart', () => {
     flushSync();
     document.querySelector<HTMLButtonElement>('button[aria-label="Remove series 1"]')!.click();
     expect(changed.mock.calls[0][0].series).toBeUndefined();
+  });
+});
+
+describe('the rows of a heatmap', () => {
+  const heat: Section = {
+    ...section,
+    type: 'heatmap',
+    series: undefined,
+    by: { time: { field: 'end', step: 'week' } },
+    rows: { time: { field: 'end', part: 'weekday' } },
+  };
+  const rowsSelect = () =>
+    [...document.querySelectorAll<HTMLSelectElement>('select')].find((x) =>
+      [...x.options].some((o) => o.value === 'monthday'),
+    )!;
+
+  it('are a part of a date or the value of an attribute, and none is a row for each series', () => {
+    const changed = vi.fn();
+    app = mount(SectionForm, { target: document.body, props: { section: heat, onchange: changed } });
+    flushSync();
+    const select = rowsSelect();
+    expect(select.value).toBe('weekday');
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'weekday', 'hour', 'monthday', 'month', 'field']);
+    const pick = (value: string) => {
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    pick('hour');
+    expect(changed.mock.calls[0][0].rows).toEqual({ time: { field: 'end', part: 'hour' } });
+    pick('field');
+    expect(changed.mock.calls[1][0].rows).toEqual({ field: 'project' });
+    pick('');
+    expect(changed.mock.calls[2][0].rows).toBeUndefined();
+  });
+
+  it('can be stacked now, and a section that is not a heatmap has none', () => {
+    const changed = vi.fn();
+    const two = { ...heat, series: [{ label: 'A' }, { label: 'B' }] };
+    app = mount(SectionForm, { target: document.body, props: { section: two, onchange: changed } });
+    flushSync();
+    const box = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((b) =>
+      b.parentElement?.textContent?.includes('Stacked'),
+    )!;
+    box.checked = true;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changed.mock.calls[0][0].stacked).toBe(true);
+    // Switching to another kind of chart takes the rows away, which only a heatmap may have.
+    const type = [...document.querySelectorAll<HTMLSelectElement>('select')].find((x) => x.value === 'heatmap')!;
+    type.value = 'bar';
+    type.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changed.mock.calls[1][0]).toMatchObject({ type: 'bar', rows: undefined });
   });
 });
 

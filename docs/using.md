@@ -385,7 +385,7 @@ label in full and its figure; the labels along an axis are thinned so none is cu
 | **Pie chart**, **Donut chart** | The share of each value in the whole. One series, and its slices are the values; hover a slice for its share |
 | **Radar chart** | The values around a circle, a shape for each series: good for comparing two or three series over a handful of values |
 | **Polar area chart** | A pie whose slices differ in how far they reach, not in their angle |
-| **Heatmap** | A grid: a row for each series and a column for each label (each week, say, or each project), a cell as strong as its value is large. It starts as two rows, what is pending and what is done, by the week the tasks were added; give it your own series to change the rows. Hover or tap a cell for its row, column and value; a cell with nothing to measure is faint. It does not stack |
+| **Heatmap** | A grid with three things in it, as GitHub's grid of commits has: the columns (**Group by**: each week, say, or each project), the rows (**Rows**), and how strong each cell is (the measure: tasks, a sum, an average). The rows are a part of a date that comes round again (the **weekday**, the **hour**, the **day of the month** or the **month** of a date, which may be another date than the columns'), or the value of an attribute (project, a UDA); the weekdays begin where your week does. A new one is a column for each week the tasks were added and a row for each weekday. A **series** is a colour, not a row: each series is a grid of its own in its own colour, one above the other, and **Stacked** adds them into one grid. Hover or tap a cell for its row, column and value; a cell with nothing to measure is faint. A heatmap with **Rows** set to *A row for each series* is the older kind: the series are its rows, in the first series' colour |
 | **Table** | Any report (`next`, `list`, one of yours) over the section's filter, drawn as on the Tasks page |
 
 - **The filter** is the same one the Tasks page takes (Tab completes). A board can have a filter of its own, which every section
@@ -451,6 +451,8 @@ label in full and its figure; the labels along an axis are thinned so none is cu
   `Succeeded` (`outcome:success or outcome:`, which takes a task with no outcome as a success) and `Failed`
   (`outcome:failed`). Every series of a chart must measure the same kind of thing (numbers or durations).
   Each series has its own **Remove series** button in the card's settings; **Add series** puts a new one at the end.
+  The order of the series is the order of stacking: the first is at the bottom and the next on it, and each series has **Move up**
+  and **Move down** (arrows on the web) to change it. A series with no colour of its own keeps the colour it had when it moves.
 - **Burndown-style series.** A series can count **what is open at the end of each period** instead of what happened in it,
   which is how `task burndown` counts: **Pending** (entered, not yet finished, and not started), **Started** (started, not yet
   finished) and **Done** (finished by then, so it adds up). Pick it in the series' **Counts** menu, or give it a `span` in the

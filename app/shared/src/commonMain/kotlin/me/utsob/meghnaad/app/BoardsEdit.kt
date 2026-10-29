@@ -80,6 +80,18 @@ fun freshId(base: String, taken: Collection<String>): String {
 
 fun newBoard(name: String, boards: List<Board>): Board = Board(freshId(name, boards.map { it.id }), name.trim())
 
+/**
+ * [series] with the one at [i] moved [delta] places (moveSeries in boards.ts). The order is the order of stacking: the first is at the
+ * bottom, the next on it. A series with no colour of its own has the colour its place gives it, so one that changes places keeps it.
+ */
+fun moveSeries(series: List<Series>, i: Int, delta: Int): List<Series> {
+    val j = i + delta
+    if (i == j || i !in series.indices || j !in series.indices) return series
+    val kept = series.mapIndexed { k, x -> if (x.color != null || (k != i && k != j)) x else x.copy(color = defaultSeriesName(k)) }.toMutableList()
+    kept[i] = kept[j].also { kept[j] = kept[i] }
+    return kept
+}
+
 /** A copy of [section], in the first free place of [board], with an id and a title of its own (copySection in boards.ts). */
 fun copySection(board: Board, section: Section): Section {
     val at = firstFree(board.sections, section.w, section.h)
@@ -113,8 +125,8 @@ fun newSection(board: Board, type: String): Section {
         isChartType(type) -> By(field = "project")
         else -> null
     }
-    // A heatmap is a row for each series and a column for each week: what was added, and what of it is done.
-    val series = if (type == "heatmap") listOf(Series("Pending", filter = "status:pending"), Series("Done", filter = "status:completed")) else emptyList()
+    // A heatmap is a column for each week and a row for each weekday, as strong as the tasks added then.
+    val rows = if (type == "heatmap") Rows(time = PartBy("entry", "weekday")) else null
     val (w, h) = DEFAULT_SIZE.getValue(type)
     val at = firstFree(board.sections, w, h)
     return Section(
@@ -127,7 +139,7 @@ fun newSection(board: Board, type: String): Section {
         type = type,
         report = if (type == "table") "next" else null,
         by = by,
-        series = series,
+        rows = rows,
     )
 }
 
@@ -138,9 +150,9 @@ fun withType(section: Section, type: String): Section {
         next = next.copy(by = if (type == "line" || type == "area" || type == "heatmap") By(time = TimeBy("entry", "week")) else By(field = "project"))
     }
     if (type == "table" && next.report == null) next = next.copy(report = "next")
-    // A pie has one series, and none stacks; neither does a heatmap, which is a row for each series.
+    // A pie has one series, and none stacks. Only a heatmap has rows: it starts with the weekday of the date it is cut by.
     if (isRoundType(type)) next = next.copy(series = emptyList(), stacked = null)
-    if (type == "heatmap") next = next.copy(stacked = null)
+    next = if (type == "heatmap") next.copy(rows = next.rows ?: Rows(time = PartBy(next.by?.time?.field ?: "entry", "weekday"))) else next.copy(rows = null)
     return next
 }
 

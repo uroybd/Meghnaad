@@ -93,6 +93,16 @@ object KeepSerializer : KSerializer<String> {
         (encoder as JsonEncoder).encodeJsonElement(value.trim().takeIf { it.isNotEmpty() && it.all(Char::isDigit) }?.let { JsonPrimitive(it.toInt()) } ?: JsonPrimitive(value))
 }
 
+/** A date and the part of it (`weekday`, `hour`, `monthday`, `month`) that is a heatmap's row (`tc_core::board::heat`). */
+@Serializable
+data class PartBy(val field: String, val part: String)
+
+/** A heatmap's rows: one of the two, the value of an attribute or a part of a date. */
+@Serializable
+data class Rows(val field: String? = null, val time: PartBy? = null)
+
+val ROW_PARTS = listOf("weekday" to "The weekday of a date", "hour" to "The hour of a date", "monthday" to "The day of the month of a date", "month" to "The month of a date")
+
 @Serializable
 data class Section(
     val id: String,
@@ -113,6 +123,8 @@ data class Section(
     val sort: String? = null,
     /** How many groups a chart keeps: a number, or the count of a date range of the board (`$week.day_count`), as text. */
     @Serializable(with = KeepSerializer::class) val limit: String? = null,
+    /** A heatmap's rows (`by` is its columns): a series is then a colour and a grid of its own, or, stacked, added into one. None: a row for each series. */
+    val rows: Rows? = null,
 )
 
 /** A named pair of dates any filter on the board can use: `$name.start` and `$name.end`. Each is a date as Taskwarrior reads one. */
@@ -159,7 +171,13 @@ data class Dataset(
 
 /** What a chart draws, in Chart.js's shape: the labels along the axis and a dataset for each series. */
 @Serializable
-data class BoardChart(val unit: String = "number", val labels: List<ChartLabel> = emptyList(), val datasets: List<Dataset> = emptyList())
+data class BoardChart(
+    val unit: String = "number",
+    val labels: List<ChartLabel> = emptyList(),
+    val datasets: List<Dataset> = emptyList(),
+    /** A heatmap's grid: the series it is of. */
+    val label: String = "",
+)
 
 /** Reading boards and writing them out: what the app does not know about is kept, nothing is written that is a default. */
 val boardsJson = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
@@ -346,6 +364,49 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, ranges: List<DateRa
 
 class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?)
 
+/** A heatmap with rows: a grid for each series (one, when they are stacked), the columns the same in each. */
+fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows, stacked: Boolean, zone: Zone, ranges: List<DateRange> = emptyList()): List<BoardChart> {
+    val series = JsonArray(
+        inputs.map {
+            buildJsonObject {
+                put("label", it.label)
+                put("tasks", it.tasks)
+                put("measure", measureJson(it.measure))
+                it.span?.let { s -> put("span", boardsJson.encodeToJsonElement(StateSpan.serializer(), s)) }
+            }
+        },
+    )
+    val got = callHelper(
+        "board_heatmap", series, boardsJson.encodeToJsonElement(By.serializer(), by), boardsJson.encodeToJsonElement(Rows.serializer(), rows),
+        JsonPrimitive(stacked), zone.toJson(), rangesJson(ranges),
+    )
+    return boardsJson.decodeFromJsonElement(ListSerializer(BoardChart.serializer()), got)
+}
+
+/**
+ * The grids of a heatmap with their columns in the order the section asks for and as many as it keeps, the same columns in each: they
+ * are ordered together, by what all the rows add up to, so the grids line up (orderGrids in boards.ts).
+ */
+fun orderGrids(grids: List<BoardChart>, section: Section, limit: Int? = section.limit?.toIntOrNull()): List<BoardChart> {
+    val first = grids.firstOrNull() ?: return grids
+    val together = BoardChart(first.unit, first.labels, grids.flatMap { it.datasets })
+    val at = first.labels.withIndex().associate { (i, l) -> l.key to i }
+    val order = orderChart(together, section, limit).labels.map { at[it.key] ?: 0 }
+    return grids.map { g ->
+        g.copy(
+            labels = order.map { g.labels[it] },
+            datasets = g.datasets.map { d -> d.copy(data = order.map { d.data.getOrNull(it) }, counts = order.map { d.counts.getOrElse(it) { 0 } }) },
+        )
+    }
+}
+
+/** A heatmap's rows in words: "weekday of end", "the value of project"; null when there are none. */
+fun describeRows(rows: Rows?): String? {
+    val part = mapOf("weekday" to "weekday", "hour" to "hour", "monthday" to "day of the month", "month" to "month")
+    rows?.time?.let { return "${part[it.part] ?: it.part} of ${it.field}" }
+    return rows?.field?.takeIf { it.isNotEmpty() }?.let { "the value of $it" }
+}
+
 /** The chart with its labels in the order the section asks for (the largest total first for a value, time order for a date), and as many as it keeps (for a date in time order, the latest). */
 fun orderChart(chart: BoardChart, section: Section, limit: Int? = section.limit?.toIntOrNull()): BoardChart {
     val sort = section.sort ?: if (section.by?.time != null) null else "value-"
@@ -369,6 +430,7 @@ fun orderChart(chart: BoardChart, section: Section, limit: Int? = section.limit?
         chart.unit,
         order.map { chart.labels[it] },
         chart.datasets.map { d -> d.copy(data = order.map { d.data.getOrNull(it) }, counts = order.map { d.counts.getOrElse(it) { 0 } }) },
+        chart.label,
     )
 }
 
@@ -379,7 +441,7 @@ class Source(val label: String, val filter: String, val text: String)
 sealed interface SectionData {
     class Number(val answer: BoardAnswer, val sources: List<Source>) : SectionData
     /** [limit] is how many groups the chart keeps, worked out now (see [keepOf]); null for all. */
-    class Chart(val chart: BoardChart, val sources: List<Source>, val limit: Int? = null) : SectionData
+    class Chart(val chart: BoardChart, val sources: List<Source>, val limit: Int? = null, val grids: List<BoardChart>? = null) : SectionData
     class Table(val result: CliResult, val filter: String) : SectionData
     class Failed(val message: String) : SectionData
 }
@@ -433,7 +495,14 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
                         inputs += SeriesInput(x.label, text, x.measure ?: s.measure, x.span)
                         sources += Source(x.label, filter, text)
                     }
-                    if (failure != null) SectionData.Failed(failure) else SectionData.Chart(layChart(inputs, s.by, zone, board.ranges), sources, keepOf(s.limit, board.ranges, zone))
+                    val rows = s.rows
+                    val by = s.by
+                    if (failure != null) SectionData.Failed(failure)
+                    else if (s.type == "heatmap" && rows != null && by != null) {
+                        // A heatmap with rows: a grid for each series, the columns the same in each.
+                        val grids = layHeatmap(inputs, by, rows, s.stacked == true, zone, board.ranges)
+                        SectionData.Chart(grids.first(), sources, keepOf(s.limit, board.ranges, zone), grids)
+                    } else SectionData.Chart(layChart(inputs, s.by, zone, board.ranges), sources, keepOf(s.limit, board.ranges, zone))
                 }
             }
         } catch (e: Exception) {

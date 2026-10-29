@@ -3,6 +3,7 @@
   import {
     SECTION_TYPES,
     describeBy,
+    describeRows,
     describeMeasure,
     describeSpan,
     formatValue,
@@ -107,6 +108,10 @@
     {#if describeBy(section.by)}
       <dt>Grouped by</dt>
       <dd>{describeBy(section.by)}</dd>
+    {/if}
+    {#if describeRows(section.rows)}
+      <dt>Rows</dt>
+      <dd>{describeRows(section.rows)}</dd>
     {/if}
     {#if chart}
       <dt>Order</dt>

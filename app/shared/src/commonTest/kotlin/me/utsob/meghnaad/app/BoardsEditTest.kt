@@ -30,16 +30,21 @@ class BoardsEditTest {
     }
 
     @Test
-    fun aNewHeatmapIsARowForEachSeriesAndAColumnForEachWeek() {
+    fun aNewHeatmapIsAColumnForEachWeekAndARowForEachWeekday() {
         val board = Board("b", "B")
         val h = newSection(board, "heatmap")
         assertEquals(By(time = TimeBy("entry", "week")), h.by)
-        assertEquals(listOf("Pending", "Done"), h.series.map { it.label })
+        assertEquals(Rows(time = PartBy("entry", "weekday")), h.rows)
+        assertEquals(emptyList(), h.series)
         assertEquals(listOf(6, 5), listOf(h.w, h.h))
-        // Switching a section to a heatmap gives it weeks, and takes away what a heatmap has no use for.
+        // Switching a section to a heatmap gives it weeks and rows, and a stack is its own now.
         val switched = withType(sec("a", type = "bar").copy(by = null, stacked = true), "heatmap")
         assertEquals(By(time = TimeBy("entry", "week")), switched.by)
-        assertNull(switched.stacked)
+        assertEquals(Rows(time = PartBy("entry", "weekday")), switched.rows)
+        assertEquals(true, switched.stacked)
+        // The rows follow the date the columns are cut by, and go when it is no heatmap: only a heatmap has rows.
+        assertEquals("due", withType(sec("a", type = "bar").copy(by = By(time = TimeBy("due", "day"))), "heatmap").rows?.time?.field)
+        assertNull(withType(switched, "bar").rows)
         assertTrue(hasManySeries("heatmap"))
     }
 
@@ -149,5 +154,19 @@ class BoardsEditTest {
         assertEquals(listOf("project", "tags", "priority", "status", "points", "outcome"), groupableFields(udas))
         assertEquals("when", dateFields(udas).last())
         assertTrue("end" in dateFields(emptyList()) && "when" !in dateFields(emptyList()))
+    }
+
+    @Test
+    fun aSeriesMovesUpOrDownTheStackAndKeepsItsColour() {
+        val a = Series("A")
+        val b = Series("B", color = "red")
+        val c = Series("C")
+        val moved = moveSeries(listOf(a, b, c), 2, -1)
+        assertEquals(listOf("A", "C", "B"), moved.map { it.label })
+        // C was third, so its colour is the third default (green), and B stays red; A did not move.
+        assertEquals(listOf("green", "red"), moved.drop(1).map { it.color })
+        assertEquals(a, moved[0])
+        assertEquals(listOf(a, b), moveSeries(listOf(a, b), 0, -1))
+        assertEquals(listOf(a, b), moveSeries(listOf(a, b), 1, 1))
     }
 }

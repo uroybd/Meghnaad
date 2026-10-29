@@ -303,6 +303,30 @@ private fun SectionForm(store: Store, s: Section, ranges: List<DateRange>, onCha
                 TextBox("Attribute", s.by?.field.orEmpty(), { onChange(s.copy(by = By(field = it.trim()))) })
                 Suggestions(groupableFields(udas)) { onChange(s.copy(by = By(field = it))) }
             }
+            if (s.type == "heatmap") {
+                // The rows: a part of a date that comes round again, or the value of an attribute; none is a row for each series.
+                val rows = s.rows
+                val kind = when {
+                    rows?.time != null -> rows.time.part
+                    rows != null -> "field"
+                    else -> ""
+                }
+                val choices = listOf("" to "A row for each series") + ROW_PARTS + ("field" to "The value of")
+                Pick("Rows", choices, kind) { v ->
+                    val next = when {
+                        v.isNullOrEmpty() -> null
+                        v == "field" -> Rows(field = "project")
+                        else -> Rows(time = PartBy(rows?.time?.field ?: s.by?.time?.field ?: "entry", v))
+                    }
+                    onChange(s.copy(rows = next))
+                }
+                if (rows?.time != null) {
+                    Pick("Date of the rows", dates.map { it to it }, rows.time.field) { v -> onChange(s.copy(rows = Rows(time = rows.time.copy(field = v ?: rows.time.field)))) }
+                } else if (rows != null) {
+                    TextBox("Attribute of the rows", rows.field.orEmpty(), { onChange(s.copy(rows = Rows(field = it.trim()))) })
+                    Suggestions(groupableFields(udas)) { onChange(s.copy(rows = Rows(field = it))) }
+                }
+            }
             Pick("Order", ORDERS, s.sort) { onChange(s.copy(sort = it)) }
             TextBox("Keep", s.limit.orEmpty(), { v -> onChange(s.copy(limit = v.trim().ifEmpty { null })) }, mono = true, placeholder = "all, 12 or \$range.day_count")
         }
@@ -320,7 +344,7 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
 
     Column(Modifier.fillMaxWidth().border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(8.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Series", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        Dim("Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With none, the chart is the one measure above.", size = 11)
+        Dim("Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With none, the chart is the one measure above. When they are stacked, the first is at the bottom and the next on it: Move changes the order. In a heatmap with rows a series is a colour and a grid of its own, or, stacked, they are added into one.", size = 11)
         s.series.forEachIndexed { i, x ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextBox("Name of series ${i + 1}", x.label, { v -> patch(i) { it.copy(label = v) } })
@@ -340,12 +364,17 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
                     }
                 }
                 ColorChoice(x.color, i, extras.dark) { c -> patch(i) { it.copy(color = c) } }
+                // The order is the order of stacking: the first is at the bottom, the next on it.
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton({ setSeries(moveSeries(s.series, i, -1)) }, enabled = i > 0) { Text("Move series ${i + 1} up", fontSize = 12.sp) }
+                    TextButton({ setSeries(moveSeries(s.series, i, 1)) }, enabled = i < s.series.size - 1) { Text("Move series ${i + 1} down", fontSize = 12.sp) }
+                }
                 TextButton({ setSeries(s.series.filterIndexed { j, _ -> j != i }) }) { Text("Remove series ${i + 1}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton({ setSeries(s.series + Series("Series ${s.series.size + 1}")) }, enabled = s.series.size < MAX_SERIES) { Text("+ Add series", fontSize = 12.sp) }
-            if ((s.series.size > 1 || s.stacked == true) && s.type != "heatmap") {
+            if ((s.series.size > 1 || s.stacked == true) && (s.type != "heatmap" || s.rows != null)) {
                 Row(Modifier.clickable { onChange(s.copy(stacked = if (s.stacked == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(s.stacked == true, onCheckedChange = null)
                     Text("Stacked", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))

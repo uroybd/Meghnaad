@@ -208,7 +208,7 @@ pub struct Answer {
 }
 
 /// The tasks in an `export` text: a JSON array (`json.array` on), or one task per line.
-fn read_tasks(text: &str) -> Result<Vec<Value>, String> {
+pub(super) fn read_tasks(text: &str) -> Result<Vec<Value>, String> {
     let mut out = Vec::new();
     for v in serde_json::Deserializer::from_str(text).into_iter::<Value>() {
         match v.map_err(|e| format!("the tasks are not JSON ({e})"))? {
@@ -221,7 +221,7 @@ fn read_tasks(text: &str) -> Result<Vec<Value>, String> {
 }
 
 /// `20261007T123000Z` as seconds since 1970.
-fn parse_stamp(s: &str) -> Option<i64> {
+pub(super) fn parse_stamp(s: &str) -> Option<i64> {
     let b = s.as_bytes();
     if b.len() != 16 || b[8] != b'T' || b[15] != b'Z' {
         return None;
@@ -250,7 +250,7 @@ fn number_of(v: &Value) -> Option<(f64, Unit)> {
 }
 
 /// The text of a value as a group key: strings as they are, numbers written plainly; nothing for what has no such text.
-fn text_of(v: &Value) -> Option<String> {
+pub(super) fn text_of(v: &Value) -> Option<String> {
     match v {
         Value::String(s) if !s.is_empty() => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),

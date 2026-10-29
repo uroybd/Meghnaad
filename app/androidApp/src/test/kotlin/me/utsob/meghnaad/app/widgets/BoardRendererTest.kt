@@ -129,6 +129,27 @@ class BoardRendererTest {
     }
 
     @Test
+    fun aHeatmapWithRowsIsAGridForEachSeriesInItsColour() {
+        fun grid(label: String) = chart(weeks, *listOf("Mon", "Tue", "Wed").map { it to weeks.indices.map { i -> (i * 2 % 5).toDouble() } }.toTypedArray()).copy(label = label)
+        val section = section("heatmap", by = By(time = TimeBy("end", "week")), series = listOf(Series("A", color = "#ff0000"), Series("B", color = "#0000ff")))
+        val grids = listOf(grid("A"), grid("B"))
+        val b = BoardRenderer.chart(grids[0], section, 600, 400, palette(false), grids = grids)
+        save("heatmap-grids", b, false)
+        // The first series' grid is above the second's: red in the top half, blue in the bottom.
+        fun count(top: Boolean, test: (Int) -> Boolean): Int {
+            val rows = if (top) 0 until b.height / 2 else b.height / 2 until b.height
+            return rows.sumOf { y -> (0 until b.width).count { x -> test(b.getPixel(x, y)) } }
+        }
+        val isRed = { px: Int -> Color.red(px) > 200 && Color.green(px) < 150 && Color.blue(px) < 150 }
+        val isBlue = { px: Int -> Color.blue(px) > 200 && Color.red(px) < 150 && Color.green(px) < 150 }
+        assertTrue("no red grid above", count(true, isRed) > 100)
+        assertTrue("no blue grid below", count(false, isBlue) > 100)
+        // A strong cell of each: the first series' grid (A) is the upper one, in its colour, and the second's the lower, in its.
+        assertTrue("the upper grid is not red", isRed(b.getPixel(250, 60)))
+        assertTrue("the lower grid is not blue", isBlue(b.getPixel(250, 260)))
+    }
+
+    @Test
     fun nothingOnTheAxisAndTooManyLabelsAreBothFine() {
         assertEquals(0, drawn(BoardRenderer.chart(BoardChart(), section("bar"), 300, 200, palette(false))))
         val many = chart((1..120).map { "w$it" }, "n" to (1..120).map { it.toDouble() })

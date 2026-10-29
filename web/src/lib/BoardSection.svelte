@@ -1,7 +1,7 @@
 <script lang="ts">
   import BoardChart from './BoardChart.svelte';
   import type { ChartKind } from './boardChart';
-  import { describeChart, formatValue, orderChart, type Section, type SectionData } from './boards';
+  import { describeChart, formatValue, orderChart, orderGrids, type Section, type SectionData } from './boards';
   import { valueColors } from './colors';
   import { compactDuration } from './dates';
   import { Info } from './icons';
@@ -26,7 +26,9 @@
   } = $props();
 
   const answer = $derived(data?.kind === 'answer' ? data.answer : null);
-  const chart = $derived(data?.kind === 'chart' ? orderChart(data.chart, section, data.limit) : null);
+  /** A heatmap with rows: a grid for each series, the columns the same in each. */
+  const grids = $derived(data?.kind === 'chart' && data.grids ? orderGrids(data.grids, section, data.limit) : null);
+  const chart = $derived(grids?.[0] ?? (data?.kind === 'chart' ? orderChart(data.chart, section, data.limit) : null));
   const unit = $derived(answer?.unit ?? chart?.unit ?? 'number');
   const fmt = (v: number | null) => formatValue(v, unit, compactDuration);
   const total = $derived(answer ? fmt(answer.total) : '');
@@ -76,16 +78,37 @@
         {answer.tasks === 1 ? 'task' : 'tasks'}
       </p>
     {:else if chart}
-      <BoardChart
-        {chart}
-        kind={section.type as ChartKind}
-        time={!!section.by?.time}
-        stacked={!!section.stacked}
-        colors={section.series?.map((x) => x.color)}
-        labelColors={valueColors(section.by?.field, chart.labels, store.config?.colors, scheme.dark)}
-        format={fmt}
-        {summary}
-      />
+      {#if grids}
+        <!-- Each grid is a series' colour; stacked, they are one (the first series') -->
+        <div class="grids">
+          {#each grids as g, i (i)}
+            <div class="grid">
+              {#if grids.length > 1}<span class="dim small">{g.label}</span>{/if}
+              <div class="plot">
+                <BoardChart
+                  chart={g}
+                  kind="heatmap"
+                  time={!!section.by?.time}
+                  colors={[section.series?.[i]?.color]}
+                  format={fmt}
+                  summary={describeChart(g.label || section.title, g, fmt)}
+                />
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <BoardChart
+          {chart}
+          kind={section.type as ChartKind}
+          time={!!section.by?.time}
+          stacked={!!section.stacked}
+          colors={section.series?.map((x) => x.color)}
+          labelColors={valueColors(section.by?.field, chart.labels, store.config?.colors, scheme.dark)}
+          format={fmt}
+          {summary}
+        />
+      {/if}
     {/if}
   </div>
 </section>
@@ -134,6 +157,24 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
+  }
+  /* A heatmap's grids share the body, each with a plot that is positioned for the chart to fill. */
+  .grids {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 100%;
+  }
+  .grid {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 90px;
+  }
+  .plot {
+    position: relative;
+    flex: 1;
+    min-height: 0;
   }
   .big {
     margin: 4px 0 0;

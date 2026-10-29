@@ -129,6 +129,55 @@ class BoardsTest {
     }
 
     @Test
+    fun aHeatmapIsGridsOfRowsByColumnsAndSeriesAreTheirColours() {
+        val z = Zone(0, true, 1_791_376_200L)
+        val tasks = """[{"end":"20261005T090000Z"},{"end":"20261005T150000Z"},{"end":"20261006T090000Z"},{"end":"20261012T090000Z"}]"""
+        val by = By(time = TimeBy("end", "week"))
+        val rows = Rows(time = PartBy("end", "weekday"))
+        val two = listOf(SeriesInput("A", tasks, Measure("count"), null), SeriesInput("B", tasks, Measure("count"), null))
+        val apart = layHeatmap(two, by, rows, false, z)
+        assertEquals(listOf("A", "B"), apart.map { it.label })
+        assertEquals(listOf("2026-10-05", "2026-10-12"), apart[0].labels.map { it.label })
+        assertEquals(listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"), apart[0].datasets.map { it.label })
+        assertEquals(listOf(2.0, 1.0), apart[0].datasets[0].data)
+        // Stacked they are one grid, added up.
+        val piled = layHeatmap(two, by, rows, true, z)
+        assertEquals(1, piled.size)
+        assertEquals(listOf(4.0, 2.0), piled[0].datasets[0].data)
+        // The rows may be the values of an attribute.
+        val byValue = layHeatmap(two.take(1), by, Rows(field = "project"), false, z)
+        assertEquals(1, byValue.size)
+        assertEquals(listOf("(none)"), byValue[0].datasets.map { it.label })
+        assertEquals("weekday of end", describeRows(rows))
+        assertEquals("the value of project", describeRows(Rows(field = "project")))
+        assertNull(describeRows(null))
+        // They are written as the engine reads them, and a section that is not a heatmap may not have them.
+        val board = Board("b", "B", sections = listOf(sec("h", "heatmap") { it.copy(by = by, rows = rows) }))
+        val back = normalizeBoards(boardsToJson(listOf(board)))
+        assertEquals(emptyList(), back.errors)
+        assertEquals(rows, back.boards[0].sections[0].rows)
+        val bad = Board("b", "B", sections = listOf(sec("h", "bar") { it.copy(by = By(field = "project"), rows = rows) }))
+        assertEquals(1, normalizeBoards(boardsToJson(listOf(bad))).errors.size)
+    }
+
+    @Test
+    fun theColumnsOfEveryGridAreOrderedTogetherSoTheyLineUp() {
+        fun grid(label: String, vararg values: Double) = BoardChart(
+            labels = listOf("a", "b", "c").map { ChartLabel(it, it) },
+            datasets = listOf(Dataset("row", values.toList(), values.map { it.toInt() })),
+            label = label,
+        )
+        val section = sec("h", "heatmap") { it.copy(by = By(field = "project"), sort = "value-") }
+        // By what the grids add up to: b (9), then c (4), then a (3).
+        val ordered = orderGrids(listOf(grid("x", 1.0, 5.0, 4.0), grid("y", 2.0, 4.0, 0.0)), section, null)
+        assertEquals(listOf(listOf("b", "c", "a"), listOf("b", "c", "a")), ordered.map { g -> g.labels.map { it.key } })
+        assertEquals(listOf(4.0, 0.0, 2.0), ordered[1].datasets[0].data)
+        assertEquals("y", ordered[1].label)
+        assertEquals(2, orderGrids(ordered, section, 2)[0].labels.size)
+        assertEquals(emptyList(), orderGrids(emptyList(), section, null))
+    }
+
+    @Test
     fun aChartMayCoverARangeOfTheBoardOrOneOfItsOwn() {
         val ranges = listOf(DateRange("week", "sow", "eow"))
         val named = By(time = TimeBy("end", "day", AxisRange.Named("week")))

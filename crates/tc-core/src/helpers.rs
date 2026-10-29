@@ -333,6 +333,19 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
                 &ctx
             )?)
         }
+        "board_heatmap" => {
+            let ctx = a.req::<crate::board::aggregate::Ctx>(4)?;
+            let ranges = a.opt::<Vec<crate::board::ranges::Range>>(5)?.unwrap_or_default();
+            let mut by = a.req::<crate::board::aggregate::By>(1)?;
+            crate::board::ranges::attach(&mut by, &ranges, &ctx)?;
+            json!(crate::board::heat::heat(
+                &a.req::<Vec<crate::board::aggregate::SeriesInput>>(0)?,
+                &by,
+                &a.req::<crate::board::heat::Rows>(2)?,
+                a.opt::<bool>(3)?.unwrap_or(false),
+                &ctx
+            )?)
+        }
         "board_ranges" => json!(crate::board::ranges::resolve(
             &a.req::<Vec<crate::board::ranges::Range>>(0)?,
             &a.req::<crate::board::aggregate::Ctx>(1)?
@@ -596,6 +609,17 @@ mod tests {
         assert_eq!(got["labels"].as_array().map(Vec::len), Some(7));
         let got = call("board_chart", &format!("[{series},{by},{ctx}]"));
         assert!(got.contains("no date range called 'week'"), "{got}");
+
+        // A heatmap is grids of rows by columns.
+        let by = r#"{"time":{"field":"end","step":"day","range":"week"}}"#;
+        let rows = r#"{"time":{"field":"end","part":"weekday"}}"#;
+        let got: serde_json::Value = serde_json::from_str(&call(
+            "board_heatmap",
+            &format!("[{series},{by},{rows},false,{ctx},{ranges}]"),
+        ))
+        .unwrap();
+        assert_eq!(got[0]["datasets"].as_array().map(Vec::len), Some(7));
+        assert_eq!(got[0]["labels"].as_array().map(Vec::len), Some(7));
 
         let cells = r#"[{"id":"a","x":0,"y":0,"w":6,"h":2},{"id":"b","x":6,"y":0,"w":6,"h":2}]"#;
         let placed: serde_json::Value = serde_json::from_str(&call(

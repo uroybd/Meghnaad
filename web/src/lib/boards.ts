@@ -5,6 +5,7 @@
 // the replica.
 
 import { callHelper } from '../engine/helpers';
+import { defaultSeriesName } from './colors';
 import { runCli, tzOffsetSeconds } from './api';
 import { splitWords } from './cmdline';
 import type { CliResponse, CliResult } from './types';
@@ -41,6 +42,22 @@ export interface By {
 
 /** The range a chart's date axis covers: a board range by its name, or two dates written as a range's are. */
 export type AxisRange = string | { start: string; end: string };
+
+/** The part of a date a heatmap's row is: it comes round again, so a week by weekday is the grid of commits on GitHub. */
+export type RowPart = 'weekday' | 'hour' | 'monthday' | 'month';
+
+/** A heatmap's rows: one of the two, the value of an attribute or a part of a date. */
+export interface Rows {
+  field?: string;
+  time?: { field: string; part: RowPart };
+}
+
+export const ROW_PARTS: { id: RowPart; label: string }[] = [
+  { id: 'weekday', label: 'The weekday of a date' },
+  { id: 'hour', label: 'The hour of a date' },
+  { id: 'monthday', label: 'The day of the month of a date' },
+  { id: 'month', label: 'The month of a date' },
+];
 
 export interface Rect {
   x: number;
@@ -98,6 +115,11 @@ export interface Section extends Rect {
   ignoreBoardFilter?: boolean;
   measure: Measure;
   by?: By;
+  /**
+   * A heatmap's rows (`by` is its columns, the measure the strength of a cell): a series is then a colour, a grid of its own or,
+   * stacked, added into one. None: a row for each series.
+   */
+  rows?: Rows;
   /** A chart's series; none is one series, the section's own measure. */
   series?: Series[];
   /** The series are piled on each other (bars) or added up (lines), not side by side. */
@@ -167,6 +189,8 @@ export interface Dataset {
 
 /** What a chart draws, in Chart.js's shape: the labels along the axis and a dataset for each series. */
 export interface Chart {
+  /** A heatmap's grid: the series it is of. */
+  label?: string;
   unit: 'number' | 'duration';
   labels: ChartLabel[];
   datasets: Dataset[];
@@ -347,12 +371,9 @@ export function newSection(board: Board, type: SectionType): Section {
   };
   if (type === 'line' || type === 'area') base.by = { time: { field: 'entry', step: 'week' } };
   else if (type === 'heatmap') {
-    // A row for each series, a column for each week: what was added, and what of it is done.
+    // A column for each week and a row for each weekday, as strong as the tasks added then.
     base.by = { time: { field: 'entry', step: 'week' } };
-    base.series = [
-      { label: 'Pending', filter: 'status:pending' },
-      { label: 'Done', filter: 'status:completed' },
-    ];
+    base.rows = { time: { field: 'entry', part: 'weekday' } };
   } else if (type !== 'number' && type !== 'table') base.by = { field: 'project' };
   if (type === 'table') base.report = 'next';
   return base;
@@ -360,6 +381,18 @@ export function newSection(board: Board, type: SectionType): Section {
 
 /** A copy that shares nothing with the original (a board or section may be a reactive proxy, which a clone refuses). */
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+/**
+ * `series` with the one at `i` moved `delta` places. The order is the order of stacking: the first is at the bottom, the next on it.
+ * A series with no colour of its own has the colour its place gives it, so one that changes places keeps the colour it had.
+ */
+export function moveSeries(series: Series[], i: number, delta: number): Series[] {
+  const j = i + delta;
+  if (i === j || i < 0 || j < 0 || i >= series.length || j >= series.length) return series;
+  const kept = series.map((x, k) => (x.color || (k !== i && k !== j) ? x : { ...x, color: defaultSeriesName(k) }));
+  [kept[i], kept[j]] = [kept[j], kept[i]];
+  return kept;
+}
 
 /** A copy of `section`, in the first free place of `board`, with an id and a title of its own. */
 export function copySection(board: Board, section: Section): Section {
@@ -544,6 +577,39 @@ export function orderChart(
   };
 }
 
+/**
+ * The grids of a heatmap with their columns in the order the section asks for and as many as it keeps, the same columns in each
+ * (they are ordered together, by what all the rows add up to, so the grids line up).
+ */
+export function orderGrids(
+  grids: Chart[],
+  section: Section,
+  limit: number | null = typeof section.limit === 'number' ? section.limit : null,
+): Chart[] {
+  const first = grids[0];
+  if (!first) return grids;
+  const together: Chart = { unit: first.unit, labels: first.labels, datasets: grids.flatMap((g) => g.datasets) };
+  const keys = orderChart(together, section, limit).labels.map((l) => l.key);
+  const at = new Map(first.labels.map((l, i) => [l.key, i]));
+  const order = keys.map((k) => at.get(k) ?? 0);
+  return grids.map((g) => ({
+    ...g,
+    labels: order.map((i) => g.labels[i]),
+    datasets: g.datasets.map((d) => ({
+      ...d,
+      data: order.map((i) => d.data[i]),
+      counts: order.map((i) => d.counts[i]),
+    })),
+  }));
+}
+
+/** A heatmap's rows in words: "weekday of end", "the value of project"; null when there are none. */
+export function describeRows(rows: Rows | undefined): string | null {
+  const part = { weekday: 'weekday', hour: 'hour', monthday: 'day of the month', month: 'month' };
+  if (rows?.time) return `${part[rows.time.part] ?? rows.time.part} of ${rows.time.field}`;
+  return rows?.field ? `the value of ${rows.field}` : null;
+}
+
 /** What one filter got: the filter it ran, and the tasks it picked, as the text `export` printed them. */
 export interface Source {
   /** The series (or, for a number, the section) it is for. */
@@ -555,7 +621,7 @@ export interface Source {
 /** What a section got: its result, and (for the info panel) where the result came from. */
 export type SectionData =
   | { kind: 'answer'; answer: Answer; sources: Source[] }
-  | { kind: 'chart'; chart: Chart; sources: Source[]; limit: number | null }
+  | { kind: 'chart'; chart: Chart; grids?: Chart[]; sources: Source[]; limit: number | null }
   | { kind: 'table'; result: CliResult; filter: string }
   | { kind: 'error'; message: string };
 
@@ -611,6 +677,11 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
         sources.push({ label: x.label, filter, text: got.text });
       }
       const limit = keepOf(s.limit, board.ranges ?? [], zone);
+      if (s.type === 'heatmap' && s.rows && s.by) {
+        // A heatmap with rows: a grid for each series (one, when they are stacked), the columns the same in each.
+        const grids = callHelper<Chart[]>('board_heatmap', inputs, s.by, s.rows, !!s.stacked, zone, board.ranges ?? []);
+        return [s.id, { kind: 'chart', chart: grids[0], grids, sources, limit }];
+      }
       return [
         s.id,
         {

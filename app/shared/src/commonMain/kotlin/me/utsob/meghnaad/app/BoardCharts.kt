@@ -134,10 +134,21 @@ fun tipText(chart: BoardChart, i: Int, d: Int): String {
 
 @OptIn(ExperimentalKoalaPlotApi::class, ExperimentalLayoutApi::class)
 @Composable
-fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier: Modifier = Modifier, height: Dp? = null, labelColors: List<Color?> = emptyList()) {
+fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier: Modifier = Modifier, height: Dp? = null, labelColors: List<Color?> = emptyList(), grids: List<BoardChart>? = null) {
     val colors = MaterialTheme.colorScheme
     if (chart.labels.isEmpty()) {
         Dim("Nothing to show.", modifier)
+        return
+    }
+    // A heatmap with rows is a grid for each series, in that series' colour; stacked, the one grid in the first series'.
+    if (grids != null && section.type == "heatmap") {
+        val each = height?.let { ((it - 18.dp * (grids.size - 1)) / grids.size).coerceAtLeast(96.dp) }
+        Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            grids.forEachIndexed { i, g ->
+                if (grids.size > 1) Dim(g.label, size = 12)
+                Heatmap(g, chartColor(section.series.getOrNull(i)?.color, dark) ?: defaultSeriesColor(i, dark), each)
+            }
+        }
         return
     }
     val stacked = section.stacked == true

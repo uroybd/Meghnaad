@@ -12,10 +12,13 @@ import {
   largestGroups,
   loadBoard,
   moveBy,
+  moveSeries,
   newBoard,
   newSection,
   normalizeBoards,
   orderChart,
+  orderGrids,
+  describeRows,
   parseTasks,
   rangeLabel,
   viewed,
@@ -123,11 +126,13 @@ describe('the grid', () => {
     expect(newSection(b, 'number')).toMatchObject({ id: 'number-2', x: 3, y: 0, w: 3, h: 2 });
     expect(newSection(b, 'line').by).toEqual({ time: { field: 'entry', step: 'week' } });
     expect(newSection(b, 'table').report).toBe('next');
-    // A heatmap is a row for each series and a column for each week.
-    expect(newSection(b, 'heatmap')).toMatchObject({
+    // A heatmap is a column for each week and a row for each weekday, as strong as the tasks added then.
+    const heat = newSection(b, 'heatmap');
+    expect(heat).toMatchObject({
       by: { time: { field: 'entry', step: 'week' } },
-      series: [{ label: 'Pending' }, { label: 'Done' }],
+      rows: { time: { field: 'entry', part: 'weekday' } },
     });
+    expect(heat.series).toBeUndefined();
   });
 
   it('copies a section into the first free place, with an id and a title of its own', () => {
@@ -540,6 +545,41 @@ describe('a series of states', () => {
     expect(next.mine.chart.labels.map((l) => l.label)).toEqual(['2026-10-12', '2026-10-13', '2026-10-14']);
   });
 
+  it('lays a heatmap out as a grid for each series, the columns the same in each, and stacked as one', async () => {
+    const rows = [
+      { end: '20261005T090000Z', project: 'A' },
+      { end: '20261005T150000Z', project: 'B' },
+      { end: '20261006T090000Z', project: 'A' },
+      { end: '20261012T090000Z', project: 'A' },
+    ];
+    const run = async () => file(rows);
+    const heat = (id: string, extra: Partial<Section> = {}) =>
+      sec(id, 0, 0, 8, 5, {
+        type: 'heatmap',
+        by: { time: { field: 'end', step: 'week' } },
+        rows: { time: { field: 'end', part: 'weekday' } },
+        ...extra,
+      });
+    const two = [
+      { label: 'A', filter: 'project:A' },
+      { label: 'B', filter: 'project:B' },
+    ];
+    const b = board([heat('one'), heat('two', { series: two }), heat('piled', { series: two, stacked: true })]);
+    const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
+    if (data.one.kind !== 'chart' || data.two.kind !== 'chart' || data.piled.kind !== 'chart') throw new Error('no');
+    // The columns are the weeks, the rows the days of the week from Monday.
+    expect(data.one.grids).toHaveLength(1);
+    expect(data.one.chart.labels.map((l) => l.label)).toEqual(['2026-10-05', '2026-10-12']);
+    expect(data.one.chart.datasets.map((d) => d.label)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+    expect(data.one.chart.datasets[0].data).toEqual([2, 1]);
+    // A series is a grid of its own; stacked they are added into one.
+    expect(data.two.grids?.map((g) => g.label)).toEqual(['A', 'B']);
+    expect(data.piled.grids).toHaveLength(1);
+    // (The test's tasks come the same for every filter, so the two series are each what the one was.)
+    expect(data.piled.grids?.[0].datasets[0].data).toEqual([4, 2]);
+    expect(data.two.grids?.[1].datasets[0].data).toEqual([2, 1]);
+  });
+
   it('is sent to the engine with its span, and counts what is open at the end of each week', async () => {
     const rows = [
       { entry: '20261006T100000Z', start: '20261008T100000Z', end: '20261014T100000Z' },
@@ -603,6 +643,46 @@ describe('what a card says about itself', () => {
     for (const v of ['2026-10-07', '20261007', 5, null, 'Home']) expect(stampEpoch(v)).toBeNull();
   });
 
+  it('moves a series up or down the stack, and a series with no colour keeps the one its place gave it', () => {
+    const a = { label: 'A' };
+    const b = { label: 'B', color: 'red' };
+    const c = { label: 'C' };
+    const moved = moveSeries([a, b, c], 2, -1);
+    expect(moved.map((x) => x.label)).toEqual(['A', 'C', 'B']);
+    // C was third (the third default colour) and B is red; A, which did not move, takes the default of its place.
+    expect(moved[1].color).toBe('green');
+    expect(moved[2].color).toBe('red');
+    expect(moved[0]).toBe(a);
+    // The edges stay, and nothing is changed in what was given.
+    expect(moveSeries([a, b], 0, -1)).toEqual([a, b]);
+    expect(moveSeries([a, b], 1, 1)).toEqual([a, b]);
+    expect(moveSeries([a, b], 5, -1)).toEqual([a, b]);
+    expect(c).toEqual({ label: 'C' });
+  });
+
+  it('orders the columns of every grid of a heatmap together, so they line up', () => {
+    const grid = (label: string, values: number[]): Chart => ({
+      label,
+      unit: 'number',
+      labels: [
+        { key: 'a', label: 'a' },
+        { key: 'b', label: 'b' },
+        { key: 'c', label: 'c' },
+      ],
+      datasets: [{ label: 'row', data: values, counts: values, total: null, tasks: 0 }],
+    });
+    const section = sec('h', 0, 0, 6, 4, { type: 'heatmap', by: { field: 'project' }, sort: 'value-' });
+    // By what the grids add up to: b (9), then c (4), then a (3).
+    const ordered = orderGrids([grid('x', [1, 5, 4]), grid('y', [2, 4, 0])], section, null);
+    expect(ordered.map((g) => g.labels.map((l) => l.key))).toEqual([
+      ['b', 'c', 'a'],
+      ['b', 'c', 'a'],
+    ]);
+    expect(ordered[1].datasets[0].data).toEqual([4, 0, 2]);
+    expect(orderGrids(ordered, section, 2)[0].labels).toHaveLength(2);
+    expect(orderGrids([], section, null)).toEqual([]);
+  });
+
   it('says what it measures and groups by', () => {
     expect(describeMeasure({ fn: 'count' })).toBe('Count of tasks');
     expect(describeMeasure({ fn: 'sum', field: 'points' })).toBe('Sum of points');
@@ -616,5 +696,9 @@ describe('what a card says about itself', () => {
       'end, per day, over sow to eow',
     );
     expect(describeBy(undefined)).toBeNull();
+    expect(describeRows({ time: { field: 'end', part: 'weekday' } })).toBe('weekday of end');
+    expect(describeRows({ time: { field: 'due', part: 'monthday' } })).toBe('day of the month of due');
+    expect(describeRows({ field: 'project' })).toBe('the value of project');
+    expect(describeRows(undefined)).toBeNull();
   });
 });

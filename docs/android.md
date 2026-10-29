@@ -44,7 +44,7 @@ cannot: reminders that come with the app closed, and the widgets.
   a date, several series on one chart (stacked or side by side), and a series that counts pending, started and done as of the
   end of each period, as `task burndown` does. Bars, lines, areas, pies, donuts and radar are drawn by
   [Koala Plot](https://github.com/koalaplot/koalaplot-core) (a polar area chart is drawn as a pie). A heatmap, which it has no plot for,
-  is a grid the app lays out itself (a tap on a cell says its row, its column and its value). Every card has an **ⓘ**: its
+  is a grid the app lays out itself (a tap on a cell says its row, its column and its value), one for each series, or one for them all when they are stacked. Every card has an **ⓘ**: its
   filter (with **Open in Tasks**), the tasks that filter got, and the values on its axis. **Settings → General** chooses the home
   page, any report or board, which the app opens on. The pencil changes a board on the phone, as the web does: its name,
   description, filter and address, and for each card its title, type, filter, measure, grouping, order and series (their colours,

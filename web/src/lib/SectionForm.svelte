@@ -9,16 +9,20 @@
     isChartType,
     isRoundType,
     largestGroups,
+    moveSeries,
+    ROW_PARTS,
     rangeLabel,
     zoneNow,
     type DateRange,
     type Fn,
+    type RowPart,
+    type Rows,
     type Section,
     type SectionType,
     type Series,
     type Span,
   } from './boards';
-  import { Plus, Trash2 } from './icons';
+  import { ArrowDown, ArrowUp, Plus, Trash2 } from './icons';
   import { store } from './store.svelte';
 
   /** The settings of one board section. It edits a copy and reports it; saving is the board's. */
@@ -60,9 +64,11 @@
           ? { time: { field: 'entry', step: 'week' } }
           : { field: 'project' };
     }
-    // A pie has one series, and none stacks; neither does a heatmap, which is a row for each series.
+    // A pie has one series, and none stacks. Only a heatmap has rows: it starts with the weekday of the date it is cut by.
     if (isRoundType(type)) Object.assign(patch, { series: undefined, stacked: undefined });
-    if (type === 'heatmap') patch.stacked = undefined;
+    if (type === 'heatmap') {
+      if (!section.rows) patch.rows = { time: { field: section.by?.time?.field ?? 'entry', part: 'weekday' } };
+    } else patch.rows = undefined;
     if (type === 'table' && !section.report) patch.report = 'next';
     set(patch);
   }
@@ -73,6 +79,16 @@
 
   function pickGrouping(kind: 'field' | 'time') {
     set({ by: kind === 'time' ? { time: { field: 'entry', step: 'week' } } : { field: 'project' } });
+  }
+
+  /** What a heatmap's rows are, as the choice it is in the list: none, a part of a date, or the value of an attribute. */
+  const rowsKind = $derived(section.rows?.time ? section.rows.time.part : section.rows ? 'field' : '');
+  const setRows = (rows: Rows | undefined) => set({ rows });
+  function pickRows(v: string) {
+    if (v === '') setRows(undefined);
+    else if (v === 'field') setRows({ field: 'project' });
+    else
+      setRows({ time: { field: section.rows?.time?.field ?? section.by?.time?.field ?? 'entry', part: v as RowPart } });
   }
 
   const MAX_SERIES = 12;
@@ -246,6 +262,36 @@
         >
       </label>
     {/if}
+    {#if section.type === 'heatmap'}
+      <label>
+        Rows
+        <select value={rowsKind} onchange={(e) => pickRows(e.currentTarget.value)}>
+          <option value="">A row for each series</option>
+          {#each ROW_PARTS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
+          <option value="field">The value of</option>
+        </select>
+      </label>
+      {#if section.rows?.time}
+        <label>
+          Date of the rows
+          <select
+            value={section.rows.time.field}
+            onchange={(e) => setRows({ time: { ...section.rows!.time!, field: e.currentTarget.value } })}
+          >
+            {#each DATES as d (d)}<option value={d}>{d}</option>{/each}
+          </select>
+        </label>
+      {:else if section.rows}
+        <label>
+          Attribute of the rows
+          <input
+            list="{uid}-groupable"
+            value={section.rows.field ?? ''}
+            oninput={(e) => setRows({ field: e.currentTarget.value.trim() })}
+          />
+        </label>
+      {/if}
+    {/if}
     <label>
       Order
       <select value={section.sort ?? ''} onchange={(e) => set({ sort: e.currentTarget.value || undefined })}>
@@ -275,7 +321,9 @@
       <legend>Series</legend>
       <p class="dim hint">
         Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With
-        none, the chart is the one measure above.
+        none, the chart is the one measure above. When they are stacked, the first is at the bottom and the next on it:
+        the arrows change the order. In a heatmap with rows a series is a colour and a grid of its own, or, stacked,
+        they are added into one.
       </p>
       {#each series as x, i (i)}
         <div class="series-item">
@@ -337,6 +385,18 @@
           />
           <div class="row-series">
             <button
+              aria-label="Move series {i + 1} up"
+              title="Move earlier: lower in a stack"
+              disabled={i === 0}
+              onclick={() => setSeries(moveSeries(series, i, -1))}><ArrowUp size={14} /></button
+            >
+            <button
+              aria-label="Move series {i + 1} down"
+              title="Move later: higher in a stack"
+              disabled={i === series.length - 1}
+              onclick={() => setSeries(moveSeries(series, i, 1))}><ArrowDown size={14} /></button
+            >
+            <button
               class="danger"
               aria-label="Remove series {i + 1}"
               onclick={() => setSeries(series.filter((_, j) => j !== i))}><Trash2 size={14} /> Remove series</button
@@ -346,7 +406,7 @@
       {/each}
       <div class="row-series">
         <button onclick={addSeries} disabled={series.length >= MAX_SERIES}><Plus size={14} /> Add series</button>
-        {#if (series.length > 1 || section.stacked) && section.type !== 'heatmap'}
+        {#if (series.length > 1 || section.stacked) && (section.type !== 'heatmap' || section.rows)}
           <label class="check">
             <input
               type="checkbox"

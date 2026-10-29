@@ -15,6 +15,7 @@ import me.utsob.meghnaad.app.heatAlpha
 import me.utsob.meghnaad.app.heatStrengths
 import me.utsob.meghnaad.app.pieSweeps
 import me.utsob.meghnaad.app.seriesColors
+import me.utsob.meghnaad.app.chartColor
 import me.utsob.meghnaad.app.defaultSeriesColor
 import me.utsob.meghnaad.app.stackedValues
 import kotlin.math.cos
@@ -54,7 +55,7 @@ object BoardRenderer {
     }
 
     /** A chart of the card's type. A polar area chart is drawn as a pie, as in the app. */
-    fun chart(chart: BoardChart, section: Section, width: Int, height: Int, palette: Palette, labelColors: List<Color?> = emptyList()): Bitmap {
+    fun chart(chart: BoardChart, section: Section, width: Int, height: Int, palette: Palette, labelColors: List<Color?> = emptyList(), grids: List<BoardChart>? = null): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         if (chart.labels.isEmpty()) return bitmap
@@ -64,6 +65,18 @@ object BoardRenderer {
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette.dim
             textSize = (height * 0.075f).coerceIn(16f, 30f)
+        }
+        // A heatmap with rows is a grid for each series, in that series' colour, one above the other.
+        if (grids != null && section.type == "heatmap") {
+            val caption = if (grids.size > 1) text.textSize * 1.4f else 0f
+            val each = height.toFloat() / grids.size
+            grids.forEachIndexed { i, g ->
+                val at = i * each
+                if (caption > 0f) canvas.drawText(clip(g.label, text, width - 8f), 4f, at + text.textSize, text)
+                val color = (chartColor(section.series.getOrNull(i)?.color, palette.dark) ?: defaultSeriesColor(i, palette.dark)).toArgb()
+                heatmap(canvas, cut(g), color, RectF(0f, at + caption, width.toFloat(), at + each - 4f), text, palette)
+            }
+            return bitmap
         }
         // A legend names the series of a chart that has several.
         var top = 0f

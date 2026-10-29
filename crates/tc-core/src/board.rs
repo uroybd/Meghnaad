@@ -6,10 +6,12 @@
 //! says where each section goes. Nothing here touches a replica.
 
 pub mod aggregate;
+pub mod heat;
 pub mod layout;
 pub mod ranges;
 
 use aggregate::{By, Func, Measure, Span};
+use heat::Rows;
 use layout::{Cell, Rect};
 use ranges::Range;
 use serde::{Deserialize, Serialize};
@@ -121,6 +123,10 @@ pub struct Section {
     pub measure: Measure,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<By>,
+    /// A heatmap's rows: a part of a date (the weekday, the hour, …) or the value of an attribute. `by` is its columns, the measure the
+    /// strength of a cell, and each series a grid of its own (or, `stacked`, added into one). None: a row for each series.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<Rows>,
     /// A chart's series. None is one series: the section's own measure.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub series: Vec<Series>,
@@ -221,6 +227,14 @@ fn section_problem(s: &Section, ranges: &[Range]) -> Option<String> {
     {
         if let Some(p) = ranges::axis_problem(r, ranges) {
             return Some(p);
+        }
+    }
+    if let Some(r) = &s.rows {
+        if s.kind != Kind::Heatmap {
+            return Some("only a heatmap has rows".into());
+        }
+        if let Some(p) = r.problem() {
+            return Some(p.into());
         }
     }
     if s.kind.is_chart() && s.by.is_none() {
@@ -505,6 +519,43 @@ mod tests {
             let n = board(bad);
             assert!(n.boards[0].sections.is_empty());
             assert!(n.errors[0].contains("Keep"), "{:?}", n.errors);
+        }
+    }
+
+    #[test]
+    fn a_heatmap_may_have_rows_and_nothing_else_may() {
+        let board = |kind: &str, rows: Value| {
+            normalize(
+                &json!([{ "id": "b", "name": "B", "sections": [{ "id": "h", "type": kind,
+                "x": 0, "y": 0, "w": 6, "h": 4, "stacked": true,
+                "by": { "time": { "field": "end", "step": "week" } }, "rows": rows }] }]),
+            )
+        };
+        for rows in [
+            json!({ "time": { "field": "end", "part": "weekday" } }),
+            json!({ "time": { "field": "entry", "part": "hour" } }),
+            json!({ "field": "project" }),
+        ] {
+            let n = board("heatmap", rows.clone());
+            assert!(n.errors.is_empty(), "{:?}", n.errors);
+            // Written out as typed, and read again the same.
+            let out = serde_json::to_value(&n.boards).unwrap();
+            assert_eq!(out[0]["sections"][0]["rows"], rows);
+            assert_eq!(normalize(&out).boards, n.boards);
+        }
+        for (kind, rows, said) in [
+            ("bar", json!({ "field": "project" }), "only a heatmap has rows"),
+            ("heatmap", json!({}), "rows are one thing"),
+            ("heatmap", json!({ "field": "", "time": null }), "rows are one thing"),
+            (
+                "heatmap",
+                json!({ "time": { "field": "end", "part": "fortnight" } }),
+                "fortnight",
+            ),
+        ] {
+            let n = board(kind, rows);
+            assert!(n.boards[0].sections.is_empty(), "{said}");
+            assert!(n.errors.iter().any(|e| e.contains(said)), "{said}: {:?}", n.errors);
         }
     }
 
