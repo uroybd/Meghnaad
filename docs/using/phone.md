@@ -1,20 +1,17 @@
 # On a phone
 
-The layout adapts below about 760 px (a phone, or a narrow window):
+Below about 760 px (a phone, or a narrow window) the layout changes:
 
-- **The menu (☰)** holds everything the top bar has on a desktop: **Tasks** (which opens into the list of reports, naming the
-  one you are on), Projects, Tags, Summary, Calendar, Burndown, Console, Review, Reminders and Settings. The bar itself
-  keeps what is live: the running task and the active context. The **+** button floats over every page.
-- **Tasks are cards.** The description comes first with a tick box and the task's number; then small marks: priority (a
-  pill, and a stripe down the card's edge), project, tags (small pills you can tap to filter), due date (red once it has
-  passed), urgency, and the other columns of the report by name. A started task is tinted. A card is compact: it shows one
-  button, **Done**, with a **⋯** whose menu has start or stop, edit and delete, then your task commands (on the phone app,
-  both sit on the description's line).
-- **Pull down** at the top of a page, as in a browser on a phone, to sync and draw the page again.
-- **Sorting** is a **Sort** picker (there are no column headers to tap), forms and the detail view go full screen, and a
-  **+** button adds a task.
-- The **Complete** (⇥) and **Previous command** (⌃) buttons, for the keys a phone lacks, are on the line that shows the last
-  command, beside Edit and Copy; the prompt under it grows to show a long command, and suggestions can be tapped.
+- **The menu (☰)** holds what the top bar has on a desktop: Tasks (it opens the list of reports), Projects, Tags,
+  Summary, Calendar, Burndown, Console, Review, Reminders and Settings. The bar keeps what is live: the running task and
+  the active context. A floating **+** adds a task from any page.
+- **Tasks are cards.** The description comes first, with a tick box and the number, then small marks: priority, project,
+  tags (tap one to filter), due date (red once past), urgency and the report's other columns. A started task is tinted.
+  A card has a **Done** button and a **⋯** menu with start or stop, edit, delete and your task commands.
+- **Pull down** at the top of a page to sync and redraw it.
+- **Sorting** is a **Sort** picker, since there are no column headers to tap. Forms and a task's detail go full screen.
+- **Complete** (⇥) and **Previous command** (⌃) stand in for keys a phone lacks. They sit beside Edit and Copy on the
+  line that shows the last command. The prompt grows to show a long command, and suggestions can be tapped.
 
-You can install the web app to your home screen from the browser menu, or use [the Android app](../android.md), which keeps
-the tasks on the phone, works offline, syncs straight with your bucket and has home-screen widgets.
+You can add the web app to your home screen from the browser menu, or use [the Android app](../android.md): it keeps
+the tasks on the phone, works offline, syncs straight with your bucket and has widgets.
