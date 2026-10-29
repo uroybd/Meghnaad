@@ -366,8 +366,9 @@ Open **Boards**, type a name and press **New board**; **Edit** turns the layout 
 and **Save** keeps it. Every board has a **slug**, the last part of its address (`/board/week`): one lower case word of
 letters, digits, `-` and `_`, made from the name when the board is created and yours to change under **Edit** → **Address**.
 It cannot be the same as another board's, and if the board is your home page, changing it moves the home page with it.
-**Duplicate** (next to **Edit**) saves a copy of the board with every section as it is, named "<name> copy", at an address made
-from that name, and shows it; the home page stays where it was. A board is kept in the app's own `settings.json` (key `boards`), not in your taskrc, so it follows you
+**Save as a copy** (under **Edit**, in the board's settings, so it is not pressed by accident) saves what is on the page as a new
+board named "<name> copy", at an address made from that name, and shows it; the board you opened stays as it was last saved, and
+the home page stays where it was. A board is kept in the app's own `settings.json` (key `boards`), not in your taskrc, so it follows you
 to every device that signs in to the same deployment. A board is not a Taskwarrior report: it is built from what
 `<filter> export` prints, so it sees every attribute of a task, your UDAs included, and runs nothing of its own.
 

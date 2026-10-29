@@ -147,7 +147,7 @@ describe('the boards page', () => {
     expect(store.boardId).toBe('my-week');
   });
 
-  it('duplicates a board, and shows the copy', async () => {
+  it('saves a board as a copy from the edit panel, with the changes made so far, and shows the copy', async () => {
     server({
       boardsVersion: 1,
       boards: [
@@ -161,14 +161,23 @@ describe('the boards page', () => {
     store.boardId = 'week';
     app = mount(BoardsPage, { target: document.body });
     await settle();
-    await click(/Duplicate/);
+    // Not beside Edit, where it is too easy to press: only once the board is being edited.
+    expect(document.body.textContent).not.toMatch(/Save as a copy/);
+    await click(/Edit/);
+    const name = document.querySelector<HTMLInputElement>('section[aria-label="Board settings"] input');
+    if (!name) throw new Error('no name field');
+    name.value = 'My month';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    await click(/Save as a copy/);
     const out = JSON.parse(puts[0]);
     expect(out.boards.map((b: { id: string; name: string }) => [b.id, b.name])).toEqual([
       ['week', 'My week'],
-      ['my-week-copy', 'My week copy'],
+      ['my-month-copy', 'My month copy'],
     ]);
     expect(out.boards[1].sections).toEqual(out.boards[0].sections);
-    expect(store.boardId).toBe('my-week-copy');
+    expect(store.boardId).toBe('my-month-copy');
+    expect(document.body.textContent).not.toMatch(/Editing/);
   });
 
   it('duplicates a section while editing, and saves it with the board', async () => {

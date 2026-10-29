@@ -141,10 +141,11 @@
     }
   }
 
-  async function duplicate() {
-    if (!board) return;
-    const made = copyBoard(board, store.boards);
-    await persist([...store.boards, made], undefined, made.id);
+  /** Save the draft as it is now as a new board, and show that; the board it was opened from stays as it was saved. */
+  async function saveCopy() {
+    if (!draft || !valid || !check?.boards[0]) return;
+    const made = copyBoard(check.boards[0], store.boards);
+    if (await persist([...store.boards, made], undefined, made.id)) cancel();
   }
 
   async function remove() {
@@ -251,7 +252,6 @@
         <button class="primary" onclick={save} disabled={busy || !valid}>Save</button>
       {:else}
         <button onclick={edit}><Pencil size={15} /> Edit</button>
-        <button onclick={duplicate} disabled={busy}><Copy size={15} /> Duplicate</button>
         <button class="danger" onclick={remove} disabled={busy}
           ><Trash2 size={15} /> {confirmDelete ? 'Really delete?' : 'Delete'}</button
         >
@@ -301,6 +301,10 @@
           <RangesEditor
             bind:ranges={() => draft?.ranges ?? [], (v) => draft && (draft.ranges = v.length ? v : undefined)}
           />
+        </div>
+        <div class="wide row copy">
+          <button onclick={saveCopy} disabled={busy || !valid}><Copy size={15} /> Save as a copy</button>
+          <span class="dim small">Keeps this board as it was saved, and saves what is here as a new board.</span>
         </div>
         <div class="wide row adds">
           <span class="dim">Add</span>
