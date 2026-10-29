@@ -57,9 +57,10 @@ private const val DATE_HINT = "a date: tomorrow, eow, 2026-12-25, 3d (empty clea
 
 /** The fields the Modify editor offers, then the taskrc's UDAs. */
 fun fieldsFor(udas: Map<String, UdaDef>): List<BulkField> {
+    val levels = priorityValues(udas)
     val core = listOf(
         BulkField("project", "Project", FieldKind.Project, "a project name (empty clears it)"),
-        BulkField("priority", "Priority", FieldKind.Priority, "H, M or L (empty clears it)", values = listOf("H", "M", "L")),
+        BulkField("priority", "Priority", FieldKind.Priority, "${orList(levels)} (empty clears it)", values = levels),
         BulkField("due", "Due", FieldKind.Date, DATE_HINT),
         BulkField("wait", "Wait", FieldKind.Date, DATE_HINT),
         BulkField("scheduled", "Scheduled", FieldKind.Date, DATE_HINT),
@@ -69,7 +70,8 @@ fun fieldsFor(udas: Map<String, UdaDef>): List<BulkField> {
         BulkField("-", "Remove tags", FieldKind.Tags, "tags to take off, separated by spaces", required = true),
         BulkField("depends", "Depends on", FieldKind.Text, "task numbers or uuids (empty clears them)"),
     )
-    val custom = udas.values.map { u ->
+    // `priority` is a UDA to the engine, but it has its field above.
+    val custom = udas.values.filter { it.name != "priority" }.map { u ->
         BulkField(
             u.name, u.label?.takeIf { it.isNotEmpty() } ?: u.name, FieldKind.Uda,
             if (u.values.isNotEmpty()) "one of ${u.values.joinToString(", ")} (empty clears it)" else "${u.type} (empty clears it)",

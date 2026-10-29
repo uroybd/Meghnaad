@@ -2,6 +2,7 @@
   import { shellQuote, splitWords } from './cmdline';
   import DateField from './DateField.svelte';
   import { SlidersHorizontal, X } from './icons';
+  import { priorityValues as priorityLevels } from './priority';
   import { store } from './store.svelte';
 
   /** The words of a filter as removable chips, and the "Filter helpers" for adding some without typing. */
@@ -86,8 +87,8 @@
       >Priority
       <select onchange={(e) => pick(e)}>
         <option value="">add…</option>
-        <option value="priority:H">H</option><option value="priority:M">M</option>
-        <option value="priority:L">L</option><option value="priority.none:">none</option>
+        {#each priorityLevels(store.config?.config.udas) as p (p)}<option value="priority:{p}">{p}</option>{/each}
+        <option value="priority.none:">none</option>
       </select>
     </label>
     <label

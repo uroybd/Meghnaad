@@ -490,7 +490,13 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
         let uda = v.udas.iter().find(|u| u.name == name);
         let pool: Vec<Choice> = match name {
             "project" => opts(&v.projects, None),
-            "priority" => ["H", "M", "L"].iter().map(|p| choice(p, None)).collect(),
+            "priority" => match uda.filter(|u| !u.values.is_empty()) {
+                Some(u) => opts(
+                    &u.values.iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>(),
+                    None,
+                ),
+                None => ["H", "M", "L"].iter().map(|p| choice(p, None)).collect(),
+            },
             "status" => ["pending", "completed", "deleted", "recurring", "waiting"]
                 .iter()
                 .map(|p| choice(p, None))
@@ -881,6 +887,28 @@ mod tests {
     fn attribute_names_get_a_colon_and_share_prefixes_with_commands() {
         eq("proj", &["project:", "projects"]);
         eq("est", &["estimate:"]);
+    }
+
+    #[test]
+    fn priority_follows_the_values_the_taskrc_allows() {
+        let mut v = vocab();
+        v.udas.push(Uda {
+            name: "priority".into(),
+            kind: "string".into(),
+            label: Some("Priority".into()),
+            values: ["Critical", "Important", ""].map(String::from).to_vec(),
+        });
+        let at = |line: &str| -> Vec<String> {
+            complete(line, len16(line), &v)
+                .options
+                .into_iter()
+                .map(|o| o.value)
+                .collect()
+        };
+        assert_eq!(at("priority:"), ["priority:Critical", "priority:Important"]);
+        assert_eq!(at("priority:Cr"), ["priority:Critical"]);
+        // Named once, though it is both an attribute and a UDA.
+        assert_eq!(at("pri"), ["priority:"]);
     }
 
     #[test]

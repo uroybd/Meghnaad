@@ -255,7 +255,7 @@ inheritance rules, which follow Taskwarrior's source.
 | `uda.<name>.values` | Done | Also drives sorting. A trailing blank value is allowed |
 | `uda.<name>.default` | Done | See Defaults |
 | `uda.<name>.indicator` | Done | |
-| `uda.priority.*` | Done | `priority` is handled as a string UDA, like Taskwarrior does, so a taskrc that defines it (type and values) changes the priority sort order |
+| `uda.priority.*` | Done | `priority` is a string UDA that Taskwarrior defines itself (label `Priority`, values `H,M,L,`), so a taskrc names only what it changes: `uda.priority.values=Critical,Important,` alone is enough. The values are what a task may be given (anything else is refused with "The 'priority' attribute does not allow a value of …"), the order of sorting and of `priority.above:`, `.below:` and `<`, and what the editors, the bulk Modify and completion offer. The blank stands where the list puts it (`H,M,,L`: between M and L); a list with no blank puts a task with no priority above every level. Urgency is separate: only `urgency.uda.priority.<value>.coefficient` counts, so a renamed level adds nothing until it has one. `udas` lists it, and `show` prints the default as `H,M,L,` |
 
 A UDA that exists on a task but isn't defined in the taskrc is shown but read-only.
 

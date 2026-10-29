@@ -1121,6 +1121,14 @@ pub fn parse_lines(lines: &[&str]) -> (Parsed, Vec<Verdict>) {
         });
     }
 
+    // `priority` is a UDA Taskwarrior defines itself (a string, labelled Priority, `H,M,L,` with the blank last), so a
+    // taskrc names only what it changes: `uda.priority.values=Critical,Important,` alone is enough.
+    if let Some(attrs) = raw_uda.get_mut("priority") {
+        for (key, default) in [("type", "string"), ("label", "Priority"), ("values", "H,M,L,")] {
+            attrs.entry(key.to_owned()).or_insert_with(|| default.to_owned());
+        }
+    }
+
     for (name, attrs) in raw_uda {
         let ty = match attrs.get("type").map(String::as_str) {
             Some("string") => UdaType::String,

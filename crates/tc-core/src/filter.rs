@@ -1455,8 +1455,9 @@ fn holds(op: Op, order: std::cmp::Ordering) -> bool {
 }
 
 /// The values a string attribute may take, highest first, when they have an order of their own: `priority` (H, M, L
-/// unless the taskrc redefines it) and a UDA with a `values` list. A comparison then follows that order, as
-/// `priority > L` finding H and M, and a task with no value is below all of them.
+/// and then none, unless the taskrc redefines it) and a UDA with a `values` list. A comparison then follows that
+/// order, as `priority > L` finding H and M. A task with no value stands where the list has its blank (`H,M,,L`: between
+/// M and L), and above every value when the list has none, as in Taskwarrior.
 fn value_order(attr: &Attr, cfg: &Config) -> Option<Vec<String>> {
     let name = match attr {
         Attr::Core(Core::Priority) => "priority",
@@ -1465,16 +1466,16 @@ fn value_order(attr: &Attr, cfg: &Config) -> Option<Vec<String>> {
     };
     match cfg.udas.get(name) {
         Some(d) if !d.values.is_empty() => Some(d.values.clone()),
-        None if name == "priority" => Some(["H", "M", "L"].map(String::from).to_vec()),
+        None if name == "priority" => Some(["H", "M", "L", ""].map(String::from).to_vec()),
         _ => None,
     }
 }
 
-/// Where `value` stands in `order`, 0 for none (or one that is not listed) and more for each step up.
+/// Where `value` stands in `order`: 0 for the last of the list, and more for each step up. One that is not listed
+/// (and no value, when the list has no blank) is above them all, which is how the sort puts it too.
 fn rank(order: &[String], value: Option<&str>) -> usize {
-    value
-        .and_then(|v| order.iter().rev().position(|o| o == v))
-        .map_or(0, |i| i + 1)
+    let value = value.unwrap_or("");
+    order.iter().rev().position(|o| o == value).unwrap_or(order.len())
 }
 
 /// Whether a value counts as true when Taskwarrior casts it to a boolean: not empty, not `0` or `0.0`, not zero.

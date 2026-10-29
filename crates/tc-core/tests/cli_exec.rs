@@ -6395,3 +6395,122 @@ mod completion_lists {
         );
     }
 }
+
+/// `uda.priority.values` as Taskwarrior 3.5.0 reads it (checked with the real `task` on a scratch data directory):
+/// `priority` is a UDA it defines itself, so a taskrc that sets only the values needs no `type`.
+mod priority_values {
+    use super::*;
+
+    async fn with(rc: &str, adds: &[&str]) -> (R, Config) {
+        let cfg = parse(rc).config;
+        let mut r = replica();
+        for a in adds {
+            run(&mut r, &cfg, &format!("add {a}")).await;
+        }
+        (r, cfg)
+    }
+
+    async fn names(r: &mut R, cfg: &Config, line: &str) -> Vec<String> {
+        match run(r, cfg, line).await.0 {
+            CliResult::Report(o) => o.rows.iter().map(|x| x.facts.description.clone()).collect(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    const BLANK_BETWEEN: &str = "uda.priority.values=H,M,,L\n";
+    const RENAMED: &str = "uda.priority.values=Critical,Important,\n";
+
+    #[tokio::test]
+    async fn a_blank_between_two_values_sorts_and_compares_between_them() {
+        let (mut r, cfg) = with(
+            BLANK_BETWEEN,
+            &["tH priority:H", "tM priority:M", "t0", "tL priority:L"],
+        )
+        .await;
+        let sort = |s: &str| format!("rc.report.list.sort:{s} list");
+        assert_eq!(names(&mut r, &cfg, &sort("priority-")).await, ["tH", "tM", "t0", "tL"]);
+        assert_eq!(names(&mut r, &cfg, &sort("priority+")).await, ["tL", "t0", "tM", "tH"]);
+        assert_eq!(names(&mut r, &cfg, "priority.above:M list").await, ["tH"]);
+        assert_eq!(names(&mut r, &cfg, "priority.below:M list").await, ["tL", "t0"]);
+        assert_eq!(names(&mut r, &cfg, "priority.above:L list").await, ["tH", "tM", "t0"]);
+        assert!(names(&mut r, &cfg, "priority.below:L list").await.is_empty());
+        assert_eq!(names(&mut r, &cfg, "priority: list").await, ["t0"]);
+    }
+
+    #[tokio::test]
+    async fn values_alone_define_priority_and_replace_h_m_and_l() {
+        let (mut r, cfg) = with(RENAMED, &["tC priority:Critical", "tI priority:Important", "t0"]).await;
+        assert_eq!(cfg.udas["priority"].values, ["Critical", "Important", ""]);
+        assert_eq!(cfg.udas["priority"].label.as_deref(), Some("Priority"));
+        assert_eq!(
+            names(&mut r, &cfg, "rc.report.list.sort:priority- list").await,
+            ["tC", "tI", "t0"]
+        );
+        assert_eq!(names(&mut r, &cfg, "priority.above:Important list").await, ["tC"]);
+        // A filter is matched as a start, as for any string: `Imp` finds Important.
+        assert_eq!(names(&mut r, &cfg, "priority:Imp list").await, ["tI"]);
+        // H, M and L are no longer allowed, on a new task or a changed one, and nothing is added.
+        for line in ["add bad priority:H", "1 modify priority:L", "add bad priority:critical"] {
+            let (res, wrote) = run(&mut r, &cfg, line).await;
+            let CliResult::Error { message } = res else {
+                panic!("{line}: {res:?}")
+            };
+            assert!(!wrote);
+            assert!(
+                message.starts_with("The 'priority' attribute does not allow a value of '"),
+                "{message}"
+            );
+        }
+        // Blank is allowed, and clears it.
+        let (_, wrote) = run(&mut r, &cfg, "1 modify priority:").await;
+        assert!(wrote);
+        // A level the taskrc gives no urgency coefficient adds nothing to the urgency.
+        let CliResult::Report(o) = run(&mut r, &cfg, "list").await.0 else {
+            panic!()
+        };
+        assert!(
+            o.rows.iter().all(|x| x.urgency < 1.0),
+            "{:?}",
+            o.rows.iter().map(|x| x.urgency).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn without_a_blank_in_the_list_a_task_with_no_priority_is_above_every_level() {
+        let (mut r, cfg) = with(
+            "uda.priority.type=string\nuda.priority.values=H,M,L\n",
+            &["tH priority:H", "tM priority:M", "t0", "tL priority:L"],
+        )
+        .await;
+        assert_eq!(
+            names(&mut r, &cfg, "rc.report.list.sort:priority- list").await,
+            ["t0", "tH", "tM", "tL"]
+        );
+        assert_eq!(names(&mut r, &cfg, "priority.above:M list").await, ["tH", "t0"]);
+        assert_eq!(names(&mut r, &cfg, "priority.below:M list").await, ["tL"]);
+    }
+
+    #[tokio::test]
+    async fn the_default_puts_no_priority_last_and_udas_lists_priority_with_its_values() {
+        let (mut r, cfg) = with("", &["tH priority:H", "t0", "tL priority:L"]).await;
+        assert_eq!(
+            names(&mut r, &cfg, "rc.report.list.sort:priority- list").await,
+            ["tH", "tL", "t0"]
+        );
+        for (rc, shown) in [
+            ("", "H,M,L,"),
+            (RENAMED, "Critical,Important,"),
+            (BLANK_BETWEEN, "H,M,,L"),
+        ] {
+            let (mut r, cfg) = with(rc, &[]).await;
+            let CliResult::Table(t) = run(&mut r, &cfg, "udas").await.0 else {
+                panic!()
+            };
+            assert_eq!(t.rows, [["priority", "string", "Priority", shown, "", "0"]]);
+        }
+        // A one-off override reads the same way.
+        let (mut r, cfg) = with("", &[]).await;
+        let (_, wrote) = run(&mut r, &cfg, "rc.uda.priority.values=P1,P2, add x priority:P1").await;
+        assert!(wrote);
+    }
+}

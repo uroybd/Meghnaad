@@ -1,6 +1,7 @@
 <script lang="ts">
   import DateField from './DateField.svelte';
   import SuggestInput from './SuggestInput.svelte';
+  import { priorityValues as priorityLevels } from './priority';
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
   import { clashOf } from './holidayClash';
@@ -35,10 +36,9 @@
   /* svelte-ignore state_referenced_locally */
   const adding = row === null;
   const defs = $derived(store.config?.config.udas ?? {});
-  const defined = $derived(Object.values(defs));
-  const priorityValues = $derived(
-    defs.priority?.values.length ? defs.priority.values.filter(Boolean) : ['H', 'M', 'L'],
-  );
+  // `priority` is a UDA to the engine, but it has its own control above.
+  const defined = $derived(Object.values(defs).filter((u) => u.name !== 'priority'));
+  const priorityValues = $derived(priorityLevels(defs));
 
   const wire = (ts: number | null | undefined) => fromParts(toParts(ts ?? null));
   function uda(u: UdaDef, r: Row | null): string {

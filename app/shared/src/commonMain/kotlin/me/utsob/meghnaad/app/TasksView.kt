@@ -332,7 +332,8 @@ private fun FilterHelpers(store: Store, words: List<String>, about: String?) {
         Helper("Tag", store.tags.flatMap { listOf("+$it", "-$it") }) { add(it) }
         Helper("State", listOf("status:pending", "status:completed", "status:deleted", "+OVERDUE", "+DUETODAY", "+WEEK", "+ACTIVE", "+BLOCKED", "+READY"),
             labels = listOf("pending", "completed", "deleted", "overdue", "due today", "due this week", "active", "blocked", "ready")) { add(it) }
-        Helper("Priority", listOf("priority:H", "priority:M", "priority:L", "priority.none:"), labels = listOf("H", "M", "L", "none")) { add(it) }
+        val levels = priorityValues(store.config?.config?.udas ?: emptyMap())
+        Helper("Priority", levels.map { "priority:$it" } + "priority.none:", labels = levels + "none") { add(it) }
     }
 }
 

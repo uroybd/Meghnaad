@@ -84,6 +84,15 @@ describe('the Modify editor', () => {
     expect(fields.find((f) => f.key === 'size')?.values).toEqual(['S', 'M']);
   });
 
+  it('lets the taskrc rename the levels of priority, and keeps it a field of its own', () => {
+    const own = fieldsFor({ priority: uda('priority', ['Critical', 'Important', ''], 'Priority') });
+    expect(own.filter((f) => f.key === 'priority')).toHaveLength(1);
+    const priority = own.find((f) => f.key === 'priority');
+    expect(priority?.values).toEqual(['Critical', 'Important']);
+    expect(priority?.hint).toBe('Critical or Important (empty clears it)');
+    expect(fields.find((f) => f.key === 'priority')?.values).toEqual(['H', 'M', 'L']);
+  });
+
   it('writes the words modify takes: field:value, +tag and -tag', () => {
     expect(
       modifyWords([

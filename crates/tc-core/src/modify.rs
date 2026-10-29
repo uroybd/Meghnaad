@@ -373,7 +373,7 @@ pub fn plan(
                         _ => matches!(v, "H" | "M" | "L"),
                     };
                 if !ok {
-                    return err(format!("'{v}' is not a valid priority; use H, M, L or leave it empty"));
+                    return err(format!("The 'priority' attribute does not allow a value of '{v}'."));
                 }
                 out.push(Change::Priority((!v.is_empty()).then(|| v.to_owned())));
             }

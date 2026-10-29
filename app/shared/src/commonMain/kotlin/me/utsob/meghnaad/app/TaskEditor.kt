@@ -50,8 +50,9 @@ import androidx.compose.ui.window.DialogProperties
 class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = null) {
     val adding = row == null
     private val defs = store.config?.config?.udas ?: emptyMap()
-    val defined: List<UdaDef> = defs.values.toList()
-    val priorityValues: List<String> = defs["priority"]?.values?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() } ?: listOf("H", "M", "L")
+    // `priority` is a UDA to the engine, but it has its own control.
+    val defined: List<UdaDef> = defs.values.filter { it.name != "priority" }
+    val priorityValues: List<String> = priorityValues(defs)
 
     private fun wire(ts: Long?): String = if (ts == null) "" else fromParts(toParts(ts, store.offsetAt(ts)))
 

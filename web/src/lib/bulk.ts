@@ -1,5 +1,6 @@
 // Pure helpers for the bulk actions: how tasks are named to the engine, and the fields the Modify editor offers.
 
+import { orList, priorityValues } from './priority';
 import type { UdaDef } from './types';
 
 /** A task as the bulk actions need it. */
@@ -66,14 +67,15 @@ const DATE_HINT = 'a date: tomorrow, eow, 2026-12-25, 3d (empty clears it)';
 
 /** The fields the Modify editor offers, then the taskrc's UDAs. */
 export function fieldsFor(udas: Record<string, UdaDef>): Field[] {
+  const levels = priorityValues(udas);
   const core: Field[] = [
     { key: 'project', label: 'Project', kind: 'project', hint: 'a project name (empty clears it)' },
     {
       key: 'priority',
       label: 'Priority',
       kind: 'priority',
-      hint: 'H, M or L (empty clears it)',
-      values: ['H', 'M', 'L'],
+      hint: `${orList(levels)} (empty clears it)`,
+      values: levels,
     },
     { key: 'due', label: 'Due', kind: 'date', hint: DATE_HINT },
     { key: 'wait', label: 'Wait', kind: 'date', hint: DATE_HINT },
@@ -84,13 +86,16 @@ export function fieldsFor(udas: Record<string, UdaDef>): Field[] {
     { key: '-', label: 'Remove tags', kind: 'tags', hint: 'tags to take off, separated by spaces', required: true },
     { key: 'depends', label: 'Depends on', kind: 'text', hint: 'task numbers or uuids (empty clears them)' },
   ];
-  const custom: Field[] = Object.values(udas).map((u) => ({
-    key: u.name,
-    label: u.label || u.name,
-    kind: 'uda',
-    hint: u.values.length ? `one of ${u.values.join(', ')} (empty clears it)` : `${u.type} (empty clears it)`,
-    values: u.values.length ? u.values : undefined,
-  }));
+  // `priority` is a UDA to the engine, but it has its field above.
+  const custom: Field[] = Object.values(udas)
+    .filter((u) => u.name !== 'priority')
+    .map((u) => ({
+      key: u.name,
+      label: u.label || u.name,
+      kind: 'uda',
+      hint: u.values.length ? `one of ${u.values.join(', ')} (empty clears it)` : `${u.type} (empty clears it)`,
+      values: u.values.length ? u.values : undefined,
+    }));
   return [...core, ...custom];
 }
 

@@ -59,6 +59,16 @@ class BulkTest {
     }
 
     @Test
+    fun letsTheTaskrcRenameTheLevelsOfPriorityAndKeepsItAFieldOfItsOwn() {
+        val own = fieldsFor(mapOf("priority" to UdaDef(name = "priority", type = "string", label = "Priority", values = listOf("Critical", "Important", ""))))
+        val priority = own.filter { it.key == "priority" }
+        assertEquals(1, priority.size)
+        assertEquals(listOf("Critical", "Important"), priority[0].values)
+        assertEquals("Critical or Important (empty clears it)", priority[0].hint)
+        assertEquals(listOf("H", "M", "L"), fields.first { it.key == "priority" }.values)
+    }
+
+    @Test
     fun writesTheWordsModifyTakes() {
         assertEquals(
             listOf("project:Home", "due:", "+a", "+b", "+c", "-old", "estimate:3"),

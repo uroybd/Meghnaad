@@ -65,7 +65,7 @@ pub fn defaults() -> BTreeMap<String, String> {
     d.insert("report.timesheet.filter".into(), crate::taskrc::TIMESHEET_FILTER.into());
     d.insert("uda.priority.type".into(), "string".into());
     d.insert("uda.priority.label".into(), "Priority".into());
-    d.insert("uda.priority.values".into(), "H,M,L".into());
+    d.insert("uda.priority.values".into(), "H,M,L,".into());
     d
 }
 
