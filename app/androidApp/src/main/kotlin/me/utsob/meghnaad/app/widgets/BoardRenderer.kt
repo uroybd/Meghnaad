@@ -10,6 +10,8 @@ import me.utsob.meghnaad.app.BoardChart
 import me.utsob.meghnaad.app.Section
 import me.utsob.meghnaad.app.chartTop
 import me.utsob.meghnaad.app.formatBoardValue
+import me.utsob.meghnaad.app.heatAlpha
+import me.utsob.meghnaad.app.heatStrengths
 import me.utsob.meghnaad.app.pieSweeps
 import me.utsob.meghnaad.app.seriesColors
 import me.utsob.meghnaad.app.defaultSeriesColor
@@ -64,15 +66,50 @@ object BoardRenderer {
         }
         // A legend names the series of a chart that has several.
         var top = 0f
-        if (shown.datasets.size > 1 && section.type !in listOf("pie", "donut", "polar")) top = legend(canvas, shown, colors, text, width)
+        if (shown.datasets.size > 1 && section.type !in listOf("pie", "donut", "polar", "heatmap")) top = legend(canvas, shown, colors, text, width)
         val area = RectF(0f, top, width.toFloat(), height.toFloat())
         when (section.type) {
             "bar" -> if (section.by?.time != null) verticalBars(canvas, shown, colors, stacked, area, text, palette) else horizontalBars(canvas, shown, colors, stacked, area, text, palette)
             "line", "area" -> lines(canvas, shown, colors, stacked, section.type == "area", area, text, palette)
             "radar" -> radar(canvas, shown, colors, area, text, palette)
+            "heatmap" -> heatmap(canvas, shown, colors.firstOrNull() ?: palette.dim, area, text, palette)
             else -> slices(canvas, shown, palette, area, text, donut = section.type == "donut")
         }
         return bitmap
+    }
+
+    /**
+     * A heatmap: a row for each series, named at the left, and a column for each label, a cell as strong as its value is large, in the
+     * colour of the first series (the app draws it the same way, BoardCharts.kt).
+     */
+    private fun heatmap(canvas: Canvas, chart: BoardChart, color: Int, area: RectF, text: Paint, palette: Palette) {
+        val rows = chart.datasets
+        if (rows.isEmpty()) return
+        val room = min(rows.maxOf { text.measureText(it.label) } + 10f, area.width() * 0.35f)
+        val plot = RectF(area.left + room, area.top + 2f, area.right - 2f, area.bottom - text.textSize * 1.7f)
+        val strengths = heatStrengths(chart)
+        val cellW = plot.width() / chart.labels.size
+        val cellH = plot.height() / rows.size
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        val empty = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = palette.line
+            alpha = 0x66
+        }
+        val saved = text.textAlign
+        text.textAlign = Paint.Align.LEFT
+        rows.forEachIndexed { r, d ->
+            val name = d.label.take(text.breakText(d.label, true, room - 8f, null))
+            canvas.drawText(name, area.left + 2f, plot.top + (r + 0.5f) * cellH + text.textSize * 0.35f, text)
+            for (c in chart.labels.indices) {
+                val s = strengths[r][c]
+                val paint = if (s == null) empty else fill.apply { this.color = color; alpha = (heatAlpha(s) * 255f).toInt() }
+                val x = plot.left + c * cellW
+                val y = plot.top + r * cellH
+                canvas.drawRoundRect(RectF(x + 1f, y + 1f, x + cellW - 1f, y + cellH - 1f), 3f, 3f, paint)
+            }
+        }
+        text.textAlign = saved
+        bottomLabels(canvas, chart, plot, text, area.bottom - text.textSize * 0.3f, centred = true)
     }
 
     /** The last labels, when there are more than will read. */

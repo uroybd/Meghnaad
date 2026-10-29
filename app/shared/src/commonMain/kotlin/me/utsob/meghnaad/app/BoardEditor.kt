@@ -326,7 +326,7 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton({ setSeries(s.series + Series("Series ${s.series.size + 1}")) }, enabled = s.series.size < MAX_SERIES) { Text("+ Add series", fontSize = 12.sp) }
-            if (s.series.size > 1 || s.stacked == true) {
+            if ((s.series.size > 1 || s.stacked == true) && s.type != "heatmap") {
                 Row(Modifier.clickable { onChange(s.copy(stacked = if (s.stacked == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(s.stacked == true, onCheckedChange = null)
                     Text("Stacked", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))

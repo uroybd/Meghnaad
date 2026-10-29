@@ -43,7 +43,8 @@ cannot: reminders that come with the app closed, and the widgets.
   agree: counts, sums and averages of numbers and durations, per value of an attribute or per day, week, month, quarter or year of
   a date, several series on one chart (stacked or side by side), and a series that counts pending, started and done as of the
   end of each period, as `task burndown` does. Bars, lines, areas, pies, donuts and radar are drawn by
-  [Koala Plot](https://github.com/koalaplot/koalaplot-core) (a polar area chart is drawn as a pie). Every card has an **ⓘ**: its
+  [Koala Plot](https://github.com/koalaplot/koalaplot-core) (a polar area chart is drawn as a pie). A heatmap, which it has no plot for,
+  is a grid the app lays out itself (a tap on a cell says its row, its column and its value). Every card has an **ⓘ**: its
   filter (with **Open in Tasks**), the tasks that filter got, and the values on its axis. **Settings → General** chooses the home
   page, any report or board, which the app opens on. The pencil changes a board on the phone, as the web does: its name,
   description, filter and address, and for each card its title, type, filter, measure, grouping, order and series (their colours,
@@ -66,7 +67,7 @@ cannot: reminders that come with the app closed, and the widgets.
   - **Burndown**: daily, weekly or monthly bars of the tasks a filter picks: finished at the bottom, then started, then
     pending, with how long it would take to clear them at this pace.
   - **Board card**: one card of a board, chosen by board and card in the widget's settings: a number drawn large, or a chart (bars,
-    lines, areas, pies, donuts, radar) drawn from the same numbers as the board, in the light or dark look of the widget. A tap
+    lines, areas, pies, donuts, radar, heatmaps) drawn from the same numbers as the board, in the light or dark look of the widget. A tap
     opens the board. A table card is not drawn (it says so).
   - **Calendar**: a month with today circled and a dot on the days with something due (red when overdue, amber today,
     blue after), for the tasks a filter picks. The arrows go to other months, and the month's name back to this one.

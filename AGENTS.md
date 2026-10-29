@@ -36,7 +36,8 @@ or a TUI around `task`? Layer 2.
   `export`, and the grid layout), both reached through `helpers`. Sorting and trimming a chart's groups, and all drawing,
   stay in each UI.
 - Charts are drawn by a charting library on each front end (Chart.js on the web), never by hand; the table is the one thing
-  that stays ours. The engine's `Chart` (labels and a dataset for each series, `tc_core::board::aggregate::chart`) is the
+  that stays ours, and the one exception is the heatmap on Android, a grid of cells (`Heatmap` in `BoardCharts.kt`), because Koala
+  Plot has no plot for it. The web draws it with Chart.js's matrix plugin. The engine's `Chart` (labels and a dataset for each series, `tc_core::board::aggregate::chart`) is the
   shared contract, shaped like Chart.js's `data`: a front end maps it to its library and never computes chart data itself.
 
 ## Before you say a change is done

@@ -30,6 +30,8 @@ pub enum Kind {
     Radar,
     /// A pie whose slices differ in how far they reach, not in their angle.
     Polar,
+    /// A grid: a row for each series and a column for each label, a cell as strong as its value.
+    Heatmap,
 }
 
 impl Kind {
@@ -642,7 +644,7 @@ mod tests {
             s.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
             normalize(&json!([{ "id": "b", "name": "B", "sections": [s] }]))
         };
-        for kind in ["bar", "line", "area", "pie", "donut", "radar", "polar"] {
+        for kind in ["bar", "line", "area", "pie", "donut", "radar", "polar", "heatmap"] {
             let n = sec(kind, json!({}));
             assert!(n.errors.is_empty(), "{kind}: {:?}", n.errors);
             assert_eq!(n.boards[0].sections.len(), 1, "{kind}");
@@ -653,7 +655,7 @@ mod tests {
         for kind in ["pie", "donut", "polar"] {
             assert!(sec(kind, two.clone()).errors[0].contains("one series"), "{kind}");
         }
-        for kind in ["bar", "line", "area", "radar"] {
+        for kind in ["bar", "line", "area", "radar", "heatmap"] {
             assert!(sec(kind, two.clone()).errors.is_empty(), "{kind}");
         }
     }

@@ -147,3 +147,68 @@ describe('a colour with an opacity', () => {
     expect(withAlpha('red', 0x40)).toBe('red');
   });
 });
+
+describe('a heatmap for the matrix plugin', () => {
+  const heat = (extra: Partial<ChartInput> = {}) => cfg(input('heatmap', extra));
+  type Cell = { x: string; y: string; v: number | null };
+
+  it('is one dataset of cells: a column for each label and a row for each series', () => {
+    const c = heat();
+    expect(c.type).toBe('matrix');
+    expect(c.data.datasets).toHaveLength(1);
+    const cells = c.data.datasets[0].data as Cell[];
+    expect(cells).toHaveLength(6);
+    expect(cells.slice(0, 3)).toEqual([
+      { x: 'Home', y: 's0', v: 1 },
+      { x: 'Work', y: 's0', v: 3 },
+      { x: '(none)', y: 's0', v: null },
+    ]);
+    expect(cells[3]).toEqual({ x: 'Home', y: 's1', v: 2 });
+    // A vertical category axis starts at the top, so the first series is the top row.
+    expect(c.options.scales.x).toMatchObject({ type: 'category', labels: ['Home', 'Work', '(none)'] });
+    expect(c.options.scales.y).toMatchObject({ type: 'category', labels: ['s0', 's1'] });
+    expect(c.options.scales.y.reverse).toBeUndefined();
+    expect(c.options.plugins.legend.display).toBe(false);
+  });
+
+  it('is stronger where the value is larger, and faint where there is none', () => {
+    const color = heat().data.datasets[0].backgroundColor as (ctx: { raw: Cell }) => string;
+    const base = defaultSeriesColor(0, false);
+    const at = (v: number | null) => color({ raw: { x: '', y: '', v } });
+    // The largest value is the colour itself, the smallest a wash of it, and nothing is the grid's own line.
+    expect(at(3)).toBe(withAlpha(base, 255));
+    expect(at(0)).toBe(withAlpha(base, 0x26));
+    expect(at(1.5)).toBe(withAlpha(base, Math.round(0x26 + 0.5 * (255 - 0x26))));
+    expect(at(null)).toBe(withAlpha('#ddd', 0x66));
+  });
+
+  it('takes the colour of the first series when it has one', () => {
+    const color = heat({ colors: ['#112233'] }).data.datasets[0].backgroundColor as (ctx: { raw: Cell }) => string;
+    expect(color({ raw: { x: '', y: '', v: 3 } })).toBe('#112233ff');
+  });
+
+  it('sizes a cell from the area the chart has, so it fills the grid', () => {
+    const d = heat().data.datasets[0];
+    const area = { chart: { chartArea: { width: 306, height: 102 } } };
+    expect(d.width(area)).toBe(100);
+    expect(d.height(area)).toBe(49);
+    // Before the first layout there is no area: a cell is still a pixel, not nothing or NaN.
+    expect(d.width({ chart: {} })).toBe(1);
+  });
+
+  it('says the row and the column, and then the value, in a tooltip', () => {
+    const t = heat().options.plugins.tooltip.callbacks;
+    const raw = { x: 'Work', y: 's1', v: 3 };
+    expect(t.title([{ raw }])).toBe('s1 · Work');
+    expect(t.label({ raw })).toBe('3!');
+    expect(t.label({ raw: { x: 'a', y: 'b', v: null } })).toBe('–');
+  });
+
+  it('copes with a chart that has nothing in it', () => {
+    const empty = heat({ chart: { unit: 'number', labels: [], datasets: [] } });
+    expect(empty.data.datasets[0].data).toEqual([]);
+    const flat = heat({ chart: { ...chart(1), datasets: [{ ...chart(1).datasets[0], data: [0, 0, 0] }] } });
+    const color = flat.data.datasets[0].backgroundColor as (ctx: { raw: Cell }) => string;
+    expect(color({ raw: { x: '', y: '', v: 0 } })).toBe(withAlpha(defaultSeriesColor(0, false), 0x26));
+  });
+});

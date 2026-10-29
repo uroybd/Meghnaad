@@ -7,7 +7,7 @@ import type { ChartConfiguration, ChartOptions } from 'chart.js';
 import type { Chart } from './boards';
 import { chartColor, defaultSeriesColor } from './colors';
 
-export type ChartKind = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'radar' | 'polar';
+export type ChartKind = 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'radar' | 'polar' | 'heatmap';
 
 /** A pie, a donut or a polar chart has one series, and its slices are the labels. */
 export const isRound = (kind: ChartKind): boolean => kind === 'pie' || kind === 'donut' || kind === 'polar';
@@ -45,6 +45,7 @@ export function withAlpha(color: string, alpha: number): string {
 }
 
 const JS_TYPE = {
+  heatmap: 'matrix',
   bar: 'bar',
   line: 'line',
   area: 'line',
@@ -54,9 +55,87 @@ const JS_TYPE = {
   polar: 'polarArea',
 } as const;
 
+/** A cell of a heatmap: its column, its row (the series) and what it measures. */
+interface Cell {
+  x: string;
+  y: string;
+  v: number | null;
+}
+
+/**
+ * A heatmap as the matrix plugin draws it: one dataset of cells, a row for each series and a column for each label, a
+ * cell as strong as its value is large (in the colour of the first series). A cell with nothing to measure is faint.
+ */
+function heatmapConfig(input: ChartInput): ChartConfiguration {
+  const { chart, format, theme, dark } = input;
+  const xs = chart.labels.map((l) => l.label);
+  const ys = chart.datasets.map((d) => d.label);
+  const cells: Cell[] = chart.datasets.flatMap((d, row) =>
+    xs.map((x, col) => ({ x, y: ys[row], v: d.data[col] ?? null })),
+  );
+  const values = cells.flatMap((c) => (c.v === null ? [] : [c.v]));
+  const low = Math.min(0, ...values);
+  const high = Math.max(0, ...values);
+  const base = chartColor(input.colors?.[0], dark) ?? defaultSeriesColor(0, dark);
+  const strength = (v: number | null) => (v === null || high === low ? 0 : (v - low) / (high - low));
+  const along =
+    (count: number, area: 'width' | 'height') => (c: { chart: { chartArea?: { width: number; height: number } } }) =>
+      Math.max(1, (c.chart.chartArea?.[area] ?? 0) / Math.max(count, 1) - 2);
+  const axis = (labels: string[]) => ({
+    type: 'category' as const,
+    labels,
+    offset: true,
+    grid: { display: false },
+    ticks: { color: theme.text, autoSkip: true, maxRotation: 0 },
+  });
+  const options: ChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          title: (items) => {
+            const raw = items[0]?.raw as Cell | undefined;
+            return raw ? `${raw.y} · ${raw.x}` : '';
+          },
+          label: (ctx) => format((ctx.raw as Cell).v),
+        },
+      },
+    },
+    scales: { x: axis(xs), y: axis(ys) },
+  };
+  return {
+    type: 'matrix',
+    data: {
+      datasets: [
+        {
+          label: ys.join(', '),
+          data: cells,
+          backgroundColor: (ctx: { raw?: unknown }) => {
+            const v = (ctx.raw as Cell | undefined)?.v ?? null;
+            // From a pale wash to the full colour; a cell with no value is the grid's own line colour.
+            return v === null
+              ? withAlpha(theme.line, 0x66)
+              : withAlpha(base, Math.round(0x26 + strength(v) * (0xff - 0x26)));
+          },
+          borderColor: theme.line,
+          borderWidth: 1,
+          borderRadius: 2,
+          width: along(xs.length, 'width'),
+          height: along(ys.length, 'height'),
+        },
+      ],
+    },
+    options,
+  } as unknown as ChartConfiguration;
+}
+
 /** What Chart.js is given for this chart. */
 export function chartConfig(input: ChartInput): ChartConfiguration {
   const { chart, kind, time, stacked, format, theme, dark } = input;
+  if (kind === 'heatmap') return heatmapConfig(input);
   const round = isRound(kind);
   const many = chart.datasets.length > 1;
   const colorOf = (i: number) => chartColor(input.colors?.[i], dark) ?? defaultSeriesColor(i, dark);

@@ -122,6 +122,11 @@ describe('the grid', () => {
     expect(newSection(b, 'number')).toMatchObject({ id: 'number-2', x: 3, y: 0, w: 3, h: 2 });
     expect(newSection(b, 'line').by).toEqual({ time: { field: 'entry', step: 'week' } });
     expect(newSection(b, 'table').report).toBe('next');
+    // A heatmap is a row for each series and a column for each week.
+    expect(newSection(b, 'heatmap')).toMatchObject({
+      by: { time: { field: 'entry', step: 'week' } },
+      series: [{ label: 'Pending' }, { label: 'Done' }],
+    });
   });
 
   it('copies a section into the first free place, with an id and a title of its own', () => {

@@ -55,7 +55,7 @@ tasks on the phone and syncs straight with your bucket.
   the app's own `settings.json`.
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
 - **Boards.** Pages of your own made of numbers, tables and charts (bars, stacked or side by side, lines, areas, pies,
-  donuts, radar: a sum of estimates by project, what you finish per week, split by outcome), each with its own filter, laid out on a 12-column grid that you drag and resize, and on 4 or 6 columns on a phone (several numbers to a row, resizable there too).
+  donuts, radar, heatmaps: a sum of estimates by project, what you finish per week, split by outcome), each with its own filter, laid out on a 12-column grid that you drag and resize, and on 4 or 6 columns on a phone (several numbers to a row, resizable there too).
   Kept in the app's own `settings.json` ([Boards](docs/using.md#boards)).
 - **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions in a script you edit in Settings,
   kept in your bucket and run on the Worker, or on the phone in the Android app ([Hooks](#hooks)).

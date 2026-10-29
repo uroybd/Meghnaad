@@ -2,6 +2,15 @@ package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -96,6 +105,22 @@ fun labelSkip(count: Int, chars: Int, width: Dp): Int {
     return ((count + room - 1) / room).coerceAtLeast(1)
 }
 
+/**
+ * How strong each cell of a heatmap is (a row for each series, a column for each label): 0 to 1 over the range of the values
+ * (counted from zero), or null where there is nothing to measure (heatmapConfig in boardChart.ts).
+ */
+fun heatStrengths(chart: BoardChart): List<List<Float?>> {
+    val values = chart.datasets.flatMap { it.data }.filterNotNull()
+    val low = minOf(0.0, values.minOrNull() ?: 0.0)
+    val high = maxOf(0.0, values.maxOrNull() ?: 0.0)
+    return chart.datasets.map { d ->
+        chart.labels.indices.map { i -> d.data.getOrNull(i)?.let { v -> if (high == low) 0f else ((v - low) / (high - low)).toFloat() } }
+    }
+}
+
+/** The opacity of a cell of that strength: from a pale wash to the full colour. */
+fun heatAlpha(strength: Float): Float = (0x26 + strength * (0xff - 0x26)) / 255f
+
 /** What a tap on label [i] of series [d] says: the label in full, and the value (with the series' name when there are several). */
 fun tipText(chart: BoardChart, i: Int, d: Int): String {
     val value = formatBoardValue(chart.datasets.getOrNull(d)?.data?.getOrNull(i), chart.unit)
@@ -114,7 +139,7 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
     val stacked = section.stacked == true
     val series = seriesColors(chart, section, dark)
     val round = section.type == "pie" || section.type == "donut" || section.type == "polar"
-    val legend = !round && chart.datasets.size > 1
+    val legend = !round && section.type != "heatmap" && chart.datasets.size > 1
     // A chart in a card that has a size fills what the legend leaves; one without is as tall as it likes.
     val plot = height?.let { (it - if (legend) 28.dp else 0.dp).coerceAtLeast(96.dp) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -124,8 +149,53 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
             "bar" -> if (section.by?.time != null) VerticalBars(chart, series, stacked, plot) else HorizontalBars(chart, series, stacked, plot)
             "line", "area" -> Lines(chart, series, stacked, section.type == "area", plot)
             "radar" -> Radar(chart, series, plot)
+            "heatmap" -> Heatmap(chart, series.firstOrNull() ?: defaultSeriesColor(0, dark), plot)
             else -> Slices(chart, section, dark, plot)
         }
+    }
+}
+
+/**
+ * A heatmap: a row for each series and a column for each label, a cell as strong as its value is large, in the colour of the first series.
+ * Koala Plot has no plot for it, so the grid is laid out here (the one chart that is: the rules for charts allow it for this). A tap on a
+ * cell says its row, its column and its value, as a tap on a bar does.
+ */
+@Composable
+private fun Heatmap(chart: BoardChart, base: Color, plot: Dp?) = BoxWithConstraints {
+    val strengths = heatStrengths(chart)
+    var picked by remember(chart) { mutableStateOf<Pair<Int, Int>?>(null) }
+    val rowChars = minOf(14, chart.datasets.maxOfOrNull { it.label.length } ?: 1)
+    val labelRoom = (rowChars * 7 + 12).dp
+    val rowHeight = plot?.let { ((it - 24.dp) / chart.datasets.size.coerceAtLeast(1)).coerceIn(20.dp, 96.dp) } ?: 30.dp
+    // A column's label is a week's date in full, as far as there is room for it (the skip leaves the room).
+    val chars = widest(chart, 12)
+    val skip = labelSkip(chart.labels.size, chars, maxWidth - labelRoom)
+    val none = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        chart.datasets.forEachIndexed { d, ds ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AxisText(ds.label.take(rowChars), Modifier.width(labelRoom))
+                chart.labels.indices.forEach { i ->
+                    val strength = strengths[d][i]
+                    Box(
+                        Modifier.weight(1f).height(rowHeight).padding(1.dp)
+                            .background(if (strength == null) none else base.copy(alpha = heatAlpha(strength)), RoundedCornerShape(2.dp))
+                            .clickable { picked = if (picked == d to i) null else d to i }
+                            .semantics { contentDescription = tipText(chart, i, d) },
+                    )
+                }
+            }
+        }
+        // The labels of the columns, every skip-th, centred under their cell.
+        Row {
+            Spacer(Modifier.width(labelRoom))
+            chart.labels.indices.forEach { i ->
+                Box(Modifier.weight(1f), Alignment.Center) {
+                    if (i % skip == 0) AxisText(chart.labels[i].label.take(chars), Modifier.wrapContentWidth(Alignment.CenterHorizontally, unbounded = true))
+                }
+            }
+        }
+        picked?.let { (d, i) -> ChartTip(tipText(chart, i, d)) }
     }
 }
 

@@ -30,6 +30,20 @@ class BoardsEditTest {
     }
 
     @Test
+    fun aNewHeatmapIsARowForEachSeriesAndAColumnForEachWeek() {
+        val board = Board("b", "B")
+        val h = newSection(board, "heatmap")
+        assertEquals(By(time = TimeBy("entry", "week")), h.by)
+        assertEquals(listOf("Pending", "Done"), h.series.map { it.label })
+        assertEquals(listOf(6, 5), listOf(h.w, h.h))
+        // Switching a section to a heatmap gives it weeks, and takes away what a heatmap has no use for.
+        val switched = withType(sec("a", type = "bar").copy(by = null, stacked = true), "heatmap")
+        assertEquals(By(time = TimeBy("entry", "week")), switched.by)
+        assertNull(switched.stacked)
+        assertTrue(hasManySeries("heatmap"))
+    }
+
+    @Test
     fun aCopiedSectionTakesTheFirstFreePlaceAndAnIdAndATitleOfItsOwn() {
         val original = Section(id = "bar", title = "Open", x = 0, y = 0, w = 6, h = 5, type = "bar", by = By(field = "project"), series = listOf(Series(label = "a")))
         val copy = copySection(Board("b", "B", sections = listOf(original)), original)

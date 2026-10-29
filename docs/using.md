@@ -384,6 +384,7 @@ label in full and its figure; the labels along an axis are thinned so none is cu
 | **Pie chart**, **Donut chart** | The share of each value in the whole. One series, and its slices are the values; hover a slice for its share |
 | **Radar chart** | The values around a circle, a shape for each series: good for comparing two or three series over a handful of values |
 | **Polar area chart** | A pie whose slices differ in how far they reach, not in their angle |
+| **Heatmap** | A grid: a row for each series and a column for each label (each week, say, or each project), a cell as strong as its value is large. It starts as two rows, what is pending and what is done, by the week the tasks were added; give it your own series to change the rows. Hover or tap a cell for its row, column and value; a cell with nothing to measure is faint. It does not stack |
 | **Table** | Any report (`next`, `list`, one of yours) over the section's filter, drawn as on the Tasks page |
 
 - **The filter** is the same one the Tasks page takes (Tab completes). A board can have a filter of its own, which every section

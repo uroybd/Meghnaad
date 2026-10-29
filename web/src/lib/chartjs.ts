@@ -20,6 +20,7 @@ import {
   RadialLinearScale,
   Tooltip,
 } from 'chart.js';
+import { MatrixController, MatrixElement } from 'chartjs-chart-matrix';
 
 Chart.register(
   BarController,
@@ -28,6 +29,7 @@ Chart.register(
   DoughnutController,
   RadarController,
   PolarAreaController,
+  MatrixController,
   CategoryScale,
   LinearScale,
   RadialLinearScale,
@@ -35,6 +37,7 @@ Chart.register(
   LineElement,
   PointElement,
   ArcElement,
+  MatrixElement,
   Filler,
   Legend,
   Tooltip,

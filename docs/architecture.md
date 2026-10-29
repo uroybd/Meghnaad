@@ -414,8 +414,9 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
   report, hands the text to `board_aggregate`, and sorts and trims the groups. Before it runs a filter it writes the board's date ranges into it (`board_substitute`; the dates typed above the board take the place of the board's own). `BoardView` is the grid and the drag, resize and
   keyboard handling (each step is worked out from where the drag began, on the layout as it was then, by `board_place`, or on a narrow screen by `board_resize_flow`, which resizes in the phone's columns; the sections are drawn where `board_flow` puts them there); a section's settings are in `Drawer`, a modal panel that slides in from the side;
   `BoardChart` is [Chart.js](https://www.chartjs.org/) on a canvas at the size of its box, loaded as a chunk of its own (`chartjs.ts`,
-  only the controllers and scales the boards use; about 66 KB compressed, fetched when a board first draws a chart), so bar, line,
-  area, pie, donut, radar and polar charts are one library's work, and only the table is the app's own. What it is given,
+  only the controllers and scales the boards use, and the matrix plugin that makes a heatmap; about 67 KB compressed, fetched when a board first draws a chart), so bar, line,
+  area, pie, donut, radar, polar and heatmap charts are one library's work, and only the table is the app's own. (On Android a heatmap is
+  the one chart the app lays out itself, as Koala Plot has none, and the widget's `BoardRenderer` draws it on its canvas.) What it is given,
   `chartConfig` in `boardChart.ts`, is a change of names and colours from the engine's `Chart` (labels, and a dataset of values for
   each series), which already has Chart.js's shape on purpose: it is the contract any front end draws from, mapping it to its own
   chart library. Nothing reads the replica.

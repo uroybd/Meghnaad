@@ -111,4 +111,28 @@ class BoardChartsTest {
         val two = one.copy(datasets = listOf(Dataset("Succeeded", listOf(1.0)), Dataset("Failed", listOf(2.0))))
         assertEquals("2026-10-12 · Failed: 2", tipText(two, 0, 1))
     }
+
+    private val grid = BoardChart(
+        "number",
+        listOf(ChartLabel("a", "Home"), ChartLabel("b", "Work"), ChartLabel("c", "(none)")),
+        listOf(Dataset("s0", listOf(1.0, 3.0, null)), Dataset("s1", listOf(2.0, 3.0, null))),
+    )
+
+    @Test
+    fun aHeatmapCellIsAsStrongAsItsValueIsLargeOverTheRangeFromZero() {
+        val strengths = heatStrengths(grid)
+        // A row for each series and a column for each label; the largest value is full, and a gap stays a gap.
+        assertEquals(listOf(listOf(1f / 3f, 1f, null), listOf(2f / 3f, 1f, null)), strengths)
+        assertEquals(listOf(listOf(0f, 0f), listOf(0f, 0f)), heatStrengths(BoardChart("number", grid.labels.take(2), listOf(Dataset("a", listOf(0.0, 0.0)), Dataset("b", listOf(0.0, 0.0))))))
+        assertEquals(emptyList(), heatStrengths(BoardChart()))
+        // A value short of its column's label has nothing to measure.
+        assertEquals(listOf(listOf(1f, null, null)), heatStrengths(grid.copy(datasets = listOf(Dataset("s", listOf(5.0))))))
+    }
+
+    @Test
+    fun aHeatmapCellGoesFromAPaleWashToTheFullColour() {
+        assertEquals(0x26 / 255f, heatAlpha(0f))
+        assertEquals(1f, heatAlpha(1f))
+        assertTrue(heatAlpha(0.5f) > heatAlpha(0.25f))
+    }
 }

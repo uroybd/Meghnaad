@@ -88,6 +88,8 @@ class BoardRendererTest {
             "donut" to (one to section("donut")),
             "polar" to (one to section("polar")),
             "radar" to (two to section("radar")),
+            "heatmap" to (two to section("heatmap")),
+            "heatmap-time" to (time to section("heatmap", by = timeBy)),
         )
         for ((name, pair) in cases) {
             for (dark in listOf(false, true)) {

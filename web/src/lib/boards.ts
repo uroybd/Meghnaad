@@ -17,7 +17,8 @@ export const ROW_PX = 56;
 /** The gap between sections, in pixels. */
 export const GAP_PX = 12;
 
-export type SectionType = 'number' | 'table' | 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'radar' | 'polar';
+export type SectionType =
+  'number' | 'table' | 'bar' | 'line' | 'area' | 'pie' | 'donut' | 'radar' | 'polar' | 'heatmap';
 export type Fn = 'count' | 'sum' | 'avg' | 'min' | 'max';
 export type Step = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
@@ -184,6 +185,7 @@ export const SECTION_TYPES: { id: SectionType; label: string }[] = [
   { id: 'donut', label: 'Donut chart' },
   { id: 'radar', label: 'Radar chart' },
   { id: 'polar', label: 'Polar area chart' },
+  { id: 'heatmap', label: 'Heatmap' },
   { id: 'table', label: 'Table' },
 ];
 
@@ -318,6 +320,7 @@ const DEFAULT_SIZE: Record<SectionType, { w: number; h: number }> = {
   donut: { w: 4, h: 5 },
   radar: { w: 4, h: 5 },
   polar: { w: 4, h: 5 },
+  heatmap: { w: 6, h: 5 },
   table: { w: 12, h: 6 },
 };
 
@@ -336,7 +339,14 @@ export function newSection(board: Board, type: SectionType): Section {
     measure: { fn: 'count' },
   };
   if (type === 'line' || type === 'area') base.by = { time: { field: 'entry', step: 'week' } };
-  else if (type !== 'number' && type !== 'table') base.by = { field: 'project' };
+  else if (type === 'heatmap') {
+    // A row for each series, a column for each week: what was added, and what of it is done.
+    base.by = { time: { field: 'entry', step: 'week' } };
+    base.series = [
+      { label: 'Pending', filter: 'status:pending' },
+      { label: 'Done', filter: 'status:completed' },
+    ];
+  } else if (type !== 'number' && type !== 'table') base.by = { field: 'project' };
   if (type === 'table') base.report = 'next';
   return base;
 }

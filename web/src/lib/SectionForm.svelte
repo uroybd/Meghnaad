@@ -55,10 +55,14 @@
   function pickType(type: SectionType) {
     const patch: Partial<Section> = { type };
     if (isChartType(type) && !section.by) {
-      patch.by = type === 'line' || type === 'area' ? { time: { field: 'entry', step: 'week' } } : { field: 'project' };
+      patch.by =
+        type === 'line' || type === 'area' || type === 'heatmap'
+          ? { time: { field: 'entry', step: 'week' } }
+          : { field: 'project' };
     }
-    // A pie has one series, and none stacks.
+    // A pie has one series, and none stacks; neither does a heatmap, which is a row for each series.
     if (isRoundType(type)) Object.assign(patch, { series: undefined, stacked: undefined });
+    if (type === 'heatmap') patch.stacked = undefined;
     if (type === 'table' && !section.report) patch.report = 'next';
     set(patch);
   }
@@ -296,7 +300,7 @@
       {/each}
       <div class="row-series">
         <button onclick={addSeries} disabled={series.length >= MAX_SERIES}><Plus size={14} /> Add series</button>
-        {#if series.length > 1 || section.stacked}
+        {#if (series.length > 1 || section.stacked) && section.type !== 'heatmap'}
           <label class="check">
             <input
               type="checkbox"

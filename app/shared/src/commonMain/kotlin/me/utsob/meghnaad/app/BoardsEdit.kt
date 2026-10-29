@@ -19,6 +19,7 @@ val SECTION_TYPES = listOf(
     SectionType("donut", "Donut chart"),
     SectionType("radar", "Radar chart"),
     SectionType("polar", "Polar area chart"),
+    SectionType("heatmap", "Heatmap"),
     SectionType("table", "Table"),
 )
 
@@ -101,17 +102,19 @@ fun copyBoard(board: Board, boards: List<Board>): Board {
 /** The size, in the grid's columns and rows, a new section of each type has to begin with (as on the web). */
 private val DEFAULT_SIZE = mapOf(
     "number" to (3 to 2), "bar" to (6 to 5), "line" to (6 to 5), "area" to (6 to 5),
-    "pie" to (4 to 5), "donut" to (4 to 5), "radar" to (4 to 5), "polar" to (4 to 5), "table" to (12 to 6),
+    "pie" to (4 to 5), "donut" to (4 to 5), "radar" to (4 to 5), "polar" to (4 to 5), "heatmap" to (6 to 5), "table" to (12 to 6),
 )
 
 /** A new section of this type, in the first free place. */
 fun newSection(board: Board, type: String): Section {
     val label = SECTION_TYPES.firstOrNull { it.id == type }?.label ?: type
     val by = when {
-        type == "line" || type == "area" -> By(time = TimeBy("entry", "week"))
+        type == "line" || type == "area" || type == "heatmap" -> By(time = TimeBy("entry", "week"))
         isChartType(type) -> By(field = "project")
         else -> null
     }
+    // A heatmap is a row for each series and a column for each week: what was added, and what of it is done.
+    val series = if (type == "heatmap") listOf(Series("Pending", filter = "status:pending"), Series("Done", filter = "status:completed")) else emptyList()
     val (w, h) = DEFAULT_SIZE.getValue(type)
     val at = firstFree(board.sections, w, h)
     return Section(
@@ -124,6 +127,7 @@ fun newSection(board: Board, type: String): Section {
         type = type,
         report = if (type == "table") "next" else null,
         by = by,
+        series = series,
     )
 }
 
@@ -131,10 +135,12 @@ fun newSection(board: Board, type: String): Section {
 fun withType(section: Section, type: String): Section {
     var next = section.copy(type = type)
     if (isChartType(type) && next.by == null) {
-        next = next.copy(by = if (type == "line" || type == "area") By(time = TimeBy("entry", "week")) else By(field = "project"))
+        next = next.copy(by = if (type == "line" || type == "area" || type == "heatmap") By(time = TimeBy("entry", "week")) else By(field = "project"))
     }
     if (type == "table" && next.report == null) next = next.copy(report = "next")
+    // A pie has one series, and none stacks; neither does a heatmap, which is a row for each series.
     if (isRoundType(type)) next = next.copy(series = emptyList(), stacked = null)
+    if (type == "heatmap") next = next.copy(stacked = null)
     return next
 }
 
