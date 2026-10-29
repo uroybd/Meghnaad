@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -125,11 +126,37 @@ fun heatStrengths(chart: BoardChart): List<List<Float?>> {
 /** The opacity of a cell of that strength: from a pale wash to the full colour. */
 fun heatAlpha(strength: Float): Float = (0x26 + strength * (0xff - 0x26)) / 255f
 
-/** What a tap on label [i] of series [d] says: the label in full, and the value (with the series' name when there are several). */
+/** A heatmap with no rows has the series for its rows, each in its own colour (unless they are stacked into one row). */
+fun heatRowsAreSeries(section: Section) = section.rows == null && section.stacked != true
+
+/**
+ * The colours grid [grid] of a heatmap is drawn in, as [heatCellColor] reads them: the series' colours, all of them (a row for each
+ * series, or stacked cells made of them), or, for a grid of one series of several, that one's.
+ */
+fun heatColors(section: Section, grids: List<BoardChart>, grid: Int, dark: Boolean): List<Color> {
+    val every = (0 until maxOf(section.series.size, grids.maxOfOrNull { it.datasets.size } ?: 1, 1)).map { k ->
+        chartColor(section.series.getOrNull(k)?.color, dark) ?: defaultSeriesColor(k, dark)
+    }
+    return if (section.rows != null && section.stacked != true) listOf(every.getOrElse(grid) { defaultSeriesColor(grid, dark) }) else every
+}
+
+/**
+ * The colour of a heatmap's cell: with a row for each series, the row's series'; a stacked cell is the colours of the series it is
+ * made of, in the proportions of what each had; any other grid is one series' ([colors] are the series', in order).
+ */
+fun heatCellColor(chart: BoardChart, row: Int, col: Int, colors: List<Color>, rowsAreSeries: Boolean): Color {
+    val parts = chart.datasets.getOrNull(row)?.parts.orEmpty()
+    if (parts.isNotEmpty()) return blendColors(parts.indices.map { colors.getOrElse(it) { Color.Gray } }, parts.map { it.data.getOrNull(col) ?: 0.0 })
+    return colors.getOrNull(if (rowsAreSeries) row else 0) ?: Color.Gray
+}
+
+/** What a tap on label [i] of series [d] says: the label in full, and the value (with the series' name when there are several, and what each of a stacked cell's had). */
 fun tipText(chart: BoardChart, i: Int, d: Int): String {
-    val value = formatBoardValue(chart.datasets.getOrNull(d)?.data?.getOrNull(i), chart.unit)
+    val ds = chart.datasets.getOrNull(d)
+    val value = formatBoardValue(ds?.data?.getOrNull(i), chart.unit)
     val series = if (chart.datasets.size > 1) "${chart.datasets[d].label}: " else ""
-    return "${chart.labels[i].label} · $series$value"
+    val each = ds?.parts.orEmpty().takeIf { it.isNotEmpty() }?.joinToString(", ", " (", ")") { "${it.label} ${formatBoardValue(it.data.getOrNull(i), chart.unit)}" } ?: ""
+    return "${chart.labels[i].label} · $series$value$each"
 }
 
 @OptIn(ExperimentalKoalaPlotApi::class, ExperimentalLayoutApi::class)
@@ -146,7 +173,7 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
         Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             grids.forEachIndexed { i, g ->
                 if (grids.size > 1) Dim(g.label, size = 12)
-                Heatmap(g, chartColor(section.series.getOrNull(i)?.color, dark) ?: defaultSeriesColor(i, dark), each)
+                Heatmap(g, heatColors(section, grids, i, dark), heatRowsAreSeries(section), each)
             }
         }
         return
@@ -164,37 +191,42 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
             "bar" -> if (section.by?.time != null) VerticalBars(chart, series, stacked, plot) else HorizontalBars(chart, series, stacked, plot, labelColors)
             "line", "area" -> Lines(chart, series, stacked, section.type == "area", plot)
             "radar" -> Radar(chart, series, plot)
-            "heatmap" -> Heatmap(chart, series.firstOrNull() ?: defaultSeriesColor(0, dark), plot)
+            "heatmap" -> Heatmap(chart, series, section.rows == null && section.stacked != true, plot)
             else -> Slices(chart, section, dark, plot, labelColors)
         }
     }
 }
 
 /**
- * A heatmap: a row for each series and a column for each label, a cell as strong as its value is large, in the colour of the first series.
- * Koala Plot has no plot for it, so the grid is laid out here (the one chart that is: the rules for charts allow it for this). A tap on a
- * cell says its row, its column and its value, as a tap on a bar does.
+ * A heatmap: a column for each label and a row for each row of the chart, a cell as strong as its value is large, a square, in the colour of
+ * its series ([heatCellColor]), the whole of it in the middle of the card. Koala Plot has no plot for it, so the grid is laid out here (the
+ * one chart that is: the rules for charts allow it for this). A tap on a cell says its row, its column and its value, as a tap on a bar does.
  */
 @Composable
-private fun Heatmap(chart: BoardChart, base: Color, plot: Dp?) = BoxWithConstraints {
+private fun Heatmap(chart: BoardChart, colors: List<Color>, rowsAreSeries: Boolean, plot: Dp?) = BoxWithConstraints {
     val strengths = heatStrengths(chart)
     var picked by remember(chart) { mutableStateOf<Pair<Int, Int>?>(null) }
     val rowChars = minOf(14, chart.datasets.maxOfOrNull { it.label.length } ?: 1)
     val labelRoom = (rowChars * 7 + 12).dp
-    val rowHeight = plot?.let { ((it - 24.dp) / chart.datasets.size.coerceAtLeast(1)).coerceIn(20.dp, 96.dp) } ?: 30.dp
+    val rows = chart.datasets.size.coerceAtLeast(1)
+    val columns = chart.labels.size.coerceAtLeast(1)
+    // The squares are as large as the room across and down allows.
+    val across = (maxWidth - labelRoom) / columns
+    val down = plot?.let { (it - 24.dp) / rows } ?: across
+    val side = minOf(across, down, 44.dp).coerceAtLeast(8.dp)
     // A column's label is a week's date in full, as far as there is room for it (the skip leaves the room).
     val chars = widest(chart, 12)
-    val skip = labelSkip(chart.labels.size, chars, maxWidth - labelRoom)
+    val skip = labelSkip(chart.labels.size, chars, side * columns)
     val none = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.fillMaxWidth().heightIn(min = plot ?: 0.dp), verticalArrangement = Arrangement.Center) {
         chart.datasets.forEachIndexed { d, ds ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AxisText(ds.label.take(rowChars), Modifier.width(labelRoom))
                 chart.labels.indices.forEach { i ->
                     val strength = strengths[d][i]
                     Box(
-                        Modifier.weight(1f).height(rowHeight).padding(1.dp)
-                            .background(if (strength == null) none else base.copy(alpha = heatAlpha(strength)), RoundedCornerShape(2.dp))
+                        Modifier.size(side).padding(1.dp)
+                            .background(if (strength == null) none else heatCellColor(chart, d, i, colors, rowsAreSeries).copy(alpha = heatAlpha(strength)), RoundedCornerShape(2.dp))
                             .clickable { picked = if (picked == d to i) null else d to i }
                             .semantics { contentDescription = tipText(chart, i, d) },
                     )
@@ -205,7 +237,7 @@ private fun Heatmap(chart: BoardChart, base: Color, plot: Dp?) = BoxWithConstrai
         Row {
             Spacer(Modifier.width(labelRoom))
             chart.labels.indices.forEach { i ->
-                Box(Modifier.weight(1f), Alignment.Center) {
+                Box(Modifier.width(side), Alignment.Center) {
                     if (i % skip == 0) AxisText(chart.labels[i].label.take(chars), Modifier.wrapContentWidth(Alignment.CenterHorizontally, unbounded = true))
                 }
             }

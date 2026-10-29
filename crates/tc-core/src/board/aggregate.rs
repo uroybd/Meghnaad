@@ -527,6 +527,17 @@ pub struct Dataset {
     /// The measure over all the series' tasks, whatever the labels.
     pub total: Option<f64>,
     pub tasks: usize,
+    /// Stacked into one in a heatmap: what each series had at each label, in the series' order (`data` is their sum), so a
+    /// cell can be drawn in the colours of the series it is made of and say what each had. Empty everywhere else.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Share>,
+}
+
+/// One series' share of a stacked dataset: its label and its value at each label of the axis.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Share {
+    pub label: String,
+    pub data: Vec<Option<f64>>,
 }
 
 /// What a chart draws, in Chart.js's shape: the labels along the axis and a dataset of values for each series.
@@ -742,6 +753,7 @@ pub fn chart(series: &[SeriesInput], by: Option<&By>, ctx: &Ctx) -> Result<Chart
                 counts: labels.iter().map(|l| at(l).map_or(0, |g| g.count)).collect(),
                 total: a.total,
                 tasks: a.tasks,
+                parts: Vec::new(),
             }
         })
         .collect();

@@ -125,6 +125,17 @@ export function defaultSeriesColor(i: number, dark: boolean): string {
 /** The default colour's name, for the picker to say which one it is. */
 export const defaultSeriesName = (i: number): string => DEFAULT_SERIES[i % DEFAULT_SERIES.length];
 
+/** The colours mixed in the proportions of their weights; the first when none has any weight. */
+export function blendColors(colors: string[], weights: number[]): string {
+  const total = weights.reduce((sum, w) => sum + Math.max(0, w), 0);
+  if (!colors.length) return '#808080';
+  if (total <= 0) return colors[0];
+  const mixed = [0, 1, 2].map((k) =>
+    colors.reduce((sum, c, i) => sum + toRgb(c)[k] * (Math.max(0, weights[i] ?? 0) / total), 0),
+  );
+  return toHex(mixed as RGB);
+}
+
 const mix = (a: string, b: string, weightOfA: number): string => {
   const [x, y] = [toRgb(a), toRgb(b)];
   return toHex([0, 1, 2].map((k) => x[k] * weightOfA + y[k] * (1 - weightOfA)) as RGB);

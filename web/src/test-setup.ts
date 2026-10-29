@@ -17,6 +17,13 @@ try {
   throw new Error('The engine is not built, and the tests need its helpers: run `npm run build:engine`', { cause: e });
 }
 
+// jsdom has no ResizeObserver, which Svelte's size bindings (`bind:clientWidth`) use: it never reports a size here.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 vi.mock('./engine/client.svelte', () => ({
   engineAvailable: () => true,
   engine: {

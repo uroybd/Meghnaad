@@ -176,31 +176,32 @@ describe('a colour with an opacity', () => {
 
 describe('a heatmap for the matrix plugin', () => {
   const heat = (extra: Partial<ChartInput> = {}) => cfg(input('heatmap', extra));
-  type Cell = { x: string; y: string; v: number | null };
+  type Cell = { x: string; y: string; v: number | null; color: string; parts?: { label: string; v: number | null }[] };
+  const base = defaultSeriesColor(0, false);
+  const colorOfCell = (c: ReturnType<typeof heat>) =>
+    c.data.datasets[0].backgroundColor as (ctx: { raw: Cell }) => string;
 
-  it('is one dataset of cells: a column for each label and a row for each series', () => {
+  it('is one dataset of cells: a column for each label and a row for each row of the chart', () => {
     const c = heat();
     expect(c.type).toBe('matrix');
     expect(c.data.datasets).toHaveLength(1);
     const cells = c.data.datasets[0].data as Cell[];
     expect(cells).toHaveLength(6);
-    expect(cells.slice(0, 3)).toEqual([
+    expect(cells.slice(0, 3).map(({ x, y, v }) => ({ x, y, v }))).toEqual([
       { x: 'Home', y: 's0', v: 1 },
       { x: 'Work', y: 's0', v: 3 },
       { x: '(none)', y: 's0', v: null },
     ]);
-    expect(cells[3]).toEqual({ x: 'Home', y: 's1', v: 2 });
-    // A vertical category axis starts at the top, so the first series is the top row.
+    expect(cells[3]).toMatchObject({ x: 'Home', y: 's1', v: 2 });
     expect(c.options.scales.x).toMatchObject({ type: 'category', labels: ['Home', 'Work', '(none)'] });
-    expect(c.options.scales.y).toMatchObject({ type: 'category', labels: ['s0', 's1'] });
-    expect(c.options.scales.y.reverse).toBeUndefined();
+    // A vertical category axis starts at the bottom, so the rows are listed last first for the first to be the top row.
+    expect(c.options.scales.y).toMatchObject({ type: 'category', labels: ['s1', 's0'] });
     expect(c.options.plugins.legend.display).toBe(false);
   });
 
   it('is stronger where the value is larger, and faint where there is none', () => {
-    const color = heat().data.datasets[0].backgroundColor as (ctx: { raw: Cell }) => string;
-    const base = defaultSeriesColor(0, false);
-    const at = (v: number | null) => color({ raw: { x: '', y: '', v } });
+    const color = colorOfCell(heat());
+    const at = (v: number | null) => color({ raw: { x: '', y: '', v, color: base } });
     // The largest value is the colour itself, the smallest a wash of it, and nothing is the grid's own line.
     expect(at(3)).toBe(withAlpha(base, 255));
     expect(at(0)).toBe(withAlpha(base, 0x26));
@@ -209,32 +210,70 @@ describe('a heatmap for the matrix plugin', () => {
   });
 
   it('takes the colour of the first series when it has one', () => {
-    const color = heat({ colors: ['#112233'] }).data.datasets[0].backgroundColor as (ctx: { raw: Cell }) => string;
-    expect(color({ raw: { x: '', y: '', v: 3 } })).toBe('#112233ff');
+    const cells = heat({ colors: ['#112233'] }).data.datasets[0].data as Cell[];
+    expect(new Set(cells.map((c) => c.color))).toEqual(new Set(['#112233']));
   });
 
-  it('sizes a cell from the area the chart has, so it fills the grid', () => {
+  it('has each row in its series’ colour when the rows are the series', () => {
+    const cells = heat({ colors: ['#112233', '#aabbcc'], rowsAreSeries: true }).data.datasets[0].data as Cell[];
+    expect(cells.filter((c) => c.y === 's0').every((c) => c.color === '#112233')).toBe(true);
+    expect(cells.filter((c) => c.y === 's1').every((c) => c.color === '#aabbcc')).toBe(true);
+  });
+
+  it('draws a stacked cell in the colours of its series in the proportions of what each had, and says what each had', () => {
+    const stacked = {
+      ...chart(1),
+      datasets: [
+        {
+          ...chart(1).datasets[0],
+          data: [4, 2, null],
+          parts: [
+            { label: 'Done', data: [3, 0, null] },
+            { label: 'Failed', data: [1, 2, null] },
+          ],
+        },
+      ],
+    };
+    const c = heat({ chart: stacked, colors: ['#ff0000', '#0000ff'] });
+    const cells = c.data.datasets[0].data as Cell[];
+    // Three parts red to one blue; and only blue.
+    expect(cells[0].color).toBe('#bf0040');
+    expect(cells[1].color).toBe('#0000ff');
+    expect(cells[0].parts).toEqual([
+      { label: 'Done', v: 3 },
+      { label: 'Failed', v: 1 },
+    ]);
+    const t = c.options.plugins.tooltip.callbacks;
+    expect(t.label({ raw: cells[0] })).toEqual(['Total 4!', 'Done: 3!', 'Failed: 1!']);
+    // Without parts it is the one value.
+    expect(t.label({ raw: { x: 'a', y: 'b', v: 3 } })).toBe('3!');
+  });
+
+  it('sizes a cell as a square, as large as the area the chart has allows for its rows and columns', () => {
     const d = heat().data.datasets[0];
+    // Three columns across 306 and two rows down 102: the rows are the narrower way.
     const area = { chart: { chartArea: { width: 306, height: 102 } } };
-    expect(d.width(area)).toBe(100);
+    expect(d.width(area)).toBe(49);
     expect(d.height(area)).toBe(49);
     // Before the first layout there is no area: a cell is still a pixel, not nothing or NaN.
     expect(d.width({ chart: {} })).toBe(1);
   });
 
-  it('says the row and the column, and then the value, in a tooltip', () => {
-    const t = heat().options.plugins.tooltip.callbacks;
+  it('says the row and the column, and then the value, in a tooltip of the page’s own', () => {
+    const o = heat().options.plugins.tooltip;
+    // Not drawn on the canvas, where a short heatmap has no room for it: an element of the page.
+    expect(o.enabled).toBe(false);
+    expect(typeof o.external).toBe('function');
     const raw = { x: 'Work', y: 's1', v: 3 };
-    expect(t.title([{ raw }])).toBe('s1 · Work');
-    expect(t.label({ raw })).toBe('3!');
-    expect(t.label({ raw: { x: 'a', y: 'b', v: null } })).toBe('–');
+    expect(o.callbacks.title([{ raw }])).toBe('s1 · Work');
+    expect(o.callbacks.label({ raw: { x: 'a', y: 'b', v: null } })).toBe('–');
   });
 
   it('copes with a chart that has nothing in it', () => {
     const empty = heat({ chart: { unit: 'number', labels: [], datasets: [] } });
     expect(empty.data.datasets[0].data).toEqual([]);
     const flat = heat({ chart: { ...chart(1), datasets: [{ ...chart(1).datasets[0], data: [0, 0, 0] }] } });
-    const color = flat.data.datasets[0].backgroundColor as (ctx: { raw: Cell }) => string;
-    expect(color({ raw: { x: '', y: '', v: 0 } })).toBe(withAlpha(defaultSeriesColor(0, false), 0x26));
+    const cells = flat.data.datasets[0].data as Cell[];
+    expect(colorOfCell(flat)({ raw: cells[0] })).toBe(withAlpha(defaultSeriesColor(0, false), 0x26));
   });
 });

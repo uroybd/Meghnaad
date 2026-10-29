@@ -29,6 +29,12 @@
   /** A heatmap with rows: a grid for each series, the columns the same in each. */
   const grids = $derived(data?.kind === 'chart' && data.grids ? orderGrids(data.grids, section, data.limit) : null);
   const chart = $derived(grids?.[0] ?? (data?.kind === 'chart' ? orderChart(data.chart, section, data.limit) : null));
+  /**
+   * The colours a heatmap's grid is drawn in: with rows, a grid is one series' (all of them, when they are stacked into one); with no
+   * rows each row is a series'.
+   */
+  const heatColors = (grid: number): (string | undefined)[] =>
+    section.rows && !section.stacked ? [section.series?.[grid]?.color] : (section.series?.map((x) => x.color) ?? []);
   const unit = $derived(answer?.unit ?? chart?.unit ?? 'number');
   const fmt = (v: number | null) => formatValue(v, unit, compactDuration);
   const total = $derived(answer ? fmt(answer.total) : '');
@@ -89,7 +95,8 @@
                   chart={g}
                   kind="heatmap"
                   time={!!section.by?.time}
-                  colors={[section.series?.[i]?.color]}
+                  colors={heatColors(i)}
+                  rowsAreSeries={!section.rows && !section.stacked}
                   format={fmt}
                   summary={describeChart(g.label || section.title, g, fmt)}
                 />

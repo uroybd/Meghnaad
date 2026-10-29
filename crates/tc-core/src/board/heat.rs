@@ -6,7 +6,7 @@
 //! The numbers are `aggregate`'s: the tasks of each series are cut into the rows, each row is a series of the chart `chart`
 //! lays on one axis (so the columns are the same in every row, whatever the tasks), and what comes back is put in grids.
 
-use super::aggregate::{chart, parse_stamp, read_tasks, text_of, By, Ctx, Dataset, Label, SeriesInput, Unit};
+use super::aggregate::{chart, parse_stamp, read_tasks, text_of, By, Ctx, Dataset, Label, SeriesInput, Share, Unit};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -128,7 +128,18 @@ fn row_keys(task: &Value, rows: &Rows, ctx: &Ctx) -> Result<Vec<String>, String>
 }
 
 /// Add `other`'s cells to `row`'s: a cell with nothing in either has nothing, as in a stacked chart.
-fn add_into(row: &mut Dataset, other: &Dataset) {
+fn add_into(row: &mut Dataset, first: &str, other: &Dataset, other_label: &str) {
+    // What each series had is kept beside the sum, for a cell to be drawn in their colours and to say what each had.
+    if row.parts.is_empty() {
+        row.parts = vec![Share {
+            label: first.to_owned(),
+            data: row.data.clone(),
+        }];
+    }
+    row.parts.push(Share {
+        label: other_label.to_owned(),
+        data: other.data.clone(),
+    });
     let sum = |a: Option<f64>, b: Option<f64>| match (a, b) {
         (None, None) => None,
         (a, b) => Some(a.unwrap_or(0.0) + b.unwrap_or(0.0)),
@@ -167,9 +178,10 @@ pub fn heat(
         let mut datasets = laid.datasets;
         if stacked && datasets.len() > 1 {
             let mut sum = datasets.remove(0);
+            let first = sum.label.clone();
             for d in &datasets {
-                sum.label = format!("{} + {}", sum.label, d.label);
-                add_into(&mut sum, d);
+                sum.label = format!("{} / {}", sum.label, d.label);
+                add_into(&mut sum, &first, d, &d.label);
             }
             datasets = vec![sum];
         }
@@ -252,10 +264,11 @@ pub fn heat(
     }
     if stacked && grids.len() > 1 {
         let mut sum = grids.remove(0);
+        let first = sum.label.clone();
         for g in &grids {
-            sum.label = format!("{} + {}", sum.label, g.label);
+            sum.label = format!("{} / {}", sum.label, g.label);
             for (row, other) in sum.datasets.iter_mut().zip(&g.datasets) {
-                add_into(row, other);
+                add_into(row, &first, other, &g.label);
             }
         }
         grids = vec![sum];
@@ -420,10 +433,25 @@ mod tests {
         assert_eq!(apart[0].labels, apart[1].labels);
         let one = heat(&two, &b, &r, true, &ctx(true)).unwrap();
         assert_eq!(one.len(), 1);
-        assert_eq!(one[0].label, "Done + Failed");
+        assert_eq!(one[0].label, "Done / Failed");
         assert_eq!(one[0].datasets[0].data, [Some(3.0), Some(1.0)]);
         assert_eq!(one[0].datasets[1].data, [Some(2.0), Some(0.0)]);
         assert_eq!(one[0].datasets[0].counts, [3, 1]);
+        // What each had is kept, in the series' order, for the colours of the cell.
+        assert_eq!(
+            one[0].datasets[0].parts,
+            [
+                Share {
+                    label: "Done".into(),
+                    data: vec![Some(2.0), Some(1.0)]
+                },
+                Share {
+                    label: "Failed".into(),
+                    data: vec![Some(1.0), Some(0.0)]
+                },
+            ]
+        );
+        assert!(apart[0].datasets[0].parts.is_empty());
     }
 
     #[test]
@@ -445,9 +473,22 @@ mod tests {
         assert_eq!(piled.len(), 1);
         assert_eq!(
             grid_of(&piled[0]),
-            [("Done + Failed".to_owned(), vec![Some(5.0), Some(1.0)])]
+            [("Done / Failed".to_owned(), vec![Some(5.0), Some(1.0)])]
         );
         assert_eq!(piled[0].datasets[0].counts, [5, 1]);
+        assert_eq!(
+            piled[0].datasets[0].parts,
+            [
+                Share {
+                    label: "Done".into(),
+                    data: vec![Some(3.0), Some(1.0)]
+                },
+                Share {
+                    label: "Failed".into(),
+                    data: vec![Some(2.0), Some(0.0)]
+                },
+            ]
+        );
         // One series stacked is itself.
         let one = super::heat(&two[..1], &b, None, true, &ctx(true)).unwrap();
         assert_eq!(one[0].datasets.len(), 1);

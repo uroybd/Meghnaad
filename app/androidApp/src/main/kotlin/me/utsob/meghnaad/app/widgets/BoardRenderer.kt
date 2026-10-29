@@ -16,6 +16,9 @@ import me.utsob.meghnaad.app.heatStrengths
 import me.utsob.meghnaad.app.pieSweeps
 import me.utsob.meghnaad.app.seriesColors
 import me.utsob.meghnaad.app.chartColor
+import me.utsob.meghnaad.app.heatCellColor
+import me.utsob.meghnaad.app.heatRowsAreSeries
+import me.utsob.meghnaad.app.heatColors
 import me.utsob.meghnaad.app.defaultSeriesColor
 import me.utsob.meghnaad.app.stackedValues
 import kotlin.math.cos
@@ -73,8 +76,7 @@ object BoardRenderer {
             grids.forEachIndexed { i, g ->
                 val at = i * each
                 if (caption > 0f) canvas.drawText(clip(g.label, text, width - 8f), 4f, at + text.textSize, text)
-                val color = (chartColor(section.series.getOrNull(i)?.color, palette.dark) ?: defaultSeriesColor(i, palette.dark)).toArgb()
-                heatmap(canvas, cut(g), color, RectF(0f, at + caption, width.toFloat(), at + each - 4f), text, palette)
+                heatmap(canvas, cut(g), heatColors(section, grids, i, palette.dark), heatRowsAreSeries(section), RectF(0f, at + caption, width.toFloat(), at + each - 4f), text, palette)
             }
             return bitmap
         }
@@ -86,24 +88,27 @@ object BoardRenderer {
             "bar" -> if (section.by?.time != null) verticalBars(canvas, shown, colors, stacked, area, text, palette) else horizontalBars(canvas, shown, colors, stacked, area, text, palette, labelColors)
             "line", "area" -> lines(canvas, shown, colors, stacked, section.type == "area", area, text, palette)
             "radar" -> radar(canvas, shown, colors, area, text, palette)
-            "heatmap" -> heatmap(canvas, shown, colors.firstOrNull() ?: palette.dim, area, text, palette)
+            "heatmap" -> heatmap(canvas, shown, seriesColors(shown, section, palette.dark), heatRowsAreSeries(section), area, text, palette)
             else -> slices(canvas, shown, palette, area, text, donut = section.type == "donut", labelColors = labelColors)
         }
         return bitmap
     }
 
     /**
-     * A heatmap: a row for each series, named at the left, and a column for each label, a cell as strong as its value is large, in the
-     * colour of the first series (the app draws it the same way, BoardCharts.kt).
+     * A heatmap: a column for each label and a row for each row of the chart (named at the left), a cell as strong as its value is large, a
+     * square, in the colour of its series ([heatCellColor]); the whole of it in the middle of its place (the app draws it the same way,
+     * BoardCharts.kt).
      */
-    private fun heatmap(canvas: Canvas, chart: BoardChart, color: Int, area: RectF, text: Paint, palette: Palette) {
+    private fun heatmap(canvas: Canvas, chart: BoardChart, colors: List<Color>, rowsAreSeries: Boolean, area: RectF, text: Paint, palette: Palette) {
         val rows = chart.datasets
         if (rows.isEmpty()) return
         val room = min(rows.maxOf { text.measureText(it.label) } + 10f, area.width() * 0.35f)
-        val plot = RectF(area.left + room, area.top + 2f, area.right - 2f, area.bottom - text.textSize * 1.7f)
+        val labelsHeight = text.textSize * 1.7f
+        val side = minOf((area.width() - room - 2f) / chart.labels.size, (area.height() - labelsHeight - 4f) / rows.size).coerceAtLeast(4f)
+        // Up and down the middle of the place, with the labels of the columns under it.
+        val top = area.top + ((area.height() - labelsHeight - side * rows.size) / 2f).coerceAtLeast(0f)
+        val plot = RectF(area.left + room, top, area.left + room + side * chart.labels.size, top + side * rows.size)
         val strengths = heatStrengths(chart)
-        val cellW = plot.width() / chart.labels.size
-        val cellH = plot.height() / rows.size
         val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         val empty = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.color = palette.line
@@ -113,17 +118,17 @@ object BoardRenderer {
         text.textAlign = Paint.Align.LEFT
         rows.forEachIndexed { r, d ->
             val name = d.label.take(text.breakText(d.label, true, room - 8f, null))
-            canvas.drawText(name, area.left + 2f, plot.top + (r + 0.5f) * cellH + text.textSize * 0.35f, text)
+            canvas.drawText(name, area.left + 2f, plot.top + (r + 0.5f) * side + text.textSize * 0.35f, text)
             for (c in chart.labels.indices) {
                 val s = strengths[r][c]
-                val paint = if (s == null) empty else fill.apply { this.color = color; alpha = (heatAlpha(s) * 255f).toInt() }
-                val x = plot.left + c * cellW
-                val y = plot.top + r * cellH
-                canvas.drawRoundRect(RectF(x + 1f, y + 1f, x + cellW - 1f, y + cellH - 1f), 3f, 3f, paint)
+                val paint = if (s == null) empty else fill.apply { this.color = heatCellColor(chart, r, c, colors, rowsAreSeries).toArgb(); alpha = (heatAlpha(s) * 255f).toInt() }
+                val x = plot.left + c * side
+                val y = plot.top + r * side
+                canvas.drawRoundRect(RectF(x + 1f, y + 1f, x + side - 1f, y + side - 1f), 3f, 3f, paint)
             }
         }
         text.textAlign = saved
-        bottomLabels(canvas, chart, plot, text, area.bottom - text.textSize * 0.3f, centred = true)
+        bottomLabels(canvas, chart, plot, text, plot.bottom + text.textSize * 1.3f, centred = true)
     }
 
     /** The last labels, when there are more than will read. */
@@ -133,7 +138,7 @@ object BoardRenderer {
         return BoardChart(
             chart.unit,
             chart.labels.drop(from),
-            chart.datasets.map { it.copy(data = it.data.drop(from), counts = it.counts.drop(from)) },
+            chart.datasets.map { it.copy(data = it.data.drop(from), counts = it.counts.drop(from), parts = it.parts.map { p -> p.copy(data = p.data.drop(from)) }) },
         )
     }
 
@@ -177,7 +182,14 @@ object BoardRenderer {
         val n = chart.labels.size
         val slot = plot.width() / n
         val saved = text.textAlign
-        for (i in listOf(0, n / 2, n - 1).distinct()) {
+        // The first, the middle and the last, as many as fit side by side (a narrow plot has two, or one).
+        val widest = chart.labels.maxOf { text.measureText(it.label) } * 1.25f
+        val places = when {
+            plot.width() >= widest * 3 -> listOf(0, n / 2, n - 1)
+            plot.width() >= widest * 2 -> listOf(0, n - 1)
+            else -> listOf(0)
+        }
+        for (i in places.distinct()) {
             val label = chart.labels[i].label
             when (i) {
                 0 -> { text.textAlign = Paint.Align.LEFT; canvas.drawText(label, plot.left, baseline, text) }

@@ -167,7 +167,13 @@ data class Dataset(
     val counts: List<Int> = emptyList(),
     val total: Double? = null,
     val tasks: Int = 0,
+    /** Stacked into one in a heatmap: what each series had at each label, in the series' order (`data` is their sum). */
+    val parts: List<Share> = emptyList(),
 )
+
+/** One series' share of a stacked dataset: its label and its value at each label of the axis. */
+@Serializable
+data class Share(val label: String, val data: List<Double?>)
 
 /** What a chart draws, in Chart.js's shape: the labels along the axis and a dataset for each series. */
 @Serializable

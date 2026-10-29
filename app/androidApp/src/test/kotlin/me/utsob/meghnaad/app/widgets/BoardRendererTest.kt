@@ -7,6 +7,8 @@ import me.utsob.meghnaad.app.BoardChart
 import me.utsob.meghnaad.app.ChartLabel
 import me.utsob.meghnaad.app.Dataset
 import me.utsob.meghnaad.app.Section
+import me.utsob.meghnaad.app.PartBy
+import me.utsob.meghnaad.app.Rows
 import me.utsob.meghnaad.app.Series
 import me.utsob.meghnaad.app.By
 import me.utsob.meghnaad.app.TimeBy
@@ -132,6 +134,7 @@ class BoardRendererTest {
     fun aHeatmapWithRowsIsAGridForEachSeriesInItsColour() {
         fun grid(label: String) = chart(weeks, *listOf("Mon", "Tue", "Wed").map { it to weeks.indices.map { i -> (i * 2 % 5).toDouble() } }.toTypedArray()).copy(label = label)
         val section = section("heatmap", by = By(time = TimeBy("end", "week")), series = listOf(Series("A", color = "#ff0000"), Series("B", color = "#0000ff")))
+            .copy(rows = Rows(time = PartBy("end", "weekday")))
         val grids = listOf(grid("A"), grid("B"))
         val b = BoardRenderer.chart(grids[0], section, 600, 400, palette(false), grids = grids)
         save("heatmap-grids", b, false)
@@ -144,9 +147,9 @@ class BoardRendererTest {
         val isBlue = { px: Int -> Color.blue(px) > 200 && Color.red(px) < 150 && Color.green(px) < 150 }
         assertTrue("no red grid above", count(true, isRed) > 100)
         assertTrue("no blue grid below", count(false, isBlue) > 100)
-        // A strong cell of each: the first series' grid (A) is the upper one, in its colour, and the second's the lower, in its.
-        assertTrue("the upper grid is not red", isRed(b.getPixel(250, 60)))
-        assertTrue("the lower grid is not blue", isBlue(b.getPixel(250, 260)))
+        // The first series' grid (A) is the upper one, in its colour, and the second's the lower, in its.
+        assertTrue("the upper grid is not red enough", count(true, isRed) > 100 && count(true, isBlue) < count(true, isRed) / 4)
+        assertTrue("the lower grid is not blue enough", count(false, isBlue) > 100 && count(false, isRed) < count(false, isBlue) / 4)
     }
 
     @Test

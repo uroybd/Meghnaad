@@ -588,7 +588,7 @@ describe('a series of states', () => {
     if (data.flat.kind !== 'chart' || data.line.kind !== 'chart') throw new Error('no');
     expect(data.flat.grids).toHaveLength(1);
     expect(data.flat.chart.datasets.map((d) => d.label)).toEqual(['A', 'B']);
-    expect(data.line.chart.datasets.map((d) => d.label)).toEqual(['A + B']);
+    expect(data.line.chart.datasets.map((d) => d.label)).toEqual(['A / B']);
     // Three tasks in the first week and one in the second, in each of the two series.
     expect(data.line.chart.datasets[0].data).toEqual([6, 2]);
   });

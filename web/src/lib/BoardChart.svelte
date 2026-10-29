@@ -17,6 +17,7 @@
     stacked = false,
     colors = [],
     labelColors = [],
+    rowsAreSeries = false,
     format,
     summary,
   }: {
@@ -29,6 +30,8 @@
     colors?: (string | undefined)[];
     /** The taskrc's colour for each label's value (a UDA's `color.uda.<name>.<value>`), by position. */
     labelColors?: (string | undefined)[];
+    /** A heatmap's rows are the series, each in its colour. */
+    rowsAreSeries?: boolean;
     /** A value as it is written (a duration the way Taskwarrior writes one). */
     format: (v: number | null) => string;
     /** What a screen reader hears instead of the picture. */
@@ -36,6 +39,24 @@
   } = $props();
 
   let canvas: HTMLCanvasElement | undefined = $state();
+  let boxWidth = $state(0);
+  let boxHeight = $state(0);
+
+  /**
+   * What the canvas is given to fill. A heatmap's cells are squares, so its chart area is as many of them as it has columns and
+   * rows across and down (with room for the labels, which are estimated: a pixel or two is not seen); the rest is left empty.
+   * Anything else fills the box.
+   */
+  const frame = $derived.by(() => {
+    if (kind !== 'heatmap' || !boxWidth || !boxHeight || !chart.labels.length) return 'width:100%;height:100%';
+    const rows = Math.max(chart.datasets.length, 1);
+    const columns = Math.max(chart.labels.length, 1);
+    const names = Math.max(...chart.datasets.map((d) => d.label.length), 1);
+    const left = Math.min(names * 7 + 18, boxWidth * 0.4);
+    const bottom = 34;
+    const side = Math.max(8, Math.floor(Math.min((boxWidth - left - 8) / columns, (boxHeight - bottom - 8) / rows)));
+    return `width:${left + columns * side + 8}px;height:${bottom + rows * side + 8}px`;
+  });
   let instance: ChartJs | null = null;
   let failed = $state<string | null>(null);
 
@@ -57,6 +78,7 @@
       stacked,
       colors,
       labelColors,
+      rowsAreSeries,
       dark: scheme.dark,
       format,
       theme: readTheme(),
@@ -98,13 +120,20 @@
   });
 </script>
 
-<div class="box" role={chart.labels.length ? 'img' : undefined} aria-label={chart.labels.length ? summary : undefined}>
+<div
+  class="box"
+  class:heat={kind === 'heatmap'}
+  bind:clientWidth={boxWidth}
+  bind:clientHeight={boxHeight}
+  role={chart.labels.length ? 'img' : undefined}
+  aria-label={chart.labels.length ? summary : undefined}
+>
   {#if !chart.labels.length}
     <p class="dim empty">Nothing to show.</p>
   {:else if failed}
     <p class="err" role="alert">The chart could not be drawn: {failed}</p>
   {:else}
-    <canvas bind:this={canvas}></canvas>
+    <div class="frame" style={frame}><canvas bind:this={canvas}></canvas></div>
   {/if}
 </div>
 
@@ -113,6 +142,17 @@
   .box {
     position: absolute;
     inset: 0;
+  }
+  /* A heatmap is as big as its squares make it: it sits in the middle of the card, up and down. */
+  .box.heat {
+    display: flex;
+    overflow: auto;
+  }
+  .frame {
+    position: relative;
+    /* Auto margins centre it up and down when there is room, and start it at the top when there is not (a tall heatmap scrolls). */
+    margin: auto 0;
+    flex: none;
   }
   .empty {
     margin: 8px 0;

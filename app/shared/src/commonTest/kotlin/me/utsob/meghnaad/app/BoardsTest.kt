@@ -152,7 +152,7 @@ class BoardsTest {
         val flat = layHeatmap(two, by, null, false, z)
         assertEquals(listOf("A", "B"), flat.single().datasets.map { it.label })
         val line = layHeatmap(two, by, null, true, z).single()
-        assertEquals(listOf("A + B"), line.datasets.map { it.label })
+        assertEquals(listOf("A / B"), line.datasets.map { it.label })
         // Three tasks in the first week and one in the second, in each of the two series.
         assertEquals(listOf(6.0, 2.0), line.datasets[0].data)
         assertEquals("weekday of end", describeRows(rows))

@@ -185,6 +185,8 @@ export interface Dataset {
   counts: number[];
   total: number | null;
   tasks: number;
+  /** Stacked into one in a heatmap: what each series had at each label, in the series' order (`data` is their sum). */
+  parts?: { label: string; data: (number | null)[] }[];
 }
 
 /** What a chart draws, in Chart.js's shape: the labels along the axis and a dataset for each series. */

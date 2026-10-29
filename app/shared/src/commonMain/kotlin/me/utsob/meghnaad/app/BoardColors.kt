@@ -84,3 +84,13 @@ fun valueColors(field: String?, labels: List<ChartLabel>, colors: Map<String, Re
 /** The taskrc's colours (`uda.priority.H` and the like, as palette indexes) from the body of the engine's `/api/config` answer; none when it is not one. */
 fun parseColors(body: String): Map<String, Resolved> =
     runCatching { engineJson.decodeFromString(ConfigResponse.serializer(), body).colors }.getOrDefault(emptyMap())
+
+/** The colours mixed in the proportions of their weights; the first when none has any weight (blendColors in colors.ts). */
+fun blendColors(colors: List<Color>, weights: List<Double>): Color {
+    if (colors.isEmpty()) return Color.Gray
+    val w = colors.indices.map { weights.getOrElse(it) { 0.0 }.coerceAtLeast(0.0) }
+    val total = w.sum()
+    if (total <= 0.0) return colors[0]
+    fun mix(channel: (Color) -> Float) = colors.indices.sumOf { channel(colors[it]) * (w[it] / total) }.toFloat()
+    return Color(mix { it.red }, mix { it.green }, mix { it.blue })
+}
