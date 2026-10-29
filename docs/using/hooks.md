@@ -129,6 +129,144 @@ million steps) or uses too much memory is stopped with a message.
 - Only the hooks your script defines are called, so a command with none is as fast as before. If the server can't be
   reached, the hook is skipped with a warning and the command carries on (your own `refuse` or error still stops it).
 
+## A fuller example: rules by project
+
+This is a real script, the one its author keeps in their dotfiles. It tags a new task from where it belongs, so the tags
+don't have to be typed. It is a table of rules, each a `match` function and the `metadata` to apply when it matches, so
+adding a rule is adding a table entry, not code.
+
+```lua
+-- True if any period-separated segment of project matches any of segments (a string or a list of strings)
+-- literally. With partial, a candidate may match anywhere inside a project segment (chore matches chorexxx, never
+-- chor); otherwise it must equal the whole project segment. A nil project (a task with no project) never matches.
+local function segment_matches(project, segments, case_insensitive, partial)
+	if project == nil then
+		return false
+	end
+	if type(segments) == "string" then
+		segments = { segments }
+	end
+	if case_insensitive then
+		project = project:lower()
+	end
+	for part in project:gmatch("[^.]+") do
+		for _, segment in ipairs(segments) do
+			if case_insensitive then
+				segment = segment:lower()
+			end
+			if partial then
+				if part:find(segment, 1, true) then
+					return true
+				end
+			elseif part == segment then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- The project's nth segment (1-based), or nil if there are fewer or no project: nth_segment("FUL.Billing", 2) is
+-- "Billing".
+local function nth_segment(project, n)
+	if project == nil then
+		return nil
+	end
+	local i = 0
+	for segment in project:gmatch("[^.]+") do
+		i = i + 1
+		if i == n then
+			return segment
+		end
+	end
+end
+
+-- Rules run by on_add, in order. Each entry has a match function (takes the task, returns true if the rule applies) and
+-- a metadata table to apply to the task when it does (the keys are listed at apply_metadata).
+local on_add_autometa = {
+	{
+		match = function(task)
+			return segment_matches(task.project, { "chore", "chores" }, true, false)
+		end,
+		metadata = {
+			tags = { "chore" },
+		},
+	},
+	{
+		match = function(task)
+			return nth_segment(task.project, 1) == "FUL"
+				or task.tags:has("jira")
+				or (task.jira ~= nil and task.jira ~= "")
+		end,
+		metadata = {
+			tags = { "work" },
+		},
+	},
+}
+
+local function as_list(value)
+	return type(value) == "string" and { value } or value
+end
+
+local function is_unset(value)
+	return value == nil or value == ""
+end
+
+-- Applies one metadata table to a task. A value may be a function of the task, for something computed. Keys:
+--   tags, depends   add to the set (a list, or one string)
+--   remove_tags     take out of tags
+--   anything else   a field (project, priority, due, wait, scheduled, until, a UDA...) set only if the task has no value
+--                   for it yet, so what was typed on the command line wins. Dates take "tomorrow", "now+3d", a date().
+local function apply_metadata(task, metadata)
+	for key, value in pairs(metadata) do
+		if type(value) == "function" then
+			value = value(task)
+		end
+		if key == "tags" or key == "depends" then
+			for _, item in ipairs(as_list(value)) do
+				task[key]:add(item)
+			end
+		elseif key == "remove_tags" then
+			for _, tag in ipairs(as_list(value)) do
+				task.tags:remove(tag)
+			end
+		elseif value ~= nil and is_unset(task[key]) then
+			task[key] = value
+		end
+	end
+end
+
+function on_add(task)
+	for _, entry in ipairs(on_add_autometa) do
+		if entry.match(task) then
+			apply_metadata(task, entry.metadata)
+		end
+	end
+end
+```
+
+**How it works**
+
+- `segment_matches(project, segments, case_insensitive, partial)` is true when any dot-separated part of the project
+  equals (or, with `partial`, contains) any of the given words. A task with no project never matches.
+- `nth_segment(project, n)` is the project's nth part, so `nth_segment("FUL.Billing", 2)` is `Billing`.
+- `on_add_autometa` is the list of rules. Here anything under a `chore` or `chores` project gets `+chore`, and anything
+  under the `FUL` project, or tagged `+jira`, or with a `jira` UDA set, gets `+work`.
+- `apply_metadata` applies one rule. `tags` and `depends` are added to; `remove_tags` takes tags out; any other key is a
+  field set only if the task has no value for it yet, so what you typed on the command line wins. A value can be a
+  function of the task, for something computed (`due = "tomorrow"` and `due = function(task) … end` both work).
+- `on_add` runs every rule in order.
+
+To make it yours, change the two `match` functions and their `metadata`. A rule that sets a default can use any field
+(`priority = "L"`, `wait = "now+3d"`), and a rule with `remove_tags = { "inbox" }` cleans up after another.
+
+**Try it** without `task`, with the program from [below](#the-same-script-with-the-real-task): `meghnaad-hook check
+hooks.lua` says which hooks it defines. To see it run, link it as `on-add.meghnaad` (see the next section), then
+`task add Take out bins project:Home.Chores` and `task 1 info` shows `+chore`.
+
+The author keeps the script in a dotfiles repository managed with [dotr](https://dotr.utsob.me) and runs `meghnaad-hook
+install` as a post action of that package, so a new machine gets the hooks linked in one step.
+
 ## The same script with the real `task`
 
 `meghnaad-hook` runs the script for the `task` on your computer, with the same Lua, library and `http`, so a script
