@@ -35,6 +35,32 @@ type Plain = Record<string, any>;
 const cfg = (i: ChartInput) =>
   chartConfig(i) as unknown as { type: string; data: { labels: string[]; datasets: Plain[] }; options: Plain };
 
+describe('the colours the taskrc gives the values of a UDA', () => {
+  const own = ['#e5484d', undefined, '#30a46c'];
+
+  it('colour the slices of a round chart, and the chart’s own colours fill in the rest', () => {
+    const c = cfg(input('pie', { chart: chart(1), labelColors: own }));
+    expect(c.data.datasets[0].backgroundColor).toEqual(['#e5484d', defaultSeriesColor(1, false), '#30a46c']);
+    // None given: the chart's own colours, as before.
+    const plain = cfg(input('donut', { chart: chart(1) }));
+    expect(plain.data.datasets[0].backgroundColor).toEqual([0, 1, 2].map((i) => defaultSeriesColor(i, false)));
+  });
+
+  it('colour the bars of one series, which has its own colour for any value with none', () => {
+    const c = cfg(input('bar', { chart: chart(1), labelColors: own, colors: ['blue'] }));
+    expect(c.data.datasets[0].backgroundColor).toEqual(['#e5484d', namedColorHex('blue', false), '#30a46c']);
+  });
+
+  it('leave several series, and a chart over time, to their own colours', () => {
+    const many = cfg(input('bar', { chart: chart(2), labelColors: own }));
+    expect(many.data.datasets.map((d) => typeof d.backgroundColor)).toEqual(['string', 'string']);
+    const dated = cfg(input('bar', { chart: chart(1), labelColors: own, time: true }));
+    expect(typeof dated.data.datasets[0].backgroundColor).toBe('string');
+    const none = cfg(input('bar', { chart: chart(1), labelColors: [undefined, undefined, undefined] }));
+    expect(typeof none.data.datasets[0].backgroundColor).toBe('string');
+  });
+});
+
 describe('a chart for Chart.js', () => {
   it('has the labels and a dataset for each series, as the engine gives them', () => {
     const c = cfg(input('bar'));

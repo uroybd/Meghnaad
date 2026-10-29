@@ -440,7 +440,12 @@ label in full and its figure; the labels along an axis are thinned so none is cu
   from Taskwarrior's basic colours by name (`red`, `bright blue`, … drawn in the page's palette, so a choice follows a light and a
   dark page and your theme's look) or any other `#rrggbb` from the system's picker; with none, the series take the palette's
   blue, red, green, yellow, magenta and cyan in turn. A series can also have a measure of its own (in the file; it is the section's
-  otherwise). They share the grouping, so a period in which one series has nothing still has a place for it (zero, or `–`
+  otherwise). **The colours of a UDA's values.** A chart grouped by the value of a UDA (`priority`, or your own) draws each value in
+  the colour your taskrc gives it, `color.uda.<name>.<value>` (`color.uda.priority.H=red`; `color.uda.<name>.none` for tasks
+  with no value): the slices of a pie, donut or polar chart, and the bars of a bar chart of one series. A value with no colour keeps
+  the chart's own (the palette in turn; for bars, the series'), and a colour too faint for the page is darkened or lightened until it
+  shows. It is the same on the phone, in the app and in a card's widget. A rule for every value (`color.uda.<name>`), and the colours
+  of projects and tags, are not used; several series and charts over time keep their series' colours. They share the grouping, so a period in which one series has nothing still has a place for it (zero, or `–`
   for an average). Unlike `task burndown`, which counts what is pending at each moment, a chart counts per period by the date
   you choose (`end`, `entry`, `due`), so "finished per week, by outcome" is a stacked bar chart with series
   `Succeeded` (`outcome:success or outcome:`, which takes a task with no outcome as a success) and `Failed`

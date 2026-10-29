@@ -1,6 +1,8 @@
 package me.utsob.meghnaad.app
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import kotlin.math.pow
 
 // The colours of a chart's series (web/src/lib/colors.ts, `chartColor`): a Taskwarrior colour name (`red`, `bright blue`), drawn
 // in the app's own palette so it follows a light and a dark page, or a `#rrggbb` value. A series that names none takes the
@@ -44,3 +46,41 @@ fun defaultSeriesColor(i: Int, dark: Boolean): Color = namedColor(DEFAULT_SERIES
 
 /** The default colour's name, for a picker to say which one it is. */
 fun defaultSeriesName(i: Int): String = DEFAULT_SERIES[i % DEFAULT_SERIES.size]
+
+private fun luminance(c: Color): Double {
+    fun lin(v: Float): Double = v.toDouble().let { if (it <= 0.03928) it / 12.92 else ((it + 0.055) / 1.055).pow(2.4) }
+    return 0.2126 * lin(c.red) + 0.7152 * lin(c.green) + 0.0722 * lin(c.blue)
+}
+
+/** The contrast between two colours, 1 (the same) to 21 (black on white). */
+fun contrast(a: Color, b: Color): Double {
+    val (x, y) = listOf(luminance(a), luminance(b)).sortedDescending()
+    return (x + 0.05) / (y + 0.05)
+}
+
+/** [fg] moved toward black or white, whichever stands out more on [bg], until it shows at [min] (web/src/lib/colors.ts, `readable`). */
+fun readableOn(fg: Color, bg: Color, min: Double): Color {
+    if (contrast(fg, bg) >= min) return fg
+    val target = if (contrast(Color.Black, bg) >= contrast(Color.White, bg)) Color.Black else Color.White
+    for (step in 9 downTo 0) {
+        val c = lerp(target, fg, step / 10f)
+        if (contrast(c, bg) >= min) return c
+    }
+    return target
+}
+
+/**
+ * The colour each value of a chart grouped by a UDA has in the taskrc (`color.uda.<name>.<value>`, `none` for a task with no value), by
+ * position in [labels]; null for a value with no colour of its own, which keeps the chart's. A style with no text colour is its
+ * background's; one too faint to show on [page] is moved toward readable (web/src/lib/colors.ts, `valueColors`).
+ */
+fun valueColors(field: String?, labels: List<ChartLabel>, colors: Map<String, Resolved>, dark: Boolean, page: Color): List<Color?> =
+    labels.map { l ->
+        val style = field?.let { colors["uda.$it.${l.key.ifEmpty { "none" }}"] } ?: return@map null
+        val index = (if (style.inverse) style.bg ?: style.fg else style.fg ?: style.bg) ?: return@map null
+        readableOn(paletteColor(index, dark), page, 1.8)
+    }
+
+/** The taskrc's colours (`uda.priority.H` and the like, as palette indexes) from the body of the engine's `/api/config` answer; none when it is not one. */
+fun parseColors(body: String): Map<String, Resolved> =
+    runCatching { engineJson.decodeFromString(ConfigResponse.serializer(), body).colors }.getOrDefault(emptyMap())

@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import me.utsob.meghnaad.app.BoardChart
 import me.utsob.meghnaad.app.Section
@@ -53,7 +54,7 @@ object BoardRenderer {
     }
 
     /** A chart of the card's type. A polar area chart is drawn as a pie, as in the app. */
-    fun chart(chart: BoardChart, section: Section, width: Int, height: Int, palette: Palette): Bitmap {
+    fun chart(chart: BoardChart, section: Section, width: Int, height: Int, palette: Palette, labelColors: List<Color?> = emptyList()): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         if (chart.labels.isEmpty()) return bitmap
@@ -69,11 +70,11 @@ object BoardRenderer {
         if (shown.datasets.size > 1 && section.type !in listOf("pie", "donut", "polar", "heatmap")) top = legend(canvas, shown, colors, text, width)
         val area = RectF(0f, top, width.toFloat(), height.toFloat())
         when (section.type) {
-            "bar" -> if (section.by?.time != null) verticalBars(canvas, shown, colors, stacked, area, text, palette) else horizontalBars(canvas, shown, colors, stacked, area, text, palette)
+            "bar" -> if (section.by?.time != null) verticalBars(canvas, shown, colors, stacked, area, text, palette) else horizontalBars(canvas, shown, colors, stacked, area, text, palette, labelColors)
             "line", "area" -> lines(canvas, shown, colors, stacked, section.type == "area", area, text, palette)
             "radar" -> radar(canvas, shown, colors, area, text, palette)
             "heatmap" -> heatmap(canvas, shown, colors.firstOrNull() ?: palette.dim, area, text, palette)
-            else -> slices(canvas, shown, palette, area, text, donut = section.type == "donut")
+            else -> slices(canvas, shown, palette, area, text, donut = section.type == "donut", labelColors = labelColors)
         }
         return bitmap
     }
@@ -208,7 +209,7 @@ object BoardRenderer {
     }
 
     /** Bars that lie down, for a category: the first label at the top. */
-    private fun horizontalBars(canvas: Canvas, chart: BoardChart, colors: List<Int>, stacked: Boolean, area: RectF, text: Paint, palette: Palette) {
+    private fun horizontalBars(canvas: Canvas, chart: BoardChart, colors: List<Int>, stacked: Boolean, area: RectF, text: Paint, palette: Palette, labelColors: List<Color?> = emptyList()) {
         val top = chartTop(chart, stacked)
         val n = chart.labels.size
         val names = min(area.width() * 0.35f, chart.labels.maxOf { text.measureText(it.label) } + 10f)
@@ -227,7 +228,8 @@ object BoardRenderer {
                 val v = chart.datasets[d].data.getOrNull(i) ?: continue
                 if (v <= 0) continue
                 val w = (v / top).toFloat() * plot.width()
-                fill.color = colors[d]
+                // One series: the taskrc's colour for this value, when it has one.
+                fill.color = if (chart.datasets.size == 1) labelColors.getOrNull(i)?.toArgb() ?: colors[d] else colors[d]
                 if (stacked) {
                     canvas.drawRect(x, mid - bar / 2, x + w, mid + bar / 2, fill)
                     x += w
@@ -291,7 +293,7 @@ object BoardRenderer {
     }
 
     /** A pie or a donut of the first series, each slice a colour of the palette in turn, with what they are beside it. */
-    private fun slices(canvas: Canvas, chart: BoardChart, palette: Palette, area: RectF, text: Paint, donut: Boolean = false) {
+    private fun slices(canvas: Canvas, chart: BoardChart, palette: Palette, area: RectF, text: Paint, donut: Boolean = false, labelColors: List<Color?> = emptyList()) {
         val data = chart.datasets.firstOrNull() ?: return
         val values = chart.labels.indices.map { (data.data.getOrNull(it) ?: 0.0).coerceAtLeast(0.0) }
         val sweeps = pieSweeps(values)
@@ -302,7 +304,7 @@ object BoardRenderer {
         var start = -90f
         for ((i, sweep) in sweeps.withIndex()) {
             if (sweep <= 0f) continue
-            paint.color = defaultSeriesColor(i, palette.dark).toArgb()
+            paint.color = (labelColors.getOrNull(i) ?: defaultSeriesColor(i, palette.dark)).toArgb()
             canvas.drawArc(ring, start, sweep, true, paint)
             start += sweep
         }
@@ -316,7 +318,7 @@ object BoardRenderer {
         val x = ring.right + 14f
         for ((i, v) in values.withIndex()) {
             if (v <= 0.0) continue
-            paint.color = defaultSeriesColor(i, palette.dark).toArgb()
+            paint.color = (labelColors.getOrNull(i) ?: defaultSeriesColor(i, palette.dark)).toArgb()
             canvas.drawRect(x, y - text.textSize * 0.8f, x + text.textSize * 0.8f, y, paint)
             val line = "${chart.labels[i].label} ${formatBoardValue(v, chart.unit)} (${(v / total * 100).toInt()}%)"
             canvas.drawText(clip(line, text, area.right - x - text.textSize - 8f), x + text.textSize, y, text)

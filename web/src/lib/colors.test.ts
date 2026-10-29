@@ -12,6 +12,7 @@ import {
   paletteHex,
   readable,
   rowVars,
+  valueColors,
 } from './colors';
 
 describe('paletteHex', () => {
@@ -140,5 +141,38 @@ describe('the colours a chart is given by name', () => {
     expect(defaultSeriesColor(0, false)).toBe(namedColorHex('blue', false));
     expect(defaultSeriesName(1)).toBe('red');
     expect(defaultSeriesColor(9, false)).toBe(defaultSeriesColor(0, false));
+  });
+});
+
+describe('the colour of each value of a UDA', () => {
+  const labels = [{ key: 'H' }, { key: 'M' }, { key: 'L' }, { key: '' }, { key: 'X' }];
+  const colors = {
+    'uda.priority.H': { fg: 9 },
+    'uda.priority.M': { bg: 4 },
+    'uda.priority.none': { fg: 2 },
+    // A rule for every value of a UDA, a project's and a tag's are not the colour of a value.
+    'uda.priority': { fg: 5 },
+    'project.Home': { fg: 6 },
+  };
+
+  it('is the one the taskrc gives that value, by its position', () => {
+    const got = valueColors('priority', labels, colors, false);
+    expect(got[0]).toBe(paletteHex(9, false));
+    expect(got[1]).toBe(paletteHex(4, false));
+    // A task with none of it is the `none` rule's; a value with no rule has none, and the chart's own colour is used.
+    expect(got[3]).toBe(paletteHex(2, false));
+    expect([got[2], got[4]]).toEqual([undefined, undefined]);
+  });
+
+  it('has none for what is not grouped by a UDA, or when the taskrc has no colours', () => {
+    expect(valueColors('project', labels, colors, false).every((c) => c === undefined)).toBe(true);
+    expect(valueColors(undefined, labels, colors, false).every((c) => c === undefined)).toBe(true);
+    expect(valueColors('priority', labels, undefined, false).every((c) => c === undefined)).toBe(true);
+  });
+
+  it('is moved toward readable when the page would swallow it, and follows a dark page', () => {
+    const white = valueColors('priority', [{ key: 'H' }], { 'uda.priority.H': { fg: 15 } }, false)[0]!;
+    expect(contrast(white, '#ffffff')).toBeGreaterThanOrEqual(1.8);
+    expect(valueColors('priority', [{ key: 'H' }], colors, true)[0]).toBe(paletteHex(9, true));
   });
 });

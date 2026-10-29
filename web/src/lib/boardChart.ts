@@ -27,6 +27,8 @@ export interface ChartInput {
   stacked: boolean;
   /** A series' own colour, by position: a Taskwarrior colour name or `#rrggbb`. The page's palette gives the rest. */
   colors?: (string | undefined)[];
+  /** The colour of each label's value, by position, where the taskrc gives it one (`color.uda.<name>.<value>`). */
+  labelColors?: (string | undefined)[];
   /** The page is dark, so the names are drawn in the palette for it. */
   dark: boolean;
   /** A value as it is written (a duration the way Taskwarrior writes one). */
@@ -147,14 +149,18 @@ export function chartConfig(input: ChartInput): ChartConfiguration {
       return {
         label: d.label,
         data: d.data.map((v) => v ?? 0),
-        backgroundColor: chart.labels.map((_, j) => defaultSeriesColor(j, dark)),
+        backgroundColor: chart.labels.map((_, j) => input.labelColors?.[j] ?? defaultSeriesColor(j, dark)),
         borderColor: theme.line,
         borderWidth: 1,
       };
     }
     const c = colorOf(i);
-    if (kind === 'bar')
-      return { label: d.label, data: d.data, backgroundColor: c, borderRadius: 2, maxBarThickness: 48 };
+    if (kind === 'bar') {
+      // One series of values: a bar of a value with a colour of its own in the taskrc has it. Several series are told apart by theirs.
+      const own = !many && !time && input.labelColors?.some(Boolean);
+      const fill = own ? chart.labels.map((_, j) => input.labelColors?.[j] ?? c) : c;
+      return { label: d.label, data: d.data, backgroundColor: fill, borderRadius: 2, maxBarThickness: 48 };
+    }
     const filled = kind === 'area' || kind === 'radar';
     return {
       label: d.label,

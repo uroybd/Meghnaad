@@ -16,6 +16,10 @@ import me.utsob.meghnaad.app.parseSettings
 import me.utsob.meghnaad.app.formatBoardValue
 import me.utsob.meghnaad.app.placeLink
 import me.utsob.meghnaad.app.AppPlace
+import me.utsob.meghnaad.app.Resolved
+import me.utsob.meghnaad.app.parseColors
+import me.utsob.meghnaad.app.valueColors
+import androidx.compose.ui.graphics.Color
 import org.json.JSONObject
 
 /** One card of a board on the home screen: a number or a chart, drawn from the engine's numbers, which opens the board when tapped. */
@@ -34,9 +38,15 @@ class BoardWidget : ImageWidget() {
         val data = BoardsData.section(context, board, section)
             ?: return Rendered(section.title, message = context.getString(R.string.widget_not_ready), link = link)
         val look = WidgetPrefs.look(context, id)
+        val colors = if (data is SectionData.Chart && section.by?.field != null) BoardsData.colors(context) else emptyMap()
         fun draw(palette: Palette) = when (data) {
             is SectionData.Number -> BoardRenderer.number(formatBoardValue(data.answer.total, data.answer.unit), data.answer.tasks, width, height, palette)
-            is SectionData.Chart -> BoardRenderer.chart(orderChart(data.chart, section, data.limit), section, width, height, palette)
+            is SectionData.Chart -> {
+                val shown = orderChart(data.chart, section, data.limit)
+                // A chart of the values of a UDA is in the colours the taskrc gives them, as in the app.
+                val own = valueColors(section.by?.field, shown.labels, colors, palette.dark, Color(palette.background))
+                BoardRenderer.chart(shown, section, width, height, palette, own)
+            }
             else -> null
         }
         if (data is SectionData.Failed) return Rendered(section.title, message = data.message, caption = board.name, link = link)
@@ -67,6 +77,14 @@ object BoardsData {
         JSONObject(answer.getString("body")).getJSONObject("config").getJSONObject("settings").optString("weekstart").ifEmpty { null }
     } catch (e: Exception) {
         null
+    }
+
+    /** The taskrc's colours (`uda.priority.H` and the like), as palette indexes; none when the engine could not say. */
+    fun colors(context: Context): Map<String, Resolved> = try {
+        val answer = JSONObject(Engines.get(context).call("api", JSONObject().put("method", "GET").put("path", "/api/config").toString()))
+        parseColors(answer.getString("body"))
+    } catch (e: Exception) {
+        emptyMap()
     }
 
     /** What one card shows now: only its own filters are run. Null when the engine had nothing to say. */

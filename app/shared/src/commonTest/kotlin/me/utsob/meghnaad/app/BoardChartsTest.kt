@@ -135,4 +135,41 @@ class BoardChartsTest {
         assertEquals(1f, heatAlpha(1f))
         assertTrue(heatAlpha(0.5f) > heatAlpha(0.25f))
     }
+
+    @Test
+    fun theValuesOfAUdaTakeTheColoursTheTaskrcGivesThem() {
+        val labels = listOf("H", "M", "L", "", "X").map { ChartLabel(it, it.ifEmpty { "(none)" }) }
+        val colors = mapOf(
+            "uda.priority.H" to Resolved(fg = 9),
+            "uda.priority.M" to Resolved(bg = 4),
+            "uda.priority.none" to Resolved(fg = 2),
+            // A rule for every value of a UDA, and a project's, are not the colour of a value.
+            "uda.priority" to Resolved(fg = 5),
+            "project.Home" to Resolved(fg = 6),
+        )
+        val page = Color.White
+        val got = valueColors("priority", labels, colors, false, page)
+        assertEquals(paletteColor(9, false), got[0])
+        assertEquals(paletteColor(4, false), got[1])
+        // A task with none of it takes the `none` rule's; a value with no rule keeps the chart's own colour.
+        assertEquals(paletteColor(2, false), got[3])
+        assertEquals(listOf<Color?>(null, null), listOf(got[2], got[4]))
+        assertTrue(valueColors("project", labels, colors, false, page).all { it == null })
+        assertTrue(valueColors(null, labels, colors, false, page).all { it == null })
+        assertTrue(valueColors("priority", labels, emptyMap(), false, page).all { it == null })
+        // What the page would swallow is moved toward readable.
+        val white = valueColors("priority", listOf(ChartLabel("H", "H")), mapOf("uda.priority.H" to Resolved(fg = 15)), false, page)[0]!!
+        assertTrue(contrast(white, page) >= 1.8)
+    }
+
+    @Test
+    fun aBarOfOneSeriesHasItsValuesColourAndSeveralSeriesKeepTheirOwn() {
+        val one = BoardChart(labels = listOf(ChartLabel("H", "H"), ChartLabel("M", "M")), datasets = listOf(Dataset("n", listOf(1.0, 2.0))))
+        val series = listOf(Color.Blue, Color.Green)
+        val own = listOf<Color?>(Color.Red, null)
+        assertEquals(Color.Red, barColor(one, series, own, 0, 0))
+        assertEquals(Color.Blue, barColor(one, series, own, 0, 1))
+        val two = one.copy(datasets = one.datasets + Dataset("m", listOf(3.0, 4.0)))
+        assertEquals(Color.Green, barColor(two, series, own, 1, 0))
+    }
 }

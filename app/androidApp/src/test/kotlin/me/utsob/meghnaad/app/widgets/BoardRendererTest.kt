@@ -112,6 +112,23 @@ class BoardRendererTest {
     }
 
     @Test
+    fun theValuesOfAUdaAreInTheColoursTheTaskrcGivesThem() {
+        val c = chart(projects.take(3), "Tasks" to listOf(5.0, 3.0, 8.0))
+        val red = androidx.compose.ui.graphics.Color(0xFFFF0000)
+        fun count(b: android.graphics.Bitmap): Int {
+            var n = 0
+            for (y in 0 until b.height) for (x in 0 until b.width) if (b.getPixel(x, y) == Color.rgb(255, 0, 0)) n++
+            return n
+        }
+        for (type in listOf("bar", "pie", "donut", "polar")) {
+            val plain = BoardRenderer.chart(c, section(type), 400, 300, palette(false))
+            val own = BoardRenderer.chart(c, section(type), 400, 300, palette(false), listOf(red, null, null))
+            assertEquals("$type has red without being given any", 0, count(plain))
+            assertTrue("$type has no red slice or bar", count(own) > 50)
+        }
+    }
+
+    @Test
     fun nothingOnTheAxisAndTooManyLabelsAreBothFine() {
         assertEquals(0, drawn(BoardRenderer.chart(BoardChart(), section("bar"), 300, 200, palette(false))))
         val many = chart((1..120).map { "w$it" }, "n" to (1..120).map { it.toDouble() })

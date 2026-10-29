@@ -16,6 +16,7 @@
     time,
     stacked = false,
     colors = [],
+    labelColors = [],
     format,
     summary,
   }: {
@@ -26,6 +27,8 @@
     stacked?: boolean;
     /** A series' own colour, by position (a colour name or `#rrggbb`); the page's palette where there is none. */
     colors?: (string | undefined)[];
+    /** The taskrc's colour for each label's value (a UDA's `color.uda.<name>.<value>`), by position. */
+    labelColors?: (string | undefined)[];
     /** A value as it is written (a duration the way Taskwarrior writes one). */
     format: (v: number | null) => string;
     /** What a screen reader hears instead of the picture. */
@@ -47,7 +50,17 @@
 
   const config = $derived.by(() => {
     void scheme.dark;
-    return chartConfig({ chart, kind, time, stacked, colors, dark: scheme.dark, format, theme: readTheme() });
+    return chartConfig({
+      chart,
+      kind,
+      time,
+      stacked,
+      colors,
+      labelColors,
+      dark: scheme.dark,
+      format,
+      theme: readTheme(),
+    });
   });
 
   // Draw: make the chart the first time, or when the type changes (Chart.js cannot change it), else update it in place.

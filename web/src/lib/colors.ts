@@ -196,6 +196,25 @@ export function look(
   return { color: fg, background: bg, bold: !!style.bold, underline: !!style.underline };
 }
 
+/**
+ * The colour each value of a chart grouped by a UDA has in the taskrc (`color.uda.<name>.<value>`, `none` for a task with no
+ * value), by position in `labels`; none for a value with no colour of its own (the chart's own colours then). A colour that has
+ * no text colour is its background's; one too faint to show on the page is moved toward readable, as the text is.
+ */
+export function valueColors(
+  field: string | undefined,
+  labels: { key: string }[],
+  colors: Record<string, Resolved> | undefined,
+  dark: boolean,
+): (string | undefined)[] {
+  if (!field || !colors) return labels.map(() => undefined);
+  return labels.map((l) => {
+    const style = colors[`uda.${field}.${l.key || 'none'}`];
+    const index = style?.inverse ? (style.bg ?? style.fg) : (style?.fg ?? style?.bg);
+    return index == null ? undefined : readable(paletteHex(index, dark), PAGE[dark ? 'dark' : 'light'].bg, 1.8);
+  });
+}
+
 /** The look as an inline `style` value. */
 export function css(l: Look | null): string {
   if (!l) return '';

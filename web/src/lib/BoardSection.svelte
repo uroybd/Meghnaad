@@ -2,10 +2,12 @@
   import BoardChart from './BoardChart.svelte';
   import type { ChartKind } from './boardChart';
   import { describeChart, formatValue, orderChart, type Section, type SectionData } from './boards';
+  import { valueColors } from './colors';
   import { compactDuration } from './dates';
   import { Info } from './icons';
   import ResultView from './ResultView.svelte';
-  import type { Entry } from './store.svelte';
+  import { scheme } from './scheme.svelte';
+  import { store, type Entry } from './store.svelte';
 
   /** What one section of a board shows: a number, a table, or a chart, with its title above. */
   let {
@@ -80,6 +82,7 @@
         time={!!section.by?.time}
         stacked={!!section.stacked}
         colors={section.series?.map((x) => x.color)}
+        labelColors={valueColors(section.by?.field, chart.labels, store.config?.colors, scheme.dark)}
         format={fmt}
         {summary}
       />

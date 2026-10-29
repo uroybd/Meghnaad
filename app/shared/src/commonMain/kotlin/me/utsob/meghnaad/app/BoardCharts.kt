@@ -85,6 +85,10 @@ fun pieSweeps(values: List<Double>): List<Float> {
 fun seriesColors(chart: BoardChart, section: Section, dark: Boolean): List<Color> =
     chart.datasets.indices.map { i -> chartColor(section.series.getOrNull(i)?.color, dark) ?: defaultSeriesColor(i, dark) }
 
+/** The colour of the bar of series [d] at label [i]: with one series, the taskrc's colour for the label's value when it has one; else the series'. */
+fun barColor(chart: BoardChart, series: List<Color>, labelColors: List<Color?>, d: Int, i: Int): Color =
+    (if (chart.datasets.size == 1) labelColors.getOrNull(i) else null) ?: series[d]
+
 /** What each series adds up to at each label, from the bottom (or the left) up: the heights of stacked bars and lines. */
 fun stackedValues(chart: BoardChart): List<List<Double>> =
     chart.labels.indices.map { i ->
@@ -130,7 +134,7 @@ fun tipText(chart: BoardChart, i: Int, d: Int): String {
 
 @OptIn(ExperimentalKoalaPlotApi::class, ExperimentalLayoutApi::class)
 @Composable
-fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier: Modifier = Modifier, height: Dp? = null) {
+fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier: Modifier = Modifier, height: Dp? = null, labelColors: List<Color?> = emptyList()) {
     val colors = MaterialTheme.colorScheme
     if (chart.labels.isEmpty()) {
         Dim("Nothing to show.", modifier)
@@ -146,11 +150,11 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
         // A legend names the series; a round chart's names its slices instead.
         if (legend) Legend(chart.datasets.map { it.label }, series)
         when (section.type) {
-            "bar" -> if (section.by?.time != null) VerticalBars(chart, series, stacked, plot) else HorizontalBars(chart, series, stacked, plot)
+            "bar" -> if (section.by?.time != null) VerticalBars(chart, series, stacked, plot) else HorizontalBars(chart, series, stacked, plot, labelColors)
             "line", "area" -> Lines(chart, series, stacked, section.type == "area", plot)
             "radar" -> Radar(chart, series, plot)
             "heatmap" -> Heatmap(chart, series.firstOrNull() ?: defaultSeriesColor(0, dark), plot)
-            else -> Slices(chart, section, dark, plot)
+            else -> Slices(chart, section, dark, plot, labelColors)
         }
     }
 }
@@ -280,7 +284,7 @@ private fun BarScope.TippedBar(color: Color, tip: String) = DefaultBar(brush = S
 /** Bars that lie down, for a category: its names are long. */
 @OptIn(ExperimentalKoalaPlotApi::class)
 @Composable
-private fun HorizontalBars(chart: BoardChart, series: List<Color>, stacked: Boolean, plot: Dp?) {
+private fun HorizontalBars(chart: BoardChart, series: List<Color>, stacked: Boolean, plot: Dp?, labelColors: List<Color?> = emptyList()) {
     // The first label at the top: the axis runs upwards.
     val at = chart.labels.indices.toList().reversed()
     val top = chartTop(chart, stacked)
@@ -295,13 +299,13 @@ private fun HorizontalBars(chart: BoardChart, series: List<Color>, stacked: Bool
         if (stacked) {
             StackedHorizontalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series({ _, k, _ -> TippedBar(series[d], tipText(chart, at[k], d)) }) { at.forEach { i -> item((ds.data.getOrNull(i) ?: 0.0).toFloat(), i) } }
+                    series({ _, k, _ -> TippedBar(barColor(chart, series, labelColors, d, at[k]), tipText(chart, at[k], d)) }) { at.forEach { i -> item((ds.data.getOrNull(i) ?: 0.0).toFloat(), i) } }
                 }
             }
         } else {
             GroupedHorizontalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series({ _, k, _ -> TippedBar(series[d], tipText(chart, at[k], d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
+                    series({ _, k, _ -> TippedBar(barColor(chart, series, labelColors, d, at[k]), tipText(chart, at[k], d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
                 }
             }
         }
@@ -365,10 +369,10 @@ private fun Radar(chart: BoardChart, series: List<Color>, plot: Dp?) {
     }
 }
 
-/** A pie or a donut: one series, its slices the labels, each in the palette in turn, with a list of what they are. */
+/** A pie or a donut: one series, its slices the labels, each in the colour the taskrc gives its value (a UDA's) or else the palette in turn, with a list of what they are. */
 @OptIn(ExperimentalKoalaPlotApi::class)
 @Composable
-private fun Slices(chart: BoardChart, section: Section, dark: Boolean, plot: Dp?) {
+private fun Slices(chart: BoardChart, section: Section, dark: Boolean, plot: Dp?, labelColors: List<Color?>) {
     val data = chart.datasets.firstOrNull() ?: return
     val values = chart.labels.indices.map { (data.data.getOrNull(it) ?: 0.0).coerceAtLeast(0.0) }
     val total = values.sum()
@@ -376,7 +380,7 @@ private fun Slices(chart: BoardChart, section: Section, dark: Boolean, plot: Dp?
         Dim("Nothing to show.")
         return
     }
-    val slice = chart.labels.indices.map { defaultSeriesColor(it, dark) }
+    val slice = chart.labels.indices.map { labelColors.getOrNull(it) ?: defaultSeriesColor(it, dark) }
     val pie: @Composable (Modifier, Dp) -> Unit = { modifier, room ->
         // A section a quarter of a phone's row wide leaves less than the library's smallest pie, and it throws if its
         // smallest is larger than its largest.
