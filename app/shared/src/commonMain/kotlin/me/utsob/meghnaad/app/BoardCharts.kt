@@ -218,7 +218,11 @@ private fun Heatmap(chart: BoardChart, colors: List<Color>, rowsAreSeries: Boole
     val chars = widest(chart, 12)
     val skip = labelSkip(chart.labels.size, chars, side * columns)
     val none = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-    Column(Modifier.fillMaxWidth().heightIn(min = plot ?: 0.dp), verticalArrangement = Arrangement.Center) {
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = plot ?: 0.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         chart.datasets.forEachIndexed { d, ds ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AxisText(ds.label.take(rowChars), Modifier.width(labelRoom))

@@ -143,15 +143,15 @@
     position: absolute;
     inset: 0;
   }
-  /* A heatmap is as big as its squares make it: it sits in the middle of the card, up and down. */
+  /* A heatmap is as big as its squares make it: it sits in the middle of the card, across and up and down. */
   .box.heat {
     display: flex;
     overflow: auto;
   }
   .frame {
     position: relative;
-    /* Auto margins centre it up and down when there is room, and start it at the top when there is not (a tall heatmap scrolls). */
-    margin: auto 0;
+    /* Auto margins centre it when there is room, and start it at the top left when there is not (a big heatmap scrolls). */
+    margin: auto;
     flex: none;
   }
   .empty {
