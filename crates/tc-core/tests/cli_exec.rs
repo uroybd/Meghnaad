@@ -2765,6 +2765,22 @@ mod recurrence_as_task_does_it {
     }
 
     #[tokio::test]
+    async fn a_one_off_recurrence_confirmation_override_edits_only_the_instance_without_asking() {
+        // The default is `prompt`; ticking a checklist box sends `rc.recurrence.confirmation:no` ahead of the `modify`.
+        let (mut r, cfg) = series("prompt").await;
+        let (res, wrote) = run(&mut r, &cfg, "2 modify project:Home").await;
+        assert!(!wrote && !asked(&res).1.is_empty(), "the form's edit still asks");
+        let (res, wrote) = run(&mut r, &cfg, "rc.recurrence.confirmation:no 2 modify project:Home").await;
+        assert!(wrote, "{}", message(&res));
+        let v = all(&mut r).await;
+        let homes = v.iter().filter(|f| f.project.as_deref() == Some("Home")).count();
+        assert_eq!(
+            homes, 1,
+            "only the instance changed, not the template or the other: {v:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn deleting_a_template_takes_its_instances_as_recurrence_confirmation_says() {
         for (mode, left) in [("yes", 0), ("no", 2)] {
             let (mut r, cfg) = series(mode).await;

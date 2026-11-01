@@ -103,7 +103,9 @@ web addresses, nested bullet and numbered lists, `>` quotes and `---`. Not table
 as typed, and links are made only for `http`, `https` and `mailto`. Showing text never changes what is stored.
 
 **Checklists** (`- [ ] milk`, `- [x] eggs`) have boxes you can click in a string UDA. The app changes that box and saves
-the whole text with an ordinary `modify <uda>:<text>`, so the CLI, a hook and the history see a normal edit. Boxes in a
+the whole text with an ordinary `modify <uda>:<text>`, so the CLI, a hook and the history see a normal edit. On a
+recurring task it changes only that occurrence, with no question about the series (`rc.recurrence.confirmation:no`);
+editing the field in the form still asks. Boxes in a
 note are only shown, because Taskwarrior has no way to change a note in place.
 
 How a table shows annotations is up to the report's `description` column, as in Taskwarrior 3 (`description`,

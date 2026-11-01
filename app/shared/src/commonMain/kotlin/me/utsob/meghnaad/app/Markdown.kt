@@ -176,14 +176,15 @@ private var ticking = false
 
 /**
  * Tick or untick a checkbox in a string UDA. The engine changes the text, and the task is told the new one with an ordinary
- * `modify <uda>:<text>`. One at a time, so a second click never works from the text the first one has just changed.
+ * `modify <uda>:<text>`. One at a time, so a second click never works from the text the first one has just changed. It
+ * changes only the task clicked (`rc.recurrence.confirmation:no`), so a recurring task is not asked about its series.
  */
 suspend fun Store.tickBox(from: Entry?, uuid: String, uda: String, text: String, line: Int) {
     if (ticking) return
     val next = toggledBox(text, line) ?: return
     ticking = true
     try {
-        act(from, listOf(uuid, "modify", "$uda:$next"), again = true)
+        act(from, listOf("rc.recurrence.confirmation:no", uuid, "modify", "$uda:$next"), again = true)
     } finally {
         ticking = false
     }

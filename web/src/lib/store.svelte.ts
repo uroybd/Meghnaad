@@ -717,7 +717,9 @@ class Store {
   /**
    * Tick or untick a checkbox in a string UDA. The engine changes the text (`tc_core::markdown`), and the task is told the
    * new one with an ordinary `modify <uda>:<text>`. One at a time, so a second click never works from the text the first
-   * one has just changed.
+   * one has just changed. It changes only the task clicked (`rc.recurrence.confirmation:no`): a box is ticked on this
+   * occurrence, so a recurring task is not asked whether the rest of its series should follow. Editing the field in the
+   * form still asks.
    */
   async tickBox(from: Entry | null, uuid: string, uda: string, text: string, line: number) {
     if (this.#ticking) return;
@@ -725,7 +727,7 @@ class Store {
     if (next === null) return;
     this.#ticking = true;
     try {
-      await this.act(from, [uuid, 'modify', `${uda}:${next}`], {}, true);
+      await this.act(from, ['rc.recurrence.confirmation:no', uuid, 'modify', `${uda}:${next}`], {}, true);
     } finally {
       this.#ticking = false;
     }

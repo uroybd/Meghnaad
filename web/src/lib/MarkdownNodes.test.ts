@@ -90,7 +90,7 @@ describe('ticking a box', () => {
     const first = store.tickBox(null, 'u1', 'plan', '- [ ] a\n- [ ] b', 1);
     const second = store.tickBox(null, 'u1', 'plan', '- [ ] a\n- [ ] b', 0);
     await Promise.all([first, second]);
-    expect(calls).toEqual([['u1', 'modify', 'plan:- [ ] a\n- [x] b']]);
+    expect(calls).toEqual([['rc.recurrence.confirmation:no', 'u1', 'modify', 'plan:- [ ] a\n- [x] b']]);
     // A line that is not a checkbox is not sent.
     await store.tickBox(null, 'u1', 'plan', 'plain', 0);
     expect(calls).toHaveLength(1);
