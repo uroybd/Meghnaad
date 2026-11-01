@@ -126,7 +126,6 @@ fun RcTextField(
     val starts = laidOut?.let { l -> (0 until l.lineCount).map { l.getLineStart(it) } }
         ?: buildList { add(0); value.forEachIndexed { i, c -> if (c == '\n') add(i + 1) } }
     val numbers = lineNumbers(value, starts)
-    val digits = (numbers.lastOrNull { it != null } ?: 1).toString().length
     val gutter = buildAnnotatedString {
         numbers.forEachIndexed { i, n ->
             if (i > 0) append("\n")
@@ -139,8 +138,11 @@ fun RcTextField(
     Row(modifier.border(1.dp, colors.outline, androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 10.dp)) {
         Text(
             gutter,
-            Modifier.width((digits * 8 + 4).dp).padding(end = 8.dp),
+            // No width of its own: the widest number sets it (a width in dp does not follow the user's font size), and no number
+            // wraps, which would throw every line after it out of step.
+            Modifier.padding(end = 8.dp),
             style = style.copy(color = colors.onSurfaceVariant, textAlign = TextAlign.End),
+            softWrap = false,
         )
         BasicTextField(
             value, onChange, Modifier.weight(1f).heightIn(min = (17 * 12).dp),
