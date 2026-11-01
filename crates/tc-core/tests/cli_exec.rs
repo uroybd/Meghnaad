@@ -2732,6 +2732,39 @@ mod recurrence_as_task_does_it {
     }
 
     #[tokio::test]
+    async fn a_copy_made_by_the_real_task_is_removed_and_the_slot_is_not_filled_twice() {
+        let cfg = parse("recurrence=on\n").config;
+        let mut r = replica();
+        run(&mut r, &cfg, "add Reading recur:daily due:3d").await;
+        run(&mut r, &cfg, "next").await;
+        let v = all(&mut r).await;
+        let (t, first) = (template(&v).uuid, instances(&v)[0].uuid);
+        // `task` on another device made its own instance for the same day, with a random uuid, before it synced.
+        let copy = uuid::Uuid::new_v4();
+        let mut ops = Operations::new();
+        let mut c = r.create_task(copy, &mut ops).await.unwrap();
+        for (k, val) in [
+            ("description", "Reading"),
+            ("status", "pending"),
+            ("parent", &t.to_string()),
+            ("imask", "0"),
+        ] {
+            c.set_value(k, Some(val.to_string()), &mut ops).unwrap();
+        }
+        let due = instances(&v)[0].due.unwrap();
+        c.set_value("due", Some(due.to_string()), &mut ops).unwrap();
+        r.commit_operations(ops).await.unwrap();
+        assert_eq!(instances(&all(&mut r).await).len(), 2);
+
+        run(&mut r, &cfg, "next").await;
+        let v = all(&mut r).await;
+        let pending: Vec<_> = instances(&v).into_iter().filter(|f| f.status == "pending").collect();
+        assert_eq!(pending.len(), 1, "{v:?}");
+        assert!(pending[0].uuid == first.min(copy), "the same one stays on every client");
+        assert_eq!(template(&v).mask.as_deref(), Some("-"));
+    }
+
+    #[tokio::test]
     async fn deleting_a_template_takes_its_instances_as_recurrence_confirmation_says() {
         for (mode, left) in [("yes", 0), ("no", 2)] {
             let (mut r, cfg) = series(mode).await;

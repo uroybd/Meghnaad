@@ -12,6 +12,7 @@
 use crate::dates::{parse_duration, Clock};
 use crate::model::Facts;
 use crate::taskrc::Config;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 /// Upper bound on instances planned for one parent in one pass. Taskwarrior has none, so a
@@ -315,12 +316,57 @@ pub enum Action {
     ExpireTask {
         task: Uuid,
     },
+    /// A second pending instance for a slot that already has one (two clients each made it before they synced): delete it.
+    DropDuplicate {
+        task: Uuid,
+    },
+}
+
+/// The pending instances of `parent` that repeat a slot another one holds, to be deleted. Taskwarrior never looks: two
+/// devices that each make the instance a day needs before they sync leave two, and nothing removes the second.
+///
+/// One of each slot stays: one the person has worked on (started or noted) if any, else the one every client makes
+/// (`instance_uuid`), else the lowest uuid. Every client picks the same from the same tasks, so they delete the same ones.
+/// A copy that has been worked on, or changed from its series, is never deleted.
+fn duplicates(parent: &Facts, kids: &[&Facts]) -> Vec<Uuid> {
+    let same_as_series = |k: &Facts| {
+        k.description == parent.description
+            && k.project == parent.project
+            && k.priority == parent.priority
+            && k.tags == parent.tags
+            && k.depends == parent.depends
+            && k.until == parent.until
+    };
+    let worked_on = |k: &Facts| k.start.is_some() || !k.annotations.is_empty() || !same_as_series(k);
+    let mut slots: BTreeMap<usize, Vec<&Facts>> = BTreeMap::new();
+    for k in kids.iter().filter(|k| k.status == "pending") {
+        if let Some(i) = k.imask {
+            slots.entry(i).or_default().push(k);
+        }
+    }
+    let mut out = Vec::new();
+    for (i, mut copies) in slots {
+        if copies.len() < 2 {
+            continue;
+        }
+        let canonical = instance_uuid(parent.uuid, i);
+        copies.sort_by_key(|k| (!worked_on(k), k.uuid != canonical, k.uuid));
+        // The first stays; of the rest, only the untouched go.
+        out.extend(copies[1..].iter().filter(|k| !worked_on(k)).map(|k| k.uuid));
+    }
+    out
 }
 
 /// What `handleRecurrence` + `handleUntil` would do right now.
 pub fn plan(all: &[Facts], cfg: &Config, clock: &Clock) -> Vec<Action> {
     let limit = limit(cfg);
     let mut out = Vec::new();
+    let mut children: BTreeMap<Uuid, Vec<&Facts>> = BTreeMap::new();
+    for f in all {
+        if let Some(parent) = f.parent {
+            children.entry(parent).or_default().push(f);
+        }
+    }
 
     for p in all.iter().filter(|f| f.status == "recurring") {
         let dates = generate_due_dates(p, limit, clock);
@@ -328,6 +374,9 @@ pub fn plan(all: &[Facts], cfg: &Config, clock: &Clock) -> Vec<Action> {
             out.push(Action::ExpireParent { parent: p.uuid });
             continue;
         }
+        let kids = children.get(&p.uuid).map_or(&[][..], Vec::as_slice);
+        let gone = duplicates(p, kids);
+        out.extend(gone.iter().map(|&task| Action::DropDuplicate { task }));
         let mut mask: String = p.mask.clone().unwrap_or_default();
         let mut changed = false;
         for (i, &d) in dates.due.iter().enumerate() {
@@ -335,6 +384,13 @@ pub fn plan(all: &[Facts], cfg: &Config, clock: &Clock) -> Vec<Action> {
                 continue;
             }
             changed = true;
+            // The slot already has an instance (another client made it, and the mask that says so has not arrived or
+            // was overwritten): it is not made again, and the mask learns of it.
+            if let Some(k) = kids.iter().find(|k| k.imask == Some(i) && !gone.contains(&k.uuid)) {
+                let waiting = k.wait.is_some_and(|w| w > clock.now);
+                mask.push(mask_char(&k.status, waiting));
+                continue;
+            }
             // Keep the offsets between due and wait/scheduled the parent had.
             let shifted = |t: Option<i64>| t.zip(p.due).map(|(t, due)| d + (t - due));
             let wait = shifted(p.wait);
@@ -719,5 +775,92 @@ mod tests {
                 Action::ExpireTask { task: late.uuid }
             ]
         );
+    }
+    fn instance(p: &Facts, index: usize, uuid: u128) -> Facts {
+        Facts {
+            uuid: Uuid::from_u128(uuid),
+            status: "pending".into(),
+            parent: Some(p.uuid),
+            imask: Some(index),
+            due: p.due,
+            ..task("rent")
+        }
+    }
+
+    #[test]
+    fn a_slot_that_has_an_instance_is_not_made_again_and_the_mask_learns_of_it() {
+        let now = at(2026, 10, 7);
+        let p = parent(at(2026, 10, 20), "weekly");
+        // The mask has not arrived (or was overwritten by a client that had not seen the instance).
+        let acts = plan(&[p.clone(), instance(&p, 0, 7)], &cfg(""), &clock_at(now));
+        assert_eq!(
+            acts,
+            vec![Action::SetMask {
+                parent: p.uuid,
+                mask: "-".into()
+            }]
+        );
+        // A finished instance counts too: its slot is not reopened.
+        let mut done = instance(&p, 0, 7);
+        done.status = "completed".into();
+        let acts = plan(&[p.clone(), done], &cfg(""), &clock_at(now));
+        assert_eq!(
+            acts,
+            vec![Action::SetMask {
+                parent: p.uuid,
+                mask: "+".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_second_pending_instance_for_a_slot_is_dropped_whichever_client_looks() {
+        let now = at(2026, 10, 7);
+        let mut p = parent(at(2026, 10, 20), "weekly");
+        p.mask = Some("-".into());
+        let (a, b) = (instance(&p, 0, 9), instance(&p, 0, 4));
+        for all in [
+            vec![p.clone(), a.clone(), b.clone()],
+            vec![b.clone(), a.clone(), p.clone()],
+        ] {
+            let acts = plan(&all, &cfg(""), &clock_at(now));
+            assert_eq!(
+                acts,
+                vec![Action::DropDuplicate { task: a.uuid }],
+                "the lower uuid stays"
+            );
+        }
+        // The one every client makes stays, whatever the uuids.
+        let mut canonical = instance(&p, 0, 9);
+        canonical.uuid = instance_uuid(p.uuid, 0);
+        let acts = plan(&[p.clone(), b.clone(), canonical.clone()], &cfg(""), &clock_at(now));
+        assert_eq!(acts, vec![Action::DropDuplicate { task: b.uuid }]);
+    }
+
+    #[test]
+    fn a_copy_that_was_worked_on_is_kept_and_so_is_a_done_one() {
+        let now = at(2026, 10, 7);
+        let mut p = parent(at(2026, 10, 20), "weekly");
+        p.mask = Some("-".into());
+        let plain = instance(&p, 0, 4);
+        let mut started = instance(&p, 0, 9);
+        started.start = Some(now - 60);
+        let acts = plan(&[p.clone(), plain.clone(), started.clone()], &cfg(""), &clock_at(now));
+        assert_eq!(
+            acts,
+            vec![Action::DropDuplicate { task: plain.uuid }],
+            "the started one stays"
+        );
+        // Two that were both worked on: nothing is lost.
+        let mut noted = instance(&p, 0, 5);
+        noted.annotations = vec![crate::model::Note {
+            entry: now,
+            text: "called".into(),
+        }];
+        assert!(plan(&[p.clone(), noted, started], &cfg(""), &clock_at(now)).is_empty());
+        // A completed instance is not a duplicate of a pending one for the same slot.
+        let mut done = instance(&p, 0, 3);
+        done.status = "completed".into();
+        assert!(plan(&[p.clone(), done, plain], &cfg(""), &clock_at(now)).is_empty());
     }
 }

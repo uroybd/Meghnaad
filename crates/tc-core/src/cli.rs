@@ -1559,7 +1559,9 @@ async fn maintain<S: Storage>(
                 masks.insert(parent, mask);
                 dirty.push(parent);
             }
-            Plan::ExpireParent { parent } | Plan::ExpireTask { task: parent } => {
+            Plan::ExpireParent { parent }
+            | Plan::ExpireTask { task: parent }
+            | Plan::DropDuplicate { task: parent } => {
                 let mut t = replica
                     .get_task(parent)
                     .await

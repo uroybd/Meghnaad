@@ -102,7 +102,7 @@ See [Recurring tasks](using/recurring.md#recurring-tasks) for how it behaves.
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `recurrence` | Done | On by default; `recurrence=off` (or `0`, `no`) turns it off. Before the commands Taskwarrior flags Recur (reports, `count`, `export`, …) the app creates the instances that are due and expires tasks past `until`. Taskwarrior advises one primary client with `recurrence=1` and `recurrence=0` on the others, because two that each make an instance before syncing make two. Between this app's own clients that can't happen: an instance's uuid derives from its template and index, so every client makes the same task and replicas merge it. A real `task` on the same data still makes its own copy, so turn it off there |
+| `recurrence` | Done | On by default; `recurrence=off` (or `0`, `no`) turns it off. Before the commands Taskwarrior flags Recur (reports, `count`, `export`, …) the app creates the instances that are due and expires tasks past `until`. Taskwarrior advises one primary client with `recurrence=1` and `recurrence=0` on the others, because two that each make an instance before syncing make two. The app does not need that: it makes an instance only if its slot (`imask`) has none, uuids derive from the template and index so its own clients make the same task, and it deletes the extra pending copy a real `task` leaves (never one you started, annotated or changed) |
 | `recurrence.confirmation` | Done | Unset or `prompt` asks, a true-ish value is yes, anything else no. It governs `modify`, `append`, `prepend`, `annotate` and `delete` on a task of a series, and `purge` of a template |
 | `recurrence.indicator` | Done | |
 | `recurrence.limit` | Done | |

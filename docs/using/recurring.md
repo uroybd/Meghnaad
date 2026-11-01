@@ -18,11 +18,21 @@ the instances that are due and expires those past their `until`. It does not do 
 task. `recurrence.limit=N` keeps N upcoming instances (default 1).
 
 Taskwarrior advises that when several clients sync, one is primary and the others set `recurrence=0`, because two that
-each make an instance before syncing make two. This app's own clients (the page, other tabs, the phone) avoid that: an
-instance's uuid comes from its template and its index, so they all make the same task and the replicas merge it. A real
-`task` on the same data doesn't know the trick, so if you also run the CLI, set `recurrence=0` in its taskrc, or turn it
-off here with `recurrence=off`. With it off, the app still shows and edits recurring tasks and reads instances made
-elsewhere.
+each make an instance before syncing make two. Meghnaad does not need that.
+
+### No duplicates
+Before it makes an instance, the app looks for one already in that slot (the same `imask`), and makes it only if there is
+none. So `recurrence=1` everywhere is safe.
+
+- **Between Meghnaad clients** (the page, other tabs, the phone), an instance's uuid comes from its template and its
+  index, so they make the same task and the replicas merge it.
+- **With the real `task`**, which gives its copy a random uuid, the app removes the extra pending copy the next time it
+  reads your tasks. Every client keeps the same one, so they delete the same one. A copy you started or annotated, or
+  changed from its series, is never deleted.
+- **A stale mask** (one client overwrote another's) is mended from the instances that exist, not made again.
+
+Run `task` on its own side with `recurrence=0` if you would rather it never made copies. With it off, the app still
+shows and edits recurring tasks and reads instances made elsewhere.
 
 ## Editing and deleting a series
 
