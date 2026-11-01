@@ -3,7 +3,8 @@
 // whole command line.
 //
 //   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ],
-//     "boards": [ … ] }            (what a board is: boards.ts and tc_core::board)
+//     "boards": [ … ],             (what a board is: boards.ts and tc_core::board)
+//     "appearance": { "progress": { "progress": { "min": 0, "max": 100 } } } }
 
 import { normalizeBoards, type Board } from './boards';
 import { ChainError, splitChain } from './compound';
@@ -37,6 +38,73 @@ export function sameHomepage(a: Homepage | null, b: Homepage | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** A UDA shown as a progress bar: the value at which the bar is empty and the value at which it is full. */
+export interface Progress {
+  min: number;
+  max: number;
+}
+
+/** How the app draws things, kept in `settings.json` under `appearance`. */
+export interface Appearance {
+  /** The numeric UDAs shown as progress bars in reports, by name. */
+  progress: Record<string, Progress>;
+}
+
+export const DEFAULT_PROGRESS: Progress = { min: 0, max: 100 };
+
+/** Why `p` can't be the range of a progress bar, or null. */
+export function progressProblem(p: Progress): string | null {
+  if (!Number.isFinite(p.min) || !Number.isFinite(p.max)) return 'min and max must be numbers';
+  if (p.min >= p.max) return 'min must be less than max';
+  return null;
+}
+
+/** How far along `value` is, from 0 (at or under `min`) to 1 (at or over `max`). */
+export function progressFraction(value: number, p: Progress): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, (value - p.min) / (p.max - p.min)));
+}
+
+export function sameAppearance(a: Appearance, b: Appearance): boolean {
+  const names = Object.keys(a.progress).sort();
+  const other = Object.keys(b.progress).sort();
+  return (
+    names.join('\n') === other.join('\n') &&
+    names.every((n) => a.progress[n].min === b.progress[n].min && a.progress[n].max === b.progress[n].max)
+  );
+}
+
+/** The valid part of a saved `appearance`, and what is wrong with the rest, one line each. */
+export function parseAppearance(v: unknown): { appearance: Appearance; errors: string[] } {
+  const appearance: Appearance = { progress: {} };
+  const errors: string[] = [];
+  if (v === undefined) return { appearance, errors };
+  if (!v || typeof v !== 'object' || Array.isArray(v)) {
+    return { appearance, errors: ['appearance must be an object: { "progress": { … } }'] };
+  }
+  const list = (v as Record<string, unknown>).progress;
+  if (list === undefined) return { appearance, errors };
+  if (!list || typeof list !== 'object' || Array.isArray(list)) {
+    return { appearance, errors: ['appearance.progress must be an object: { "<uda>": { "min": 0, "max": 100 } }'] };
+  }
+  for (const [name, r] of Object.entries(list)) {
+    const at = `appearance.progress.${name}`;
+    if (!r || typeof r !== 'object' || Array.isArray(r)) {
+      errors.push(`${at}: must be { "min": …, "max": … }`);
+      continue;
+    }
+    const { min = DEFAULT_PROGRESS.min, max = DEFAULT_PROGRESS.max } = r as Record<string, unknown>;
+    if (typeof min !== 'number' || typeof max !== 'number') {
+      errors.push(`${at}: min and max must be numbers`);
+      continue;
+    }
+    const bad = progressProblem({ min, max });
+    if (bad) errors.push(`${at}: ${bad}`);
+    else appearance.progress[name] = { min, max };
+  }
+  return { appearance, errors };
+}
+
 export interface ParsedSettings {
   /** Every top-level key as it was, so what this page does not know about is kept when it saves. */
   raw: Record<string, unknown>;
@@ -46,6 +114,10 @@ export interface ParsedSettings {
   boards: Board[];
   /** Where the app opens, if the settings say. */
   homepage: Homepage | null;
+  /** How the app draws things (the valid part of `appearance`). */
+  appearance: Appearance;
+  /** What is wrong with `appearance`, one line each. */
+  appearanceErrors: string[];
   /** What is wrong with the boards, one line each; a board or section with a problem is left out. */
   boardErrors: string[];
   /** What is wrong, one line each; a command with a problem is left out. */
@@ -81,7 +153,16 @@ export function commandProblem(command: string): string | null {
 }
 
 export function parseSettings(text: string): ParsedSettings {
-  const out: ParsedSettings = { raw: {}, commands: [], boards: [], homepage: null, boardErrors: [], errors: [] };
+  const out: ParsedSettings = {
+    raw: {},
+    commands: [],
+    boards: [],
+    homepage: null,
+    appearance: { progress: {} },
+    appearanceErrors: [],
+    boardErrors: [],
+    errors: [],
+  };
   if (!text.trim()) return out;
   let value: unknown;
   try {
@@ -96,6 +177,7 @@ export function parseSettings(text: string): ParsedSettings {
   }
   out.raw = value as Record<string, unknown>;
   out.homepage = parseHomepage(out.raw.homepage);
+  ({ appearance: out.appearance, errors: out.appearanceErrors } = parseAppearance(out.raw.appearance));
   if (out.raw.boards !== undefined) {
     const n = normalizeBoards(out.raw.boards);
     out.boards = n.boards;
@@ -160,5 +242,13 @@ export function serializeHomepage(raw: Record<string, unknown>, homepage: Homepa
   const { homepage: _old, ...rest } = raw;
   const next: Record<string, unknown> = { ...rest };
   if (homepage) next.homepage = homepage;
+  return JSON.stringify(next, null, 2) + '\n';
+}
+
+/** The text to save: the other top-level keys as they were, and `appearance` as given (nothing chosen leaves the key out). */
+export function serializeAppearance(raw: Record<string, unknown>, appearance: Appearance): string {
+  const { appearance: _old, ...rest } = raw;
+  const next: Record<string, unknown> = { ...rest };
+  if (Object.keys(appearance.progress).length) next.appearance = { progress: appearance.progress };
   return JSON.stringify(next, null, 2) + '\n';
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   nameProblem,
+  parseAppearance,
+  progressFraction,
+  serializeAppearance,
   commandProblem,
   parseHomepage,
   parseSettings,
@@ -165,5 +168,55 @@ describe('the home page in the settings', () => {
     expect(JSON.parse(serializeHomepage(out, null))).toEqual(raw);
     expect(JSON.parse(serializeSettings(out, [])).homepage).toEqual({ report: 'list' });
     expect(JSON.parse(serializeBoards(out, [])).homepage).toEqual({ report: 'list' });
+  });
+});
+
+describe('appearance', () => {
+  it('reads the UDAs shown as progress bars, with a default range', () => {
+    const p = parseSettings(
+      '{ "appearance": { "progress": { "progress": { "min": 0, "max": 10 }, "done": {}, "pct": { "max": 1.5 } } } }',
+    );
+    expect(p.appearanceErrors).toEqual([]);
+    expect(p.appearance.progress).toEqual({
+      progress: { min: 0, max: 10 },
+      done: { min: 0, max: 100 },
+      pct: { min: 0, max: 1.5 },
+    });
+  });
+
+  it('says what is wrong and keeps what is right', () => {
+    const { appearance, errors } = parseAppearance({
+      progress: {
+        ok: { min: 1, max: 2 },
+        flat: { min: 5, max: 5 },
+        backwards: { min: 9, max: 1 },
+        text: { max: '9' },
+        no: 3,
+      },
+    });
+    expect(Object.keys(appearance.progress)).toEqual(['ok']);
+    expect(errors).toHaveLength(4);
+    expect(errors.join('\n')).toContain('flat: min must be less than max');
+    expect(parseAppearance('x').errors).toHaveLength(1);
+    expect(parseAppearance({ progress: [] }).errors).toHaveLength(1);
+    expect(parseAppearance(undefined)).toEqual({ appearance: { progress: {} }, errors: [] });
+  });
+
+  it('is kept when the rest of the settings are saved, and saved without touching them', () => {
+    const raw = { homepage: { report: 'list' }, taskCommands: [{ name: 'a', command: 'done' }], keep: 1 };
+    const text = serializeAppearance(raw, { progress: { progress: { min: 0, max: 100 } } });
+    expect(JSON.parse(text)).toEqual({ ...raw, appearance: { progress: { progress: { min: 0, max: 100 } } } });
+    // None left leaves the key out.
+    expect(JSON.parse(serializeAppearance({ ...raw, appearance: { progress: {} } }, { progress: {} }))).toEqual(raw);
+    const kept = parseSettings(text);
+    expect(serializeSettings(kept.raw, kept.commands)).toContain('"appearance"');
+  });
+
+  it('fills a bar from empty at the min to full at the max', () => {
+    const r = { min: 0, max: 50 };
+    expect(progressFraction(25, r)).toBe(0.5);
+    expect(progressFraction(-5, r)).toBe(0);
+    expect(progressFraction(80, r)).toBe(1);
+    expect(progressFraction(Number.NaN, r)).toBe(0);
   });
 });

@@ -134,4 +134,46 @@ class AppSettingsTest {
         val cmds = Json.parseToJsonElement(serializeSettings(parseSettings(serializeBoards(raw, listOf(board))).raw, emptyList())) as kotlinx.serialization.json.JsonObject
         assertTrue("boards" in cmds.keys && "homepage" in cmds.keys, cmds.keys.toString())
     }
+
+    @Test
+    fun readsTheUdasShownAsProgressBarsWithADefaultRange() {
+        val p = parseSettings("""{ "appearance": { "progress": { "progress": { "min": 0, "max": 10 }, "done": {}, "pct": { "max": 1.5 } } } }""")
+        assertEquals(emptyList(), p.appearanceErrors)
+        assertEquals(
+            mapOf("progress" to Progress(0.0, 10.0), "done" to Progress(0.0, 100.0), "pct" to Progress(0.0, 1.5)),
+            p.appearance.progress,
+        )
+    }
+
+    @Test
+    fun saysWhatIsWrongWithAnAppearanceAndKeepsWhatIsRight() {
+        val p = parseSettings(
+            """{ "appearance": { "progress": { "ok": { "min": 1, "max": 2 }, "flat": { "min": 5, "max": 5 }, "backwards": { "min": 9, "max": 1 }, "text": { "max": "9" }, "no": 3 } } }""",
+        )
+        assertEquals(listOf("ok"), p.appearance.progress.keys.toList())
+        assertEquals(4, p.appearanceErrors.size)
+        assertTrue(p.appearanceErrors.any { "flat: min must be less than max" in it })
+        assertEquals(1, parseSettings("""{ "appearance": [] }""").appearanceErrors.size)
+    }
+
+    @Test
+    fun savesTheAppearanceWithoutTouchingTheRestAndLeavesTheKeyOutWhenEmpty() {
+        val raw = Json.parseToJsonElement("""{ "homepage": { "report": "list" }, "keep": 1 }""").jsonObject
+        val text = serializeAppearance(raw, Appearance(mapOf("progress" to Progress(0.0, 100.0), "pct" to Progress(0.0, 1.5))))
+        assertTrue("\"max\": 100\n" in text || "\"max\": 100," in text || "\"max\": 100 " in text, text)
+        val back = parseSettings(text)
+        assertEquals(mapOf("progress" to Progress(0.0, 100.0), "pct" to Progress(0.0, 1.5)), back.appearance.progress)
+        assertEquals(Homepage(report = "list"), back.homepage)
+        assertTrue("keep" in back.raw)
+        assertTrue("appearance" !in parseSettings(serializeAppearance(back.raw, Appearance())).raw)
+    }
+
+    @Test
+    fun aBarFillsFromEmptyAtTheMinToFullAtTheMax() {
+        val r = Progress(0.0, 50.0)
+        assertEquals(0.5f, r.fraction(25.0))
+        assertEquals(0f, r.fraction(-5.0))
+        assertEquals(1f, r.fraction(80.0))
+        assertEquals(0f, r.fraction(Double.NaN))
+    }
 }

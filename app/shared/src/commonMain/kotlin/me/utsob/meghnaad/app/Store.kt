@@ -38,7 +38,7 @@ enum class Setup {
 
 enum class View { Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings }
 
-enum class SettingsTab { General, Taskrc, Tasksh, Commands, Hooks, Urgency, Sync }
+enum class SettingsTab { General, Appearance, Taskrc, Tasksh, Commands, Hooks, Urgency, Sync }
 
 /** The pages that show one command's answer with the same component the console uses. */
 enum class Panel { Summary, Calendar, Burndown }
@@ -178,6 +178,9 @@ class Store(
 
     /** Where the app opens: a report or a board of `settings.json`, or `next` when it says nothing. */
     val homepage: Homepage? get() = appSettings?.homepage
+
+    /** How the app draws things, from `settings.json`: the numeric UDAs shown as progress bars, by name. */
+    val appearance: Appearance get() = appSettings?.appearance ?: Appearance()
     val reports: List<ReportMeta> get() = config?.reports ?: emptyList()
 
     /** Reports named `_something` are hidden helpers: left out of the lists to pick from unless this is on. */
@@ -557,6 +560,12 @@ class Store(
         val text = serializeBoards(appSettings?.raw ?: JsonObject(emptyMap()), next, homepage, setHomepage)
         if (text.encodeToByteArray().size > MAX_SETTINGS_BYTES) error("The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.")
         request("PUT", "/api/settings", text)
+        loadAppSettings()
+    }
+
+    /** Save how the app draws things, the rest of `settings.json` as it was. Throws what the engine refused. */
+    suspend fun saveAppearance(appearance: Appearance) {
+        request("PUT", "/api/settings", serializeAppearance(appSettings?.raw ?: JsonObject(emptyMap()), appearance))
         loadAppSettings()
     }
 

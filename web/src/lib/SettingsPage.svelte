@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AppearancePanel from './AppearancePanel.svelte';
   import CommandsPanel from './CommandsPanel.svelte';
   import GeneralPanel from './GeneralPanel.svelte';
   import HooksPanel from './HooksPanel.svelte';
@@ -7,9 +8,10 @@
   import TaskshPanel from './TaskshPanel.svelte';
   import UrgencyPanel from './UrgencyPanel.svelte';
 
-  type Tab = 'general' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
+  type Tab = 'general' | 'appearance' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
     { id: 'general', label: 'General', hint: 'Where the app opens' },
+    { id: 'appearance', label: 'Appearance', hint: 'How the app draws things: UDAs shown as progress bars' },
     {
       id: 'taskrc',
       label: 'taskrc',
@@ -28,6 +30,7 @@
   // Each tab keeps its own edits while another is shown, and says so with a dot.
   let dirty = $state<Record<Tab, boolean>>({
     general: false,
+    appearance: false,
     taskrc: false,
     tasksh: false,
     commands: false,
@@ -91,6 +94,14 @@
     hidden={store.settingsTab !== 'general'}
   >
     <GeneralPanel ondirty={(v) => (dirty.general = v)} />
+  </div>
+  <div
+    role="tabpanel"
+    id="settings-panel-appearance"
+    aria-labelledby="settings-tab-appearance"
+    hidden={store.settingsTab !== 'appearance'}
+  >
+    <AppearancePanel ondirty={(v) => (dirty.appearance = v)} />
   </div>
   <div
     role="tabpanel"

@@ -16,6 +16,12 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
@@ -269,6 +275,26 @@ private fun TableRow(
     }
 }
 
+/** A value drawn as a bar between [range]'s min (empty) and max (full), with the value written beside it. */
+@Composable
+private fun ProgressBar(value: Double, text: String, range: Progress, label: String, tone: androidx.compose.ui.graphics.Color) {
+    val colors = MaterialTheme.colorScheme
+    val fraction = range.fraction(value)
+    Row(
+        Modifier.widthIn(min = 110.dp).semantics {
+            contentDescription = "$label $text"
+            progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.outlineVariant)) {
+            Box(Modifier.fillMaxWidth(fraction).height(8.dp).background(if (fraction >= 1f) extras.ok else colors.primary))
+        }
+        Text(text, color = tone, fontSize = 12.sp)
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TableCell(
@@ -299,7 +325,10 @@ private fun TableCell(
         "urg-crit" -> colors.error to FontWeight.Bold
         else -> base to if (col.kind == "id") FontWeight.Bold else if (bold) FontWeight.Bold else FontWeight.Normal
     }
+    // A numeric UDA the settings show as a progress bar (Settings → Appearance), where the cell has a number in it.
+    val bar = store.appearance.progress[col.name]?.let { range -> c.text.trim().toDoubleOrNull()?.let { range to it } }
     when {
+        bar != null -> ProgressBar(bar.second, c.text, bar.first, col.label, tone)
         c.uuid != null -> Text(
             c.text, Modifier.clickable { clipboard.setText(AnnotatedString(c.uuid)); store.notify("uuid copied") },
             color = tone, fontSize = 13.sp, fontFamily = FontFamily.Monospace,

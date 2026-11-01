@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import ReportTable from './ReportTable.svelte';
+import { parseSettings } from './appsettings';
 import { selection } from './selection.svelte';
 import { store } from './store.svelte';
 import type { ConfigResponse, ReportResult, Row } from './types';
@@ -12,6 +13,7 @@ afterEach(() => {
   app = null;
   document.body.innerHTML = '';
   store.config = null;
+  store.appSettings = null;
   store.detail = null;
   selection.clear();
   vi.restoreAllMocks();
@@ -338,5 +340,54 @@ describe('a report of many tasks', () => {
         expect(drawn()).toBe(650);
         expect(watched).toBeGreaterThan(1);
       });
+  });
+});
+
+describe('a UDA shown as a progress bar', () => {
+  function drawProgress(values: (string | null)[]) {
+    store.appSettings = parseSettings('{ "appearance": { "progress": { "progress": { "min": 0, "max": 50 } } } }');
+    store.config = {
+      colors: {},
+      config: {
+        udas: { progress: { name: 'progress', type: 'numeric', label: 'Progress', values: [], default: null } },
+        settings: {},
+        reports: {},
+      },
+    } as unknown as ConfigResponse;
+    const rows = values.map((v, i) => ({
+      ...row(`task${i}`, null),
+      extra: (v === null ? {} : { progress: v }) as Record<string, string>,
+    }));
+    const result: ReportResult = {
+      kind: 'report',
+      report: 'next',
+      description: null,
+      columns: [
+        { spec: 'description', name: 'description', format: null, label: 'Description', kind: 'description' },
+        { spec: 'progress', name: 'progress', format: null, label: 'Progress', kind: 'number' },
+      ],
+      rows,
+      breaks: rows.map(() => false),
+      matched: rows.length,
+      sort: null,
+    };
+    app = mount(ReportTable, { target: document.body, props: { result } });
+    flushSync();
+  }
+
+  it('is drawn as a bar between its min and max, with the number beside it', () => {
+    drawProgress(['10', '75']);
+    const bars = [...document.querySelectorAll('[role=progressbar]')];
+    expect(bars).toHaveLength(2);
+    expect(bars[0].getAttribute('aria-valuenow')).toBe('10');
+    expect(bars[0].querySelector<HTMLElement>('.fill')?.style.width).toBe('20%');
+    expect(bars[0].textContent?.trim()).toBe('10');
+    expect(bars[1].querySelector<HTMLElement>('.fill')?.style.width).toBe('100%');
+  });
+
+  it('shows nothing for a task with no value, and other columns are untouched', () => {
+    drawProgress(['10', null]);
+    expect(document.querySelectorAll('[role=progressbar]')).toHaveLength(1);
+    expect(cellOf('task0', 'description').querySelector('[role=progressbar]')).toBeNull();
   });
 });

@@ -4,8 +4,10 @@ import { ApiError, getAppSettings, getConfig, putAppSettings, runCli, type Answe
 import {
   MAX_SETTINGS_BYTES,
   parseSettings,
+  serializeAppearance,
   serializeBoards,
   serializeHomepage,
+  type Appearance,
   type Homepage,
   type ParsedSettings,
   type TaskCommand,
@@ -313,6 +315,15 @@ class Store {
               : { page: 'settings', tab: this.settingsTab }
             : { page: this.view },
   );
+
+  /** How the app draws things, from `settings.json`: the numeric UDAs shown as progress bars, by name. */
+  appearance = $derived<Appearance>(this.appSettings?.appearance ?? { progress: {} });
+
+  /** Save how the app draws things, the rest of `settings.json` as it was. Throws what the server refused. */
+  async saveAppearance(appearance: Appearance) {
+    await putAppSettings(serializeAppearance(this.appSettings?.raw ?? {}, appearance));
+    await this.loadAppSettings();
+  }
 
   /** Save where the app opens (`null`: `next`), the rest of `settings.json` as it was. Throws what the server refused. */
   async saveHomepage(homepage: Homepage | null) {

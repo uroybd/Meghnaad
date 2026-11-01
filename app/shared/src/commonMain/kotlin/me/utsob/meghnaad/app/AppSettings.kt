@@ -12,7 +12,8 @@ import kotlinx.serialization.json.buildJsonObject
 // command line, `boards` (see Boards.kt) and `homepage`, where the app opens (web/src/lib/appsettings.ts):
 //
 //   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ],
-//     "boards": [ … ], "homepage": { "board": "week" } }
+//     "boards": [ … ], "homepage": { "board": "week" },
+//     "appearance": { "progress": { "progress": { "min": 0, "max": 100 } } } }
 
 /** The most the engine saves. */
 const val MAX_SETTINGS_BYTES = 64 * 1024
@@ -39,6 +40,52 @@ fun parseHomepage(v: JsonElement?): Homepage? {
     return Homepage(report, board)
 }
 
+/** A UDA shown as a progress bar: the value at which the bar is empty and the value at which it is full. */
+data class Progress(val min: Double, val max: Double) {
+    /** How far along [value] is, from 0 (at or under [min]) to 1 (at or over [max]). */
+    fun fraction(value: Double): Float = if (value.isNaN()) 0f else ((value - min) / (max - min)).coerceIn(0.0, 1.0).toFloat()
+
+    /** Why this can't be the range of a bar, or null. */
+    fun problem(): String? = when {
+        !min.isFinite() || !max.isFinite() -> "min and max must be numbers"
+        min >= max -> "min must be less than max"
+        else -> null
+    }
+}
+
+/** How the app draws things, kept in `settings.json` under `appearance`. */
+data class Appearance(
+    /** The numeric UDAs shown as progress bars in reports, by name. */
+    val progress: Map<String, Progress> = emptyMap(),
+)
+
+val DEFAULT_PROGRESS = Progress(0.0, 100.0)
+
+/** The valid part of a saved `appearance`, and what is wrong with the rest, one line each. */
+fun parseAppearance(v: JsonElement?): Pair<Appearance, List<String>> {
+    if (v == null) return Appearance() to emptyList()
+    val o = v as? JsonObject ?: return Appearance() to listOf("appearance must be an object: { \"progress\": { … } }")
+    val list = o["progress"] ?: return Appearance() to emptyList()
+    val bars = list as? JsonObject
+        ?: return Appearance() to listOf("appearance.progress must be an object: { \"<uda>\": { \"min\": 0, \"max\": 100 } }")
+    val errors = mutableListOf<String>()
+    val out = LinkedHashMap<String, Progress>()
+    for ((name, r) in bars) {
+        val at = "appearance.progress.$name"
+        val range = r as? JsonObject
+        if (range == null) {
+            errors += "$at: must be { \"min\": …, \"max\": … }"
+            continue
+        }
+        val min = range["min"]?.let { (it as? JsonPrimitive)?.takeIf { p -> !p.isString }?.content?.toDoubleOrNull() ?: Double.NaN } ?: DEFAULT_PROGRESS.min
+        val max = range["max"]?.let { (it as? JsonPrimitive)?.takeIf { p -> !p.isString }?.content?.toDoubleOrNull() ?: Double.NaN } ?: DEFAULT_PROGRESS.max
+        val p = Progress(min, max)
+        val bad = p.problem()
+        if (bad != null) errors += "$at: $bad" else out[name] = p
+    }
+    return Appearance(out) to errors
+}
+
 class ParsedSettings(
     /** Every top-level key as it was, so what this app does not know about is kept when it saves. */
     val raw: JsonObject,
@@ -52,6 +99,10 @@ class ParsedSettings(
     val boardErrors: List<String> = emptyList(),
     /** Where the app opens, if the settings say. */
     val homepage: Homepage? = null,
+    /** How the app draws things (the valid part of `appearance`). */
+    val appearance: Appearance = Appearance(),
+    /** What is wrong with `appearance`, one line each. */
+    val appearanceErrors: List<String> = emptyList(),
 )
 
 /** A Lucide icon's name: lower case words joined by dashes (`circle-x`, `arrow-up-0-1`). */
@@ -97,11 +148,12 @@ fun parseSettings(text: String): ParsedSettings {
         return ParsedSettings(none.raw, emptyList(), listOf("The settings must be a JSON object: { \"taskCommands\": [ … ] }"))
     }
     val homepage = parseHomepage(value["homepage"])
+    val (appearance, appearanceErrors) = parseAppearance(value["appearance"])
     val normalized = value["boards"]?.let { normalizeBoards(it) }
     val boards = normalized?.boards ?: emptyList()
     val boardErrors = normalized?.errors ?: emptyList()
-    val list = value["taskCommands"] ?: return ParsedSettings(value, emptyList(), emptyList(), boards, boardErrors, homepage)
-    if (list !is JsonArray) return ParsedSettings(value, emptyList(), listOf("taskCommands must be a list"), boards, boardErrors, homepage)
+    val list = value["taskCommands"] ?: return ParsedSettings(value, emptyList(), emptyList(), boards, boardErrors, homepage, appearance, appearanceErrors)
+    if (list !is JsonArray) return ParsedSettings(value, emptyList(), listOf("taskCommands must be a list"), boards, boardErrors, homepage, appearance, appearanceErrors)
     val errors = mutableListOf<String>()
     val commands = mutableListOf<TaskCommand>()
     val seen = HashSet<String>()
@@ -138,7 +190,7 @@ fun parseSettings(text: String): ParsedSettings {
         }
         commands += TaskCommand(name, command.trim(), icon)
     }
-    return ParsedSettings(value, commands, errors, boards, boardErrors, homepage)
+    return ParsedSettings(value, commands, errors, boards, boardErrors, homepage, appearance, appearanceErrors)
 }
 
 private val pretty = Json { prettyPrint = true; prettyPrintIndent = "  " }
@@ -196,3 +248,29 @@ private fun homepageJson(h: Homepage): JsonObject = buildJsonObject {
     h.report?.let { put("report", JsonPrimitive(it)) }
     h.board?.let { put("board", JsonPrimitive(it)) }
 }
+
+/** The text to save: the other top-level keys as they were, and `appearance` as given (nothing chosen takes the key out). */
+fun serializeAppearance(raw: JsonObject, appearance: Appearance): String {
+    val next = buildJsonObject {
+        for ((k, v) in raw) if (k != "appearance") put(k, v)
+        if (appearance.progress.isNotEmpty()) {
+            put(
+                "appearance",
+                buildJsonObject {
+                    put(
+                        "progress",
+                        buildJsonObject {
+                            for ((name, p) in appearance.progress) {
+                                put(name, buildJsonObject { put("min", number(p.min)); put("max", number(p.max)) })
+                            }
+                        },
+                    )
+                },
+            )
+        }
+    }
+    return pretty.encodeToString(JsonObject.serializer(), next) + "\n"
+}
+
+/** A number the way the web writes it: `100`, not `100.0`. */
+private fun number(d: Double): JsonPrimitive = if (d == kotlin.math.floor(d) && kotlin.math.abs(d) < 1e15) JsonPrimitive(d.toLong()) else JsonPrimitive(d)

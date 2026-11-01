@@ -12,7 +12,7 @@
 // address and back.
 
 /** The tabs of Settings. */
-export const SETTINGS_TABS = ['general', 'taskrc', 'tasksh', 'commands', 'hooks', 'urgency'] as const;
+export const SETTINGS_TABS = ['general', 'appearance', 'taskrc', 'tasksh', 'commands', 'hooks', 'urgency'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /** The pages that are just a page. */

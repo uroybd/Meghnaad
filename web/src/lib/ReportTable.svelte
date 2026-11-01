@@ -4,6 +4,7 @@
   import { css, look, rowVars } from './colors';
   import { formatTable, rowClass } from './format';
   import MarkdownNodes from './MarkdownNodes.svelte';
+  import ProgressBar from './ProgressBar.svelte';
   import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import MoreMenu, { type MenuAction } from './MoreMenu.svelte';
   import ProjectPath from './ProjectPath.svelte';
@@ -45,6 +46,12 @@
   } = $props();
 
   const udas = $derived(store.config?.config.udas ?? {});
+  /** A cell of a UDA shown as a progress bar: its number and range, or null (some other column, or no number in it). */
+  function progressOf(name: string, text: string) {
+    const range = store.appearance.progress[name];
+    const value = Number(text);
+    return range && text.trim() !== '' && Number.isFinite(value) ? { value, range } : null;
+  }
   const settings = $derived(store.config?.config.settings);
   const reportFormat = $derived(
     (store.config?.config.reports[result.report] as { dateformat?: string | null } | undefined)?.dateformat,
@@ -387,6 +394,9 @@
                       ontoggle={(line) => store.tickBox(entry, row.uuid, col.name, c.text, line)}
                     />
                   </div>
+                {:else if progressOf(col.name, c.text)}
+                  {@const p = progressOf(col.name, c.text)}
+                  {#if p}<ProgressBar value={p.value} text={c.text} range={p.range} label={col.label} />{/if}
                 {:else}
                   {c.text}
                 {/if}

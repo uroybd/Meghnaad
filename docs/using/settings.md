@@ -1,7 +1,7 @@
 # Settings
 
-**Settings** in the header has a tab each for **General**, the **taskrc**, **tasksh**, **Commands**, **Hooks** and
-**Urgency**. Every tab has its own **Apply** (**Save**, on Hooks), and applying one doesn't touch the others. A tab with
+**Settings** in the header has a tab each for **General**, **Appearance**, the **taskrc**, **tasksh**, **Commands**,
+**Hooks** and **Urgency**. Every tab has its own **Apply** (**Save**, on Hooks), and applying one doesn't touch the others. A tab with
 unapplied edits has a dot, and the edits stay while you look at another tab or page. If the saved settings change
 elsewhere (the Console's `config`, another tab), a tab with no edits of its own follows them.
 
@@ -10,6 +10,22 @@ The default is `next`. It is kept in the app's own `settings.json` (`"homepage":
 "week" }`), not your taskrc, so it is the same on every device that signs in to the same deployment. A link to a task
 still opens that task, and a report or board that is gone opens `next`. (The taskrc's `default.command` is different: it
 is the command a line runs when it names none.)
+
+## Appearance
+
+How the app draws things. It is kept in the app's own `settings.json`, not your taskrc, so it is the same on the web
+and on the phone.
+
+### Progress bars
+
+Mark a numeric UDA as a progress bar and every report shows it as a bar, with the number beside it. Tick the UDA on the
+**Appearance** tab and set its **min** (the bar is empty) and **max** (the bar is full); they start at 0 and 100. A
+value outside the range fills or empties the bar, and a task with no value shows nothing. The bar turns green when full.
+Only numeric UDAs are offered (`uda.progress.type=numeric`).
+
+```json
+{ "appearance": { "progress": { "progress": { "min": 0, "max": 100 } } } }
+```
 
 ![The Settings page, on its taskrc tab: the saved settings as text to edit, with a colour theme picker and import from a file or a link](../screenshots/settings-taskrc.png)
 
