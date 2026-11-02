@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
@@ -231,9 +232,13 @@ private fun Mark(
             ProjectPath(c.segments, onPick = { store.showProject(it) })
         }
         else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            // A numeric UDA the settings show as a progress bar (Settings → Appearance) is a bar here too, after its label.
+            val bar = store.appearance.progress[col.name]?.let { range -> c.text.trim().toDoubleOrNull()?.let { range to it } }
             if (icon != null) LucideIcon(icon, size = 13.dp, tint = if (col.name == "due" && overdue) colors.error else dim.copy(alpha = 0.85f))
             else Text(col.label.uppercase(), fontSize = 11.sp, letterSpacing = 0.6.sp, color = dim.copy(alpha = 0.75f))
-            if (!iconOnly) {
+            if (bar != null) {
+                ProgressBar(bar.second, c.text, bar.first, col.label, dim, Modifier.width(120.dp))
+            } else if (!iconOnly) {
                 Text(
                     c.text,
                     fontSize = 13.sp,

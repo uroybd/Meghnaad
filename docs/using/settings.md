@@ -18,7 +18,7 @@ and on the phone.
 
 ### Progress bars
 
-Mark a numeric UDA as a progress bar and every report shows it as a bar, with the number beside it. Tick the UDA on the
+Mark a numeric UDA as a progress bar and every report shows it as a bar, with the number beside it (in a table, and on the phone's task cards). Tick the UDA on the
 **Appearance** tab and set its **min** (the bar is empty) and **max** (the bar is full); they start at 0 and 100. A
 value outside the range fills or empties the bar, and a task with no value shows nothing. The bar turns green when full.
 Only numeric UDAs are offered (`uda.progress.type=numeric`).

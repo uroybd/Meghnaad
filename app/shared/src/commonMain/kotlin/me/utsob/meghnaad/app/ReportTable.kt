@@ -277,11 +277,18 @@ private fun TableRow(
 
 /** A value drawn as a bar between [range]'s min (empty) and max (full), with the value written beside it. */
 @Composable
-private fun ProgressBar(value: Double, text: String, range: Progress, label: String, tone: androidx.compose.ui.graphics.Color) {
+fun ProgressBar(
+    value: Double,
+    text: String,
+    range: Progress,
+    label: String,
+    tone: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier.widthIn(min = 110.dp),
+) {
     val colors = MaterialTheme.colorScheme
     val fraction = range.fraction(value)
     Row(
-        Modifier.widthIn(min = 110.dp).semantics {
+        modifier.semantics {
             contentDescription = "$label $text"
             progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
         },
