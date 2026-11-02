@@ -2760,7 +2760,10 @@ mod recurrence_as_task_does_it {
         let v = all(&mut r).await;
         let pending: Vec<_> = instances(&v).into_iter().filter(|f| f.status == "pending").collect();
         assert_eq!(pending.len(), 1, "{v:?}");
-        assert_eq!(pending[0].uuid, first, "the one every client makes stays, whatever the random uuid is");
+        assert_eq!(
+            pending[0].uuid, first,
+            "the one every client makes stays, whatever the random uuid is"
+        );
         assert_eq!(template(&v).mask.as_deref(), Some("-"));
     }
 
