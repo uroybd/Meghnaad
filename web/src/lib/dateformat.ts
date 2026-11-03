@@ -21,7 +21,9 @@ export type FormatKind =
   | 'report' // table cells: report.<name>.dateformat, dateformat.report, dateformat
   | 'info' // the detail view: dateformat.info, dateformat
   | 'annotation' // notes under a report's description: dateformat.annotation, dateformat
-  | 'infoNote'; // notes in the detail view: dateformat.annotation, else the detail view's format
+  | 'infoNote' // notes in the detail view: dateformat.annotation, else the detail view's format
+  | 'detail' // the task detail panel: dateformat.report, dateformat (it follows the tables, not `info`)
+  | 'detailNote'; // notes in the detail panel: dateformat.annotation, else the panel's format
 
 export const weekStartOf = (settings: Record<string, string> | undefined): 0 | 1 =>
   /^mon/i.test(settings?.weekstart ?? '') ? 1 : 0;
@@ -35,6 +37,7 @@ export function formatFor(
   const s = settings ?? {};
   const first = (...v: (string | null | undefined)[]) => v.find((x) => !!x) ?? '';
   const infoFmt = first(s['dateformat.info'], s.dateformat);
+  const detailFmt = first(s['dateformat.report'], s.dateformat);
   const pattern =
     kind === 'report'
       ? first(reportDateformat, s['dateformat.report'], s.dateformat)
@@ -42,6 +45,10 @@ export function formatFor(
         ? infoFmt
         : kind === 'annotation'
           ? first(s['dateformat.annotation'], s.dateformat)
-          : first(s['dateformat.annotation'], infoFmt);
+          : kind === 'detail'
+            ? detailFmt
+            : kind === 'detailNote'
+              ? first(s['dateformat.annotation'], detailFmt)
+              : first(s['dateformat.annotation'], infoFmt);
   return pattern ? { pattern, weekstart: weekStartOf(settings) } : undefined;
 }

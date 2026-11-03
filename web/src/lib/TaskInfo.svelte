@@ -60,10 +60,10 @@
   });
 
   const defs = $derived(store.config?.config.udas ?? {});
-  const infoFmt = $derived(formatFor('info', store.config?.config.settings));
-  const noteFmt = $derived(formatFor('infoNote', store.config?.config.settings));
+  const infoFmt = $derived(formatFor('detail', store.config?.config.settings));
+  const noteFmt = $derived(formatFor('detailNote', store.config?.config.settings));
   // History moments carry seconds (a row is the changes within one second); a configured
-  // `dateformat.info` wins, as in Taskwarrior.
+  // `dateformat.report` (else `dateformat`) wins.
   const stamp = (epoch: number) => (infoFmt ? formatMoment(epoch, undefined, infoFmt) : formatStamp(epoch));
   const waiting = $derived(task.status === 'pending' && task.waiting === true);
   const udaKeys = $derived(
@@ -276,10 +276,9 @@
           {#each task.sessions as s, i (i)}
             <tr class:running={s.end == null}>
               <td class="dim">{i + 1}</td>
-              <td class="mono">{formatStamp(s.start)}</td>
+              <td class="mono">{stamp(s.start)}</td>
               <td class="mono">
-                {#if s.end != null}{formatStamp(s.end)}{:else}<span class="chip live"><Timer size={11} /> running</span
-                  >{/if}
+                {#if s.end != null}{stamp(s.end)}{:else}<span class="chip live"><Timer size={11} /> running</span>{/if}
               </td>
               <td class="num mono">{formatSeconds(s.seconds)}</td>
             </tr>

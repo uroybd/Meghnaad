@@ -47,6 +47,13 @@ describe('formatFor (Taskwarrior fallbacks)', () => {
     expect(formatFor('infoNote', { 'dateformat.info': 'Y-M-D H:N' })?.pattern).toBe('Y-M-D H:N');
     expect(formatFor('infoNote', s)?.pattern).toBe('D.M.');
   });
+  it('the detail panel follows dateformat.report, then dateformat; never dateformat.info', () => {
+    expect(formatFor('detail', s)?.pattern).toBe('Y-M-D');
+    expect(formatFor('detail', { dateformat: 'D/M/Y', 'dateformat.info': 'Y' })?.pattern).toBe('D/M/Y');
+    expect(formatFor('detailNote', s)?.pattern).toBe('D.M.');
+    expect(formatFor('detailNote', { 'dateformat.report': 'Y-M-D' })?.pattern).toBe('Y-M-D');
+    expect(formatFor('detail', {})).toBeUndefined();
+  });
   it('nothing configured means the built-in display', () => {
     expect(formatFor('report', {})).toBeUndefined();
     expect(formatFor('info', undefined)).toBeUndefined();
