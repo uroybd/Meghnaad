@@ -26,6 +26,12 @@ enum class FormatKind {
 
     /** Notes in the detail view: dateformat.annotation, else the detail view's format. */
     InfoNote,
+
+    /** The task detail panel: dateformat.report, dateformat (it follows the tables, not `Info`). */
+    Detail,
+
+    /** Notes in the detail panel: dateformat.annotation, else the panel's format. */
+    DetailNote,
 }
 
 fun weekStartOf(settings: Map<String, String>?): Int =
@@ -37,11 +43,14 @@ fun formatFor(kind: FormatKind, settings: Map<String, String>?, reportDateformat
 
     fun first(vararg v: String?) = v.firstOrNull { !it.isNullOrEmpty() } ?: ""
     val infoFmt = first(s["dateformat.info"], s["dateformat"])
+    val detailFmt = first(s["dateformat.report"], s["dateformat"])
     val pattern = when (kind) {
         FormatKind.Report -> first(reportDateformat, s["dateformat.report"], s["dateformat"])
         FormatKind.Info -> infoFmt
         FormatKind.Annotation -> first(s["dateformat.annotation"], s["dateformat"])
         FormatKind.InfoNote -> first(s["dateformat.annotation"], infoFmt)
+        FormatKind.Detail -> detailFmt
+        FormatKind.DetailNote -> first(s["dateformat.annotation"], detailFmt)
     }
     return if (pattern.isNotEmpty()) DateFmt(pattern, weekStartOf(settings)) else null
 }

@@ -61,12 +61,12 @@ private fun UrgencyText(u: Double) {
 @Composable
 fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
     val settings = store.config?.config?.settings
-    val infoFmt = formatFor(FormatKind.Info, settings)
-    val noteFmt = formatFor(FormatKind.InfoNote, settings)
+    val infoFmt = formatFor(FormatKind.Detail, settings)
+    val noteFmt = formatFor(FormatKind.DetailNote, settings)
     val defs = store.config?.config?.udas ?: emptyMap()
     val clipboard = LocalClipboardManager.current
     fun at(epoch: Long) = formatMoment(epoch, store.offsetAt(epoch), infoFmt)
-    // History moments carry seconds (a row is the changes within one second); a configured `dateformat.info` wins.
+    // History moments carry seconds (a row is the changes within one second); a configured `dateformat.report` (else `dateformat`) wins.
     fun stamp(epoch: Long) = if (infoFmt != null) formatMoment(epoch, store.offsetAt(epoch), infoFmt) else formatStamp(epoch, store.offsetAt(epoch))
     val waiting = task.status == "pending" && task.waiting
     val udaKeys = task.extra.keys.filter { it in defs }.sorted()
@@ -210,9 +210,9 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                         Dim("${i + 1}", Modifier.width(26.dp), 12)
                         Column(Modifier.weight(1f)) {
-                            Text(formatStamp(s.start, store.offsetAt(s.start)), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            Text(stamp(s.start), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                             if (s.end != null) {
-                                Text("→ ${formatStamp(s.end, store.offsetAt(s.end))}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                Text("→ ${stamp(s.end)}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                             } else {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text("→", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
