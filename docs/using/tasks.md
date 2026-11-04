@@ -36,9 +36,10 @@ use the **Group** picker beside **Sort**. Underneath it is the same command: gro
 - Urgency is coloured by level (under 5, to 10, to 15, from 15).
 - The `start.active`, `tags.indicator` and `depends.indicator` columns follow `active.indicator`, `tag.indicator` and
   `dependency.indicator`.
-- Dates follow your taskrc: `dateformat`, `dateformat.report` (tables and the task detail panel),
+- Dates follow your taskrc: `dateformat`, `dateformat.report` (tables), `dateformat.info` (the task detail panel),
   `dateformat.annotation` (notes) and a report's own `dateformat`, with Taskwarrior's tokens (`Y y M m D d H h N n S s A a B b V v J j w`).
-  Without one, dates show as `2026-12-25`, plus the time when there is one.
+  Without one, dates in tables show as `2026-12-25`, plus the time when there is one; the detail panel uses
+  Taskwarrior's default for `dateformat.info`, `Y-M-D H:N:S`, and never falls back to `dateformat`.
 
 ## The detail view
 

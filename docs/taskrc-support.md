@@ -142,7 +142,7 @@ The `calendar` command takes Taskwarrior's arguments (`calendar`, `calendar y`, 
 | --- | --- | --- |
 | `dateformat` | Done | Taskwarrior's format letters (`Y M D H N S` and the rest), in tables, info and the detail view |
 | `dateformat.report` | Done | |
-| `dateformat.info` | Done | |
+| `dateformat.info` | Done | The task detail panel. Unset, it is Taskwarrior's default `Y-M-D H:N:S`, with no fallback to `dateformat` |
 | `dateformat.annotation` | Done | |
 | `report.<name>.dateformat` | Done | |
 | `weekstart` | Done | Sunday (the default, as in Taskwarrior) or Monday. It decides how the calendar's weeks start, which week numbers it shows, and how an ISO week such as `2026-W44` is counted (from Monday, ISO weeks; from Sunday, Taskwarrior's older count). `sow`, `eow` and the other week dates count from Monday whatever it says, because Taskwarrior's code does (checked against `task` 3.5.0 on a Sunday with `weekstart=Sunday`); a board's date range is the exception and follows the page's week. `rc.weekstart:monday` works for one command |

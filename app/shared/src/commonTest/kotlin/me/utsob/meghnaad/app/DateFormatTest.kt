@@ -74,18 +74,17 @@ class DateFormatTest {
     }
 
     @Test
-    fun theDetailPanelFollowsDateformatReportThenDateformatNeverInfo() {
-        assertEquals("Y-M-D", formatFor(FormatKind.Detail, settings)?.pattern)
-        assertEquals("D/M/Y", formatFor(FormatKind.Detail, mapOf("dateformat" to "D/M/Y", "dateformat.info" to "Y"))?.pattern)
-        assertEquals("D.M.", formatFor(FormatKind.DetailNote, settings)?.pattern)
-        assertEquals("Y-M-D", formatFor(FormatKind.DetailNote, mapOf("dateformat.report" to "Y-M-D"))?.pattern)
-        assertNull(formatFor(FormatKind.Detail, emptyMap()))
+    fun theDetailViewIsDateformatInfoElseItsDefaultNeverDateformatOrReport() {
+        val other = mapOf("dateformat" to "D/M/Y", "dateformat.report" to "Y")
+        assertEquals("Y-M-D H:N:S", formatFor(FormatKind.Info, other)?.pattern)
+        assertEquals("Y-M-D H:N:S", formatFor(FormatKind.Info, emptyMap())?.pattern)
+        assertEquals("Y-M-D H:N:S", formatFor(FormatKind.Info, null)?.pattern)
+        assertEquals("Y-M-D H:N:S", formatFor(FormatKind.InfoNote, other)?.pattern)
     }
 
     @Test
     fun nothingConfiguredMeansTheBuiltInDisplay() {
         assertNull(formatFor(FormatKind.Report, emptyMap()))
-        assertNull(formatFor(FormatKind.Info, null))
     }
 
     @Test

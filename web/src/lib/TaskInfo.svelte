@@ -60,10 +60,10 @@
   });
 
   const defs = $derived(store.config?.config.udas ?? {});
-  const infoFmt = $derived(formatFor('detail', store.config?.config.settings));
-  const noteFmt = $derived(formatFor('detailNote', store.config?.config.settings));
+  const infoFmt = $derived(formatFor('info', store.config?.config.settings));
+  const noteFmt = $derived(formatFor('infoNote', store.config?.config.settings));
   // History moments carry seconds (a row is the changes within one second); a configured
-  // `dateformat.report` (else `dateformat`) wins.
+  // `dateformat.info` (else its default) is used.
   const stamp = (epoch: number) => (infoFmt ? formatMoment(epoch, undefined, infoFmt) : formatStamp(epoch));
   const waiting = $derived(task.status === 'pending' && task.waiting === true);
   const udaKeys = $derived(

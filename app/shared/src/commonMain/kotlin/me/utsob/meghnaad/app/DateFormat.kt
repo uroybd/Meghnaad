@@ -18,7 +18,7 @@ enum class FormatKind {
     /** Table cells: report.<name>.dateformat, dateformat.report, dateformat. */
     Report,
 
-    /** The detail view: dateformat.info, dateformat. */
+    /** The detail view: dateformat.info, else Taskwarrior's default for it (no fallback to dateformat). */
     Info,
 
     /** Notes under a report's description: dateformat.annotation, dateformat. */
@@ -26,31 +26,25 @@ enum class FormatKind {
 
     /** Notes in the detail view: dateformat.annotation, else the detail view's format. */
     InfoNote,
-
-    /** The task detail panel: dateformat.report, dateformat (it follows the tables, not `Info`). */
-    Detail,
-
-    /** Notes in the detail panel: dateformat.annotation, else the panel's format. */
-    DetailNote,
 }
 
 fun weekStartOf(settings: Map<String, String>?): Int =
     if (Regex("^mon", RegexOption.IGNORE_CASE).containsMatchIn(settings?.get("weekstart") ?: "")) 1 else 0
+
+/** `dateformat.info`'s default in Taskwarrior 3.5.0 (`tc_core::taskrc`): the detail view's dates carry the time. */
+private const val DEFAULT_INFO_DATEFORMAT = "Y-M-D H:N:S"
 
 /** The pattern for a place, following Taskwarrior's fallbacks; null = none configured. */
 fun formatFor(kind: FormatKind, settings: Map<String, String>?, reportDateformat: String? = null): DateFmt? {
     val s = settings ?: emptyMap()
 
     fun first(vararg v: String?) = v.firstOrNull { !it.isNullOrEmpty() } ?: ""
-    val infoFmt = first(s["dateformat.info"], s["dateformat"])
-    val detailFmt = first(s["dateformat.report"], s["dateformat"])
+    val infoFmt = first(s["dateformat.info"], DEFAULT_INFO_DATEFORMAT)
     val pattern = when (kind) {
         FormatKind.Report -> first(reportDateformat, s["dateformat.report"], s["dateformat"])
         FormatKind.Info -> infoFmt
         FormatKind.Annotation -> first(s["dateformat.annotation"], s["dateformat"])
         FormatKind.InfoNote -> first(s["dateformat.annotation"], infoFmt)
-        FormatKind.Detail -> detailFmt
-        FormatKind.DetailNote -> first(s["dateformat.annotation"], detailFmt)
     }
     return if (pattern.isNotEmpty()) DateFmt(pattern, weekStartOf(settings)) else null
 }

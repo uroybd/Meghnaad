@@ -61,12 +61,12 @@ private fun UrgencyText(u: Double) {
 @Composable
 fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
     val settings = store.config?.config?.settings
-    val infoFmt = formatFor(FormatKind.Detail, settings)
-    val noteFmt = formatFor(FormatKind.DetailNote, settings)
+    val infoFmt = formatFor(FormatKind.Info, settings)
+    val noteFmt = formatFor(FormatKind.InfoNote, settings)
     val defs = store.config?.config?.udas ?: emptyMap()
     val clipboard = LocalClipboardManager.current
     fun at(epoch: Long) = formatMoment(epoch, store.offsetAt(epoch), infoFmt)
-    // History moments carry seconds (a row is the changes within one second); a configured `dateformat.report` (else `dateformat`) wins.
+    // History moments carry seconds (a row is the changes within one second); `dateformat.info` (else its default) is used.
     fun stamp(epoch: Long) = if (infoFmt != null) formatMoment(epoch, store.offsetAt(epoch), infoFmt) else formatStamp(epoch, store.offsetAt(epoch))
     val waiting = task.status == "pending" && task.waiting
     val udaKeys = task.extra.keys.filter { it in defs }.sorted()
