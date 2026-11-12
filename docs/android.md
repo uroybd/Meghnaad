@@ -36,9 +36,11 @@ On a tablet, a foldable or a phone held wide (over 760 dp), a report is the web'
 - The menu isn't over the page: the list of reports is an always-open sidebar and the pages are tabs along the top (their
   names drop away below 1100 dp, and those of Review and Settings below 1400 dp). The floating **+** is the same.
 
-With a keyboard attached, the web's keys work: `/` focuses the prompt with its line selected (not while you're typing in
+With a keyboard attached, `/` focuses the prompt with its line selected (not while you're typing in
 a field), Tab completes, ↑ and ↓ go through the last commands, Ctrl+L clears the console and Esc leaves the prompt. In
 the Hooks editor Ctrl+S saves and Tab indents. In the task form Enter saves, and Ctrl+Enter saves from a multi-line field.
+**Settings → Keybindings** changes the keys of the phone, the web app and the terminal app, as on the web
+([Keybindings](using/settings.md#keybindings)).
 
 ### Reminders and links
 

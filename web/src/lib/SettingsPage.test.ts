@@ -90,6 +90,7 @@ describe('the Settings page', () => {
     expect([...document.querySelectorAll('[role=tab]')].map((t) => t.textContent?.trim())).toEqual([
       'General',
       'Appearance',
+      'Keybindings',
       'taskrc',
       'tasksh',
       'Commands',

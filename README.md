@@ -54,6 +54,9 @@ completion and task commands around your own `task` CLI.
 - **Your own commands.** A word for a whole command line, such as `fail` for `done outcome:fail`, with an icon from
   Lucide. It works typed (`3 fail`, `project:Home fail`) and from a **⋯** menu on a task and on the selected tasks. Kept in
   the app's own `settings.json`.
+- **Keys, as in a terminal app.** `a` adds, `f` the filter, `r` a report, `C` the context, `v` review, `1` to `9` the
+  pages, `/` the prompt, and `?` lists them. **Settings → Keybindings** shows the keys you changed and changes any of
+  them, for the web app, the phone and the terminal app at once or for one alone ([Keys](docs/using/settings.md#keys)).
 - **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
 - **Boards.** Pages of your own made of numbers, tables and charts (bars, stacked or side by side, lines, areas, pies,
   donuts, radar, heatmaps: a sum of estimates by project, what you finish per week, split by outcome), each with its own filter, laid out on a 12-column grid that you drag and resize, and on 4 or 6 columns on a phone (several numbers to a row, resizable there too).
@@ -314,8 +317,10 @@ brew install uroybd/tap/meghnaad-tui   # or a prebuilt from the release, or carg
 meghnaad-tui
 ```
 
-Its `settings.json` (task commands, boards, and its own settings under `tui`: when to sync and its theme) is kept in
-`~/.config/meghnaad`, or in `$MEGHNAAD_CONFIG_DIR`. The keys and the rest are in **[the terminal app](docs/terminal.md)**.
+![The terminal app on the Tasks page: the reports down the side, the next report in task's colours, and the page's keys along the bottom](docs/screenshots/terminal-tasks.png)
+
+Its `settings.json` (task commands, boards, keys, and its own settings under `tui`: when to sync and its theme) is kept
+in `~/.config/meghnaad`, or in `$MEGHNAAD_CONFIG_DIR`. The keys and the rest are in **[the terminal app](docs/terminal.md)**.
 
 ## Using it
 

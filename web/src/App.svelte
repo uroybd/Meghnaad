@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
   import { engine } from './engine/client.svelte';
   import {
@@ -31,6 +31,8 @@
   import TagsView from './lib/TagsView.svelte';
   import DetailDrawer from './lib/DetailDrawer.svelte';
   import NotifyDialog from './lib/NotifyDialog.svelte';
+  import KeysHelp from './lib/KeysHelp.svelte';
+  import { actionOf } from './lib/keymap';
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
   import SetupGuide from './lib/SetupGuide.svelte';
@@ -189,7 +191,70 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && navOpen) navOpen = false;
+    // The keys of the keymap (`?` lists them), as the terminal app has them, from anywhere that isn't a text field or a
+    // dialog. `app.prompt` is the prompt's own (ConsoleInput).
+    const t = e.target as HTMLElement | null;
+    const typing =
+      t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    if (typing || e.defaultPrevented || e.repeat || document.querySelector('dialog[open]')) return;
+    const action = actionOf(store.keymap, e, store.view === 'tasks' ? 'tasks' : 'app');
+    if (action && action !== 'app.prompt' && runKey(action)) e.preventDefault();
   }
+
+  /** Focus a field of the page (and open a list where the browser can), after the page it is on is drawn. */
+  async function focusField(selector: string) {
+    await tick();
+    const el = document.querySelector<HTMLElement>(selector);
+    el?.focus();
+    if (el instanceof HTMLSelectElement) {
+      try {
+        el.showPicker();
+      } catch {
+        // Not every browser opens a list from code; it has the focus, so the arrow keys choose.
+      }
+    }
+  }
+
+  /** Do what a key of the keymap stands for; false for an action the web app has nothing for. */
+  function runKey(action: string): boolean {
+    const page = action.startsWith('page.') ? action.slice(5) : null;
+    if (page === 'settings') {
+      store.openSettings();
+      return true;
+    }
+    if (page && PAGES.includes(page as (typeof PAGES)[number])) {
+      store.view = page as (typeof PAGES)[number];
+      return true;
+    }
+    switch (action) {
+      case 'app.help':
+        store.keysHelpOpen = true;
+        return true;
+      case 'app.review':
+        if (review.phase === 'idle') void review.start({ surface: 'card' });
+        return true;
+      case 'app.context':
+        void focusField('main select.context');
+        return true;
+      case 'app.reminders':
+        store.notifyOpen = true;
+        return true;
+      case 'app.sync':
+        void refreshPage();
+        return true;
+      case 'tasks.add':
+        store.quickAdd();
+        return true;
+      case 'tasks.filter':
+        void focusField('#fb-filter');
+        return true;
+      case 'tasks.report':
+        void focusField('#fb-report');
+        return true;
+    }
+    return false;
+  }
+  const PAGES = ['tasks', 'projects', 'tags', 'summary', 'calendar', 'burndown', 'boards', 'console'] as const;
 </script>
 
 <svelte:window {onkeydown} onpopstate={() => void followAddress()} />
@@ -396,6 +461,7 @@
     {#key store.detail.uuid}<DetailDrawer uuid={store.detail.uuid} />{/key}
   {/if}
   {#if store.notifyOpen}<NotifyDialog />{/if}
+  {#if store.keysHelpOpen}<KeysHelp />{/if}
 {/if}
 
 <style>

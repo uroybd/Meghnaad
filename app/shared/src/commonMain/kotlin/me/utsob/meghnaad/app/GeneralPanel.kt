@@ -101,19 +101,5 @@ fun GeneralPanel(store: Store, state: GeneralState) {
             Button({ scope.launch { state.apply() } }, enabled = !state.busy && state.edited) { Text("Apply") }
             if (state.done) Dim("Saved")
         }
-        Text("Keyboard", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
-        MOBILE_ACTIONS.forEach { (name, does) ->
-            val keys = store.keymap.keys[name].orEmpty()
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(if (keys.isEmpty()) "none" else keys.joinToString(" ") { keyLabel(it) }, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text("$does  $name", fontSize = 14.sp)
-            }
-        }
-        Dim(
-            "A hardware keyboard's keys. Set in settings.json, under keys for the phone, the web app and the terminal app alike, " +
-                "or mobile.keys for the phone alone: { \"keys\": { \"app.prompt\": [\"/\", \"ctrl+k\"] } }. A key is written as Zed " +
-                "and VS Code write it; null leaves an action without one.",
-        )
-        store.keymap.problems.forEach { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
     }
 }

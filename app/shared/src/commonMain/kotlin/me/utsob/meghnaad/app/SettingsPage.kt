@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 class SettingsState(store: Store) {
     val general = GeneralState(store)
     val appearance = AppearanceState(store)
+    val keys = KeysState(store)
     val taskrc = TaskrcState(store)
     val commands = CommandsState(store)
     val urgency = UrgencyState(store)
@@ -39,6 +40,7 @@ private class SettingsTabInfo(val tab: SettingsTab, val label: String)
 private val TABS = listOf(
     SettingsTabInfo(SettingsTab.General, "General"),
     SettingsTabInfo(SettingsTab.Appearance, "Appearance"),
+    SettingsTabInfo(SettingsTab.Keys, "Keybindings"),
     SettingsTabInfo(SettingsTab.Taskrc, "taskrc"),
     SettingsTabInfo(SettingsTab.Tasksh, "tasksh"),
     SettingsTabInfo(SettingsTab.Commands, "Commands"),
@@ -50,7 +52,7 @@ private val TABS = listOf(
 /** One page with a tab each for the taskrc, tasksh, commands, hooks, urgency and sync; each has its own Apply (SettingsPage.svelte). */
 @Composable
 fun SettingsPage(store: Store, state: SettingsState) {
-    val dirty = mapOf(SettingsTab.General to state.general.edited, SettingsTab.Appearance to state.appearance.edited, SettingsTab.Taskrc to state.taskrc.edited, SettingsTab.Commands to state.commands.edited, SettingsTab.Urgency to state.urgency.edited, SettingsTab.Tasksh to state.tasksh.edited, SettingsTab.Hooks to state.hooks.edited)
+    val dirty = mapOf(SettingsTab.General to state.general.edited, SettingsTab.Appearance to state.appearance.edited, SettingsTab.Keys to state.keys.edited, SettingsTab.Taskrc to state.taskrc.edited, SettingsTab.Commands to state.commands.edited, SettingsTab.Urgency to state.urgency.edited, SettingsTab.Tasksh to state.tasksh.edited, SettingsTab.Hooks to state.hooks.edited)
     Column(Modifier.fillMaxSize()) {
         Text("Settings", Modifier.padding(start = 16.dp, top = 10.dp), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
         ScrollableTabRow(selectedTabIndex = TABS.indexOfFirst { it.tab == store.settingsTab }.coerceAtLeast(0), edgePadding = 8.dp, containerColor = MaterialTheme.colorScheme.background) {
@@ -68,6 +70,7 @@ fun SettingsPage(store: Store, state: SettingsState) {
             when (store.settingsTab) {
                 SettingsTab.General -> GeneralPanel(store, state.general)
                 SettingsTab.Appearance -> AppearancePanel(store, state.appearance)
+                SettingsTab.Keys -> KeysPanel(store, state.keys)
                 SettingsTab.Taskrc -> TaskrcPanel(store, state.taskrc)
                 SettingsTab.Commands -> CommandsPanel(store, state.commands)
                 SettingsTab.Tasksh -> TaskshPanel(store, state.tasksh)

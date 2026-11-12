@@ -22,7 +22,7 @@ tab, and the browser's back button goes where you were.
 | `/report/<name>` | Tasks, as that report: `/report/next`, `/report/list`, and any report of your own by name |
 | `/projects` `/tags` `/summary` `/calendar` `/burndown` `/console` | those pages |
 | `/boards`, `/board/<slug>` | the list of boards, and one board (see [Boards](boards.md#boards)) |
-| `/settings`, `/settings/<tab>` | Settings, and one tab: `general` `appearance` `taskrc` `tasksh` `commands` `hooks` `urgency` |
+| `/settings`, `/settings/<tab>` | Settings, and one tab: `general` `appearance` `keys` `taskrc` `tasksh` `commands` `hooks` `urgency` |
 | `/settings/taskrc/<path>` | one file of the taskrc folder (`/settings/taskrc/holidays/en-US.rc`) |
 | `/task/<8 characters>` | a task's detail over the page behind it (the first 8 characters of its uuid) |
 

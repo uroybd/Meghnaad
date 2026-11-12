@@ -25,6 +25,8 @@ run `meghnaad-tui`:
 `meghnaad-tui --help` says where it keeps its settings, and `meghnaad-tui --version` which release it is. It also starts with another version of `task`, says in the status line which
 one it found, and then behaves as that version does.
 
+![The Tasks page: the reports down the side, the next report in task's colours, and the page's keys along the bottom](screenshots/terminal-tasks.png)
+
 ## The screen
 
 The top bar has the pages, by number (with their names where they fit), then the started task with how long it has run,
@@ -43,7 +45,7 @@ command line, which shows the page's keys until you type into it, with `? all ke
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
 | `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` (or `[` `]`) go to the board before or after, and `Esc` (or `b`) comes back to the list |
 | `8` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
-| `9` Settings | A section each for when to sync, the theme, your task commands and your boards ([Settings](#the-settings-page)) |
+| `9` Settings | A section each for when to sync, the theme, your task commands, your boards and your keys ([Settings](#the-settings-page)) |
 
 `Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Colours
 follow `task` ([Colours](#colours)).
@@ -98,8 +100,11 @@ turns colour off itself whenever it writes to a pipe, as it does for this app.
 
 ## The keys
 
-These are the defaults; every one can be changed in `settings.json` ([Keys](using/settings.md#keys)), and `?` lists
-them as they are. The hints along the bottom and in the Settings page's borders follow what you set.
+These are the defaults; every one can be changed on the Settings page ([Keybindings](#the-settings-page)) or in
+`settings.json` ([Keys](using/settings.md#keys)), and `?` lists them as they are, with what each does. The hints along
+the bottom and in the Settings page's borders follow what you set.
+
+![? lists every key as it is, a group at a time, with what it does](screenshots/terminal-keys-help.png)
 
 On every page:
 
@@ -146,6 +151,8 @@ The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` witho
 (`Created task 3.`) in the status line. They add no overrides. If `task` or a hook asks a question there, it gets no
 answer, which is no, and nothing changes; use the command line with `!` when you want to answer. After every command
 the pages and what completion offers are read again.
+
+![a opens the add box over the report; it shows the task the line will make](screenshots/terminal-add.png)
 
 The add box is Meghnaad's reading of the line, by the same rules as `task add`, ported from Taskwarrior. What is made
 is what `task add` makes. A line it finds a problem in stays open with the reason. Adding and
@@ -252,7 +259,7 @@ is read when its page opens, and again with `R`.
 
 ## The Settings page
 
-The page has a section each for General, Sync, Theme, Task commands and Boards, one under the other. A key acts on the
+The page has a section each for General, Sync, Theme, Task commands, Boards and Keybindings, one under the other. A key acts on the
 section that has the focus, whose border is in the accent and names its keys: `j` `k` move through a section's rows
 and on into the next one, and `[` `]` jump between sections. `E`, in any section, opens `settings.json` in your editor
 (`$VISUAL`, else `$EDITOR`, else `vi`) on the terminal, and reads it again when the editor closes.
@@ -264,6 +271,17 @@ and on into the next one, and `[` `]` jump between sections. `E`, in any section
 | Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
 | Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
 | Boards | `Enter` opens the board chosen |
+| Keybindings | Your keys, under a heading for each place they go: General (`keys`, every front end), Web, Mobile and Terminal (`tui.keys`). `t` shows the default keys too, faint; `f` searches the actions, what they do and their keys; `a` adds a key to the section of the line chosen; `D` takes out what you set, back to the defaults; `n` leaves the action without a key |
+
+![The Keybindings section: your keys, under General, Web, Mobile and Terminal](screenshots/terminal-keybindings.png)
+
+`a` opens a box of the section's actions, each with the keys it has now; typing narrows it and `Enter` picks one. Then
+the next key you press is the one to add (any key but `Esc`, so one the app already uses can be given too), and `Enter`
+saves it to `settings.json` at once, beside any you set before; `Backspace` lets you press another. A key you give an
+action replaces its defaults and is taken from any action that had it, as [Keys](using/settings.md#keys) explains. The
+web app and the phone have the same in **Settings → Keybindings**.
+
+![Adding a key: the Terminal section's actions narrowed to sort, each with its keys](screenshots/terminal-keybindings-add.png)
 
 ## Settings
 

@@ -427,6 +427,30 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
                 .collect::<Vec<_>>()
         )),
         "key_label" => json!(crate::keymap::display(&a.req::<String>(0)?)),
+        // A key as typed (`Ctrl-K`), as `settings.json` writes it: `{key}`, or `{problem}` for one that is no key.
+        "key_parse" => match crate::keymap::parse(&a.req::<String>(0)?) {
+            Ok(key) => json!({ "key": key }),
+            Err(problem) => json!({ "problem": problem }),
+        },
+        // What a Keybindings page shows, from the whole of `settings.json` and the keymap asset: `{sections, problems}`.
+        "keymap_bindings" => json!(crate::keymap::bindings(
+            &a.opt::<serde_json::Value>(1)?.unwrap_or_default(),
+            &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
+        )),
+        // `settings.json` with an action's keys in a section set (a list, `[]` for none), or taken out (`null`).
+        "keymap_set" => {
+            let section = a.req::<String>(1)?;
+            if !crate::keymap::SECTIONS.contains(&section.as_str()) {
+                return Err(format!("{section} is not a section of the keys"));
+            }
+            let keys = a.opt::<Vec<String>>(3)?;
+            crate::keymap::with_binding(
+                &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
+                &section,
+                &a.req::<String>(2)?,
+                keys.as_deref(),
+            )
+        }
         _ => return Err(format!("{name} is not a helper")),
     })
 }

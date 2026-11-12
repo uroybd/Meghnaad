@@ -15,10 +15,25 @@ export interface Keymap {
   problems: string[];
 }
 
-/** Every action the web app has, with what it does, for the list in Settings. */
-export const WEB_ACTIONS: { name: string; does: string }[] = [
-  { name: 'app.prompt', does: 'Put the cursor in the prompt (from anywhere that isn’t a text field)' },
-];
+/** The sections of `settings.json` that hold keys: `general` is `keys`, for every front end; the rest their own. */
+export const KEY_SECTIONS = ['general', 'web', 'mobile', 'tui'] as const;
+export type KeySection = (typeof KEY_SECTIONS)[number];
+
+/** One action of a section, for the Keybindings tab (`tc_core::keymap::Binding`). */
+export interface Binding {
+  action: string;
+  /** What it does, from the asset's `about`; empty for a name that is no action. */
+  about: string;
+  /** Its keys by default. */
+  defaults: string[];
+  /** The keys set in this section (`[]` for none); null where nothing is set. */
+  keys: string[] | null;
+}
+
+export interface Bindings {
+  sections: { id: KeySection; actions: Binding[] }[];
+  problems: string[];
+}
 
 const NONE: Keymap = { keys: {}, contexts: {}, problems: [] };
 
@@ -56,6 +71,36 @@ export function chordOf(e: KeyboardEvent): string | null {
 export function actionOf(keymap: Keymap, e: KeyboardEvent, context = 'app'): string | null {
   const chord = chordOf(e);
   return (chord && keymap.contexts[context]?.[chord]) ?? null;
+}
+
+/** Every section's actions, the user's first; none until the defaults are there. */
+export function keyBindings(settings: Record<string, unknown>, defaults: Record<string, unknown> | null): Bindings {
+  const none: Bindings = { sections: KEY_SECTIONS.map((id) => ({ id, actions: [] })), problems: [] };
+  if (!defaults) return none;
+  try {
+    return callHelper<Bindings>('keymap_bindings', settings, defaults);
+  } catch {
+    return none;
+  }
+}
+
+/** `settings` with an action's keys in a section set (`[]` for none), or taken out (`null`); the rest as it was. */
+export function withBinding(
+  settings: Record<string, unknown>,
+  section: KeySection,
+  action: string,
+  keys: string[] | null,
+): Record<string, unknown> {
+  return callHelper<Record<string, unknown>>('keymap_set', settings, section, action, keys);
+}
+
+/** A key as typed (`Ctrl-K`), as `settings.json` writes it, or what is wrong with it. */
+export function parseKey(text: string): { key: string } | { problem: string } {
+  try {
+    return callHelper<{ key: string } | { problem: string }>('key_parse', text);
+  } catch (e) {
+    return { problem: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /** A key as a hint shows it: `↵`, `Ctrl+K`, `/`. */

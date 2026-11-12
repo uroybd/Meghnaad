@@ -195,6 +195,9 @@ fun parseSettings(text: String): ParsedSettings {
 
 private val pretty = Json { prettyPrint = true; prettyPrintIndent = "  " }
 
+/** `settings.json` as the app writes it. */
+fun serializeSettings(raw: JsonObject): String = pretty.encodeToString(JsonObject.serializer(), raw) + "\n"
+
 /** The text to save: the other top-level keys as they were, and `taskCommands` as given. */
 fun serializeSettings(raw: JsonObject, commands: List<TaskCommand>): String {
     val next = buildJsonObject {

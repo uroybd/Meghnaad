@@ -39,7 +39,7 @@ enum class Setup {
 
 enum class View { Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings }
 
-enum class SettingsTab { General, Appearance, Taskrc, Tasksh, Commands, Hooks, Urgency, Sync }
+enum class SettingsTab { General, Appearance, Keys, Taskrc, Tasksh, Commands, Hooks, Urgency, Sync }
 
 /** The pages that show one command's answer with the same component the console uses. */
 enum class Panel { Summary, Calendar, Burndown }
@@ -118,6 +118,7 @@ const val HISTORY_MAX = 20
 
 private const val HISTORY_KEY = "history"
 private const val SHOW_HIDDEN_KEY = "show-hidden-reports"
+private const val SHOW_DEFAULT_KEYS_KEY = "show-default-keys"
 
 /** Long uuids make the "last command" line unreadable; the first 8 characters resolve the same way. */
 fun shortenUuids(s: String): String =
@@ -573,6 +574,14 @@ class Store(
         loadAppSettings()
     }
 
+    /** Save the whole of `settings.json` as the Keybindings tab edited it. Throws what the engine refused. */
+    suspend fun saveKeys(settings: JsonObject) {
+        val text = serializeSettings(settings)
+        if (text.encodeToByteArray().size > MAX_SETTINGS_BYTES) error("The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.")
+        request("PUT", "/api/settings", text)
+        loadAppSettings()
+    }
+
     /** Save where the app opens (null: `next`), the rest of `settings.json` as it was. Throws what the engine refused. */
     suspend fun saveHomepage(homepage: Homepage?) {
         request("PUT", "/api/settings", serializeHomepage(appSettings?.raw ?: JsonObject(emptyMap()), homepage))
@@ -597,6 +606,15 @@ class Store(
         loadConfig()
         live?.let { exec(it) }
         rev++
+    }
+
+    /** The Keybindings tab shows the default keys too, not only the user's. */
+    var showDefaultKeys by mutableStateOf(prefs.get(SHOW_DEFAULT_KEYS_KEY) == "1")
+        private set
+
+    fun showDefaultKeys(on: Boolean) {
+        showDefaultKeys = on
+        prefs.put(SHOW_DEFAULT_KEYS_KEY, if (on) "1" else "0")
     }
 
     fun showHidden(on: Boolean) {

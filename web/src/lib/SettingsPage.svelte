@@ -3,15 +3,17 @@
   import CommandsPanel from './CommandsPanel.svelte';
   import GeneralPanel from './GeneralPanel.svelte';
   import HooksPanel from './HooksPanel.svelte';
+  import KeysPanel from './KeysPanel.svelte';
   import { store } from './store.svelte';
   import TaskrcPanel from './TaskrcPanel.svelte';
   import TaskshPanel from './TaskshPanel.svelte';
   import UrgencyPanel from './UrgencyPanel.svelte';
 
-  type Tab = 'general' | 'appearance' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
+  type Tab = 'general' | 'appearance' | 'keys' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
     { id: 'general', label: 'General', hint: 'Where the app opens' },
     { id: 'appearance', label: 'Appearance', hint: 'How the app draws things: UDAs shown as progress bars' },
+    { id: 'keys', label: 'Keybindings', hint: 'The keys of the web app, the phone and the terminal app' },
     {
       id: 'taskrc',
       label: 'taskrc',
@@ -31,6 +33,7 @@
   let dirty = $state<Record<Tab, boolean>>({
     general: false,
     appearance: false,
+    keys: false,
     taskrc: false,
     tasksh: false,
     commands: false,
@@ -102,6 +105,14 @@
     hidden={store.settingsTab !== 'appearance'}
   >
     <AppearancePanel ondirty={(v) => (dirty.appearance = v)} />
+  </div>
+  <div
+    role="tabpanel"
+    id="settings-panel-keys"
+    aria-labelledby="settings-tab-keys"
+    hidden={store.settingsTab !== 'keys'}
+  >
+    <KeysPanel ondirty={(v) => (dirty.keys = v)} />
   </div>
   <div
     role="tabpanel"

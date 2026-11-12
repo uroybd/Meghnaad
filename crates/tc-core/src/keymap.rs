@@ -23,6 +23,11 @@
 //! the key a character (`G`, `?`, `/`) or a name (`enter`, `esc`, `space`, `tab`, `up`, `pagedown`, `f5`). A front end
 //! turns a key it is given into the same form with [`from_event`], and looks the action up in the context it is in
 //! ([`Keymap::action`]). Typing in a field, and a menu's or a dialog's own keys, are the platform's and not here.
+//!
+//! The asset's `about` says in a line what each action does, so every front end's Keybindings page can list and search
+//! the actions of the others. That page is [`bindings`] (each section of `settings.json` that holds keys: what the user
+//! set there and every action it can name, with its default keys) and [`with_binding`] (one action's keys set or taken
+//! out).
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -389,6 +394,193 @@ pub fn display(chord: &str) -> String {
     out.join("+")
 }
 
+/// The sections of `settings.json` a person sets keys in, as a Keybindings page lists them: `general` is `keys`, for
+/// every front end, and each front end's is its own `<front end>.keys`.
+pub const SECTIONS: [&str; 4] = ["general", "web", "mobile", "tui"];
+
+/// One action of a section, for a Keybindings page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Binding {
+    pub action: String,
+    /// What it does: the asset's `about`, empty for a name that is no action.
+    pub about: String,
+    /// Its keys by default (for `general`, the shared defaults, else those of every front end that has it).
+    pub defaults: Vec<String>,
+    /// The keys the user set in this section (`[]` for none); `None` where they set nothing.
+    pub keys: Option<Vec<String>>,
+}
+
+/// One section of a Keybindings page: every action it can name, those the user set first, each part by name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BindingSection {
+    pub id: &'static str,
+    pub actions: Vec<Binding>,
+}
+
+/// What a Keybindings page shows: each section's actions, and what is wrong with the user's keys on any front end.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Bindings {
+    pub sections: Vec<BindingSection>,
+    pub problems: Vec<String>,
+}
+
+/// A layer of keys, read: each action and its keys.
+type Layer = Vec<(String, Vec<String>)>;
+
+/// The object a section's keys are in: `keys`, or `<front end>.keys`.
+fn section_keys<'a>(v: &'a Value, section: &str) -> Option<&'a Value> {
+    match Platform::parse(section) {
+        Some(p) => own_keys(v, p),
+        None => v.get("keys"),
+    }
+}
+
+/// Every section of a Keybindings page, from the keymap asset and the whole of `settings.json`.
+pub fn bindings(defaults: &Value, settings: &Value) -> Bindings {
+    let about = |name: &str| {
+        defaults
+            .get("about")
+            .and_then(|a| a.get(name))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let mut quiet = Vec::new();
+    let read = |v: Option<&Value>, quiet: &mut Vec<String>| -> Layer { layer(v, "", quiet).unwrap_or_default() };
+    let shared = read(defaults.get("keys"), &mut quiet);
+    let own: Vec<(Platform, Layer)> = Platform::ALL
+        .into_iter()
+        .map(|p| (p, read(own_keys(defaults, p), &mut quiet)))
+        .collect();
+    let mut sections = Vec::new();
+    for id in SECTIONS {
+        // What the section can name, with its default keys.
+        let mut names: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let platform = Platform::parse(id);
+        for (p, list) in &own {
+            if platform.is_none_or(|x| x == *p) {
+                for (name, keys) in list {
+                    let at = names.entry(name.clone()).or_default();
+                    at.extend(keys.iter().filter(|k| !at.contains(k)).cloned().collect::<Vec<_>>());
+                }
+            }
+        }
+        for (name, keys) in &shared {
+            // The shared defaults are every front end's, unless its own replace them.
+            let replaced =
+                platform.is_some_and(|p| own.iter().any(|(q, l)| *q == p && l.iter().any(|(n, _)| n == name)));
+            if !replaced {
+                names.insert(name.clone(), keys.clone());
+            }
+        }
+        // The user's, as written; a key that cannot be read is kept as it is so it can still be seen and taken out.
+        let mut set: Layer = Vec::new();
+        if let Some(map) = section_keys(settings, id).and_then(Value::as_object) {
+            for (name, v) in map {
+                let texts: Vec<&Value> = match v {
+                    Value::Null => Vec::new(),
+                    Value::Array(list) => list.iter().collect(),
+                    other => vec![other],
+                };
+                let list = texts
+                    .into_iter()
+                    .map(|t| {
+                        t.as_str()
+                            .map_or_else(|| t.to_string(), |s| parse(s).unwrap_or_else(|_| s.to_owned()))
+                    })
+                    .collect();
+                set.push((name.clone(), list));
+            }
+        }
+        let mut actions: Vec<Binding> = set
+            .iter()
+            .map(|(name, keys)| Binding {
+                action: name.clone(),
+                about: about(name),
+                defaults: names.get(name).cloned().unwrap_or_default(),
+                keys: Some(keys.clone()),
+            })
+            .collect();
+        actions.extend(
+            names
+                .into_iter()
+                .filter(|(n, _)| !set.iter().any(|(s, _)| s == n))
+                .map(|(name, defaults)| Binding {
+                    about: about(&name),
+                    action: name,
+                    defaults,
+                    keys: None,
+                }),
+        );
+        sections.push(BindingSection { id, actions });
+    }
+    let mut problems: Vec<String> = Vec::new();
+    for p in Platform::ALL {
+        for line in resolve(defaults, settings, p).problems {
+            if !problems.contains(&line) {
+                problems.push(line);
+            }
+        }
+    }
+    Bindings { sections, problems }
+}
+
+/// `settings` with `action`'s keys in `section` (`general`, `web`, `mobile` or `tui`) set to `keys` (none written
+/// `null`, one as a string, more as a list), or with what the user set there taken out for `None` (and a `keys` or a
+/// front end's section left empty by that taken out too). Everything else in `settings` is kept.
+pub fn with_binding(settings: &Value, section: &str, action: &str, keys: Option<&[String]>) -> Value {
+    let mut root = settings.as_object().cloned().unwrap_or_default();
+    let platform = Platform::parse(section);
+    let mut outer = match platform {
+        Some(p) => root
+            .get(p.key())
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default(),
+        None => Map::new(),
+    };
+    let held = match platform {
+        Some(_) => outer.get("keys"),
+        None => root.get("keys"),
+    };
+    let mut map = held.and_then(Value::as_object).cloned().unwrap_or_default();
+    match keys {
+        Some([]) => {
+            map.insert(action.to_owned(), Value::Null);
+        }
+        Some([one]) => {
+            map.insert(action.to_owned(), Value::String(one.clone()));
+        }
+        Some(list) => {
+            map.insert(action.to_owned(), list.iter().cloned().map(Value::String).collect());
+        }
+        None => {
+            map.remove(action);
+        }
+    }
+    match platform {
+        Some(p) => {
+            if map.is_empty() {
+                outer.remove("keys");
+            } else {
+                outer.insert("keys".into(), Value::Object(map));
+            }
+            if outer.is_empty() {
+                root.remove(p.key());
+            } else {
+                root.insert(p.key().into(), Value::Object(outer));
+            }
+        }
+        None if map.is_empty() => {
+            root.remove("keys");
+        }
+        None => {
+            root.insert("keys".into(), Value::Object(map));
+        }
+    }
+    Value::Object(root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,6 +777,86 @@ mod tests {
         assert!(mobile
             .problems
             .contains(&"mobile.keys: not an object of actions and their keys".to_owned()));
+    }
+
+    #[test]
+    fn every_action_says_what_it_does() {
+        let d = defaults();
+        for p in Platform::ALL {
+            for name in km(&json!({}), p).keys.keys() {
+                assert!(d["about"][name].as_str().is_some_and(|s| !s.is_empty()), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_keybindings_page_has_the_users_keys_then_the_rest() {
+        let s = json!({
+            "keys": { "app.prompt": ["ctrl+k", "Ctrl-J"], "tasks.done": "hyper+d" },
+            "tui": { "keys": { "tasks.done": null, "tasks.nope": "z" } },
+        });
+        let b = bindings(&defaults(), &s);
+        let ids: Vec<&str> = b.sections.iter().map(|s| s.id).collect();
+        assert_eq!(ids, SECTIONS);
+        let general = &b.sections[0].actions;
+        assert_eq!(general[0].action, "app.prompt");
+        assert_eq!(general[0].keys, Some(vec!["ctrl+k".into(), "ctrl+shift+j".into()]));
+        assert_eq!(general[0].defaults, ["/"]);
+        assert!(general[0].about.starts_with("put the cursor"));
+        assert_eq!(general[1].keys, Some(vec!["hyper+d".into()]), "kept as written");
+        assert!(general[2..].iter().all(|a| a.keys.is_none()));
+        assert!(general.iter().any(|a| a.action == "tasks.filter"), "every front end's");
+        let web: Vec<(&str, &[String])> = b.sections[1]
+            .actions
+            .iter()
+            .map(|a| (a.action.as_str(), a.defaults.as_slice()))
+            .collect();
+        assert!(
+            web.contains(&("app.prompt", &["/".to_owned()][..])),
+            "the shared default"
+        );
+        assert!(web.contains(&("tasks.add", &["a".to_owned()][..])), "its own");
+        assert!(
+            !web.iter().any(|(a, _)| *a == "tasks.done"),
+            "only the web app's actions"
+        );
+        let tui = &b.sections[3].actions;
+        assert_eq!(tui[0].keys, Some(vec![]));
+        assert_eq!((tui[1].action.as_str(), tui[1].about.as_str()), ("tasks.nope", ""));
+        let prompt = tui.iter().find(|a| a.action == "app.prompt").unwrap();
+        assert_eq!(prompt.defaults, ["/", ":"], "the terminal app's own replace the shared");
+        assert!(b
+            .problems
+            .contains(&"keys.tasks.done: “hyper+d” is not a key".to_owned()));
+        assert!(b.problems.contains(&"tui.keys: “tasks.nope” is no action".to_owned()));
+        assert_eq!(
+            b.problems.iter().filter(|p| p.contains("hyper+d")).count(),
+            1,
+            "said once"
+        );
+    }
+
+    #[test]
+    fn a_key_is_set_and_taken_out_and_nothing_else_moves() {
+        let s = json!({ "taskCommands": [1], "web": { "theme": "dark" } });
+        let one = with_binding(&s, "web", "app.prompt", Some(&["ctrl+k".into()]));
+        assert_eq!(
+            one,
+            json!({ "taskCommands": [1], "web": { "theme": "dark", "keys": { "app.prompt": "ctrl+k" } } })
+        );
+        let two = with_binding(&one, "general", "app.undo", Some(&["u".into(), "U".into()]));
+        assert_eq!(two["keys"], json!({ "app.undo": ["u", "U"] }));
+        let none = with_binding(&two, "tui", "tasks.done", Some(&[]));
+        assert_eq!(none["tui"], json!({ "keys": { "tasks.done": null } }));
+        let back = with_binding(
+            &with_binding(&none, "tui", "tasks.done", None),
+            "general",
+            "app.undo",
+            None,
+        );
+        let back = with_binding(&back, "web", "app.prompt", None);
+        assert_eq!(back, s);
+        assert_eq!(with_binding(&Value::Null, "mobile", "app.prompt", None), json!({}));
     }
 
     #[test]

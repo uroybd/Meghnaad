@@ -430,6 +430,35 @@ pub fn save_theme_preset(word: &str) -> Result<(), String> {
     })
 }
 
+/// `text` with an action's keys in a section of the keys (`general`, `web`, `mobile` or `tui`) set (`[]` for none), or
+/// taken out (`None`), as `tc_core::keymap::with_binding` writes them, and every other key as it was.
+///
+/// # Errors
+///
+/// As [`with_commands`].
+pub fn with_binding(text: &str, section: &str, action: &str, keys: Option<&[String]>) -> Result<String, String> {
+    let raw = Value::Object(object(text)?);
+    let Value::Object(mut raw) = tc_core::keymap::with_binding(&raw, section, action, keys) else {
+        return Err("settings.json is not an object".into());
+    };
+    let commands: Vec<TaskCommand> = raw
+        .remove("taskCommands")
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| format!("taskCommands: {e}"))?
+        .unwrap_or_default();
+    written(raw, &commands)
+}
+
+/// Save an action's keys in a section of the keys to `settings.json`, keeping the rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_binding(section: &str, action: &str, keys: Option<&[String]>) -> Result<(), String> {
+    save(|text| with_binding(text, section, action, keys))
+}
+
 /// Write `settings.json` in place as `edit` makes it from what is there.
 fn save(edit: impl FnOnce(&str) -> Result<String, String>) -> Result<(), String> {
     let path = path().ok_or("No config folder: set MEGHNAAD_CONFIG_DIR or HOME.")?;
@@ -448,6 +477,22 @@ fn save(edit: impl FnOnce(&str) -> Result<String, String>) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_key_is_written_into_its_section_and_the_task_commands_stay_last() {
+        let text = r#"{ "taskCommands": [{ "name": "fail", "command": "done" }], "tui": { "sync": "manual" } }"#;
+        let out = with_binding(text, "tui", "tasks.done", Some(&["x".to_owned()])).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            v["tui"],
+            serde_json::json!({ "sync": "manual", "keys": { "tasks.done": "x" } })
+        );
+        assert!(out.find("taskCommands") > out.find("\"tui\""), "the commands go last");
+        let back = with_binding(&out, "tui", "tasks.done", None).unwrap();
+        let v: Value = serde_json::from_str(&back).unwrap();
+        assert_eq!(v["tui"], serde_json::json!({ "sync": "manual" }));
+        assert!(with_binding("[1]", "tui", "tasks.done", None).is_err());
+    }
 
     #[test]
     fn the_folder_is_the_variable_then_xdg_then_home() {

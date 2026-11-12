@@ -190,6 +190,8 @@ class Store {
   /** The task detail drawer. */
   detail = $state<{ uuid: string; from: Entry | null } | null>(null);
   notifyOpen = $state(false);
+  /** The list of every key (`app.help`, `?`) is open. */
+  keysHelpOpen = $state(false);
 
   #toastTimer: ReturnType<typeof setTimeout> | undefined;
   #lastWasLive = false;
@@ -336,6 +338,15 @@ class Store {
   /** Save how the app draws things, the rest of `settings.json` as it was. Throws what the server refused. */
   async saveAppearance(appearance: Appearance) {
     await putAppSettings(serializeAppearance(this.appSettings?.raw ?? {}, appearance));
+    await this.loadAppSettings();
+  }
+
+  /** Save the whole of `settings.json` as the Keybindings tab edited it. Throws what the server refused. */
+  async saveKeys(settings: Record<string, unknown>) {
+    const text = JSON.stringify(settings, null, 2) + '\n';
+    if (new Blob([text]).size > MAX_SETTINGS_BYTES)
+      throw new Error(`The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.`);
+    await putAppSettings(text);
     await this.loadAppSettings();
   }
 

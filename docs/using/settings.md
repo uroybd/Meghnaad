@@ -33,11 +33,39 @@ last. A list gives an action several keys, and `null` (or `[]`) leaves it with n
 from the action that had it by default, so there is nothing to unbind first. A page's keys come before the keys of every
 page where both have one, on that page only (a `tasks` key before an `app` key), so the same key can mean something on
 one page and something else elsewhere. A name that is no action, a key that can't be read, or one key for two actions of
-one group is said (on **General**, in the terminal app's Settings page) and the rest still applies.
+one group is said (on **Keybindings**, and in the terminal app's Settings page) and the rest still applies. The file
+also says in a line what each action does (`about`), which is what the lists of keys show.
 
-`/` puts the cursor in the prompt everywhere (`app.prompt`; the terminal app also keeps `:`). The web app and the
-phone (with a hardware keyboard) have that one key so far; the terminal app's are all in the file, and its `?` lists
-them. **General** lists the web app's and the phone's keys as they are.
+`/` puts the cursor in the prompt everywhere (`app.prompt`; the terminal app also keeps `:`). The web app has the
+terminal app's keys for what it can do, away from a text field and a dialog, and `?` lists them:
+
+| Key | Does |
+| --- | --- |
+| `/` | Put the cursor in the prompt |
+| `?` | Every key and what it does |
+| `1` to `9` | Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings |
+| `a` | Add a task (on Tasks) |
+| `f` | The filter (on Tasks) |
+| `r` | Another report (on Tasks) |
+| `C` | The context of the page |
+| `v` | Review |
+| `S` | Sync now |
+| `N` | Reminders |
+
+The phone has `/` alone, with a hardware keyboard; the terminal app's are in [its guide](../terminal.md#the-keys).
+
+### Keybindings
+
+**Settings → Keybindings** (`/settings/keys`) is the keys in four sections, one for each place they go in
+`settings.json`: **General** (`keys`, every front end), **Web**, **Mobile** and **Terminal**. It shows only the keys
+you set; **Show defaults** lists the others too, with their keys drawn faint. The search at the top narrows every
+section to the actions whose name, line or key has what you type in it (`done`, `ctrl+k`).
+
+**Add** in a section searches its actions, each with the keys it has now. Pick one, then press the key, or type it
+(`ctrl+k`) where a key can't be pressed, and **Add key**; **No key** leaves the action without one. A key you add
+replaces the action's default keys, and a second one goes beside the first. **✕** takes out what you set, so the
+action has its defaults again. Nothing is saved until **Apply**, and the tab shows a dot while there are changes. The
+phone has the same tab, and the terminal app [a Keybindings section](../terminal.md#the-settings-page) of its own.
 
 ## Appearance
 

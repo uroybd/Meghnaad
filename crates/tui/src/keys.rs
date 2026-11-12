@@ -3,148 +3,111 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::Value;
+use std::sync::LazyLock;
 use tc_core::keymap::{self, Keymap, Platform};
 
 /// The default keys, the keymap asset the web app serves and the phone carries (`web/public/keymaps/default.json`),
 /// built into the app.
 const DEFAULTS: &str = include_str!("../../../web/public/keymaps/default.json");
 
-/// The keys of the terminal app: [`DEFAULTS`], then `keys` and `tui.keys` of `settings`.
-pub fn resolve(settings: &Value) -> Keymap {
-    // The asset is checked by the tests; a broken one would leave the app with no keys but `settings.json`'s.
-    let defaults = serde_json::from_str(DEFAULTS).unwrap_or_default();
-    keymap::resolve(&defaults, settings, Platform::Tui)
+/// [`DEFAULTS`], read once.
+pub fn defaults() -> &'static Value {
+    static READ: LazyLock<Value> = LazyLock::new(|| {
+        // The asset is checked by the tests; a broken one would leave the app with no keys but `settings.json`'s.
+        serde_json::from_str(DEFAULTS).unwrap_or_default()
+    });
+    &READ
 }
 
-/// What each action of the keymap is called here: a word or two for a hint line, and a line for the list of every key.
-pub const WORDS: &[(&str, &str, &str)] = &[
-    (
-        "app.prompt",
-        "command line",
-        "the command line: any task command line, && || ; chains, task commands, review",
-    ),
-    (
-        "app.sidebar",
-        "reports",
-        "move between the page and the reports down the side",
-    ),
-    (
-        "app.back",
-        "back",
-        "back to the page from the reports, or to the list from a board",
-    ),
-    (
-        "app.review",
-        "review",
-        "review the tasks that need it (tasksh's review)",
-    ),
-    ("app.context", "context", "choose the context"),
-    (
-        "app.stopTimer",
-        "stop timer",
-        "stop the started task (the timer in the top bar)",
-    ),
-    ("app.reminders", "reminders", "reminders on or off"),
-    ("app.sync", "sync", "task sync, in the background"),
-    ("app.undo", "undo", "task undo, on the terminal"),
-    ("app.reload", "reload", "read everything again"),
-    ("app.help", "all keys", "this list"),
-    ("app.quit", "quit", "quit"),
-    ("page.tasks", "Tasks", "the Tasks page"),
-    ("page.projects", "Projects", "the Projects page"),
-    ("page.tags", "Tags", "the Tags page"),
-    ("page.summary", "Summary", "the Summary page"),
-    ("page.calendar", "Calendar", "the Calendar page"),
-    ("page.burndown", "Burndown", "the Burndown page"),
-    ("page.boards", "Boards", "the Boards page"),
-    ("page.console", "Console", "the Console page"),
-    ("page.settings", "Settings", "the Settings page"),
-    ("move.down", "down", "down a row, or scroll down"),
-    ("move.up", "up", "up a row, or scroll up"),
-    ("move.pageDown", "page down", "a page down"),
-    ("move.pageUp", "page up", "a page up"),
-    ("move.first", "first", "the first row"),
-    ("move.last", "last", "the last row"),
-    ("sidebar.open", "open", "open the report"),
-    (
-        "sidebar.hidden",
-        "hidden",
-        "show the hidden reports (names starting with _)",
-    ),
-    ("tasks.info", "info", "task info"),
-    (
-        "tasks.add",
-        "add",
-        "add, with a preview of the task it makes; ↓ or Ctrl+F opens the full form",
-    ),
-    ("tasks.modify", "modify", "modify the task, in the full form"),
-    ("tasks.annotate", "annotate", "annotate the task"),
-    ("tasks.done", "done", "mark the task done"),
-    ("tasks.start", "start", "start the task"),
-    ("tasks.stop", "stop", "stop the task"),
-    ("tasks.delete", "delete", "delete the task (asks, on the terminal)"),
-    (
-        "tasks.command",
-        "task commands",
-        "run one of your task commands on the task, chosen from a list",
-    ),
-    ("tasks.filter", "filter", "change the filter"),
-    ("tasks.report", "report", "another report"),
-    (
-        "tasks.sort",
-        "sort",
-        "sort the report: add, take out, reverse and reorder its sort keys",
-    ),
-    ("sort.add", "add", "add a column to sort by"),
-    ("sort.remove", "take out", "take the key out"),
-    ("sort.reverse", "reverse", "ascending or descending"),
-    ("sort.raise", "earlier", "sort by the key earlier"),
-    ("sort.lower", "later", "sort by the key later"),
-    ("sort.reset", "report's own", "back to the report's own sort"),
-    ("sort.apply", "apply", "sort the report so"),
-    ("sort.cancel", "cancel", "leave the sort as it was"),
-    ("lists.open", "open its tasks", "open the tasks of the project or tag"),
-    ("calendar.prev", "month before", "the month before"),
-    ("calendar.next", "month after", "the month after"),
-    ("burndown.daily", "daily", "by day"),
-    ("burndown.weekly", "weekly", "by week"),
-    ("burndown.monthly", "monthly", "by month"),
-    ("boards.list.open", "open the board", "open the board"),
-    ("boards.close", "all boards", "back to the list of boards"),
-    ("boards.prev", "board before", "the board before"),
-    ("boards.next", "board after", "the board after"),
-    ("console.clear", "clear", "clear the console"),
-    ("settings.next", "next section", "the next section"),
-    ("settings.prev", "section before", "the section before"),
-    (
-        "settings.editFile",
-        "edit settings.json",
-        "open settings.json in $VISUAL or $EDITOR",
-    ),
-    (
-        "settings.general.home",
-        "change the home page",
-        "choose the page the app opens on: a report or a board",
-    ),
-    (
-        "settings.sync.change",
-        "change when to sync",
-        "go through when to sync, and save it",
-    ),
-    (
-        "settings.theme.preset",
-        "auto, light, dark or mono",
-        "go through the presets: auto, light, dark or mono",
-    ),
-    (
-        "settings.theme.shading",
-        "task's shading on or off",
-        "draw task's grey shading, or leave it out",
-    ),
-    ("settings.commands.add", "add", "add a task command"),
-    ("settings.commands.edit", "edit", "change the task command"),
-    ("settings.commands.delete", "delete", "delete the task command"),
-    ("settings.boards.open", "open the board", "open the board"),
+/// The keys of the terminal app: [`DEFAULTS`], then `keys` and `tui.keys` of `settings`.
+pub fn resolve(settings: &Value) -> Keymap {
+    keymap::resolve(defaults(), settings, Platform::Tui)
+}
+
+/// What an action does, in a line: the asset's `about` (empty for a name that is no action).
+pub fn about(action: &str) -> &'static str {
+    defaults()["about"][action].as_str().unwrap_or_default()
+}
+
+/// What each action of the keymap is called here: a word or two for a hint line. What it does is the asset's
+/// [`about`], shared with the other front ends.
+pub const WORDS: &[(&str, &str)] = &[
+    ("app.prompt", "command line"),
+    ("app.sidebar", "reports"),
+    ("app.back", "back"),
+    ("app.review", "review"),
+    ("app.context", "context"),
+    ("app.stopTimer", "stop timer"),
+    ("app.reminders", "reminders"),
+    ("app.sync", "sync"),
+    ("app.undo", "undo"),
+    ("app.reload", "reload"),
+    ("app.help", "all keys"),
+    ("app.quit", "quit"),
+    ("page.tasks", "Tasks"),
+    ("page.projects", "Projects"),
+    ("page.tags", "Tags"),
+    ("page.summary", "Summary"),
+    ("page.calendar", "Calendar"),
+    ("page.burndown", "Burndown"),
+    ("page.boards", "Boards"),
+    ("page.console", "Console"),
+    ("page.settings", "Settings"),
+    ("move.down", "down"),
+    ("move.up", "up"),
+    ("move.pageDown", "page down"),
+    ("move.pageUp", "page up"),
+    ("move.first", "first"),
+    ("move.last", "last"),
+    ("sidebar.open", "open"),
+    ("sidebar.hidden", "hidden"),
+    ("tasks.info", "info"),
+    ("tasks.add", "add"),
+    ("tasks.modify", "modify"),
+    ("tasks.annotate", "annotate"),
+    ("tasks.done", "done"),
+    ("tasks.start", "start"),
+    ("tasks.stop", "stop"),
+    ("tasks.delete", "delete"),
+    ("tasks.command", "task commands"),
+    ("tasks.filter", "filter"),
+    ("tasks.report", "report"),
+    ("tasks.sort", "sort"),
+    ("sort.add", "add"),
+    ("sort.remove", "take out"),
+    ("sort.reverse", "reverse"),
+    ("sort.raise", "earlier"),
+    ("sort.lower", "later"),
+    ("sort.reset", "report's own"),
+    ("sort.apply", "apply"),
+    ("sort.cancel", "cancel"),
+    ("lists.open", "open its tasks"),
+    ("calendar.prev", "month before"),
+    ("calendar.next", "month after"),
+    ("burndown.daily", "daily"),
+    ("burndown.weekly", "weekly"),
+    ("burndown.monthly", "monthly"),
+    ("boards.list.open", "open the board"),
+    ("boards.close", "all boards"),
+    ("boards.prev", "board before"),
+    ("boards.next", "board after"),
+    ("console.clear", "clear"),
+    ("settings.next", "next section"),
+    ("settings.prev", "section before"),
+    ("settings.editFile", "edit settings.json"),
+    ("settings.general.home", "change the home page"),
+    ("settings.sync.change", "change when to sync"),
+    ("settings.theme.preset", "auto, light, dark or mono"),
+    ("settings.theme.shading", "task's shading on or off"),
+    ("settings.commands.add", "add"),
+    ("settings.commands.edit", "edit"),
+    ("settings.commands.delete", "delete"),
+    ("settings.boards.open", "open the board"),
+    ("settings.keys.add", "add"),
+    ("settings.keys.remove", "take out"),
+    ("settings.keys.none", "no key"),
+    ("settings.keys.defaults", "defaults"),
+    ("settings.keys.search", "search"),
 ];
 
 /// What each group of actions is called in the list of every key.
@@ -167,6 +130,7 @@ pub const SECTIONS: &[(&str, &str)] = &[
     ("settings.theme", "Settings: Theme"),
     ("settings.commands", "Settings: Task commands"),
     ("settings.boards", "Settings: Boards"),
+    ("settings.keys", "Settings: Keybindings"),
 ];
 
 /// An action's word or two for a hint line.
@@ -182,9 +146,9 @@ pub fn help(map: &Keymap) -> Vec<(&'static str, Vec<(String, &'static str)>)> {
             let rows: Vec<(String, &'static str)> = WORDS
                 .iter()
                 .filter(|w| keymap::section_of(w.0) == section && map.keys.contains_key(w.0))
-                .map(|&(name, _, what)| {
+                .map(|&(name, _)| {
                     let keys = map.label(name);
-                    (if keys.is_empty() { "—".to_owned() } else { keys }, what)
+                    (if keys.is_empty() { "—".to_owned() } else { keys }, about(name))
                 })
                 .collect();
             (!rows.is_empty()).then_some((title, rows))
@@ -244,6 +208,7 @@ mod tests {
         assert!(km.keys.len() > 50, "the asset is built in");
         for name in km.keys.keys() {
             assert!(!hint(name).is_empty(), "{name}");
+            assert!(!about(name).is_empty(), "{name}");
             assert!(SECTIONS.iter().any(|s| s.0 == keymap::section_of(name)), "{name}");
         }
         for w in WORDS {

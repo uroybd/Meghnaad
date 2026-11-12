@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 use tc_core::board::Board;
 use tc_core::complete::Vocab;
 use tc_core::filter::split_words;
-use tc_core::keymap::{self, Keymap};
+use tc_core::keymap::{self, Binding, Keymap};
 use tc_core::preview::Preview;
 use tc_core::sortspec::{self, Key};
 use tc_core::taskrc::Config;
@@ -109,6 +109,8 @@ pub enum PromptKind {
     ReviewModify,
     /// A task command's name (`Some` when changing the one at that place).
     CommandName(Option<usize>),
+    /// What the Keybindings section shows: actions and keys with this in them.
+    KeysSearch,
     /// What the task command named stands for.
     CommandLine(Option<usize>, String),
 }
@@ -124,13 +126,17 @@ impl PromptKind {
             PromptKind::Report => "report",
             PromptKind::CommandName(_) => "name",
             PromptKind::CommandLine(..) => "command",
+            PromptKind::KeysSearch => "search keys",
         }
     }
 
     /// Whether it opens as a box over the page (a task or a task command being made or changed) rather than on the
     /// bottom line.
     pub fn popup(&self) -> bool {
-        !matches!(self, PromptKind::Console | PromptKind::Filter | PromptKind::Report)
+        !matches!(
+            self,
+            PromptKind::Console | PromptKind::Filter | PromptKind::Report | PromptKind::KeysSearch
+        )
     }
 
     /// What completion reads in front of the typed words, so it knows where the line is; `None` offers nothing.
@@ -141,7 +147,7 @@ impl PromptKind {
             PromptKind::ReviewModify => Some("1 modify ".into()),
             PromptKind::Console | PromptKind::Filter | PromptKind::Report => Some(String::new()),
             PromptKind::CommandLine(..) => Some("1 ".into()),
-            PromptKind::CommandName(_) => None,
+            PromptKind::CommandName(_) | PromptKind::KeysSearch => None,
         }
     }
 }
@@ -182,6 +188,39 @@ pub enum Mode {
     },
     /// Sorting the report, in a box.
     Sort(SortEdit),
+    /// Adding a key on the Keybindings section, in a box.
+    KeyAdd(KeyAdd),
+}
+
+/// A key being added: the section of the keys, the search for the action and the action chosen, then the key pressed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyAdd {
+    pub section: &'static str,
+    pub query: String,
+    pub sel: usize,
+    pub picked: Option<Binding>,
+    pub key: Option<String>,
+}
+
+/// A line of the Keybindings section: a section of the keys (`general`, `web`, `mobile`, `tui`), or an action in one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyLine {
+    Head(&'static str),
+    Row(&'static str, Binding),
+}
+
+/// `b` matches what is typed: its name, what it does, or one of its keys (KeysPanel.svelte `matches`).
+pub fn binding_matches(b: &Binding, query: &str) -> bool {
+    let t = query.trim().to_lowercase();
+    if t.is_empty() {
+        return true;
+    }
+    let keys = b.keys.as_ref().unwrap_or(&b.defaults);
+    b.action.to_lowercase().contains(&t)
+        || b.about.to_lowercase().contains(&t)
+        || keys
+            .iter()
+            .any(|k| k.to_lowercase() == t || keymap::display(k).to_lowercase() == t)
 }
 
 /// The sort keys of the report as they are being changed, before they are applied.
@@ -214,15 +253,17 @@ pub enum SettingsSection {
     Theme,
     Commands,
     Boards,
+    Keys,
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 5] = [
+    pub const ALL: [SettingsSection; 6] = [
         SettingsSection::General,
         SettingsSection::Sync,
         SettingsSection::Theme,
         SettingsSection::Commands,
         SettingsSection::Boards,
+        SettingsSection::Keys,
     ];
 
     /// Its group of keys in the keymap, and its context there.
@@ -233,6 +274,7 @@ impl SettingsSection {
             SettingsSection::Theme => "settings.theme",
             SettingsSection::Commands => "settings.commands",
             SettingsSection::Boards => "settings.boards",
+            SettingsSection::Keys => "settings.keys",
         }
     }
 
@@ -303,6 +345,10 @@ pub struct App {
     /// The task command, and the board, chosen in their sections.
     pub settings_sel: usize,
     pub settings_board: usize,
+    /// The line chosen in the Keybindings section, whether it shows the default keys too, and what it is narrowed to.
+    pub keys_sel: usize,
+    pub keys_defaults: bool,
+    pub keys_query: String,
 
     pub review: Option<Review>,
     /// `task sync` in the background, and when it runs by itself.
@@ -492,6 +538,9 @@ impl App {
             settings_stamp: None,
             settings_sel: 0,
             settings_board: 0,
+            keys_sel: 0,
+            keys_defaults: false,
+            keys_query: String::new(),
             review: None,
             syncer: Syncer::default(),
             sync_mode: SyncMode::default(),
@@ -1079,6 +1128,7 @@ impl App {
                 Action::None
             }
             Mode::Sort(edit) => self.in_sort(edit, key),
+            Mode::KeyAdd(add) => self.in_key_add(add, key),
             Mode::Home { options, sel } => {
                 if let Some(step) = self.step_of(key) {
                     self.mode = Mode::Home {
@@ -1438,7 +1488,7 @@ impl App {
         keys::WORDS
             .iter()
             .filter(|w| groups.contains(&keymap::section_of(w.0)))
-            .filter_map(|&(name, hint, _)| {
+            .filter_map(|&(name, hint)| {
                 let keys = self.keymap.label(name);
                 (!keys.is_empty()).then(|| format!("{keys} {hint}"))
             })
@@ -1541,6 +1591,104 @@ impl App {
         lines.join("\n")
     }
 
+    /// The lines of the Keybindings section: each section of the keys, then its actions that have keys of the user's
+    /// (and with the defaults shown, those that have only their defaults), narrowed to what was searched for.
+    pub fn key_lines(&self) -> Vec<KeyLine> {
+        let all = keymap::bindings(keys::defaults(), &self.settings.raw);
+        let mut out = Vec::new();
+        for s in all.sections {
+            out.push(KeyLine::Head(s.id));
+            out.extend(
+                s.actions
+                    .into_iter()
+                    .filter(|b| {
+                        (b.keys.is_some() || (self.keys_defaults && !b.defaults.is_empty()))
+                            && binding_matches(b, &self.keys_query)
+                    })
+                    .map(|b| KeyLine::Row(s.id, b)),
+            );
+        }
+        out
+    }
+
+    /// The actions of the section being added to that match its search.
+    pub fn key_add_found(&self, add: &KeyAdd) -> Vec<Binding> {
+        keymap::bindings(keys::defaults(), &self.settings.raw)
+            .sections
+            .into_iter()
+            .find(|s| s.id == add.section)
+            .map(|s| s.actions)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|b| binding_matches(b, &add.query))
+            .collect()
+    }
+
+    /// Adding a key: narrow and choose the action, then press the key, then save it (↵) or press again (⌫).
+    fn in_key_add(&mut self, mut add: KeyAdd, key: KeyEvent) -> Action {
+        match (&add.picked, &add.key) {
+            (None, _) => {
+                let n = self.key_add_found(&add).len();
+                match key.code {
+                    KeyCode::Esc => return Action::None,
+                    KeyCode::Enter => add.picked = self.key_add_found(&add).into_iter().nth(add.sel),
+                    KeyCode::Down | KeyCode::Tab => add.sel = (add.sel + 1).min(n.saturating_sub(1)),
+                    KeyCode::Up | KeyCode::BackTab => add.sel = add.sel.saturating_sub(1),
+                    KeyCode::Backspace => {
+                        add.query.pop();
+                        add.sel = 0;
+                    }
+                    KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        add.query.push(c);
+                        add.sel = 0;
+                    }
+                    _ => {}
+                }
+            }
+            // Every key but Esc is the one to add, so a key the app already uses can be given too.
+            (Some(_), None) if key.code == KeyCode::Esc => add.picked = None,
+            (Some(_), None) => add.key = keys::chord(key),
+            (Some(b), Some(k)) => match key.code {
+                KeyCode::Enter => {
+                    let mut list = b.keys.clone().unwrap_or_default();
+                    if !list.contains(k) {
+                        list.push(k.clone());
+                    }
+                    self.save_binding(add.section, &b.action, Some(&list));
+                    return Action::None;
+                }
+                KeyCode::Backspace => add.key = None,
+                KeyCode::Esc => return Action::None,
+                _ => {}
+            },
+        }
+        self.mode = Mode::KeyAdd(add);
+        Action::None
+    }
+
+    /// Save an action's keys in a section of the keys (`None`: back to the defaults), and read the keys again.
+    fn save_binding(&mut self, section: &str, action: &str, keys: Option<&[String]>) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        match settings::save_binding(section, action, keys) {
+            Ok(()) => {
+                self.read_settings();
+                self.status = match keys {
+                    None => format!("{action}: back to its default keys."),
+                    Some([]) => format!("{action}: no key."),
+                    Some(list) => format!(
+                        "{action}: {}.",
+                        list.iter().map(|k| keymap::display(k)).collect::<Vec<_>>().join(" ")
+                    ),
+                };
+                self.keys_sel = self.keys_sel.min(self.key_lines().len().saturating_sub(1));
+            }
+            Err(e) => self.status = e,
+        }
+    }
+
     fn settings_action(&mut self, action: &str) {
         let n = self.settings.task_commands.len();
         match action {
@@ -1580,6 +1728,36 @@ impl App {
                     self.status = format!("Deleted the task command ‘{}’.", gone.name);
                 }
             }
+            "settings.keys.add" => {
+                let section = match self.key_lines().get(self.keys_sel) {
+                    Some(KeyLine::Head(s) | KeyLine::Row(s, _)) => s,
+                    None => "general",
+                };
+                self.mode = Mode::KeyAdd(KeyAdd {
+                    section,
+                    query: String::new(),
+                    sel: 0,
+                    picked: None,
+                    key: None,
+                });
+            }
+            "settings.keys.remove" | "settings.keys.none" => {
+                if let Some(KeyLine::Row(section, b)) = self.key_lines().get(self.keys_sel) {
+                    if action == "settings.keys.none" {
+                        self.save_binding(section, &b.action, Some(&[]));
+                    } else if b.keys.is_some() {
+                        self.save_binding(section, &b.action, None);
+                    }
+                }
+            }
+            "settings.keys.defaults" => {
+                self.keys_defaults = !self.keys_defaults;
+                self.keys_sel = self.keys_sel.min(self.key_lines().len().saturating_sub(1));
+            }
+            "settings.keys.search" => {
+                let q = self.keys_query.clone();
+                self.prompt(PromptKind::KeysSearch, &q);
+            }
             "settings.boards.open" if self.settings_board < self.boards.len() => {
                 self.board = self.settings_board;
                 self.open(Page::Boards);
@@ -1594,6 +1772,11 @@ impl App {
         use SettingsSection as S;
         let n = self.settings.task_commands.len();
         let boards = self.boards.len();
+        let lines = if self.settings_section == S::Keys {
+            self.key_lines().len()
+        } else {
+            0
+        };
         let (down, up) = (
             matches!(step, Step::By(k) if k > 0),
             matches!(step, Step::By(k) if k < 0),
@@ -1605,12 +1788,15 @@ impl App {
             S::Boards if (down && self.settings_board + 1 < boards) || (up && self.settings_board > 0) => {
                 self.settings_board = moved(self.settings_board, boards, step);
             }
+            S::Keys if (down && self.keys_sel + 1 < lines) || (up && self.keys_sel > 0) || (!down && !up) => {
+                self.keys_sel = moved(self.keys_sel, lines, step);
+            }
             S::Commands if !down && !up => self.settings_sel = moved(self.settings_sel, n, step),
             S::Boards if !down && !up => self.settings_board = moved(self.settings_board, boards, step),
-            S::General | S::Sync | S::Theme | S::Commands if down => {
+            S::General | S::Sync | S::Theme | S::Commands | S::Boards if down => {
                 self.settings_section = self.settings_section.step(1);
             }
-            S::Sync | S::Theme | S::Commands | S::Boards if up => {
+            S::Sync | S::Theme | S::Commands | S::Boards | S::Keys if up => {
                 self.settings_section = self.settings_section.step(-1);
             }
             _ => {}
@@ -1888,6 +2074,10 @@ impl App {
                 if !words.is_empty() {
                     self.quick(&[vec![u.clone(), "annotate".to_owned()], words].concat());
                 }
+            }
+            PromptKind::KeysSearch => {
+                line.clone_into(&mut self.keys_query);
+                self.keys_sel = 0;
             }
             PromptKind::Filter => {
                 line.clone_into(&mut self.filter);
@@ -2389,17 +2579,92 @@ mod tests {
         app.key(key(KeyCode::Char('j')));
         assert_eq!(app.settings_section, SettingsSection::Boards);
         app.key(key(KeyCode::Char('j')));
+        assert_eq!(app.settings_section, SettingsSection::Keys);
+        app.key(key(KeyCode::Char('j')));
         assert_eq!(
-            app.settings_section,
-            SettingsSection::Boards,
-            "the last section keeps the focus"
+            (app.settings_section, app.keys_sel),
+            (SettingsSection::Keys, 1),
+            "the last section moves through its lines"
         );
+        app.key(key(KeyCode::Char('k')));
+        app.key(key(KeyCode::Char('k')));
+        assert_eq!(app.settings_section, SettingsSection::Boards);
         app.key(key(KeyCode::Char('k')));
         assert_eq!(app.settings_section, SettingsSection::Commands);
         for _ in 0..4 {
             app.key(key(KeyCode::Char('[')));
         }
-        assert_eq!(app.settings_section, SettingsSection::Boards, "[ goes round");
+        assert_eq!(app.settings_section, SettingsSection::Keys, "[ goes round");
+    }
+
+    /// Settings, on the Keybindings section.
+    fn on_keys(settings: &str) -> App {
+        let mut app = app();
+        app.settings = AppSettings::parse(settings).unwrap();
+        app.key(key(KeyCode::Char('9')));
+        app.key(key(KeyCode::Char('[')));
+        assert_eq!(app.settings_section, SettingsSection::Keys);
+        app
+    }
+
+    fn actions(app: &App) -> Vec<String> {
+        app.key_lines()
+            .into_iter()
+            .map(|l| match l {
+                KeyLine::Head(s) => format!("# {s}"),
+                KeyLine::Row(_, b) => b.action,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_keybindings_show_yours_then_the_defaults_and_search() {
+        let mut app = on_keys(r#"{ "keys": { "app.undo": "U" }, "tui": { "keys": { "tasks.done": "x" } } }"#);
+        assert_eq!(
+            actions(&app),
+            ["# general", "app.undo", "# web", "# mobile", "# tui", "tasks.done"]
+        );
+        app.key(key(KeyCode::Char('t')));
+        assert!(app.keys_defaults);
+        assert!(actions(&app).contains(&"tasks.add".to_owned()));
+        app.key(key(KeyCode::Char('t')));
+        app.key(key(KeyCode::Char('f')));
+        assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::KeysSearch));
+        typing(&mut app, "done");
+        app.key(key(KeyCode::Enter));
+        assert_eq!(actions(&app), ["# general", "# web", "# mobile", "# tui", "tasks.done"]);
+    }
+
+    #[test]
+    fn a_key_is_added_by_choosing_the_action_and_pressing_it() {
+        let mut app = on_keys("{}");
+        // On the Terminal heading, a adds there.
+        for _ in 0..3 {
+            app.key(key(KeyCode::Char('j')));
+        }
+        assert_eq!(app.key_lines()[app.keys_sel], KeyLine::Head("tui"));
+        app.key(key(KeyCode::Char('a')));
+        typing(&mut app, "tasks.done");
+        let Mode::KeyAdd(add) = &app.mode else {
+            panic!("a opens the box");
+        };
+        assert_eq!(add.section, "tui");
+        assert_eq!(app.key_add_found(add)[0].action, "tasks.done");
+        app.key(key(KeyCode::Enter));
+        // Any key, even one the app uses, is the one to add.
+        app.key(key(KeyCode::Char('q')));
+        let Mode::KeyAdd(add) = &app.mode else {
+            panic!("still open until saved");
+        };
+        assert_eq!(add.key.as_deref(), Some("q"));
+        app.key(key(KeyCode::Backspace));
+        app.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        let Mode::KeyAdd(add) = &app.mode else {
+            panic!("pressed again");
+        };
+        assert_eq!(add.key.as_deref(), Some("ctrl+d"));
+        app.key(key(KeyCode::Esc));
+        assert!(matches!(app.mode, Mode::Normal));
     }
 
     #[test]

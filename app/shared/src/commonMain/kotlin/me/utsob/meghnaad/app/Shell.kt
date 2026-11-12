@@ -86,7 +86,7 @@ private val LETTER_KEYS = listOf(
 private val DIGIT_KEYS = listOf(Key.Zero, Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine)
 
 /** A key the keyboard gave, as the keymap writes it: the character it types, or the key's name. */
-private fun chordOf(e: KeyEvent): String? {
+internal fun chordOf(e: KeyEvent): String? {
     val name = when (e.key) {
         Key.Enter, Key.NumPadEnter -> "enter"
         Key.Escape -> "esc"

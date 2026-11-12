@@ -4,7 +4,7 @@
 //! itself (`info`, `summary`, `calendar`, `burndown`, the console) is drawn as it coloured it.
 
 use crate::ansi;
-use crate::app::{now, App, Focus, Mode, Page, Prompt, PromptKind, SettingsSection, SortEdit};
+use crate::app::{now, App, Focus, KeyAdd, KeyLine, Mode, Page, Prompt, PromptKind, SettingsSection, SortEdit};
 use crate::form::{self, Form, Kind};
 use crate::model::local_offset;
 use crate::remind::format_seconds;
@@ -125,6 +125,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Commands { uuid, query, sel } => commands(f, app, uuid, query, *sel, main),
         Mode::Form(form) => form_box(f, app, form, main),
         Mode::Sort(edit) => sort_box(f, app, edit, main),
+        Mode::KeyAdd(add) => key_add_box(f, app, add, main),
         _ => {}
     }
     if !app.status.is_empty() {
@@ -153,6 +154,14 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Prompt(p) => prompt(f, p, main, dock),
         Mode::Commands { .. } => {
             f.render_widget(hints("a-z narrow · ↑/↓ choose · ↵ run on the task · Esc cancel"), dock);
+        }
+        Mode::KeyAdd(add) => {
+            let keys = match (&add.picked, &add.key) {
+                (None, _) => "a-z narrow · ↑/↓ choose · ↵ pick · Esc cancel",
+                (Some(_), None) => "any key is the one to add · Esc back",
+                (Some(_), Some(_)) => "↵ save · ⌫ press another · Esc cancel",
+            };
+            f.render_widget(hints(keys), dock);
         }
         Mode::Sort(edit) => {
             let keys = if edit.adding.is_some() {
@@ -520,13 +529,13 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     let theme_rows = u16::try_from(swatches.len() + app.theme_errors.len()).unwrap_or(4) + 2;
     let problems = u16::from(app.settings_problem.is_some())
         + u16::try_from(app.keymap.problems.len() + app.progress_errors.len()).unwrap_or(0);
-    let [general, sync, theme_area, cmds, boards, _] = Layout::vertical([
+    let [general, sync, theme_area, cmds, boards, keys_area] = Layout::vertical([
         Constraint::Length(4 + problems),
         Constraint::Length(3),
         Constraint::Length(theme_rows),
         Constraint::Length(rows(commands, 10) + 1),
         Constraint::Length(rows(app.boards.len() + app.board_errors.len(), 6)),
-        Constraint::Fill(1),
+        Constraint::Min(6),
     ])
     .areas(area);
 
@@ -660,6 +669,163 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
         boards,
         &mut ListState::default()
             .with_selected((here(S::Boards) && !app.boards.is_empty()).then_some(app.settings_board)),
+    );
+
+    let block = section("Keybindings", S::Keys).title_top(note(&if app.keys_query.is_empty() {
+        if app.keys_defaults {
+            "yours and the defaults".to_owned()
+        } else {
+            "yours".to_owned()
+        }
+    } else {
+        format!("search: {}", app.keys_query)
+    }));
+    f.render_stateful_widget(
+        List::new(key_items(app))
+            .block(block)
+            .highlight_style(if here(S::Keys) { theme::selected() } else { Style::new() })
+            .highlight_symbol(MARK)
+            .highlight_spacing(HighlightSpacing::Always),
+        keys_area,
+        &mut ListState::default().with_selected(here(S::Keys).then_some(app.keys_sel)),
+    );
+}
+
+/// What a section of the keys is called, and where it is in `settings.json`.
+fn key_section_title(id: &str) -> (&'static str, &'static str) {
+    match id {
+        "web" => ("Web", "web.keys"),
+        "mobile" => ("Mobile", "mobile.keys"),
+        "tui" => ("Terminal", "tui.keys"),
+        _ => ("General", "keys"),
+    }
+}
+
+/// Keys as a hint shows them, each in brackets; the defaults quiet.
+fn key_spans(keys: &[String], muted: bool) -> Vec<Span<'static>> {
+    keys.iter()
+        .map(|k| {
+            let span = Span::from(format!("[{}] ", tc_core::keymap::display(k)));
+            if muted {
+                span.quiet()
+            } else {
+                span.style(theme::accent())
+            }
+        })
+        .collect()
+}
+
+/// The lines of the Keybindings section: each section's heading, then its actions.
+fn key_items(app: &App) -> Vec<ListItem<'static>> {
+    app.key_lines()
+        .into_iter()
+        .map(|line| match line {
+            KeyLine::Head(id) => {
+                let (title, at) = key_section_title(id);
+                ListItem::new(Line::from(vec![
+                    Span::from(title).bold(),
+                    Span::from(format!("  {at}  · a adds")).quiet(),
+                ]))
+            }
+            KeyLine::Row(_, b) => {
+                let mut spans = vec![Span::from("  ")];
+                match &b.keys {
+                    None => spans.extend(key_spans(&b.defaults, true)),
+                    Some(k) if k.is_empty() => spans.push(Span::from("no key ").quiet()),
+                    Some(k) => spans.extend(key_spans(k, false)),
+                }
+                let name = Span::from(format!(" {}  ", b.action));
+                spans.push(if b.keys.is_none() { name.quiet() } else { name.bold() });
+                spans.push(if b.about.is_empty() {
+                    Span::from("no such action").bad()
+                } else {
+                    Span::from(b.about).quiet()
+                });
+                if b.keys.is_some() && app.keys_defaults && !b.defaults.is_empty() {
+                    spans.push(Span::from("  · default ").quiet());
+                    spans.extend(key_spans(&b.defaults, true));
+                }
+                ListItem::new(Line::from(spans))
+            }
+        })
+        .collect()
+}
+
+/// Adding a key: the actions of the section that match what is typed, then the key pressed for the one chosen.
+fn key_add_box(f: &mut Frame, app: &App, add: &KeyAdd, main: Rect) {
+    let (title, _) = key_section_title(add.section);
+    let found = if add.picked.is_none() {
+        app.key_add_found(add)
+    } else {
+        Vec::new()
+    };
+    let width = main.width.saturating_sub(4).min(90);
+    let height = u16::try_from(found.len().max(3) + 4)
+        .unwrap_or(8)
+        .min(main.height)
+        .min(20);
+    let area = Rect::new(
+        main.x + (main.width - width) / 2,
+        main.y + main.height.saturating_sub(height) / 3,
+        width,
+        height,
+    );
+    let block = boxed(format!(" add a key · {title} "));
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    let [line, _, rest] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    if let Some(b) = &add.picked {
+        f.render_widget(
+            Line::from(vec![
+                Span::from(b.action.clone()).bold(),
+                Span::from(format!("  {}", b.about)).quiet(),
+            ]),
+            line,
+        );
+        let mut lines = vec![match &add.key {
+            None => Line::from(Span::styled("Press the key…", theme::accent())),
+            Some(k) => Line::from(vec![
+                Span::from("Key  "),
+                Span::styled(tc_core::keymap::display(k), theme::accent()),
+            ]),
+        }];
+        if b.keys.is_none() && !b.defaults.is_empty() {
+            let mut spans = vec![Span::from("Replaces its default ").quiet()];
+            spans.extend(key_spans(&b.defaults, true));
+            lines.push(Line::from(spans));
+        }
+        f.render_widget(Paragraph::new(lines), rest);
+        return;
+    }
+    f.render_widget(
+        Line::from(vec![Span::styled("› ", theme::accent()), Span::from(add.query.clone())]),
+        line,
+    );
+    let caret = u16::try_from(add.query.chars().count()).unwrap_or(0);
+    f.set_cursor_position(((line.x + 2 + caret).min(line.x + line.width), line.y));
+    if found.is_empty() {
+        f.render_widget(Paragraph::new("No action matches.").quiet(), rest);
+        return;
+    }
+    let widest = found.iter().map(|b| b.action.chars().count()).max().unwrap_or(0);
+    let items: Vec<ListItem> = found
+        .iter()
+        .map(|b| {
+            let mut spans = vec![Span::from(format!("{:<widest$}  ", b.action)).bold()];
+            spans.extend(key_spans(b.keys.as_ref().unwrap_or(&b.defaults), b.keys.is_none()));
+            spans.push(Span::from(format!(" {}", b.about)).quiet());
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+    f.render_stateful_widget(
+        List::new(items)
+            .highlight_style(theme::selected())
+            .highlight_symbol(MARK)
+            .highlight_spacing(HighlightSpacing::Always),
+        rest,
+        &mut ListState::default().with_selected(Some(add.sel)),
     );
 }
 
