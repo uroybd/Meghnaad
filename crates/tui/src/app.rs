@@ -6,11 +6,13 @@ use crate::ansi;
 use crate::chain::{runs, Statement};
 use crate::commands::{plan_chain, TaskCommand};
 use crate::completer::{Completer, Input};
+use crate::form::{Form, Kind};
 use crate::lists::{self, Item};
 use crate::model::{self, Report};
 use crate::remind::{self, Notice};
 use crate::review::{self, Outcome, Phase, Review};
 use crate::settings::{self, AppSettings};
+use crate::sync::{self, SyncMode, Syncer};
 use crate::task::Task;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::text::Line;
@@ -70,7 +72,7 @@ impl Page {
             Page::Calendar => "h/l month · j/k scroll",
             Page::Burndown => "d daily · w weekly · m monthly · j/k scroll",
             Page::Console => "j/k scroll · c clear",
-            Page::Settings => "a add · e edit · D delete · t taskrc / task commands",
+            Page::Settings => "a add · e edit · D delete · y when to sync · t taskrc / task commands",
         }
     }
 }
@@ -89,8 +91,6 @@ pub enum PromptKind {
     Console,
     /// What comes after `task add`, with a preview of the task it makes.
     Add,
-    /// What comes after `task <uuid> modify`.
-    Modify(String),
     /// What comes after `task <uuid> annotate`.
     Annotate(String),
     /// The words put in front of the report.
@@ -110,7 +110,7 @@ impl PromptKind {
         match self {
             PromptKind::Console => "task",
             PromptKind::Add => "add",
-            PromptKind::Modify(_) | PromptKind::ReviewModify => "modify",
+            PromptKind::ReviewModify => "modify",
             PromptKind::Annotate(_) => "annotate",
             PromptKind::Filter => "filter",
             PromptKind::Report => "report",
@@ -129,7 +129,6 @@ impl PromptKind {
     fn prefix(&self) -> Option<String> {
         match self {
             PromptKind::Add => Some("add ".into()),
-            PromptKind::Modify(u) => Some(format!("{u} modify ")),
             PromptKind::Annotate(u) => Some(format!("{u} annotate ")),
             PromptKind::ReviewModify => Some("1 modify ".into()),
             PromptKind::Console | PromptKind::Filter | PromptKind::Report => Some(String::new()),
@@ -150,6 +149,8 @@ pub struct Prompt {
 pub enum Mode {
     Normal,
     Prompt(Prompt),
+    /// The full form for a new task or one being changed.
+    Form(Form),
     /// `task <uuid> info`, as it printed it.
     Info {
         text: String,
@@ -226,6 +227,9 @@ pub struct App {
     pub taskrc: Vec<String>,
 
     pub review: Option<Review>,
+    /// `task sync` in the background, and when it runs by itself.
+    pub syncer: Syncer,
+    pub sync_mode: SyncMode,
     pub reminders: bool,
     seen: BTreeSet<String>,
     pub notices: usize,
@@ -254,7 +258,7 @@ Everywhere
   C          choose the context
   T          stop the started task (the timer in the top bar)
   N          reminders on or off
-  S          task sync, on the terminal
+  S          task sync, in the background (Settings → y: also on opening and closing, or after every change)
   u          task undo, on the terminal
   R          read everything again
   ?          this list
@@ -263,8 +267,8 @@ Everywhere
 Tasks
   j/k ↑/↓    move · g/G first/last · PgUp/PgDn
   ↵          task info
-  a          add, with a preview of the task it makes
-  m / A      modify / annotate the task
+  a          add, with a preview of the task it makes; ↓ or Ctrl+F opens the full form
+  m          modify the task, in the full form · A annotate it
   d          done · s start · x stop · D delete (asks, on the terminal)
   c          run one of your task commands on the task, chosen from a list (type to narrow it)
   /          filter · r another report
@@ -282,11 +286,14 @@ Console
   j/k        scroll back · c clear
 
 Settings
-  a add · e/↵ edit · D delete a task command · t the taskrc as task reads it
+  a add · e/↵ edit · D delete a task command · y when to sync · t the taskrc as task reads it
+
+The form
+  ↑/↓ a field · Tab complete · Space starts the task (on Start) · ↵ save · Esc cancel
 
 The command line
   Tab/Shift+Tab complete · Ctrl+A/E start/end · Ctrl+W delete a word · Ctrl+U clear · Esc cancel
-  A line whose command asks first (delete, edit, undo, sync, …) runs on the terminal;
+  A line whose command asks first (delete, edit, undo, …) runs on the terminal; sync runs in the background;
   put ! in front of any line to run it there.
 
 Any key closes this.";
@@ -297,12 +304,32 @@ const ASKS: &[&str] = &[
     "edit",
     "undo",
     "purge",
-    "synchronize",
     "import",
     "import-v2",
     "config",
     "news",
     "execute",
+];
+
+/// Taskwarrior's commands that change tasks, after which the app syncs when set to.
+const CHANGES: &[&str] = &[
+    "add",
+    "annotate",
+    "append",
+    "delete",
+    "denotate",
+    "done",
+    "duplicate",
+    "edit",
+    "import",
+    "import-v2",
+    "log",
+    "modify",
+    "prepend",
+    "purge",
+    "start",
+    "stop",
+    "undo",
 ];
 
 /// The arguments that make `task` colour what it prints for a page this wide and tall.
@@ -360,6 +387,8 @@ impl App {
             settings_sel: 0,
             taskrc: Vec::new(),
             review: None,
+            syncer: Syncer::default(),
+            sync_mode: SyncMode::default(),
             reminders: true,
             seen: BTreeSet::new(),
             notices: 0,
@@ -402,7 +431,9 @@ impl App {
         }
         let (settings, problem) = AppSettings::load();
         self.settings = settings;
-        if let Some(p) = &problem {
+        let (mode, odd) = self.settings.sync_mode();
+        self.sync_mode = mode;
+        if let Some(p) = problem.as_ref().or(odd.as_ref()) {
             p.clone_into(&mut self.status);
         }
         self.settings_problem = problem;
@@ -444,7 +475,12 @@ impl App {
     /// Once a second: the reminders due now, and the pending tasks read again each minute.
     pub fn tick(&mut self) {
         let now = now();
-        if now - self.last_read >= 60 && matches!(self.mode, Mode::Normal) && self.review.is_none() {
+        if let Some(result) = self.syncer.poll(&self.task, now) {
+            self.synced(&result);
+        }
+        // A read now would wait for the sync; the sync reads everything again when it ends.
+        let idle = matches!(self.mode, Mode::Normal) && self.review.is_none() && !self.syncer.running();
+        if now - self.last_read >= 60 && idle {
             if let Ok(p) = model::pending(&self.task) {
                 self.pending = p;
             }
@@ -509,6 +545,76 @@ impl App {
             Err(e) => e,
         };
         self.reload();
+        if self.changes_tasks(&args.join(" ")) {
+            self.after_change();
+        }
+    }
+
+    /// Start `task sync` in the background (`S`, or `sync` typed).
+    pub fn sync(&mut self) {
+        self.syncer.start(&self.task);
+        self.status = "Syncing…".into();
+    }
+
+    /// A command changed tasks: sync, when that is how it is set.
+    fn after_change(&mut self) {
+        if self.sync_mode.after_changes() {
+            self.syncer.start(&self.task);
+        }
+    }
+
+    /// Commands were run on the terminal: what they changed is synced, when that is how it is set.
+    pub fn ran(&mut self, steps: &[Statement]) {
+        if steps.iter().any(|s| self.changes_tasks(&s.line)) {
+            self.after_change();
+        }
+    }
+
+    /// A sync ended: say how, keep what it said in the console, and read everything again.
+    fn synced(&mut self, result: &Result<crate::task::Output, String>) {
+        let line = sync::said(result);
+        self.log.push(Line::from(format!("sync · {line}")));
+        if let Ok(out) = result {
+            if !out.ok {
+                self.log.extend(shown(out));
+            }
+        }
+        self.status = line;
+        self.reload();
+    }
+
+    /// Before closing: wait for a sync that is running, then sync once more when set to. What went wrong, if anything.
+    pub fn sync_at_close(&mut self) -> Option<String> {
+        let mut failed = None;
+        if let Some(r) = self.syncer.wait(now()) {
+            let ok = matches!(&r, Ok(o) if o.ok);
+            failed = (!ok).then(|| sync::said(&r));
+        }
+        if self.sync_mode.at_start_and_close() {
+            self.syncer.start(&self.task);
+            if let Some(r) = self.syncer.wait(now()) {
+                let ok = matches!(&r, Ok(o) if o.ok);
+                failed = (!ok).then(|| sync::said(&r));
+            }
+        }
+        failed
+    }
+
+    /// The full form for the task with this uuid.
+    fn modify_form(&mut self, uuid: &str) {
+        let found = self
+            .pending
+            .iter()
+            .find(|t| t.get("uuid").and_then(Value::as_str) == Some(uuid))
+            .cloned()
+            .or_else(|| {
+                let text = self.task.read(&[uuid, "export"]).ok()?;
+                serde_json::from_str::<Vec<Value>>(&text).ok()?.into_iter().next()
+            });
+        match found {
+            Some(t) => self.mode = Mode::Form(Form::modify(&t, &self.cfg, &self.pending)),
+            None => self.status = "That task could not be read.".into(),
+        }
     }
 
     fn prompt(&mut self, kind: PromptKind, line: &str) {
@@ -546,6 +652,7 @@ impl App {
     pub fn key(&mut self, key: KeyEvent) -> Action {
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Prompt(p) => self.in_prompt(p, key),
+            Mode::Form(f) => self.in_form(f, key),
             Mode::Info { text, scroll } => {
                 self.mode = match key.code {
                     KeyCode::Down | KeyCode::Char('j') => Mode::Info {
@@ -645,6 +752,8 @@ impl App {
             Outcome::Close => {
                 self.review = None;
                 self.reload();
+                // The review marked tasks reviewed and may have changed them: one sync for all of it.
+                self.after_change();
                 return Action::None;
             }
             Outcome::Edit(u) => return Action::Edit(u),
@@ -665,6 +774,9 @@ impl App {
     pub fn edited(&mut self) {
         if let Some(r) = self.review.as_mut() {
             r.edited(&self.task, self.width);
+        }
+        if self.review.is_none() {
+            self.after_change();
         }
     }
 
@@ -712,7 +824,10 @@ impl App {
                 return Action::None;
             }
             // Taskwarrior's own sync, with its own settings.
-            KeyCode::Char('S') => return Action::Run(vec![plain("sync")]),
+            KeyCode::Char('S') => {
+                self.sync();
+                return Action::None;
+            }
             KeyCode::Char('u') => return Action::Run(vec![plain("undo")]),
             KeyCode::Char('v') => {
                 self.start_review(0);
@@ -859,7 +974,7 @@ impl App {
             KeyCode::Char('r') => self.prompt(PromptKind::Report, ""),
             KeyCode::Char('m') => {
                 if let Some(u) = target {
-                    self.prompt(PromptKind::Modify(u), "");
+                    self.modify_form(&u);
                 }
             }
             KeyCode::Char('A') => {
@@ -913,6 +1028,7 @@ impl App {
     fn on_settings(&mut self, key: KeyEvent) {
         let n = self.settings.task_commands.len();
         match key.code {
+            KeyCode::Char('y') => self.save_sync(self.sync_mode.next()),
             KeyCode::Char('t') => {
                 self.settings_view = match self.settings_view {
                     SettingsView::Commands => SettingsView::Taskrc,
@@ -953,6 +1069,22 @@ impl App {
         }
     }
 
+    /// Save when to sync to `settings.json`; say why not when it cannot.
+    fn save_sync(&mut self, mode: SyncMode) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        match settings::save_sync(mode) {
+            Ok(()) => {
+                self.sync_mode = mode;
+                self.settings.sync = Some(mode.key().into());
+                self.status = format!("Syncs {}.", mode.label());
+            }
+            Err(e) => self.status = e,
+        }
+    }
+
     /// Save the task commands to `settings.json`; say why not when it cannot.
     fn save_commands(&mut self, list: Vec<TaskCommand>) -> bool {
         if let Some(p) = &self.settings_problem {
@@ -976,6 +1108,12 @@ impl App {
 
     fn in_prompt(&mut self, mut p: Prompt, key: KeyEvent) -> Action {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        // The one line opens into the full form, with what it says broken into the fields.
+        if p.kind == PromptKind::Add && (key.code == KeyCode::Down || (ctrl && key.code == KeyCode::Char('f'))) {
+            let preview = self.preview(p.input.line.trim());
+            self.mode = Mode::Form(Form::add(&preview, &self.cfg));
+            return Action::None;
+        }
         if !matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
             p.completer.close();
         }
@@ -1023,6 +1161,99 @@ impl App {
         Action::None
     }
 
+    /// A key in the full form.
+    fn in_form(&mut self, mut f: Form, key: KeyEvent) -> Action {
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if !matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
+            f.completer.close();
+        }
+        match key.code {
+            KeyCode::Esc => return Action::None,
+            KeyCode::Enter => return self.save_form(f),
+            KeyCode::Char('s') if ctrl => return self.save_form(f),
+            KeyCode::Down => f.next(),
+            KeyCode::Up => f.prev(),
+            KeyCode::Tab | KeyCode::BackTab => self.complete_field(&mut f, key.code == KeyCode::BackTab),
+            _ => {
+                if let Some(field) = f.current() {
+                    edit_field(field, key, ctrl);
+                }
+            }
+        }
+        self.mode = Mode::Form(f);
+        Action::None
+    }
+
+    /// Tab in a field: completed as the same word would be at the command line (`project:Ho` → `project:Home`).
+    fn complete_field(&mut self, f: &mut Form, reverse: bool) {
+        let Some(field) = f.fields.get(f.sel).filter(|x| !x.locked) else {
+            return;
+        };
+        let Some((prefix, last_word)) = field.completes_as() else {
+            return;
+        };
+        let line = field.input.line.clone();
+        let (head, word) = match line.rfind(' ').filter(|_| last_word) {
+            Some(i) => (line[..=i].to_owned(), line[i + 1..].to_owned()),
+            None => (String::new(), line),
+        };
+        let word = if prefix == "+" {
+            word.trim_start_matches('+').to_owned()
+        } else {
+            word
+        };
+        let whole = Input::new(&format!("{prefix}{word}"));
+        let Some(done) = f.completer.tab(&whole, &self.vocab, reverse) else {
+            return;
+        };
+        if let (Some(rest), Some(field)) = (done.line.strip_prefix(&prefix), f.fields.get_mut(f.sel)) {
+            field.input = Input::new(&format!("{head}{rest}"));
+        }
+    }
+
+    /// Save the form: `add` or `modify` with what changed, then `start` and `annotate`, each while the last worked.
+    /// When the first is refused the form stays, to be put right.
+    fn save_form(&mut self, f: Form) -> Action {
+        if let Some(why) = f.problem() {
+            self.status = why.into();
+            self.mode = Mode::Form(f);
+            return Action::None;
+        }
+        let statements = f.statements();
+        if statements.is_empty() {
+            self.status = "Nothing changed.".into();
+            return Action::None;
+        }
+        let mut status = String::new();
+        for (i, words) in statements.iter().enumerate() {
+            let shown_line: Vec<String> = words.iter().map(|w| crate::form::quote(w)).collect();
+            self.log.push(Line::from(format!("$ task {}", shown_line.join(" "))));
+            let (ok, said) = match self.task.capture(words) {
+                Ok(out) => {
+                    self.log.extend(shown(&out));
+                    (out.ok, out.summary())
+                }
+                Err(e) => (false, e),
+            };
+            if !ok {
+                self.status = if said.is_empty() { "task said no.".into() } else { said };
+                if i == 0 {
+                    self.mode = Mode::Form(f);
+                    return Action::None;
+                }
+                status.clone_from(&self.status);
+                break;
+            }
+            if i == 0 {
+                status = said;
+            }
+        }
+        self.reload();
+        self.status = status;
+        self.after_change();
+        Action::None
+    }
+
     /// Keep a prompt open with what was typed, to be put right.
     fn reopen(&mut self, p: &Prompt) {
         self.mode = Mode::Prompt(Prompt {
@@ -1050,14 +1281,9 @@ impl App {
                 }
                 self.quick(&[vec!["add".to_owned()], words].concat());
             }
-            PromptKind::Modify(u) | PromptKind::Annotate(u) => {
+            PromptKind::Annotate(u) => {
                 if !words.is_empty() {
-                    let verb = if matches!(p.kind, PromptKind::Modify(_)) {
-                        "modify"
-                    } else {
-                        "annotate"
-                    };
-                    self.quick(&[vec![u.clone(), verb.to_owned()], words].concat());
+                    self.quick(&[vec![u.clone(), "annotate".to_owned()], words].concat());
                 }
             }
             PromptKind::Filter => {
@@ -1129,7 +1355,18 @@ impl App {
 
     /// Whether `task` would ask before running `line` (or open an editor): its command is one of those.
     fn asks(&self, line: &str) -> bool {
-        let command = split_words(line).into_iter().find_map(|w| {
+        self.command_of(line).is_some_and(|c| ASKS.contains(&c.as_str()))
+    }
+
+    /// Whether `line` changes tasks: its command is one of those that do.
+    fn changes_tasks(&self, line: &str) -> bool {
+        self.command_of(line).is_some_and(|c| CHANGES.contains(&c.as_str()))
+    }
+
+    /// The Taskwarrior command `line` runs: the first word that is one, whole or a prefix of only one (at least two
+    /// letters), as `task` reads it.
+    fn command_of(&self, line: &str) -> Option<String> {
+        split_words(line).into_iter().find_map(|w| {
             if self.commands.contains(&w) {
                 return Some(w);
             }
@@ -1138,8 +1375,7 @@ impl App {
                 (Some(c), None) => Some(c.clone()),
                 _ => None,
             }
-        });
-        command.is_some_and(|c| ASKS.contains(&c.as_str()))
+        })
     }
 
     /// A line typed at the command line: `review` begins one; a chain with a command that asks (or a line with `!`
@@ -1166,15 +1402,21 @@ impl App {
         if steps.is_empty() {
             return Action::None;
         }
+        if !own && steps.len() == 1 && self.command_of(&steps[0].line).as_deref() == Some("synchronize") {
+            self.sync();
+            return Action::None;
+        }
         if own || steps.iter().any(|s| self.asks(&s.line)) {
             return Action::Run(steps);
         }
         let before = self.log.len();
         let mut ok = true;
+        let mut changed = false;
         for s in &steps {
             if !runs(s.join, ok) {
                 continue;
             }
+            changed |= self.changes_tasks(&s.line);
             self.log.push(Line::from(format!("$ task {}", s.line)));
             let mut args = colored(self.width, self.height);
             args.extend(split_words(&s.line));
@@ -1203,7 +1445,39 @@ impl App {
             self.open(Page::Console);
         }
         self.reload();
+        if changed {
+            self.after_change();
+        }
         Action::None
+    }
+}
+
+/// A key typed into a field of the form.
+fn edit_field(field: &mut crate::form::Field, key: KeyEvent, ctrl: bool) {
+    if field.locked {
+        return;
+    }
+    if field.kind == Kind::Start {
+        if key.code == KeyCode::Char(' ') {
+            let on = field.input.line == "yes";
+            field.input = Input::new(if on { "" } else { "yes" });
+        }
+        return;
+    }
+    let i = &mut field.input;
+    match key.code {
+        KeyCode::Char('a') if ctrl => i.home(),
+        KeyCode::Char('e') if ctrl => i.end(),
+        KeyCode::Char('w') if ctrl => i.delete_word(),
+        KeyCode::Char('u') if ctrl => *i = Input::default(),
+        KeyCode::Char(c) if !ctrl => i.insert(c),
+        KeyCode::Backspace => i.backspace(),
+        KeyCode::Delete => i.delete(),
+        KeyCode::Left => i.left(),
+        KeyCode::Right => i.right(),
+        KeyCode::Home => i.home(),
+        KeyCode::End => i.end(),
+        _ => {}
     }
 }
 
@@ -1255,11 +1529,74 @@ mod tests {
         };
         let lines: Vec<&str> = steps.iter().map(|s| s.line.as_str()).collect();
         assert_eq!(lines, ["3 delete", "next"]);
-        for line in ["sync", "1 del", "+x edit", "!next"] {
+        for line in ["1 del", "+x edit", "!next"] {
             app.key(key(KeyCode::Char(':')));
             typing(&mut app, line);
             assert!(matches!(app.key(key(KeyCode::Enter)), Action::Run(_)), "{line}");
         }
+    }
+
+    #[test]
+    fn sync_runs_in_the_background_and_never_takes_the_terminal() {
+        let mut app = app();
+        app.key(key(KeyCode::Char(':')));
+        typing(&mut app, "sync");
+        assert_eq!(app.key(key(KeyCode::Enter)), Action::None);
+        assert!(app.syncer.running());
+        assert_eq!(app.key(key(KeyCode::Char('S'))), Action::None);
+        assert!(app.syncer.wait(0).is_some());
+    }
+
+    #[test]
+    fn which_lines_change_tasks() {
+        let app = app();
+        for line in ["3 done", "1 mod +x", "undo", "1 delete"] {
+            assert!(app.changes_tasks(line), "{line}");
+        }
+        for line in ["next", "3", "+x list", "sync"] {
+            assert!(!app.changes_tasks(line), "{line}");
+        }
+        assert_eq!(app.sync_mode, SyncMode::Manual);
+    }
+
+    #[test]
+    fn the_one_line_add_opens_into_the_form_with_its_fields_filled() {
+        let mut app = app();
+        app.key(key(KeyCode::Char('a')));
+        typing(&mut app, "Fix bike project:Home +errand");
+        app.key(key(KeyCode::Down));
+        let Mode::Form(f) = &app.mode else {
+            panic!("expected the form");
+        };
+        assert_eq!(f.field("description").map(crate::form::Field::value), Some("Fix bike"));
+        assert_eq!(f.field("project").map(crate::form::Field::value), Some("Home"));
+        assert_eq!(f.field("tags").map(crate::form::Field::value), Some("errand"));
+        // Down goes from field to field, Space ticks Start, Esc closes it.
+        for _ in 0..f.fields.iter().position(|x| x.kind == Kind::Start).unwrap_or(0) {
+            app.key(key(KeyCode::Down));
+        }
+        app.key(key(KeyCode::Char(' ')));
+        let Mode::Form(f) = &app.mode else {
+            panic!("expected the form");
+        };
+        assert!(f.start_now());
+        app.key(key(KeyCode::Esc));
+        assert!(matches!(app.mode, Mode::Normal));
+    }
+
+    #[test]
+    fn a_form_that_cannot_be_saved_stays_open_and_says_why() {
+        let mut app = app();
+        app.key(key(KeyCode::Char('a')));
+        app.key(key(KeyCode::Down));
+        assert_eq!(app.key(key(KeyCode::Enter)), Action::None);
+        assert!(matches!(app.mode, Mode::Form(_)));
+        assert_eq!(app.status, "A task needs a description.");
+        typing(&mut app, "Fix bike");
+        // `task` is not there: the add is refused and the form stays, to be put right.
+        app.key(key(KeyCode::Enter));
+        assert!(matches!(app.mode, Mode::Form(_)));
+        assert!(app.status.contains("could not run"), "{}", app.status);
     }
 
     #[test]

@@ -5,6 +5,7 @@
 
 use crate::ansi;
 use crate::app::{now, App, Focus, Mode, Page, Prompt, PromptKind, SettingsView};
+use crate::form::{self, Form, Kind};
 use crate::model::local_offset;
 use crate::remind::format_seconds;
 use crate::review::Phase;
@@ -118,6 +119,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         }
         Mode::Context { options, sel } => context(f, options, *sel, main),
         Mode::Commands { uuid, query, sel } => commands(f, app, uuid, query, *sel, main),
+        Mode::Form(form) => form_box(f, app, form, main),
         _ => {}
     }
     if !app.status.is_empty() {
@@ -132,11 +134,17 @@ pub fn draw(f: &mut Frame, app: &App) {
     match &app.mode {
         Mode::Prompt(p) if p.kind.popup() => {
             popup(f, app, p, main);
-            f.render_widget(
-                hints("Tab complete · ↵ save · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"),
-                dock,
-            );
+            let keys = if p.kind == PromptKind::Add {
+                "Tab complete · ↵ save · ↓ the full form · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"
+            } else {
+                "Tab complete · ↵ save · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"
+            };
+            f.render_widget(hints(keys), dock);
         }
+        Mode::Form(_) => f.render_widget(
+            hints("↑/↓ field · Tab complete · ↵ save · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"),
+            dock,
+        ),
         Mode::Prompt(p) => prompt(f, p, main, dock),
         Mode::Commands { .. } => {
             f.render_widget(hints("a-z narrow · ↑/↓ choose · ↵ run on the task · Esc cancel"), dock);
@@ -178,6 +186,7 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
         };
         right.push(Span::from(format!(" ● {short}{}{more} ", format_seconds(now() - start))).green());
     }
+    right.push(sync_chip(app));
     right.push(match &app.cfg.active_context {
         Some(c) => Span::styled(format!(" ◎ {c} "), theme::accent()),
         None => Span::from(" ◎ none ").dim(),
@@ -220,6 +229,28 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
     .areas(area);
     f.render_widget(Line::from(left), l);
     f.render_widget(Line::from(right), r);
+}
+
+/// How syncing goes: running, failed, or how long ago it last worked.
+fn sync_chip(app: &App) -> Span<'static> {
+    if app.syncer.running() {
+        return Span::styled(" ⟳ syncing ", theme::accent());
+    }
+    match &app.syncer.last {
+        Some(l) if !l.ok => Span::from(" ⟳ failed ").red(),
+        Some(l) => Span::from(format!(" ⟳ {} ", ago(now() - l.at))).dim(),
+        None => Span::from(" ⟳ ").dim(),
+    }
+}
+
+/// A time since, coarsely: `now`, `3m`, `2h`, `4d`.
+fn ago(secs: i64) -> String {
+    match secs {
+        ..60 => "now".into(),
+        60..3600 => format!("{}m", secs / 60),
+        3600..86_400 => format!("{}h", secs / 3600),
+        _ => format!("{}d", secs / 86_400),
+    }
 }
 
 fn sidebar(f: &mut Frame, app: &App, area: Rect) {
@@ -373,8 +404,21 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
         .title_bottom(note(&path));
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let [head, _, body] =
-        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    let [sync, head, _, body] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
+    f.render_widget(
+        Line::from(vec![
+            Span::from(" Sync ").bold(),
+            Span::from(app.sync_mode.label()),
+            Span::from(" · y changes it").dim(),
+        ]),
+        sync,
+    );
     f.render_widget(
         match &app.settings_problem {
             Some(p) => Line::from(format!(" {p}")).red(),
@@ -712,10 +756,131 @@ fn task_card(app: &App, t: &Value) -> Vec<Line<'static>> {
     text
 }
 
+/// What a field of the form will be, shown after it: a date as `task` reads it, a period in words.
+fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
+    let v = field.value();
+    if field.locked {
+        return Some(Span::from("  set on the recurring task").dim());
+    }
+    if v.is_empty() {
+        return None;
+    }
+    match field.kind {
+        Kind::Date => {
+            let pv = app.preview(&format!("x {}:{}", field.key, form::quote(v)));
+            if let Some(e) = pv.errors.first() {
+                return Some(Span::from(format!("  {e}")).red());
+            }
+            let ts = pv
+                .dates
+                .get(&field.key)
+                .copied()
+                .or_else(|| pv.udas.get(&field.key).and_then(|u| u.parse().ok()))?;
+            // Only where it says more than what was typed (`fri`, `eom`), not a date written out.
+            let read = date(app, ts);
+            (read != v).then(|| Span::from(format!("  → {read}")).dim())
+        }
+        Kind::Value if field.key == "recur" => {
+            Some(Span::from(format!("  {}", tc_core::helpers::describe_recur(v))).dim())
+        }
+        _ => None,
+    }
+}
+
+/// The full form: a row for each field, the label on the left, the chosen one in the accent, and the command line it
+/// will run along the bottom.
+fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
+    const LABEL: u16 = 12;
+    let title = match (&form.uuid, form.id) {
+        (None, _) => " add a task ".to_owned(),
+        (Some(_), Some(id)) => format!(" modify task {id} "),
+        (Some(u), None) => format!(" modify task {} ", u.chars().take(8).collect::<String>()),
+    };
+    let mut rows: Vec<Line> = Vec::new();
+    let mut caret = None;
+    for (i, field) in form.fields.iter().enumerate() {
+        let chosen = i == form.sel;
+        let label_style = if chosen { theme::accent() } else { Style::new().dim() };
+        let mut spans = vec![Span::styled(
+            format!("{:>w$} ", field.label, w = usize::from(LABEL) - 1),
+            label_style,
+        )];
+        if field.kind == Kind::Start {
+            let mark = if form.start_now() { "[x]" } else { "[ ]" };
+            spans.push(Span::from(format!("{mark} start working on it now")));
+            if chosen {
+                spans.push(Span::from("  Space").dim());
+            }
+        } else {
+            let value = Span::from(field.input.line.clone());
+            spans.push(if field.locked { value.dim() } else { value });
+            if chosen {
+                caret = Some((rows.len(), u16::try_from(field.input.caret_chars()).unwrap_or(0)));
+            }
+            spans.extend(field_hint(app, field));
+        }
+        rows.push(Line::from(spans));
+    }
+    if !form.notes.is_empty() {
+        rows.push(Line::default());
+        for n in &form.notes {
+            rows.push(Line::from(vec![
+                Span::from(format!("{:>w$} ", "", w = usize::from(LABEL) - 1)),
+                Span::from(format!("· {n}")).dim(),
+            ]));
+        }
+    }
+    if let Some(why) = form.problem() {
+        rows.push(Line::default());
+        rows.push(Line::from(format!("{:>w$} {why}", "", w = usize::from(LABEL) - 1)).red());
+    }
+    let width = main.width.saturating_sub(4).min(96);
+    let height = u16::try_from(rows.len() + 2).unwrap_or(u16::MAX).min(main.height);
+    let area = Rect::new(
+        main.x + (main.width - width) / 2,
+        main.y + main.height.saturating_sub(height) / 3,
+        width,
+        height,
+    );
+    let command = form.command();
+    let mut block = boxed(title);
+    if !command.is_empty() {
+        let room = usize::from(width.saturating_sub(6));
+        let shown: String = if command.chars().count() > room {
+            command.chars().take(room.saturating_sub(1)).chain(['…']).collect()
+        } else {
+            command
+        };
+        block = block.title_bottom(Span::from(format!(" {shown} ")).dim());
+    }
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    // Keep the chosen field in sight when the rows don't all fit.
+    let shown = usize::from(inner.height);
+    let at = caret.map_or(form.sel, |(row, _)| row);
+    let skip = (at + 1).saturating_sub(shown);
+    f.render_widget(
+        Paragraph::new(rows).scroll((u16::try_from(skip).unwrap_or(0), 0)),
+        inner,
+    );
+    if let Some((row, col)) = caret {
+        let y = inner.y + u16::try_from(row - skip).unwrap_or(0);
+        let x = (inner.x + LABEL + col).min(inner.x + inner.width.saturating_sub(1));
+        f.set_cursor_position((x, y));
+        if let Some(m) = &form.completer.menu {
+            let below = main.y + main.height - (y + 1);
+            let h = menu_height(m).min(below);
+            let mx = (inner.x + LABEL).min(main.x + main.width.saturating_sub(MENU_WIDTH));
+            menu(f, m, Rect::new(mx, y + 1, MENU_WIDTH.min(main.width), h));
+        }
+    }
+}
+
 /// Adding, changing or annotating a task, or a task command, in a box over the page: the line, then what it is about.
 fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
     let uuid = match &p.kind {
-        PromptKind::Modify(u) | PromptKind::Annotate(u) => Some(u.clone()),
+        PromptKind::Annotate(u) => Some(u.clone()),
         PromptKind::ReviewModify => app.review.as_ref().and_then(crate::review::Review::uuid),
         _ => None,
     };
@@ -727,7 +892,7 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         .unwrap_or_default();
     let (title, card) = match &p.kind {
         PromptKind::Add => (" add a task ".to_owned(), add_card(app, &p.input.line)),
-        PromptKind::Modify(_) | PromptKind::ReviewModify => (
+        PromptKind::ReviewModify => (
             format!(" modify task{id} "),
             task.map(|t| task_card(app, t)).unwrap_or_default(),
         ),

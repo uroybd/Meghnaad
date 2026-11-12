@@ -302,17 +302,18 @@ the secrets for hooks never are. Everything about it, including building it your
 ## Terminal app
 
 On the desktop, `meghnaad-tui` is a full-screen terminal app around the real `task` 3.5.0: your own `~/.task` and
-`~/.taskrc`, with no replica, server or sync of its own (`S` runs `task sync`). It is laid out as the web app is: pages
-along the top (Tasks, Projects, Tags, Summary, Calendar, Burndown, Console, Settings), the reports down the side and a
-command line at the bottom with Tab completion, `&&` `||` `;` chains and your task commands. It has an add line that
-shows the task before it makes it, tasksh's review, a timer and reminders.
+`~/.taskrc`, with no replica or server of its own: it syncs with `task sync`, in the background, by hand or when it
+opens and closes or after every change, as you set it. It is laid out as the web app is: pages along the top (Tasks,
+Projects, Tags, Summary, Calendar, Burndown, Console, Settings), the reports down the side and a command line at the
+bottom with Tab completion, `&&` `||` `;` chains and your task commands. It has an add line that shows the task before it
+makes it and opens into the full task form, which modifying always uses, tasksh's review, a timer and reminders.
 
 ```bash
 brew install uroybd/tap/meghnaad-tui   # or a prebuilt from the release, or cargo install (see the guide)
 meghnaad-tui
 ```
 
-Its `settings.json` (task commands, edited on its Settings page) is kept in `~/.config/meghnaad`, or in
+Its `settings.json` (task commands and when to sync, edited on its Settings page) is kept in `~/.config/meghnaad`, or in
 `$MEGHNAAD_CONFIG_DIR`. The keys and the rest are in **[the terminal app](docs/terminal.md)**.
 
 ## Using it

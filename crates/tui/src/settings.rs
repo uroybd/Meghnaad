@@ -7,6 +7,7 @@
 
 use crate::chain::split_chain;
 use crate::commands::TaskCommand;
+use crate::sync::SyncMode;
 use serde_json::{Map, Value};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -38,9 +39,29 @@ pub fn path() -> Option<PathBuf> {
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
     pub task_commands: Vec<TaskCommand>,
+    /// When to sync (this app's own key; the web app and the phone sync their own way).
+    pub sync: Option<String>,
 }
 
 impl AppSettings {
+    /// When to sync, and what is wrong with the setting if it is not one of the three.
+    pub fn sync_mode(&self) -> (SyncMode, Option<String>) {
+        match self.sync.as_deref() {
+            None => (SyncMode::default(), None),
+            Some(s) => SyncMode::parse(s).map_or_else(
+                || {
+                    let known: Vec<&str> = SyncMode::ALL.iter().map(|m| m.key()).collect();
+                    let why = format!(
+                        "\"sync\": \"{s}\" is not one of {}; syncing by hand only.",
+                        known.join(", ")
+                    );
+                    (SyncMode::default(), Some(why))
+                },
+                |m| (m, None),
+            ),
+        }
+    }
+
     /// The settings in `text`.
     ///
     /// # Errors
@@ -101,13 +122,39 @@ pub fn command_problem(command: &str) -> Option<String> {
 ///
 /// The file is there but is not settings: it is left alone rather than replaced.
 pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, String> {
-    let mut raw: Map<String, Value> = if text.trim().is_empty() {
-        Map::new()
-    } else {
-        tc_core::appsettings::check(text)?;
-        serde_json::from_str(text).map_err(|e| e.to_string())?
-    };
+    let mut raw = object(text)?;
     raw.remove("taskCommands");
+    written(raw, commands)
+}
+
+/// `text` with `"sync"` set to `mode`, and every other key as it was.
+///
+/// # Errors
+///
+/// As [`with_commands`].
+pub fn with_sync(text: &str, mode: SyncMode) -> Result<String, String> {
+    let mut raw = object(text)?;
+    let commands: Vec<TaskCommand> = raw
+        .remove("taskCommands")
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| format!("taskCommands: {e}"))?
+        .unwrap_or_default();
+    raw.insert("sync".into(), Value::String(mode.key().into()));
+    written(raw, &commands)
+}
+
+/// The settings in `text` as an object (none for an empty file).
+fn object(text: &str) -> Result<Map<String, Value>, String> {
+    if text.trim().is_empty() {
+        return Ok(Map::new());
+    }
+    tc_core::appsettings::check(text)?;
+    serde_json::from_str(text).map_err(|e| e.to_string())
+}
+
+/// The file for `raw` and the task commands, which go last.
+fn written(raw: Map<String, Value>, commands: &[TaskCommand]) -> Result<String, String> {
     /// The other keys, then the commands, each written `name`, `command` (and `icon`) as the web app writes them.
     #[derive(serde::Serialize)]
     struct Out<'a> {
@@ -127,13 +174,27 @@ pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, Str
 ///
 /// There is no config folder, the file is not settings, or it could not be written.
 pub fn save_commands(commands: &[TaskCommand]) -> Result<(), String> {
+    save(|text| with_commands(text, commands))
+}
+
+/// Save when to sync to `settings.json`, keeping the rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_sync(mode: SyncMode) -> Result<(), String> {
+    save(|text| with_sync(text, mode))
+}
+
+/// Write `settings.json` in place as `edit` makes it from what is there.
+fn save(edit: impl FnOnce(&str) -> Result<String, String>) -> Result<(), String> {
     let path = path().ok_or("No config folder: set MEGHNAAD_CONFIG_DIR or HOME.")?;
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    let out = with_commands(&text, commands).map_err(|e| format!("{}: {e}", path.display()))?;
+    let out = edit(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
@@ -193,6 +254,27 @@ mod tests {
         assert!(out.find("\"name\"") < out.find("\"command\""), "{out}");
         assert!(with_commands("", &[cmd("a", "done")]).is_ok());
         assert!(with_commands("[", &[]).is_err());
+    }
+
+    #[test]
+    fn when_to_sync_is_read_and_saved_with_the_rest_kept() {
+        let mode = |text: &str| AppSettings::parse(text).unwrap().sync_mode();
+        assert_eq!(mode("{}"), (SyncMode::Manual, None));
+        assert_eq!(mode(r#"{ "sync": "everyChange" }"#), (SyncMode::EveryChange, None));
+        let (m, why) = mode(r#"{ "sync": "hourly" }"#);
+        assert_eq!(m, SyncMode::Manual);
+        assert!(why.unwrap().contains("hourly"));
+        let text = r#"{ "boards": [1], "taskCommands": [ { "name": "fail", "command": "done", "icon": "x" } ] }"#;
+        let out = with_sync(text, SyncMode::StartAndClose).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["sync"], "startAndClose");
+        assert_eq!(v["boards"], serde_json::json!([1]));
+        assert_eq!(
+            v["taskCommands"],
+            serde_json::json!([{ "name": "fail", "command": "done", "icon": "x" }])
+        );
+        assert!(out.find("\"name\"") < out.find("\"command\""), "{out}");
+        assert!(with_sync("", SyncMode::Manual).unwrap().contains("\"manual\""));
     }
 
     #[test]

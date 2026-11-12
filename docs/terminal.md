@@ -42,7 +42,7 @@ command line, which shows the page's keys until you type into it, with `? all ke
 | `5` Calendar | `task calendar`, from this month; `h` `l` go a month back or on |
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
 | `7` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
-| `8` Settings | Your task commands, which you add, change and delete here, and with `t` the taskrc as `task` reads it |
+| `8` Settings | When to sync (`y`), your task commands, which you add, change and delete here, and with `t` the taskrc as `task` reads it |
 
 `Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Summary,
 Calendar, Burndown and `info` are drawn in `task`'s own colours, at the page's width, with one change: the grey
@@ -64,7 +64,7 @@ On every page:
 | `C` | Choose the context (`task context <name>`, or `none`) |
 | `T` | Stop the started task the timer shows |
 | `N` | Reminders on or off |
-| `S` | `task sync`, on the terminal, with Taskwarrior's own sync settings |
+| `S` | [Sync](#sync) now, in the background |
 | `u` | `task undo`, on the terminal so `task` can ask first |
 | `R` | Read everything again |
 | `?` | Every key |
@@ -76,9 +76,9 @@ On the Tasks page:
 | --- | --- |
 | `j` `k`, arrows, `g` `G`, PgUp PgDn | Move through the report |
 | `Enter` | `task <uuid> info`, scrolled with `j` `k`; any other key closes it |
-| `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make |
-| `m` | Modify the selected task, in a box that shows it as it is: type what follows `task <uuid> modify` |
-| `A` | Annotate the selected task, in the same kind of box |
+| `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form) |
+| `m` | Modify the selected task, in [the full form](#the-form) |
+| `A` | Annotate the selected task, in a box that shows it as it is |
 | `d` | Mark the selected task done |
 | `s` `x` | Start, stop the selected task |
 | `D` | Delete the selected task, on the terminal so `task` can ask first |
@@ -86,7 +86,7 @@ On the Tasks page:
 | `/` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
 
-The quick keys (`a`, `m`, `A`, `d`, `s`, `x`, `T`, `C`) run `task` without handing it the terminal and put its first line
+The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
 (`Created task 3.`) in the status line. They add no overrides. If `task` or a hook asks a question there, it gets no
 answer, which is no, and nothing changes; use the command line with `!` when you want to answer. After every command
 the pages and what completion offers are read again.
@@ -95,7 +95,23 @@ The add box is Meghnaad's reading of the line, by the same rules as `task add`, 
 is what `task add` makes. A line it finds a problem in stays open with the reason. Adding and
 changing task commands on the Settings page use the same box.
 
-In the command line and the boxes, `Tab` completes the word: the shared part first, then each option in turn, with `Shift+Tab` going
+### The form
+
+The web app's task form, in a box over the page: a line for each part of a task, its name on the left. Description,
+project, priority, due, wait, scheduled, until, repeat, tags (space separated), each UDA your taskrc defines, and what it
+depends on (task ids); for a new task, whether to start it now and a note, and for one that exists, an annotation to add
+under the ones it has. `↑` `↓` go from line to line, `Tab` completes the line's word as the command line would
+(`project:Ho` → `project:Home`), `Space` ticks Start, `Enter` saves and `Esc` leaves.
+
+A date is typed as `task` takes it (`fri`, `eom`, `2026-11-20`, `2026-11-20T14:30`) and shown after it as `task` will read
+it; a repeat shows its period in words. One task of a series shows its period but leaves it to the recurring task.
+
+Saving sends only what changed: `<uuid> modify` with those attributes (`project:` to remove one, `+tag` and `-tag`,
+`depends:-3`), or `add` with what is filled in, then `+LATEST start` and `+LATEST annotate` when asked for. The bottom
+border shows the command line it will run. A form `task` refuses stays open with the reason, as does one with no
+description, or a repeat without a due date.
+
+In the command line, the boxes and the form, `Tab` completes the word: the shared part first, then each option in turn, with `Shift+Tab` going
 back. `Ctrl+A` and `Ctrl+E` go to the start and the end, `Ctrl+W` deletes a word, `Ctrl+U` the line, `Enter` runs it and
 `Esc` leaves it. Completion offers commands and reports, attributes, projects, tags, UDA values, task ids and date words,
 from what `task` lists (`_show`, `_projects`, `_tags` and the pending tasks).
@@ -106,7 +122,7 @@ from what `task` lists (`_show`, `_projects`, `_tags` and the pending tasks).
 
 - **Where it runs.** A line runs here, and what `task` prints goes to the Console page (opened for you when it is more
   than a line; a single line goes to the status line). A line whose command asks before it acts or opens an editor
-  (`delete`, `edit`, `undo`, `purge`, `sync`, `import`, `config`, and their abbreviations) hands the terminal to `task`
+  (`delete`, `edit`, `undo`, `purge`, `import`, `config`, and their abbreviations) hands the terminal to `task`
   instead, so its output and questions are exactly the CLI's, and the app comes back when you press Enter. Put `!` in
   front of any line to run it on the terminal, for example a bulk `modify` that asks for each task. A question asked of
   a line run here is answered no, and the console says so.
@@ -116,6 +132,7 @@ from what `task` lists (`_show`, `_projects`, `_tags` and the pending tasks).
 - **Task commands.** A word from `taskCommands` in `settings.json` stands for its command line, with the filter before
   it and the words after it: `3 fail` runs `3 done outcome:fail`. See [Commands](using/settings.md#commands).
 - **Review.** `review`, or `review 10` to stop after ten, begins a review, as `v` does.
+- **Sync.** `sync` alone syncs in the background, as `S` does.
 
 ## Review
 
@@ -136,6 +153,24 @@ day, a task coming back when its wait ends, and one notice a day for whatever is
 and the Console page, and the count is in the top bar. They work while the app is open, each is said once per run, and
 the pending tasks are read again every minute for them. `N` turns them off.
 
+## Sync
+
+Syncing is `task sync`, with Taskwarrior's own sync settings (`sync.*` in the taskrc, `AWS_ENDPOINT_URL` and the like in
+the environment). It runs in the background: the screen stays yours, the top bar shows `⟳ syncing`, then how long ago it
+worked or `⟳ failed`, and how it went is said in the status line and kept on the Console page, with what `task` wrote
+when it failed. The pages are read again when it ends. While it runs, a command you give waits for it, so the two never
+use the data at once.
+
+When it runs is the `sync` setting, which `y` on the Settings page goes through and saves:
+
+| `"sync"` | Syncs |
+| --- | --- |
+| `"manual"` (or none) | Only when asked: `S`, or `sync` at the command line |
+| `"startAndClose"` | Also when the app opens and when it closes |
+| `"everyChange"` | Also after every command that changes tasks (`add`, `modify`, `done`, `start`, `delete`, `undo`, …, from a key, the form, the command line or the terminal), and once when a review ends |
+
+Closing waits for a sync that is running, then syncs once more when set to, and says on the terminal if that failed.
+
 ## Settings
 
 The app's own `settings.json` is kept on this machine only, in the first of:
@@ -144,15 +179,19 @@ The app's own `settings.json` is kept on this machine only, in the first of:
 2. `$XDG_CONFIG_HOME/meghnaad`;
 3. `~/.config/meghnaad`.
 
-The file is optional; without it there are no task commands. The terminal app uses its `taskCommands`, words that stand
-for a command line, which you can also add, change and delete on the Settings page:
+The file is optional; without it there are no task commands and syncing is by hand. The terminal app uses its
+`taskCommands`, words that stand for a command line, which you can also add, change and delete on the Settings page,
+and its own `sync` ([Sync](#sync)):
 
 ```json
-{ "taskCommands": [{ "name": "fail", "command": "done outcome:fail" }, { "name": "late", "command": "+OVERDUE list" }] }
+{
+  "sync": "startAndClose",
+  "taskCommands": [{ "name": "fail", "command": "done outcome:fail" }, { "name": "late", "command": "+OVERDUE list" }]
+}
 ```
 
 It is the same JSON as the web app's (**Settings → Commands**, or `web/settings.json` in the bucket), so copying that
-file here gives you the same task commands. Keys the terminal app has no use for yet (`boards`, `appearance`) are
+file here gives you the same task commands; the web app and the phone have no use for `sync`. Keys the terminal app has no use for yet (`boards`, `appearance`) are
 ignored and kept as they are when it saves. A file that is not a JSON object is reported in the status line and read as
 none, and the app will not save over it until it is put right.
 

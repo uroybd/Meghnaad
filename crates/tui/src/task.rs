@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// The Taskwarrior release the app follows.
 pub const VERSION: &str = "3.5.0";
@@ -19,6 +20,8 @@ pub struct Output {
 #[derive(Debug, Clone)]
 pub struct Task {
     bin: PathBuf,
+    /// Held by each run, so one in the background (a sync) and one from the screen never use the data at once.
+    turn: Arc<Mutex<()>>,
 }
 
 impl Task {
@@ -26,11 +29,20 @@ impl Task {
     pub fn from_env() -> Task {
         Task {
             bin: std::env::var_os("MEGHNAAD_TASK").map_or_else(|| PathBuf::from("task"), PathBuf::from),
+            turn: Arc::default(),
         }
     }
 
     pub fn new(bin: impl Into<PathBuf>) -> Task {
-        Task { bin: bin.into() }
+        Task {
+            bin: bin.into(),
+            turn: Arc::default(),
+        }
+    }
+
+    /// Wait for any other run (a sync in the background) to finish; the turn is this caller's until it is dropped.
+    fn turn(&self) -> MutexGuard<'_, ()> {
+        self.turn.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// `task` with `args` and this app's whole environment, as a shell would start it: `TASKRC`, `TASKDATA`, `EDITOR`,
@@ -48,6 +60,7 @@ impl Task {
     ///
     /// `task` could not be started.
     pub fn capture<S: AsRef<std::ffi::OsStr>>(&self, args: &[S]) -> Result<Output, String> {
+        let _turn = self.turn();
         let out = self
             .command(args)
             .stdin(Stdio::null())
@@ -116,6 +129,7 @@ impl Task {
     ///
     /// `task` could not be started.
     pub fn interactive(&self, words: &[String]) -> Result<bool, String> {
+        let _turn = self.turn();
         self.command(words)
             .status()
             .map(|s| s.success())

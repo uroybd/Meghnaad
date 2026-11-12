@@ -156,8 +156,9 @@ with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) open
 `crates/tui` (`meghnaad-tui`, ratatui) is a front end whose backend is the real `task` 3.5.0, not the engine: every read
 and change is a `task` command line (`_show`, `<filter> export <report>`, `_projects`, …) on the desktop's own data. It
 links `tc-core` only for helpers `task` has no command for (completion, the add preview, report cells) and adds nothing to
-`tc-core` for itself; its glue (export to rows, chains, task commands, the Projects and Tags lists, review, reminders)
-lives in the crate, ported with the web app's tests. It never reaches the bucket: `settings.json` is read and written in
+`tc-core` for itself; its glue (export to rows, chains, task commands, the Projects and Tags lists, the task form,
+review, reminders) lives in the crate, ported with the web app's tests. Syncing is `task sync` run in the background, when
+the `sync` key of its `settings.json` says. It never reaches the bucket: `settings.json` is read and written in
 place in `$MEGHNAAD_CONFIG_DIR` (else `~/.config/meghnaad`) and nothing else there is touched. Its tests that run `task` use a scratch `TASKRC` and `TASKDATA` and skip where `task` 3.5.0 is missing.
 
 ## Running it

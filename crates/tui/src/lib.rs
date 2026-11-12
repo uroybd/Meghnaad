@@ -8,11 +8,13 @@ pub mod app;
 pub mod chain;
 pub mod commands;
 pub mod completer;
+pub mod form;
 pub mod lists;
 pub mod model;
 pub mod remind;
 pub mod review;
 pub mod settings;
+pub mod sync;
 pub mod task;
 pub mod theme;
 pub mod ui;
@@ -54,7 +56,8 @@ fn run_on_terminal(app: &App, steps: &[chain::Statement], pause: bool) -> io::Re
     Ok(())
 }
 
-fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
+/// Run until quit; what the closing sync said when it failed.
+fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<Option<String>> {
     loop {
         (app.width, app.height) = ui::page_size(terminal.size()?.into());
         terminal.draw(|f| ui::draw(f, app))?;
@@ -71,12 +74,19 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
         }
         match app.key(key) {
             Action::None => {}
-            Action::Quit => return Ok(()),
+            Action::Quit => {
+                if app.syncer.running() || app.sync_mode.at_start_and_close() {
+                    "Syncing before closing…".clone_into(&mut app.status);
+                    terminal.draw(|f| ui::draw(f, app))?;
+                }
+                return Ok(app.sync_at_close());
+            }
             Action::Run(steps) => {
                 run_on_terminal(app, &steps, true)?;
                 *terminal = ratatui::init();
                 app.status.clear();
                 app.reload();
+                app.ran(&steps);
             }
             Action::Edit(uuid) => {
                 let edit = chain::Statement {
@@ -104,8 +114,14 @@ pub fn run() -> io::Result<()> {
         app.status = format!("task {version} found; this app follows Taskwarrior {}.", task::VERSION);
     }
     app.reload();
+    if app.sync_mode.at_start_and_close() {
+        app.syncer.start(&app.task);
+    }
     let mut terminal = ratatui::init();
     let result = event_loop(&mut terminal, &mut app);
     ratatui::restore();
-    result
+    if let Some(why) = result? {
+        writeln!(io::stderr(), "meghnaad-tui: {why}")?;
+    }
+    Ok(())
 }
