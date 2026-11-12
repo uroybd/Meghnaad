@@ -124,8 +124,12 @@ bucket), and `setup.mjs`, `deploy.mjs` and `deploy-lib.mjs` must keep working in
 ## Versions
 
 One version, the root `package.json`'s: the web app's label in Settings (`__APP_VERSION__`), the Android versionName and
-versionCode (`scripts/version.mjs`), and the prebuilt package. Release by changing it, committing, and pushing the tag
-`v<version>` (the Release workflow refuses a tag that does not match). Don't hard-code a version anywhere else.
+versionCode (`scripts/version.mjs`), the prebuilt package, and the crates (`[workspace.package]` in `Cargo.toml`, which
+`meghnaad-tui --version` and `meghnaad-hook --version` print). Cargo cannot read `package.json`, so that one copy is
+written for you: change the version with `npm version <x> --no-git-tag-version`, whose `version` script runs
+`node scripts/version.mjs sync` (Cargo.toml and Cargo.lock); a script test and the Release workflow refuse a mismatch.
+Then commit and push the tag `v<version>` (the Release workflow refuses a tag that does not match). Don't hard-code a
+version anywhere else.
 
 ## The Android app
 
@@ -157,7 +161,7 @@ with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) open
 and change is a `task` command line (`_show`, `<filter> export <report>`, `_projects`, …) on the desktop's own data. It
 links `tc-core` only for helpers `task` has no command for (completion, the add preview, report cells) and adds nothing to
 `tc-core` for itself; its glue (export to rows, chains, task commands, the Projects and Tags lists, the task form,
-review, reminders) lives in the crate, ported with the web app's tests. Syncing is `task sync` run in the background, when
+review, reminders, and boards' glue from Android's `Boards.kt`, drawn with ratatui's charts) lives in the crate, ported with the web app's tests. Syncing is `task sync` run in the background, when
 the `sync` key of its `settings.json` says. It never reaches the bucket: `settings.json` is read and written in
 place in `$MEGHNAAD_CONFIG_DIR` (else `~/.config/meghnaad`) and nothing else there is touched. Its tests that run `task` use a scratch `TASKRC` and `TASKDATA` and skip where `task` 3.5.0 is missing.
 

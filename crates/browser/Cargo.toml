@@ -1,6 +1,6 @@
 [package]
 name = "tc-browser"
-version = "0.1.0"
+version.workspace = true
 description = "The Taskwarrior engine for the browser: tc-core as WebAssembly, syncing through the Worker"
 edition.workspace = true
 license.workspace = true

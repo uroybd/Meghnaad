@@ -20,7 +20,8 @@
     "fix:rust": "cargo clippy --fix --allow-dirty --allow-staged -p tc-core --all-targets --features lua && cargo clippy --fix --allow-dirty --allow-staged -p tw-worker --target wasm32-unknown-unknown && cargo clippy --fix --allow-dirty --allow-staged -p tc-browser --target wasm32-unknown-unknown && cargo clippy --fix --allow-dirty --allow-staged -p tc-android --all-targets && cargo clippy --fix --allow-dirty --allow-staged -p tc-hook --all-targets && cargo clippy --fix --allow-dirty --allow-staged -p meghnaad-tui --all-targets",
     "format": "npm run fix:rust && cargo fmt --all && prettier --write .",
     "build": "node scripts/build.mjs",
-    "build:android": "node scripts/build-android.mjs"
+    "build:android": "node scripts/build-android.mjs",
+    "version": "node scripts/version.mjs sync"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

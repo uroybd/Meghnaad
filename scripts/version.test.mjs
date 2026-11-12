@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { currentVersion, parseVersion } from './version.mjs';
+import { cargoVersion, currentVersion, parseVersion, withCargoVersion } from './version.mjs';
 
 test('a version is read with or without the v, and gives a tag and an Android code', () => {
   assert.deepEqual(parseVersion('v1.2.3'), { name: '1.2.3', tag: 'v1.2.3', code: 1_002_003 });
@@ -24,4 +24,15 @@ test('what is not a version, or would overflow, is refused', () => {
 
 test('the repository has a valid version', () => {
   assert.match(currentVersion().name, /^\d+\.\d+\.\d+/);
+});
+
+test('the crates have the version package.json has', () => {
+  assert.equal(cargoVersion(), currentVersion().name, 'run `node scripts/version.mjs sync` (npm version does)');
+});
+
+test('only the workspace version is changed in Cargo.toml', () => {
+  const toml =
+    '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "0.1.0"\nedition = "2021"\n\n[x]\nversion = "9"\n';
+  assert.equal(withCargoVersion(toml, '1.2.3'), toml.replace('version = "0.1.0"', 'version = "1.2.3"'));
+  assert.throws(() => withCargoVersion('[workspace]\n', '1.2.3'), /no version/);
 });

@@ -95,8 +95,9 @@ fn tame(style: Style) -> Style {
     s
 }
 
-/// One line of text with its escapes read.
-fn line(text: &str) -> Line<'static> {
+/// One line of text with its escapes read, its greys left out when `tamed`.
+fn line_as(text: &str, tamed: bool) -> Line<'static> {
+    let tame = |s: Style| if tamed { tame(s) } else { s };
     let mut spans = Vec::new();
     let mut style = Style::default();
     let mut buf = String::new();
@@ -133,9 +134,21 @@ fn line(text: &str) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Every line of `text`, styled as its escapes say.
+#[cfg(test)]
+fn line(text: &str) -> Line<'static> {
+    line_as(text, true)
+}
+
+/// Every line of `text`, styled as its escapes say, with `task`'s grey shading left to the terminal unless the theme
+/// draws it (`tui.shading`).
 pub fn lines(text: &str) -> Vec<Line<'static>> {
-    text.lines().map(line).collect()
+    let tamed = crate::theme::current().shading == crate::theme::Shading::None;
+    text.lines().map(|l| line_as(l, tamed)).collect()
+}
+
+/// Every line of `text` in exactly the colours `task` gave it.
+pub fn lines_as_task(text: &str) -> Vec<Line<'static>> {
+    text.lines().map(|l| line_as(l, false)).collect()
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 //! Everything a key changes in the tasks is a `task` command line; the screen then reads again what it shows.
 
 use crate::ansi;
+use crate::boards;
 use crate::chain::{runs, Statement};
 use crate::commands::{plan_chain, TaskCommand};
 use crate::completer::{Completer, Input};
@@ -18,10 +19,11 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::text::Line;
 use serde_json::Value;
 use std::collections::BTreeSet;
+use tc_core::board::Board;
 use tc_core::complete::Vocab;
 use tc_core::filter::split_words;
 use tc_core::preview::Preview;
-use tc_core::taskrc::{is_sensitive, Config};
+use tc_core::taskrc::Config;
 
 /// The pages, in the order of the top bar; each is opened by its number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,18 +34,20 @@ pub enum Page {
     Summary,
     Calendar,
     Burndown,
+    Boards,
     Console,
     Settings,
 }
 
 impl Page {
-    pub const ALL: [Page; 8] = [
+    pub const ALL: [Page; 9] = [
         Page::Tasks,
         Page::Projects,
         Page::Tags,
         Page::Summary,
         Page::Calendar,
         Page::Burndown,
+        Page::Boards,
         Page::Console,
         Page::Settings,
     ];
@@ -56,6 +60,7 @@ impl Page {
             Page::Summary => "Summary",
             Page::Calendar => "Calendar",
             Page::Burndown => "Burndown",
+            Page::Boards => "Boards",
             Page::Console => "Console",
             Page::Settings => "Settings",
         }
@@ -71,8 +76,9 @@ impl Page {
             Page::Summary => "j/k scroll",
             Page::Calendar => "h/l month · j/k scroll",
             Page::Burndown => "d daily · w weekly · m monthly · j/k scroll",
+            Page::Boards => "j/k scroll · h/l the board before or after · Esc/b all boards",
             Page::Console => "j/k scroll · c clear",
-            Page::Settings => "a add · e edit · D delete · y when to sync · t taskrc / task commands",
+            Page::Settings => "[/] section · j/k move",
         }
     }
 }
@@ -180,11 +186,38 @@ pub enum Action {
     Edit(String),
 }
 
-/// Which of the Settings page's two halves is shown.
+/// The sections of the Settings page, top to bottom. The keys act on the one that has the focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsView {
+pub enum SettingsSection {
+    Sync,
+    Theme,
     Commands,
-    Taskrc,
+    Boards,
+}
+
+impl SettingsSection {
+    pub const ALL: [SettingsSection; 4] = [
+        SettingsSection::Sync,
+        SettingsSection::Theme,
+        SettingsSection::Commands,
+        SettingsSection::Boards,
+    ];
+
+    /// What the section's own keys are, when it has the focus.
+    pub fn keys(self) -> &'static str {
+        match self {
+            SettingsSection::Sync => "y/Space/↵ change when to sync",
+            SettingsSection::Theme => "Space/↵ auto, light, dark or mono · s task's shading on or off",
+            SettingsSection::Commands => "a add · e/↵ edit · D delete",
+            SettingsSection::Boards => "↵ open the board",
+        }
+    }
+
+    fn step(self, by: isize) -> SettingsSection {
+        let i = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
+        let n = Self::ALL.len();
+        Self::ALL[(i + n).saturating_add_signed(by) % n]
+    }
 }
 
 pub struct App {
@@ -218,13 +251,30 @@ pub struct App {
     pub month: Option<i32>,
     pub burndown: &'static str,
 
+    /// The boards in `settings.json`, what was wrong with any left out, the one shown and what its sections got.
+    pub boards: Vec<Board>,
+    pub board_errors: Vec<String>,
+    pub board: usize,
+    /// Whether a board is open, or the list of them is shown.
+    pub board_open: bool,
+    pub board_data: Vec<(String, boards::Data)>,
+
     pub log: Vec<Line<'static>>,
     /// How far the console is scrolled back from its end.
     pub log_back: u16,
 
-    pub settings_view: SettingsView,
+    pub settings_section: SettingsSection,
+    /// What is wrong with `tui.theme` or `tui.shading`, one line each.
+    pub theme_errors: Vec<String>,
+    /// Whether the terminal is light or dark (what the theme's `auto` draws), the system's appearance when last looked
+    /// at, when that was, and when `settings.json` was last changed, to follow either when it changes.
+    pub appearance: crate::appearance::Mode,
+    pub system_mode: Option<crate::appearance::Mode>,
+    last_look: i64,
+    settings_stamp: Option<std::time::SystemTime>,
+    /// The task command, and the board, chosen in their sections.
     pub settings_sel: usize,
-    pub taskrc: Vec<String>,
+    pub settings_board: usize,
 
     pub review: Option<Review>,
     /// `task sync` in the background, and when it runs by itself.
@@ -251,14 +301,14 @@ pub fn now() -> i64 {
 /// Every key, for `?`.
 pub const HELP: &str = "\
 Everywhere
-  1-8        open a page: Tasks, Projects, Tags, Summary, Calendar, Burndown, Console, Settings
+  1-9        open a page: Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings
   Tab        move between the page and the reports down the side (Esc comes back)
   :          the command line: any task command line, && || ; chains, task commands, review
   v          review the tasks that need it (tasksh's review)
   C          choose the context
   T          stop the started task (the timer in the top bar)
   N          reminders on or off
-  S          task sync, in the background (Settings → y: also on opening and closing, or after every change)
+  S          task sync, in the background (Settings → Sync: also on opening and closing, or after every change)
   u          task undo, on the terminal
   R          read everything again
   ?          this list
@@ -282,11 +332,19 @@ Projects, Tags
 Summary, Calendar, Burndown
   j/k        scroll · Calendar: h/l the month before or after · Burndown: d daily, w weekly, m monthly
 
+Boards
+  j/k ↵      choose a board from the list and open it
+  Esc/b      back to the list · h/l [ ] the board before or after · j/k scroll
+
 Console
   j/k        scroll back · c clear
 
-Settings
-  a add · e/↵ edit · D delete a task command · y when to sync · t the taskrc as task reads it
+Settings (keys act on the section that has the focus: j/k move through it and on, [ ] jump)
+  Sync           y, Space or ↵ changes when to sync
+  Theme          Space or ↵ the preset: auto (as the terminal is), light, dark or mono
+                 s draws task's grey shading (alternate rows, weekends) or leaves it out
+  Task commands  a add · e/↵ edit · D delete
+  Boards         ↵ open the board
 
 The form
   ↑/↓ a field · Tab complete · Space starts the task (on Start) · ↵ save · Esc cancel
@@ -333,7 +391,7 @@ const CHANGES: &[&str] = &[
 ];
 
 /// The arguments that make `task` colour what it prints for a page this wide and tall.
-fn colored(width: u16, height: u16) -> Vec<String> {
+pub(crate) fn colored(width: u16, height: u16) -> Vec<String> {
     vec![
         "rc._forcecolor=on".into(),
         "rc.color=on".into(),
@@ -381,11 +439,21 @@ impl App {
             scroll: 0,
             month: None,
             burndown: "weekly",
+            boards: Vec::new(),
+            board_errors: Vec::new(),
+            board: 0,
+            board_open: false,
+            board_data: Vec::new(),
             log: Vec::new(),
             log_back: 0,
-            settings_view: SettingsView::Commands,
+            settings_section: SettingsSection::Sync,
+            theme_errors: Vec::new(),
+            appearance: crate::appearance::Mode::default(),
+            system_mode: None,
+            last_look: 0,
+            settings_stamp: None,
             settings_sel: 0,
-            taskrc: Vec::new(),
+            settings_board: 0,
             review: None,
             syncer: Syncer::default(),
             sync_mode: SyncMode::default(),
@@ -429,6 +497,20 @@ impl App {
         if self.commands.is_empty() {
             self.commands = self.task.lines(&["_commands"]).unwrap_or_default();
         }
+        self.read_settings();
+        self.last_read = now();
+        self.selected = self.selected.min(self.report.uuids.len().saturating_sub(1));
+        self.load_page();
+    }
+
+    /// When `settings.json` was last changed.
+    fn settings_stamp() -> Option<std::time::SystemTime> {
+        settings::path().and_then(|p| std::fs::metadata(p).ok()?.modified().ok())
+    }
+
+    /// Read `settings.json` again: the task commands, the boards, when to sync and the theme.
+    fn read_settings(&mut self) {
+        self.settings_stamp = Self::settings_stamp();
         let (settings, problem) = AppSettings::load();
         self.settings = settings;
         let (mode, odd) = self.settings.sync_mode();
@@ -436,10 +518,42 @@ impl App {
         if let Some(p) = problem.as_ref().or(odd.as_ref()) {
             p.clone_into(&mut self.status);
         }
+        self.apply_theme();
+        if let Some(e) = self.theme_errors.first() {
+            e.clone_into(&mut self.status);
+        }
         self.settings_problem = problem;
-        self.last_read = now();
-        self.selected = self.selected.min(self.report.uuids.len().saturating_sub(1));
-        self.load_page();
+        (self.boards, self.board_errors) = boards::read(&self.settings.boards);
+        self.board = self.board.min(self.boards.len().saturating_sub(1));
+    }
+
+    /// Put the theme the settings and the terminal's appearance make in force.
+    fn apply_theme(&mut self) {
+        let (t, errors) = crate::theme::Theme::from_settings(
+            &self.settings.tui.theme,
+            self.settings.tui.shading.as_deref(),
+            &self.cfg.settings,
+            self.appearance,
+        );
+        crate::theme::set(t);
+        self.theme_errors = errors;
+    }
+
+    /// The terminal has the focus back: its colours may have changed meanwhile.
+    pub fn focus_gained(&mut self) {
+        self.look_again();
+    }
+
+    /// Ask the terminal (else the system) whether it is light or dark, and draw the theme for it.
+    fn look_again(&mut self) {
+        if crate::theme::current().base != crate::theme::Base::Auto {
+            return;
+        }
+        let mode = crate::appearance::detect();
+        if mode != self.appearance {
+            self.appearance = mode;
+            self.apply_theme();
+        }
     }
 
     /// Read what the page shows from `task`, where it is `task`'s own output.
@@ -454,17 +568,11 @@ impl App {
                 }
             }
             Page::Burndown => args.push(format!("burndown.{}", self.burndown)),
-            Page::Settings => {
-                self.taskrc = self
-                    .task
-                    .lines(&["_show"])
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|l| !is_sensitive(l.split_once('=').map_or(l.as_str(), |(n, _)| n)))
-                    .collect();
+            Page::Boards => {
+                self.load_board();
                 return;
             }
-            Page::Tasks | Page::Projects | Page::Tags | Page::Console => return,
+            Page::Tasks | Page::Projects | Page::Tags | Page::Console | Page::Settings => return,
         }
         match self.task.capture(&args) {
             Ok(out) => self.output = shown(&out),
@@ -472,9 +580,61 @@ impl App {
         }
     }
 
-    /// Once a second: the reminders due now, and the pending tasks read again each minute.
+    /// Open the board chosen in the list.
+    pub fn open_board(&mut self) {
+        if self.board < self.boards.len() {
+            self.board_open = true;
+            self.scroll = 0;
+            self.load_board();
+        }
+    }
+
+    /// Back from a board to the list of them.
+    fn close_board(&mut self) {
+        self.board_open = false;
+        self.board_data.clear();
+        self.scroll = 0;
+    }
+
+    /// Ask `task` for what the board shown needs. A table is printed as wide as its share of the page.
+    pub fn load_board(&mut self) {
+        self.board_data.clear();
+        if !self.board_open {
+            return;
+        }
+        let Some(board) = self.boards.get(self.board) else {
+            return;
+        };
+        let ctx = boards::ctx(&self.cfg, now());
+        let page = u32::from(self.width);
+        let width = |s: &tc_core::board::Section| {
+            let cols = if page >= crate::boardui::BOARD_WIDE.into() {
+                s.w
+            } else {
+                12
+            };
+            u16::try_from(page * cols / 12).unwrap_or(u16::MAX).saturating_sub(4)
+        };
+        self.board_data = boards::load(&self.task, board, &ctx, width);
+    }
+
+    /// Once a second: the reminders due now, the pending tasks read again each minute, and every few seconds whether the
+    /// system's appearance or `settings.json` changed.
     pub fn tick(&mut self) {
         let now = now();
+        if now - self.last_look >= 3 {
+            self.last_look = now;
+            let system = crate::appearance::system();
+            // A terminal that follows the system changes with it.
+            if system != self.system_mode {
+                self.system_mode = system;
+                self.look_again();
+            }
+            if Self::settings_stamp() != self.settings_stamp {
+                self.read_settings();
+                self.load_page();
+            }
+        }
         if let Some(result) = self.syncer.poll(&self.task, now) {
             self.synced(&result);
         }
@@ -635,6 +795,8 @@ impl App {
         if self.page != page {
             self.page = page;
             self.scroll = 0;
+            // The boards open on their list.
+            self.board_open = false;
             self.list_sel = 0;
             self.load_page();
         }
@@ -794,7 +956,7 @@ impl App {
         // Keys every page has.
         match key.code {
             KeyCode::Char('q') => return Action::Quit,
-            KeyCode::Char(c @ '1'..='8') => {
+            KeyCode::Char(c @ '1'..='9') => {
                 let i = usize::from(c as u8 - b'1');
                 if let Some(&p) = Page::ALL.get(i) {
                     self.open(p);
@@ -807,6 +969,10 @@ impl App {
                 } else {
                     Focus::Main
                 };
+                return Action::None;
+            }
+            KeyCode::Esc if self.page == Page::Boards && self.board_open && self.focus == Focus::Main => {
+                self.close_board();
                 return Action::None;
             }
             KeyCode::Esc => {
@@ -911,6 +1077,33 @@ impl App {
                 }
                 _ => {}
             },
+            Page::Boards if !self.board_open => match key.code {
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.board = (self.board + 1).min(self.boards.len().saturating_sub(1));
+                }
+                KeyCode::Up | KeyCode::Char('k') => self.board = self.board.saturating_sub(1),
+                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.open_board(),
+                _ => {}
+            },
+            Page::Boards => match key.code {
+                KeyCode::Backspace | KeyCode::Char('b') => self.close_board(),
+                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
+                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(10),
+                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(10),
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l' | '[' | ']') if !self.boards.is_empty() => {
+                    let n = self.boards.len();
+                    let back = matches!(key.code, KeyCode::Left | KeyCode::Char('h' | '['));
+                    self.board = if back {
+                        (self.board + n - 1) % n
+                    } else {
+                        (self.board + 1) % n
+                    };
+                    self.scroll = 0;
+                    self.load_board();
+                }
+                _ => {}
+            },
             Page::Console => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => self.log_back = self.log_back.saturating_add(1),
                 KeyCode::Down | KeyCode::Char('j') => self.log_back = self.log_back.saturating_sub(1),
@@ -962,7 +1155,7 @@ impl App {
             }
             KeyCode::Char('c') => {
                 if self.settings.task_commands.is_empty() {
-                    self.status = "No task commands yet: add them on the Settings page (8).".into();
+                    self.status = "No task commands yet: add them on the Settings page (9).".into();
                 } else if let Some(uuid) = target {
                     self.mode = Mode::Commands {
                         uuid,
@@ -1025,47 +1218,114 @@ impl App {
         Action::None
     }
 
+    /// The page's own keys, as the bottom line says them: on Settings, the focused section's too.
+    pub fn page_keys(&self) -> String {
+        if self.page == Page::Settings {
+            format!("{} · {}", self.settings_section.keys(), self.page.keys())
+        } else if self.page == Page::Boards && !self.board_open {
+            "j/k choose · ↵ open the board".into()
+        } else {
+            self.page.keys().to_owned()
+        }
+    }
+
     fn on_settings(&mut self, key: KeyEvent) {
+        use SettingsSection as S;
         let n = self.settings.task_commands.len();
-        match key.code {
-            KeyCode::Char('y') => self.save_sync(self.sync_mode.next()),
-            KeyCode::Char('t') => {
-                self.settings_view = match self.settings_view {
-                    SettingsView::Commands => SettingsView::Taskrc,
-                    SettingsView::Taskrc => SettingsView::Commands,
-                };
-                self.scroll = 0;
-            }
-            KeyCode::Down | KeyCode::Char('j') if self.settings_view == SettingsView::Taskrc => {
-                self.scroll = self.scroll.saturating_add(1);
-            }
-            KeyCode::Up | KeyCode::Char('k') if self.settings_view == SettingsView::Taskrc => {
-                self.scroll = self.scroll.saturating_sub(1);
-            }
-            KeyCode::PageDown if self.settings_view == SettingsView::Taskrc => {
-                self.scroll = self.scroll.saturating_add(10);
-            }
-            KeyCode::PageUp if self.settings_view == SettingsView::Taskrc => {
-                self.scroll = self.scroll.saturating_sub(10);
-            }
-            _ if self.settings_view == SettingsView::Taskrc => {}
-            KeyCode::Down | KeyCode::Char('j') => self.settings_sel = (self.settings_sel + 1).min(n.saturating_sub(1)),
-            KeyCode::Up | KeyCode::Char('k') => self.settings_sel = self.settings_sel.saturating_sub(1),
-            KeyCode::Char('a') => self.prompt(PromptKind::CommandName(None), ""),
-            KeyCode::Char('e') | KeyCode::Enter => {
+        let down = matches!(key.code, KeyCode::Down | KeyCode::Char('j'));
+        let up = matches!(key.code, KeyCode::Up | KeyCode::Char('k'));
+        match (self.settings_section, key.code) {
+            (_, KeyCode::Char(']')) => self.settings_section = self.settings_section.step(1),
+            (_, KeyCode::Char('[')) => self.settings_section = self.settings_section.step(-1),
+            (S::Sync, KeyCode::Char('y' | ' ') | KeyCode::Enter) => self.save_sync(self.sync_mode.next()),
+            (S::Theme, KeyCode::Char(' ') | KeyCode::Enter) => self.next_preset(),
+            (S::Theme, KeyCode::Char('s')) => self.toggle_shading(),
+            (S::Commands, KeyCode::Char('a')) => self.prompt(PromptKind::CommandName(None), ""),
+            (S::Commands, KeyCode::Char('e') | KeyCode::Enter) => {
                 if let Some(c) = self.settings.task_commands.get(self.settings_sel) {
                     let name = c.name.clone();
                     self.prompt(PromptKind::CommandName(Some(self.settings_sel)), &name);
                 }
             }
-            KeyCode::Char('D') if self.settings_sel < n => {
+            (S::Commands, KeyCode::Char('D')) if self.settings_sel < n => {
                 let mut list = self.settings.task_commands.clone();
                 let gone = list.remove(self.settings_sel);
                 if self.save_commands(list) {
                     self.status = format!("Deleted the task command ‘{}’.", gone.name);
                 }
             }
+            (S::Boards, KeyCode::Enter) if self.settings_board < self.boards.len() => {
+                self.board = self.settings_board;
+                self.open(Page::Boards);
+                self.open_board();
+            }
+            // Moving goes through the rows of a section, then on to the next section.
+            (S::Commands, _) if down && self.settings_sel + 1 < n => self.settings_sel += 1,
+            (S::Commands, _) if up && self.settings_sel > 0 => self.settings_sel -= 1,
+            (S::Boards, _) if down && self.settings_board + 1 < self.boards.len() => self.settings_board += 1,
+            (S::Boards, _) if up && self.settings_board > 0 => self.settings_board -= 1,
+            (S::Sync | S::Theme | S::Commands, _) if down => {
+                self.settings_section = self.settings_section.step(1);
+            }
+            (S::Theme | S::Commands | S::Boards, _) if up => {
+                self.settings_section = self.settings_section.step(-1);
+            }
             _ => {}
+        }
+    }
+
+    /// The next preset (auto, light, dark, mono; mono only for a theme that sets no roles of its own), saved in
+    /// `settings.json`.
+    fn next_preset(&mut self) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        use crate::theme::Base;
+        let t = crate::theme::current();
+        let roles = self.settings.tui.theme.is_object();
+        let next = match (t.base, t.mono && !roles) {
+            (_, true) => "auto",
+            (Base::Auto, _) => "light",
+            (Base::Light, _) => "dark",
+            (Base::Dark, _) if roles => "auto",
+            (Base::Dark, _) => "mono",
+        };
+        match settings::save_theme_preset(next) {
+            Ok(()) => {
+                self.read_settings();
+                let t = crate::theme::current();
+                self.status = if next == "auto" {
+                    format!("Theme: as the terminal is ({}).", t.mode.word())
+                } else {
+                    format!("Theme: {next}.")
+                };
+            }
+            Err(e) => self.status = e,
+        }
+    }
+
+    /// Draw `task`'s grey shading, or leave it to the terminal, and save which in `settings.json`.
+    fn toggle_shading(&mut self) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        let next = if crate::theme::current().shading == crate::theme::Shading::Task {
+            "none"
+        } else {
+            "task"
+        };
+        match settings::save_tui("shading", Value::String(next.into())) {
+            Ok(()) => {
+                self.status = if next == "task" {
+                    "Task's shading is drawn.".into()
+                } else {
+                    "Task's shading is left to the terminal.".into()
+                };
+                self.reload();
+            }
+            Err(e) => self.status = e,
         }
     }
 
@@ -1078,7 +1338,7 @@ impl App {
         match settings::save_sync(mode) {
             Ok(()) => {
                 self.sync_mode = mode;
-                self.settings.sync = Some(mode.key().into());
+                self.settings.tui.sync = Some(mode.key().into());
                 self.status = format!("Syncs {}.", mode.label());
             }
             Err(e) => self.status = e,
@@ -1635,7 +1895,7 @@ mod tests {
     #[test]
     fn numbers_open_pages_tab_moves_to_the_side_and_q_quits() {
         let mut app = app();
-        app.key(key(KeyCode::Char('7')));
+        app.key(key(KeyCode::Char('8')));
         assert_eq!(app.page, Page::Console);
         app.key(key(KeyCode::Tab));
         assert_eq!(app.focus, Focus::Sidebar);
@@ -1654,12 +1914,73 @@ mod tests {
     #[test]
     fn a_task_command_name_is_checked_before_its_command_is_asked() {
         let mut app = app();
-        app.key(key(KeyCode::Char('8')));
+        app.key(key(KeyCode::Char('9')));
+        app.key(key(KeyCode::Char(']')));
+        app.key(key(KeyCode::Char(']')));
         app.key(key(KeyCode::Char('a')));
         typing(&mut app, "two words");
         app.key(key(KeyCode::Enter));
         assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::CommandName(None)));
         assert_eq!(app.status, "a name is one word (no spaces)");
+    }
+
+    #[test]
+    fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
+        let mut app = app();
+        app.key(key(KeyCode::Char('9')));
+        assert_eq!(app.settings_section, SettingsSection::Sync);
+        app.key(key(KeyCode::Char('a')));
+        assert!(
+            matches!(app.mode, Mode::Normal),
+            "a adds a task command only in its section"
+        );
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(app.settings_section, SettingsSection::Theme);
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(app.settings_section, SettingsSection::Commands);
+        let before = app.sync_mode;
+        app.key(key(KeyCode::Char('y')));
+        assert_eq!(app.sync_mode, before, "y changes syncing only in its section");
+        app.key(key(KeyCode::Char('a')));
+        assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::CommandName(None)));
+        app.key(key(KeyCode::Esc));
+        // Moving runs through each section's rows, then on; [ and ] jump.
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(app.settings_section, SettingsSection::Boards);
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(
+            app.settings_section,
+            SettingsSection::Boards,
+            "the last section keeps the focus"
+        );
+        app.key(key(KeyCode::Char('k')));
+        assert_eq!(app.settings_section, SettingsSection::Commands);
+        app.key(key(KeyCode::Char('[')));
+        app.key(key(KeyCode::Char('[')));
+        app.key(key(KeyCode::Char('[')));
+        assert_eq!(app.settings_section, SettingsSection::Boards, "[ goes round");
+    }
+
+    #[test]
+    fn boards_open_on_their_list_and_esc_comes_back_to_it() {
+        let mut app = app();
+        (app.boards, _) = boards::read(&serde_json::json!([
+            { "id": "a", "name": "A", "sections": [] },
+            { "id": "b", "name": "B", "sections": [] }
+        ]));
+        app.key(key(KeyCode::Char('7')));
+        assert_eq!(app.page, Page::Boards);
+        assert!(!app.board_open, "the list first");
+        app.key(key(KeyCode::Char('j')));
+        app.key(key(KeyCode::Enter));
+        assert!(app.board_open);
+        assert_eq!(app.board, 1);
+        app.key(key(KeyCode::Esc));
+        assert!(!app.board_open);
+        app.key(key(KeyCode::Enter));
+        app.key(key(KeyCode::Char('1')));
+        app.key(key(KeyCode::Char('7')));
+        assert!(!app.board_open, "coming back to the page shows the list");
     }
 
     #[test]

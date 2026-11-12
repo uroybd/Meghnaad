@@ -1,6 +1,6 @@
 [package]
 name = "tc-hook"
-version = "0.1.0"
+version.workspace = true
 description = "Your Lua hooks script as Taskwarrior hooks for the real `task` CLI: the same interpreter and library the web app and the phone use"
 edition.workspace = true
 license.workspace = true

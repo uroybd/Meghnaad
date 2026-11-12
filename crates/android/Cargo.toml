@@ -1,6 +1,6 @@
 [package]
 name = "tc-android"
-version = "0.1.0"
+version.workspace = true
 description = "The Taskwarrior engine for the Android app: tc-core as a native library, syncing straight with R2 over S3"
 edition.workspace = true
 license.workspace = true

@@ -3,6 +3,8 @@ resolver = "2"
 members = ["crates/tc-core", "crates/worker", "crates/browser", "crates/android", "crates/hook-shim", "crates/tui"]
 
 [workspace.package]
+# The root package.json's version, kept in step by `npm version` (scripts/version.mjs `sync`); a test checks they agree.
+version = "0.6.53"
 edition = "2021"
 license = "MIT"
 rust-version = "1.91"
@@ -93,10 +95,6 @@ opt-level = 3
 [profile.release.package.hmac]
 opt-level = 3
 [profile.release.package.chacha20poly1305]
-opt-level = 3
-[profile.release.package.chacha20]
-opt-level = 3
-[profile.release.package.poly1305]
 opt-level = 3
 
 # Key derivation is 600k PBKDF2 iterations; keep it fast in debug builds and tests.

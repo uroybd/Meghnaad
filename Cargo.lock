@@ -988,13 +988,14 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "meghnaad-tui"
-version = "0.1.0"
+version = "0.6.53"
 dependencies = [
  "chrono",
  "ratatui",
  "serde",
  "serde_json",
  "tc-core",
+ "terminal-colorsaurus",
 ]
 
 [[package]]
@@ -1679,7 +1680,7 @@ dependencies = [
 
 [[package]]
 name = "tc-android"
-version = "0.1.0"
+version = "0.6.53"
 dependencies = [
  "async-trait",
  "hmac",
@@ -1696,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "tc-browser"
-version = "0.1.0"
+version = "0.6.53"
 dependencies = [
  "async-trait",
  "js-sys",
@@ -1711,7 +1712,7 @@ dependencies = [
 
 [[package]]
 name = "tc-core"
-version = "0.1.0"
+version = "0.6.53"
 dependencies = [
  "async-trait",
  "chacha20poly1305",
@@ -1731,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "tc-hook"
-version = "0.1.0"
+version = "0.6.53"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1740,6 +1741,32 @@ dependencies = [
  "tc-core",
  "ureq",
  "uuid",
+]
+
+[[package]]
+name = "terminal-colorsaurus"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a46bb5364467da040298c573c8a95dbf9a512efc039630409a03126e3703e90"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "memchr",
+ "mio",
+ "terminal-trx",
+ "windows-sys 0.61.2",
+ "xterm-color",
+]
+
+[[package]]
+name = "terminal-trx"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b3f27d9a8a177e57545481faec87acb45c6e854ed1e5a3658ad186c106f38ed"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1836,7 +1863,7 @@ dependencies = [
 
 [[package]]
 name = "tw-worker"
-version = "0.1.0"
+version = "0.6.53"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2380,6 +2407,12 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "xterm-color"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7008a9d8ba97a7e47d9b2df63fcdb8dade303010c5a7cd5bf2469d4da6eba673"
 
 [[package]]
 name = "yoke"

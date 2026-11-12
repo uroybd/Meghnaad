@@ -19,6 +19,7 @@ const USAGE: &str = "meghnaad-hook: your Meghnaad hooks script, as hooks for `ta
   meghnaad-hook check [SCRIPT]                 say which hooks a script defines, or what is wrong with it
   meghnaad-hook install [SCRIPT] [--data DIR] [--hooks HOOKS]  link the hooks the script defines into HOOKS
   meghnaad-hook uninstall [--data DIR] [--hooks HOOKS]         remove those links
+  meghnaad-hook --version                      the release it is from
 
 The script is SCRIPT, else $MEGHNAAD_HOOKS, else DIR/hooks.lua. DIR is --data, else $TASKDATA, else ~/.task, which
 is `data.location`. HOOKS is --hooks, else DIR/hooks: give it when the taskrc sets `hooks.location`, which is not read
@@ -52,6 +53,10 @@ fn main() -> ExitCode {
         Some((&"check", args)) => check(args),
         Some((&"install", args)) => install(args),
         Some((&"uninstall", args)) => uninstall(args),
+        Some((&("--version" | "-V"), _)) => {
+            say(concat!("meghnaad-hook ", env!("CARGO_PKG_VERSION")));
+            return ExitCode::SUCCESS;
+        }
         _ => {
             say(USAGE);
             return ExitCode::from(2);

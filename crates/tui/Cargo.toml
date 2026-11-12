@@ -1,6 +1,6 @@
 [package]
 name = "meghnaad-tui"
-version = "0.1.0"
+version.workspace = true
 description = "Meghnaad in the terminal: a TUI around the real task 3.5.0 CLI, with tc-core's helpers for completion, the add preview and report cells"
 edition.workspace = true
 license.workspace = true
@@ -19,3 +19,4 @@ ratatui = { version = "0.30", default-features = false, features = ["crossterm"]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tc-core = { path = "../tc-core" }
+terminal-colorsaurus = "1"

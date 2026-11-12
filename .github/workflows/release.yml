@@ -40,13 +40,17 @@ jobs:
           node-version: 22
           cache: npm
 
-      # A tag has to be the version in package.json; anything else is `<version>-dev.<commit>`.
+      # A tag has to be the version in package.json (and the crates have to have it too); anything else is `<version>-dev.<commit>`.
       - name: Version
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           declared="$(node scripts/version.mjs)"
+          if [ "$(node scripts/version.mjs cargo)" != "$declared" ]; then
+            echo "::error::Cargo.toml's version is not package.json's ($declared). Run node scripts/version.mjs sync and commit."
+            exit 1
+          fi
           if [ "$REF_TYPE" = tag ]; then
             if [ "$REF_NAME" != "v$declared" ]; then
               echo "::error::The tag $REF_NAME does not match the version in package.json (v$declared). Change it there, commit, and tag again."

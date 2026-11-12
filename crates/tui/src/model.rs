@@ -194,6 +194,10 @@ pub fn moments(task: &Value) -> Vec<i64> {
 pub struct Report {
     pub name: String,
     pub labels: Vec<String>,
+    /// Whether the report sorts by each column (its label is drawn in `color.label.sort`).
+    pub sorted: Vec<bool>,
+    /// Each row's colour, as `task`'s colour rules make it (`row_styles`), without the alternate shading.
+    pub styles: Vec<ratatui::style::Style>,
     pub uuids: Vec<String>,
     pub ids: Vec<Option<u64>>,
     pub cells: Vec<Vec<Cell>>,
@@ -236,9 +240,24 @@ pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64
     // Taskwarrior leaves out a column with nothing in it unless `print.empty.columns` is on.
     let keep: Vec<bool> = table.empty.iter().map(|e| !e || cfg.print_empty_columns()).collect();
     labels.resize(cols.len(), String::new());
+    let sort = cfg.reports.get(name).and_then(|r| r.sort.clone()).unwrap_or_default();
+    let sort_fields: Vec<&str> = sort
+        .split(',')
+        .map(|k| k.trim().trim_end_matches('/').trim_end_matches(['+', '-']))
+        .collect();
+    let sorted: Vec<bool> = cols.iter().map(|c| sort_fields.contains(&c.name.as_str())).collect();
+    let colours = row_styles(task, name, filter);
     Ok(Report {
         name: name.to_owned(),
         labels: pick(labels, &keep),
+        sorted: pick(sorted, &keep),
+        styles: tasks
+            .iter()
+            .map(|t| {
+                let uuid = t.get("uuid").and_then(Value::as_str).unwrap_or("");
+                colours.get(uuid).copied().unwrap_or_default()
+            })
+            .collect(),
         uuids: tasks
             .iter()
             .map(|t| t.get("uuid").and_then(Value::as_str).unwrap_or("").to_owned())
@@ -249,6 +268,37 @@ pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64
             .collect(),
         cells: table.cells.into_iter().map(|row| pick(row, &keep)).collect(),
     })
+}
+
+/// Each task's colour in the report, as `task` itself colours it: the report run with its columns swapped for `uuid`
+/// and colour forced on, so each line is a uuid in that row's colour, worked out by Taskwarrior's own rules
+/// (`rule.precedence.color`, `color.due`, `color.tag.X`, an included theme, `nocolor`, …). The alternate shading is
+/// left out, for the page to draw as it is set to. None where `task` could not say.
+pub fn row_styles(task: &Task, name: &str, filter: &[String]) -> BTreeMap<String, ratatui::style::Style> {
+    let mut args: Vec<String> = vec![
+        "rc._forcecolor=on".into(),
+        "rc.color=on".into(),
+        "rc.detection=off".into(),
+        "rc.verbose=nothing".into(),
+        "rc.defaultwidth=200".into(),
+        // `limit:page` counts lines of the screen: none are left out here.
+        "rc.defaultheight=100000".into(),
+        "rc.color.alternate=".into(),
+        format!("rc.report.{name}.columns=uuid"),
+        format!("rc.report.{name}.labels=UUID"),
+    ];
+    args.extend(filter.iter().cloned());
+    args.push(name.to_owned());
+    let Ok(out) = task.capture(&args) else {
+        return BTreeMap::new();
+    };
+    crate::ansi::lines_as_task(&out.stdout)
+        .into_iter()
+        .filter_map(|line| {
+            let span = line.spans.iter().find(|s| s.content.trim().len() == 36)?;
+            Some((span.content.trim().to_owned(), span.style))
+        })
+        .collect()
 }
 
 /// The items of `v` whose column is kept.

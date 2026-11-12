@@ -18,7 +18,7 @@ fn scratch() -> PathBuf {
     std::fs::write(
         dir.join("rc"),
         format!(
-            "data.location={}\nnews.version=3.5.0\nuda.estimate.type=numeric\nuda.estimate.label=Est\nreport.mine.columns=id,project,due.relative,estimate,description\nreport.mine.labels=ID,Proj,Due,Est,Description\nreport.mine.filter=status:pending\nreport.mine.sort=urgency-\n",
+            "data.location={}\nnews.version=3.5.0\nuda.estimate.type=numeric\nuda.estimate.label=Est\nreport.mine.columns=id,project,due.relative,estimate,description\nreport.mine.labels=ID,Proj,Due,Est,Description\nreport.mine.filter=status:pending\nreport.mine.sort=urgency-\ncolor.tag.errand=color4\ncolor.project.Work=bold\n",
             dir.join("data").display()
         ),
     )
@@ -63,6 +63,12 @@ fn reads_reports_completion_and_adds_through_the_real_task() {
     assert_eq!(first[1], "Home");
     assert_eq!(first[3], "3");
     assert_eq!(first[4], "Buy milk");
+
+    // Each row in the colour `task` gives it, by its own rules.
+    assert_eq!(report.styles[0].fg, Some(ratatui::style::Color::Indexed(4)));
+    assert!(report.styles[1].add_modifier.contains(ratatui::style::Modifier::BOLD));
+    assert_eq!(report.styles[1].fg, None);
+    assert_eq!(report.sorted, [false; 5], "it sorts by urgency, which is not a column");
 
     // A filter goes in front of the report, as on the command line.
     let filtered = model::report(&task, &cfg, "mine", &["project:Work".to_owned()], now).unwrap();

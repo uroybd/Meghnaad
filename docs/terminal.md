@@ -22,7 +22,7 @@ run `meghnaad-tui`:
   puts it in `~/.cargo/bin` (add `--tag v<version>` for a release instead of the latest commit), and
   `cargo uninstall meghnaad-tui` removes it.
 
-`meghnaad-tui --help` says where it keeps its settings. It also starts with another version of `task`, says in the status line which
+`meghnaad-tui --help` says where it keeps its settings, and `meghnaad-tui --version` which release it is. It also starts with another version of `task`, says in the status line which
 one it found, and then behaves as that version does.
 
 ## The screen
@@ -41,15 +41,60 @@ command line, which shows the page's keys until you type into it, with `? all ke
 | `4` Summary | `task summary`, as it prints it |
 | `5` Calendar | `task calendar`, from this month; `h` `l` go a month back or on |
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
-| `7` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
-| `8` Settings | When to sync (`y`), your task commands, which you add, change and delete here, and with `t` the taskrc as `task` reads it |
+| `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` (or `[` `]`) go to the board before or after, and `Esc` (or `b`) comes back to the list |
+| `8` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
+| `9` Settings | A section each for when to sync, the theme, your task commands and your boards ([Settings](#the-settings-page)) |
 
-`Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Summary,
-Calendar, Burndown and `info` are drawn in `task`'s own colours, at the page's width, with one change: the grey
-shading Taskwarrior's default colours give alternate rows, weekends and week numbers is left out, and dark grey text is
-drawn dim, so the pages read on a light terminal as on a dark one. Today, due, overdue and the bars keep their colours.
-The app's own colours are the terminal's, with the web app's blue as the accent. The report's cells are not coloured
-yet.
+`Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Colours
+follow `task` ([Colours](#colours)).
+
+## Colours
+
+What Taskwarrior has a colour for is drawn in `task`'s colours, from your taskrc (and any theme it includes):
+
+- **A report's rows** are coloured as `task` colours them: the app asks `task` for the report with its columns swapped
+  for `uuid` and colour forced on, and draws each row in the colour that uuid came back in. Every rule counts, as
+  `task` applies it: `rule.precedence.color`, `rule.color.merge`, `color.active`, `color.due`, `color.tag.X`,
+  `color.project.X`, `color.uda.*`, a `nocolor` tag. The row chosen is drawn reversed, so its colour still shows.
+- **The column labels** are in `color.label`, and those the report sorts by in `color.label.sort`.
+- **Summary, Calendar, Burndown and `info`** are what `task` printed, in its colours, at the page's width.
+
+Taskwarrior's default colours shade every other row, weekends and week numbers in fixed dark greys, which suit a dark
+terminal and turn into black blocks on a light one. By default that shading is left out (and dark grey text is drawn
+dim), so the pages read on either; `"shading": "task"` draws it as `task` does, `color.alternate` on every other row of a
+report included.
+
+What Taskwarrior has no colour for is the app's own: a light and a dark preset, in the colours the web app and the phone
+use, so the three look alike.
+
+| Role | Drawn on | Light | Dark |
+| --- | --- | --- | --- |
+| `accent` | the brand, the page open, keys in the hints, titles | `#1f6feb` | `#58a6ff` |
+| `focus` | the border and title of the pane the keys go to (drawn thick, so it shows without colour too) | `bold #1f6feb` | `bold #58a6ff` |
+| `border` | the other panes | `#75756f` | `#9a9a90` |
+| `selected` | the row, item or field chosen: `reverse` (its own colours swapped), `marker` (the `▸` and bold only), `accent`, or a colour | `reverse` | `reverse` |
+| `dim` | notes, help, what matters less | `#75756f` | `#9a9a90` |
+| `ok` | the timer | `#1a7f37` | `#56d364` |
+| `bad` | what failed, overdue counts | `#cf222e` | `#ff7b72` |
+
+Which preset is drawn is `tui.theme` in `settings.json`, which the Theme section of the Settings page goes through:
+
+| `"theme"` | Draws |
+| --- | --- |
+| `"auto"` (or none) | The preset for the terminal's background: the app asks the terminal for it (`OSC 11`), and where it does not answer, the system's appearance (macOS's dark mode, GNOME's colour scheme); dark when neither says |
+| `"light"`, `"dark"` | That preset, whatever the terminal is |
+| `"mono"` | No colour: bold, reverse and dim only (as the `NO_COLOR` variable does) |
+| `{ "base": "auto", "accent": "magenta", … }` | A preset (`base`, `auto` when left out) with roles of your own over it |
+
+On `auto` the app follows the terminal as it changes: it asks again when the terminal gets the focus back and when the
+system's appearance changes (looked at every few seconds), since a terminal that follows the system changes with it.
+`settings.json` is read again when it changes, so a theme edited by hand shows at once.
+
+A role is written as a taskrc colour is (`bold white on rgb013`, `color33`, `bright red`), or as `#rrggbb`; on a terminal
+without 24-bit colour (`COLORTERM` is not `truecolor` or `24bit`) a `#` colour is drawn as the nearest of its 256. An
+`accent` of your own is the `focus` too, unless you set that as well. A role that is not a colour is said in the status
+line and on the Settings page, and the preset's is used. `color=off` in the taskrc cannot be seen from here: `task`
+turns colour off itself whenever it writes to a pipe, as it does for this app.
 
 ## The keys
 
@@ -57,7 +102,7 @@ On every page:
 
 | Key | Does |
 | --- | --- |
-| `1` to `8` | Open a page |
+| `1` to `9` | Open a page |
 | `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_` |
 | `:` | The command line |
 | `v` | Review the tasks that need it |
@@ -161,7 +206,7 @@ worked or `⟳ failed`, and how it went is said in the status line and kept on t
 when it failed. The pages are read again when it ends. While it runs, a command you give waits for it, so the two never
 use the data at once.
 
-When it runs is the `sync` setting, which `y` on the Settings page goes through and saves:
+When it runs is the `tui.sync` setting, which `y` in the Sync section of the Settings page goes through and saves:
 
 | `"sync"` | Syncs |
 | --- | --- |
@@ -171,6 +216,42 @@ When it runs is the `sync` setting, which `y` on the Settings page goes through 
 
 Closing waits for a sync that is running, then syncs once more when set to, and says on the terminal if that failed.
 
+## Boards
+
+A board is a page of your own: numbers, charts and tables over your tasks, on a grid of twelve columns, the same boards
+the web app and the phone draw ([Boards](using/boards.md)). The Boards page lists them, each with its description, and
+opens the one you choose.
+
+The terminal app shows boards and does not make or change them. They are the `boards` of `settings.json`, so there are
+two ways to make one:
+
+- **On the web app or the phone**, where a board is made and laid out on the page (**Boards** → **New board**, then
+  **Edit**). Then copy that `settings.json` here: from the web app's Settings, or `web/settings.json` in the bucket.
+- **By hand**, in `settings.json` here: a board is an `id`, a `name` and its `sections`, each placed on the grid (`x`,
+  `y`, `w`, `h`) with a `type` and what it shows. [Boards](using/boards.md) has every kind of section and a whole
+  board as JSON. `R` reads the file again.
+
+What each section shows is worked out as on the web: one `task <filter> export` for each filter the board uses (the
+board's, the section's and a series', with the board's date ranges written in), measured by the same code. Numbers are
+a figure; bars run down the page for values and across for dates; lines and areas, pies, donuts, polar charts and
+radars are drawn in braille dots; a heatmap is a grid of shaded cells; a table is the report as `task` prints it, at
+the section's width. A series' colour is the one it names, else blue, red, green, yellow, magenta and cyan in turn. On a
+page narrower than 100 columns the board has six columns, as on a phone, and the sections keep their order. A board
+is read when its page opens, and again with `R`.
+
+## The Settings page
+
+The page has a section each for Sync, Theme, Task commands and Boards, one under the other. A key acts on the
+section that has the focus, whose border is in the accent and names its keys: `j` `k` move through a section's rows
+and on into the next one, and `[` `]` jump between sections.
+
+| Section | Keys |
+| --- | --- |
+| Sync | `y`, `Space` or `Enter` goes through when to sync, and saves it ([Sync](#sync)) |
+| Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
+| Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
+| Boards | `Enter` opens the board chosen |
+
 ## Settings
 
 The app's own `settings.json` is kept on this machine only, in the first of:
@@ -179,20 +260,26 @@ The app's own `settings.json` is kept on this machine only, in the first of:
 2. `$XDG_CONFIG_HOME/meghnaad`;
 3. `~/.config/meghnaad`.
 
-The file is optional; without it there are no task commands and syncing is by hand. The terminal app uses its
-`taskCommands`, words that stand for a command line, which you can also add, change and delete on the Settings page,
-and its own `sync` ([Sync](#sync)):
+The file is optional; without it there are no task commands or boards, syncing is by hand and the theme is the
+default. The terminal app uses what it shares with the web app and the phone, `taskCommands` (words that stand for a
+command line, which you can also add, change and delete on the Settings page) and `boards` ([Boards](#boards)), and its
+own settings, all under `tui`: `sync` ([Sync](#sync)), `theme` and `shading` ([Colours](#colours)).
 
 ```json
 {
-  "sync": "startAndClose",
-  "taskCommands": [{ "name": "fail", "command": "done outcome:fail" }, { "name": "late", "command": "+OVERDUE list" }]
+  "taskCommands": [{ "name": "fail", "command": "done outcome:fail" }, { "name": "late", "command": "+OVERDUE list" }],
+  "tui": {
+    "sync": "startAndClose",
+    "theme": { "base": "auto", "accent": "#1f6feb", "selected": "reverse" },
+    "shading": "none"
+  }
 }
 ```
 
 It is the same JSON as the web app's (**Settings → Commands**, or `web/settings.json` in the bucket), so copying that
-file here gives you the same task commands; the web app and the phone have no use for `sync`. Keys the terminal app has no use for yet (`boards`, `appearance`) are
-ignored and kept as they are when it saves. A file that is not a JSON object is reported in the status line and read as
+file here gives you the same task commands and boards; the web app and the phone keep `tui` as it is and have no use
+for it. Keys the terminal app has no use for (`appearance`) are ignored, and every key is kept as it is when it saves.
+A `sync` at the top of the file, where 0.6.53 kept it, is still read, and moved into `tui` the next time the app saves. A file that is not a JSON object is reported in the status line and read as
 none, and the app will not save over it until it is put right.
 
 The app reads and writes `settings.json` in that folder and touches nothing else there. It writes the file in place, so
@@ -203,12 +290,12 @@ in the taskrc, `AWS_ENDPOINT_URL` and the like in the environment) are Taskwarri
 
 It is a front end like the web app and the phone (layer 2 in `AGENTS.md`), with the real `task` as its backend instead
 of `tc-core`'s engine. `tc-core` comes in only for what `task` has no command for, the same helpers the page and the
-phone call: completion (`complete`), the add preview (`preview`), the cells of a report (`cells`) and dates in
-`dateformat`, all fed with what
-`task` said, so a report's columns, dates and indicators read as in the web app. The settings those need come from
-`task _show`, which is what `task` itself resolved, parsed by the engine's taskrc reader, which keeps nothing sync or
-credential-like, and the Settings page shows those lines without them. The app never reads or edits your taskrc file
-itself; review's setup goes through `task config`. Chains and task commands are the web app's logic,
-ported to Rust with its tests as the phone has them in Kotlin, and so are the Projects and Tags lists, review (tasksh's,
-from the web app's port), the reminders and the timer. Nothing of it is compiled into the browser engine or the
+phone call: completion (`complete`), the add preview (`preview`), the cells of a report (`cells`), dates in
+`dateformat`, colours in the taskrc's words, and what a board means and measures (`board`), all fed with what `task`
+said, so a report's columns, dates and indicators read as in the web app. The settings those need come from `task
+_show`, which is what `task` itself resolved, parsed by the engine's taskrc reader, which keeps nothing sync or
+credential-like. The app never reads or edits your taskrc file itself; review's setup goes through `task config`.
+Chains and task commands are the web app's logic, ported to Rust with its tests as the phone has them in Kotlin, and so
+are the Projects and Tags lists, review (tasksh's, from the web app's port), the reminders, the timer and the glue of
+boards (Android's `Boards.kt`). Nothing of it is compiled into the browser engine or the
 Worker.

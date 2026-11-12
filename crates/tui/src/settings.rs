@@ -34,25 +34,42 @@ pub fn path() -> Option<PathBuf> {
     dir().map(|d| d.join("settings.json"))
 }
 
-/// What the TUI reads of `settings.json`.
+/// What the TUI reads of `settings.json`: what it shares with the web app and the phone (task commands, boards), and its
+/// own settings under `tui`.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
     pub task_commands: Vec<TaskCommand>,
-    /// When to sync (this app's own key; the web app and the phone sync their own way).
+    /// The boards, as the web app saves them; read here, changed there (or in the file).
+    pub boards: Value,
+    pub tui: TuiSettings,
+    /// Where 0.6.53 kept `tui.sync`: still read, and moved into `tui` when the app next saves.
+    sync: Option<String>,
+}
+
+/// The terminal app's own settings, which the web app and the phone keep as they are.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct TuiSettings {
+    /// When to sync.
     pub sync: Option<String>,
+    /// The colours of what Taskwarrior has none for: `"auto"` (the default: light or dark as the terminal is), `"light"`,
+    /// `"dark"`, `"mono"`, or an object of roles (`theme::ROLES`) over a `base` preset.
+    pub theme: Value,
+    /// Whether `task`'s grey shading is drawn: `"none"` (the default) or `"task"`.
+    pub shading: Option<String>,
 }
 
 impl AppSettings {
     /// When to sync, and what is wrong with the setting if it is not one of the three.
     pub fn sync_mode(&self) -> (SyncMode, Option<String>) {
-        match self.sync.as_deref() {
+        match self.tui.sync.as_deref().or(self.sync.as_deref()) {
             None => (SyncMode::default(), None),
             Some(s) => SyncMode::parse(s).map_or_else(
                 || {
                     let known: Vec<&str> = SyncMode::ALL.iter().map(|m| m.key()).collect();
                     let why = format!(
-                        "\"sync\": \"{s}\" is not one of {}; syncing by hand only.",
+                        "tui.sync: \"{s}\" is not one of {}; syncing by hand only.",
                         known.join(", ")
                     );
                     (SyncMode::default(), Some(why))
@@ -127,12 +144,33 @@ pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, Str
     written(raw, commands)
 }
 
-/// `text` with `"sync"` set to `mode`, and every other key as it was.
+/// `text` with `tui.sync` set to `mode` (and the old top-level `sync` gone), and every other key as it was.
 ///
 /// # Errors
 ///
 /// As [`with_commands`].
 pub fn with_sync(text: &str, mode: SyncMode) -> Result<String, String> {
+    with_tui(text, "sync", Value::String(mode.key().into()))
+}
+
+/// `text` with `tui.<key>` set to `value`, and every other key as it was; the old top-level `sync` is moved into `tui`
+/// on the way.
+///
+/// # Errors
+///
+/// As [`with_commands`], or `tui` is not an object.
+pub fn with_tui(text: &str, key: &str, value: Value) -> Result<String, String> {
+    with_tui_edit(text, |tui| {
+        tui.insert(key.into(), value);
+    })
+}
+
+/// `text` with `tui` changed by `edit`, and every other key as it was (the old top-level `sync` moved into `tui`).
+///
+/// # Errors
+///
+/// As [`with_tui`].
+pub fn with_tui_edit(text: &str, edit: impl FnOnce(&mut Map<String, Value>)) -> Result<String, String> {
     let mut raw = object(text)?;
     let commands: Vec<TaskCommand> = raw
         .remove("taskCommands")
@@ -140,7 +178,15 @@ pub fn with_sync(text: &str, mode: SyncMode) -> Result<String, String> {
         .transpose()
         .map_err(|e| format!("taskCommands: {e}"))?
         .unwrap_or_default();
-    raw.insert("sync".into(), Value::String(mode.key().into()));
+    let old_sync = raw.remove("sync");
+    let tui = raw.entry("tui").or_insert_with(|| Value::Object(Map::new()));
+    let Some(tui) = tui.as_object_mut() else {
+        return Err("\"tui\" is not an object".into());
+    };
+    if let Some(old) = old_sync {
+        tui.entry("sync").or_insert(old);
+    }
+    edit(tui);
     written(raw, &commands)
 }
 
@@ -183,7 +229,34 @@ pub fn save_commands(commands: &[TaskCommand]) -> Result<(), String> {
 ///
 /// As [`save_commands`].
 pub fn save_sync(mode: SyncMode) -> Result<(), String> {
-    save(|text| with_sync(text, mode))
+    save_tui("sync", Value::String(mode.key().into()))
+}
+
+/// Save `tui.<key>` to `settings.json`, keeping the rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_tui(key: &str, value: Value) -> Result<(), String> {
+    save(|text| with_tui(text, key, value))
+}
+
+/// Save the theme's preset: `tui.theme` itself when it is a name, its `base` when it sets roles of its own (which are kept).
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_theme_preset(word: &str) -> Result<(), String> {
+    save(|text| {
+        with_tui_edit(text, |tui| match tui.get_mut("theme") {
+            Some(Value::Object(roles)) => {
+                roles.insert("base".into(), Value::String(word.into()));
+            }
+            _ => {
+                tui.insert("theme".into(), Value::String(word.into()));
+            }
+        })
+    })
 }
 
 /// Write `settings.json` in place as `edit` makes it from what is there.
@@ -260,14 +333,28 @@ mod tests {
     fn when_to_sync_is_read_and_saved_with_the_rest_kept() {
         let mode = |text: &str| AppSettings::parse(text).unwrap().sync_mode();
         assert_eq!(mode("{}"), (SyncMode::Manual, None));
-        assert_eq!(mode(r#"{ "sync": "everyChange" }"#), (SyncMode::EveryChange, None));
-        let (m, why) = mode(r#"{ "sync": "hourly" }"#);
+        assert_eq!(
+            mode(r#"{ "tui": { "sync": "everyChange" } }"#),
+            (SyncMode::EveryChange, None)
+        );
+        assert_eq!(
+            mode(r#"{ "sync": "everyChange" }"#),
+            (SyncMode::EveryChange, None),
+            "where 0.6.53 kept it"
+        );
+        let (m, why) = mode(r#"{ "tui": { "sync": "hourly" } }"#);
         assert_eq!(m, SyncMode::Manual);
         assert!(why.unwrap().contains("hourly"));
-        let text = r#"{ "boards": [1], "taskCommands": [ { "name": "fail", "command": "done", "icon": "x" } ] }"#;
+        let text = r#"{ "sync": "manual", "boards": [1], "tui": { "theme": "mono" },
+            "taskCommands": [ { "name": "fail", "command": "done", "icon": "x" } ] }"#;
         let out = with_sync(text, SyncMode::StartAndClose).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["sync"], "startAndClose");
+        assert_eq!(
+            v["tui"],
+            serde_json::json!({ "sync": "startAndClose", "theme": "mono" })
+        );
+        assert!(v.get("sync").is_none(), "moved into tui");
+        assert!(with_sync(r#"{ "tui": 3 }"#, SyncMode::Manual).is_err());
         assert_eq!(v["boards"], serde_json::json!([1]));
         assert_eq!(
             v["taskCommands"],

@@ -4,12 +4,12 @@
 //! itself (`info`, `summary`, `calendar`, `burndown`, the console) is drawn as it coloured it.
 
 use crate::ansi;
-use crate::app::{now, App, Focus, Mode, Page, Prompt, PromptKind, SettingsView};
+use crate::app::{now, App, Focus, Mode, Page, Prompt, PromptKind, SettingsSection};
 use crate::form::{self, Form, Kind};
 use crate::model::local_offset;
 use crate::remind::format_seconds;
 use crate::review::Phase;
-use crate::theme;
+use crate::theme::{self, Roles};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
@@ -26,7 +26,7 @@ use tc_core::helpers::format_date;
 const SIDE: u16 = 20;
 const SIDE_FROM: u16 = 72;
 
-const GLOBAL_KEYS: &str = "1-8 pages · Tab reports · : command";
+const GLOBAL_KEYS: &str = "1-9 pages · Tab reports · : command";
 /// Kept in sight on the right however many keys the page has.
 const ALWAYS_KEYS: &str = "? all keys · q quit";
 
@@ -60,16 +60,16 @@ const MARK: &str = "▸ ";
 
 /// A pane: rounded, its title in the top border, in the accent when the keys go to it.
 fn pane(title: &str, focused: bool) -> Block<'static> {
-    let style = if focused { theme::accent() } else { Style::new().bold() };
+    let style = theme::title(focused);
     Block::bordered()
-        .border_type(BorderType::Rounded)
+        .border_type(theme::border_type(focused))
         .border_style(theme::border(focused))
         .title(Span::styled(format!(" {title} "), style))
 }
 
 /// A note in a pane's border, on the right.
 fn note(text: &str) -> Line<'static> {
-    Line::from(Span::from(format!(" {text} ")).dim()).right_aligned()
+    Line::from(Span::from(format!(" {text} ")).quiet()).right_aligned()
 }
 
 /// A box over the page: a pane with the keys.
@@ -91,7 +91,7 @@ fn hints(text: &str) -> Line<'static> {
         let (key, what) = item.split_once(' ').unwrap_or((item, ""));
         spans.push(Span::styled(key.to_owned(), theme::accent()));
         if !what.is_empty() {
-            spans.push(Span::from(format!(" {what}")).dim());
+            spans.push(Span::from(format!(" {what}")).quiet());
         }
     }
     Line::from(spans)
@@ -155,7 +155,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             } else if app.focus == Focus::Sidebar {
                 hints(&format!("↵ open the report · . hidden · Tab back · {GLOBAL_KEYS}"))
             } else {
-                hints(&format!("{} · {GLOBAL_KEYS}", app.page.keys()))
+                hints(&format!("{} · {GLOBAL_KEYS}", app.page_keys()))
             };
             let always = hints(ALWAYS_KEYS);
             let [l, r] = Layout::horizontal([
@@ -184,18 +184,18 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
         } else {
             String::new()
         };
-        right.push(Span::from(format!(" ● {short}{}{more} ", format_seconds(now() - start))).green());
+        right.push(Span::from(format!(" ● {short}{}{more} ", format_seconds(now() - start))).good());
     }
     right.push(sync_chip(app));
     right.push(match &app.cfg.active_context {
         Some(c) => Span::styled(format!(" ◎ {c} "), theme::accent()),
-        None => Span::from(" ◎ none ").dim(),
+        None => Span::from(" ◎ none ").quiet(),
     });
-    right.push(Span::from(" v review ").dim());
+    right.push(Span::from(" v review ").quiet());
     right.push(if app.reminders {
         Span::from(format!(" ♪ {} ", app.notices))
     } else {
-        Span::from(" ♪ off ").dim()
+        Span::from(" ♪ off ").quiet()
     });
     let width: usize = right.iter().map(|s| s.content.chars().count()).sum();
     // The pages by name when they fit beside the chips, else by number and the first letters, else by number alone.
@@ -219,7 +219,7 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
         left.push(if *p == app.page {
             tab.style(theme::selected().add_modifier(Modifier::BOLD))
         } else {
-            tab.dim()
+            tab.quiet()
         });
     }
     let [l, r] = Layout::horizontal([
@@ -237,9 +237,9 @@ fn sync_chip(app: &App) -> Span<'static> {
         return Span::styled(" ⟳ syncing ", theme::accent());
     }
     match &app.syncer.last {
-        Some(l) if !l.ok => Span::from(" ⟳ failed ").red(),
-        Some(l) => Span::from(format!(" ⟳ {} ", ago(now() - l.at))).dim(),
-        None => Span::from(" ⟳ ").dim(),
+        Some(l) if !l.ok => Span::from(" ⟳ failed ").bad(),
+        Some(l) => Span::from(format!(" ⟳ {} ", ago(now() - l.at))).quiet(),
+        None => Span::from(" ⟳ ").quiet(),
     }
 }
 
@@ -305,7 +305,7 @@ fn page(f: &mut Frame, app: &App, area: Rect) {
             let start = end.saturating_sub(shown);
             let lines: Vec<Line> = app.log.get(start..end).unwrap_or_default().to_vec();
             let body = if lines.is_empty() {
-                vec![Line::from("Type : and a command line; what task prints is kept here.").dim()]
+                vec![Line::from("Type : and a command line; what task prints is kept here.").quiet()]
             } else {
                 lines
             };
@@ -313,6 +313,7 @@ fn page(f: &mut Frame, app: &App, area: Rect) {
                 text_pane("console", app.focus == Focus::Main).title_top(note(&format!("{} lines", app.log.len())));
             f.render_widget(Paragraph::new(body).block(block), area);
         }
+        Page::Boards => crate::boardui::draw(f, app, area),
         Page::Settings => settings(f, app, area),
     }
 }
@@ -324,9 +325,9 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
         pane(&app.report.name, focused).title_top(note(&format!("{count} task{}", if count == 1 { "" } else { "s" })));
     if !app.filter.is_empty() {
         block = block.title(Line::from(vec![
-            Span::from("[ ").dim(),
+            Span::from("[ ").quiet(),
             Span::from(app.filter.clone()),
-            Span::from(" ] ").dim(),
+            Span::from(" ] ").quiet(),
         ]));
     }
     if count > 0 {
@@ -340,7 +341,7 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
         ..inner
     };
     if count == 0 {
-        f.render_widget(Paragraph::new(" No task matches.").dim(), body);
+        f.render_widget(Paragraph::new(" No task matches.").quiet(), body);
         return;
     }
     table(f, app, body);
@@ -359,17 +360,17 @@ fn items(f: &mut Frame, app: &App, area: Rect) {
             let name = format!("{}{}", "  ".repeat(i.depth), i.label);
             let mut spans = vec![
                 Span::from(format!("{name:<widest$}")),
-                Span::from(format!("  {:>3}", i.total)).dim(),
+                Span::from(format!("  {:>3}", i.total)).quiet(),
             ];
             if i.overdue > 0 {
-                spans.push(Span::from(format!("  {} overdue", i.overdue)).red());
+                spans.push(Span::from(format!("  {} overdue", i.overdue)).bad());
             }
             ListItem::new(Line::from(spans))
         })
         .collect();
     let mut block = pane(&app.page.title().to_lowercase(), app.focus == Focus::Main);
     if list.is_empty() {
-        f.render_widget(Paragraph::new(" Nothing pending.").dim().block(block), area);
+        f.render_widget(Paragraph::new(" Nothing pending.").quiet().block(block), area);
         return;
     }
     block = block.title_bottom(note(&format!("{} of {}", app.list_sel + 1, list.len())));
@@ -385,70 +386,186 @@ fn items(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+/// The Settings page: a pane for each section, the focused one in the accent with its keys in its border.
 fn settings(f: &mut Frame, app: &App, area: Rect) {
-    if app.settings_view == SettingsView::Taskrc {
-        let lines: Vec<Line> = app.taskrc.iter().map(|l| Line::from(l.as_str())).collect();
-        f.render_widget(
-            Paragraph::new(lines).scroll((app.scroll, 0)).block(
-                text_pane("taskrc, as task reads it", app.focus == Focus::Main)
-                    .title_top(note("t task commands"))
-                    .title_bottom(note("sync and credentials left out")),
-            ),
-            area,
-        );
-        return;
-    }
-    let path = crate::settings::path().map_or_else(|| "no config folder".to_owned(), |p| p.display().to_string());
-    let block = pane("Task commands", app.focus == Focus::Main)
-        .title_top(note("t taskrc"))
-        .title_bottom(note(&path));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    let [sync, head, _, body] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
+    use SettingsSection as S;
+    let here = |s: S| app.focus == Focus::Main && app.settings_section == s;
+    let section = |title: &str, s: S| {
+        let b = pane(title, here(s)).padding(Padding::horizontal(1));
+        if here(s) {
+            b.title_bottom(hints(s.keys()).right_aligned())
+        } else {
+            b
+        }
+    };
+    let rows = |n: usize, most: u16| u16::try_from(n).unwrap_or(most).clamp(1, most) + 2;
+    let commands = app.settings.task_commands.len();
+    let t = theme::current();
+    let swatches = theme_lines(&t);
+    let theme_rows = u16::try_from(swatches.len() + app.theme_errors.len()).unwrap_or(4) + 2;
+    let [sync, theme_area, cmds, boards, _] = Layout::vertical([
+        Constraint::Length(if app.settings_problem.is_some() { 4 } else { 3 }),
+        Constraint::Length(theme_rows),
+        Constraint::Length(rows(commands, 10) + 1),
+        Constraint::Length(rows(app.boards.len() + app.board_errors.len(), 6)),
         Constraint::Fill(1),
     ])
-    .areas(inner);
+    .areas(area);
+
+    let path = crate::settings::path().map_or_else(|| "no config folder".to_owned(), |p| p.display().to_string());
+    let mut lines = vec![Line::from(vec![
+        Span::from("When to sync  ").quiet(),
+        Span::styled(
+            app.sync_mode.label().to_owned(),
+            if here(S::Sync) {
+                theme::selected()
+            } else {
+                Style::new().bold()
+            },
+        ),
+    ])];
+    if let Some(p) = &app.settings_problem {
+        lines.push(Line::from(p.clone()).bad());
+    }
     f.render_widget(
-        Line::from(vec![
-            Span::from(" Sync ").bold(),
-            Span::from(app.sync_mode.label()),
-            Span::from(" · y changes it").dim(),
-        ]),
+        Paragraph::new(lines).block(section("Sync", S::Sync).title_top(note(&path))),
         sync,
     );
+
+    let mut lines = swatches;
+    lines.extend(app.theme_errors.iter().map(|e| Line::from(e.clone()).bad()));
     f.render_widget(
-        match &app.settings_problem {
-            Some(p) => Line::from(format!(" {p}")).red(),
-            None => Line::from(" A name typed at the command line runs what it stands for (`3 fail`).").dim(),
-        },
+        Paragraph::new(lines).block(section("Theme", S::Theme).title_top(note("tui.theme in settings.json"))),
+        theme_area,
+    );
+
+    let block = section("Task commands", S::Commands);
+    let inner = block.inner(cmds);
+    f.render_widget(block, cmds);
+    let [head, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    f.render_widget(
+        Line::from("A name typed at the command line runs what it stands for (`3 fail`).").quiet(),
         head,
     );
-    let rows: Vec<ListItem> = app
-        .settings
-        .task_commands
+    if commands == 0 {
+        f.render_widget(Paragraph::new("None yet: a adds one.").quiet(), body);
+    } else {
+        let items: Vec<ListItem> = app
+            .settings
+            .task_commands
+            .iter()
+            .map(|c| {
+                ListItem::new(Line::from(vec![
+                    Span::from(format!("{:<14}", c.name)).bold(),
+                    Span::from(c.command.clone()),
+                ]))
+            })
+            .collect();
+        f.render_stateful_widget(
+            List::new(items)
+                .highlight_style(if here(S::Commands) {
+                    theme::selected()
+                } else {
+                    Style::new()
+                })
+                .highlight_symbol(MARK)
+                .highlight_spacing(HighlightSpacing::Always),
+            body,
+            &mut ListState::default().with_selected(here(S::Commands).then_some(app.settings_sel)),
+        );
+    }
+
+    let mut items: Vec<ListItem> = app
+        .boards
         .iter()
-        .map(|c| {
+        .map(|b| {
             ListItem::new(Line::from(vec![
-                Span::from(format!("{:<14}", c.name)).bold(),
-                Span::from(c.command.clone()),
+                Span::from(format!("{:<20}", b.name)).bold(),
+                Span::from(format!("{} sections", b.sections.len())).quiet(),
             ]))
         })
         .collect();
-    if rows.is_empty() {
-        f.render_widget(Paragraph::new(" None yet: a adds one.").dim(), body);
-        return;
+    items.extend(
+        app.board_errors
+            .iter()
+            .map(|e| ListItem::new(Line::from(e.clone()).bad())),
+    );
+    if items.is_empty() {
+        items.push(ListItem::new(
+            Line::from("None: make them on the web app and copy its settings.json here.").quiet(),
+        ));
     }
     f.render_stateful_widget(
-        List::new(rows)
-            .highlight_style(theme::selected())
+        List::new(items)
+            .block(section("Boards", S::Boards))
+            .highlight_style(if here(S::Boards) {
+                theme::selected()
+            } else {
+                Style::new()
+            })
             .highlight_symbol(MARK)
             .highlight_spacing(HighlightSpacing::Always),
-        body,
-        &mut ListState::default().with_selected(Some(app.settings_sel)),
+        boards,
+        &mut ListState::default()
+            .with_selected((here(S::Boards) && !app.boards.is_empty()).then_some(app.settings_board)),
     );
+}
+
+/// The theme as it is drawn: each role of the app's in its style, then Taskwarrior's own, then the shading.
+fn theme_lines(t: &theme::Theme) -> Vec<Line<'static>> {
+    let chip = |name: &str, style: Style| vec![Span::styled(format!(" {name} "), style), Span::from("  ")];
+    let selected = match t.selected {
+        theme::Selected::Reverse => "reverse",
+        theme::Selected::Marker => "marker",
+        theme::Selected::Style(_) => "its own",
+    };
+    let mut app_roles: Vec<Span> = vec![Span::from(format!("{:<14}", "The app")).quiet()];
+    for (name, style) in [
+        ("accent", t.accent),
+        ("focus", t.focus),
+        ("border", t.border),
+        ("dim", t.dim),
+        ("ok", t.ok),
+        ("bad", t.bad),
+    ] {
+        app_roles.extend(chip(name, style));
+    }
+    app_roles.extend(chip(&format!("selected: {selected}"), theme::selected()));
+    let mut task_roles: Vec<Span> = vec![Span::from(format!("{:<14}", "From taskrc")).quiet()];
+    for (name, style) in [
+        ("color.label", t.label),
+        ("color.label.sort", t.label_sort),
+        ("color.alternate", t.alternate),
+        ("color.error", t.error),
+        ("color.warning", t.warning),
+    ] {
+        task_roles.extend(chip(name, style));
+    }
+    let shading = if t.shading == theme::Shading::Task {
+        "drawn as task draws it"
+    } else {
+        "left to the terminal"
+    };
+    let preset = match (t.mono, t.base) {
+        (true, _) => "mono: no colour".to_owned(),
+        (_, theme::Base::Auto) => format!("auto: {}, as the terminal is", t.mode.word()),
+        (_, theme::Base::Light) => "light".to_owned(),
+        (_, theme::Base::Dark) => "dark".to_owned(),
+    };
+    let lines = vec![
+        Line::from(vec![
+            Span::from(format!("{:<14}", "Preset")).quiet(),
+            Span::from(preset).bold(),
+        ]),
+        Line::from(app_roles),
+        Line::from(task_roles),
+        Line::from(vec![
+            Span::from(format!("{:<14}", "Shading")).quiet(),
+            Span::from(format!(" {shading}")),
+            Span::from(" (alternate rows, weekends, week numbers)").quiet(),
+        ]),
+    ];
+    lines
 }
 
 fn review(f: &mut Frame, r: &crate::review::Review, area: Rect) {
@@ -461,7 +578,7 @@ fn review(f: &mut Frame, r: &crate::review::Review, area: Rect) {
     if !r.message.is_empty() {
         foot.push(Line::from(r.message.clone()).bold());
     }
-    foot.push(Line::from(r.hint()).dim());
+    foot.push(Line::from(r.hint()).quiet());
     let block = boxed(title);
     let inner = block.inner(area);
     f.render_widget(Clear, area);
@@ -495,7 +612,7 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
         width,
         height,
     );
-    let block = boxed(format!(" task commands · task{id} ")).title_bottom(Span::from(format!(" {desc} ")).dim());
+    let block = boxed(format!(" task commands · task{id} ")).title_bottom(Span::from(format!(" {desc} ")).quiet());
     let inner = block.inner(area);
     f.render_widget(Clear, area);
     f.render_widget(block, area);
@@ -508,7 +625,7 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
     let caret = u16::try_from(query.chars().count()).unwrap_or(0);
     f.set_cursor_position(((line.x + 2 + caret).min(line.x + line.width), line.y));
     if list.is_empty() {
-        f.render_widget(Paragraph::new("No task command matches.").dim(), rest);
+        f.render_widget(Paragraph::new("No task command matches.").quiet(), rest);
         return;
     }
     let widest = list.iter().map(|c| c.name.chars().count()).max().unwrap_or(0);
@@ -517,7 +634,7 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
         .map(|c| {
             ListItem::new(Line::from(vec![
                 Span::from(format!("{:<widest$}  ", c.name)).bold(),
-                Span::from(c.command.clone()).dim(),
+                Span::from(c.command.clone()).quiet(),
             ]))
         })
         .collect();
@@ -564,7 +681,7 @@ fn lines(c: &Cell) -> Vec<Line<'static>> {
         out.push(Line::default());
     }
     for n in c.notes.iter().flatten() {
-        out.push(Line::from(format!("  {} {}", n.at, n.text)).dim());
+        out.push(Line::from(format!("  {} {}", n.at, n.text)).quiet());
     }
     out
 }
@@ -590,13 +707,34 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
             Constraint::Length(u16::try_from(widest).unwrap_or(u16::MAX))
         })
         .collect();
-    let rows = r.cells.iter().map(|row| {
+    let t = theme::current();
+    let rows = r.cells.iter().enumerate().map(|(i, row)| {
         let cells: Vec<Vec<Line<'static>>> = row.iter().map(lines).collect();
         let height = cells.iter().map(Vec::len).max().unwrap_or(1);
-        Row::new(cells.into_iter().map(TCell::from)).height(u16::try_from(height).unwrap_or(1))
+        // Taskwarrior lays the colour rules over the alternate shading of every other row.
+        let shade = if i % 2 == 1 && t.shading == theme::Shading::Task {
+            t.alternate
+        } else {
+            Style::new()
+        };
+        let style = shade.patch(r.styles.get(i).copied().unwrap_or_default());
+        Row::new(cells.into_iter().map(TCell::from))
+            .height(u16::try_from(height).unwrap_or(1))
+            .style(style)
     });
-    let header = Row::new(r.labels.iter().map(|l| TCell::from(l.as_str())))
-        .style(Style::default().add_modifier(Modifier::UNDERLINED | Modifier::BOLD));
+    // The labels as `task` writes them: underlined, in `color.label`, and `color.label.sort` where it sorts.
+    let header = Row::new(r.labels.iter().enumerate().map(|(j, l)| {
+        let colour = if r.sorted.get(j).copied().unwrap_or(false) {
+            t.label_sort
+        } else {
+            t.label
+        };
+        TCell::from(l.as_str()).style(
+            Style::new()
+                .add_modifier(Modifier::UNDERLINED | Modifier::BOLD)
+                .patch(colour),
+        )
+    }));
     let t = Table::new(rows, widths)
         .header(header)
         .column_spacing(2)
@@ -655,7 +793,7 @@ fn menu(f: &mut Frame, m: &crate::completer::Menu, area: Rect) {
         .map(|(i, o)| {
             let line = Line::from(vec![
                 Span::from(o.value.clone()),
-                Span::from(o.hint.as_deref().map(|h| format!("  {h}")).unwrap_or_default()).dim(),
+                Span::from(o.hint.as_deref().map(|h| format!("  {h}")).unwrap_or_default()).quiet(),
             ]);
             let item = ListItem::new(line);
             if m.sel == Some(i) {
@@ -678,13 +816,13 @@ fn menu(f: &mut Frame, m: &crate::completer::Menu, area: Rect) {
 
 /// A field of a card: its name, right-aligned, then its value.
 fn field(name: &str, value: String) -> Line<'static> {
-    Line::from(vec![Span::from(format!("{name:>10}  ")).dim(), Span::from(value)])
+    Line::from(vec![Span::from(format!("{name:>10}  ")).quiet(), Span::from(value)])
 }
 
 /// What `add <line>` will make, as the card under the line shows it.
 fn add_card(app: &App, line: &str) -> Vec<Line<'static>> {
     if line.trim().is_empty() {
-        return vec![Line::from("A description, then project: tags +x due: and the rest, as after task add.").dim()];
+        return vec![Line::from("A description, then project: tags +x due: and the rest, as after task add.").quiet()];
     }
     let pv = app.preview(line.trim());
     let mut text = vec![Line::from(pv.description.clone()).bold()];
@@ -710,7 +848,7 @@ fn add_card(app: &App, line: &str) -> Vec<Line<'static>> {
         text.push(field(name, v.clone()));
     }
     for e in &pv.errors {
-        text.push(Line::from(e.clone()).red());
+        text.push(Line::from(e.clone()).bad());
     }
     text
 }
@@ -760,7 +898,7 @@ fn task_card(app: &App, t: &Value) -> Vec<Line<'static>> {
 fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
     let v = field.value();
     if field.locked {
-        return Some(Span::from("  set on the recurring task").dim());
+        return Some(Span::from("  set on the recurring task").quiet());
     }
     if v.is_empty() {
         return None;
@@ -769,7 +907,7 @@ fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
         Kind::Date => {
             let pv = app.preview(&format!("x {}:{}", field.key, form::quote(v)));
             if let Some(e) = pv.errors.first() {
-                return Some(Span::from(format!("  {e}")).red());
+                return Some(Span::from(format!("  {e}")).bad());
             }
             let ts = pv
                 .dates
@@ -778,10 +916,10 @@ fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
                 .or_else(|| pv.udas.get(&field.key).and_then(|u| u.parse().ok()))?;
             // Only where it says more than what was typed (`fri`, `eom`), not a date written out.
             let read = date(app, ts);
-            (read != v).then(|| Span::from(format!("  → {read}")).dim())
+            (read != v).then(|| Span::from(format!("  → {read}")).quiet())
         }
         Kind::Value if field.key == "recur" => {
-            Some(Span::from(format!("  {}", tc_core::helpers::describe_recur(v))).dim())
+            Some(Span::from(format!("  {}", tc_core::helpers::describe_recur(v))).quiet())
         }
         _ => None,
     }
@@ -800,7 +938,7 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
     let mut caret = None;
     for (i, field) in form.fields.iter().enumerate() {
         let chosen = i == form.sel;
-        let label_style = if chosen { theme::accent() } else { Style::new().dim() };
+        let label_style = if chosen { theme::accent() } else { theme::dim() };
         let mut spans = vec![Span::styled(
             format!("{:>w$} ", field.label, w = usize::from(LABEL) - 1),
             label_style,
@@ -809,11 +947,11 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
             let mark = if form.start_now() { "[x]" } else { "[ ]" };
             spans.push(Span::from(format!("{mark} start working on it now")));
             if chosen {
-                spans.push(Span::from("  Space").dim());
+                spans.push(Span::from("  Space").quiet());
             }
         } else {
             let value = Span::from(field.input.line.clone());
-            spans.push(if field.locked { value.dim() } else { value });
+            spans.push(if field.locked { value.quiet() } else { value });
             if chosen {
                 caret = Some((rows.len(), u16::try_from(field.input.caret_chars()).unwrap_or(0)));
             }
@@ -826,13 +964,13 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
         for n in &form.notes {
             rows.push(Line::from(vec![
                 Span::from(format!("{:>w$} ", "", w = usize::from(LABEL) - 1)),
-                Span::from(format!("· {n}")).dim(),
+                Span::from(format!("· {n}")).quiet(),
             ]));
         }
     }
     if let Some(why) = form.problem() {
         rows.push(Line::default());
-        rows.push(Line::from(format!("{:>w$} {why}", "", w = usize::from(LABEL) - 1)).red());
+        rows.push(Line::from(format!("{:>w$} {why}", "", w = usize::from(LABEL) - 1)).bad());
     }
     let width = main.width.saturating_sub(4).min(96);
     let height = u16::try_from(rows.len() + 2).unwrap_or(u16::MAX).min(main.height);
@@ -851,7 +989,7 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
         } else {
             command
         };
-        block = block.title_bottom(Span::from(format!(" {shown} ")).dim());
+        block = block.title_bottom(Span::from(format!(" {shown} ")).quiet());
     }
     let inner = block.inner(area);
     f.render_widget(Clear, area);
@@ -902,11 +1040,11 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         ),
         PromptKind::CommandName(_) => (
             " task command: its name ".to_owned(),
-            vec![Line::from("One word, typed at the command line in place of what it stands for.").dim()],
+            vec![Line::from("One word, typed at the command line in place of what it stands for.").quiet()],
         ),
         PromptKind::CommandLine(_, name) => (
             format!(" task command: what {name} stands for "),
-            vec![Line::from("A command line without task in front; && || ; chain more than one.").dim()],
+            vec![Line::from("A command line without task in front; && || ; chain more than one.").quiet()],
         ),
         _ => (String::new(), Vec::new()),
     };
