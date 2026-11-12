@@ -1,6 +1,6 @@
 {
   "name": "taskwarrior-web",
-  "version": "0.6.53",
+  "version": "0.6.54",
   "private": true,
   "license": "MIT",
   "type": "module",
