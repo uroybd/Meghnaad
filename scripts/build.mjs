@@ -36,7 +36,7 @@ if (!process.env.MEGHNAAD_DEV) {
 
 step('Worker (Rust -> WASM)');
 if (!has('worker-build')) {
-  console.error('[build] worker-build is not on PATH (try: cargo install worker-build)');
+  console.error('[build] worker-build is not on PATH (try: cargo install worker-build --version "~0.8" --locked)');
   process.exit(1);
 }
 must(run('worker-build', ['--release'], { cwd: join(ROOT, 'crates', 'worker') }), 'worker-build');

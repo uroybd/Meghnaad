@@ -144,7 +144,11 @@ export function missingTools() {
   const missing = [];
   if (!capture('rustup', ['target', 'list', '--installed']).out.includes('wasm32-unknown-unknown'))
     missing.push({ what: 'the wasm32 Rust target', fix: ['rustup', ['target', 'add', 'wasm32-unknown-unknown']] });
-  if (!has('worker-build')) missing.push({ what: 'worker-build', fix: ['cargo', ['install', 'worker-build']] });
+  if (!has('worker-build'))
+    missing.push({
+      what: 'worker-build',
+      fix: ['cargo', ['install', 'worker-build', '--version', '~0.8', '--locked']],
+    });
   return missing;
 }
 

@@ -64,7 +64,7 @@ jobs:
 
       - name: Install worker-build
         if: ${{ !inputs.dry_run }}
-        run: command -v worker-build >/dev/null || cargo install worker-build --locked
+        run: command -v worker-build >/dev/null || cargo install worker-build --version '~0.8' --locked
 
       # Builds the web app and the Worker (wrangler's build command), then deploys.
       - name: Deploy

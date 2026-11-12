@@ -67,8 +67,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Its version follows the `worker` crate's (0.8 in crates/worker): worker-build 0.9 refuses worker 0.8.
       - name: Install worker-build
-        run: command -v worker-build >/dev/null || cargo install worker-build --locked
+        run: command -v worker-build >/dev/null || cargo install worker-build --version '~0.8' --locked
 
       # The web app, the engine that runs in the browser, and the Worker. The web app shows the version in Settings.
       - name: Build
