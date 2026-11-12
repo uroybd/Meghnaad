@@ -1,5 +1,6 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -172,6 +173,9 @@ class Store(
         private set
 
     val taskCommands: List<TaskCommand> get() = appSettings?.commands ?: emptyList()
+
+    /** The keys of a hardware keyboard: the defaults, then `keys` and `mobile.keys` of `settings.json`. */
+    val keymap: Keymap by derivedStateOf { resolveKeymap(appSettings?.raw ?: JsonObject(emptyMap())) }
 
     /** The boards in `settings.json`: pages of numbers, tables and charts. */
     val boards: List<Board> get() = appSettings?.boards ?: emptyList()

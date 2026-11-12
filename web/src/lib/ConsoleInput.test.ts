@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { parseSettings } from './appsettings';
@@ -14,6 +15,7 @@ afterEach(() => {
   store.promptRequest = null;
   store.promptLine = '';
   store.appSettings = null;
+  store.keymapDefaults = null;
   store.config = null;
   vi.restoreAllMocks();
 });
@@ -38,6 +40,23 @@ describe('the prompt', () => {
     store.requestPrompt('2 ');
     flushSync();
     expect(input.value).toBe('2 ');
+  });
+
+  it('takes the focus on the key settings.json gives it, / unless it says otherwise', () => {
+    store.keymapDefaults = JSON.parse(readFileSync('public/keymaps/default.json', 'utf8')) as Record<string, unknown>;
+    app = mount(ConsoleInput, { target: document.body });
+    flushSync();
+    const input = document.querySelector('textarea') as HTMLTextAreaElement;
+    const press = (init: KeyboardEventInit) => window.dispatchEvent(new KeyboardEvent('keydown', init));
+    press({ key: '/' });
+    expect(document.activeElement).toBe(input);
+    input.blur();
+    store.appSettings = parseSettings('{ "web": { "keys": { "app.prompt": "ctrl+k" } } }');
+    flushSync();
+    press({ key: '/' });
+    expect(document.activeElement).not.toBe(input);
+    press({ key: 'k', ctrlKey: true });
+    expect(document.activeElement).toBe(input);
   });
 
   it('ignores a request made before it appeared', () => {

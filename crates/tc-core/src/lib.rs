@@ -24,6 +24,7 @@ pub mod holidays;
 pub mod hooks;
 pub mod ics;
 pub mod import;
+pub mod keymap;
 pub mod live;
 #[cfg(feature = "lua")]
 pub mod lua_hooks;

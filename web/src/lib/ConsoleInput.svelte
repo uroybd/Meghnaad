@@ -6,6 +6,7 @@
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil, TriangleAlert, X } from './icons';
   import { highlightPieces } from './highlight';
+  import { actionOf } from './keymap';
   import { clashMarks } from './holidayClash';
   import ReviewBar from './ReviewBar.svelte';
   import { review } from './review.svelte';
@@ -279,13 +280,13 @@
     }
   }
 
-  // `/` focuses the prompt from anywhere that isn't a text field.
+  // `app.prompt` (`/` unless settings.json says otherwise) focuses the prompt from anywhere that isn't a text field.
   function globalKey(e: KeyboardEvent) {
     if (reviewKey(e)) return;
     const t = e.target as HTMLElement | null;
     const typing =
       t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
-    if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey) {
+    if (!typing && actionOf(store.keymap, e) === 'app.prompt') {
       e.preventDefault();
       el.focus();
       el.select();

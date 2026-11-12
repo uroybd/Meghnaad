@@ -9,8 +9,10 @@ use crate::chain::split_chain;
 use crate::commands::TaskCommand;
 use crate::sync::SyncMode;
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use tc_core::filter::split_words;
 
 /// The variable that moves the config folder.
 pub const DIR_VAR: &str = "MEGHNAAD_CONFIG_DIR";
@@ -34,6 +36,47 @@ pub fn path() -> Option<PathBuf> {
     dir().map(|d| d.join("settings.json"))
 }
 
+/// The editor `settings.json` is opened in, as its words: `$VISUAL`, else `$EDITOR`, else `vi`, as git and most shells'
+/// tools choose one. A value with arguments (`code --wait`) is split as a shell would split it.
+pub fn editor() -> Vec<String> {
+    let var = |name: &str| std::env::var(name).ok();
+    editor_from(var("VISUAL"), var("EDITOR"))
+}
+
+fn editor_from(visual: Option<String>, editor: Option<String>) -> Vec<String> {
+    [visual, editor]
+        .into_iter()
+        .flatten()
+        .map(|v| split_words(&v))
+        .find(|w| !w.is_empty())
+        .unwrap_or_else(|| vec!["vi".to_owned()])
+}
+
+/// Open `settings.json` in [`editor`] on the terminal, which the caller has handed over, and wait for it to close. The
+/// folder is made first so the editor can write a new file.
+///
+/// # Errors
+///
+/// There is no config folder, it cannot be made, or the editor cannot be started or fails.
+pub fn edit_in_editor() -> Result<(), String> {
+    let path = path().ok_or("No config folder: set MEGHNAAD_CONFIG_DIR or HOME.")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    }
+    let words = editor();
+    let (bin, args) = words.split_first().ok_or("No editor: set EDITOR.")?;
+    let status = std::process::Command::new(bin)
+        .args(args)
+        .arg(&path)
+        .status()
+        .map_err(|e| format!("Could not start {bin}: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{bin} ended with {status}."))
+    }
+}
+
 /// What the TUI reads of `settings.json`: what it shares with the web app and the phone (task commands, boards), and its
 /// own settings under `tui`.
 #[derive(Debug, Default, serde::Deserialize)]
@@ -45,6 +88,9 @@ pub struct AppSettings {
     pub tui: TuiSettings,
     /// Where 0.6.53 kept `tui.sync`: still read, and moved into `tui` when the app next saves.
     sync: Option<String>,
+    /// The whole file, for what is read from all of it (the keys: `keys` and `tui.keys`).
+    #[serde(skip)]
+    pub raw: Value,
 }
 
 /// The terminal app's own settings, which the web app and the phone keep as they are.
@@ -60,7 +106,99 @@ pub struct TuiSettings {
     pub shading: Option<String>,
 }
 
+/// The page the app opens on: a report or a board (`homepage` in `settings.json`, shared with the web app and the phone).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Homepage {
+    Report(String),
+    Board(String),
+}
+
+impl Homepage {
+    /// As `settings.json` keeps it: `{ "report": "next" }` or `{ "board": "week" }`.
+    fn to_value(&self) -> Value {
+        match self {
+            Homepage::Report(r) => serde_json::json!({ "report": r }),
+            Homepage::Board(b) => serde_json::json!({ "board": b }),
+        }
+    }
+}
+
+/// The range of a numeric UDA drawn as a progress bar: the value at which it is empty, and at which it is full.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Progress {
+    pub min: f64,
+    pub max: f64,
+}
+
+impl Progress {
+    /// How far along `value` is, from 0 (at or under `min`) to 1 (at or over `max`).
+    pub fn fraction(self, value: f64) -> f64 {
+        if value.is_finite() {
+            ((value - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+}
+
 impl AppSettings {
+    /// Where the app opens, if the settings say: one of the two shapes, anything else is no choice (as the web app reads
+    /// it).
+    pub fn homepage(&self) -> Option<Homepage> {
+        let h = self.raw.get("homepage")?.as_object()?;
+        let text = |k: &str| {
+            h.get(k)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+        };
+        match (h.len(), text("report"), text("board")) {
+            (1, Some(r), None) => Some(Homepage::Report(r.to_owned())),
+            (1, None, Some(b)) => Some(Homepage::Board(b.to_owned())),
+            _ => None,
+        }
+    }
+
+    /// The numeric UDAs drawn as progress bars (`appearance.progress`), and what is wrong with the rest, one line each,
+    /// as the web app reads them.
+    pub fn progress(&self) -> (BTreeMap<String, Progress>, Vec<String>) {
+        let mut out = BTreeMap::new();
+        let mut errors = Vec::new();
+        let Some(appearance) = self.raw.get("appearance") else {
+            return (out, errors);
+        };
+        let Some(appearance) = appearance.as_object() else {
+            errors.push("appearance must be an object: { \"progress\": { … } }".to_owned());
+            return (out, errors);
+        };
+        let Some(list) = appearance.get("progress") else {
+            return (out, errors);
+        };
+        let Some(list) = list.as_object() else {
+            errors
+                .push("appearance.progress must be an object: { \"<uda>\": { \"min\": 0, \"max\": 100 } }".to_owned());
+            return (out, errors);
+        };
+        for (name, r) in list {
+            let at = format!("appearance.progress.{name}");
+            let Some(r) = r.as_object() else {
+                errors.push(format!("{at}: must be {{ \"min\": …, \"max\": … }}"));
+                continue;
+            };
+            let number = |k: &str, default: f64| r.get(k).map_or(Some(default), Value::as_f64);
+            let (Some(min), Some(max)) = (number("min", 0.0), number("max", 100.0)) else {
+                errors.push(format!("{at}: min and max must be numbers"));
+                continue;
+            };
+            if min >= max {
+                errors.push(format!("{at}: min must be less than max"));
+            } else {
+                out.insert(name.clone(), Progress { min, max });
+            }
+        }
+        (out, errors)
+    }
+
     /// When to sync, and what is wrong with the setting if it is not one of the three.
     pub fn sync_mode(&self) -> (SyncMode, Option<String>) {
         match self.tui.sync.as_deref().or(self.sync.as_deref()) {
@@ -86,7 +224,11 @@ impl AppSettings {
     /// The text is not a settings object (the same check the web app and the phone make, then what it says).
     pub fn parse(text: &str) -> Result<AppSettings, String> {
         tc_core::appsettings::check(text)?;
-        serde_json::from_str(text).map_err(|e| format!("settings.json: {e}"))
+        let raw: Value = serde_json::from_str(text).map_err(|e| format!("settings.json: {e}"))?;
+        let mut settings: AppSettings =
+            serde_json::from_value(raw.clone()).map_err(|e| format!("settings.json: {e}"))?;
+        settings.raw = raw;
+        Ok(settings)
     }
 
     /// The settings kept on this machine; none when there is no file. A file that is not settings is said, and read
@@ -163,6 +305,35 @@ pub fn with_tui(text: &str, key: &str, value: Value) -> Result<String, String> {
     with_tui_edit(text, |tui| {
         tui.insert(key.into(), value);
     })
+}
+
+/// `text` with `homepage` set (or taken out, for the default), and every other key as it was.
+///
+/// # Errors
+///
+/// As [`with_commands`].
+pub fn with_homepage(text: &str, home: Option<&Homepage>) -> Result<String, String> {
+    let mut raw = object(text)?;
+    let commands: Vec<TaskCommand> = raw
+        .remove("taskCommands")
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| format!("taskCommands: {e}"))?
+        .unwrap_or_default();
+    match home {
+        Some(h) => raw.insert("homepage".into(), h.to_value()),
+        None => raw.remove("homepage"),
+    };
+    written(raw, &commands)
+}
+
+/// Save where the app opens to `settings.json` (none: `next`, the default), keeping the rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_homepage(home: Option<&Homepage>) -> Result<(), String> {
+    save(|text| with_homepage(text, home))
 }
 
 /// `text` with `tui` changed by `edit`, and every other key as it was (the old top-level `sync` moved into `tui`).
@@ -291,6 +462,53 @@ mod tests {
             Some(PathBuf::from("/h/.config/meghnaad"))
         );
         assert_eq!(dir_from(None, None, None), None);
+    }
+
+    #[test]
+    fn the_editor_is_visual_then_editor_then_vi() {
+        let s = |v: &str| Some(v.to_owned());
+        assert_eq!(editor_from(s("code --wait"), s("nano")), ["code", "--wait"]);
+        assert_eq!(editor_from(None, s("nano")), ["nano"]);
+        assert_eq!(editor_from(s(""), s("hx")), ["hx"]);
+        assert_eq!(editor_from(None, None), ["vi"]);
+    }
+
+    #[test]
+    fn the_home_page_and_the_progress_bars_are_read_as_the_web_app_reads_them() {
+        let s = AppSettings::parse(
+            r#"{ "homepage": { "board": " week " },
+                 "appearance": { "progress": { "estimate": {}, "done": { "min": 0, "max": 1 },
+                                               "bad": { "min": 5, "max": 5 }, "worse": { "min": "a" } } } }"#,
+        )
+        .unwrap();
+        assert_eq!(s.homepage(), Some(Homepage::Board("week".into())));
+        let (bars, errors) = s.progress();
+        assert_eq!(bars["estimate"], Progress { min: 0.0, max: 100.0 });
+        assert_eq!(bars["done"].fraction(0.25), 0.25);
+        assert_eq!(bars["done"].fraction(3.0), 1.0);
+        assert_eq!(
+            errors,
+            [
+                "appearance.progress.bad: min must be less than max",
+                "appearance.progress.worse: min and max must be numbers"
+            ]
+        );
+        for odd in [r#"{ "report": "next", "board": "b" }"#, r#"{ "report": "" }"#, "3"] {
+            let s = AppSettings::parse(&format!(r#"{{ "homepage": {odd} }}"#)).unwrap();
+            assert_eq!(s.homepage(), None, "{odd}");
+        }
+    }
+
+    #[test]
+    fn the_home_page_is_saved_and_taken_out_keeping_the_rest() {
+        let text = r#"{ "taskCommands": [ { "name": "fail", "command": "done" } ], "x": 1 }"#;
+        let out = with_homepage(text, Some(&Homepage::Report("work".into()))).unwrap();
+        let s = AppSettings::parse(&out).unwrap();
+        assert_eq!(s.homepage(), Some(Homepage::Report("work".into())));
+        assert_eq!(s.task_commands.len(), 1);
+        assert_eq!(s.raw["x"], 1);
+        let out = with_homepage(&out, None).unwrap();
+        assert!(AppSettings::parse(&out).unwrap().raw.get("homepage").is_none());
     }
 
     #[test]

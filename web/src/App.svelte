@@ -98,6 +98,7 @@
     started = true;
     // The settings and `settings.json` are asked for together (they are two objects in the bucket). The settings were
     // already read when the first command started the engine, so those are used.
+    void store.loadKeymapDefaults();
     void Promise.all([store.loadConfig(true), store.loadAppSettings()])
       // Where the address says wins over the home page (`/` is the home page). The reports and the boards had to be read
       // first to know what the address names, so it is followed again now that they are.

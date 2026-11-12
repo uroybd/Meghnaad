@@ -1,0 +1,99 @@
+{
+  "keys": {
+    "app.prompt": "/"
+  },
+  "tui": {
+    "keys": {
+      "app.prompt": ["/", ":"],
+      "app.sidebar": "tab",
+      "app.back": "esc",
+      "app.review": "v",
+      "app.context": "C",
+      "app.stopTimer": "T",
+      "app.reminders": "N",
+      "app.sync": "S",
+      "app.undo": "u",
+      "app.reload": "R",
+      "app.help": "?",
+      "app.quit": "q",
+      "page.tasks": "1",
+      "page.projects": "2",
+      "page.tags": "3",
+      "page.summary": "4",
+      "page.calendar": "5",
+      "page.burndown": "6",
+      "page.boards": "7",
+      "page.console": "8",
+      "page.settings": "9",
+      "move.down": ["j", "down"],
+      "move.up": ["k", "up"],
+      "move.pageDown": "pagedown",
+      "move.pageUp": "pageup",
+      "move.first": ["g", "home"],
+      "move.last": ["G", "end"],
+      "sidebar.open": "enter",
+      "sidebar.hidden": ".",
+      "tasks.info": "enter",
+      "tasks.add": "a",
+      "tasks.modify": "m",
+      "tasks.annotate": "A",
+      "tasks.done": "d",
+      "tasks.start": "s",
+      "tasks.stop": "x",
+      "tasks.delete": "D",
+      "tasks.command": "c",
+      "tasks.filter": "f",
+      "tasks.report": "r",
+      "lists.open": "enter",
+      "calendar.prev": ["h", "left"],
+      "calendar.next": ["l", "right"],
+      "burndown.daily": "d",
+      "burndown.weekly": "w",
+      "burndown.monthly": "m",
+      "boards.list.open": ["enter", "l", "right"],
+      "boards.close": ["b", "backspace"],
+      "boards.prev": ["h", "left", "["],
+      "boards.next": ["l", "right", "]"],
+      "console.clear": "c",
+      "settings.next": "]",
+      "settings.prev": "[",
+      "settings.editFile": "E",
+      "settings.general.home": ["space", "enter"],
+      "settings.sync.change": ["y", "space", "enter"],
+      "settings.theme.preset": ["space", "enter"],
+      "settings.theme.shading": "s",
+      "settings.commands.add": "a",
+      "settings.commands.edit": ["e", "enter"],
+      "settings.commands.delete": "D",
+      "settings.boards.open": "enter"
+    },
+    "contexts": {
+      "sidebar": ["sidebar", "app", "page", "move"],
+      "tasks": ["tasks", "app", "page", "move"],
+      "lists": ["lists", "app", "page", "move"],
+      "summary": ["app", "page", "move"],
+      "calendar": ["calendar", "app", "page", "move"],
+      "burndown": ["burndown", "app", "page", "move"],
+      "boards.list": ["boards.list", "app", "page", "move"],
+      "boards": ["boards", "app", "page", "move"],
+      "console": ["console", "app", "page", "move"],
+      "settings.general": ["settings.general", "settings", "app", "page", "move"],
+      "settings.sync": ["settings.sync", "settings", "app", "page", "move"],
+      "settings.theme": ["settings.theme", "settings", "app", "page", "move"],
+      "settings.commands": ["settings.commands", "settings", "app", "page", "move"],
+      "settings.boards": ["settings.boards", "settings", "app", "page", "move"]
+    }
+  },
+  "web": {
+    "keys": {},
+    "contexts": {
+      "app": ["app"]
+    }
+  },
+  "mobile": {
+    "keys": {},
+    "contexts": {
+      "app": ["app"]
+    }
+  }
+}

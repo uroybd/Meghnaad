@@ -13,6 +13,7 @@ import {
   type TaskCommand,
 } from './appsettings';
 import type { Board } from './boards';
+import { fetchKeymapDefaults, resolveKeymap, type Keymap } from './keymap';
 import { lucide } from './lucideLib.svelte';
 import { isHiddenReport, offeredReports as pickable } from './reportList';
 import { parsePath, placePath, prefixFilter, taskPath, type Place, type SettingsTab } from './route';
@@ -120,6 +121,19 @@ class Store {
   settingsFile = $state<string | null>(null);
   /** The app's own `settings.json`, read (null until it has been). */
   appSettings = $state<ParsedSettings | null>(null);
+  /** The default keys (`/keymaps/default.json`), once fetched. */
+  keymapDefaults = $state<Record<string, unknown> | null>(null);
+  /** The keys: the defaults, then `keys` and `web.keys` of `settings.json`. */
+  keymap = $derived<Keymap>(resolveKeymap(this.appSettings?.raw ?? {}, this.keymapDefaults));
+
+  /** Fetch the default keys. Without them the page has no keys, only its buttons, so a failure is not said. */
+  async loadKeymapDefaults() {
+    try {
+      this.keymapDefaults = await fetchKeymapDefaults();
+    } catch {
+      // Left as none: the keys are a convenience.
+    }
+  }
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
   tagFocus = $state<{ tag: string; n: number } | null>(null);
   /** The same for a project on the Projects page. */

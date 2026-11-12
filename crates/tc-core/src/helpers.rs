@@ -405,6 +405,28 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             a.req::<u32>(1)?,
             a.req::<u32>(2)?
         )),
+        // A front end's keys (`tui`, `web` or `mobile`) from the whole of `settings.json` and the keymap asset
+        // (`web/public/keymaps/default.json`): `{keys, contexts, problems}`.
+        "keymap" => {
+            let platform = a.req::<String>(0)?;
+            let platform = crate::keymap::Platform::parse(&platform).ok_or(format!("{platform} is not a front end"))?;
+            json!(crate::keymap::resolve(
+                &a.opt::<serde_json::Value>(2)?.unwrap_or_default(),
+                &a.opt::<serde_json::Value>(1)?.unwrap_or_default(),
+                platform
+            ))
+        }
+        // A key a front end was given, with the modifiers held, as `settings.json` writes it; `null` for one it has no
+        // name for.
+        "key_chord" => json!(crate::keymap::from_event(
+            &a.req::<String>(0)?,
+            &a.opt::<Vec<String>>(1)?
+                .unwrap_or_default()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+        )),
+        "key_label" => json!(crate::keymap::display(&a.req::<String>(0)?)),
         _ => return Err(format!("{name} is not a helper")),
     })
 }

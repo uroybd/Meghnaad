@@ -92,8 +92,8 @@ pub fn places(board: &Board, cols: u32) -> Vec<Cell> {
 const HOW: [&str; 4] = [
     "A board is a page of numbers, charts and tables over your tasks. Make one on the web app's Boards page (or the",
     "phone's) and copy its settings.json here, or write it under \"boards\" in settings.json by hand: an id, a name and",
-    "sections, each a number, table or chart placed on twelve columns. R reads the file again. The guide's Boards",
-    "chapter has every kind of section and an example.",
+    "sections, each a number, table or chart placed on twelve columns; the app reads it again when it changes. The Boards",
+    "chapter of the guide has every kind of section and an example.",
 ];
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
@@ -105,7 +105,16 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     };
     let mut block = page_block(&board.name, focused);
     if app.boards.len() > 1 {
-        block = block.title_top(note(&format!("{} of {} · h/l", app.board + 1, app.boards.len())));
+        let keys = [
+            app.keymap.keys_of("boards.prev").first(),
+            app.keymap.keys_of("boards.next").first(),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|k| tc_core::keymap::display(k))
+        .collect::<Vec<_>>()
+        .join("/");
+        block = block.title_top(note(&format!("{} of {} · {keys}", app.board + 1, app.boards.len())));
     }
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -174,7 +183,9 @@ fn list(f: &mut Frame, app: &App, area: Rect, focused: bool) {
         return;
     }
     foot.push(Line::from(""));
-    foot.push(Line::from("Boards are made on the web app or in settings.json; R reads it again.").quiet());
+    foot.push(
+        Line::from("Boards are made on the web app or in settings.json, which is read again when it changes.").quiet(),
+    );
     let [body, bottom] = Layout::vertical([
         Constraint::Fill(1),
         Constraint::Length(u16::try_from(foot.len()).unwrap_or(2)),
@@ -310,13 +321,71 @@ fn height(v: Option<f64>) -> u64 {
     h
 }
 
+/// A label as short as `level` makes it: whole, then without a leading year (`2026-11-15` → `11-15`, `2026-W45` →
+/// `W45`), then its last part (`15`).
+fn shortened(label: &str, level: usize) -> &str {
+    let no_year = match label.split_once('-') {
+        Some((y, rest)) if y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()) && !rest.is_empty() => rest,
+        _ => label,
+    };
+    match level {
+        0 => label,
+        1 => no_year,
+        _ => no_year.rsplit(['-', ' ']).next().unwrap_or(no_year),
+    }
+}
+
+/// The labels along an axis whose slots are `slot` columns apart, as Chart.js fits a crowded axis: every one whole, or
+/// else without its year (see [`shortened`]); where that is still too long, every other one without its year, or else
+/// their last parts, as few apart as they need. The forms and every how many slots are named.
+fn fit_labels<'a>(labels: &[&'a str], slot: usize) -> (Vec<&'a str>, usize) {
+    let slot = slot.max(1);
+    let level = |l: usize| {
+        let forms: Vec<&str> = labels.iter().map(|s| shortened(s, l)).collect();
+        let widest = forms.iter().map(|f| f.chars().count()).max().unwrap_or(0);
+        let step = (widest + 1).div_ceil(slot).max(1);
+        (forms, step)
+    };
+    let (whole, short) = (level(0), level(1));
+    if whole.1 == 1 {
+        whole
+    } else if short.1 <= 2 {
+        short
+    } else {
+        level(2)
+    }
+}
+
+/// A line naming every `step`th of `labels` from the start of its slot (`offset` + i × `slot`), each cut short of the
+/// next named one.
+fn label_line(labels: &[&str], offset: usize, slot: usize, width: usize) -> String {
+    let (forms, step) = fit_labels(labels, slot);
+    let room = (step * slot.max(1)).saturating_sub(1).max(1);
+    let mut line: Vec<char> = vec![' '; width];
+    for (i, form) in forms.iter().enumerate().step_by(step) {
+        let at = offset + i * slot;
+        for (j, ch) in form.chars().take(room).enumerate() {
+            if let Some(c) = line.get_mut(at + j) {
+                *c = ch;
+            }
+        }
+    }
+    line.into_iter().collect::<String>().trim_end().to_owned()
+}
+
 /// Bars: down the page for values (room for their names), across for dates (in time order), a bar for each series.
 fn bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, area: Rect) {
     let n = chart.datasets.len().max(1);
-    let bar = |d: usize, i: usize| {
+    // A value is written on its bar only where the bar is wide enough for all of it.
+    let bar = |d: usize, i: usize, room: usize| {
         let v = chart.datasets.get(d).and_then(|s| s.data.get(i).copied().flatten());
+        let text = boards::format_value(v, chart.unit);
         Bar::new(height(v))
-            .text_value(boards::format_value(v, chart.unit))
+            .text_value(if text.chars().count() <= room {
+                text
+            } else {
+                String::new()
+            })
             .style(Style::new().fg(colors.get(d).copied().unwrap_or(Color::Blue)))
             .value_style(Style::new().fg(Color::Reset).add_modifier(Modifier::DIM))
     };
@@ -326,16 +395,23 @@ fn bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, area: Rec
         let per = u16::try_from(n).unwrap_or(1);
         // Each group: a bar for each series and a column between groups.
         let width = (area.width.saturating_sub(groups) / groups / per).clamp(1, 8);
-        for (i, l) in chart.labels.iter().enumerate() {
-            let bs: Vec<Bar> = (0..n).map(|d| bar(d, i)).collect();
-            c = c.data(BarGroup::new(bs).label(Line::from(l.label.clone())));
+        for i in 0..chart.labels.len() {
+            let bs: Vec<Bar> = (0..n).map(|d| bar(d, i, usize::from(width))).collect();
+            c = c.data(BarGroup::new(bs));
         }
-        c.bar_width(width).bar_gap(0).group_gap(1).render(area, buf);
+        // The dates under the bars are written here, fitted to the room, rather than each cut to its group's width.
+        let [plot, axis] = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
+        c.bar_width(width).bar_gap(0).group_gap(1).render(plot, buf);
+        let names: Vec<&str> = chart.labels.iter().map(|l| l.label.as_str()).collect();
+        let slot = usize::from(width * per + 1);
+        Line::from(label_line(&names, 0, slot, usize::from(area.width)))
+            .quiet()
+            .render(axis, buf);
     } else {
         for (i, l) in chart.labels.iter().enumerate() {
             let bs: Vec<Bar> = (0..n)
                 .map(|d| {
-                    let b = bar(d, i);
+                    let b = bar(d, i, usize::MAX);
                     if d == 0 {
                         b.label(Line::from(l.label.clone()))
                     } else {
@@ -590,13 +666,9 @@ fn heatmap(buf: &mut Buffer, grids: &[Grid], colors: &[Color], area: Rect) {
         if grids.len() > 1 {
             out.push(Line::from(g.label.clone()).bold());
         }
-        // The column names, as much of each as its cell holds.
-        let mut head = vec![Span::from(" ".repeat(names + 1))];
-        for l in &g.labels {
-            let short: String = l.label.chars().take(cell.saturating_sub(1).max(1)).collect();
-            head.push(Span::from(format!("{short:<cell$}")).quiet());
-        }
-        out.push(Line::from(head));
+        // The column names, fitted to the cells as the bars' dates are.
+        let heads: Vec<&str> = g.labels.iter().map(|l| l.label.as_str()).collect();
+        out.push(Line::from(label_line(&heads, names + 1, cell, usize::from(area.width))).quiet());
         for d in &g.datasets {
             let name: String = d.label.chars().take(names).collect();
             let mut row = vec![Span::from(format!("{name:<names$} ")).quiet()];
@@ -635,6 +707,27 @@ fn heatmap(buf: &mut Buffer, grids: &[Grid], colors: &[Color], area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crowded_labels_are_shortened_then_thinned_and_never_run_together() {
+        let days = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"];
+        // Room for each whole: all of them, a space apart.
+        assert_eq!(
+            label_line(&days, 0, 11, 44),
+            "2026-11-01 2026-11-02 2026-11-03 2026-11-04"
+        );
+        // Less room: without the year, then every other one.
+        assert_eq!(label_line(&days, 0, 6, 24), "11-01 11-02 11-03 11-04");
+        assert_eq!(label_line(&days, 0, 4, 16), "11-01   11-03");
+        // Very little: the day alone, thinned as it needs.
+        assert_eq!(label_line(&days, 0, 2, 8), "01  03");
+        assert_eq!(label_line(&["2026-W44", "2026-W45"], 2, 4, 10), "  W44 W45");
+        // Names that are not dates are cut short of the next one shown.
+        assert_eq!(
+            label_line(&["Home", "Work", "Errands", "Shop"], 0, 3, 13),
+            "Home     Shop"
+        );
+    }
 
     #[test]
     fn colours_are_named_as_settings_json_names_them() {

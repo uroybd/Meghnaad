@@ -41,13 +41,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,13 +67,53 @@ fun Shell(store: Store) {
     }
 }
 
-/** `/` focuses the prompt from anywhere that isn't a text field (a hardware keyboard). */
+/**
+ * `app.prompt` (`/` unless settings.json says otherwise) focuses the prompt from anywhere that isn't a text field (a hardware
+ * keyboard).
+ */
 private fun slashKey(store: Store) = Modifier.onPreviewKeyEvent { e ->
-    val slash = e.type == KeyEventType.KeyDown && e.key == Key.Slash && !e.isCtrlPressed && !e.isMetaPressed && !e.isAltPressed
-    if (slash && !TypingFocus.typing && store.detail == null) {
+    if (e.type != KeyEventType.KeyDown || TypingFocus.typing || store.detail != null) return@onPreviewKeyEvent false
+    if (store.keymap.action(chordOf(e)) == "app.prompt") {
         store.focusPrompt()
         true
     } else false
+}
+
+private val LETTER_KEYS = listOf(
+    Key.A, Key.B, Key.C, Key.D, Key.E, Key.F, Key.G, Key.H, Key.I, Key.J, Key.K, Key.L, Key.M,
+    Key.N, Key.O, Key.P, Key.Q, Key.R, Key.S, Key.T, Key.U, Key.V, Key.W, Key.X, Key.Y, Key.Z,
+)
+private val DIGIT_KEYS = listOf(Key.Zero, Key.One, Key.Two, Key.Three, Key.Four, Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine)
+
+/** A key the keyboard gave, as the keymap writes it: the character it types, or the key's name. */
+private fun chordOf(e: KeyEvent): String? {
+    val name = when (e.key) {
+        Key.Enter, Key.NumPadEnter -> "enter"
+        Key.Escape -> "esc"
+        Key.Tab -> "tab"
+        Key.Spacebar -> "space"
+        Key.Backspace -> "backspace"
+        Key.Delete -> "delete"
+        Key.DirectionUp -> "up"
+        Key.DirectionDown -> "down"
+        Key.DirectionLeft -> "left"
+        Key.DirectionRight -> "right"
+        Key.MoveHome -> "home"
+        Key.MoveEnd -> "end"
+        Key.PageUp -> "pageup"
+        Key.PageDown -> "pagedown"
+        // With Ctrl or Alt there may be no character typed: then the key's letter or digit is what counts.
+        else -> e.utf16CodePoint.takeIf { it > 0x20 }?.let { Char(it).toString() }
+            ?: LETTER_KEYS.indexOf(e.key).takeIf { it >= 0 }?.let { ('a' + it).toString() }
+            ?: DIGIT_KEYS.indexOf(e.key).takeIf { it >= 0 }?.toString()
+    } ?: return null
+    val mods = listOfNotNull(
+        "ctrl".takeIf { e.isCtrlPressed },
+        "alt".takeIf { e.isAltPressed },
+        "shift".takeIf { e.isShiftPressed },
+        "meta".takeIf { e.isMetaPressed },
+    )
+    return keyChord(name, mods)
 }
 
 /** The pages along the top of the wide layout, as the web's tabs. */

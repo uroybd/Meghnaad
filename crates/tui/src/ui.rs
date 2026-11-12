@@ -9,6 +9,7 @@ use crate::form::{self, Form, Kind};
 use crate::model::local_offset;
 use crate::remind::format_seconds;
 use crate::review::Phase;
+use crate::settings::Progress;
 use crate::theme::{self, Roles};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style, Stylize};
@@ -25,10 +26,6 @@ use tc_core::helpers::format_date;
 /// The side's width, and the narrowest terminal that shows it.
 const SIDE: u16 = 20;
 const SIDE_FROM: u16 = 72;
-
-const GLOBAL_KEYS: &str = "1-9 pages · Tab reports · : command";
-/// Kept in sight on the right however many keys the page has.
-const ALWAYS_KEYS: &str = "? all keys · q quit";
 
 /// The areas of the screen: top bar, side (if it fits), page, status line, command line.
 pub fn areas(area: Rect) -> [Rect; 5] {
@@ -113,11 +110,18 @@ pub fn draw(f: &mut Frame, app: &App) {
             f.render_widget(
                 Paragraph::new(ansi::lines(text))
                     .scroll((*scroll, 0))
-                    .block(text_pane("info", true).title_bottom(note("j/k scroll · any other key closes"))),
+                    .block(text_pane("info", true).title_bottom(note(&format!(
+                        "{}any other key closes",
+                        app.move_hint().map(|m| format!("{m} · ")).unwrap_or_default()
+                    )))),
                 main,
             );
         }
-        Mode::Context { options, sel } => context(f, options, *sel, main),
+        Mode::Context { options, sel } => picker(f, " context ", options, *sel, main),
+        Mode::Home { options, sel } => {
+            let names: Vec<String> = options.iter().map(|o| o.0.clone()).collect();
+            picker(f, " home page ", &names, *sel, main);
+        }
         Mode::Commands { uuid, query, sel } => commands(f, app, uuid, query, *sel, main),
         Mode::Form(form) => form_box(f, app, form, main),
         _ => {}
@@ -152,12 +156,19 @@ pub fn draw(f: &mut Frame, app: &App) {
         _ => {
             let keys = if app.review.is_some() {
                 hints("v the review's keys are on its card")
-            } else if app.focus == Focus::Sidebar {
-                hints(&format!("↵ open the report · . hidden · Tab back · {GLOBAL_KEYS}"))
             } else {
-                hints(&format!("{} · {GLOBAL_KEYS}", app.page_keys()))
+                let parts = [app.page_keys(), app.global_keys()];
+                hints(
+                    &parts
+                        .iter()
+                        .filter(|p| !p.is_empty())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(" · "),
+                )
             };
-            let always = hints(ALWAYS_KEYS);
+            // Kept in sight on the right however many keys the page has.
+            let always = hints(&app.always_keys());
             let [l, r] = Layout::horizontal([
                 Constraint::Fill(1),
                 Constraint::Length(u16::try_from(always.width() + 3).unwrap_or(0)),
@@ -393,7 +404,7 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     let section = |title: &str, s: S| {
         let b = pane(title, here(s)).padding(Padding::horizontal(1));
         if here(s) {
-            b.title_bottom(hints(s.keys()).right_aligned())
+            b.title_bottom(hints(&app.hints(&[s.group()])).right_aligned())
         } else {
             b
         }
@@ -403,8 +414,11 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     let t = theme::current();
     let swatches = theme_lines(&t);
     let theme_rows = u16::try_from(swatches.len() + app.theme_errors.len()).unwrap_or(4) + 2;
-    let [sync, theme_area, cmds, boards, _] = Layout::vertical([
-        Constraint::Length(if app.settings_problem.is_some() { 4 } else { 3 }),
+    let problems = u16::from(app.settings_problem.is_some())
+        + u16::try_from(app.keymap.problems.len() + app.progress_errors.len()).unwrap_or(0);
+    let [general, sync, theme_area, cmds, boards, _] = Layout::vertical([
+        Constraint::Length(4 + problems),
+        Constraint::Length(3),
         Constraint::Length(theme_rows),
         Constraint::Length(rows(commands, 10) + 1),
         Constraint::Length(rows(app.boards.len() + app.board_errors.len(), 6)),
@@ -412,8 +426,48 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     ])
     .areas(area);
 
+    // The file itself, where it is and what is wrong with it; the home page and the progress bars, shared with the web
+    // app and the phone.
     let path = crate::settings::path().map_or_else(|| "no config folder".to_owned(), |p| p.display().to_string());
-    let mut lines = vec![Line::from(vec![
+    let bars = if app.progress.is_empty() {
+        "none (appearance.progress in settings.json)".to_owned()
+    } else {
+        app.progress
+            .iter()
+            .map(|(name, p)| format!("{name} {}–{}", p.min, p.max))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    };
+    let mut lines = vec![
+        Line::from(vec![
+            Span::from("Home page      ").quiet(),
+            Span::styled(
+                app.homepage_label(),
+                if here(S::General) {
+                    theme::selected()
+                } else {
+                    Style::new().bold()
+                },
+            ),
+        ]),
+        Line::from(vec![Span::from("Progress bars  ").quiet(), Span::from(bars)]),
+    ];
+    if let Some(p) = &app.settings_problem {
+        lines.push(Line::from(p.clone()).bad());
+    }
+    lines.extend(
+        app.keymap
+            .problems
+            .iter()
+            .chain(&app.progress_errors)
+            .map(|p| Line::from(p.clone()).bad()),
+    );
+    f.render_widget(
+        Paragraph::new(lines).block(section("General", S::General).title_top(note(&path))),
+        general,
+    );
+
+    let lines = vec![Line::from(vec![
         Span::from("When to sync  ").quiet(),
         Span::styled(
             app.sync_mode.label().to_owned(),
@@ -424,13 +478,7 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             },
         ),
     ])];
-    if let Some(p) = &app.settings_problem {
-        lines.push(Line::from(p.clone()).bad());
-    }
-    f.render_widget(
-        Paragraph::new(lines).block(section("Sync", S::Sync).title_top(note(&path))),
-        sync,
-    );
+    f.render_widget(Paragraph::new(lines).block(section("Sync", S::Sync)), sync);
 
     let mut lines = swatches;
     lines.extend(app.theme_errors.iter().map(|e| Line::from(e.clone()).bad()));
@@ -648,7 +696,8 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
     );
 }
 
-fn context(f: &mut Frame, options: &[String], sel: usize, main: Rect) {
+/// A short list over the page's top right to choose from (the context, the home page).
+fn picker(f: &mut Frame, title: &str, options: &[String], sel: usize, main: Rect) {
     let h = u16::try_from(options.len() + 2).unwrap_or(3).min(main.height);
     let w = options.iter().map(|o| o.chars().count()).max().unwrap_or(0).max(9) + 6 + MARK.chars().count();
     let area = Rect::new(
@@ -661,7 +710,7 @@ fn context(f: &mut Frame, options: &[String], sel: usize, main: Rect) {
     f.render_widget(Clear, area);
     f.render_stateful_widget(
         List::new(items)
-            .block(boxed(" context ".to_owned()))
+            .block(boxed(title.to_owned()))
             .highlight_style(theme::selected())
             .highlight_symbol(MARK)
             .highlight_spacing(HighlightSpacing::Always),
@@ -686,8 +735,33 @@ fn lines(c: &Cell) -> Vec<Line<'static>> {
     out
 }
 
+/// How many columns a progress bar takes, its number aside.
+const BAR: u32 = 10;
+
+/// A cell of a UDA drawn as a progress bar (`appearance.progress`): the bar between the range's ends, in eighths of a
+/// column, then the number, as the web app draws it; `None` when the cell holds no number.
+fn progress_line(text: &str, p: Progress) -> Option<Line<'static>> {
+    const PARTS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+    let value: f64 = text.trim().parse().ok()?;
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a fraction in 0..=1 of BAR × 8"
+    )]
+    let eighths = (p.fraction(value) * f64::from(BAR * 8)).round() as usize;
+    let (full, part) = (eighths / 8, eighths % 8);
+    let empty = (BAR as usize).saturating_sub(full + usize::from(part > 0));
+    Some(Line::from(vec![
+        Span::styled(format!("{}{}", "█".repeat(full), PARTS[part]), theme::accent()),
+        Span::styled("░".repeat(empty), theme::dim()),
+        Span::from(format!(" {}", text.trim())),
+    ]))
+}
+
 fn table(f: &mut Frame, app: &App, area: Rect) {
     let r = &app.report;
+    let bars: Vec<Option<Progress>> = r.names.iter().map(|n| app.progress.get(n).copied()).collect();
+    let bar_of = |j: usize| bars.get(j).copied().flatten();
     let widths: Vec<Constraint> = r
         .labels
         .iter()
@@ -701,6 +775,7 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
                 .iter()
                 .filter_map(|row| row.get(j))
                 .map(|c| c.text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
+                .map(|w| if bar_of(j).is_some() { w + BAR as usize + 1 } else { w })
                 .chain(std::iter::once(label.chars().count()))
                 .max()
                 .unwrap_or(0);
@@ -709,7 +784,14 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
         .collect();
     let t = theme::current();
     let rows = r.cells.iter().enumerate().map(|(i, row)| {
-        let cells: Vec<Vec<Line<'static>>> = row.iter().map(lines).collect();
+        let cells: Vec<Vec<Line<'static>>> = row
+            .iter()
+            .enumerate()
+            .map(|(j, c)| match bar_of(j).and_then(|p| progress_line(&c.text, p)) {
+                Some(bar) => vec![bar],
+                None => lines(c),
+            })
+            .collect();
         let height = cells.iter().map(Vec::len).max().unwrap_or(1);
         // Taskwarrior lays the colour rules over the alternate shading of every other row.
         let shade = if i % 2 == 1 && t.shading == theme::Shading::Task {
@@ -1078,5 +1160,19 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         let below = main.y + main.height - (line.y + 1);
         let h = menu_height(m).min(below);
         menu(f, m, Rect::new(x, line.y + 1, MENU_WIDTH.min(main.width), h));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_progress_cell_is_a_bar_then_its_number() {
+        let p = crate::settings::Progress { min: 0.0, max: 100.0 };
+        let text = |t: &str| super::progress_line(t, p).map(|l| l.to_string());
+        assert_eq!(text("45").as_deref(), Some("████▌░░░░░ 45"));
+        assert_eq!(text("100").as_deref(), Some("██████████ 100"));
+        assert_eq!(text("250").as_deref(), Some("██████████ 250"));
+        assert_eq!(text("0").as_deref(), Some("░░░░░░░░░░ 0"));
+        assert_eq!(text(""), None);
     }
 }

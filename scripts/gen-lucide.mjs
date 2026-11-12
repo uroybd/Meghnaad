@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Writes every Lucide icon the app can draw as one JSON file, for the Kotlin app (app/): the shapes of each icon from the
 // installed @lucide/svelte, and the words each is found by from the same release's tags.json (what the icon picker searches).
-// It also copies Taskwarrior's colour themes (web/public/themes) to the same resources, so the app picks one the way the web's
-// taskrc tab does. A task command can name any Lucide icon (`circle-x`), and the phone has no CDN to fetch it from, so all of them travel with it.
+// It also copies Taskwarrior's colour themes (web/public/themes) to the same resources, so the app picks one the way the
+// web's taskrc tab does, and the default keys (web/public/keymaps), which the app reads as the web fetches them. A task command can name any Lucide icon (`circle-x`), and the phone has no CDN to fetch it from, so all of them travel with it.
 //
-//   node scripts/gen-lucide.mjs        writes app/shared/src/commonMain/resources/lucide.json and themes/*.theme
+//   node scripts/gen-lucide.mjs        writes app/shared/src/commonMain/resources/lucide.json, themes/*.theme and
+//                                      keymaps/default.json
 //
 // Only a short list of shapes and attributes is kept, as web/src/lib/lucide.ts keeps from a fetched file.
 import { copyFileSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -75,5 +76,9 @@ const themes = join(ROOT, 'web', 'public', 'themes');
 const themeOut = join(dirname(OUT), 'themes');
 mkdirSync(themeOut, { recursive: true });
 for (const f of readdirSync(themes)) if (f.endsWith('.theme')) copyFileSync(join(themes, f), join(themeOut, f));
+// The default keys, the same asset the web serves (tc_core::keymap reads them with the user's own).
+const keymapOut = join(dirname(OUT), 'keymaps');
+mkdirSync(keymapOut, { recursive: true });
+copyFileSync(join(ROOT, 'web', 'public', 'keymaps', 'default.json'), join(keymapOut, 'default.json'));
 
 console.log(`${Object.keys(icons).length} icons of Lucide ${version} -> ${OUT}`);

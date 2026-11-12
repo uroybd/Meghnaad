@@ -11,6 +11,34 @@ The default is `next`. It is kept in the app's own `settings.json` (`"homepage":
 still opens that task, and a report or board that is gone opens `next`. (The taskrc's `default.command` is different: it
 is the command a line runs when it names none.)
 
+## Keys
+
+Every front end has its keys in one place: the defaults are `keymaps/default.json` (in the repository,
+`web/public/keymaps/default.json`; the web app fetches it, and the terminal app and the phone carry it), and yours go in
+`settings.json`, in the same shape. An action is named by where it acts, with dots, as in Zed and VS Code
+(`app.prompt`, `tasks.done`, `settings.commands.add`); a key is written as they write it, the modifiers then the key,
+with `+` or `-`: `/`, `G`, `ctrl+k`, `ctrl-shift-tab`, `enter`, `esc`, `space`, `pagedown`, `f5`.
+
+```json
+{
+  "keys": { "app.prompt": ["/", "ctrl+k"] },
+  "tui": { "keys": { "tasks.filter": "F", "app.undo": null } },
+  "web": { "keys": {} },
+  "mobile": { "keys": {} }
+}
+```
+
+`keys` is for every front end and `tui.keys`, `web.keys` and `mobile.keys` for one alone; the front end's own come
+last. A list gives an action several keys, and `null` (or `[]`) leaves it with none. A key you give one action is taken
+from the action that had it by default, so there is nothing to unbind first. A page's keys come before the keys of every
+page where both have one, on that page only (a `tasks` key before an `app` key), so the same key can mean something on
+one page and something else elsewhere. A name that is no action, a key that can't be read, or one key for two actions of
+one group is said (on **General**, in the terminal app's Settings page) and the rest still applies.
+
+`/` puts the cursor in the prompt everywhere (`app.prompt`; the terminal app also keeps `:`). The web app and the
+phone (with a hardware keyboard) have that one key so far; the terminal app's are all in the file, and its `?` lists
+them. **General** lists the web app's and the phone's keys as they are.
+
 ## Appearance
 
 How the app draws things. It is kept in the app's own `settings.json`, not your taskrc, so it is the same on the web

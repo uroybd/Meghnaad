@@ -12,6 +12,7 @@ pub mod chain;
 pub mod commands;
 pub mod completer;
 pub mod form;
+pub mod keys;
 pub mod lists;
 pub mod model;
 pub mod remind;
@@ -121,6 +122,12 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<Optio
                 *terminal = init();
                 app.edited();
             }
+            Action::EditSettings => {
+                restore();
+                let result = settings::edit_in_editor();
+                *terminal = init();
+                app.settings_edited(result);
+            }
         }
     }
 }
@@ -141,6 +148,7 @@ pub fn run() -> io::Result<()> {
     app.appearance = appearance::detect();
     app.system_mode = appearance::system();
     app.reload();
+    app.go_home();
     if app.sync_mode.at_start_and_close() {
         app.syncer.start(&app.task);
     }

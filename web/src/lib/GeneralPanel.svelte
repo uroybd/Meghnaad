@@ -2,6 +2,7 @@
   import { untrack } from 'svelte';
   import { sameHomepage, type Homepage } from './appsettings';
   import { Check } from './icons';
+  import { keyLabel, WEB_ACTIONS } from './keymap';
   import { store } from './store.svelte';
 
   /** There are edits not yet applied (the tab shows a dot). */
@@ -95,7 +96,45 @@
   </div>
 </section>
 
+<section aria-label="Keyboard">
+  <h2>Keyboard</h2>
+  <table class="keys">
+    <tbody>
+      {#each WEB_ACTIONS as a (a.name)}
+        <tr>
+          <td>
+            {#each store.keymap.keys[a.name] ?? [] as k, i (i)}<kbd>{keyLabel(k)}</kbd>
+            {:else}<span class="dim">none</span>{/each}
+          </td>
+          <td>{a.does} <code class="dim">{a.name}</code></td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+  <p class="dim">
+    Set in <code>settings.json</code>, under <code>keys</code> for the web app, the phone and the terminal app alike, or
+    <code>web.keys</code> for this app alone: <code>{'{ "keys": { "app.prompt": ["/", "ctrl+k"] } }'}</code>. A key is
+    written as Zed and VS Code write it; <code>null</code> leaves an action without one.
+  </p>
+  {#if store.keymap.problems.length}
+    <ul class="err" role="alert">
+      {#each store.keymap.problems as line, i (i)}<li>{line}</li>{/each}
+    </ul>
+  {/if}
+</section>
+
 <style>
+  section + section {
+    margin-top: 24px;
+  }
+  .keys {
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .keys td {
+    padding: 3px 12px 3px 0;
+  }
   .field {
     display: flex;
     flex-direction: column;

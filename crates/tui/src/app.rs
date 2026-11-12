@@ -8,11 +8,12 @@ use crate::chain::{runs, Statement};
 use crate::commands::{plan_chain, TaskCommand};
 use crate::completer::{Completer, Input};
 use crate::form::{Form, Kind};
+use crate::keys;
 use crate::lists::{self, Item};
 use crate::model::{self, Report};
 use crate::remind::{self, Notice};
 use crate::review::{self, Outcome, Phase, Review};
-use crate::settings::{self, AppSettings};
+use crate::settings::{self, AppSettings, Homepage, Progress};
 use crate::sync::{self, SyncMode, Syncer};
 use crate::task::Task;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -22,6 +23,7 @@ use std::collections::BTreeSet;
 use tc_core::board::Board;
 use tc_core::complete::Vocab;
 use tc_core::filter::split_words;
+use tc_core::keymap::{self, Keymap};
 use tc_core::preview::Preview;
 use tc_core::taskrc::Config;
 
@@ -66,19 +68,18 @@ impl Page {
         }
     }
 
-    /// What the bottom line says the page's own keys are.
-    pub fn keys(self) -> &'static str {
+    /// The keymap's action that opens it (`page.tasks`).
+    pub fn action(self) -> &'static str {
         match self {
-            Page::Tasks => {
-                "a add · m modify · A annotate · d done · s/x start/stop · D delete · c task commands · ↵ info · / filter · r report"
-            }
-            Page::Projects | Page::Tags => "↵ open its tasks",
-            Page::Summary => "j/k scroll",
-            Page::Calendar => "h/l month · j/k scroll",
-            Page::Burndown => "d daily · w weekly · m monthly · j/k scroll",
-            Page::Boards => "j/k scroll · h/l the board before or after · Esc/b all boards",
-            Page::Console => "j/k scroll · c clear",
-            Page::Settings => "[/] section · j/k move",
+            Page::Tasks => "page.tasks",
+            Page::Projects => "page.projects",
+            Page::Tags => "page.tags",
+            Page::Summary => "page.summary",
+            Page::Calendar => "page.calendar",
+            Page::Burndown => "page.burndown",
+            Page::Boards => "page.boards",
+            Page::Console => "page.console",
+            Page::Settings => "page.settings",
         }
     }
 }
@@ -173,6 +174,11 @@ pub enum Mode {
         options: Vec<String>,
         sel: usize,
     },
+    /// Choosing the home page: `next` (the default), then each report and each board.
+    Home {
+        options: Vec<(String, Option<Homepage>)>,
+        sel: usize,
+    },
 }
 
 /// What the loop has to do for a key that the screen cannot do itself.
@@ -184,11 +190,14 @@ pub enum Action {
     Run(Vec<Statement>),
     /// Open `task <uuid> edit` on the terminal for the task under review.
     Edit(String),
+    /// Open `settings.json` in the user's editor on the terminal, then read it again.
+    EditSettings,
 }
 
 /// The sections of the Settings page, top to bottom. The keys act on the one that has the focus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
+    General,
     Sync,
     Theme,
     Commands,
@@ -196,20 +205,22 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 4] = [
+    pub const ALL: [SettingsSection; 5] = [
+        SettingsSection::General,
         SettingsSection::Sync,
         SettingsSection::Theme,
         SettingsSection::Commands,
         SettingsSection::Boards,
     ];
 
-    /// What the section's own keys are, when it has the focus.
-    pub fn keys(self) -> &'static str {
+    /// Its group of keys in the keymap, and its context there.
+    pub fn group(self) -> &'static str {
         match self {
-            SettingsSection::Sync => "y/Space/↵ change when to sync",
-            SettingsSection::Theme => "Space/↵ auto, light, dark or mono · s task's shading on or off",
-            SettingsSection::Commands => "a add · e/↵ edit · D delete",
-            SettingsSection::Boards => "↵ open the board",
+            SettingsSection::General => "settings.general",
+            SettingsSection::Sync => "settings.sync",
+            SettingsSection::Theme => "settings.theme",
+            SettingsSection::Commands => "settings.commands",
+            SettingsSection::Boards => "settings.boards",
         }
     }
 
@@ -227,6 +238,8 @@ pub struct App {
     pub settings: AppSettings,
     /// What is wrong with `settings.json`, if anything; saving waits until it is put right.
     pub settings_problem: Option<String>,
+    /// The keys: the defaults, then `keys` and `tui.keys` of `settings.json`.
+    pub keymap: Keymap,
     /// Taskwarrior's command names (`_commands`), to tell which ones ask questions.
     commands: Vec<String>,
 
@@ -266,6 +279,9 @@ pub struct App {
     pub settings_section: SettingsSection,
     /// What is wrong with `tui.theme` or `tui.shading`, one line each.
     pub theme_errors: Vec<String>,
+    /// The numeric UDAs drawn as progress bars (`appearance.progress`), and what was wrong with the rest.
+    pub progress: std::collections::BTreeMap<String, Progress>,
+    pub progress_errors: Vec<String>,
     /// Whether the terminal is light or dark (what the theme's `auto` draws), the system's appearance when last looked
     /// at, when that was, and when `settings.json` was last changed, to follow either when it changes.
     pub appearance: crate::appearance::Mode,
@@ -299,53 +315,8 @@ pub fn now() -> i64 {
 }
 
 /// Every key, for `?`.
-pub const HELP: &str = "\
-Everywhere
-  1-9        open a page: Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings
-  Tab        move between the page and the reports down the side (Esc comes back)
-  :          the command line: any task command line, && || ; chains, task commands, review
-  v          review the tasks that need it (tasksh's review)
-  C          choose the context
-  T          stop the started task (the timer in the top bar)
-  N          reminders on or off
-  S          task sync, in the background (Settings → Sync: also on opening and closing, or after every change)
-  u          task undo, on the terminal
-  R          read everything again
-  ?          this list
-  q          quit
-
-Tasks
-  j/k ↑/↓    move · g/G first/last · PgUp/PgDn
-  ↵          task info
-  a          add, with a preview of the task it makes; ↓ or Ctrl+F opens the full form
-  m          modify the task, in the full form · A annotate it
-  d          done · s start · x stop · D delete (asks, on the terminal)
-  c          run one of your task commands on the task, chosen from a list (type to narrow it)
-  /          filter · r another report
-
-Reports (Tab)
-  ↵ open · . show the hidden ones (names starting with _)
-
-Projects, Tags
-  ↵          open the tasks of the project or tag
-
-Summary, Calendar, Burndown
-  j/k        scroll · Calendar: h/l the month before or after · Burndown: d daily, w weekly, m monthly
-
-Boards
-  j/k ↵      choose a board from the list and open it
-  Esc/b      back to the list · h/l [ ] the board before or after · j/k scroll
-
-Console
-  j/k        scroll back · c clear
-
-Settings (keys act on the section that has the focus: j/k move through it and on, [ ] jump)
-  Sync           y, Space or ↵ changes when to sync
-  Theme          Space or ↵ the preset: auto (as the terminal is), light, dark or mono
-                 s draws task's grey shading (alternate rows, weekends) or leaves it out
-  Task commands  a add · e/↵ edit · D delete
-  Boards         ↵ open the board
-
+/// The end of the list of keys: what typing in a box or the form takes, which is not in the keymap.
+const HELP_TAIL: &str = "\
 The form
   ↑/↓ a field · Tab complete · Space starts the task (on Start) · ↵ save · Esc cancel
 
@@ -354,7 +325,46 @@ The command line
   A line whose command asks first (delete, edit, undo, …) runs on the terminal; sync runs in the background;
   put ! in front of any line to run it there.
 
+Review
+  The keys tasksh's review asks for, on its card.
+
+Every key above can be changed in settings.json, under keys (for every front end) or tui.keys.
+
 Any key closes this.";
+
+/// Where a move goes: by some rows (up is less than none), or to the first or the last.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Step {
+    By(isize),
+    First,
+    Last,
+}
+
+/// Row `at` of `len` after `step`.
+fn moved(at: usize, len: usize, step: Step) -> usize {
+    let last = len.saturating_sub(1);
+    match step {
+        Step::By(n) => at.saturating_add_signed(n).min(last),
+        Step::First => 0,
+        Step::Last => last,
+    }
+}
+
+/// A scroll after `step`; a page that scrolls has no last row it knows of.
+fn scrolled(at: u16, step: Step) -> u16 {
+    match step {
+        Step::By(n) => {
+            let by = u16::try_from(n.unsigned_abs()).unwrap_or(u16::MAX);
+            if n < 0 {
+                at.saturating_sub(by)
+            } else {
+                at.saturating_add(by)
+            }
+        }
+        Step::First => 0,
+        Step::Last => at,
+    }
+}
 
 /// Taskwarrior's commands that ask before they act (or open an editor), so they run on the terminal.
 const ASKS: &[&str] = &[
@@ -424,6 +434,7 @@ impl App {
             vocab: Vocab::default(),
             settings: AppSettings::default(),
             settings_problem: None,
+            keymap: keys::resolve(&Value::Null),
             commands: Vec::new(),
             page: Page::Tasks,
             focus: Focus::Main,
@@ -446,8 +457,10 @@ impl App {
             board_data: Vec::new(),
             log: Vec::new(),
             log_back: 0,
-            settings_section: SettingsSection::Sync,
+            settings_section: SettingsSection::General,
             theme_errors: Vec::new(),
+            progress: std::collections::BTreeMap::new(),
+            progress_errors: Vec::new(),
             appearance: crate::appearance::Mode::default(),
             system_mode: None,
             last_look: 0,
@@ -508,6 +521,69 @@ impl App {
         settings::path().and_then(|p| std::fs::metadata(p).ok()?.modified().ok())
     }
 
+    /// Back from editing `settings.json` in the editor: read it again, and say what came of it.
+    pub fn settings_edited(&mut self, result: Result<(), String>) {
+        self.status.clear();
+        self.read_settings();
+        match result {
+            Err(e) => self.status = e,
+            Ok(()) if self.status.is_empty() => "Read settings.json again.".clone_into(&mut self.status),
+            Ok(()) => {}
+        }
+    }
+
+    /// Open the home page `settings.json` names: a report, or a board; one that is not there (any more) is no choice,
+    /// and the app stays where it is.
+    pub fn go_home(&mut self) {
+        match self.settings.homepage() {
+            Some(Homepage::Report(r)) if self.cfg.reports.contains_key(&r) => {
+                self.report_name = r;
+                self.selected = 0;
+                self.open(Page::Tasks);
+                self.reload();
+            }
+            Some(Homepage::Board(b)) => {
+                if let Some(i) = self.boards.iter().position(|x| x.id == b) {
+                    self.open(Page::Boards);
+                    self.board = i;
+                    self.open_board();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The home page as the Settings page names it.
+    pub fn homepage_label(&self) -> String {
+        match self.settings.homepage() {
+            None => "next (the default)".to_owned(),
+            Some(Homepage::Report(r)) if self.cfg.reports.contains_key(&r) => format!("the {r} report"),
+            Some(Homepage::Board(b)) => self.boards.iter().find(|x| x.id == b).map_or_else(
+                || format!("the board {b}, which is not there: the app opens on next"),
+                |x| format!("the {} board", x.name),
+            ),
+            Some(Homepage::Report(r)) => format!("the {r} report, which is not there: the app opens on next"),
+        }
+    }
+
+    /// Save where the app opens; say why not when it cannot.
+    fn save_homepage(&mut self, home: Option<&Homepage>, label: &str) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        match settings::save_homepage(home) {
+            Ok(()) => {
+                self.read_settings();
+                self.status = format!(
+                    "The app opens on {}.",
+                    label.split_whitespace().collect::<Vec<_>>().join(" ")
+                );
+            }
+            Err(e) => self.status = e,
+        }
+    }
+
     /// Read `settings.json` again: the task commands, the boards, when to sync and the theme.
     fn read_settings(&mut self) {
         self.settings_stamp = Self::settings_stamp();
@@ -515,6 +591,7 @@ impl App {
         self.settings = settings;
         let (mode, odd) = self.settings.sync_mode();
         self.sync_mode = mode;
+        (self.progress, self.progress_errors) = self.settings.progress();
         if let Some(p) = problem.as_ref().or(odd.as_ref()) {
             p.clone_into(&mut self.status);
         }
@@ -523,6 +600,12 @@ impl App {
             e.clone_into(&mut self.status);
         }
         self.settings_problem = problem;
+        self.keymap = keys::resolve(&self.settings.raw);
+        if let Some(p) = self.keymap.problems.first() {
+            if self.status.is_empty() {
+                p.clone_into(&mut self.status);
+            }
+        }
         (self.boards, self.board_errors) = boards::read(&self.settings.boards);
         self.board = self.board.min(self.boards.len().saturating_sub(1));
     }
@@ -816,14 +899,10 @@ impl App {
             Mode::Prompt(p) => self.in_prompt(p, key),
             Mode::Form(f) => self.in_form(f, key),
             Mode::Info { text, scroll } => {
-                self.mode = match key.code {
-                    KeyCode::Down | KeyCode::Char('j') => Mode::Info {
+                self.mode = match self.step_of(key) {
+                    Some(step @ Step::By(_)) => Mode::Info {
                         text,
-                        scroll: scroll.saturating_add(1),
-                    },
-                    KeyCode::Up | KeyCode::Char('k') => Mode::Info {
-                        text,
-                        scroll: scroll.saturating_sub(1),
+                        scroll: scrolled(scroll, step),
                     },
                     _ => Mode::Normal,
                 };
@@ -831,25 +910,30 @@ impl App {
             }
             Mode::Commands { uuid, query, sel } => self.in_commands(uuid, query, sel, key),
             Mode::Context { options, sel } => {
-                match key.code {
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.mode = Mode::Context {
-                            sel: (sel + 1).min(options.len().saturating_sub(1)),
-                            options,
-                        };
+                if let Some(step) = self.step_of(key) {
+                    self.mode = Mode::Context {
+                        sel: moved(sel, options.len(), step),
+                        options,
+                    };
+                    return Action::None;
+                }
+                if key.code == KeyCode::Enter {
+                    if let Some(name) = options.get(sel) {
+                        self.quick(&["context".into(), name.clone()]);
                     }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.mode = Mode::Context {
-                            sel: sel.saturating_sub(1),
-                            options,
-                        };
+                }
+                Action::None
+            }
+            Mode::Home { options, sel } => {
+                if let Some(step) = self.step_of(key) {
+                    self.mode = Mode::Home {
+                        sel: moved(sel, options.len(), step),
+                        options,
+                    };
+                } else if key.code == KeyCode::Enter {
+                    if let Some((label, home)) = options.into_iter().nth(sel) {
+                        self.save_homepage(home.as_ref(), &label);
                     }
-                    KeyCode::Enter => {
-                        if let Some(name) = options.get(sel) {
-                            self.quick(&["context".into(), name.clone()]);
-                        }
-                    }
-                    _ => {}
                 }
                 Action::None
             }
@@ -952,54 +1036,80 @@ impl App {
         }
     }
 
+    /// The keymap's context the page's keys are in: the reports down the side, or the page (and on Settings, the section
+    /// that has the focus).
+    pub fn context(&self) -> &'static str {
+        if self.focus == Focus::Sidebar {
+            return "sidebar";
+        }
+        match self.page {
+            Page::Tasks => "tasks",
+            Page::Projects | Page::Tags => "lists",
+            Page::Summary => "summary",
+            Page::Calendar => "calendar",
+            Page::Burndown => "burndown",
+            Page::Boards if self.board_open => "boards",
+            Page::Boards => "boards.list",
+            Page::Console => "console",
+            Page::Settings => self.settings_section.group(),
+        }
+    }
+
+    /// The move a key makes, in a box or a list over the page that only moves.
+    fn step_of(&self, key: KeyEvent) -> Option<Step> {
+        let chord = keys::chord(key)?;
+        Some(match self.keymap.action("summary", &chord)? {
+            "move.down" => Step::By(1),
+            "move.up" => Step::By(-1),
+            "move.pageDown" => Step::By(10),
+            "move.pageUp" => Step::By(-10),
+            "move.first" => Step::First,
+            "move.last" => Step::Last,
+            _ => return None,
+        })
+    }
+
     fn normal(&mut self, key: KeyEvent) -> Action {
-        // Keys every page has.
-        match key.code {
-            KeyCode::Char('q') => return Action::Quit,
-            KeyCode::Char(c @ '1'..='9') => {
-                let i = usize::from(c as u8 - b'1');
-                if let Some(&p) = Page::ALL.get(i) {
-                    self.open(p);
-                }
-                return Action::None;
+        let Some(chord) = keys::chord(key) else {
+            return Action::None;
+        };
+        match self.keymap.action(self.context(), &chord) {
+            Some(action) => {
+                let action = action.to_owned();
+                self.act(&action)
             }
-            KeyCode::Tab => {
+            None => Action::None,
+        }
+    }
+
+    /// Do what the keymap's `action` says, where the app is.
+    fn act(&mut self, action: &str) -> Action {
+        match action {
+            "app.quit" => return Action::Quit,
+            "app.prompt" => self.prompt(PromptKind::Console, ""),
+            "app.sidebar" => {
                 self.focus = if self.focus == Focus::Main {
                     Focus::Sidebar
                 } else {
                     Focus::Main
                 };
-                return Action::None;
             }
-            KeyCode::Esc if self.page == Page::Boards && self.board_open && self.focus == Focus::Main => {
+            "app.back" if self.page == Page::Boards && self.board_open && self.focus == Focus::Main => {
                 self.close_board();
-                return Action::None;
             }
-            KeyCode::Esc => {
+            "app.back" => {
                 self.focus = Focus::Main;
                 self.status.clear();
-                return Action::None;
             }
-            KeyCode::Char(':') => {
-                self.prompt(PromptKind::Console, "");
-                return Action::None;
-            }
-            KeyCode::Char('R') => {
+            "app.reload" => {
                 self.status.clear();
                 self.reload();
-                return Action::None;
             }
             // Taskwarrior's own sync, with its own settings.
-            KeyCode::Char('S') => {
-                self.sync();
-                return Action::None;
-            }
-            KeyCode::Char('u') => return Action::Run(vec![plain("undo")]),
-            KeyCode::Char('v') => {
-                self.start_review(0);
-                return Action::None;
-            }
-            KeyCode::Char('C') => {
+            "app.sync" => self.sync(),
+            "app.undo" => return Action::Run(vec![plain("undo")]),
+            "app.review" => self.start_review(0),
+            "app.context" => {
                 let mut options = vec!["none".to_owned()];
                 options.extend(self.cfg.contexts.keys().cloned());
                 let sel = self
@@ -1009,153 +1119,124 @@ impl App {
                     .and_then(|c| options.iter().position(|o| o == c))
                     .unwrap_or(0);
                 self.mode = Mode::Context { options, sel };
-                return Action::None;
             }
-            KeyCode::Char('T') => {
+            "app.stopTimer" => {
                 if let Some((u, _, _)) = self.active().into_iter().next() {
                     self.quick(&[u, "stop".into()]);
                 }
-                return Action::None;
             }
-            KeyCode::Char('?') => {
+            "app.help" => {
                 self.mode = Mode::Info {
-                    text: HELP.into(),
+                    text: self.help(),
                     scroll: 0,
                 };
-                return Action::None;
             }
-            KeyCode::Char('N') => {
+            "app.reminders" => {
                 self.reminders = !self.reminders;
                 self.status = format!("Reminders {}.", if self.reminders { "on" } else { "off" });
-                return Action::None;
             }
-            _ => {}
-        }
-        if self.focus == Focus::Sidebar {
-            self.in_sidebar(key);
-            return Action::None;
-        }
-        match self.page {
-            Page::Tasks => return self.on_tasks(key),
-            Page::Projects | Page::Tags => {
-                let items = self.items();
-                match key.code {
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.list_sel = (self.list_sel + 1).min(items.len().saturating_sub(1));
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => self.list_sel = self.list_sel.saturating_sub(1),
-                    KeyCode::Enter => {
-                        if let Some(item) = items.get(self.list_sel) {
-                            self.open_filter(&item.filter);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Page::Summary | Page::Calendar | Page::Burndown => match key.code {
-                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
-                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
-                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(10),
-                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(10),
-                KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l') if self.page == Page::Calendar => {
-                    let step = if matches!(key.code, KeyCode::Left | KeyCode::Char('h')) {
-                        -1
-                    } else {
-                        1
-                    };
-                    let here = self.month.unwrap_or_else(this_month);
-                    self.month = Some(here + step);
-                    self.load_page();
-                }
-                KeyCode::Char(c @ ('d' | 'w' | 'm')) if self.page == Page::Burndown => {
-                    self.burndown = match c {
-                        'd' => "daily",
-                        'w' => "weekly",
-                        _ => "monthly",
-                    };
-                    self.load_page();
-                }
-                _ => {}
-            },
-            Page::Boards if !self.board_open => match key.code {
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.board = (self.board + 1).min(self.boards.len().saturating_sub(1));
-                }
-                KeyCode::Up | KeyCode::Char('k') => self.board = self.board.saturating_sub(1),
-                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.open_board(),
-                _ => {}
-            },
-            Page::Boards => match key.code {
-                KeyCode::Backspace | KeyCode::Char('b') => self.close_board(),
-                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
-                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
-                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(10),
-                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(10),
-                KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l' | '[' | ']') if !self.boards.is_empty() => {
-                    let n = self.boards.len();
-                    let back = matches!(key.code, KeyCode::Left | KeyCode::Char('h' | '['));
-                    self.board = if back {
-                        (self.board + n - 1) % n
-                    } else {
-                        (self.board + 1) % n
-                    };
-                    self.scroll = 0;
-                    self.load_board();
-                }
-                _ => {}
-            },
-            Page::Console => match key.code {
-                KeyCode::Up | KeyCode::Char('k') => self.log_back = self.log_back.saturating_add(1),
-                KeyCode::Down | KeyCode::Char('j') => self.log_back = self.log_back.saturating_sub(1),
-                KeyCode::PageUp => self.log_back = self.log_back.saturating_add(10),
-                KeyCode::PageDown => self.log_back = self.log_back.saturating_sub(10),
-                KeyCode::Char('c') => {
-                    self.log.clear();
-                    self.log_back = 0;
-                }
-                _ => {}
-            },
-            Page::Settings => self.on_settings(key),
-        }
-        Action::None
-    }
-
-    fn in_sidebar(&mut self, key: KeyEvent) {
-        let names: Vec<String> = self.report_names().into_iter().map(str::to_owned).collect();
-        match key.code {
-            KeyCode::Down | KeyCode::Char('j') => self.sidebar = (self.sidebar + 1).min(names.len().saturating_sub(1)),
-            KeyCode::Up | KeyCode::Char('k') => self.sidebar = self.sidebar.saturating_sub(1),
-            KeyCode::Char('.') => self.hidden_reports = !self.hidden_reports,
-            KeyCode::Enter => {
-                if let Some(name) = names.get(self.sidebar) {
-                    name.clone_into(&mut self.report_name);
+            "move.down" => self.step(Step::By(1)),
+            "move.up" => self.step(Step::By(-1)),
+            "move.pageDown" => self.step(Step::By(10)),
+            "move.pageUp" => self.step(Step::By(-10)),
+            "move.first" => self.step(Step::First),
+            "move.last" => self.step(Step::Last),
+            "sidebar.hidden" => self.hidden_reports = !self.hidden_reports,
+            "sidebar.open" => {
+                let name = self.report_names().get(self.sidebar).map(|n| (*n).to_owned());
+                if let Some(name) = name {
+                    self.report_name = name;
                     self.selected = 0;
                     self.open(Page::Tasks);
                     self.reload();
                 }
             }
+            "lists.open" => {
+                if let Some(item) = self.items().get(self.list_sel) {
+                    let filter = item.filter.clone();
+                    self.open_filter(&filter);
+                }
+            }
+            "calendar.prev" | "calendar.next" => {
+                let here = self.month.unwrap_or_else(this_month);
+                self.month = Some(here + if action == "calendar.prev" { -1 } else { 1 });
+                self.load_page();
+            }
+            "burndown.daily" | "burndown.weekly" | "burndown.monthly" => {
+                self.burndown = match action {
+                    "burndown.daily" => "daily",
+                    "burndown.weekly" => "weekly",
+                    _ => "monthly",
+                };
+                self.load_page();
+            }
+            "boards.list.open" => self.open_board(),
+            "boards.close" => self.close_board(),
+            "boards.prev" | "boards.next" if !self.boards.is_empty() => {
+                let n = self.boards.len();
+                self.board = if action == "boards.prev" {
+                    (self.board + n - 1) % n
+                } else {
+                    (self.board + 1) % n
+                };
+                self.scroll = 0;
+                self.load_board();
+            }
+            "console.clear" => {
+                self.log.clear();
+                self.log_back = 0;
+            }
+            "settings.editFile" => return Action::EditSettings,
+            a if a.starts_with("page.") => {
+                if let Some(&p) = Page::ALL.iter().find(|p| p.action() == a) {
+                    self.open(p);
+                }
+            }
+            a if a.starts_with("tasks.") => return self.task_action(a),
+            a if a.starts_with("settings.") => self.settings_action(a),
             _ => {}
+        }
+        Action::None
+    }
+
+    /// Move through what the page has: its rows, or its scroll.
+    fn step(&mut self, step: Step) {
+        match self.context() {
+            "sidebar" => self.sidebar = moved(self.sidebar, self.report_names().len(), step),
+            "tasks" => self.selected = moved(self.selected, self.report.uuids.len(), step),
+            "lists" => self.list_sel = moved(self.list_sel, self.items().len(), step),
+            "boards.list" => self.board = moved(self.board, self.boards.len(), step),
+            // The console counts back from its end: down is nearer the end.
+            "console" => {
+                self.log_back = match step {
+                    Step::By(n) => scrolled(self.log_back, Step::By(-n)),
+                    Step::Last => 0,
+                    Step::First => self.log_back,
+                };
+            }
+            c if c.starts_with("settings.") => self.settings_step(step),
+            _ => self.scroll = scrolled(self.scroll, step),
         }
     }
 
-    fn on_tasks(&mut self, key: KeyEvent) -> Action {
-        let rows = self.report.uuids.len();
+    /// An action of the Tasks page, on the selected task.
+    fn task_action(&mut self, action: &str) -> Action {
         let target = self.current().map(str::to_owned);
-        match key.code {
-            KeyCode::Down | KeyCode::Char('j') => self.selected = (self.selected + 1).min(rows.saturating_sub(1)),
-            KeyCode::Up | KeyCode::Char('k') => self.selected = self.selected.saturating_sub(1),
-            KeyCode::PageDown => self.selected = (self.selected + 10).min(rows.saturating_sub(1)),
-            KeyCode::PageUp => self.selected = self.selected.saturating_sub(10),
-            KeyCode::Char('g') | KeyCode::Home => self.selected = 0,
-            KeyCode::Char('G') | KeyCode::End => self.selected = rows.saturating_sub(1),
-            KeyCode::Char('a') => self.prompt(PromptKind::Add, ""),
-            KeyCode::Char('/') => {
+        match action {
+            "tasks.add" => self.prompt(PromptKind::Add, ""),
+            "tasks.filter" => {
                 let f = self.filter.clone();
                 self.prompt(PromptKind::Filter, &f);
             }
-            KeyCode::Char('c') => {
+            "tasks.report" => self.prompt(PromptKind::Report, ""),
+            "tasks.command" => {
                 if self.settings.task_commands.is_empty() {
-                    self.status = "No task commands yet: add them on the Settings page (9).".into();
+                    let settings = self.keymap.label(Page::Settings.action());
+                    self.status = if settings.is_empty() {
+                        "No task commands yet: add them on the Settings page.".into()
+                    } else {
+                        format!("No task commands yet: add them on the Settings page ({settings}).")
+                    };
                 } else if let Some(uuid) = target {
                     self.mode = Mode::Commands {
                         uuid,
@@ -1164,110 +1245,206 @@ impl App {
                     };
                 }
             }
-            KeyCode::Char('r') => self.prompt(PromptKind::Report, ""),
-            KeyCode::Char('m') => {
-                if let Some(u) = target {
-                    self.modify_form(&u);
-                }
-            }
-            KeyCode::Char('A') => {
-                if let Some(u) = target {
-                    self.prompt(PromptKind::Annotate(u), "");
-                }
-            }
-            KeyCode::Char('d') => {
-                if let Some(u) = target {
-                    self.quick(&[u, "done".into()]);
-                }
-            }
-            KeyCode::Char('s') => {
-                if let Some(u) = target {
+            _ => {
+                let Some(u) = target else {
+                    return Action::None;
+                };
+                match action {
+                    "tasks.modify" => self.modify_form(&u),
+                    "tasks.annotate" => self.prompt(PromptKind::Annotate(u), ""),
+                    "tasks.done" => self.quick(&[u, "done".into()]),
                     // `start` on an active task says so and changes nothing; `stop` is its own key.
-                    self.quick(&[u, "start".into()]);
-                }
-            }
-            KeyCode::Char('x') => {
-                if let Some(u) = target {
-                    self.quick(&[u, "stop".into()]);
-                }
-            }
-            KeyCode::Char('D') => {
-                if let Some(u) = target {
+                    "tasks.start" => self.quick(&[u, "start".into()]),
+                    "tasks.stop" => self.quick(&[u, "stop".into()]),
                     // `delete` asks first, so it runs on the terminal where it can.
-                    return Action::Run(vec![plain(&format!("{u} delete"))]);
+                    "tasks.delete" => return Action::Run(vec![plain(&format!("{u} delete"))]),
+                    "tasks.info" => {
+                        let mut args = colored(self.width, self.height);
+                        args.extend([u, "info".into()]);
+                        self.mode = match self.task.capture(&args) {
+                            Ok(out) => Mode::Info {
+                                text: out.stdout,
+                                scroll: 0,
+                            },
+                            Err(e) => {
+                                self.status = e;
+                                Mode::Normal
+                            }
+                        };
+                    }
+                    _ => {}
                 }
             }
-            KeyCode::Enter => {
-                if let Some(u) = target {
-                    let mut args = colored(self.width, self.height);
-                    args.extend([u, "info".into()]);
-                    self.mode = match self.task.capture(&args) {
-                        Ok(out) => Mode::Info {
-                            text: out.stdout,
-                            scroll: 0,
-                        },
-                        Err(e) => {
-                            self.status = e;
-                            Mode::Normal
-                        }
-                    };
-                }
-            }
-            _ => {}
         }
         Action::None
     }
 
-    /// The page's own keys, as the bottom line says them: on Settings, the focused section's too.
-    pub fn page_keys(&self) -> String {
-        if self.page == Page::Settings {
-            format!("{} · {}", self.settings_section.keys(), self.page.keys())
-        } else if self.page == Page::Boards && !self.board_open {
-            "j/k choose · ↵ open the board".into()
-        } else {
-            self.page.keys().to_owned()
-        }
+    /// Each action of `groups` that has a key, as a hint line says it: `a add · e/↵ edit`.
+    pub fn hints(&self, groups: &[&str]) -> String {
+        keys::WORDS
+            .iter()
+            .filter(|w| groups.contains(&keymap::section_of(w.0)))
+            .filter_map(|&(name, hint, _)| {
+                let keys = self.keymap.label(name);
+                (!keys.is_empty()).then(|| format!("{keys} {hint}"))
+            })
+            .collect::<Vec<_>>()
+            .join(" · ")
     }
 
-    fn on_settings(&mut self, key: KeyEvent) {
-        use SettingsSection as S;
+    /// The first key of `action` as a hint shows it, if it has one.
+    fn first_key(&self, action: &str) -> Option<String> {
+        self.keymap.keys_of(action).first().map(|k| keymap::display(k))
+    }
+
+    /// `j/k move`, with the keys moving has.
+    pub fn move_hint(&self) -> Option<String> {
+        Some(format!(
+            "{}/{} move",
+            self.first_key("move.down")?,
+            self.first_key("move.up")?
+        ))
+    }
+
+    /// The page's own keys, as the bottom line says them: on Settings, those the page has in every section (the
+    /// focused section's own are in its border).
+    pub fn page_keys(&self) -> String {
+        let context = self.context();
+        let own: &[&str] = match context {
+            c if c.starts_with("settings.") => &["settings"],
+            "summary" => &[],
+            c => &[c],
+        };
+        let mut parts: Vec<String> = Vec::new();
+        if context != "tasks" {
+            parts.extend(self.move_hint());
+        }
+        let own = self.hints(own);
+        if !own.is_empty() {
+            parts.push(own);
+        }
+        parts.join(" · ")
+    }
+
+    /// The keys every page has, as the bottom line says them: `1-9 pages · Tab reports · / command`.
+    pub fn global_keys(&self) -> String {
+        let mut parts = Vec::new();
+        if let (Some(first), Some(last)) = (
+            self.first_key(Page::Tasks.action()),
+            self.first_key(Page::Settings.action()),
+        ) {
+            parts.push(format!("{first}-{last} pages"));
+        }
+        if let Some(k) = self.first_key("app.sidebar") {
+            parts.push(format!(
+                "{k} {}",
+                if self.focus == Focus::Sidebar {
+                    "back"
+                } else {
+                    "reports"
+                }
+            ));
+        }
+        if let Some(k) = self.first_key("app.prompt") {
+            parts.push(format!("{k} command"));
+        }
+        parts.join(" · ")
+    }
+
+    /// The keys kept in sight on the right: `? all keys · q quit`.
+    pub fn always_keys(&self) -> String {
+        [("app.help", "all keys"), ("app.quit", "quit")]
+            .iter()
+            .filter_map(|(a, what)| Some(format!("{} {what}", self.first_key(a)?)))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+
+    /// Every key, a group at a time, as the keymap has them now; then what typing in a box takes.
+    pub fn help(&self) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        for (title, rows) in keys::help(&self.keymap) {
+            lines.push(title.to_owned());
+            let width = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0).max(10);
+            for (keys, what) in rows {
+                lines.push(format!("  {keys:<width$} {what}"));
+            }
+            lines.push(String::new());
+        }
+        lines.push(HELP_TAIL.to_owned());
+        lines.join("\n")
+    }
+
+    fn settings_action(&mut self, action: &str) {
         let n = self.settings.task_commands.len();
-        let down = matches!(key.code, KeyCode::Down | KeyCode::Char('j'));
-        let up = matches!(key.code, KeyCode::Up | KeyCode::Char('k'));
-        match (self.settings_section, key.code) {
-            (_, KeyCode::Char(']')) => self.settings_section = self.settings_section.step(1),
-            (_, KeyCode::Char('[')) => self.settings_section = self.settings_section.step(-1),
-            (S::Sync, KeyCode::Char('y' | ' ') | KeyCode::Enter) => self.save_sync(self.sync_mode.next()),
-            (S::Theme, KeyCode::Char(' ') | KeyCode::Enter) => self.next_preset(),
-            (S::Theme, KeyCode::Char('s')) => self.toggle_shading(),
-            (S::Commands, KeyCode::Char('a')) => self.prompt(PromptKind::CommandName(None), ""),
-            (S::Commands, KeyCode::Char('e') | KeyCode::Enter) => {
+        match action {
+            "settings.next" => self.settings_section = self.settings_section.step(1),
+            "settings.prev" => self.settings_section = self.settings_section.step(-1),
+            "settings.general.home" => {
+                let mut options = vec![("next (the default)".to_owned(), None)];
+                options.extend(
+                    self.report_names()
+                        .into_iter()
+                        .filter(|r| *r != "next")
+                        .map(|r| (format!("report  {r}"), Some(Homepage::Report(r.to_owned())))),
+                );
+                options.extend(
+                    self.boards
+                        .iter()
+                        .map(|b| (format!("board   {}", b.name), Some(Homepage::Board(b.id.clone())))),
+                );
+                let now = self.settings.homepage();
+                let sel = options.iter().position(|o| o.1 == now).unwrap_or(0);
+                self.mode = Mode::Home { options, sel };
+            }
+            "settings.sync.change" => self.save_sync(self.sync_mode.next()),
+            "settings.theme.preset" => self.next_preset(),
+            "settings.theme.shading" => self.toggle_shading(),
+            "settings.commands.add" => self.prompt(PromptKind::CommandName(None), ""),
+            "settings.commands.edit" => {
                 if let Some(c) = self.settings.task_commands.get(self.settings_sel) {
                     let name = c.name.clone();
                     self.prompt(PromptKind::CommandName(Some(self.settings_sel)), &name);
                 }
             }
-            (S::Commands, KeyCode::Char('D')) if self.settings_sel < n => {
+            "settings.commands.delete" if self.settings_sel < n => {
                 let mut list = self.settings.task_commands.clone();
                 let gone = list.remove(self.settings_sel);
                 if self.save_commands(list) {
                     self.status = format!("Deleted the task command ‘{}’.", gone.name);
                 }
             }
-            (S::Boards, KeyCode::Enter) if self.settings_board < self.boards.len() => {
+            "settings.boards.open" if self.settings_board < self.boards.len() => {
                 self.board = self.settings_board;
                 self.open(Page::Boards);
                 self.open_board();
             }
-            // Moving goes through the rows of a section, then on to the next section.
-            (S::Commands, _) if down && self.settings_sel + 1 < n => self.settings_sel += 1,
-            (S::Commands, _) if up && self.settings_sel > 0 => self.settings_sel -= 1,
-            (S::Boards, _) if down && self.settings_board + 1 < self.boards.len() => self.settings_board += 1,
-            (S::Boards, _) if up && self.settings_board > 0 => self.settings_board -= 1,
-            (S::Sync | S::Theme | S::Commands, _) if down => {
+            _ => {}
+        }
+    }
+
+    /// Moving on Settings goes through the rows of a section, then on to the next section.
+    fn settings_step(&mut self, step: Step) {
+        use SettingsSection as S;
+        let n = self.settings.task_commands.len();
+        let boards = self.boards.len();
+        let (down, up) = (
+            matches!(step, Step::By(k) if k > 0),
+            matches!(step, Step::By(k) if k < 0),
+        );
+        match self.settings_section {
+            S::Commands if (down && self.settings_sel + 1 < n) || (up && self.settings_sel > 0) => {
+                self.settings_sel = moved(self.settings_sel, n, step);
+            }
+            S::Boards if (down && self.settings_board + 1 < boards) || (up && self.settings_board > 0) => {
+                self.settings_board = moved(self.settings_board, boards, step);
+            }
+            S::Commands if !down && !up => self.settings_sel = moved(self.settings_sel, n, step),
+            S::Boards if !down && !up => self.settings_board = moved(self.settings_board, boards, step),
+            S::General | S::Sync | S::Theme | S::Commands if down => {
                 self.settings_section = self.settings_section.step(1);
             }
-            (S::Theme | S::Commands | S::Boards, _) if up => {
+            S::Sync | S::Theme | S::Commands | S::Boards if up => {
                 self.settings_section = self.settings_section.step(-1);
             }
             _ => {}
@@ -1778,6 +1955,15 @@ mod tests {
     }
 
     #[test]
+    fn e_on_the_settings_page_opens_settings_json_in_the_editor() {
+        let mut app = app();
+        app.open(Page::Settings);
+        assert_eq!(app.key(key(KeyCode::Char('E'))), Action::EditSettings);
+        app.settings_section = SettingsSection::Commands;
+        assert_eq!(app.key(key(KeyCode::Char('E'))), Action::EditSettings);
+    }
+
+    #[test]
     fn a_line_with_a_command_that_asks_runs_on_the_terminal() {
         let mut app = app();
         app.settings =
@@ -1893,6 +2079,26 @@ mod tests {
     }
 
     #[test]
+    fn keys_are_the_keymaps_and_the_hints_and_the_list_say_so() {
+        let mut app = app();
+        app.keymap = keys::resolve(
+            &serde_json::json!({ "keys": { "app.prompt": "ctrl+k" }, "tui": { "keys": { "page.console": "F8" } } }),
+        );
+        app.key(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE));
+        assert_eq!(app.page, Page::Console);
+        app.key(key(KeyCode::Char('/')));
+        assert!(matches!(app.mode, Mode::Normal), "/ was given up for Ctrl+K");
+        app.key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Console));
+        app.key(key(KeyCode::Esc));
+        assert!(app.global_keys().ends_with("Ctrl+K command"), "{}", app.global_keys());
+        assert!(app.help().contains("Ctrl+K"));
+        assert!(app.help().contains("F8"));
+        app.key(key(KeyCode::Char('1')));
+        assert!(app.page_keys().contains("f filter"), "{}", app.page_keys());
+    }
+
+    #[test]
     fn numbers_open_pages_tab_moves_to_the_side_and_q_quits() {
         let mut app = app();
         app.key(key(KeyCode::Char('8')));
@@ -1901,10 +2107,17 @@ mod tests {
         assert_eq!(app.focus, Focus::Sidebar);
         app.key(key(KeyCode::Esc));
         assert_eq!(app.focus, Focus::Main);
+        app.key(key(KeyCode::Char('f')));
+        assert!(matches!(app.mode, Mode::Normal), "f filters only on Tasks");
         app.key(key(KeyCode::Char('/')));
-        assert!(matches!(app.mode, Mode::Normal), "/ filters only on Tasks");
+        assert!(
+            matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Console),
+            "/ is the command line"
+        );
+        app.key(key(KeyCode::Esc));
         app.key(key(KeyCode::Char('1')));
-        app.key(key(KeyCode::Char('/')));
+        app.key(key(KeyCode::Char('f')));
+        assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Filter));
         typing(&mut app, "q");
         app.key(key(KeyCode::Esc));
         assert!(matches!(app.mode, Mode::Normal));
@@ -1915,6 +2128,7 @@ mod tests {
     fn a_task_command_name_is_checked_before_its_command_is_asked() {
         let mut app = app();
         app.key(key(KeyCode::Char('9')));
+        app.key(key(KeyCode::Char(']')));
         app.key(key(KeyCode::Char(']')));
         app.key(key(KeyCode::Char(']')));
         app.key(key(KeyCode::Char('a')));
@@ -1928,6 +2142,8 @@ mod tests {
     fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
         let mut app = app();
         app.key(key(KeyCode::Char('9')));
+        assert_eq!(app.settings_section, SettingsSection::General);
+        app.key(key(KeyCode::Char('j')));
         assert_eq!(app.settings_section, SettingsSection::Sync);
         app.key(key(KeyCode::Char('a')));
         assert!(
@@ -1955,10 +2171,27 @@ mod tests {
         );
         app.key(key(KeyCode::Char('k')));
         assert_eq!(app.settings_section, SettingsSection::Commands);
-        app.key(key(KeyCode::Char('[')));
-        app.key(key(KeyCode::Char('[')));
-        app.key(key(KeyCode::Char('[')));
+        for _ in 0..4 {
+            app.key(key(KeyCode::Char('[')));
+        }
         assert_eq!(app.settings_section, SettingsSection::Boards, "[ goes round");
+    }
+
+    #[test]
+    fn the_home_page_is_chosen_from_a_list_in_general() {
+        let mut app = app();
+        app.settings = AppSettings::parse(r#"{ "homepage": { "report": "gone" } }"#).unwrap();
+        assert!(app.homepage_label().contains("not there"));
+        app.key(key(KeyCode::Char('9')));
+        app.key(key(KeyCode::Enter));
+        let Mode::Home { options, sel } = &app.mode else {
+            panic!("expected the list of home pages");
+        };
+        assert_eq!(options[0], ("next (the default)".to_owned(), None));
+        assert_eq!(*sel, 0, "a home page that is not there is no choice");
+        // Leaving the list chooses nothing (and writes nothing).
+        app.key(key(KeyCode::Esc));
+        assert!(matches!(app.mode, Mode::Normal));
     }
 
     #[test]

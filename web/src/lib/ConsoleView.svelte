@@ -2,10 +2,13 @@
   import { tick } from 'svelte';
   import ConsoleInput from './ConsoleInput.svelte';
   import { Eraser } from './icons';
+  import { keyLabel } from './keymap';
   import ResultView from './ResultView.svelte';
   import { store } from './store.svelte';
 
   let end: HTMLElement;
+  // The key that focuses the prompt, as settings.json has it now.
+  const promptKey = $derived(store.keymap.keys['app.prompt']?.[0]);
 
   // Keep the newest output in view.
   $effect(() => {
@@ -21,7 +24,8 @@
       <div class="empty dim">
         <p>Type a command below, like <code>task next</code> or <code>task add Buy milk due:tomorrow</code>.</p>
         <p>
-          Press <kbd>/</kbd> to focus the prompt, <kbd>Tab</kbd> to complete, <kbd>↑</kbd> for history,
+          {#if promptKey}Press <kbd>{keyLabel(promptKey)}</kbd> to focus the prompt,{/if}
+          <kbd>Tab</kbd> to complete, <kbd>↑</kbd> for history,
           <code>help</code> for commands.
         </p>
       </div>

@@ -30,11 +30,16 @@ or a TUI around `task`? Layer 2.
 - `tc_core::helpers` (a date in `dateformat`, a line split as the engine reads it, completion, a report's cells) is
   layer 1 knowledge handed to both UIs, so they never copy it. Shell-level logic does not go there, with the exceptions
   below.
-- Layer 2 is per front end: the web app's logic is ported to Kotlin with its tests, not shared through Rust. Two
-  exceptions, because they are pure functions both UIs would otherwise write twice and drift apart on: the header-sort
-  helpers (`sortspec`) and boards (`tc_core::board`: what a saved board means, the numbers a section shows from an
-  `export`, and the grid layout), both reached through `helpers`. Sorting and trimming a chart's groups, and all drawing,
-  stay in each UI.
+- Layer 2 is per front end: the web app's logic is ported to Kotlin with its tests, not shared through Rust. Three
+  exceptions, because they are pure functions every UI would otherwise write again and drift apart on: the header-sort
+  helpers (`sortspec`), boards (`tc_core::board`: what a saved board means, the numbers a section shows from an
+  `export`, and the grid layout) and the keys (`tc_core::keymap`: how a key is written, the user's keys over the
+  defaults, and which action a key runs in a context), all reached through `helpers`. Sorting and trimming a chart's
+  groups, all drawing, and what each action is called and does stay in each UI.
+- The default keys are an asset, as the colour themes are: `web/public/keymaps/default.json`, fetched by the web app,
+  built into the terminal app and copied into the phone's resources by `scripts/gen-lucide.mjs` (a test fails when the
+  copy drifts). A new key-driven action goes there, under its front end, with a context naming its group; the engine
+  holds no table of its own.
 - Charts are drawn by a charting library on each front end (Chart.js on the web), never by hand; the table is the one thing
   that stays ours, and the one exception is the heatmap on Android, a grid of cells (`Heatmap` in `BoardCharts.kt`), because Koala
   Plot has no plot for it. The web draws it with Chart.js's matrix plugin. The engine's `Chart` (labels and a dataset for each series, `tc_core::board::aggregate::chart`) is the

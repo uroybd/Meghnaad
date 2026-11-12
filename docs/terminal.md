@@ -98,13 +98,16 @@ turns colour off itself whenever it writes to a pipe, as it does for this app.
 
 ## The keys
 
+These are the defaults; every one can be changed in `settings.json` ([Keys](using/settings.md#keys)), and `?` lists
+them as they are. The hints along the bottom and in the Settings page's borders follow what you set.
+
 On every page:
 
 | Key | Does |
 | --- | --- |
 | `1` to `9` | Open a page |
 | `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_` |
-| `:` | The command line |
+| `/` or `:` | The command line |
 | `v` | Review the tasks that need it |
 | `C` | Choose the context (`task context <name>`, or `none`) |
 | `T` | Stop the started task the timer shows |
@@ -128,7 +131,7 @@ On the Tasks page:
 | `s` `x` | Start, stop the selected task |
 | `D` | Delete the selected task, on the terminal so `task` can ask first |
 | `c` | Run one of your [task commands](#settings) on the selected task: a box lists them, typing narrows the list, `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
-| `/` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
+| `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
 
 The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
@@ -241,12 +244,14 @@ is read when its page opens, and again with `R`.
 
 ## The Settings page
 
-The page has a section each for Sync, Theme, Task commands and Boards, one under the other. A key acts on the
+The page has a section each for General, Sync, Theme, Task commands and Boards, one under the other. A key acts on the
 section that has the focus, whose border is in the accent and names its keys: `j` `k` move through a section's rows
-and on into the next one, and `[` `]` jump between sections.
+and on into the next one, and `[` `]` jump between sections. `E`, in any section, opens `settings.json` in your editor
+(`$VISUAL`, else `$EDITOR`, else `vi`) on the terminal, and reads it again when the editor closes.
 
 | Section | Keys |
 | --- | --- |
+| General | Where `settings.json` is and what is wrong with it; the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board) and saves; and the [progress bars](#settings) |
 | Sync | `y`, `Space` or `Enter` goes through when to sync, and saves it ([Sync](#sync)) |
 | Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
 | Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
@@ -261,9 +266,12 @@ The app's own `settings.json` is kept on this machine only, in the first of:
 3. `~/.config/meghnaad`.
 
 The file is optional; without it there are no task commands or boards, syncing is by hand and the theme is the
-default. The terminal app uses what it shares with the web app and the phone, `taskCommands` (words that stand for a
-command line, which you can also add, change and delete on the Settings page) and `boards` ([Boards](#boards)), and its
-own settings, all under `tui`: `sync` ([Sync](#sync)), `theme` and `shading` ([Colours](#colours)).
+default. The terminal app uses what it shares with the web app and the phone: `taskCommands` (words that stand for a
+command line, which you can also add, change and delete on the Settings page), `boards` ([Boards](#boards)),
+`homepage` (the report or board it opens on, chosen in the General section), `appearance.progress` (numeric UDAs drawn
+in a report as a bar with the number beside it, as on the web: [Progress bars](using/settings.md#progress-bars)) and
+`keys` ([Keys](using/settings.md#keys)). Its own settings are all under `tui`: `sync` ([Sync](#sync)), `theme` and
+`shading` ([Colours](#colours)), and `keys`, which apply here only.
 
 ```json
 {
@@ -278,7 +286,7 @@ own settings, all under `tui`: `sync` ([Sync](#sync)), `theme` and `shading` ([C
 
 It is the same JSON as the web app's (**Settings → Commands**, or `web/settings.json` in the bucket), so copying that
 file here gives you the same task commands and boards; the web app and the phone keep `tui` as it is and have no use
-for it. Keys the terminal app has no use for (`appearance`) are ignored, and every key is kept as it is when it saves.
+for it. What the terminal app has no use for is kept as it is when it saves.
 A `sync` at the top of the file, where 0.6.53 kept it, is still read, and moved into `tui` the next time the app saves. A file that is not a JSON object is reported in the status line and read as
 none, and the app will not save over it until it is put right.
 

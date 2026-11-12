@@ -194,6 +194,8 @@ pub fn moments(task: &Value) -> Vec<i64> {
 pub struct Report {
     pub name: String,
     pub labels: Vec<String>,
+    /// Each column's attribute (`due`, a UDA's name), as `labels` are its words.
+    pub names: Vec<String>,
     /// Whether the report sorts by each column (its label is drawn in `color.label.sort`).
     pub sorted: Vec<bool>,
     /// Each row's colour, as `task`'s colour rules make it (`row_styles`), without the alternate shading.
@@ -246,10 +248,12 @@ pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64
         .map(|k| k.trim().trim_end_matches('/').trim_end_matches(['+', '-']))
         .collect();
     let sorted: Vec<bool> = cols.iter().map(|c| sort_fields.contains(&c.name.as_str())).collect();
+    let names: Vec<String> = cols.iter().map(|c| c.name.clone()).collect();
     let colours = row_styles(task, name, filter);
     Ok(Report {
         name: name.to_owned(),
         labels: pick(labels, &keep),
+        names: pick(names, &keep),
         sorted: pick(sorted, &keep),
         styles: tasks
             .iter()
