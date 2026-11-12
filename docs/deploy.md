@@ -166,12 +166,19 @@ custom reports.
 ## Making a release (for maintainers)
 
 The version is the one in the root `package.json`. The web app shows it at the bottom of **Settings**, the Android app
-takes it as its version name (and a code that rises with it), and the prebuilt package carries it. To release:
+takes it as its version name (and a code that rises with it), and the prebuilt package carries it. To release, with
+[`just`](https://just.systems) and everything committed on `main`:
 
 ```bash
-# 1. set "version" in package.json (for example 0.2.0), commit it, push, and let CI pass
-git tag v0.2.0 && git push origin v0.2.0
+just release          # check, bump the patch version, commit "chore: bump to <version>", tag v<version>, push both
+just release minor    # or major, or an exact version: just release 0.7.0
+just ship             # the same, then start the Deploy workflow
 ```
+
+`release` refuses to run off `main`, with changes not committed, or behind `origin/main`, and runs `just check` (format,
+lint, tests, type checks) first; a check that fixes files stops it, so the fixes can be committed. By hand it is the
+same steps: `npm version <x> --no-git-tag-version` (which writes the version into `Cargo.toml` and `Cargo.lock` too),
+commit, then `git tag v<version> && git push origin main v<version>`.
 
 Pushing the tag runs the **Release** workflow, which refuses a tag that isn't `v` plus the version in `package.json`. It
 builds once and publishes:

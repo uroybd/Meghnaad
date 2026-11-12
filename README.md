@@ -406,6 +406,10 @@ scripts/          setup / deploy / build / dev server · seed-dev.sh (demo data)
 docs/             the guides above
 ```
 
+The common tasks are also recipes for [`just`](https://just.systems) (`just` lists them): `just check` runs every check
+CI runs, `just release` bumps, tags and pushes a version, `just deploy` starts the Deploy workflow and `just ship` does
+both.
+
 ```bash
 npm run dev                   # the dev server: engine build and rebuild, Worker, app with hot reload
 npm run build:engine          # the engine for the browser alone (web/src/engine/pkg)
@@ -424,7 +428,7 @@ It does not touch a running dev server.
 
 CI (`.github/workflows/ci.yml`) runs tests, formatting, linting and the type check on every push and pull request (and the
 Android app's unit tests). Deploying is the separate manual workflow. A release is a version in `package.json` and a tag
-`v<version>`: the Release workflow publishes the web package and the signed Android APK together
+`v<version>` (`just release`): the Release workflow publishes the web package and the signed Android APK together
 ([Making a release](docs/deploy.md#making-a-release-for-maintainers)).
 
 Taskwarrior's behaviour is ported from its source and checked against the real `task`: when changing filters, sorting,

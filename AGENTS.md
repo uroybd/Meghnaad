@@ -47,7 +47,8 @@ or a TUI around `task`? Layer 2.
 
 ## Before you say a change is done
 
-Format, lint and test, in that order. CI runs the same checks and fails on any of them.
+Format, lint and test, in that order. CI runs the same checks and fails on any of them. `just check` runs them all
+(the `justfile` at the root wraps the npm scripts for the common tasks; `just` lists them).
 
 ```bash
 npm run format                # clippy --fix (the fixes it can make itself), cargo fmt (rustfmt.toml, 120 columns) and
@@ -131,10 +132,11 @@ bucket), and `setup.mjs`, `deploy.mjs` and `deploy-lib.mjs` must keep working in
 One version, the root `package.json`'s: the web app's label in Settings (`__APP_VERSION__`), the Android versionName and
 versionCode (`scripts/version.mjs`), the prebuilt package, and the crates (`[workspace.package]` in `Cargo.toml`, which
 `meghnaad-tui --version` and `meghnaad-hook --version` print). Cargo cannot read `package.json`, so that one copy is
-written for you: change the version with `npm version <x> --no-git-tag-version`, whose `version` script runs
-`node scripts/version.mjs sync` (Cargo.toml and Cargo.lock); a script test and the Release workflow refuse a mismatch.
-Then commit and push the tag `v<version>` (the Release workflow refuses a tag that does not match). Don't hard-code a
-version anywhere else.
+written for you: `just bump [patch|minor|major|1.2.3]` (`npm version <x> --no-git-tag-version`, whose `version`
+script runs `node scripts/version.mjs sync` for Cargo.toml and Cargo.lock); a script test and the Release workflow
+refuse a mismatch. `just release [level]` does the whole release: checks, bumps, commits `chore: bump to <version>`,
+tags `v<version>` and pushes both (the Release workflow refuses a tag that does not match); `just ship` deploys after.
+Don't hard-code a version anywhere else.
 
 ## The Android app
 
