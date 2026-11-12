@@ -988,7 +988,7 @@ checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "meghnaad-tui"
-version = "0.6.53"
+version = "0.6.54"
 dependencies = [
  "chrono",
  "ratatui",
@@ -1680,7 +1680,7 @@ dependencies = [
 
 [[package]]
 name = "tc-android"
-version = "0.6.53"
+version = "0.6.54"
 dependencies = [
  "async-trait",
  "hmac",
@@ -1697,7 +1697,7 @@ dependencies = [
 
 [[package]]
 name = "tc-browser"
-version = "0.6.53"
+version = "0.6.54"
 dependencies = [
  "async-trait",
  "js-sys",
@@ -1712,7 +1712,7 @@ dependencies = [
 
 [[package]]
 name = "tc-core"
-version = "0.6.53"
+version = "0.6.54"
 dependencies = [
  "async-trait",
  "chacha20poly1305",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "tc-hook"
-version = "0.6.53"
+version = "0.6.54"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1863,7 +1863,7 @@ dependencies = [
 
 [[package]]
 name = "tw-worker"
-version = "0.6.53"
+version = "0.6.54"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
