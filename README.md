@@ -5,7 +5,7 @@
 <h1 align="center">Meghnaad</h1>
 
 <p align="center">
-  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser and on your phone. The Rust engine runs in the page
+  <a href="https://taskwarrior.org">Taskwarrior 3</a> in your browser, on your phone and in your terminal. The Rust engine runs in the page
   (and natively in the Android app), a small Worker on Cloudflare keeps the secret, your existing S3 or R2 bucket is the
   sync store, Cloudflare Access is the login.
 </p>
@@ -22,7 +22,8 @@ Meghnaad is another **replica** of your Taskwarrior data. The `task` CLI keeps s
 reads and writes the same bucket. A task added here shows up on your laptop after `task sync`, and the other way round.
 It is **console-first** (type `task` commands) with tables, forms and charts beside it. Both use the same command engine.
 It comes as a **web app** you deploy to Cloudflare and as an **Android app** with home-screen widgets that keeps the
-tasks on the phone and syncs straight with your bucket.
+tasks on the phone and syncs straight with your bucket. On the desktop, a **terminal app** puts the same console,
+completion and task commands around your own `task` CLI.
 
 ## Philosophy
 
@@ -137,6 +138,7 @@ The same pages are a searchable site at **[meghnaad.utsob.me](https://meghnaad.u
 | **[Using Meghnaad](docs/using.md)** | Pages, console, confirmations, hooks, recurrence, urgency, time tracking |
 | **[Deploying](docs/deploy.md)** | Setup, GitHub Actions deploy, Access, connecting `task`, troubleshooting |
 | **[The Android app](docs/android.md)** | Install, connect (a bucket or a TaskChampion sync server, or neither), the four widgets, sharing settings and hooks, building it |
+| **[The terminal app](docs/terminal.md)** | Install, the pages and keys, the command line, review, where its settings are kept |
 | **[Architecture](docs/architecture.md)** | The engine, sync, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
 
@@ -148,12 +150,14 @@ flowchart TB
     direction TB
     sh["shell aliases<br/>alias fail='task done outcome:fail'"]
     tsh["tasksh<br/>review"]
+    tui["meghnaad-tui (terminal)<br/>runs task, completes with tc-core"]
     cli["task CLI (C++)"]
     tcd["TaskChampion (Rust)"]
     db[("SQLite replica<br/>~/.task")]
     rc["~/.taskrc"]
     sh -.-> cli
     tsh -.-> cli
+    tui --> cli
     cli --> tcd --> db
     rc -.-> cli
   end
@@ -294,6 +298,22 @@ syncs straight with your bucket over S3 (R2, AWS S3, MinIO, ...), so it needs no
 Settings and hooks can be kept in step with the web app's through the bucket (two switches under **Settings → Sync**);
 the secrets for hooks never are. Everything about it, including building it yourself, is in
 **[the Android app](docs/android.md)**.
+
+## Terminal app
+
+On the desktop, `meghnaad-tui` is a full-screen terminal app around the real `task` 3.5.0: your own `~/.task` and
+`~/.taskrc`, with no replica, server or sync of its own (`S` runs `task sync`). It is laid out as the web app is: pages
+along the top (Tasks, Projects, Tags, Summary, Calendar, Burndown, Console, Settings), the reports down the side and a
+command line at the bottom with Tab completion, `&&` `||` `;` chains and your task commands. It has an add line that
+shows the task before it makes it, tasksh's review, a timer and reminders.
+
+```bash
+brew install uroybd/tap/meghnaad-tui   # or a prebuilt from the release, or cargo install (see the guide)
+meghnaad-tui
+```
+
+Its `settings.json` (task commands, edited on its Settings page) is kept in `~/.config/meghnaad`, or in
+`$MEGHNAAD_CONFIG_DIR`. The keys and the rest are in **[the terminal app](docs/terminal.md)**.
 
 ## Using it
 

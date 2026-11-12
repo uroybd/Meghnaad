@@ -15,7 +15,7 @@ Two layers. Ask which one the feature is about.
    recurrence, confirmation, `calc`, setting or hook means, and the sync format. Check against the real `task`; where it
    is odd, so are we. The Worker, the browser engine, the phone library and the bucket only host this layer (storage,
    sync, the secret, running hooks) and add no behaviour.
-2. **UI** (`web/`, `app/`). Everything a TUI or a shell adds around `task`, and everything custom: screens, the console,
+2. **UI** (`web/`, `app/`, `crates/tui`). Everything a TUI or a shell adds around `task`, and everything custom: screens, the console,
    task commands, `&&` `||` `;` chains, bulk actions, review, reminders, themes, routes. It uses the task CLI as its
    backend to our instance: it sends command lines (and `_` hidden commands, as Taskwarrior has) and draws what comes
    back. It never reaches into the replica and never re-implements layer 1.
@@ -150,6 +150,15 @@ needs another; only the web app's own view logic (`web/src/lib`: task commands, 
 with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) opens a live preview of the screens. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour. Check it with
 `cd app && ./gradlew :shared:testDebugUnitTest :androidApp:assembleDebug` (build the engine for the host first:
 `cargo build --profile android -p tc-android`); CI runs the same on the `kotlin-app` job. It has no formatter or linter in CI yet.
+
+## The terminal app
+
+`crates/tui` (`meghnaad-tui`, ratatui) is a front end whose backend is the real `task` 3.5.0, not the engine: every read
+and change is a `task` command line (`_show`, `<filter> export <report>`, `_projects`, …) on the desktop's own data. It
+links `tc-core` only for helpers `task` has no command for (completion, the add preview, report cells) and adds nothing to
+`tc-core` for itself; its glue (export to rows, chains, task commands, the Projects and Tags lists, review, reminders)
+lives in the crate, ported with the web app's tests. It never reaches the bucket: `settings.json` is read and written in
+place in `$MEGHNAAD_CONFIG_DIR` (else `~/.config/meghnaad`) and nothing else there is touched. Its tests that run `task` use a scratch `TASKRC` and `TASKDATA` and skip where `task` 3.5.0 is missing.
 
 ## Running it
 

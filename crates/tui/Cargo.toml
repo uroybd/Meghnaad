@@ -1,0 +1,21 @@
+[package]
+name = "meghnaad-tui"
+version = "0.1.0"
+description = "Meghnaad in the terminal: a TUI around the real task 3.5.0 CLI, with tc-core's helpers for completion, the add preview and report cells"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "meghnaad-tui"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tc-core = { path = "../tc-core" }

@@ -1,6 +1,7 @@
 # Meghnaad
 
-[Taskwarrior 3](https://taskwarrior.org) in your browser and on your phone. Meghnaad is another **replica** of your
+[Taskwarrior 3](https://taskwarrior.org) in your browser and on your phone, and [around `task` in your
+terminal](terminal.md). Meghnaad is another **replica** of your
 Taskwarrior data: the `task` CLI keeps syncing to your bucket as it does today, and Meghnaad reads and writes the same
 bucket. A task added here shows up on your laptop after `task sync`, and the other way round. Behaviour follows
 Taskwarrior **3.5.0**, command for command, and where it does not, that is a bug.

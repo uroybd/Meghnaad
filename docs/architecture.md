@@ -39,12 +39,14 @@ flowchart TB
     direction TB
     sh["shell aliases<br/>alias fail='task done outcome:fail'"]
     tsh["tasksh<br/>review"]
+    tui["meghnaad-tui (terminal)<br/>runs task, completes with tc-core"]
     cli["task CLI (C++)"]
     tcd["TaskChampion (Rust)"]
     db[("SQLite replica<br/>~/.task")]
     rc["~/.taskrc"]
     sh -.-> cli
     tsh -.-> cli
+    tui --> cli
     cli --> tcd --> db
     rc -.-> cli
   end
@@ -224,6 +226,16 @@ hooks the script defines, and it picks the hook to run from the name it was call
   `secret(name)` is the environment variable of that exact name). The clock is the computer's zone and the taskrc's
   `dateformat`, `date.iso` and `weekstart`.
 - Nothing about Taskwarrior is decided here.
+
+`crates/tui` is `meghnaad-tui`, a terminal front end whose backend is the real `task` rather than the engine. It runs
+`task` for everything: `_show` for the settings (read by `tc_core::taskrc`, so the helpers get the same `Config` the
+engine would), `<filter> export <report>` for a report, `_projects`, `_tags` and the pending tasks for completion, and
+every change as a command line, captured (a quick action, a console line, `summary`, `calendar`, `burndown`) or run on
+the terminal itself when `task` would ask. It calls `tc-core` only where `task` has no command: `complete`, `preview`
+and `cells`. Turning `export` into the rows `cells` reads, the zone offsets, chains, task commands, the Projects and Tags
+lists, tasksh's review and the reminders are its own (layer 2, ported from the web app with their tests). It keeps its
+`settings.json` in its config folder and never reaches the bucket. Nothing of it is in the browser engine or
+the Worker. See [the terminal app](terminal.md).
 
 ## `tc-core`: the engine
 

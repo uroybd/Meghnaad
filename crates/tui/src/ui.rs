@@ -1,0 +1,779 @@
+//! Drawing, laid out as the web app is: the top bar (pages, the timer, the context, review and reminders), the reports
+//! down the side, the page, and the command line at the bottom with its completion menu (and, for `add`, the task it
+//! will make). Each part is a rounded pane titled in its border, in the accent where the keys go. What `task` prints
+//! itself (`info`, `summary`, `calendar`, `burndown`, the console) is drawn as it coloured it.
+
+use crate::ansi;
+use crate::app::{now, App, Focus, Mode, Page, Prompt, PromptKind, SettingsView};
+use crate::model::local_offset;
+use crate::remind::format_seconds;
+use crate::review::Phase;
+use crate::theme;
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Modifier, Style, Stylize};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{
+    Block, BorderType, Cell as TCell, Clear, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph, Row,
+    Table, TableState, Wrap,
+};
+use ratatui::Frame;
+use serde_json::Value;
+use tc_core::cells::Cell;
+use tc_core::helpers::format_date;
+
+/// The side's width, and the narrowest terminal that shows it.
+const SIDE: u16 = 20;
+const SIDE_FROM: u16 = 72;
+
+const GLOBAL_KEYS: &str = "1-8 pages · Tab reports · : command";
+/// Kept in sight on the right however many keys the page has.
+const ALWAYS_KEYS: &str = "? all keys · q quit";
+
+/// The areas of the screen: top bar, side (if it fits), page, status line, command line.
+pub fn areas(area: Rect) -> [Rect; 5] {
+    let [top, middle, status, dock] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+    let side = if area.width >= SIDE_FROM { SIDE } else { 0 };
+    let [side, main] = Layout::horizontal([Constraint::Length(side), Constraint::Fill(1)]).areas(middle);
+    [top, side, main, status, dock]
+}
+
+/// The room inside the page's pane and its padding, the width and height `task` is told to write for.
+pub fn page_size(area: Rect) -> (u16, u16) {
+    let main = areas(area)[2];
+    (main.width.saturating_sub(4), main.height.saturating_sub(2))
+}
+
+/// A pane holding text `task` wrote, with a column of room on each side.
+fn text_pane(title: &str, focused: bool) -> Block<'static> {
+    pane(title, focused).padding(Padding::horizontal(1))
+}
+
+/// The mark before the row or item chosen.
+const MARK: &str = "▸ ";
+
+/// A pane: rounded, its title in the top border, in the accent when the keys go to it.
+fn pane(title: &str, focused: bool) -> Block<'static> {
+    let style = if focused { theme::accent() } else { Style::new().bold() };
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme::border(focused))
+        .title(Span::styled(format!(" {title} "), style))
+}
+
+/// A note in a pane's border, on the right.
+fn note(text: &str) -> Line<'static> {
+    Line::from(Span::from(format!(" {text} ")).dim()).right_aligned()
+}
+
+/// A box over the page: a pane with the keys.
+fn boxed(title: String) -> Block<'static> {
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(theme::border(true))
+        .padding(Padding::horizontal(1))
+        .title(Span::styled(title, theme::accent()))
+}
+
+/// A line of keys, `key what · key what`, with each key in the accent.
+fn hints(text: &str) -> Line<'static> {
+    let mut spans = vec![Span::from(" ")];
+    for (i, item) in text.split(" · ").enumerate() {
+        if i > 0 {
+            spans.push(Span::from("  "));
+        }
+        let (key, what) = item.split_once(' ').unwrap_or((item, ""));
+        spans.push(Span::styled(key.to_owned(), theme::accent()));
+        if !what.is_empty() {
+            spans.push(Span::from(format!(" {what}")).dim());
+        }
+    }
+    Line::from(spans)
+}
+
+pub fn draw(f: &mut Frame, app: &App) {
+    let [top, side, main, status, dock] = areas(f.area());
+    top_bar(f, app, top);
+    if side.width > 0 {
+        sidebar(f, app, side);
+    }
+    page(f, app, main);
+    if let Some(r) = &app.review {
+        review(f, r, main);
+    }
+    match &app.mode {
+        Mode::Info { text, scroll } => {
+            f.render_widget(Clear, main);
+            f.render_widget(
+                Paragraph::new(ansi::lines(text))
+                    .scroll((*scroll, 0))
+                    .block(text_pane("info", true).title_bottom(note("j/k scroll · any other key closes"))),
+                main,
+            );
+        }
+        Mode::Context { options, sel } => context(f, options, *sel, main),
+        Mode::Commands { uuid, query, sel } => commands(f, app, uuid, query, *sel, main),
+        _ => {}
+    }
+    if !app.status.is_empty() {
+        f.render_widget(
+            Line::from(vec![
+                Span::styled(" » ", theme::accent()),
+                Span::from(app.status.as_str()),
+            ]),
+            status,
+        );
+    }
+    match &app.mode {
+        Mode::Prompt(p) if p.kind.popup() => {
+            popup(f, app, p, main);
+            f.render_widget(
+                hints("Tab complete · ↵ save · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"),
+                dock,
+            );
+        }
+        Mode::Prompt(p) => prompt(f, p, main, dock),
+        Mode::Commands { .. } => {
+            f.render_widget(hints("a-z narrow · ↑/↓ choose · ↵ run on the task · Esc cancel"), dock);
+        }
+        _ => {
+            let keys = if app.review.is_some() {
+                hints("v the review's keys are on its card")
+            } else if app.focus == Focus::Sidebar {
+                hints(&format!("↵ open the report · . hidden · Tab back · {GLOBAL_KEYS}"))
+            } else {
+                hints(&format!("{} · {GLOBAL_KEYS}", app.page.keys()))
+            };
+            let always = hints(ALWAYS_KEYS);
+            let [l, r] = Layout::horizontal([
+                Constraint::Fill(1),
+                Constraint::Length(u16::try_from(always.width() + 3).unwrap_or(0)),
+            ])
+            .areas(dock);
+            f.render_widget(keys, l);
+            f.render_widget(always, r);
+        }
+    }
+}
+
+fn top_bar(f: &mut Frame, app: &App, area: Rect) {
+    let mut right: Vec<Span> = Vec::new();
+    let active = app.active();
+    if let Some((_, desc, start)) = active.first() {
+        // The task's name only where there is room for it.
+        let short: String = if area.width >= 120 {
+            desc.chars().take(16).chain([' ']).collect()
+        } else {
+            String::new()
+        };
+        let more = if active.len() > 1 {
+            format!(" +{}", active.len() - 1)
+        } else {
+            String::new()
+        };
+        right.push(Span::from(format!(" ● {short}{}{more} ", format_seconds(now() - start))).green());
+    }
+    right.push(match &app.cfg.active_context {
+        Some(c) => Span::styled(format!(" ◎ {c} "), theme::accent()),
+        None => Span::from(" ◎ none ").dim(),
+    });
+    right.push(Span::from(" v review ").dim());
+    right.push(if app.reminders {
+        Span::from(format!(" ♪ {} ", app.notices))
+    } else {
+        Span::from(" ♪ off ").dim()
+    });
+    let width: usize = right.iter().map(|s| s.content.chars().count()).sum();
+    // The pages by name when they fit beside the chips, else by number and the first letters, else by number alone.
+    let room = usize::from(area.width).saturating_sub(width + 12);
+    let fits = |letters: usize| {
+        Page::ALL
+            .iter()
+            .map(|p| p.title().len().min(letters) + 4)
+            .sum::<usize>()
+            <= room
+    };
+    let letters = [usize::MAX, 3].into_iter().find(|&n| fits(n)).unwrap_or(0);
+    let mut left = vec![Span::styled(" ◆ Meghnaad ", theme::accent())];
+    for (i, p) in Page::ALL.iter().enumerate() {
+        let title: String = p.title().chars().take(letters).collect();
+        let tab = Span::from(if title.is_empty() {
+            format!(" {} ", i + 1)
+        } else {
+            format!(" {} {title} ", i + 1)
+        });
+        left.push(if *p == app.page {
+            tab.style(theme::selected().add_modifier(Modifier::BOLD))
+        } else {
+            tab.dim()
+        });
+    }
+    let [l, r] = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(u16::try_from(width).unwrap_or(0)),
+    ])
+    .areas(area);
+    f.render_widget(Line::from(left), l);
+    f.render_widget(Line::from(right), r);
+}
+
+fn sidebar(f: &mut Frame, app: &App, area: Rect) {
+    let names = app.report_names();
+    let items: Vec<ListItem> = names
+        .iter()
+        .map(|n| {
+            let item = ListItem::new(*n);
+            if *n == app.report_name {
+                item.style(theme::accent())
+            } else {
+                item
+            }
+        })
+        .collect();
+    let focused = app.focus == Focus::Sidebar;
+    let mut block = pane("Reports", focused);
+    if focused {
+        block = block.title_bottom(note(&format!("{} of {}", app.sidebar + 1, names.len())));
+    }
+    let list = List::new(items)
+        .block(block)
+        .highlight_style(theme::selected())
+        .highlight_symbol(MARK)
+        .highlight_spacing(HighlightSpacing::Always);
+    let sel = focused.then_some(app.sidebar);
+    f.render_stateful_widget(list, area, &mut ListState::default().with_selected(sel));
+}
+
+fn page(f: &mut Frame, app: &App, area: Rect) {
+    match app.page {
+        Page::Tasks => tasks(f, app, area),
+        Page::Projects | Page::Tags => items(f, app, area),
+        Page::Summary | Page::Calendar | Page::Burndown => {
+            let (title, keys) = match app.page {
+                Page::Burndown => (format!("burndown.{}", app.burndown), "d · w · m"),
+                Page::Calendar => (app.page.title().to_lowercase(), "h/l month"),
+                p => (p.title().to_lowercase(), ""),
+            };
+            let mut block = text_pane(&title, app.focus == Focus::Main);
+            if !keys.is_empty() {
+                block = block.title_top(note(keys));
+            }
+            f.render_widget(
+                Paragraph::new(app.output.clone()).scroll((app.scroll, 0)).block(block),
+                area,
+            );
+        }
+        Page::Console => {
+            let shown = usize::from(area.height.saturating_sub(2));
+            let end = app.log.len().saturating_sub(usize::from(app.log_back));
+            let start = end.saturating_sub(shown);
+            let lines: Vec<Line> = app.log.get(start..end).unwrap_or_default().to_vec();
+            let body = if lines.is_empty() {
+                vec![Line::from("Type : and a command line; what task prints is kept here.").dim()]
+            } else {
+                lines
+            };
+            let block =
+                text_pane("console", app.focus == Focus::Main).title_top(note(&format!("{} lines", app.log.len())));
+            f.render_widget(Paragraph::new(body).block(block), area);
+        }
+        Page::Settings => settings(f, app, area),
+    }
+}
+
+fn tasks(f: &mut Frame, app: &App, area: Rect) {
+    let focused = app.focus == Focus::Main;
+    let count = app.report.uuids.len();
+    let mut block =
+        pane(&app.report.name, focused).title_top(note(&format!("{count} task{}", if count == 1 { "" } else { "s" })));
+    if !app.filter.is_empty() {
+        block = block.title(Line::from(vec![
+            Span::from("[ ").dim(),
+            Span::from(app.filter.clone()),
+            Span::from(" ] ").dim(),
+        ]));
+    }
+    if count > 0 {
+        block = block.title_bottom(note(&format!("{} of {count}", app.selected + 1)));
+    }
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    // A column's room on the right too, so the last one does not touch the border.
+    let body = Rect {
+        width: inner.width.saturating_sub(1),
+        ..inner
+    };
+    if count == 0 {
+        f.render_widget(Paragraph::new(" No task matches.").dim(), body);
+        return;
+    }
+    table(f, app, body);
+}
+
+fn items(f: &mut Frame, app: &App, area: Rect) {
+    let list = app.items();
+    let widest = list
+        .iter()
+        .map(|i| 2 * i.depth + i.label.chars().count())
+        .max()
+        .unwrap_or(0);
+    let rows: Vec<ListItem> = list
+        .iter()
+        .map(|i| {
+            let name = format!("{}{}", "  ".repeat(i.depth), i.label);
+            let mut spans = vec![
+                Span::from(format!("{name:<widest$}")),
+                Span::from(format!("  {:>3}", i.total)).dim(),
+            ];
+            if i.overdue > 0 {
+                spans.push(Span::from(format!("  {} overdue", i.overdue)).red());
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+    let mut block = pane(&app.page.title().to_lowercase(), app.focus == Focus::Main);
+    if list.is_empty() {
+        f.render_widget(Paragraph::new(" Nothing pending.").dim().block(block), area);
+        return;
+    }
+    block = block.title_bottom(note(&format!("{} of {}", app.list_sel + 1, list.len())));
+    let widget = List::new(rows)
+        .block(block)
+        .highlight_style(theme::selected())
+        .highlight_symbol(MARK)
+        .highlight_spacing(HighlightSpacing::Always);
+    f.render_stateful_widget(
+        widget,
+        area,
+        &mut ListState::default().with_selected(Some(app.list_sel)),
+    );
+}
+
+fn settings(f: &mut Frame, app: &App, area: Rect) {
+    if app.settings_view == SettingsView::Taskrc {
+        let lines: Vec<Line> = app.taskrc.iter().map(|l| Line::from(l.as_str())).collect();
+        f.render_widget(
+            Paragraph::new(lines).scroll((app.scroll, 0)).block(
+                text_pane("taskrc, as task reads it", app.focus == Focus::Main)
+                    .title_top(note("t task commands"))
+                    .title_bottom(note("sync and credentials left out")),
+            ),
+            area,
+        );
+        return;
+    }
+    let path = crate::settings::path().map_or_else(|| "no config folder".to_owned(), |p| p.display().to_string());
+    let block = pane("Task commands", app.focus == Focus::Main)
+        .title_top(note("t taskrc"))
+        .title_bottom(note(&path));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let [head, _, body] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    f.render_widget(
+        match &app.settings_problem {
+            Some(p) => Line::from(format!(" {p}")).red(),
+            None => Line::from(" A name typed at the command line runs what it stands for (`3 fail`).").dim(),
+        },
+        head,
+    );
+    let rows: Vec<ListItem> = app
+        .settings
+        .task_commands
+        .iter()
+        .map(|c| {
+            ListItem::new(Line::from(vec![
+                Span::from(format!("{:<14}", c.name)).bold(),
+                Span::from(c.command.clone()),
+            ]))
+        })
+        .collect();
+    if rows.is_empty() {
+        f.render_widget(Paragraph::new(" None yet: a adds one.").dim(), body);
+        return;
+    }
+    f.render_stateful_widget(
+        List::new(rows)
+            .highlight_style(theme::selected())
+            .highlight_symbol(MARK)
+            .highlight_spacing(HighlightSpacing::Always),
+        body,
+        &mut ListState::default().with_selected(Some(app.settings_sel)),
+    );
+}
+
+fn review(f: &mut Frame, r: &crate::review::Review, area: Rect) {
+    let title = match r.phase {
+        Phase::Running | Phase::Modifying => format!(" review · task {} of {} ", r.current + 1, r.total),
+        Phase::Setup(_) => " review · setup ".to_owned(),
+        Phase::Done => " review ".to_owned(),
+    };
+    let mut foot: Vec<Line> = Vec::new();
+    if !r.message.is_empty() {
+        foot.push(Line::from(r.message.clone()).bold());
+    }
+    foot.push(Line::from(r.hint()).dim());
+    let block = boxed(title);
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    // The menu stays in sight under the task, however long its `info` is.
+    let h = u16::try_from(foot.len()).unwrap_or(1);
+    let [body, _, menu] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(1), Constraint::Length(h)]).areas(inner);
+    if matches!(r.phase, Phase::Running | Phase::Modifying) {
+        f.render_widget(Paragraph::new(ansi::lines(&r.info)), body);
+    }
+    f.render_widget(Paragraph::new(foot).wrap(Wrap { trim: false }), menu);
+}
+
+/// Your task commands, to run one on the selected task.
+fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main: Rect) {
+    let list = app.matching_commands(query);
+    let id = pending(app, uuid)
+        .and_then(|t| t.get("id").and_then(Value::as_u64))
+        .filter(|&i| i > 0)
+        .map(|i| format!(" {i}"))
+        .unwrap_or_default();
+    let desc = pending(app, uuid)
+        .and_then(|t| t.get("description").and_then(Value::as_str))
+        .unwrap_or("");
+    let width = main.width.saturating_sub(4).min(72);
+    let height = u16::try_from(list.len().max(1) + 4).unwrap_or(6).min(main.height);
+    let area = Rect::new(
+        main.x + (main.width - width) / 2,
+        main.y + main.height.saturating_sub(height) / 3,
+        width,
+        height,
+    );
+    let block = boxed(format!(" task commands · task{id} ")).title_bottom(Span::from(format!(" {desc} ")).dim());
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    let [line, _, rest] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    f.render_widget(
+        Line::from(vec![Span::styled("› ", theme::accent()), Span::from(query)]),
+        line,
+    );
+    let caret = u16::try_from(query.chars().count()).unwrap_or(0);
+    f.set_cursor_position(((line.x + 2 + caret).min(line.x + line.width), line.y));
+    if list.is_empty() {
+        f.render_widget(Paragraph::new("No task command matches.").dim(), rest);
+        return;
+    }
+    let widest = list.iter().map(|c| c.name.chars().count()).max().unwrap_or(0);
+    let items: Vec<ListItem> = list
+        .iter()
+        .map(|c| {
+            ListItem::new(Line::from(vec![
+                Span::from(format!("{:<widest$}  ", c.name)).bold(),
+                Span::from(c.command.clone()).dim(),
+            ]))
+        })
+        .collect();
+    f.render_stateful_widget(
+        List::new(items)
+            .highlight_style(theme::selected())
+            .highlight_symbol(MARK)
+            .highlight_spacing(HighlightSpacing::Always),
+        rest,
+        &mut ListState::default().with_selected(Some(sel)),
+    );
+}
+
+fn context(f: &mut Frame, options: &[String], sel: usize, main: Rect) {
+    let h = u16::try_from(options.len() + 2).unwrap_or(3).min(main.height);
+    let w = options.iter().map(|o| o.chars().count()).max().unwrap_or(0).max(9) + 6 + MARK.chars().count();
+    let area = Rect::new(
+        main.x + main.width.saturating_sub(u16::try_from(w).unwrap_or(20)),
+        main.y,
+        u16::try_from(w).unwrap_or(20).min(main.width),
+        h,
+    );
+    let items: Vec<ListItem> = options.iter().map(|o| ListItem::new(o.as_str())).collect();
+    f.render_widget(Clear, area);
+    f.render_stateful_widget(
+        List::new(items)
+            .block(boxed(" context ".to_owned()))
+            .highlight_style(theme::selected())
+            .highlight_symbol(MARK)
+            .highlight_spacing(HighlightSpacing::Always),
+        area,
+        &mut ListState::default().with_selected(Some(sel)),
+    );
+}
+
+/// A cell's lines: its text, then its notes (annotations) under it, as Taskwarrior writes a description.
+fn lines(c: &Cell) -> Vec<Line<'static>> {
+    let style = match c.cls.as_deref() {
+        Some(cls) if cls.split(' ').any(|x| x == "dim") => Style::default().add_modifier(Modifier::DIM),
+        _ => Style::default(),
+    };
+    let mut out: Vec<Line<'static>> = c.text.lines().map(|l| Line::styled(l.to_owned(), style)).collect();
+    if out.is_empty() {
+        out.push(Line::default());
+    }
+    for n in c.notes.iter().flatten() {
+        out.push(Line::from(format!("  {} {}", n.at, n.text)).dim());
+    }
+    out
+}
+
+fn table(f: &mut Frame, app: &App, area: Rect) {
+    let r = &app.report;
+    let widths: Vec<Constraint> = r
+        .labels
+        .iter()
+        .enumerate()
+        .map(|(j, label)| {
+            if label == "Description" {
+                return Constraint::Fill(1);
+            }
+            let widest = r
+                .cells
+                .iter()
+                .filter_map(|row| row.get(j))
+                .map(|c| c.text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
+                .chain(std::iter::once(label.chars().count()))
+                .max()
+                .unwrap_or(0);
+            Constraint::Length(u16::try_from(widest).unwrap_or(u16::MAX))
+        })
+        .collect();
+    let rows = r.cells.iter().map(|row| {
+        let cells: Vec<Vec<Line<'static>>> = row.iter().map(lines).collect();
+        let height = cells.iter().map(Vec::len).max().unwrap_or(1);
+        Row::new(cells.into_iter().map(TCell::from)).height(u16::try_from(height).unwrap_or(1))
+    });
+    let header = Row::new(r.labels.iter().map(|l| TCell::from(l.as_str())))
+        .style(Style::default().add_modifier(Modifier::UNDERLINED | Modifier::BOLD));
+    let t = Table::new(rows, widths)
+        .header(header)
+        .column_spacing(2)
+        .row_highlight_style(theme::selected())
+        .highlight_symbol(MARK)
+        .highlight_spacing(HighlightSpacing::Always);
+    let sel = (app.focus == Focus::Main).then_some(app.selected);
+    f.render_stateful_widget(t, area, &mut TableState::default().with_selected(sel));
+}
+
+/// A date of the add preview, in `dateformat`.
+fn date(app: &App, ts: i64) -> String {
+    let pattern = app.cfg.settings.get("dateformat").cloned().unwrap_or_default();
+    format_date(&pattern, ts, local_offset(ts), app.cfg.week_starts_monday())
+}
+
+/// A line typed at the bottom: the command line, the filter, a report's name.
+fn prompt(f: &mut Frame, p: &Prompt, body: Rect, foot: Rect) {
+    let label = format!("{} ", p.kind.label());
+    let width = u16::try_from(label.chars().count()).unwrap_or(0);
+    f.render_widget(
+        Line::from(vec![
+            Span::styled(label, theme::accent()),
+            Span::from(p.input.line.as_str()),
+        ]),
+        foot,
+    );
+    let caret = u16::try_from(p.input.caret_chars()).unwrap_or(0);
+    f.set_cursor_position((foot.x + width + caret, foot.y));
+    if let Some(m) = &p.completer.menu {
+        let x = (foot.x + width).min(body.x + body.width.saturating_sub(MENU_WIDTH));
+        let h = menu_height(m).min(body.height);
+        menu(
+            f,
+            m,
+            Rect::new(x, body.y + body.height - h, MENU_WIDTH.min(body.width), h),
+        );
+    }
+}
+
+const MENU_WIDTH: u16 = 48;
+
+fn menu_height(m: &crate::completer::Menu) -> u16 {
+    u16::try_from(m.options.len().min(10) + 2).unwrap_or(3)
+}
+
+/// The completion menu, with the option chosen in the accent.
+fn menu(f: &mut Frame, m: &crate::completer::Menu, area: Rect) {
+    let shown = usize::from(area.height.saturating_sub(2));
+    let items: Vec<ListItem> = m
+        .options
+        .iter()
+        .enumerate()
+        .skip(m.sel.unwrap_or(0).saturating_sub(shown.saturating_sub(1)))
+        .take(shown)
+        .map(|(i, o)| {
+            let line = Line::from(vec![
+                Span::from(o.value.clone()),
+                Span::from(o.hint.as_deref().map(|h| format!("  {h}")).unwrap_or_default()).dim(),
+            ]);
+            let item = ListItem::new(line);
+            if m.sel == Some(i) {
+                item.style(theme::selected())
+            } else {
+                item
+            }
+        })
+        .collect();
+    f.render_widget(Clear, area);
+    f.render_widget(
+        List::new(items).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(theme::border(true)),
+        ),
+        area,
+    );
+}
+
+/// A field of a card: its name, right-aligned, then its value.
+fn field(name: &str, value: String) -> Line<'static> {
+    Line::from(vec![Span::from(format!("{name:>10}  ")).dim(), Span::from(value)])
+}
+
+/// What `add <line>` will make, as the card under the line shows it.
+fn add_card(app: &App, line: &str) -> Vec<Line<'static>> {
+    if line.trim().is_empty() {
+        return vec![Line::from("A description, then project: tags +x due: and the rest, as after task add.").dim()];
+    }
+    let pv = app.preview(line.trim());
+    let mut text = vec![Line::from(pv.description.clone()).bold()];
+    if let Some(project) = &pv.project {
+        text.push(field("project", project.clone()));
+    }
+    if let Some(priority) = &pv.priority {
+        text.push(field("priority", priority.clone()));
+    }
+    if !pv.tags.is_empty() {
+        text.push(field("tags", pv.tags.join(" ")));
+    }
+    for (name, ts) in &pv.dates {
+        text.push(field(name, date(app, *ts)));
+    }
+    if let Some(recur) = &pv.recur {
+        text.push(field("recur", tc_core::helpers::describe_recur(recur)));
+    }
+    if !pv.depends.is_empty() {
+        text.push(field("depends", pv.depends.join(" ")));
+    }
+    for (name, v) in &pv.udas {
+        text.push(field(name, v.clone()));
+    }
+    for e in &pv.errors {
+        text.push(Line::from(e.clone()).red());
+    }
+    text
+}
+
+/// The pending task with this uuid, as `export` wrote it.
+fn pending<'a>(app: &'a App, uuid: &str) -> Option<&'a Value> {
+    app.pending
+        .iter()
+        .find(|t| t.get("uuid").and_then(Value::as_str) == Some(uuid))
+}
+
+/// The task being changed, as it is now.
+fn task_card(app: &App, t: &Value) -> Vec<Line<'static>> {
+    let s = |k: &str| t.get(k).and_then(Value::as_str).map(str::to_owned);
+    let mut text = vec![Line::from(s("description").unwrap_or_default()).bold()];
+    for k in ["project", "priority"] {
+        if let Some(v) = s(k) {
+            text.push(field(k, v));
+        }
+    }
+    let tags: Vec<&str> = t
+        .get("tags")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if !tags.is_empty() {
+        text.push(field("tags", tags.join(" ")));
+    }
+    for k in ["due", "scheduled", "wait", "until"] {
+        if let Some(ts) = s(k).as_deref().and_then(crate::model::parse_date) {
+            text.push(field(k, date(app, ts)));
+        }
+    }
+    if let Some(r) = s("recur") {
+        text.push(field("recur", r));
+    }
+    let notes = t.get("annotations").and_then(Value::as_array).map_or(0, Vec::len);
+    if notes > 0 {
+        text.push(field("notes", notes.to_string()));
+    }
+    text
+}
+
+/// Adding, changing or annotating a task, or a task command, in a box over the page: the line, then what it is about.
+fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
+    let uuid = match &p.kind {
+        PromptKind::Modify(u) | PromptKind::Annotate(u) => Some(u.clone()),
+        PromptKind::ReviewModify => app.review.as_ref().and_then(crate::review::Review::uuid),
+        _ => None,
+    };
+    let task = uuid.as_deref().and_then(|u| pending(app, u));
+    let id = task
+        .and_then(|t| t.get("id").and_then(Value::as_u64))
+        .filter(|&i| i > 0)
+        .map(|i| format!(" {i}"))
+        .unwrap_or_default();
+    let (title, card) = match &p.kind {
+        PromptKind::Add => (" add a task ".to_owned(), add_card(app, &p.input.line)),
+        PromptKind::Modify(_) | PromptKind::ReviewModify => (
+            format!(" modify task{id} "),
+            task.map(|t| task_card(app, t)).unwrap_or_default(),
+        ),
+        PromptKind::Annotate(_) => (
+            format!(" annotate task{id} "),
+            task.map(|t| task_card(app, t)).unwrap_or_default(),
+        ),
+        PromptKind::CommandName(_) => (
+            " task command: its name ".to_owned(),
+            vec![Line::from("One word, typed at the command line in place of what it stands for.").dim()],
+        ),
+        PromptKind::CommandLine(_, name) => (
+            format!(" task command: what {name} stands for "),
+            vec![Line::from("A command line without task in front; && || ; chain more than one.").dim()],
+        ),
+        _ => (String::new(), Vec::new()),
+    };
+    let width = main.width.saturating_sub(4).min(84);
+    let height = u16::try_from(card.len() + 4).unwrap_or(6).min(main.height);
+    let area = Rect::new(
+        main.x + (main.width - width) / 2,
+        main.y + main.height.saturating_sub(height) / 3,
+        width,
+        height,
+    );
+    let block = boxed(title);
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    let [line, _, rest] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    f.render_widget(
+        Line::from(vec![
+            Span::styled("› ", theme::accent()),
+            Span::from(p.input.line.as_str()),
+        ]),
+        line,
+    );
+    let caret = u16::try_from(p.input.caret_chars()).unwrap_or(0);
+    f.set_cursor_position(((line.x + 2 + caret).min(line.x + line.width), line.y));
+    f.render_widget(Paragraph::new(card).wrap(Wrap { trim: false }), rest);
+    if let Some(m) = &p.completer.menu {
+        // A drop-down under the line, from the word being completed.
+        let x = (line.x + 2 + caret.saturating_sub(4)).min(main.x + main.width.saturating_sub(MENU_WIDTH));
+        let below = main.y + main.height - (line.y + 1);
+        let h = menu_height(m).min(below);
+        menu(f, m, Rect::new(x, line.y + 1, MENU_WIDTH.min(main.width), h));
+    }
+}

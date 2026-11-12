@@ -1,0 +1,208 @@
+//! The app's own settings (`settings.json`: task commands, and boards and appearance for the other front ends), kept
+//! on this machine only, in the config folder ([`dir`]). Syncing is the real `task`'s business and its settings (some of
+//! them in the environment) are its own, so this app never reaches the bucket; copy the file from the web app's Settings
+//! to share the same task commands. The app reads and writes `settings.json` in that folder and touches nothing else
+//! there, so a dotfiles manager (stow and the like) can own the folder. It writes the file in place, so a symlink stays a
+//! symlink.
+
+use crate::chain::split_chain;
+use crate::commands::TaskCommand;
+use serde_json::{Map, Value};
+use std::ffi::OsString;
+use std::path::PathBuf;
+
+/// The variable that moves the config folder.
+pub const DIR_VAR: &str = "MEGHNAAD_CONFIG_DIR";
+
+/// The config folder: `$MEGHNAAD_CONFIG_DIR`, else `$XDG_CONFIG_HOME/meghnaad`, else `~/.config/meghnaad`.
+pub fn dir() -> Option<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    dir_from(var(DIR_VAR), var("XDG_CONFIG_HOME"), var("HOME"))
+}
+
+fn dir_from(own: Option<OsString>, xdg: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
+    own.map(PathBuf::from).or_else(|| {
+        xdg.map(PathBuf::from)
+            .or_else(|| home.map(|h| PathBuf::from(h).join(".config")))
+            .map(|d| d.join("meghnaad"))
+    })
+}
+
+/// The settings file in the config folder.
+pub fn path() -> Option<PathBuf> {
+    dir().map(|d| d.join("settings.json"))
+}
+
+/// What the TUI reads of `settings.json`.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AppSettings {
+    pub task_commands: Vec<TaskCommand>,
+}
+
+impl AppSettings {
+    /// The settings in `text`.
+    ///
+    /// # Errors
+    ///
+    /// The text is not a settings object (the same check the web app and the phone make, then what it says).
+    pub fn parse(text: &str) -> Result<AppSettings, String> {
+        tc_core::appsettings::check(text)?;
+        serde_json::from_str(text).map_err(|e| format!("settings.json: {e}"))
+    }
+
+    /// The settings kept on this machine; none when there is no file. A file that is not settings is said, and read
+    /// as none.
+    pub fn load() -> (AppSettings, Option<String>) {
+        let Some(path) = path() else {
+            return (AppSettings::default(), None);
+        };
+        match std::fs::read_to_string(&path) {
+            Err(_) => (AppSettings::default(), None),
+            Ok(text) => match AppSettings::parse(&text) {
+                Ok(s) => (s, None),
+                Err(e) => (AppSettings::default(), Some(format!("{}: {e}", path.display()))),
+            },
+        }
+    }
+}
+
+/// Why `name` cannot name a task command, or `None` (the web app's rules).
+pub fn name_problem(name: &str) -> Option<String> {
+    if name.is_empty() {
+        return Some("needs a name".into());
+    }
+    if name.chars().any(char::is_whitespace) {
+        return Some("a name is one word (no spaces)".into());
+    }
+    if name.starts_with(['+', '-', '/', '(']) || name.contains([':', '=', '\'', '"']) {
+        return Some("a name can’t start with + - / ( or contain : = or quotes".into());
+    }
+    if name.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.') {
+        return Some("a name can’t be a number".into());
+    }
+    if name == "task" || name == "--" {
+        return Some(format!("‘{name}’ can’t be a name"));
+    }
+    None
+}
+
+/// Why `command` is not a command line (`done &&` has nothing after the `&&`), or `None`.
+pub fn command_problem(command: &str) -> Option<String> {
+    if command.trim().is_empty() {
+        return Some("needs a command".into());
+    }
+    split_chain(command).err()
+}
+
+/// `text` (the file as it is, or empty) with `taskCommands` replaced and every other key as it was.
+///
+/// # Errors
+///
+/// The file is there but is not settings: it is left alone rather than replaced.
+pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, String> {
+    let mut raw: Map<String, Value> = if text.trim().is_empty() {
+        Map::new()
+    } else {
+        tc_core::appsettings::check(text)?;
+        serde_json::from_str(text).map_err(|e| e.to_string())?
+    };
+    raw.remove("taskCommands");
+    /// The other keys, then the commands, each written `name`, `command` (and `icon`) as the web app writes them.
+    #[derive(serde::Serialize)]
+    struct Out<'a> {
+        #[serde(flatten)]
+        rest: Map<String, Value>,
+        #[serde(rename = "taskCommands", skip_serializing_if = "<[TaskCommand]>::is_empty")]
+        commands: &'a [TaskCommand],
+    }
+    let out = serde_json::to_string_pretty(&Out { rest: raw, commands }).map_err(|e| e.to_string())? + "\n";
+    tc_core::appsettings::check(&out)?;
+    Ok(out)
+}
+
+/// Save the task commands to `settings.json`, keeping the rest of the file.
+///
+/// # Errors
+///
+/// There is no config folder, the file is not settings, or it could not be written.
+pub fn save_commands(commands: &[TaskCommand]) -> Result<(), String> {
+    let path = path().ok_or("No config folder: set MEGHNAAD_CONFIG_DIR or HOME.")?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let out = with_commands(&text, commands).map_err(|e| format!("{}: {e}", path.display()))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    }
+    std::fs::write(&path, out).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_folder_is_the_variable_then_xdg_then_home() {
+        let s = |v: &str| Some(OsString::from(v));
+        assert_eq!(
+            dir_from(s("/dots/meghnaad"), s("/x"), s("/h")),
+            Some(PathBuf::from("/dots/meghnaad"))
+        );
+        assert_eq!(dir_from(None, s("/x"), s("/h")), Some(PathBuf::from("/x/meghnaad")));
+        assert_eq!(
+            dir_from(None, None, s("/h")),
+            Some(PathBuf::from("/h/.config/meghnaad"))
+        );
+        assert_eq!(dir_from(None, None, None), None);
+    }
+
+    #[test]
+    fn task_commands_are_read_and_anything_else_is_refused() {
+        let s = AppSettings::parse(
+            r#"{ "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "x" } ], "boards": [] }"#,
+        )
+        .unwrap();
+        assert_eq!(s.task_commands.len(), 1);
+        assert_eq!(s.task_commands[0].command, "done outcome:fail");
+        assert!(AppSettings::parse("{}").unwrap().task_commands.is_empty());
+        assert!(AppSettings::parse("[]").is_err());
+        assert!(AppSettings::parse("{").is_err());
+        assert!(AppSettings::parse(r#"{ "taskCommands": 3 }"#).is_err());
+    }
+
+    #[test]
+    fn saving_replaces_the_commands_and_keeps_the_rest() {
+        let cmd = |n: &str, c: &str| TaskCommand {
+            name: n.into(),
+            command: c.into(),
+            icon: None,
+        };
+        let text = r#"{ "boards": [1], "taskCommands": [ { "name": "old", "command": "done" } ] }"#;
+        let out = with_commands(text, &[cmd("late", "modify +late")]).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["boards"], serde_json::json!([1]));
+        assert_eq!(
+            v["taskCommands"],
+            serde_json::json!([{ "name": "late", "command": "modify +late" }])
+        );
+        let none: Value = serde_json::from_str(&with_commands(text, &[]).unwrap()).unwrap();
+        assert!(none.get("taskCommands").is_none());
+        assert!(out.find("\"name\"") < out.find("\"command\""), "{out}");
+        assert!(with_commands("", &[cmd("a", "done")]).is_ok());
+        assert!(with_commands("[", &[]).is_err());
+    }
+
+    #[test]
+    fn names_and_commands_are_checked_as_the_web_app_does() {
+        assert_eq!(name_problem("fail"), None);
+        for bad in ["", "two words", "+x", "a:b", "12", "task"] {
+            assert!(name_problem(bad).is_some(), "{bad}");
+        }
+        assert_eq!(command_problem("done outcome:fail"), None);
+        assert!(command_problem("done &&").is_some());
+        assert!(command_problem("  ").is_some());
+    }
+}

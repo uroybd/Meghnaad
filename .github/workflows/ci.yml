@@ -57,6 +57,10 @@ jobs:
       - name: Clippy (hooks for the real task)
         run: cargo clippy -p tc-hook --all-targets -- -D warnings
 
+      # The terminal app around the real `task` (native, ratatui).
+      - name: Clippy (terminal app)
+        run: cargo clippy -p meghnaad-tui --all-targets -- -D warnings
+
   web:
     name: Web app and scripts (format, lint, tests, type check)
     runs-on: ubuntu-latest

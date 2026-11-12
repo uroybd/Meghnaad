@@ -180,14 +180,16 @@ builds once and publishes:
   and a `wrangler.jsonc` without a build step (the branch only gains commits; nothing is force-pushed),
 - a GitHub release titled with the version, holding the same files as `meghnaad-<version>.tar.gz`,
 - the Android APK, added to that release when its build finishes ([signing it](android.md#releases-and-signing)).
+- `meghnaad-hook` and `meghnaad-tui` for Linux and macOS (x86_64 and arm64), as `<program>-<version>-<platform>.tar.gz`,
+  added to that release when their builds finish.
 
-**A Homebrew tap.** The release can also keep the `meghnaad-hook` formula up to date in a tap, so people install it with
-`brew install <owner>/tap/meghnaad-hook`. It is off until you set the repository **variable** `HOMEBREW_TAP` to the tap
+**A Homebrew tap.** The release can also keep the `meghnaad-hook` and `meghnaad-tui` formulas up to date in a tap, so
+people install them with `brew install <owner>/tap/meghnaad-hook` (or `meghnaad-tui`, which brings `task` with it). It is off until you set the repository **variable** `HOMEBREW_TAP` to the tap
 (`owner/homebrew-tap`) and add the **secret** `HOMEBREW_TAP_TOKEN`: a fine-grained token with **Contents: read and write**
 on that one repository (the workflow's own token can't push to another). For a release version (not `1.2.3-rc.1`) the
-`tap` job waits for the four hook builds, writes `Formula/meghnaad-hook.rb` (`scripts/homebrew-formula.mjs`, with the URL
-and sha256 of each platform's archive) and pushes it as "Update meghnaad-hook to v`<version>`". If a platform's build
-fails, no formula is written; re-run the failed jobs and it follows. Without the token it only warns.
+`tap` job waits for the four platforms' builds, writes `Formula/meghnaad-hook.rb` and `Formula/meghnaad-tui.rb`
+(`scripts/homebrew-formula.mjs`, with the URL and sha256 of each platform's archive) and pushes them as "Update
+meghnaad-hook and meghnaad-tui to v`<version>`". If a platform's build fails, no formula is written; re-run the failed jobs and it follows. Without the token it only warns.
 
 **Trying a build first.** **Actions → Release → Run workflow** builds the same things as `<version>-dev.<commit>` and only
 updates the `release` branch (the APK stays as the run's artifact). `node scripts/build.mjs && node
