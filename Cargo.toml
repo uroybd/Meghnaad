@@ -4,7 +4,7 @@ members = ["crates/tc-core", "crates/worker", "crates/browser", "crates/android"
 
 [workspace.package]
 # The root package.json's version, kept in step by `npm version` (scripts/version.mjs `sync`); a test checks they agree.
-version = "0.6.55"
+version = "0.6.56"
 edition = "2021"
 license = "MIT"
 rust-version = "1.91"
