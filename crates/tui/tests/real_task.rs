@@ -68,11 +68,42 @@ fn reads_reports_completion_and_adds_through_the_real_task() {
     assert_eq!(report.styles[0].fg, Some(ratatui::style::Color::Indexed(4)));
     assert!(report.styles[1].add_modifier.contains(ratatui::style::Modifier::BOLD));
     assert_eq!(report.styles[1].fg, None);
-    assert_eq!(report.sorted, [false; 5], "it sorts by urgency, which is not a column");
+    assert_eq!(report.sorted, [None; 5], "it sorts by urgency, which is not a column");
+
+    // A sort the filter carries, as the sort box writes it: `task` sorts so, and the label says how.
+    let resorted = model::report(
+        &task,
+        &cfg,
+        "mine",
+        &["rc.report.mine.sort:description-".to_owned()],
+        now,
+    )
+    .unwrap();
+    assert_eq!(resorted.cells[0][4].text, "Second");
+    assert_eq!(resorted.sorted[4], Some((0, true)));
 
     // A filter goes in front of the report, as on the command line.
     let filtered = model::report(&task, &cfg, "mine", &["project:Work".to_owned()], now).unwrap();
     assert_eq!(filtered.uuids.len(), 1);
+
+    // `export` leaves out the context; the report puts its read filter in front, as `task mine` would.
+    assert!(
+        task.capture(&["rc.confirmation=off", "context", "define", "work", "project:Work"])
+            .unwrap()
+            .ok
+    );
+    assert!(task.capture(&["context", "work"]).unwrap().ok);
+    let mut in_context = model::load_config(&task).unwrap();
+    let report = model::report(&task, &in_context, "mine", &[], now).unwrap();
+    assert_eq!(report.uuids.len(), 1);
+    assert_eq!(report.cells[0].last().unwrap().text, "Second");
+    // A report that does not apply the context (`report.mine.context=0`) shows every task.
+    in_context.reports.get_mut("mine").unwrap().context = false;
+    assert_eq!(
+        model::report(&task, &in_context, "mine", &[], now).unwrap().uuids.len(),
+        2
+    );
+    assert!(task.capture(&["context", "none"]).unwrap().ok);
 
     let vocab = model::vocab(&task, &cfg, &model::pending(&task).unwrap()).unwrap();
     assert!(vocab.projects.contains(&"Home".to_owned()));

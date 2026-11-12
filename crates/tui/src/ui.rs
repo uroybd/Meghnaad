@@ -4,7 +4,7 @@
 //! itself (`info`, `summary`, `calendar`, `burndown`, the console) is drawn as it coloured it.
 
 use crate::ansi;
-use crate::app::{now, App, Focus, Mode, Page, Prompt, PromptKind, SettingsSection};
+use crate::app::{now, App, Focus, Mode, Page, Prompt, PromptKind, SettingsSection, SortEdit};
 use crate::form::{self, Form, Kind};
 use crate::model::local_offset;
 use crate::remind::format_seconds;
@@ -124,6 +124,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         }
         Mode::Commands { uuid, query, sel } => commands(f, app, uuid, query, *sel, main),
         Mode::Form(form) => form_box(f, app, form, main),
+        Mode::Sort(edit) => sort_box(f, app, edit, main),
         _ => {}
     }
     if !app.status.is_empty() {
@@ -152,6 +153,16 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Prompt(p) => prompt(f, p, main, dock),
         Mode::Commands { .. } => {
             f.render_widget(hints("a-z narrow · ↑/↓ choose · ↵ run on the task · Esc cancel"), dock);
+        }
+        Mode::Sort(edit) => {
+            let keys = if edit.adding.is_some() {
+                let pick = app.hints_of(&["sort.apply"]).replace(" apply", " add");
+                let back = app.hints_of(&["sort.cancel"]).replace(" cancel", " back");
+                [app.move_hint().unwrap_or_default(), pick, back].join(" · ")
+            } else {
+                [app.move_hint().unwrap_or_default(), app.hints(&["sort"])].join(" · ")
+            };
+            f.render_widget(hints(&keys), dock);
         }
         _ => {
             let keys = if app.review.is_some() {
@@ -334,18 +345,23 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
     let count = app.report.uuids.len();
     let mut block =
         pane(&app.report.name, focused).title_top(note(&format!("{count} task{}", if count == 1 { "" } else { "s" })));
-    if !app.filter.is_empty() {
+    // The filter typed; a sort it carries is said over the table instead.
+    let typed = tc_core::sortspec::with_sort_override(&app.filter, &app.report_name, None, None);
+    if !typed.is_empty() {
         block = block.title(Line::from(vec![
             Span::from("[ ").quiet(),
-            Span::from(app.filter.clone()),
+            Span::from(typed),
             Span::from(" ] ").quiet(),
         ]));
     }
+    block = block.title_bottom(hints(&app.hints_of(&["tasks.filter", "tasks.sort", "app.context"])));
     if count > 0 {
         block = block.title_bottom(note(&format!("{} of {count}", app.selected + 1)));
     }
     let inner = block.inner(area);
     f.render_widget(block, area);
+    let [about, inner] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    report_about(f, app, about);
     // A column's room on the right too, so the last one does not touch the border.
     let body = Rect {
         width: inner.width.saturating_sub(1),
@@ -356,6 +372,94 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
     table(f, app, body);
+    // The rule under the labels, across the pane.
+    if inner.height > 1 {
+        let rule = Rect {
+            y: inner.y + 1,
+            height: 1,
+            ..inner
+        };
+        f.render_widget(
+            Line::styled("─".repeat(usize::from(inner.width)), theme::border(false)),
+            rule,
+        );
+    }
+}
+
+/// What `task` adds to the filter typed, as the web app says it over its table: the report's own filter, the sort in
+/// force and the context (the keys that change them are in the pane's bottom border).
+fn report_about(f: &mut Frame, app: &App, area: Rect) {
+    let def = app.cfg.reports.get(&app.report_name);
+    let mut spans = vec![Span::from(" ")];
+    let mut part = |name: &str, value: String| {
+        if spans.len() > 1 {
+            spans.push(Span::from(" · ").quiet());
+        }
+        spans.push(Span::from(format!("{name} ")).quiet());
+        spans.push(Span::styled(value, theme::accent()));
+    };
+    if let Some(filter) = def.and_then(|d| d.filter.clone()).filter(|x| !x.is_empty()) {
+        part("report filter", filter);
+    }
+    let own = app.default_sort();
+    match (app.sort_in_force(), own) {
+        (Some(sort), Some(own)) if sort != own => part("sort", format!("{sort} (its own: {own})")),
+        (Some(sort), _) => part("sort", sort),
+        (None, _) => {}
+    }
+    let context = app
+        .cfg
+        .active_context
+        .as_ref()
+        .filter(|_| def.is_none_or(|d| d.context));
+    if let Some(name) = context {
+        match app.cfg.contexts.get(name).and_then(|c| c.read.clone()) {
+            Some(read) => part("context", format!("{name} ({read})")),
+            None => part("context", name.clone()),
+        }
+    } else {
+        part("context", "none".into());
+    }
+    f.render_widget(Line::from(spans), area);
+}
+
+/// The box for sorting the report: its keys in order, the chosen one marked; over it, the columns when adding one.
+fn sort_box(f: &mut Frame, app: &App, edit: &SortEdit, main: Rect) {
+    let mut lines: Vec<String> = edit
+        .keys
+        .iter()
+        .enumerate()
+        .map(|(i, k)| {
+            let way = if k.desc { "↓ descending" } else { "↑ ascending" };
+            let group = if k.brk { "  (grouped)" } else { "" };
+            format!("{}  {:<12} {way}{group}", i + 1, k.column)
+        })
+        .collect();
+    if lines.is_empty() {
+        lines.push(match app.default_sort() {
+            Some(own) => format!("No keys: the report's own sort ({own})."),
+            None => "No keys: the report's own sort.".to_owned(),
+        });
+    }
+    let w = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0).max(36) + 6 + MARK.chars().count();
+    let h = u16::try_from(lines.len() + 2).unwrap_or(3).min(main.height);
+    let w = u16::try_from(w).unwrap_or(40).min(main.width);
+    let area = Rect::new(main.x + main.width.saturating_sub(w), main.y, w, h);
+    let items: Vec<ListItem> = lines.into_iter().map(ListItem::new).collect();
+    let sel = (!edit.keys.is_empty()).then_some(edit.sel);
+    f.render_widget(Clear, area);
+    f.render_stateful_widget(
+        List::new(items)
+            .block(boxed(format!(" sort {} ", app.report_name)))
+            .highlight_style(theme::selected())
+            .highlight_symbol(MARK)
+            .highlight_spacing(HighlightSpacing::Always),
+        area,
+        &mut ListState::default().with_selected(sel),
+    );
+    if let Some((columns, at)) = &edit.adding {
+        picker(f, " sort by ", columns, *at, main);
+    }
 }
 
 fn items(f: &mut Frame, app: &App, area: Rect) {
@@ -762,6 +866,21 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
     let r = &app.report;
     let bars: Vec<Option<Progress>> = r.names.iter().map(|n| app.progress.get(n).copied()).collect();
     let bar_of = |j: usize| bars.get(j).copied().flatten();
+    // A sorted column's label has its way, and its place when the table sorts by more than one.
+    let several = r.sorted.iter().flatten().count() > 1;
+    let labels: Vec<String> = r
+        .labels
+        .iter()
+        .zip(r.sorted.iter().chain(std::iter::repeat(&None)))
+        .map(|(l, s)| match s {
+            Some((i, desc)) => {
+                let way = if *desc { '↓' } else { '↑' };
+                let place = if several { (i + 1).to_string() } else { String::new() };
+                format!("{l} {way}{place}")
+            }
+            None => l.clone(),
+        })
+        .collect();
     let widths: Vec<Constraint> = r
         .labels
         .iter()
@@ -776,7 +895,7 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
                 .filter_map(|row| row.get(j))
                 .map(|c| c.text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
                 .map(|w| if bar_of(j).is_some() { w + BAR as usize + 1 } else { w })
-                .chain(std::iter::once(label.chars().count()))
+                .chain(labels.get(j).map(|l| l.chars().count()))
                 .max()
                 .unwrap_or(0);
             Constraint::Length(u16::try_from(widest).unwrap_or(u16::MAX))
@@ -804,19 +923,16 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
             .height(u16::try_from(height).unwrap_or(1))
             .style(style)
     });
-    // The labels as `task` writes them: underlined, in `color.label`, and `color.label.sort` where it sorts.
-    let header = Row::new(r.labels.iter().enumerate().map(|(j, l)| {
-        let colour = if r.sorted.get(j).copied().unwrap_or(false) {
+    // The labels in bold, in `color.label`, and `color.label.sort` with its way where it sorts, over a rule.
+    let header = Row::new(labels.iter().enumerate().map(|(j, l)| {
+        let colour = if r.sorted.get(j).copied().flatten().is_some() {
             t.label_sort
         } else {
             t.label
         };
-        TCell::from(l.as_str()).style(
-            Style::new()
-                .add_modifier(Modifier::UNDERLINED | Modifier::BOLD)
-                .patch(colour),
-        )
-    }));
+        TCell::from(l.clone()).style(Style::new().add_modifier(Modifier::BOLD).patch(colour))
+    }))
+    .bottom_margin(1);
     let t = Table::new(rows, widths)
         .header(header)
         .column_spacing(2)

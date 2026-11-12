@@ -25,6 +25,7 @@ use tc_core::complete::Vocab;
 use tc_core::filter::split_words;
 use tc_core::keymap::{self, Keymap};
 use tc_core::preview::Preview;
+use tc_core::sortspec::{self, Key};
 use tc_core::taskrc::Config;
 
 /// The pages, in the order of the top bar; each is opened by its number.
@@ -179,6 +180,17 @@ pub enum Mode {
         options: Vec<(String, Option<Homepage>)>,
         sel: usize,
     },
+    /// Sorting the report, in a box.
+    Sort(SortEdit),
+}
+
+/// The sort keys of the report as they are being changed, before they are applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SortEdit {
+    pub keys: Vec<Key>,
+    pub sel: usize,
+    /// Adding a key: the columns to choose from, and the one chosen.
+    pub adding: Option<(Vec<String>, usize)>,
 }
 
 /// What the loop has to do for a key that the screen cannot do itself.
@@ -338,6 +350,19 @@ enum Step {
     By(isize),
     First,
     Last,
+}
+
+/// The move a `move.` action makes.
+fn step_named(action: &str) -> Option<Step> {
+    Some(match action {
+        "move.down" => Step::By(1),
+        "move.up" => Step::By(-1),
+        "move.pageDown" => Step::By(10),
+        "move.pageUp" => Step::By(-10),
+        "move.first" => Step::First,
+        "move.last" => Step::Last,
+        _ => return None,
+    })
 }
 
 /// Row `at` of `len` after `step`.
@@ -886,6 +911,135 @@ impl App {
         self.focus = Focus::Main;
     }
 
+    /// Show another report. A sort override belongs to one report: the others' are dropped from the filter.
+    fn switch_report(&mut self, name: String) {
+        let own = format!("rc.report.{name}.");
+        self.filter = split_words(&self.filter)
+            .iter()
+            .filter(|w| !w.starts_with("rc.report.") || w.starts_with(&own))
+            .map(|w| tc_core::helpers::shell_quote(w))
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.report_name = name;
+        self.selected = 0;
+    }
+
+    /// The report's own sort, as the taskrc has it.
+    pub fn default_sort(&self) -> Option<String> {
+        self.cfg.reports.get(&self.report_name).and_then(|r| r.sort.clone())
+    }
+
+    /// The sort the report is shown in: the filter's override, else its own.
+    pub fn sort_in_force(&self) -> Option<String> {
+        sortspec::sort_override(&self.filter, &self.report_name).or_else(|| self.default_sort())
+    }
+
+    /// The columns a key can be added for, those the report shows first; none the sort has already.
+    pub fn sort_columns(&self, keys: &[Key]) -> Vec<String> {
+        let shown = self
+            .cfg
+            .reports
+            .get(&self.report_name)
+            .map(|r| {
+                r.columns
+                    .iter()
+                    .map(|c| sortspec::base_column(c).to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let rest = sortspec::SORTABLE
+            .iter()
+            .map(|c| (*c).to_owned())
+            .chain(self.cfg.udas.keys().cloned());
+        let mut out: Vec<String> = Vec::new();
+        for c in shown.into_iter().chain(rest) {
+            let sortable = sortspec::SORTABLE.contains(&c.as_str()) || self.cfg.udas.contains_key(&c);
+            if sortable && !out.contains(&c) && !keys.iter().any(|k| k.column == c) {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// A key in the sort box: change the keys, or apply them as `rc.report.<name>.sort:<spec>` in the filter.
+    fn in_sort(&mut self, mut edit: SortEdit, key: KeyEvent) -> Action {
+        let action = keys::chord(key)
+            .and_then(|c| self.keymap.action("sort", &c).map(str::to_owned))
+            .unwrap_or_default();
+        if let Some((columns, at)) = edit.adding.take() {
+            match action.as_str() {
+                "sort.apply" => {
+                    if let Some(c) = columns.get(at) {
+                        edit.keys.push(Key {
+                            column: c.clone(),
+                            desc: false,
+                            brk: false,
+                        });
+                        edit.sel = edit.keys.len() - 1;
+                    }
+                }
+                "sort.cancel" => {}
+                a => {
+                    let at = step_named(a).map_or(at, |step| moved(at, columns.len(), step));
+                    edit.adding = Some((columns, at));
+                }
+            }
+            self.mode = Mode::Sort(edit);
+            return Action::None;
+        }
+        let n = edit.keys.len();
+        match action.as_str() {
+            "sort.cancel" => return Action::None,
+            "sort.apply" => {
+                self.apply_sort(&edit.keys);
+                return Action::None;
+            }
+            "sort.add" => {
+                let columns = self.sort_columns(&edit.keys);
+                if !columns.is_empty() {
+                    edit.adding = Some((columns, 0));
+                }
+            }
+            "sort.remove" if edit.sel < n => {
+                edit.keys.remove(edit.sel);
+                edit.sel = edit.sel.min(n.saturating_sub(2));
+            }
+            "sort.reverse" => {
+                if let Some(k) = edit.keys.get_mut(edit.sel) {
+                    k.desc = !k.desc;
+                }
+            }
+            "sort.raise" if edit.sel > 0 && edit.sel < n => {
+                edit.keys.swap(edit.sel, edit.sel - 1);
+                edit.sel -= 1;
+            }
+            "sort.lower" if edit.sel + 1 < n => {
+                edit.keys.swap(edit.sel, edit.sel + 1);
+                edit.sel += 1;
+            }
+            "sort.reset" => {
+                edit.keys = sortspec::parse(self.default_sort().as_deref());
+                edit.sel = 0;
+            }
+            a => {
+                if let Some(step) = step_named(a) {
+                    edit.sel = moved(edit.sel, n, step);
+                }
+            }
+        }
+        self.mode = Mode::Sort(edit);
+        Action::None
+    }
+
+    /// Sort the report by `keys`: the override in the filter, or none when they are the report's own (or there are none).
+    fn apply_sort(&mut self, keys: &[Key]) {
+        let spec = sortspec::serialize(keys);
+        let default = self.default_sort();
+        self.filter = sortspec::with_sort_override(&self.filter, &self.report_name, Some(&spec), default.as_deref());
+        self.selected = 0;
+        self.reload();
+    }
+
     /// Open the tasks a filter picks (a project or tag from its page).
     fn open_filter(&mut self, filter: &str) {
         filter.clone_into(&mut self.filter);
@@ -924,6 +1078,7 @@ impl App {
                 }
                 Action::None
             }
+            Mode::Sort(edit) => self.in_sort(edit, key),
             Mode::Home { options, sel } => {
                 if let Some(step) = self.step_of(key) {
                     self.mode = Mode::Home {
@@ -1058,15 +1213,7 @@ impl App {
     /// The move a key makes, in a box or a list over the page that only moves.
     fn step_of(&self, key: KeyEvent) -> Option<Step> {
         let chord = keys::chord(key)?;
-        Some(match self.keymap.action("summary", &chord)? {
-            "move.down" => Step::By(1),
-            "move.up" => Step::By(-1),
-            "move.pageDown" => Step::By(10),
-            "move.pageUp" => Step::By(-10),
-            "move.first" => Step::First,
-            "move.last" => Step::Last,
-            _ => return None,
-        })
+        step_named(self.keymap.action("summary", &chord)?)
     }
 
     fn normal(&mut self, key: KeyEvent) -> Action {
@@ -1145,8 +1292,7 @@ impl App {
             "sidebar.open" => {
                 let name = self.report_names().get(self.sidebar).map(|n| (*n).to_owned());
                 if let Some(name) = name {
-                    self.report_name = name;
-                    self.selected = 0;
+                    self.switch_report(name);
                     self.open(Page::Tasks);
                     self.reload();
                 }
@@ -1229,6 +1375,14 @@ impl App {
                 self.prompt(PromptKind::Filter, &f);
             }
             "tasks.report" => self.prompt(PromptKind::Report, ""),
+            "tasks.sort" => {
+                let keys = sortspec::parse(self.sort_in_force().as_deref());
+                self.mode = Mode::Sort(SortEdit {
+                    keys,
+                    sel: 0,
+                    adding: None,
+                });
+            }
             "tasks.command" => {
                 if self.settings.task_commands.is_empty() {
                     let settings = self.keymap.label(Page::Settings.action());
@@ -1287,6 +1441,18 @@ impl App {
             .filter_map(|&(name, hint, _)| {
                 let keys = self.keymap.label(name);
                 (!keys.is_empty()).then(|| format!("{keys} {hint}"))
+            })
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+
+    /// These actions, those that have a key, as a hint line says them: `f filter · o sort`.
+    pub fn hints_of(&self, actions: &[&str]) -> String {
+        actions
+            .iter()
+            .filter_map(|&name| {
+                let keys = self.keymap.label(name);
+                (!keys.is_empty()).then(|| format!("{keys} {}", keys::hint(name)))
             })
             .collect::<Vec<_>>()
             .join(" · ")
@@ -1730,8 +1896,7 @@ impl App {
             }
             PromptKind::Report => {
                 if self.cfg.reports.contains_key(line) {
-                    line.clone_into(&mut self.report_name);
-                    self.selected = 0;
+                    self.switch_report(line.to_owned());
                     self.reload();
                 } else if !line.is_empty() {
                     self.status = format!("No report named ‘{line}’.");
@@ -1952,6 +2117,66 @@ mod tests {
             .map(str::to_owned)
             .to_vec();
         a
+    }
+
+    #[test]
+    fn the_sort_box_adds_reverses_and_reorders_keys_and_writes_the_override() {
+        let mut app = app();
+        app.report_name = "next".into();
+        app.cfg.reports.insert(
+            "next".into(),
+            serde_json::from_value(serde_json::json!({
+                "name": "next", "columns": ["id", "due.relative", "description"], "sort": "urgency-"
+            }))
+            .unwrap(),
+        );
+        app.open(Page::Tasks);
+        app.key(key(KeyCode::Char('o')));
+        let Mode::Sort(edit) = &app.mode else {
+            panic!("o opens the sort box");
+        };
+        assert_eq!(sortspec::serialize(&edit.keys), "urgency-");
+        // The report's columns come first when adding.
+        app.key(key(KeyCode::Char('a')));
+        let Mode::Sort(SortEdit {
+            adding: Some((columns, _)),
+            ..
+        }) = &app.mode
+        else {
+            panic!("a lists the columns");
+        };
+        assert_eq!(&columns[..3], ["id", "due", "description"]);
+        assert!(!columns.contains(&"urgency".to_owned()), "a key the sort has already");
+        app.key(key(KeyCode::Char('j')));
+        app.key(key(KeyCode::Enter));
+        app.key(key(KeyCode::Char(' ')));
+        app.key(KeyEvent::new(KeyCode::Char('K'), KeyModifiers::SHIFT));
+        let Mode::Sort(edit) = &app.mode else {
+            panic!("still sorting");
+        };
+        assert_eq!(
+            (sortspec::serialize(&edit.keys).as_str(), edit.sel),
+            ("due-,urgency-", 0)
+        );
+        app.key(key(KeyCode::Enter));
+        assert!(matches!(app.mode, Mode::Normal));
+        assert_eq!(app.filter, "rc.report.next.sort:due-,urgency-");
+        assert_eq!(app.sort_in_force().as_deref(), Some("due-,urgency-"));
+
+        // Back to the report's own: no override is left.
+        app.key(key(KeyCode::Char('o')));
+        app.key(KeyEvent::new(KeyCode::Char('R'), KeyModifiers::SHIFT));
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.filter, "");
+
+        // Esc leaves it as it was; another report drops this one's override.
+        app.filter = "+home rc.report.next.sort:due+".into();
+        app.key(key(KeyCode::Char('o')));
+        app.key(key(KeyCode::Char('d')));
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.filter, "+home rc.report.next.sort:due+");
+        app.switch_report("list".into());
+        assert_eq!(app.filter, "+home");
     }
 
     #[test]

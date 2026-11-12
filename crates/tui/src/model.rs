@@ -196,8 +196,8 @@ pub struct Report {
     pub labels: Vec<String>,
     /// Each column's attribute (`due`, a UDA's name), as `labels` are its words.
     pub names: Vec<String>,
-    /// Whether the report sorts by each column (its label is drawn in `color.label.sort`).
-    pub sorted: Vec<bool>,
+    /// Where each column is in the sort, and whether it sorts descending (its label is drawn in `color.label.sort`).
+    pub sorted: Vec<Option<(usize, bool)>>,
     /// Each row's colour, as `task`'s colour rules make it (`row_styles`), without the alternate shading.
     pub styles: Vec<ratatui::style::Style>,
     pub uuids: Vec<String>,
@@ -223,15 +223,18 @@ pub fn columns(cfg: &Config, report: &str) -> (Vec<Col>, Vec<String>) {
     (cols, def.labels.clone())
 }
 
-/// A report's tasks, from `task <filter> export <report>`: the report's own filter and sort, and the context, applied
-/// by Taskwarrior.
+/// A report's tasks, from `task <filter> export <report>`: the report's own filter and sort applied by Taskwarrior.
+/// `export` leaves out the context, which the report itself applies (`report.<name>.context`), so its read filter is
+/// put in front, in parentheses, as `task` puts it.
 ///
 /// # Errors
 ///
 /// `task` could not be run, or what it wrote was not JSON.
 pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64) -> Result<Report, String> {
-    let mut args: Vec<&str> = filter.iter().map(String::as_str).collect();
-    args.extend(["export", name]);
+    let mut args: Vec<String> = context_filter(cfg, name);
+    args.extend(filter.iter().cloned());
+    args.extend(["export".to_owned(), name.to_owned()]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let tasks: Vec<Value> =
         serde_json::from_str(&task.read(&args)?).map_err(|e| format!("export was not JSON: {e}"))?;
     let pending: BTreeSet<String> = task.lines(&["+PENDING", "_uuids"])?.into_iter().collect();
@@ -242,12 +245,14 @@ pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64
     // Taskwarrior leaves out a column with nothing in it unless `print.empty.columns` is on.
     let keep: Vec<bool> = table.empty.iter().map(|e| !e || cfg.print_empty_columns()).collect();
     labels.resize(cols.len(), String::new());
-    let sort = cfg.reports.get(name).and_then(|r| r.sort.clone()).unwrap_or_default();
-    let sort_fields: Vec<&str> = sort
-        .split(',')
-        .map(|k| k.trim().trim_end_matches('/').trim_end_matches(['+', '-']))
+    // The sort in force: an override in the filter (`rc.report.<name>.sort:…`), else the report's own.
+    let sort = tc_core::sortspec::sort_override(&filter.join(" "), name)
+        .or_else(|| cfg.reports.get(name).and_then(|r| r.sort.clone()));
+    let keys = tc_core::sortspec::parse(sort.as_deref());
+    let sorted: Vec<Option<(usize, bool)>> = cols
+        .iter()
+        .map(|c| keys.iter().position(|k| k.column == c.name).map(|i| (i, keys[i].desc)))
         .collect();
-    let sorted: Vec<bool> = cols.iter().map(|c| sort_fields.contains(&c.name.as_str())).collect();
     let names: Vec<String> = cols.iter().map(|c| c.name.clone()).collect();
     let colours = row_styles(task, name, filter);
     Ok(Report {
@@ -272,6 +277,26 @@ pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64
             .collect(),
         cells: table.cells.into_iter().map(|row| pick(row, &keep)).collect(),
     })
+}
+
+/// The active context's read filter, in parentheses, for a report that applies the context; nothing otherwise.
+pub fn context_filter(cfg: &Config, report: &str) -> Vec<String> {
+    let applies = cfg.reports.get(report).is_none_or(|r| r.context);
+    let read = cfg
+        .active_context
+        .as_ref()
+        .filter(|_| applies)
+        .and_then(|c| cfg.contexts.get(c))
+        .and_then(|c| c.read.as_deref())
+        .map(tc_core::filter::split_words)
+        .unwrap_or_default();
+    if read.is_empty() {
+        return Vec::new();
+    }
+    let mut out = vec!["(".to_owned()];
+    out.extend(read);
+    out.push(")".to_owned());
+    out
 }
 
 /// Each task's colour in the report, as `task` itself colours it: the report run with its columns swapped for `uuid`

@@ -133,6 +133,14 @@ On the Tasks page:
 | `c` | Run one of your [task commands](#settings) on the selected task: a box lists them, typing narrows the list, `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
 | `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
+| `o` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
+
+Over the table a line says what `task` adds to your filter: the report's own filter, the sort in force (and the
+report's own when you changed it) and the context; `f`, `o` and `C` change them. A sort is put in the filter as
+`rc.report.<name>.sort:<spec>`, as the web app's header clicks do, so the command line sorts the same way; it belongs to
+its report, and showing another report drops it. The labels of the columns sorted by have `↑` or `↓`, and their place
+when there is more than one. `export` leaves out the context, so the app puts the context's read filter in front of the
+report itself, in parentheses, as `task <report>` does (and not for a report with `report.<name>.context=0`).
 
 The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
 (`Created task 3.`) in the status line. They add no overrides. If `task` or a hook asks a question there, it gets no
