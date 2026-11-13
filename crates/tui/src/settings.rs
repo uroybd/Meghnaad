@@ -12,6 +12,47 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
+
+/// Why `settings.json` could not be read, edited or written. Each says it as the app shows it.
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    #[error("No config folder: set MEGHNAAD_CONFIG_DIR or HOME.")]
+    NoConfigFolder,
+    #[error("No editor: set EDITOR.")]
+    NoEditor,
+    #[error("Could not start {bin}: {source}")]
+    EditorStart { bin: String, source: std::io::Error },
+    #[error("{bin} ended with {status}.")]
+    EditorFailed {
+        bin: String,
+        status: std::process::ExitStatus,
+    },
+    #[error("{}: {source}", path.display())]
+    Io { path: PathBuf, source: std::io::Error },
+    /// What the check the web app and the phone make too says (too large, not an object).
+    #[error("{0}")]
+    NotSettings(String),
+    #[error("{0}")]
+    Json(#[from] serde_json::Error),
+    #[error("settings.json: {0}")]
+    Parse(serde_json::Error),
+    #[error("taskCommands: {0}")]
+    TaskCommands(serde_json::Error),
+    #[error("\"tui\" is not an object")]
+    TuiNotObject,
+    #[error("settings.json is not an object")]
+    NotObject,
+    /// One of the above, about the file at `path`.
+    #[error("{}: {source}", path.display())]
+    InFile { path: PathBuf, source: Box<SettingsError> },
+}
+
+fn io_at(path: &std::path::Path) -> impl FnOnce(std::io::Error) -> SettingsError + '_ {
+    move |source| SettingsError::Io {
+        path: path.to_owned(),
+        source,
+    }
+}
 use tc_core::filter::split_words;
 
 /// The variable that moves the config folder.
@@ -58,22 +99,26 @@ fn editor_from(visual: Option<String>, editor: Option<String>) -> Vec<String> {
 /// # Errors
 ///
 /// There is no config folder, it cannot be made, or the editor cannot be started or fails.
-pub fn edit_in_editor() -> Result<(), String> {
-    let path = path().ok_or("No config folder: set MEGHNAAD_CONFIG_DIR or HOME.")?;
+pub fn edit_in_editor() -> Result<(), SettingsError> {
+    let path = path().ok_or(SettingsError::NoConfigFolder)?;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(io_at(parent))?;
     }
     let words = editor();
-    let (bin, args) = words.split_first().ok_or("No editor: set EDITOR.")?;
-    let status = std::process::Command::new(bin)
+    let (bin, args) = words.split_first().ok_or(SettingsError::NoEditor)?;
+    let bin = bin.clone();
+    let status = std::process::Command::new(&bin)
         .args(args)
         .arg(&path)
         .status()
-        .map_err(|e| format!("Could not start {bin}: {e}"))?;
+        .map_err(|source| SettingsError::EditorStart {
+            bin: bin.clone(),
+            source,
+        })?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!("{bin} ended with {status}."))
+        Err(SettingsError::EditorFailed { bin, status })
     }
 }
 
@@ -222,11 +267,10 @@ impl AppSettings {
     /// # Errors
     ///
     /// The text is not a settings object (the same check the web app and the phone make, then what it says).
-    pub fn parse(text: &str) -> Result<AppSettings, String> {
-        tc_core::appsettings::check(text)?;
-        let raw: Value = serde_json::from_str(text).map_err(|e| format!("settings.json: {e}"))?;
-        let mut settings: AppSettings =
-            serde_json::from_value(raw.clone()).map_err(|e| format!("settings.json: {e}"))?;
+    pub fn parse(text: &str) -> Result<AppSettings, SettingsError> {
+        tc_core::appsettings::check(text).map_err(SettingsError::NotSettings)?;
+        let raw: Value = serde_json::from_str(text).map_err(SettingsError::Parse)?;
+        let mut settings: AppSettings = serde_json::from_value(raw.clone()).map_err(SettingsError::Parse)?;
         settings.raw = raw;
         Ok(settings)
     }
@@ -280,7 +324,7 @@ pub fn command_problem(command: &str) -> Option<String> {
 /// # Errors
 ///
 /// The file is there but is not settings: it is left alone rather than replaced.
-pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, String> {
+pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, SettingsError> {
     let mut raw = object(text)?;
     raw.remove("taskCommands");
     written(raw, commands)
@@ -291,7 +335,7 @@ pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, Str
 /// # Errors
 ///
 /// As [`with_commands`].
-pub fn with_sync(text: &str, mode: SyncMode) -> Result<String, String> {
+pub fn with_sync(text: &str, mode: SyncMode) -> Result<String, SettingsError> {
     with_tui(text, "sync", Value::String(mode.key().into()))
 }
 
@@ -301,7 +345,7 @@ pub fn with_sync(text: &str, mode: SyncMode) -> Result<String, String> {
 /// # Errors
 ///
 /// As [`with_commands`], or `tui` is not an object.
-pub fn with_tui(text: &str, key: &str, value: Value) -> Result<String, String> {
+pub fn with_tui(text: &str, key: &str, value: Value) -> Result<String, SettingsError> {
     with_tui_edit(text, |tui| {
         tui.insert(key.into(), value);
     })
@@ -312,13 +356,13 @@ pub fn with_tui(text: &str, key: &str, value: Value) -> Result<String, String> {
 /// # Errors
 ///
 /// As [`with_commands`].
-pub fn with_homepage(text: &str, home: Option<&Homepage>) -> Result<String, String> {
+pub fn with_homepage(text: &str, home: Option<&Homepage>) -> Result<String, SettingsError> {
     let mut raw = object(text)?;
     let commands: Vec<TaskCommand> = raw
         .remove("taskCommands")
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|e| format!("taskCommands: {e}"))?
+        .map_err(SettingsError::TaskCommands)?
         .unwrap_or_default();
     match home {
         Some(h) => raw.insert("homepage".into(), h.to_value()),
@@ -332,7 +376,7 @@ pub fn with_homepage(text: &str, home: Option<&Homepage>) -> Result<String, Stri
 /// # Errors
 ///
 /// As [`save_commands`].
-pub fn save_homepage(home: Option<&Homepage>) -> Result<(), String> {
+pub fn save_homepage(home: Option<&Homepage>) -> Result<(), SettingsError> {
     save(|text| with_homepage(text, home))
 }
 
@@ -341,18 +385,18 @@ pub fn save_homepage(home: Option<&Homepage>) -> Result<(), String> {
 /// # Errors
 ///
 /// As [`with_tui`].
-pub fn with_tui_edit(text: &str, edit: impl FnOnce(&mut Map<String, Value>)) -> Result<String, String> {
+pub fn with_tui_edit(text: &str, edit: impl FnOnce(&mut Map<String, Value>)) -> Result<String, SettingsError> {
     let mut raw = object(text)?;
     let commands: Vec<TaskCommand> = raw
         .remove("taskCommands")
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|e| format!("taskCommands: {e}"))?
+        .map_err(SettingsError::TaskCommands)?
         .unwrap_or_default();
     let old_sync = raw.remove("sync");
     let tui = raw.entry("tui").or_insert_with(|| Value::Object(Map::new()));
     let Some(tui) = tui.as_object_mut() else {
-        return Err("\"tui\" is not an object".into());
+        return Err(SettingsError::TuiNotObject);
     };
     if let Some(old) = old_sync {
         tui.entry("sync").or_insert(old);
@@ -362,16 +406,16 @@ pub fn with_tui_edit(text: &str, edit: impl FnOnce(&mut Map<String, Value>)) -> 
 }
 
 /// The settings in `text` as an object (none for an empty file).
-fn object(text: &str) -> Result<Map<String, Value>, String> {
+fn object(text: &str) -> Result<Map<String, Value>, SettingsError> {
     if text.trim().is_empty() {
         return Ok(Map::new());
     }
-    tc_core::appsettings::check(text)?;
-    serde_json::from_str(text).map_err(|e| e.to_string())
+    tc_core::appsettings::check(text).map_err(SettingsError::NotSettings)?;
+    Ok(serde_json::from_str(text)?)
 }
 
 /// The file for `raw` and the task commands, which go last.
-fn written(raw: Map<String, Value>, commands: &[TaskCommand]) -> Result<String, String> {
+fn written(raw: Map<String, Value>, commands: &[TaskCommand]) -> Result<String, SettingsError> {
     /// The other keys, then the commands, each written `name`, `command` (and `icon`) as the web app writes them.
     #[derive(serde::Serialize)]
     struct Out<'a> {
@@ -380,8 +424,8 @@ fn written(raw: Map<String, Value>, commands: &[TaskCommand]) -> Result<String, 
         #[serde(rename = "taskCommands", skip_serializing_if = "<[TaskCommand]>::is_empty")]
         commands: &'a [TaskCommand],
     }
-    let out = serde_json::to_string_pretty(&Out { rest: raw, commands }).map_err(|e| e.to_string())? + "\n";
-    tc_core::appsettings::check(&out)?;
+    let out = serde_json::to_string_pretty(&Out { rest: raw, commands })? + "\n";
+    tc_core::appsettings::check(&out).map_err(SettingsError::NotSettings)?;
     Ok(out)
 }
 
@@ -390,7 +434,7 @@ fn written(raw: Map<String, Value>, commands: &[TaskCommand]) -> Result<String, 
 /// # Errors
 ///
 /// There is no config folder, the file is not settings, or it could not be written.
-pub fn save_commands(commands: &[TaskCommand]) -> Result<(), String> {
+pub fn save_commands(commands: &[TaskCommand]) -> Result<(), SettingsError> {
     save(|text| with_commands(text, commands))
 }
 
@@ -399,7 +443,7 @@ pub fn save_commands(commands: &[TaskCommand]) -> Result<(), String> {
 /// # Errors
 ///
 /// As [`save_commands`].
-pub fn save_sync(mode: SyncMode) -> Result<(), String> {
+pub fn save_sync(mode: SyncMode) -> Result<(), SettingsError> {
     save_tui("sync", Value::String(mode.key().into()))
 }
 
@@ -408,7 +452,7 @@ pub fn save_sync(mode: SyncMode) -> Result<(), String> {
 /// # Errors
 ///
 /// As [`save_commands`].
-pub fn save_tui(key: &str, value: Value) -> Result<(), String> {
+pub fn save_tui(key: &str, value: Value) -> Result<(), SettingsError> {
     save(|text| with_tui(text, key, value))
 }
 
@@ -417,7 +461,7 @@ pub fn save_tui(key: &str, value: Value) -> Result<(), String> {
 /// # Errors
 ///
 /// As [`save_commands`].
-pub fn save_theme_preset(word: &str) -> Result<(), String> {
+pub fn save_theme_preset(word: &str) -> Result<(), SettingsError> {
     save(|text| {
         with_tui_edit(text, |tui| match tui.get_mut("theme") {
             Some(Value::Object(roles)) => {
@@ -436,16 +480,16 @@ pub fn save_theme_preset(word: &str) -> Result<(), String> {
 /// # Errors
 ///
 /// As [`with_commands`].
-pub fn with_binding(text: &str, section: &str, action: &str, keys: Option<&[String]>) -> Result<String, String> {
+pub fn with_binding(text: &str, section: &str, action: &str, keys: Option<&[String]>) -> Result<String, SettingsError> {
     let raw = Value::Object(object(text)?);
     let Value::Object(mut raw) = tc_core::keymap::with_binding(&raw, section, action, keys) else {
-        return Err("settings.json is not an object".into());
+        return Err(SettingsError::NotObject);
     };
     let commands: Vec<TaskCommand> = raw
         .remove("taskCommands")
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|e| format!("taskCommands: {e}"))?
+        .map_err(SettingsError::TaskCommands)?
         .unwrap_or_default();
     written(raw, &commands)
 }
@@ -455,23 +499,26 @@ pub fn with_binding(text: &str, section: &str, action: &str, keys: Option<&[Stri
 /// # Errors
 ///
 /// As [`save_commands`].
-pub fn save_binding(section: &str, action: &str, keys: Option<&[String]>) -> Result<(), String> {
+pub fn save_binding(section: &str, action: &str, keys: Option<&[String]>) -> Result<(), SettingsError> {
     save(|text| with_binding(text, section, action, keys))
 }
 
 /// Write `settings.json` in place as `edit` makes it from what is there.
-fn save(edit: impl FnOnce(&str) -> Result<String, String>) -> Result<(), String> {
-    let path = path().ok_or("No config folder: set MEGHNAAD_CONFIG_DIR or HOME.")?;
+fn save(edit: impl FnOnce(&str) -> Result<String, SettingsError>) -> Result<(), SettingsError> {
+    let path = path().ok_or(SettingsError::NoConfigFolder)?;
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(format!("{}: {e}", path.display())),
+        Err(e) => return Err(io_at(&path)(e)),
     };
-    let out = edit(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let out = edit(&text).map_err(|e| SettingsError::InFile {
+        path: path.clone(),
+        source: Box::new(e),
+    })?;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(io_at(parent))?;
     }
-    std::fs::write(&path, out).map_err(|e| format!("{}: {e}", path.display()))
+    std::fs::write(&path, out).map_err(io_at(&path))
 }
 
 #[cfg(test)]
@@ -568,6 +615,25 @@ mod tests {
         assert!(AppSettings::parse("[]").is_err());
         assert!(AppSettings::parse("{").is_err());
         assert!(AppSettings::parse(r#"{ "taskCommands": 3 }"#).is_err());
+    }
+
+    #[test]
+    fn what_went_wrong_reads_as_the_app_shows_it() {
+        let said = |r: Result<String, SettingsError>| r.unwrap_err().to_string();
+        assert_eq!(
+            said(with_sync(r#"{ "tui": 3 }"#, SyncMode::Manual)),
+            "\"tui\" is not an object"
+        );
+        assert!(said(with_commands("[1]", &[])).contains("object"));
+        assert!(AppSettings::parse(r#"{ "taskCommands": 3 }"#)
+            .unwrap_err()
+            .to_string()
+            .starts_with("settings.json: "));
+        let in_file = SettingsError::InFile {
+            path: "/x/settings.json".into(),
+            source: Box::new(SettingsError::NotObject),
+        };
+        assert_eq!(in_file.to_string(), "/x/settings.json: settings.json is not an object");
     }
 
     #[test]

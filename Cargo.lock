@@ -996,6 +996,7 @@ dependencies = [
  "serde_json",
  "tc-core",
  "terminal-colorsaurus",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
