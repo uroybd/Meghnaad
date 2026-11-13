@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
@@ -127,11 +128,74 @@ data class Section(
     val rows: Rows? = null,
 )
 
-/** A named pair of dates any filter on the board can use: `$name.start` and `$name.end`. Each is a date as Taskwarrior reads one. */
+/**
+ * A named value set above the board (boards.ts `Control`, `tc_core::board::controls`), which any filter on it uses as `$name`: a
+ * date range (`daterange`: [start], [end]; `$name.start`, `$name.end`), a date (`date`: [value]), a number (`number`: [value]), a
+ * number range (`numrange`: [min], [max]; `$name.min`, `$name.max`), a selection (`select`: [values] of [source], one or with
+ * [multiple] several; the clause that picks them) or a switch (`boolean`: [value], and the text [on] or [off] it is). [label] is
+ * what is shown, any text; the name what a filter writes. [value] is text, or for a switch true or false.
+ */
 @Serializable
-data class DateRange(val name: String, val start: String, val end: String)
+data class Control(
+    val name: String,
+    val type: String,
+    val label: String? = null,
+    val start: String? = null,
+    val end: String? = null,
+    val value: JsonPrimitive? = null,
+    val min: String? = null,
+    val max: String? = null,
+    val source: String? = null,
+    val multiple: Boolean? = null,
+    val completed: Boolean? = null,
+    val values: List<String>? = null,
+    val on: String? = null,
+    val off: String? = null,
+) {
+    /** The text of a date's or a number's value. */
+    val text: String get() = value?.contentOrNull.orEmpty()
 
-/** A range worked out for now: the two moments (epoch seconds), or why it cannot be. */
+    /** A switch is on. */
+    val isOn: Boolean get() = value?.booleanOrNull == true
+
+    /** This control's settings with the values (not the settings) of [typed]: what is set above the board over the board's own. */
+    fun withValues(typed: Control): Control =
+        copy(start = typed.start, end = typed.end, value = typed.value, min = typed.min, max = typed.max, values = typed.values)
+
+    /** The same values as [other]'s. */
+    fun sameValues(other: Control): Boolean =
+        start?.trim() == other.start?.trim() && end?.trim() == other.end?.trim() && value == other.value &&
+            min?.trim() == other.min?.trim() && max?.trim() == other.max?.trim() && values.orEmpty() == other.values.orEmpty()
+}
+
+/** The kinds of control, and what each is called. */
+val CONTROL_TYPES = listOf(
+    "daterange" to "Date range",
+    "date" to "Date",
+    "number" to "Number",
+    "numrange" to "Number range",
+    "select" to "Selection",
+    "boolean" to "Switch",
+)
+
+/** A new control of a kind, with values that work at once (boards.ts `newControl`). */
+fun newControl(type: String, name: String): Control = when (type) {
+    "daterange" -> Control(name, type, start = "sow", end = "eow")
+    "date" -> Control(name, type, value = JsonPrimitive("eod"))
+    "number" -> Control(name, type, value = JsonPrimitive("0"))
+    "numrange" -> Control(name, type, min = "0", max = "10")
+    "select" -> Control(name, type, source = "project")
+    else -> Control(name, type, on = "", off = "")
+}
+
+/** How a filter writes a control, for a hint beside it. */
+fun usage(c: Control): String = when (c.type) {
+    "daterange" -> "\$${c.name}.start and \$${c.name}.end"
+    "numrange" -> "\$${c.name}.min and \$${c.name}.max"
+    else -> "\$${c.name}"
+}
+
+/** A control worked out for now: a date range's two moments, a date's one ([start]), or why it cannot be. */
 @Serializable
 data class ResolvedRange(val name: String, val start: Long? = null, val end: Long? = null, val error: String? = null)
 
@@ -143,7 +207,7 @@ data class Board(
     /** Added to every section's filter. */
     val filter: String? = null,
     val sections: List<Section> = emptyList(),
-    val ranges: List<DateRange> = emptyList(),
+    val controls: List<Control> = emptyList(),
 )
 
 @Serializable
@@ -277,14 +341,20 @@ fun effectiveFilter(board: Board, section: Section, series: Series? = null): Str
 /** A range's name as a label: `sprint_week` is `Sprint week`. The name itself is what a filter writes. */
 fun rangeLabel(name: String): String = name.replace(Regex("_+"), " ").trim().replaceFirstChar { it.uppercase() }
 
+/** What the page calls a control: its label, or its name as one. */
+fun controlLabel(c: Control): String = c.label?.trim()?.takeIf { it.isNotEmpty() } ?: rangeLabel(c.name)
+
+/** The date ranges among a board's controls. */
+fun dateRanges(controls: List<Control>): List<Control> = controls.filter { it.type == "daterange" }
+
 /**
- * The board as it is looked at: with the filter and the range dates typed on the page (BoardFilter.svelte, `viewed`), where there are some.
- * [typed] holds, for a range's name, the dates typed for it.
+ * The board as it is looked at: with the filter and the control values set on the page (BoardFilter.svelte, `viewed`), where there are
+ * some. [typed] holds, for a control's name, the control as it was set.
  */
-fun viewedBoard(board: Board, filter: String?, typed: Map<String, DateRange>?): Board =
+fun viewedBoard(board: Board, filter: String?, typed: Map<String, Control>?): Board =
     board.copy(
         filter = filter ?: board.filter,
-        ranges = board.ranges.map { r -> typed?.get(r.name)?.let { r.copy(start = it.start, end = it.end) } ?: r },
+        controls = board.controls.map { c -> typed?.get(c.name)?.let { c.withValues(it) } ?: c },
     )
 
 /** The series of a chart section: its own, or the one the section itself measures. */
@@ -306,39 +376,51 @@ class Zone(val tz: Int, val weekStartsMonday: Boolean, val now: Long) {
 fun boardZone(settings: Map<String, String>?, tz: Int, nowSeconds: Double): Zone =
     Zone(tz, settings?.get("weekstart")?.trim()?.lowercase() == "monday", nowSeconds.toLong())
 
-internal fun rangesJson(ranges: List<DateRange>): JsonElement = boardsJson.encodeToJsonElement(ListSerializer(DateRange.serializer()), ranges)
+internal fun controlsJson(controls: List<Control>): JsonElement = boardsJson.encodeToJsonElement(ListSerializer(Control.serializer()), controls)
 
-/** What the board's date ranges are right now, each worked out in the zone and week of the page. */
-fun resolveRanges(ranges: List<DateRange>, zone: Zone): List<ResolvedRange> =
-    if (ranges.isEmpty()) emptyList()
-    else boardsJson.decodeFromJsonElement(ListSerializer(ResolvedRange.serializer()), callHelper("board_ranges", rangesJson(ranges), zone.toJson()))
+/** What each control is right now, worked out in the zone and week of the page: a range's moments, a date's, or why not. */
+fun resolveControls(controls: List<Control>, zone: Zone): List<ResolvedRange> =
+    if (controls.isEmpty()) emptyList()
+    else boardsJson.decodeFromJsonElement(ListSerializer(ResolvedRange.serializer()), callHelper("board_controls", controlsJson(controls), zone.toJson()))
 
-/** [filter] with every `$name.start` and `$name.end` written as the moment it means; throws why it cannot be. */
-fun substituteRanges(filter: String, ranges: List<DateRange>, zone: Zone): String {
+/** [filter] with every control it names (`$proj`, `$week.start`) written as what it is now; throws why it cannot be. */
+fun substituteControls(filter: String, controls: List<Control>, zone: Zone): String {
     if ('$' !in filter) return filter
-    val got = callHelper("board_substitute", JsonPrimitive(filter), rangesJson(ranges), zone.toJson()).jsonObject
+    val got = callHelper("board_substitute", JsonPrimitive(filter), controlsJson(controls), zone.toJson()).jsonObject
     got["message"]?.let { error(it.jsonPrimitive.content) }
     return got["filter"]?.jsonPrimitive?.content ?: filter
 }
 
 /** How many groups a chart keeps, worked out now: a number, or the count of a date range (`$week.day_count`); null for all. Throws why not. */
-fun keepOf(limit: String?, ranges: List<DateRange>, zone: Zone): Int? {
+fun keepOf(limit: String?, controls: List<Control>, zone: Zone): Int? {
     if (limit.isNullOrBlank()) return null
     limit.trim().toIntOrNull()?.let { return it.takeIf { n -> n > 0 } }
-    val got = callHelper("board_limit", JsonPrimitive(limit), rangesJson(ranges), zone.toJson()).jsonObject
+    val got = callHelper("board_limit", JsonPrimitive(limit), controlsJson(controls), zone.toJson()).jsonObject
     got["message"]?.let { error(it.jsonPrimitive.content) }
     return got["limit"]?.takeIf { it !is JsonNull }?.jsonPrimitive?.content?.toIntOrNull()
 }
 
 /** What the largest group of each range is right now (`day`, `week`, `month` or `year`), by the range's name; none for one that cannot be worked out. */
-fun largestGroups(ranges: List<DateRange>, zone: Zone): Map<String, String> =
-    ranges.mapNotNull { r -> runCatching { r.name to substituteRanges("\$${r.name}.lg_group.name", ranges, zone) }.getOrNull() }.toMap()
+fun largestGroups(controls: List<Control>, zone: Zone): Map<String, String> =
+    dateRanges(controls).mapNotNull { r -> runCatching { r.name to substituteControls("\$${r.name}.lg_group.name", controls, zone) }.getOrNull() }.toMap()
 
 /** The grouping with a step written as a range's largest group worked out. */
-fun resolveBy(by: By?, ranges: List<DateRange>, zone: Zone): By? {
+fun resolveBy(by: By?, controls: List<Control>, zone: Zone): By? {
     val time = by?.time ?: return by
     if (!time.step.startsWith("$")) return by
-    return By(time = time.copy(step = substituteRanges(time.step, ranges, zone)))
+    return By(time = time.copy(step = substituteControls(time.step, controls, zone)))
+}
+
+/**
+ * The values a selection offers (boards.ts `choicesOf`): those open tasks have in its source (or, with `completed`, completed tasks'
+ * too), by `_unique`. A UDA with values offers those of them in use, in their order. What is picked is always offered.
+ */
+suspend fun choicesOf(tw: Tw, c: Control, defined: List<String>?): List<String> {
+    val which = if (c.completed == true) listOf("status.not:deleted") else listOf("status.not:deleted", "status.not:completed")
+    val result = tw.run(args = which + "_unique" + c.source.orEmpty()).result
+    val used = (result as? CliResult.Text)?.value?.lines.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }
+    val offered = if (!defined.isNullOrEmpty()) defined.filter { it.isNotEmpty() && it in used } else used
+    return offered + c.values.orEmpty().filter { it !in offered }
 }
 
 private fun measureJson(m: Measure): JsonElement = boardsJson.encodeToJsonElement(Measure.serializer(), m)
@@ -353,7 +435,7 @@ fun aggregateNumber(text: String, section: Section, zone: Zone): BoardAnswer {
 }
 
 /** What a chart section's series, laid on one axis. */
-fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, ranges: List<DateRange> = emptyList()): BoardChart {
+fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, controls: List<Control> = emptyList()): BoardChart {
     val series = JsonArray(
         inputs.map {
             buildJsonObject {
@@ -365,13 +447,13 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, ranges: List<DateRa
         },
     )
     val byJson: JsonElement = by?.let { boardsJson.encodeToJsonElement(By.serializer(), it) } ?: JsonNull
-    return boardsJson.decodeFromJsonElement(BoardChart.serializer(), callHelper("board_chart", series, byJson, zone.toJson(), rangesJson(ranges)))
+    return boardsJson.decodeFromJsonElement(BoardChart.serializer(), callHelper("board_chart", series, byJson, zone.toJson(), controlsJson(controls)))
 }
 
 class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?)
 
 /** A heatmap: a grid for each series (one, when they are stacked), the columns the same in each. With no rows a series is a row, and stacked they are one row. */
-fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows?, stacked: Boolean, zone: Zone, ranges: List<DateRange> = emptyList()): List<BoardChart> {
+fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows?, stacked: Boolean, zone: Zone, controls: List<Control> = emptyList()): List<BoardChart> {
     val series = JsonArray(
         inputs.map {
             buildJsonObject {
@@ -384,7 +466,7 @@ fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows?, stacked: Boolean,
     )
     val got = callHelper(
         "board_heatmap", series, boardsJson.encodeToJsonElement(By.serializer(), by), rows?.let { boardsJson.encodeToJsonElement(Rows.serializer(), it) } ?: JsonNull,
-        JsonPrimitive(stacked), zone.toJson(), rangesJson(ranges),
+        JsonPrimitive(stacked), zone.toJson(), controlsJson(controls),
     )
     return boardsJson.decodeFromJsonElement(ListSerializer(BoardChart.serializer()), got)
 }
@@ -458,8 +540,8 @@ sealed interface SectionData {
  */
 suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData> {
     val exports = HashMap<String, CliResult>()
-    /** The filter a section (or one of its series) runs, with the board's date ranges in it. */
-    fun filterOf(s: Section, x: Series? = null) = substituteRanges(effectiveFilter(board, s, x), board.ranges, zone)
+    /** The filter a section (or one of its series) runs, with the board's controls in it. */
+    fun filterOf(s: Section, x: Series? = null) = substituteControls(effectiveFilter(board, s, x), board.controls, zone)
     suspend fun exportOf(filter: String): CliResult =
         exports.getOrPut(filter) { tw.run(args = rustHelpers().splitWords(filter) + "export").result }
 
@@ -474,7 +556,7 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
     for (section in board.sections) {
         out[section.id] = try {
             // A step written as a range's largest group is the step it is now.
-            val s = section.copy(by = resolveBy(section.by, board.ranges, zone))
+            val s = section.copy(by = resolveBy(section.by, board.controls, zone))
             when {
                 s.type == "table" -> {
                     val filter = filterOf(s)
@@ -505,9 +587,9 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
                     if (failure != null) SectionData.Failed(failure)
                     else if (s.type == "heatmap" && by != null) {
                         // A heatmap: a grid for each series (one when stacked), the columns the same in each.
-                        val grids = layHeatmap(inputs, by, s.rows, s.stacked == true, zone, board.ranges)
-                        SectionData.Chart(grids.first(), sources, keepOf(s.limit, board.ranges, zone), grids)
-                    } else SectionData.Chart(layChart(inputs, s.by, zone, board.ranges), sources, keepOf(s.limit, board.ranges, zone))
+                        val grids = layHeatmap(inputs, by, s.rows, s.stacked == true, zone, board.controls)
+                        SectionData.Chart(grids.first(), sources, keepOf(s.limit, board.controls, zone), grids)
+                    } else SectionData.Chart(layChart(inputs, s.by, zone, board.controls), sources, keepOf(s.limit, board.controls, zone))
                 }
             }
         } catch (e: Exception) {

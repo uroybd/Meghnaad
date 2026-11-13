@@ -555,8 +555,15 @@ groups is each screen's job.
   the range is cut into (the largest of day, week, month and year with two whole periods in it); a `by.time.step` may be
   written as it, kept as `TimeBy.var` until the page has worked it out. A `by.time.range` (a range's name, or two dates
   of the chart's own) makes the axis every period of that range, with a state series stopping at today: `board_chart`
-  takes the board's ranges as a fourth argument and works the range into `TimeBy.window`, which is never saved. A name
+  takes the board's controls as a fourth argument and works the range into `TimeBy.window`, which is never saved. A name
   that is no range, or a date that can't be read, is refused.
+- **`controls`** is a board's named values, of which a date range is one kind: a date, a number, a number range, a
+  selection of a project, tags or a UDA's values, and a switch, each with an optional label. `board_substitute` writes
+  every `$name` in a filter as what it is now (a moment, a number, the clause that picks a selection's values, a switch's
+  text for on or off, `uuid.any:` for an empty one), and hands `$name.start` and the counts to `ranges`; `board_controls`
+  works out what a date range or a date is now, for the page. A control is read from the JSON by hand (`read`), which
+  costs the WebAssembly much less than an internally tagged enum. `normalize` reads a board's old `ranges` as date-range
+  controls and writes `controls`. The choices a selection offers are the front end's to ask for (`_unique`).
 - **`layout`** places, moves and resizes a section so that what it lands on is pushed down and everything floats up,
   and orders sections for a narrow screen.
 - **`heat`** makes a heatmap's grids (reached as `board_heatmap`). The columns are `chart`'s; the rows are the value of
@@ -804,7 +811,9 @@ The browser's pages over the engine's `board` module.
   commands') and `serializeBoards` writes them back with the other keys as they were.
 - `boards.ts` runs `<filter> export` for each distinct filter (sections with the same one share it) and a table's
   report, hands the text to `board_aggregate`, and sorts and trims the groups. Before it runs a filter it writes the
-  board's date ranges into it (`board_substitute`; the dates typed above the board take the place of the board's own).
+  board's controls into it (`board_substitute`; the values set above the board take the place of the board's own).
+  `ControlField` draws one control (above the board and as its starting value in `ControlsEditor`), and asks
+  `_unique` for a selection's choices.
 - `BoardView` is the grid and the drag, resize and keyboard handling. Each step is worked out from where the drag
   began, on the layout as it was then, by `board_place`, or on a narrow screen by `board_resize_flow`, which resizes in
   the phone's columns; sections are drawn where `board_flow` puts them there. A section's settings are in `Drawer`, a

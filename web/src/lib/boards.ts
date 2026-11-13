@@ -137,7 +137,52 @@ export interface DateRange {
   end: string;
 }
 
-/** A range worked out for now: the two moments (epoch seconds), or why it cannot be. */
+/**
+ * What a control holds, by its kind (`tc_core::board::controls`). A filter on the board uses it as `$name`: a date range as
+ * `$name.start` and `$name.end`, a number range as `$name.min` and `$name.max`, a selection as the clause that picks its
+ * values (`project:Home`, `( +a or +b )`), and a switch as its text for on or off.
+ */
+export type ControlKind =
+  | { type: 'daterange'; start: string; end: string }
+  | { type: 'date'; value: string }
+  | { type: 'number'; value: string }
+  | { type: 'numrange'; min: string; max: string }
+  | {
+      type: 'select';
+      /** `project`, `tags` or the name of a UDA with values. */
+      source: string;
+      multiple?: boolean;
+      /** The choices include the values only completed tasks have. */
+      completed?: boolean;
+      values?: string[];
+    }
+  | { type: 'boolean'; on?: string; off?: string; value?: boolean };
+
+export type ControlType = ControlKind['type'];
+
+/** A named value set above the board; `label` is what the page shows (any text), the name what a filter writes. */
+export type Control = { name: string; label?: string } & ControlKind;
+
+/** The values of a control as they are set on the page, over the board's own. */
+export interface ControlValue {
+  start?: string;
+  end?: string;
+  value?: string | boolean;
+  min?: string;
+  max?: string;
+  values?: string[];
+}
+
+export const CONTROL_TYPES: { id: ControlType; label: string }[] = [
+  { id: 'daterange', label: 'Date range' },
+  { id: 'date', label: 'Date' },
+  { id: 'number', label: 'Number' },
+  { id: 'numrange', label: 'Number range' },
+  { id: 'select', label: 'Selection' },
+  { id: 'boolean', label: 'Switch' },
+];
+
+/** A control worked out for now: a date range's two moments, a date's one (`start`), or why it cannot be. */
 export interface ResolvedRange {
   name: string;
   start?: number;
@@ -151,7 +196,7 @@ export interface Board {
   description?: string;
   /** Added to every section's filter. */
   filter?: string;
-  ranges?: DateRange[];
+  controls?: Control[];
   sections: Section[];
 }
 
@@ -452,36 +497,51 @@ export function rangeLabel(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** What the board's date ranges are right now, each worked out in the page's zone and week. */
-export function resolveRanges(ranges: DateRange[], zone: Zone): ResolvedRange[] {
-  return ranges.length ? callHelper<ResolvedRange[]>('board_ranges', ranges, zone) : [];
+/** What the page calls a control: its label, or its name as one. */
+export const controlLabel = (c: { name: string; label?: string }): string => c.label?.trim() || rangeLabel(c.name);
+
+/** The date ranges among a board's controls. */
+export const dateRanges = (controls: Control[] | undefined): (Control & { type: 'daterange' })[] =>
+  (controls ?? []).filter((c): c is Control & { type: 'daterange' } => c.type === 'daterange');
+
+/** What each control is right now, worked out in the page's zone and week: a range's moments, a date's, or why not. */
+export function resolveControls(controls: Control[], zone: Zone): ResolvedRange[] {
+  return controls.length ? callHelper<ResolvedRange[]>('board_controls', controls, zone) : [];
 }
 
-/** `filter` with every `$name.start` and `$name.end` written as the moment it means; throws why it cannot be. */
-export function substituteRanges(filter: string, ranges: DateRange[], zone: Zone): string {
+/** What these date ranges are right now. */
+export function resolveRanges(ranges: DateRange[], zone: Zone): ResolvedRange[] {
+  return resolveControls(
+    ranges.map((r) => ({ ...r, type: 'daterange' as const })),
+    zone,
+  );
+}
+
+/** `filter` with every control it names (`$proj`, `$week.start`) written as what it is now; throws why it cannot be. */
+export function substituteControls(filter: string, controls: Control[], zone: Zone): string {
   if (!filter.includes('$')) return filter;
-  const got = callHelper<{ filter: string } | { message: string }>('board_substitute', filter, ranges, zone);
+  const got = callHelper<{ filter: string } | { message: string }>('board_substitute', filter, controls, zone);
   if ('message' in got) throw new Error(got.message);
   return got.filter;
 }
 
 /** How many groups a chart keeps, worked out now: a number, or the count of a date range (`$week.day_count`); null for all. Throws why not. */
-export function keepOf(limit: number | string | undefined, ranges: DateRange[], zone: Zone): number | null {
+export function keepOf(limit: number | string | undefined, controls: Control[], zone: Zone): number | null {
   if (limit === undefined || typeof limit === 'number') return limit || null;
-  const got = callHelper<{ limit: number | null } | { message: string }>('board_limit', limit, ranges, zone);
+  const got = callHelper<{ limit: number | null } | { message: string }>('board_limit', limit, controls, zone);
   if ('message' in got) throw new Error(got.message);
   return got.limit;
 }
 
 /**
- * What the largest group of each range is right now (`day`, `week`, `month` or `year`: the largest step that gives at least two
- * whole periods), by the range's name; none for a range that cannot be worked out.
+ * What the largest group of each date range is right now (`day`, `week`, `month` or `year`: the largest step that gives at
+ * least two whole periods), by the range's name; none for a range that cannot be worked out.
  */
-export function largestGroups(ranges: DateRange[], zone: Zone): Record<string, string> {
+export function largestGroups(controls: Control[], zone: Zone): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const r of ranges) {
+  for (const r of dateRanges(controls)) {
     try {
-      out[r.name] = substituteRanges(`$${r.name}.lg_group.name`, ranges, zone);
+      out[r.name] = substituteControls(`$${r.name}.lg_group.name`, controls, zone);
     } catch {
       // A range that is not one yet has no group.
     }
@@ -490,22 +550,85 @@ export function largestGroups(ranges: DateRange[], zone: Zone): Record<string, s
 }
 
 /** The grouping with a step written as a range's largest group worked out. */
-export function resolveBy(by: By | undefined, ranges: DateRange[], zone: Zone): By | undefined {
+export function resolveBy(by: By | undefined, controls: Control[], zone: Zone): By | undefined {
   if (!by?.time || !by.time.step.startsWith('$')) return by;
-  return { time: { ...by.time, step: substituteRanges(by.time.step, ranges, zone) } };
+  return { time: { ...by.time, step: substituteControls(by.time.step, controls, zone) } };
 }
 
-/** The board as it is looked at: with the filter and the range values typed on the page, where there are some. */
+/** The board as it is looked at: with the filter and the control values set on the page, where there are some. */
 export function viewed(
   board: Board,
   filter: string | undefined,
-  ranges: Record<string, Omit<DateRange, 'name'>> | undefined,
+  values: Record<string, ControlValue> | undefined,
 ): Board {
   return {
     ...board,
     filter: filter ?? board.filter,
-    ...(board.ranges ? { ranges: board.ranges.map((r) => ({ ...r, ...ranges?.[r.name] })) } : {}),
+    ...(board.controls ? { controls: board.controls.map((c) => ({ ...c, ...values?.[c.name] }) as Control) } : {}),
   };
+}
+
+/** The values a control has, without its name, label and settings: what the page can set over the board's own. */
+export function valueOf(c: Control): ControlValue {
+  switch (c.type) {
+    case 'daterange':
+      return { start: c.start, end: c.end };
+    case 'date':
+    case 'number':
+      return { value: c.value };
+    case 'numrange':
+      return { min: c.min, max: c.max };
+    case 'select':
+      return { values: c.values ?? [] };
+    case 'boolean':
+      return { value: !!c.value };
+  }
+}
+
+/** A new control of a kind, with values that work at once. */
+export function newControl(type: ControlType, name: string): Control {
+  switch (type) {
+    case 'daterange':
+      return { name, type, start: 'sow', end: 'eow' };
+    case 'date':
+      return { name, type, value: 'eod' };
+    case 'number':
+      return { name, type, value: '0' };
+    case 'numrange':
+      return { name, type, min: '0', max: '10' };
+    case 'select':
+      return { name, type, source: 'project' };
+    case 'boolean':
+      return { name, type, on: '', off: '' };
+  }
+}
+
+/** How a filter writes a control, for a hint beside it. */
+export function usage(c: Control): string {
+  switch (c.type) {
+    case 'daterange':
+      return `$${c.name}.start and $${c.name}.end`;
+    case 'numrange':
+      return `$${c.name}.min and $${c.name}.max`;
+    default:
+      return `$${c.name}`;
+  }
+}
+
+/**
+ * The values a selection offers: those open tasks have in its source (or, with `completed`, completed tasks' too), by
+ * `_unique`. A UDA with values offers those of them in use, in their order. What is picked is always offered.
+ */
+export async function choicesOf(
+  c: Control & { type: 'select' },
+  defined: string[] | undefined,
+  run: Run = runCli,
+): Promise<string[]> {
+  const which = c.completed ? ['status.not:deleted'] : ['status.not:deleted', 'status.not:completed'];
+  const result = (await run({ args: [...which, '_unique', c.source] })).result;
+  const used = result.kind === 'text' ? result.lines.map((l) => l.trim()).filter(Boolean) : [];
+  const offered = defined?.length ? defined.filter((v) => v && used.includes(v)) : used;
+  return [...offered, ...(c.values ?? []).filter((v) => !offered.includes(v))];
 }
 
 export interface Zone {
@@ -635,8 +758,9 @@ type Run = (input: { args: string[] }) => Promise<CliResponse>;
  */
 export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Promise<Record<string, SectionData>> {
   const exports = new Map<string, Promise<CliResult>>();
-  /** The filter a section (or one of its series) runs, with the board's date ranges in it. */
-  const filterOf = (s: Section, x?: Series) => substituteRanges(effectiveFilter(board, s, x), board.ranges ?? [], zone);
+  /** The filter a section (or one of its series) runs, with the board's controls in it. */
+  const controls = board.controls ?? [];
+  const filterOf = (s: Section, x?: Series) => substituteControls(effectiveFilter(board, s, x), controls, zone);
   const exportOf = (filter: string) => {
     let p = exports.get(filter);
     if (!p) exports.set(filter, (p = run({ args: [...splitWords(filter), 'export'] }).then((r) => r.result)));
@@ -652,7 +776,7 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
   const one = async (section: Section): Promise<[string, SectionData]> => {
     try {
       // A step written as a range's largest group is the step it is now.
-      const s = { ...section, by: resolveBy(section.by, board.ranges ?? [], zone) };
+      const s = { ...section, by: resolveBy(section.by, controls, zone) };
       if (s.type === 'table') {
         const filter = filterOf(s);
         const result = (await run({ args: [...splitWords(filter), s.report || 'next'] })).result;
@@ -678,19 +802,19 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
         inputs.push({ label: x.label, tasks: got.text, measure: x.measure ?? s.measure, span: x.span });
         sources.push({ label: x.label, filter, text: got.text });
       }
-      const limit = keepOf(s.limit, board.ranges ?? [], zone);
+      const limit = keepOf(s.limit, controls, zone);
       if (s.type === 'heatmap' && s.by) {
         // A heatmap: a grid for each series (one, when they are stacked), the columns the same in each. With no rows a series is
         // a row, and stacked they are one row.
         const rows = s.rows ?? null;
-        const grids = callHelper<Chart[]>('board_heatmap', inputs, s.by, rows, !!s.stacked, zone, board.ranges ?? []);
+        const grids = callHelper<Chart[]>('board_heatmap', inputs, s.by, rows, !!s.stacked, zone, controls);
         return [s.id, { kind: 'chart', chart: grids[0], grids, sources, limit }];
       }
       return [
         s.id,
         {
           kind: 'chart',
-          chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone, board.ranges ?? []),
+          chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone, controls),
           sources,
           limit,
         },

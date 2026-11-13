@@ -131,8 +131,8 @@ describe('grouping a chart by a date', () => {
 
   it('offers the largest group of a range, as it is now', () => {
     const changed = vi.fn();
-    const ranges = [{ name: 'daterange', start: 'sow', end: 'eow' }];
-    app = mount(SectionForm, { target: document.body, props: { section: dated, onchange: changed, ranges } });
+    const controls = [{ name: 'daterange', type: 'daterange' as const, start: 'sow', end: 'eow' }];
+    app = mount(SectionForm, { target: document.body, props: { section: dated, onchange: changed, controls } });
     flushSync();
     const option = [...per().options].find((o) => o.value === '$daterange.lg_group.name')!;
     expect(option.textContent).toBe('Largest group (currently day)');
@@ -144,8 +144,8 @@ describe('grouping a chart by a date', () => {
 
   it('covers a range of the board or dates of its own, and keeps the range when the date or step changes', () => {
     const changed = vi.fn();
-    const ranges = [{ name: 'sprint', start: 'sow', end: 'eow' }];
-    app = mount(SectionForm, { target: document.body, props: { section: dated, onchange: changed, ranges } });
+    const controls = [{ name: 'sprint', type: 'daterange' as const, start: 'sow', end: 'eow' }];
+    app = mount(SectionForm, { target: document.body, props: { section: dated, onchange: changed, controls } });
     flushSync();
     const over = [...document.querySelectorAll<HTMLSelectElement>('select')].find((x) => x.value === '')!;
     expect([...over.options].map((o) => o.value)).toEqual(['', 'range:sprint', 'own']);
@@ -186,11 +186,11 @@ describe('grouping a chart by a date', () => {
   });
 
   it('says whose group it is when there are several ranges, and offers none without ranges', () => {
-    const ranges = [
-      { name: 'sprint_week', start: 'som', end: 'eom' },
-      { name: 'later', start: 'soonish', end: 'eom' },
+    const controls = [
+      { name: 'sprint_week', type: 'daterange' as const, start: 'som', end: 'eom' },
+      { name: 'later', type: 'daterange' as const, start: 'soonish', end: 'eom' },
     ];
-    app = mount(SectionForm, { target: document.body, props: { section: dated, onchange: vi.fn(), ranges } });
+    app = mount(SectionForm, { target: document.body, props: { section: dated, onchange: vi.fn(), controls } });
     flushSync();
     const texts = [...per().options].map((o) => o.textContent);
     expect(texts).toContain('Largest group of Sprint week (currently week)');

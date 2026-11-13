@@ -526,6 +526,9 @@ class Store(
     /** What each section of [board] shows now: their filters run, their numbers worked out (see [loadBoard]). */
     suspend fun loadBoardData(board: Board): Map<String, SectionData> = loadBoard(tw, board, boardZone())
 
+    /** What a selection control offers: the values its source has (`choicesOf`), a UDA's in the order of its values. */
+    suspend fun selectChoices(c: Control): List<String> = choicesOf(tw, c, udas.firstOrNull { it.name == c.source }?.values)
+
     /** What a board needs to cut dates into periods and to work out its date ranges: the zone now in force, the first day of the week, and today. */
     fun boardZone(): Zone = boardZone(config?.config?.settings, clock.utcOffsetSeconds(), clock.nowSeconds())
 
@@ -629,10 +632,10 @@ class Store(
     val boardFilters = mutableStateMapOf<String, String>()
 
     /**
-     * The dates typed for a board's date ranges, by board id and then range name: they take the place of the board's own while the
-     * app is open (nothing saved). A range not here has its own.
+     * The values set for a board's controls, by board id and then control name: they take the place of the board's own while the
+     * app is open (nothing saved). A control not here has its own.
      */
-    val boardRanges = mutableStateMapOf<String, Map<String, DateRange>>()
+    val boardControls = mutableStateMapOf<String, Map<String, Control>>()
 
     // ---- Each page's own context
 

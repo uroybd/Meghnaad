@@ -321,8 +321,9 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         )?),
         "board_chart" => {
             let ctx = a.req::<crate::board::aggregate::Ctx>(2)?;
-            // The board's date ranges, for a date axis that covers one of them.
-            let ranges = a.opt::<Vec<crate::board::ranges::Range>>(3)?.unwrap_or_default();
+            // The board's controls, for a date axis that covers one of its date ranges.
+            let ranges =
+                crate::board::controls::ranges(&a.opt::<Vec<crate::board::controls::Control>>(3)?.unwrap_or_default());
             let mut by = a.opt::<crate::board::aggregate::By>(1)?;
             if let Some(by) = by.as_mut() {
                 crate::board::ranges::attach(by, &ranges, &ctx)?;
@@ -335,7 +336,8 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         }
         "board_heatmap" => {
             let ctx = a.req::<crate::board::aggregate::Ctx>(4)?;
-            let ranges = a.opt::<Vec<crate::board::ranges::Range>>(5)?.unwrap_or_default();
+            let ranges =
+                crate::board::controls::ranges(&a.opt::<Vec<crate::board::controls::Control>>(5)?.unwrap_or_default());
             let mut by = a.req::<crate::board::aggregate::By>(1)?;
             crate::board::ranges::attach(&mut by, &ranges, &ctx)?;
             json!(crate::board::heat::heat(
@@ -346,14 +348,14 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
                 &ctx
             )?)
         }
-        "board_ranges" => json!(crate::board::ranges::resolve(
-            &a.req::<Vec<crate::board::ranges::Range>>(0)?,
+        "board_controls" => json!(crate::board::controls::resolve(
+            &a.req::<Vec<crate::board::controls::Control>>(0)?,
             &a.req::<crate::board::aggregate::Ctx>(1)?
         )),
         // `{"filter": ..}` or `{"error": ..}` as the answer itself: a filter that cannot be had is not a failed call.
-        "board_substitute" => match crate::board::ranges::substitute(
+        "board_substitute" => match crate::board::controls::substitute(
             &a.req::<String>(0)?,
-            &a.req::<Vec<crate::board::ranges::Range>>(1)?,
+            &a.req::<Vec<crate::board::controls::Control>>(1)?,
             &a.req::<crate::board::aggregate::Ctx>(2)?,
         ) {
             Ok(filter) => json!({ "filter": filter }),
@@ -362,7 +364,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         // The groups a chart keeps, worked out now: `{"limit": 7}` (or `null` for all) or `{"message": ..}`.
         "board_limit" => match crate::board::ranges::limit(
             &a.req::<String>(0)?,
-            &a.req::<Vec<crate::board::ranges::Range>>(1)?,
+            &crate::board::controls::ranges(&a.req::<Vec<crate::board::controls::Control>>(1)?),
             &a.req::<crate::board::aggregate::Ctx>(2)?,
         ) {
             Ok(limit) => json!({ "limit": limit }),
@@ -622,7 +624,7 @@ mod tests {
         );
         assert!(call("board_aggregate", &bad).contains("need a field"));
 
-        let ranges = r#"[{"name":"week","start":"sow","end":"eow"}]"#;
+        let ranges = r#"[{"name":"week","type":"daterange","start":"sow","end":"eow"}]"#;
         let ranges_w = ranges;
         let got = call(
             "board_substitute",
@@ -634,7 +636,8 @@ mod tests {
             &format!(r#"["due.after:$nope.start",{ranges},{ctx}]"#),
         );
         assert!(got.contains(r#""message""#) && got.contains("nope"), "{got}");
-        let got: serde_json::Value = serde_json::from_str(&call("board_ranges", &format!("[{ranges},{ctx}]"))).unwrap();
+        let got: serde_json::Value =
+            serde_json::from_str(&call("board_controls", &format!("[{ranges},{ctx}]"))).unwrap();
         assert_eq!(
             (got[0]["start"].as_i64(), got[0]["end"].as_i64()),
             (Some(1_791_158_400), Some(1_791_763_199))

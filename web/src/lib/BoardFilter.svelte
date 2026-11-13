@@ -1,6 +1,16 @@
 <script lang="ts">
-  import { rangeLabel, resolveRanges, viewed, zoneNow, type Board, type ResolvedRange } from './boards';
-  import DateField from './DateField.svelte';
+  import {
+    controlLabel,
+    resolveControls,
+    usage,
+    valueOf,
+    viewed,
+    zoneNow,
+    type Board,
+    type ControlValue,
+    type ResolvedRange,
+  } from './boards';
+  import ControlField from './ControlField.svelte';
   import { formatFor } from './dateformat';
   import { formatMoment } from './dates';
   import { ChevronDown, ChevronRight, RotateCcw } from './icons';
@@ -10,7 +20,7 @@
   /**
    * A filter to look at one board another way: collapsed by default, and what is typed here takes the place of the board's own
    * filter (its default, saved with the board) for as long as the page is open. It is not saved. A context goes in it as it does
-   * in the board's own: `rc.context=this_week`. The board's date ranges are beside it, always in view, and work the same way.
+   * in the board's own: `rc.context=this_week`. The board's controls (date ranges, numbers, selections, switches) are beside it, always in view, and work the same way.
    */
   let { board }: { board: Board } = $props();
 
@@ -27,37 +37,34 @@
     store.boardFilters = next;
   }
 
-  // ---- The date ranges ---------------------------------------------------------------------------------------------
-  const typedRanges = $derived(store.boardRanges[board.id] ?? {});
-  const ranges = $derived(viewed(board, undefined, typedRanges).ranges ?? []);
-  const rangesChanged = $derived(Object.keys(typedRanges).length > 0);
+  // ---- The controls ------------------------------------------------------------------------------------------------
+  const typedValues = $derived(store.boardControls[board.id] ?? {});
+  const controls = $derived(viewed(board, undefined, typedValues).controls ?? []);
+  const valuesChanged = $derived(Object.keys(typedValues).length > 0);
   const fmt = $derived(formatFor('info', store.config?.config.settings));
-  const resolved = $derived<ResolvedRange[]>(resolveRanges(ranges, zoneNow(store.config?.config.settings)));
+  const resolved = $derived<ResolvedRange[]>(resolveControls(controls, zoneNow(store.config?.config.settings)));
 
-  /** Keep these dates for the range (or, with none, the board's own). */
-  function keepRange(name: string, dates: { start: string; end: string } | null) {
-    const next = { ...store.boardRanges };
-    const mine = { ...typedRanges };
-    if (dates) mine[name] = dates;
+  /** Keep this value for the control (or, with none, the board's own). */
+  function keep(name: string, value: ControlValue | null) {
+    const next = { ...store.boardControls };
+    const mine = { ...typedValues };
+    if (value) mine[name] = value;
     else delete mine[name];
     if (Object.keys(mine).length) next[board.id] = mine;
     else delete next[board.id];
-    store.boardRanges = next;
+    store.boardControls = next;
   }
-  function setRange(name: string, which: 'start' | 'end', value: string) {
-    const saved = board.ranges?.find((r) => r.name === name);
+  function setValue(name: string, value: ControlValue) {
+    const saved = board.controls?.find((c) => c.name === name);
     if (!saved) return;
-    const was = typedRanges[name] ?? saved;
-    const now = { start: was.start, end: was.end };
-    now[which] = value;
-    // Typing the board's own dates back is no change.
-    const same = now.start.trim() === saved.start.trim() && now.end.trim() === saved.end.trim();
-    keepRange(name, same ? null : now);
+    // Setting the board's own value back is no change.
+    keep(name, JSON.stringify(value) === JSON.stringify(valueOf(saved)) ? null : value);
   }
   /** `Oct 5 – Oct 11` as the user's dateformat writes each end; or why the range is not one. */
   function shown(r: ResolvedRange | undefined): string {
     if (!r) return '';
     if (r.error) return r.error;
+    if (r.end === undefined) return formatMoment(r.start ?? 0, undefined, fmt);
     return `${formatMoment(r.start ?? 0, undefined, fmt)} – ${formatMoment(r.end ?? 0, undefined, fmt)}`;
   }
 </script>
@@ -74,37 +81,29 @@
       {#if open}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if} Filter
       {#if changed}<span class="changed">changed</span>{/if}
     </button>
-    {#each ranges as r, i (r.name)}
-      <div class="range" role="group" aria-label="Date range {rangeLabel(r.name)}">
-        <span class="name" title="Use it in a filter as ${r.name}.start and ${r.name}.end">{rangeLabel(r.name)}</span>
-        <DateField
-          bind:value={() => r.start, (v) => setRange(r.name, 'start', v)}
-          label="Start of {rangeLabel(r.name)}"
-          invalid={!!resolved[i]?.error}
-        />
-        <span class="dim">–</span>
-        <DateField
-          bind:value={() => r.end, (v) => setRange(r.name, 'end', v)}
-          label="End of {rangeLabel(r.name)}"
-          invalid={!!resolved[i]?.error}
-        />
+    {#each controls as c, i (c.name)}
+      <div class="control" class:range={c.type === 'daterange'} role="group" aria-label={controlLabel(c)}>
+        <span class="name" title="Use it in a filter as {usage(c)}">{controlLabel(c)}</span>
+        <ControlField control={c} invalid={!!resolved[i]?.error} onchange={(v) => setValue(c.name, v)} />
         <button
           type="button"
           class="ghost"
-          aria-label="Use the board's own dates for {rangeLabel(r.name)}"
-          title="Use the board's own dates"
-          disabled={!typedRanges[r.name]}
-          onclick={() => keepRange(r.name, null)}><RotateCcw size={15} /></button
+          aria-label="Use the board's own value for {controlLabel(c)}"
+          title="Use the board's own value"
+          disabled={!typedValues[c.name]}
+          onclick={() => keep(c.name, null)}><RotateCcw size={15} /></button
         >
       </div>
     {/each}
   </div>
-  {#if ranges.length}
-    <ul class="dim resolved" aria-label="What the date ranges are now">
-      {#each ranges as r, i (r.name)}
-        <li class:err={!!resolved[i]?.error}><code>${r.name}</code> {shown(resolved[i])}</li>
+  {#if controls.length}
+    <ul class="dim resolved" aria-label="What the controls are now">
+      {#each controls as c, i (c.name)}
+        {#if resolved[i]?.error || resolved[i]?.start !== undefined}
+          <li class:err={!!resolved[i]?.error}><code>${c.name}</code> {shown(resolved[i])}</li>
+        {/if}
       {/each}
-      {#if rangesChanged}<li>Dates typed here replace the board's own while you look at it; nothing is saved.</li>{/if}
+      {#if valuesChanged}<li>Values set here replace the board's own while you look at it; nothing is saved.</li>{/if}
     </ul>
   {/if}
   {#if open}
@@ -148,7 +147,7 @@
   .row {
     flex-wrap: wrap;
   }
-  .range {
+  .control {
     display: inline-flex;
     align-items: center;
     gap: 6px;

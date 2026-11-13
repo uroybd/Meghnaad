@@ -5,7 +5,7 @@
   import FilterInput from './FilterInput.svelte';
   import type { Homepage } from './appsettings';
   import { ChevronLeft, Copy, LayoutDashboard, Pencil, Plus, Trash2, TriangleAlert } from './icons';
-  import RangesEditor from './RangesEditor.svelte';
+  import ControlsEditor from './ControlsEditor.svelte';
   import SectionForm from './SectionForm.svelte';
   import {
     SECTION_TYPES,
@@ -298,8 +298,8 @@
           />
         </div>
         <div class="wide">
-          <RangesEditor
-            bind:ranges={() => draft?.ranges ?? [], (v) => draft && (draft.ranges = v.length ? v : undefined)}
+          <ControlsEditor
+            bind:controls={() => draft?.controls ?? [], (v) => draft && (draft.controls = v.length ? v : undefined)}
           />
         </div>
         <div class="wide row copy">
@@ -320,13 +320,13 @@
       {/if}
       {#if picked}
         <Drawer title={picked.title || 'Section'} onclose={() => (opened = null)}>
-          <SectionForm section={picked} ranges={draft?.ranges ?? []} onchange={setSection} />
+          <SectionForm section={picked} controls={draft?.controls ?? []} onchange={setSection} />
         </Drawer>
       {/if}
     {/if}
 
     <BoardView
-      board={draft ?? viewed(board, store.boardFilters[board.id], store.boardRanges[board.id])}
+      board={draft ?? viewed(board, store.boardFilters[board.id], store.boardControls[board.id])}
       editing={!!draft}
       {selected}
       onchange={setSections}

@@ -1,12 +1,13 @@
 //! Boards: the `boards` of `settings.json`, each a page of sections (a number, a chart, a table) over what `<filter>
 //! export` prints. What a board means and the numbers a section shows are `tc_core::board`'s, as on the web and the phone;
 //! this is the glue around it, ported from Android's `Boards.kt` and the web app's `boards.ts`: running each filter once,
-//! putting the board's date ranges into the filters, and the order and number of a chart's groups.
+//! putting the board's controls into the filters, and the order and number of a chart's groups.
 
 use crate::task::Task;
 use serde_json::Value;
 use std::collections::HashMap;
 use tc_core::board::aggregate::{self, Answer, By, Chart, Ctx, Dataset, Query, SeriesInput};
+use tc_core::board::controls::{self, Control};
 use tc_core::board::heat::{self, Grid};
 use tc_core::board::ranges::{self, Range};
 use tc_core::board::{Board, Kind, Limit, Section, Series};
@@ -72,13 +73,9 @@ pub fn series_of(section: &Section) -> Vec<Series> {
     }
 }
 
-/// `filter` with every `$name.start` and `$name.end` written as the moment it means.
-fn substitute(filter: &str, ranges: &[Range], ctx: &Ctx) -> Result<String, String> {
-    if filter.contains('$') {
-        ranges::substitute(filter, ranges, ctx)
-    } else {
-        Ok(filter.to_owned())
-    }
+/// `filter` with every control of the board it names (`$proj`, `$week.start`) written as what it is now.
+fn substitute(filter: &str, controls: &[Control], ctx: &Ctx) -> Result<String, String> {
+    controls::substitute(filter, controls, ctx)
 }
 
 /// The grouping with a step written as a range's largest group (`$week.lg_group.name`) worked out, and the range of a date
@@ -90,7 +87,7 @@ fn resolve_by(by: Option<&By>, ranges: &[Range], ctx: &Ctx) -> Result<Option<By>
     let mut by = by.clone();
     if let Some(var) = by.time.as_ref().and_then(|t| t.var.clone()) {
         // The step is read as a saved board writes it, now with the word the range gives.
-        let step = substitute(&var, ranges, ctx)?;
+        let step = ranges::substitute(&var, ranges, ctx)?;
         let mut wire = serde_json::to_value(&by).map_err(|e| e.to_string())?;
         if let Some(t) = wire.get_mut("time") {
             t["step"] = Value::String(step);
@@ -228,9 +225,10 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
             .clone()
     };
     let mut out = Vec::new();
+    let date_ranges = controls::ranges(&board.controls);
     for s in &board.sections {
         let data = (|| -> Result<Data, String> {
-            let filter_of = |x: Option<&Series>| substitute(&effective_filter(board, s, x), &board.ranges, ctx);
+            let filter_of = |x: Option<&Series>| substitute(&effective_filter(board, s, x), &board.controls, ctx);
             match s.kind {
                 Kind::Table => {
                     let mut args = crate::app::colored(width(s), 200);
@@ -262,8 +260,8 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
                             span: x.span.clone(),
                         });
                     }
-                    let by = resolve_by(s.by.as_ref(), &board.ranges, ctx)?;
-                    let keep = keep(s.limit.as_ref(), &board.ranges, ctx)?;
+                    let by = resolve_by(s.by.as_ref(), &date_ranges, ctx)?;
+                    let keep = keep(s.limit.as_ref(), &date_ranges, ctx)?;
                     if s.kind == Kind::Heatmap {
                         let by = by.ok_or("a heatmap needs something to group by")?;
                         let grids = heat::heat(&inputs, &by, s.rows.as_ref(), s.stacked == Some(true), ctx)?;

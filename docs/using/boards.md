@@ -72,15 +72,50 @@ The filter is the one the Tasks page takes (Tab completes).
 - **Ignore the board's filter.** Tick it in a section's settings (off by default) for a section that should ask about its
   own tasks only.
 
-## Date ranges
+## Controls
 
-A board can have any number of named **ranges**, each a **start** and an **end** (both required), set in the board's
-settings. They sit above the board next to its filter. Filters on the board, a section or a series use them as
-`$name.start` and `$name.end`, so one change moves every card. For a range named `daterange` (`sow` to `eow`):
+A board can have any number of named **controls**, set in the board's settings. They sit above the board next to its
+filter, and filters on the board, a section or a series use them as variables, so one change moves every card. Each has a
+**name** (what a filter writes after `$`) and an optional **label**, any text with spaces, which is what the board shows;
+with none, the name is shown as a label (`sprint_week` is "Sprint week"). What a control starts as is set with it.
+
+| Kind | Holds | A filter writes | Becomes |
+| --- | --- | --- | --- |
+| **Date range** | a start and an end | `$name.start`, `$name.end` (and [its counts](#counts-and-the-largest-group)) | the two moments |
+| **Date** | one date or moment | `$name` | the moment, as Taskwarrior writes one (`20261009T000000Z`) |
+| **Number** | one number | `$name` | the number as typed |
+| **Number range** | a least and a most | `$name.min`, `$name.max` | the numbers |
+| **Selection** | a value of projects, tags or a UDA with values; or several, with **Several at once** | `$name` | `project:Home`, `( +a or +b )`, `( priority:H or priority:M )` |
+| **Switch** | on or off, and a filter for each | `$name` | the filter in effect, in parentheses |
+
+For a range named `daterange` (`sow` to `eow`):
 
 ```
 (end.after:$daterange.start and end.before:$daterange.end) or (scheduled.after:$daterange.start and scheduled.before:$daterange.end)
 ```
+
+and a board of open work, cut by a project picked above it, by tags, by urgency, by a due date and an estimate, and with
+a switch for what is next:
+
+```
+status:pending $project $tags urgency.above:$urgency.min urgency.below:$urgency.max due.before:$cutoff estimate.above:$least $next
+```
+
+A date, a number and a range's ends are values, written after an attribute (`due.before:$cutoff`). A selection and a
+switch are whole terms: write `$project`, not `project:$project`.
+
+### Selections
+
+A selection offers the values open tasks have (`task _unique`): their projects, their tags, or a UDA's. **Offer values of
+completed tasks** adds those that only completed tasks have. A UDA can be picked from when it has `uda.<name>.values`,
+and offers those of its values in use, in their order. Several values are joined with `or`, so a task with any of them
+is picked. A value with a space is quoted (`project:"My Home"`). Nothing chosen picks every task: `$name` is then
+`uuid.any:`, as an empty switch is.
+
+### Switches
+
+A switch has a filter for **When on** and one for **When off**, such as `+next` and nothing. An empty one picks every task:
+`$name` is then `uuid.any:`, which every task matches, so `$next or +urgent` and `status:pending $next` still read.
 
 ### Dates
 
@@ -91,14 +126,15 @@ written into the filter as the moment they mean, so a value with a space can't b
 
 ### Names
 
-A name is lower-case letters, digits and `_`, starting with a letter, and shown as a label (`sprint_week` is
-"Sprint week"). An unknown name, an unreadable date or an end before its start is an error on the cards that use it,
-and nothing runs.
+A name is lower-case letters, digits and `_`, starting with a letter. A label is one line of up to 80 characters. An
+unknown name, an unreadable date or number, a least above its most, or a reference the kind doesn't have (`$week` for a
+date range, `$urgency.start` for a number range) is an error on the cards that use it, and nothing runs. A `$` followed by
+no name (the end of a regular expression, `description~done$`) is left as it is.
 
 ### Changing them
 
-Dates typed above a board last only while the page is open (**Reset** brings the board's own back).
-The board's own are changed in its settings.
+Values set above a board last only while the page is open (**Reset** brings the board's own back).
+The board's own are changed in its settings, where each control's **Starts as** is the value it has.
 
 ### Counts and the largest group
 
@@ -125,7 +161,7 @@ dates).
   task outside the range has no place on it, so the section's filter needn't repeat the range.
 - A burndown over a week per day has its seven days. A series that counts what is open at the end of each period
   (**Counts**) stops at today, leaving later periods empty, as `task burndown` stops.
-- The periods are the range's, so the chart moves with the dates typed above the board, and a chart of the largest group
+- The periods are the range's, so the chart moves with the dates set above the board, and a chart of the largest group
   of the same range gives exactly its whole periods.
 
 ## Measuring and grouping
@@ -257,7 +293,11 @@ want to keep what was left out.
       "name": "My week",
       "description": "What I got done",
       "filter": "project.not:Someday",
-      "ranges": [{ "name": "daterange", "start": "sow", "end": "eow" }],
+      "controls": [
+        { "name": "daterange", "label": "This week", "type": "daterange", "start": "sow", "end": "eow" },
+        { "name": "project", "type": "select", "source": "project", "completed": true },
+        { "name": "next", "type": "boolean", "on": "+next", "off": "" }
+      ],
       "sections": [
         { "id": "open", "title": "Open", "x": 0, "y": 0, "w": 3, "h": 2, "type": "number",
           "filter": "status:pending" },
@@ -282,6 +322,23 @@ want to keep what was left out.
   ]
 }
 ```
+
+A board saved before there were other controls keeps its date ranges under `ranges` (a `name`, `start` and `end`); they
+are read as date-range controls and written back under `controls` when the board is next saved. A control is one object:
+`name`, an optional `label`, a `type`, and that kind's fields, which hold what it starts as:
+
+```json
+{ "name": "week", "label": "This week", "type": "daterange", "start": "sow", "end": "eow" }
+{ "name": "cutoff", "type": "date", "value": "eow" }
+{ "name": "least", "type": "number", "value": "2" }
+{ "name": "urgency", "type": "numrange", "min": "1", "max": "10" }
+{ "name": "project", "type": "select", "source": "project", "values": ["Home"] }
+{ "name": "tags", "type": "select", "source": "tags", "multiple": true, "completed": true, "values": ["a", "b"] }
+{ "name": "next", "type": "boolean", "on": "+next", "off": "", "value": false }
+```
+
+`source` is `project`, `tags` or the name of a UDA; `values` is what is chosen (none: any). Dates are anything
+Taskwarrior reads; a number may be written as a number or as text.
 
 `x` and `w` are columns (0 to 11, and 2 to 12); `y` and `h` are rows. `measure` is `{ "fn": "count" }` unless it says
 otherwise, and `estimate` above is a duration UDA of yours.

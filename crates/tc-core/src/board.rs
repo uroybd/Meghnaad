@@ -6,11 +6,13 @@
 //! says where each section goes. Nothing here touches a replica.
 
 pub mod aggregate;
+pub mod controls;
 pub mod heat;
 pub mod layout;
 pub mod ranges;
 
 use aggregate::{By, Func, Measure, Span};
+use controls::Control;
 use heat::Rows;
 use layout::{Cell, Rect};
 use ranges::Range;
@@ -157,9 +159,10 @@ pub struct Board {
     /// Added to every section's filter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
-    /// Named dates any filter on the board can use: `$name.start` and `$name.end`.
+    /// Named values set above the board that any filter on it uses: `$name`, and a date range's `$name.start` and
+    /// `$name.end` (see `controls`). A board saved before there were other kinds has its date ranges in `ranges`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ranges: Vec<Range>,
+    pub controls: Vec<Control>,
     pub sections: Vec<Section>,
 }
 
@@ -321,39 +324,49 @@ pub fn normalize(value: &Value) -> Normalized {
             out.errors.push(format!("{at}: the id is used twice"));
             continue;
         }
-        let mut ranges: Vec<Range> = Vec::new();
-        for (j, r) in o
+        let mut controls: Vec<Control> = Vec::new();
+        // The date ranges of a board saved before there were other controls come first, as the date ranges they are.
+        let legacy = o
             .get("ranges")
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .enumerate()
-        {
-            let range = match serde_json::from_value::<Range>(r.clone()) {
-                Ok(r) => Range {
-                    name: r.name.trim().to_owned(),
-                    start: r.start.trim().to_owned(),
-                    end: r.end.trim().to_owned(),
-                },
+            .map(|r| {
+                let mut r = r.clone();
+                if let Some(m) = r.as_object_mut() {
+                    m.entry("type").or_insert_with(|| Value::from("daterange"));
+                }
+                r
+            });
+        let listed = o
+            .get("controls")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .cloned();
+        for (j, c) in legacy.chain(listed).enumerate() {
+            let control = match serde_json::from_value::<Control>(c) {
+                Ok(c) => c,
                 Err(e) => {
-                    out.errors.push(format!("{at}, date range {}: {e}", j + 1));
+                    out.errors.push(format!("{at}, control {}: {e}", j + 1));
                     continue;
                 }
             };
-            if let Some(p) = ranges::problem(&range) {
-                out.errors.push(format!("{at}, date range {}: {p}", j + 1));
+            if let Some(p) = controls::problem(&control) {
+                out.errors.push(format!("{at}, control {}: {p}", j + 1));
                 continue;
             }
-            if ranges.iter().any(|x| x.name == range.name) {
+            if controls.iter().any(|x| x.name == control.name) {
                 out.errors.push(format!(
-                    "{at}, date range {}: the name '{}' is used twice",
+                    "{at}, control {}: the name '{}' is used twice",
                     j + 1,
-                    range.name
+                    control.name
                 ));
                 continue;
             }
-            ranges.push(range);
+            controls.push(control);
         }
+        let ranges = controls::ranges(&controls);
         let mut sections: Vec<Section> = Vec::new();
         let mut section_ids = BTreeSet::new();
         for (j, s) in o
@@ -412,7 +425,7 @@ pub fn normalize(value: &Value) -> Normalized {
             name,
             description: text(o, "description"),
             filter: text(o, "filter"),
-            ranges,
+            controls,
             sections,
         });
     }
@@ -478,17 +491,41 @@ mod tests {
             { "name": "late", "start": "som", "end": "soonish" },
             { "name": "open", "start": "", "end": "eom" },
             { "start": "som" } ] }]));
-        let kept = &n.boards[0].ranges;
+        let kept = controls::ranges(&n.boards[0].controls);
         assert_eq!(kept.len(), 1);
         assert_eq!((kept[0].name.as_str(), kept[0].start.as_str()), ("week", "sow"));
         assert_eq!(n.errors.len(), 5, "{:?}", n.errors);
         assert!(n.errors[0].contains("used twice") && n.errors[3].contains("needs a start"));
-        // Written out and read again, they are the same; none is not written.
-        assert_eq!(normalize(&serde_json::to_value(&n.boards).unwrap()).boards, n.boards);
+        // Written out (as controls) and read again, they are the same; none is not written.
+        let written = serde_json::to_value(&n.boards).unwrap();
+        assert_eq!(written[0]["controls"][0]["type"], json!("daterange"));
+        assert!(written[0].get("ranges").is_none());
+        assert_eq!(normalize(&written).boards, n.boards);
         assert!(serde_json::to_value(&normalize(&good()).boards[0])
             .unwrap()
-            .get("ranges")
+            .get("controls")
             .is_none());
+    }
+
+    #[test]
+    fn controls_of_every_kind_are_kept_after_a_boards_date_ranges() {
+        let n = normalize(&json!([{ "id": "b", "name": "B",
+            "ranges": [{ "name": "week", "start": "sow", "end": "eow" }],
+            "controls": [
+                { "name": "urg", "label": " How urgent ", "type": "number", "value": 4.5 },
+                { "name": "proj", "type": "select", "source": "project", "values": [" Home ", ""] },
+                { "name": "week", "type": "boolean" },
+                { "name": "odd", "type": "colour" }
+            ] }]));
+        let kept = &n.boards[0].controls;
+        let names: Vec<&str> = kept.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["week", "urg", "proj"]);
+        assert_eq!(kept[1].label.as_deref(), Some("How urgent"));
+        assert_eq!(kept[1].kind, controls::Kind::Number { value: "4.5".into() });
+        assert!(matches!(&kept[2].kind, controls::Kind::Select { values, .. } if values == &["Home"]));
+        assert_eq!(n.errors.len(), 2, "{:?}", n.errors);
+        assert!(n.errors[0].contains("used twice") && n.errors[1].contains("control 5"));
+        assert_eq!(normalize(&serde_json::to_value(&n.boards).unwrap()).boards, n.boards);
     }
 
     #[test]

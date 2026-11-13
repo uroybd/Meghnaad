@@ -264,7 +264,11 @@ describe('the boards page', () => {
     app = mount(BoardsPage, { target: document.body });
     await settle();
     await click(/Edit/);
-    await click(/Number/);
+    // The section's Number, not the control's.
+    [...document.querySelectorAll<HTMLButtonElement>('.adds button')]
+      .find((b) => /Number/.test(b.textContent ?? ''))!
+      .click();
+    await settle();
     expect(document.querySelector('dialog')?.getAttribute('aria-label')).toBe('Number');
   });
 });

@@ -66,32 +66,62 @@ private fun TextBox(label: String, value: String, onChange: (String) -> Unit, mo
 }
 
 /**
- * The date ranges a board offers (RangesEditor.svelte): a name and a start and an end, each a date as Taskwarrior reads one (`sow`, `eod`,
- * `eow-2d`, `2026-10-01`). A filter on the board uses them as `$name.start` and `$name.end`. What the engine thinks of them (a name used
- * twice, a date it cannot read) is said with the board's other problems.
+ * The controls a board offers (ControlsEditor.svelte): each a name (what a filter writes after `$`), an optional label (any text), its
+ * settings by kind, and the value it starts with. What the engine thinks of them (a name used twice, a date it cannot read) is said with
+ * the board's other problems.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BoardRangesEditor(store: Store, ranges: List<DateRange>, onChange: (List<DateRange>) -> Unit) {
-    Labeled("Date ranges") {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ranges.forEachIndexed { i, r ->
-                fun set(now: DateRange) = onChange(ranges.mapIndexed { j, x -> if (j == i) now else x })
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextBox("Name of date range ${i + 1}", r.name, { set(r.copy(name = it.trim().lowercase())) }, mono = true)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        DateTimeInput(r.start, { set(r.copy(start = it)) }, "Start of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "sow")
-                        Dim("–")
-                        DateTimeInput(r.end, { set(r.copy(end = it)) }, "End of ${r.name.ifEmpty { "date range ${i + 1}" }}", store.now, store.utcOffset, placeholder = "eow")
+private fun BoardControlsEditor(store: Store, controls: List<Control>, onChange: (List<Control>) -> Unit) {
+    val sources = listOf("project" to "Projects", "tags" to "Tags") +
+        store.udas.filter { it.values.isNotEmpty() }.map { it.name to (it.label ?: it.name) }
+    Labeled("Controls") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            controls.forEachIndexed { i, c ->
+                fun set(now: Control) = onChange(controls.mapIndexed { j, x -> if (j == i) now else x })
+                val called = c.name.ifEmpty { "control ${i + 1}" }
+                Column(
+                    Modifier.fillMaxWidth().border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(8.dp)).padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(CONTROL_TYPES.firstOrNull { it.first == c.type }?.second ?: c.type, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    TextBox("Name of control ${i + 1}", c.name, { set(c.copy(name = it.trim().lowercase())) }, mono = true)
+                    TextBox("Label", c.label.orEmpty(), { set(c.copy(label = it.ifEmpty { null })) }, placeholder = rangeLabel(c.name))
+                    if (c.type == "select") {
+                        Pick("From", sources.map { it.first to it.second }, c.source) { set(c.copy(source = it, values = null)) }
+                        Row(Modifier.clickable { set(c.copy(multiple = if (c.multiple == true) null else true, values = if (c.multiple == true) c.values?.take(1) else c.values)) }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(c.multiple == true, onCheckedChange = null)
+                            Text("Several at once", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
+                        }
+                        Row(Modifier.clickable { set(c.copy(completed = if (c.completed == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(c.completed == true, onCheckedChange = null)
+                            Text("Offer values of completed tasks", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
+                        }
                     }
-                    TextButton({ onChange(ranges.filterIndexed { j, _ -> j != i }) }) { Text("Remove date range ${i + 1}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+                    if (c.type == "boolean") {
+                        TextBox("Filter of $called when on", c.on.orEmpty(), { set(c.copy(on = it)) }, mono = true, placeholder = "+next")
+                        TextBox("Filter of $called when off", c.off.orEmpty(), { set(c.copy(off = it)) }, mono = true, placeholder = "nothing")
+                    }
+                    Labeled("Starts as") { ControlField(store, c, ::set) }
+                    Dim("Use it in a filter as ${usage(c)}.", size = 11)
+                    TextButton({ onChange(controls.filterIndexed { j, _ -> j != i }) }) { Text("Remove $called", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
                 }
             }
-            OutlinedButton({
-                val taken = ranges.map { it.name }.toSet()
-                val name = generateSequence(1) { it + 1 }.map { if (it == 1) "daterange" else "daterange$it" }.first { it !in taken }
-                onChange(ranges + DateRange(name, "sow", "eow"))
-            }) { Text("+ Date range", fontSize = 12.sp) }
-            Dim("Use \$name.start and \$name.end in any filter on the board, such as due.after:\$daterange.start.", size = 11)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                CONTROL_TYPES.forEach { (type, label) ->
+                    OutlinedButton({
+                        val base = type
+                        val taken = controls.map { it.name }.toSet()
+                        val name = generateSequence(1) { it + 1 }.map { if (it == 1) base else "$base$it" }.first { it !in taken }
+                        onChange(controls + newControl(type, name))
+                    }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)) { Text("+ $label", fontSize = 12.sp) }
+                }
+            }
+            Dim(
+                "Any filter on the board can use a control: due.after:\$daterange.start, urgency.above:\$number, \$select (the clause that picks " +
+                    "what is chosen: project:Home), \$boolean (its text for on or off). A selection with nothing chosen, or an empty text, picks every task.",
+                size = 11,
+            )
         }
     }
 }
@@ -181,7 +211,7 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
                         Labeled("Filter for every section") {
                             CompletingField(d.filter.orEmpty(), { v -> editor.edit { it.copy(filter = v.ifEmpty { null }) } }, store.vocab, placeholder = "optional: project:Home")
                         }
-                        BoardRangesEditor(store, d.ranges) { ranges -> editor.edit { it.copy(ranges = ranges) } }
+                        BoardControlsEditor(store, d.controls) { controls -> editor.edit { it.copy(controls = controls) } }
                         Spacer4()
                     }
                 }
@@ -208,7 +238,7 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
 
     // The settings of a card are in a pop-up over the board, not among the cards.
     d.sections.firstOrNull { it.id == editor.opened }?.let { s ->
-        SectionDialog(store, s, editor.draft.ranges, onChange = { editor.update(it) }, onDismiss = { editor.opened = null })
+        SectionDialog(store, s, editor.draft.controls, onChange = { editor.update(it) }, onDismiss = { editor.opened = null })
     }
 
     if (confirmDelete) {
@@ -224,7 +254,7 @@ fun BoardEditScreen(store: Store, editor: BoardEditor, onDone: () -> Unit) {
 
 /** The settings of a card in a pop-up that fills the screen, so the form has room and the keyboard does not cover it. */
 @Composable
-private fun SectionDialog(store: Store, s: Section, ranges: List<DateRange>, onChange: (Section) -> Unit, onDismiss: () -> Unit) {
+private fun SectionDialog(store: Store, s: Section, controls: List<Control>, onChange: (Section) -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize()) {
@@ -232,7 +262,7 @@ private fun SectionDialog(store: Store, s: Section, ranges: List<DateRange>, onC
                     Text(s.title.ifEmpty { "Card" }, Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     Button(onDismiss) { Text("Done") }
                 }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) { SectionForm(store, s, ranges, onChange) }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) { SectionForm(store, s, controls, onChange) }
             }
         }
     }
@@ -240,8 +270,10 @@ private fun SectionDialog(store: Store, s: Section, ranges: List<DateRange>, onC
 
 /** The settings of one section. */
 @Composable
-private fun SectionForm(store: Store, s: Section, ranges: List<DateRange>, onChange: (Section) -> Unit) {
+private fun SectionForm(store: Store, s: Section, controls: List<Control>, onChange: (Section) -> Unit) {
     val udas = store.udas
+    // The board's date ranges, which a chart's axis, Per and Keep can use.
+    val ranges = dateRanges(controls)
     Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         TextBox("Title", s.title, { onChange(s.copy(title = it)) })
         Pick("Shows", SECTION_TYPES.map { it.id to it.label }, s.type) { onChange(withType(s, it ?: s.type)) }
@@ -275,9 +307,9 @@ private fun SectionForm(store: Store, s: Section, ranges: List<DateRange>, onCha
             if (time != null) {
                 Pick("Date", dates.map { it to it }, time.field) { onChange(s.copy(by = By(time = time.copy(field = it ?: time.field)))) }
                 // The steps, and the largest group of each date range of the board, as it is now.
-                val groups = largestGroups(ranges, store.boardZone())
+                val groups = largestGroups(controls, store.boardZone())
                 val perGroups = ranges.map { r ->
-                    "\$${r.name}.lg_group.name" to "Largest group${if (ranges.size > 1) " of ${rangeLabel(r.name)}" else ""} (currently ${groups[r.name] ?: "not a date range yet"})"
+                    "\$${r.name}.lg_group.name" to "Largest group${if (ranges.size > 1) " of ${controlLabel(r)}" else ""} (currently ${groups[r.name] ?: "not a date range yet"})"
                 }
                 Pick("Per", STEPS.map { it to it } + perGroups, time.step) { onChange(s.copy(by = By(time = time.copy(step = it ?: time.step)))) }
                 // What the axis covers: as far as the tasks go, a date range of the board, or two dates of its own.
@@ -286,7 +318,7 @@ private fun SectionForm(store: Store, s: Section, ranges: List<DateRange>, onCha
                     is AxisRange.Named -> "range:${r.name}"
                     is AxisRange.Own -> "own"
                 }
-                val overs = listOf("" to "As far as the tasks go") + ranges.map { "range:${it.name}" to "${rangeLabel(it.name)} (the board's date range)" } + ("own" to "Dates of its own…")
+                val overs = listOf("" to "As far as the tasks go") + ranges.map { "range:${it.name}" to "${controlLabel(it)} (the board's date range)" } + ("own" to "Dates of its own…")
                 Pick("Over", overs, over) { v ->
                     val range = when {
                         v.isNullOrEmpty() -> null

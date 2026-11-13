@@ -10,7 +10,7 @@ const board: Board = { id: 'wk', name: 'Week', filter: 'rc.context=this_week', s
 let app: ReturnType<typeof mount> | null = null;
 beforeEach(() => {
   store.boardFilters = {};
-  store.boardRanges = {};
+  store.boardControls = {};
 });
 afterEach(() => {
   if (app) unmount(app);
@@ -60,10 +60,10 @@ describe('the filter above a board', () => {
   });
 });
 
-describe('the date ranges above a board', () => {
+describe('the controls above a board', () => {
   const withRange: Board = {
     ...board,
-    ranges: [{ name: 'sprint_week', start: 'sow', end: 'eow' }],
+    controls: [{ name: 'sprint_week', type: 'daterange', start: 'sow', end: 'eow' }],
   };
   const start = () => document.querySelector<HTMLButtonElement>('button[aria-label^="Start of"]')!;
 
@@ -88,13 +88,41 @@ describe('the date ranges above a board', () => {
     input.value = 'som';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     flushSync();
-    expect(store.boardRanges).toEqual({ wk: { sprint_week: { start: 'som', end: 'eow' } } });
+    expect(store.boardControls).toEqual({ wk: { sprint_week: { start: 'som', end: 'eow' } } });
     input.value = 'soonish';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     flushSync();
     expect(document.querySelector('.resolved .err')!.textContent).toContain("'soonish' is not a date");
-    document.querySelector<HTMLButtonElement>('button[aria-label^="Use the board\'s own dates"]')!.click();
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Use the board\'s own value"]')!.click();
     flushSync();
-    expect(store.boardRanges).toEqual({});
+    expect(store.boardControls).toEqual({});
+  });
+});
+
+describe('the other controls above a board', () => {
+  const withControls: Board = {
+    ...board,
+    controls: [
+      { name: 'next', label: 'Only what is next', type: 'boolean', on: '+next' },
+      { name: 'urg', type: 'numrange', min: '1', max: '5' },
+    ],
+  };
+
+  it('shows each by its label, and keeps what is set while the page is open', () => {
+    draw(withControls);
+    const names = [...document.querySelectorAll('.control .name')].map((n) => n.textContent);
+    expect(names).toEqual(['Only what is next', 'Urg']);
+    document.querySelector<HTMLInputElement>('input[aria-label="Only what is next"]')!.click();
+    flushSync();
+    const most = document.querySelector<HTMLInputElement>('input[aria-label="Most of Urg"]')!;
+    most.value = '9';
+    most.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    expect(store.boardControls).toEqual({ wk: { next: { value: true }, urg: { min: '1', max: '9' } } });
+    // Setting the board's own value back is no change.
+    most.value = '5';
+    most.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    expect(store.boardControls).toEqual({ wk: { next: { value: true } } });
   });
 });

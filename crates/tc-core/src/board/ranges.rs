@@ -57,7 +57,7 @@ pub fn problem(r: &Range) -> Option<String> {
 }
 
 /// Why `start` and `end` cannot be the two dates of a range, or `None`.
-fn dates_problem(start: &str, end: &str) -> Option<String> {
+pub(super) fn dates_problem(start: &str, end: &str) -> Option<String> {
     let clock = Clock::utc(0);
     for (what, a, text) in [("start", "a", start), ("end", "an", end)] {
         if text.trim().is_empty() {
@@ -212,7 +212,7 @@ pub fn attach(by: &mut By, ranges: &[Range], ctx: &Ctx) -> Result<(), String> {
 
 /// What a reference asks of a range: one of its two moments, or how many periods of a unit it covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Which {
+pub(super) enum Which {
     Start,
     End,
     Count(Unit),
@@ -223,7 +223,7 @@ enum Which {
 
 /// A unit a range is counted in. A minute and an hour are counted on the clock; the rest are the periods a chart is cut into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Unit {
+pub(super) enum Unit {
     Minute,
     Hour,
     Step(Step),
@@ -304,7 +304,7 @@ fn periods(unit: Unit, start: i64, end: i64, ctx: &Ctx) -> i64 {
 
 /// `$name.start`, `$name.end` or `$name.day_count` (and the like) at the front of `s`: the name, what is asked, and how many
 /// bytes it takes.
-fn reference(s: &str) -> Option<(&str, Which, usize)> {
+pub(super) fn reference(s: &str) -> Option<(&str, Which, usize)> {
     let body = s.strip_prefix('$')?;
     let name_len = body
         .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))

@@ -11,9 +11,10 @@
     largestGroups,
     moveSeries,
     ROW_PARTS,
-    rangeLabel,
+    controlLabel,
     zoneNow,
-    type DateRange,
+    dateRanges,
+    type Control,
     type Fn,
     type RowPart,
     type Rows,
@@ -29,8 +30,10 @@
   let {
     section,
     onchange,
-    ranges = [],
-  }: { section: Section; onchange: (next: Section) => void; ranges?: DateRange[] } = $props();
+    controls = [],
+  }: { section: Section; onchange: (next: Section) => void; controls?: Control[] } = $props();
+  /** The board's date ranges, which a chart's axis, Per and Keep can use. */
+  const ranges = $derived(dateRanges(controls));
 
   const set = (patch: Partial<Section>) => onchange({ ...section, ...patch });
 
@@ -142,10 +145,10 @@
   /** What is typed for Keep: a number, or the count of a date range as text (the engine says if it is not one the board has). */
   const keep = (v: string) => (/^\s*\d*\s*$/.test(v) ? num(v) : v.trim());
   /** The step each range's largest group is now, from the dates the board has (or has been given on the page). */
-  const groups = $derived(largestGroups(ranges, zoneNow(store.config?.config.settings)));
+  const groups = $derived(largestGroups(controls, zoneNow(store.config?.config.settings)));
   /** `Largest group (currently week)`; with several ranges, whose. */
-  const groupLabel = (name: string) =>
-    `Largest group${ranges.length > 1 ? ` of ${rangeLabel(name)}` : ''} (currently ${groups[name] ?? 'not a date range yet'})`;
+  const groupLabel = (r: Control) =>
+    `Largest group${ranges.length > 1 ? ` of ${controlLabel(r)}` : ''} (currently ${groups[r.name] ?? 'not a date range yet'})`;
   const uid = $props.id();
 </script>
 
@@ -211,7 +214,7 @@
         <select value={section.by.time.step} onchange={(e) => setTime({ step: e.currentTarget.value })}>
           {#each STEPS as s (s)}<option value={s}>{s}</option>{/each}
           {#each ranges as r (r.name)}
-            <option value="${r.name}.lg_group.name">{groupLabel(r.name)}</option>
+            <option value="${r.name}.lg_group.name">{groupLabel(r)}</option>
           {/each}
         </select>
       </label>
@@ -220,7 +223,7 @@
         <select value={overKind} onchange={(e) => pickOver(e.currentTarget.value)}>
           <option value="">As far as the tasks go</option>
           {#each ranges as r (r.name)}
-            <option value="range:{r.name}">{rangeLabel(r.name)} (the board’s date range)</option>
+            <option value="range:{r.name}">{controlLabel(r)} (the board’s date range)</option>
           {/each}
           <option value="own">Dates of its own…</option>
         </select>

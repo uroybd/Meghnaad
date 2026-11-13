@@ -1,6 +1,7 @@
 package me.utsob.meghnaad.app
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -80,34 +81,65 @@ class BoardsTest {
                 """[{"id":"b","name":"B","ranges":[{"name":" week ","start":" sow ","end":"eow"},{"name":"Bad","start":"sow","end":"eow"}]}]""",
             ),
         )
-        assertEquals(listOf(DateRange("week", "sow", "eow")), n.boards[0].ranges)
+        assertEquals(listOf(Control("week", "daterange", start = "sow", end = "eow")), n.boards[0].controls)
         assertEquals(1, n.errors.size)
-        // Written out and read again it is the same, and none is not written.
+        // Written out (as controls) and read again it is the same, and none is not written.
         assertEquals(n.boards, normalizeBoards(boardsToJson(n.boards)).boards)
-        assertTrue("ranges" !in boardsToJson(listOf(Board("b", "B"))).toString())
+        assertTrue("controls" !in boardsToJson(listOf(Board("b", "B"))).toString())
+    }
+
+    @Test
+    fun everyKindOfControlIsWrittenIntoAFilterAsWhatItIsNow() {
+        val n = normalizeBoards(
+            Json.parseToJsonElement(
+                """[{"id":"b","name":"B","controls":[
+                    {"name":"proj","label":"Which project","type":"select","source":"project","values":["My Home"]},
+                    {"name":"tags","type":"select","source":"tags","multiple":true,"values":["a","b"]},
+                    {"name":"urg","type":"numrange","min":1,"max":"5"},
+                    {"name":"due","type":"date","value":"2026-10-09"},
+                    {"name":"next","type":"boolean","on":"+next"}]}]""",
+            ),
+        )
+        assertEquals(emptyList(), n.errors)
+        val board = n.boards[0]
+        assertEquals("Which project", controlLabel(board.controls[0]))
+        assertEquals("1", board.controls[2].min)
+        val z = Zone(0, true, 1_791_376_200L)
+        val filter = "\$proj \$tags urgency.above:\$urg.min due.before:\$due \$next"
+        assertEquals(
+            "project:\"My Home\" ( +a or +b ) urgency.above:1 due.before:20261009T000000Z uuid.any:",
+            substituteControls(filter, board.controls, z),
+        )
+        // What is set above the board takes the place of the board's own, its settings kept.
+        val set = mapOf("next" to board.controls[4].copy(value = JsonPrimitive(true), on = "ignored"), "proj" to board.controls[0].copy(values = null))
+        val viewed = viewedBoard(board, null, set)
+        assertEquals("uuid.any: ( +next )", substituteControls("\$proj \$next", viewed.controls, z))
+        assertTrue(board.controls[0].sameValues(board.controls[0].copy(label = "x")))
+        // Written out and read again it is the same.
+        assertEquals(n.boards, normalizeBoards(boardsToJson(n.boards)).boards)
     }
 
     @Test
     fun aDateRangeIsWrittenIntoAFilterAsTheMomentsItMeans() {
-        val ranges = listOf(DateRange("daterange", "sow", "eow"))
+        val ranges = listOf(Control("daterange", "daterange", start = "sow", end = "eow"))
         // 2026-10-07 12:30 UTC, a Wednesday, weeks from Monday.
         val z = Zone(0, true, 1_791_376_200L)
         assertEquals(
             "( end.after:20261005T000000Z and end.before:20261011T235959Z )",
-            substituteRanges("( end.after:\$daterange.start and end.before:\$daterange.end )", ranges, z),
+            substituteControls("( end.after:\$daterange.start and end.before:\$daterange.end )", ranges, z),
         )
-        assertEquals("description~foo\$", substituteRanges("description~foo\$", ranges, z))
+        assertEquals("description~foo\$", substituteControls("description~foo\$", ranges, z))
         assertEquals(
-            "this board has no date range called 'nope'",
-            runCatching { substituteRanges("due:\$nope.start", ranges, z) }.exceptionOrNull()?.message?.substringAfter("message: ")?.trim('"'),
+            "this board has no control called 'nope'",
+            runCatching { substituteControls("due:\$nope.start", ranges, z) }.exceptionOrNull()?.message?.substringAfter("message: ")?.trim('"'),
         )
-        val got = resolveRanges(ranges, z).single()
+        val got = resolveControls(ranges, z).single()
         assertEquals(1_791_158_400L to 1_791_763_199L, got.start to got.end)
     }
 
     @Test
     fun keepIsANumberOrTheCountOfARangeAndIsWrittenAsOne() {
-        val ranges = listOf(DateRange("daterange", "sow", "eow"))
+        val ranges = listOf(Control("daterange", "daterange", start = "sow", end = "eow"))
         val z = Zone(0, true, 1_791_376_200L)
         assertEquals(7, keepOf("7", ranges, z))
         assertEquals(7, keepOf(" \$daterange.day_count ", ranges, z))
@@ -186,17 +218,17 @@ class BoardsTest {
 
     @Test
     fun aChartMayCoverARangeOfTheBoardOrOneOfItsOwn() {
-        val ranges = listOf(DateRange("week", "sow", "eow"))
+        val ranges = listOf(Control("week", "daterange", start = "sow", end = "eow"))
         val named = By(time = TimeBy("end", "day", AxisRange.Named("week")))
         val own = By(time = TimeBy("end", "day", AxisRange.Own("2026-10-05", "2026-10-06T23:59")))
         // Written as the engine reads them (a name, or two dates), and read again the same.
         for (by in listOf(named, own)) {
-            val board = Board("b", "B", ranges = ranges, sections = listOf(sec("a", "line") { it.copy(by = by) }))
+            val board = Board("b", "B", controls = ranges, sections = listOf(sec("a", "line") { it.copy(by = by) }))
             val back = normalizeBoards(boardsToJson(listOf(board)))
             assertEquals(emptyList(), back.errors)
             assertEquals(by, back.boards[0].sections[0].by)
         }
-        assertTrue("\"range\":\"week\"" in boardsToJson(listOf(Board("b", "B", ranges = ranges, sections = listOf(sec("a", "line") { it.copy(by = named) })))).toString())
+        assertTrue("\"range\":\"week\"" in boardsToJson(listOf(Board("b", "B", controls = ranges, sections = listOf(sec("a", "line") { it.copy(by = named) })))).toString())
         // A range the board has not is refused.
         val bad = Board("b", "B", sections = listOf(sec("a", "line") { it.copy(by = named) }))
         assertEquals(1, normalizeBoards(boardsToJson(listOf(bad))).errors.size)
@@ -218,9 +250,9 @@ class BoardsTest {
     @Test
     fun aChartMayBeCutByTheLargestGroupOfARange() {
         val z = Zone(0, true, 1_791_376_200L)
-        val week = listOf(DateRange("daterange", "sow", "eow"))
+        val week = listOf(Control("daterange", "daterange", start = "sow", end = "eow"))
         assertEquals(mapOf("daterange" to "day"), largestGroups(week, z))
-        assertEquals(mapOf("m" to "week"), largestGroups(listOf(DateRange("m", "som", "eom"), DateRange("x", "later", "eom")), z))
+        assertEquals(mapOf("m" to "week"), largestGroups(listOf(Control("m", "daterange", start = "som", end = "eom"), Control("x", "daterange", start = "later", end = "eom")), z))
         assertEquals(7, keepOf("\$daterange.lg_group.count", week, z))
         val by = By(time = TimeBy("end", "\$daterange.lg_group.name"))
         assertEquals(By(time = TimeBy("end", "day")), resolveBy(by, week, z))
@@ -238,11 +270,11 @@ class BoardsTest {
 
     @Test
     fun theDatesTypedOnThePageTakeThePlaceOfTheBoardsOwn() {
-        val b = Board("b", "B", filter = "a", ranges = listOf(DateRange("sprint_week", "sow", "eow")))
+        val b = Board("b", "B", filter = "a", controls = listOf(Control("sprint_week", "daterange", start = "sow", end = "eow")))
         assertEquals(b, viewedBoard(b, null, null))
-        val v = viewedBoard(b, "x", mapOf("sprint_week" to DateRange("sprint_week", "som", "eom")))
+        val v = viewedBoard(b, "x", mapOf("sprint_week" to Control("sprint_week", "daterange", start = "som", end = "eom")))
         assertEquals("x", v.filter)
-        assertEquals(listOf(DateRange("sprint_week", "som", "eom")), v.ranges)
+        assertEquals(listOf(Control("sprint_week", "daterange", start = "som", end = "eom")), v.controls)
         assertEquals("Sprint week", rangeLabel("sprint_week"))
     }
 

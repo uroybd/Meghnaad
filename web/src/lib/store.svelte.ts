@@ -12,7 +12,7 @@ import {
   type ParsedSettings,
   type TaskCommand,
 } from './appsettings';
-import type { Board } from './boards';
+import type { Board, ControlValue } from './boards';
 import { fetchKeymapDefaults, resolveKeymap, type Keymap } from './keymap';
 import { lucide } from './lucideLib.svelte';
 import { isHiddenReport, offeredReports as pickable } from './reportList';
@@ -111,10 +111,10 @@ class Store {
    */
   boardFilters = $state<Record<string, string>>({});
   /**
-   * The dates typed for a board's date ranges (by board, then by range name) in place of the board's own, while the page
-   * is open (nothing saved). A range not here has its own.
+   * The values set for a board's controls (by board, then by control name) in place of the board's own, while the page
+   * is open (nothing saved). A control not here has its own.
    */
-  boardRanges = $state<Record<string, Record<string, { start: string; end: string }>>>({});
+  boardControls = $state<Record<string, Record<string, ControlValue>>>({});
   /** The tab the Settings page shows. */
   settingsTab = $state<SettingsTab>('taskrc');
   /** The file of the taskrc folder the taskrc tab shows (`null`: the main taskrc). */

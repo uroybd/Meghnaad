@@ -9,6 +9,8 @@ import {
   firstFree,
   formatValue,
   freshId,
+  choicesOf,
+  controlLabel,
   largestGroups,
   loadBoard,
   moveBy,
@@ -349,7 +351,7 @@ describe('loading a board', () => {
         }),
         sec('bad', 0, 5, 3, 2, { filter: 'due.after:$nope.start' }),
       ],
-      { ranges: [{ name: 'daterange', start: 'sow', end: 'eow' }] },
+      { controls: [{ name: 'daterange', type: 'daterange', start: 'sow', end: 'eow' }] },
     );
     // 2026-10-07 12:30 UTC, a Wednesday.
     const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
@@ -360,7 +362,45 @@ describe('loading a board', () => {
     expect(ran.some((a) => a.includes('$'))).toBe(false);
     expect(data.n.kind).toBe('answer');
     expect(data.t).toMatchObject({ kind: 'table', filter: '( due.before:20261011T235959Z )' });
-    expect(data.bad).toEqual({ kind: 'error', message: "this board has no date range called 'nope'" });
+    expect(data.bad).toEqual({ kind: 'error', message: "this board has no control called 'nope'" });
+  });
+
+  it('puts a selection, a number, a date and a switch into the filters as what they are now', async () => {
+    const run = vi.fn(async (_input: { args: string[] }) =>
+      respond({ kind: 'file', name: 't.json', mime: '', text: FILE, count: 3 }),
+    );
+    const b = board([sec('n', 0, 0, 3, 2, { filter: '$proj $tags urgency.above:$urg due.before:$due $next' })], {
+      controls: [
+        { name: 'proj', label: 'Which project', type: 'select', source: 'project', values: ['My Home'] },
+        { name: 'tags', type: 'select', source: 'tags', multiple: true, values: ['a', 'b'] },
+        { name: 'urg', type: 'number', value: '5' },
+        { name: 'due', type: 'date', value: '2026-10-09' },
+        { name: 'next', type: 'boolean', on: '+next', off: '' },
+      ],
+    });
+    const zone = { tz: 0, week_starts_monday: true, now: 1_791_376_200 };
+    await loadBoard(b, zone, run);
+    await loadBoard(viewed(b, undefined, { next: { value: true }, proj: { values: [] } }), zone, run);
+    const ran = run.mock.calls.map(([i]) => i.args.join(' '));
+    expect(ran).toEqual([
+      '( project:My Home ( +a or +b ) urgency.above:5 due.before:20261009T000000Z uuid.any: ) export',
+      '( uuid.any: ( +a or +b ) urgency.above:5 due.before:20261009T000000Z ( +next ) ) export',
+    ]);
+    expect(controlLabel(b.controls![0])).toBe('Which project');
+    expect(controlLabel(b.controls![1])).toBe('Tags');
+  });
+
+  it('offers what open tasks have in a selection, completed ones on request, a UDA in the order of its values', async () => {
+    const run = vi.fn(async ({ args }: { args: string[] }) =>
+      respond({ kind: 'text', lines: args.includes('status.not:completed') ? ['M', 'H'] : ['L', 'M', 'H'] }),
+    );
+    const c = { name: 'p', type: 'select' as const, source: 'priority', values: ['X'] };
+    expect(await choicesOf(c, ['H', 'M', 'L'], run)).toEqual(['H', 'M', 'X']);
+    expect(await choicesOf({ ...c, completed: true }, undefined, run)).toEqual(['L', 'M', 'H', 'X']);
+    expect(run.mock.calls.map(([i]) => i.args.join(' '))).toEqual([
+      'status.not:deleted status.not:completed _unique priority',
+      'status.not:deleted _unique priority',
+    ]);
   });
 
   it('keeps as many groups as a date range covers, when Keep is its count', async () => {
@@ -379,7 +419,7 @@ describe('loading a board', () => {
         per('bad', '$nope.day_count'),
       ],
       {
-        ranges: [{ name: 'daterange', start: 'sow', end: 'eow' }],
+        controls: [{ name: 'daterange', type: 'daterange', start: 'sow', end: 'eow' }],
       },
     );
     const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
@@ -405,23 +445,28 @@ describe('loading a board', () => {
     const b = board(
       [per('auto', '$daterange.lg_group.name'), per('plain', 'week'), per('bad', '$nope.lg_group.name')],
       {
-        ranges: [{ name: 'daterange', start: 'sow', end: 'eow' }],
+        controls: [{ name: 'daterange', type: 'daterange', start: 'sow', end: 'eow' }],
       },
     );
     const data = await loadBoard(b, week, run);
     // A week is days, and 7 of them are kept; a plain step is as it was.
     expect(data.auto).toMatchObject({ kind: 'chart', limit: 7 });
     expect(data.plain).toMatchObject({ kind: 'chart', limit: 7 });
-    expect(data.bad).toEqual({ kind: 'error', message: "this board has no date range called 'nope'" });
+    expect(data.bad).toEqual({ kind: 'error', message: "this board has no control called 'nope'" });
     // A month is weeks.
-    const month = await loadBoard({ ...b, ranges: [{ name: 'daterange', start: 'som', end: 'eom' }] }, week, run);
+    const month = await loadBoard(
+      { ...b, controls: [{ name: 'daterange', type: 'daterange', start: 'som', end: 'eom' }] },
+      week,
+      run,
+    );
     expect(month.auto).toMatchObject({ kind: 'chart', limit: 5 });
-    expect(largestGroups(b.ranges!, week)).toEqual({ daterange: 'day' });
+    expect(largestGroups(b.controls!, week)).toEqual({ daterange: 'day' });
     expect(
       largestGroups(
         [
-          { name: 'm', start: 'som', end: 'eom' },
-          { name: 'x', start: 'later', end: 'eom' },
+          { name: 'm', type: 'daterange', start: 'som', end: 'eom' },
+          { name: 'x', type: 'daterange', start: 'later', end: 'eom' },
+          { name: 'n', type: 'number', value: '1' },
         ],
         week,
       ),
@@ -429,11 +474,14 @@ describe('loading a board', () => {
   });
 
   it('shows a range by the dates typed on the page, and a name as a label', () => {
-    const b = board([], { filter: 'a', ranges: [{ name: 'sprint_week', start: 'sow', end: 'eow' }] });
+    const b = board([], {
+      filter: 'a',
+      controls: [{ name: 'sprint_week', type: 'daterange', start: 'sow', end: 'eow' }],
+    });
     expect(viewed(b, undefined, undefined)).toEqual(b);
     const v = viewed(b, 'b', { sprint_week: { start: 'som', end: 'eom' } });
     expect(v.filter).toBe('b');
-    expect(v.ranges).toEqual([{ name: 'sprint_week', start: 'som', end: 'eom' }]);
+    expect(v.controls).toEqual([{ name: 'sprint_week', type: 'daterange', start: 'som', end: 'eom' }]);
     expect(rangeLabel('sprint_week')).toBe('Sprint week');
     expect(rangeLabel('daterange')).toBe('Daterange');
   });
@@ -528,7 +576,7 @@ describe('a series of states', () => {
     const b = board(
       [over('mine', 'week'), over('own', { start: '2026-10-05', end: '2026-10-06T23:59' }), over('nope', 'x')],
       {
-        ranges: [{ name: 'week', start: 'sow', end: 'eow' }],
+        controls: [{ name: 'week', type: 'daterange', start: 'sow', end: 'eow' }],
       },
     );
     // Wednesday 2026-10-07.
