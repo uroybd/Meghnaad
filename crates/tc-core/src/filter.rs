@@ -379,6 +379,20 @@ fn parse_modifier(m: &str) -> Result<Op, FilterError> {
     })
 }
 
+/// An attribute, a comparison and a value (`due.before:eom`), with the value read ahead as a date, a number and a
+/// pattern where it can be one.
+#[derive(Debug, Clone, PartialEq)]
+struct AttrTerm {
+    attr: Attr,
+    op: Op,
+    value: String,
+    date: Option<i64>,
+    num: Option<f64>,
+    /// The pattern behind `.has`, `.startswith`, `.endswith`, `.word` and their negations, when
+    /// `regex` is on. Taskwarrior turns each into a `~` match: `^value`, `value$`, `\bvalue\b`.
+    rx: Option<Rx>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Term {
     Tag {
@@ -387,16 +401,7 @@ enum Term {
     },
     /// An attribute's name standing alone beside a `!` (`priority !`): what it holds, as true or false.
     Truth(Attr),
-    Attr {
-        attr: Attr,
-        op: Op,
-        value: String,
-        date: Option<i64>,
-        num: Option<f64>,
-        /// The pattern behind `.has`, `.startswith`, `.endswith`, `.word` and their negations, when
-        /// `regex` is on. Taskwarrior turns each into a `~` match: `^value`, `value$`, `\bvalue\b`.
-        rx: Option<Rx>,
-    },
+    Attr(AttrTerm),
     /// An expression with arithmetic, or with an attribute on either side of a comparison (`due < now + 3d`,
     /// `urgency * 2 > 10`): worked out for each task by the evaluator `calc` uses, which reads a name as that task's
     /// attribute.
@@ -891,8 +896,8 @@ impl Parser<'_, '_> {
     /// which every task has and none has.
     fn wrap(&self, term: Term) -> Expr {
         match term {
-            Term::Attr { op: Op::Any, .. } if self.value_not > 0 => Expr::All,
-            Term::Attr { op: Op::None, .. } if self.value_not > 0 => constant(false),
+            Term::Attr(AttrTerm { op: Op::Any, .. }) if self.value_not > 0 => Expr::All,
+            Term::Attr(AttrTerm { op: Op::None, .. }) if self.value_not > 0 => constant(false),
             t => Expr::Term(t),
         }
     }
@@ -1138,14 +1143,14 @@ impl Parser<'_, '_> {
             ),
             _ => None,
         };
-        Ok(Term::Attr {
+        Ok(Term::Attr(AttrTerm {
             attr,
             op,
             value: value.to_owned(),
             date,
             num,
             rx,
-        })
+        }))
     }
 }
 
@@ -1297,14 +1302,7 @@ fn eval_term(t: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
             .ids
             .get(&f.uuid)
             .is_some_and(|id| ranges.iter().any(|(lo, hi)| id >= lo && id <= hi)),
-        Term::Attr {
-            attr,
-            op,
-            value,
-            date,
-            num,
-            rx,
-        } => eval_attr(attr, *op, value, *date, *num, rx.as_ref(), f, ctx),
+        Term::Attr(t) => eval_attr(t, f, ctx),
     }
 }
 
@@ -1499,14 +1497,14 @@ fn eval_bang(bangs: u8, term: &Term, f: &Facts, ctx: &EvalCtx) -> bool {
             let said = truthy(&Val::Str(Cow::Borrowed(&f.description))) != negate;
             m.is_match(if said { "true" } else { "false" })
         }
-        Term::Attr {
+        Term::Attr(AttrTerm {
             attr,
             op,
             value,
             date,
             num,
             rx,
-        } => {
+        }) => {
             let b = truthy(&attr_value(attr, f, ctx)) != negate;
             let (word, n) = (if b { "true" } else { "false" }, i64::from(b));
             let cs = ctx.case_sensitive();
@@ -1560,17 +1558,16 @@ fn date_of_expression(value: &str, clock: &Clock) -> Result<Option<i64>, FilterE
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn eval_attr(
-    attr: &Attr,
-    op: Op,
-    value: &str,
-    date: Option<i64>,
-    num: Option<f64>,
-    rx: Option<&Rx>,
-    f: &Facts,
-    ctx: &EvalCtx,
-) -> bool {
+fn eval_attr(t: &AttrTerm, f: &Facts, ctx: &EvalCtx) -> bool {
+    let AttrTerm {
+        attr,
+        op,
+        value,
+        date,
+        num,
+        rx,
+    } = t;
+    let (op, value, date, num, rx) = (*op, value.as_str(), *date, *num, rx.as_ref());
     let cs = ctx.case_sensitive();
     let have = attr_value(attr, f, ctx);
     let unset = match &have {

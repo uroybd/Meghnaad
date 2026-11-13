@@ -109,6 +109,12 @@ pub enum Kind {
 )]
 use Kind::*;
 
+mod dom;
+mod lists;
+mod tables;
+mod views;
+mod write;
+
 /// Command name, kind, whether the words after it are modifications (vs. more filter).
 const COMMANDS: &[(&str, Kind, bool)] = &[
     ("add", Add, true),
@@ -1443,7 +1449,13 @@ pub async fn execute<S: Storage>(
             }
         }
     };
-    let mut done = execute_inner(replica, cfg, clock, args, opts, undo, tasks, &hk).await;
+    let w = Writer {
+        replica,
+        opts,
+        undo,
+        hk: &hk,
+    };
+    let mut done = execute_inner(w, cfg, clock, args, tasks).await;
     done.command = command;
     done.wrote |= maintained;
     done.feedback = hk.finish(matches!(done.result, CliResult::Error { .. })).await;
@@ -1707,18 +1719,29 @@ async fn pending_matching<S: Storage>(
     Ok(n)
 }
 
+/// What a command may change, and how it was asked: the replica, the caller's answers and options, the undo stack
+/// and the hooks. The settings and the tasks it reads are passed beside it.
+struct Writer<'a, S: Storage> {
+    replica: &'a mut Replica<S>,
+    opts: Options,
+    undo: &'a mut UndoStack,
+    hk: &'a crate::hooks::Runner,
+}
+
 /// `tasks` are the tasks as they are now, if the caller has just read them.
-#[allow(clippy::too_many_arguments)]
 async fn execute_inner<S: Storage>(
-    replica: &mut Replica<S>,
+    w: Writer<'_, S>,
     cfg: &Config,
     clock: Clock,
     args: &[String],
-    opts: Options,
-    undo: &mut UndoStack,
     tasks: Option<Arc<Vec<Facts>>>,
-    hk: &crate::hooks::Runner,
 ) -> Done {
+    let Writer {
+        replica,
+        opts,
+        undo,
+        hk,
+    } = w;
     // `cfg` already has this command's `rc.` overrides and the active context's settings in it.
     let parsed = match parse_command(args, cfg) {
         Ok(p) => p,
@@ -1750,20 +1773,23 @@ async fn execute_inner<S: Storage>(
             }
         }
         Cmd::Builtin(k @ (Add | Log)) => {
-            add(
+            let w = Writer {
                 replica,
-                cfg,
-                &ctx,
-                &all,
-                &parsed,
-                k == Log,
+                opts,
                 undo,
                 hk,
-                opts.warm.as_ref(),
-            )
-            .await
+            };
+            add(w, cfg, &ctx, &all, &parsed, k == Log).await
         }
-        Cmd::Builtin(k) => builtin(replica, cfg, &ctx, &all, k, &parsed, args, opts, undo, hk).await,
+        Cmd::Builtin(k) => {
+            let w = Writer {
+                replica,
+                opts,
+                undo,
+                hk,
+            };
+            builtin(w, cfg, &ctx, &all, k, &parsed, args).await
+        }
     }
 }
 
@@ -1931,18 +1957,21 @@ fn changed(all_after: &[Facts], uuids: &[Uuid], message: String) -> CliResult {
 }
 
 /// `add`, and `log` (a task that is already completed, with its `end` the moment it was entered).
-#[allow(clippy::too_many_arguments)]
 async fn add<S: Storage>(
-    replica: &mut Replica<S>,
+    w: Writer<'_, S>,
     cfg: &Config,
     ctx: &EvalCtx<'_>,
     all: &[Facts],
     p: &Parsed,
     log: bool,
-    undo: &mut UndoStack,
-    hk: &crate::hooks::Runner,
-    warm: Option<&Warm>,
 ) -> Done {
+    let Writer {
+        replica,
+        opts,
+        undo,
+        hk,
+    } = w;
+    let warm = opts.warm.as_ref();
     // `task rc.x:y add ...` is fine: overrides were applied before this point and aren't filters.
     if p.filter.iter().any(|w| !w.starts_with("rc.") && !w.starts_with("rc:")) {
         return error(format!(
@@ -2036,19 +2065,21 @@ async fn add<S: Storage>(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn builtin<S: Storage>(
-    replica: &mut Replica<S>,
+    w: Writer<'_, S>,
     cfg: &Config,
     ctx: &EvalCtx<'_>,
     all: &[Facts],
     kind: Kind,
     p: &Parsed,
     args: &[String],
-    opts: Options,
-    undo: &mut UndoStack,
-    hk: &crate::hooks::Runner,
 ) -> Done {
+    let Writer {
+        replica,
+        opts,
+        undo,
+        hk,
+    } = w;
     match kind {
         Sync => ok(CliResult::Text {
             lines: vec!["Syncing is automatic in the web UI; there is nothing to do.".into()],
@@ -2072,189 +2103,8 @@ async fn builtin<S: Storage>(
             lines: vec!["3.5.0".into()],
         }),
         ListCommands | ListAliases | ListColumns | ListConfig | ListContexts | ListUdas | ListShow | ZshCommands
-        | ZshAttributes => {
-            let mut lines: Vec<String> = match kind {
-                ListCommands | ZshCommands => {
-                    let mut names: Vec<String> = COMMAND_INFO.iter().map(|i| i.0.to_owned()).collect();
-                    names.extend(report::names(cfg));
-                    names.sort_unstable();
-                    names.dedup();
-                    if kind == ZshCommands {
-                        names
-                            .into_iter()
-                            .map(|n| {
-                                let info = COMMAND_INFO.iter().find(|i| i.0 == n);
-                                let described = info.map_or_else(
-                                    || ("report", report::resolve(cfg, &n).and_then(|r| r.description).unwrap_or_default()),
-                                    |i| (i.1, i.3.to_owned()),
-                                );
-                                format!("{n}:{}:{}", described.0, described.1.replace(':', "\\:"))
-                            })
-                            .collect()
-                    } else {
-                        names
-                    }
-                }
-                ListAliases => cfg.aliases().keys().cloned().collect(),
-                ListColumns | ZshAttributes => {
-                    let mut names: Vec<String> = [
-                        "depends", "description", "due", "end", "entry", "id", "imask", "last", "mask", "modified",
-                        "parent", "priority", "project", "recur", "rtype", "scheduled", "start", "status", "tags",
-                        "template", "until", "urgency", "uuid", "wait",
-                    ]
-                    .map(String::from)
-                    .to_vec();
-                    names.extend(cfg.udas.keys().cloned());
-                    names.sort_unstable();
-                    names.dedup();
-                    if kind == ZshAttributes {
-                        names.into_iter().map(|n| format!("{n}:{n}")).collect()
-                    } else {
-                        names
-                    }
-                }
-                ListUdas => {
-                    let mut names: Vec<String> = cfg.udas.keys().cloned().collect();
-                    names.push("priority".into());
-                    names.sort_unstable();
-                    names.dedup();
-                    names
-                }
-                ListContexts => cfg.contexts.keys().cloned().collect(),
-                // ListConfig and ListShow: the settings, from what `show` lists.
-                _ => {
-                    let rows = match crate::settings::show(cfg, &[]) {
-                        CliResult::Table(t) => t.rows,
-                        _ => Vec::new(),
-                    };
-                    let rows = rows.into_iter().filter(|r| !r[0].starts_with(' '));
-                    if kind == ListShow {
-                        rows.map(|r| format!("{}={}", r[0], r[1])).collect()
-                    } else {
-                        // The settings of Taskwarrior's that mean nothing in a browser are named too.
-                        const TERMINAL: &[&str] = &[
-                            "_forcecolor", "annotation.info", "avoidlastcolumn", "column.padding", "data.location",
-                            "dateformat.edit", "debug", "default.timesheet.filter", "defaultheight", "defaultwidth",
-                            "dependency.reminder", "detection", "exit.on.missing.db", "fontunderline", "gc",
-                            "hyphenate", "indent.annotation", "indent.report", "nag", "news.version", "obfuscate",
-                            "purge.on-sync", "reserved.lines", "row.padding", "sugar", "urgency.inherit", "verbose",
-                            "xterm.title",
-                        ];
-                        let mut names: Vec<String> = rows.map(|r| r[0].clone()).collect();
-                        names.extend(TERMINAL.iter().map(|n| (*n).to_owned()));
-                        names.sort_unstable();
-                        names.dedup();
-                        names
-                    }
-                }
-            };
-            if kind == ListShow || kind == ListConfig {
-                lines.sort_unstable();
-            }
-            ok(CliResult::Text { lines })
-        }
-        ListIds | ListUuids | UrgencyList | ZshIds | ZshUuids | Unique => {
-            // `_unique` is given the attribute it lists as a word among the filter's.
-            let mut filter = p.filter.clone();
-            let attribute = (kind == Unique)
-                .then(|| {
-                    let at = filter
-                        .iter()
-                        .position(|w| !w.contains([':', '=']) && crate::filter::canonical_attr_name(w, cfg).is_some())?;
-                    let name = filter.remove(at);
-                    crate::filter::canonical_attr_name(&name, cfg).map(|(n, _)| n)
-                })
-                .flatten();
-            let (sel, _) = match selected(all, ctx, cfg, &filter) {
-                Ok(s) => s,
-                Err(e) => return e.into(),
-            };
-            let open = |f: &&&Facts| f.status != "completed" && f.status != "deleted";
-            let mut lines: Vec<String> = Vec::new();
-            match kind {
-                ListIds | ZshIds => {
-                    let mut ids: Vec<(u32, &Facts)> = sel
-                        .iter()
-                        .filter(open)
-                        .filter_map(|f| ctx.ids.get(&f.uuid).map(|id| (*id, *f)))
-                        .collect();
-                    ids.sort_unstable_by_key(|(id, _)| *id);
-                    lines = ids
-                        .into_iter()
-                        .map(|(id, f)| {
-                            if kind == ZshIds {
-                                format!("{id}:{}", f.description.replace(':', "\\:"))
-                            } else {
-                                id.to_string()
-                            }
-                        })
-                        .collect();
-                }
-                ListUuids => lines = sel.iter().map(|f| f.uuid.to_string()).collect(),
-                ZshUuids => {
-                    let mut tasks: Vec<&&Facts> = sel.iter().collect();
-                    tasks.sort_by_key(|f| std::cmp::Reverse(ctx.ids.get(&f.uuid).copied().unwrap_or(0)));
-                    lines = tasks
-                        .into_iter()
-                        .map(|f| format!("{}:{}", f.uuid, f.description.replace(':', "\\:")))
-                        .collect();
-                }
-                UrgencyList => {
-                    let mut urgent: Vec<(f64, String)> = sel
-                        .iter()
-                        .map(|f| (ctx.urgency(f), format!("task {} urgency ", ident(ctx, f))))
-                        .collect();
-                    urgent.sort_by(|a, b| a.0.total_cmp(&b.0));
-                    lines = urgent
-                        .into_iter()
-                        .map(|(u, text)| format!("{text}{}", crate::calc::fmt_real(u)))
-                        .collect();
-                }
-                _ => {
-                    let Some(name) = attribute else {
-                        return ok(CliResult::Text { lines });
-                    };
-                    let mut values: BTreeSet<String> = BTreeSet::new();
-                    for f in &sel {
-                        match name.as_str() {
-                            "project" => values.extend(f.project.clone()),
-                            "priority" => values.extend(f.priority.clone()),
-                            "status" => {
-                                values.insert(f.status.clone());
-                            }
-                            "description" => {
-                                values.insert(f.description.clone());
-                            }
-                            "recur" => values.extend(f.recur.clone()),
-                            "rtype" => values.extend(f.rtype.clone()),
-                            "mask" => values.extend(f.mask.clone()),
-                            "parent" => values.extend(f.parent.map(|u| u.to_string())),
-                            "uuid" => {
-                                values.insert(f.uuid.to_string());
-                            }
-                            "tags" => values.extend(f.tags.iter().cloned()),
-                            "depends" => values.extend(f.depends.iter().map(Uuid::to_string)),
-                            "due" | "wait" | "scheduled" | "until" | "start" | "end" | "entry" | "modified" => {
-                                let ts = match name.as_str() {
-                                    "due" => f.due,
-                                    "wait" => f.wait,
-                                    "scheduled" => f.scheduled,
-                                    "until" => f.until,
-                                    "start" => f.start,
-                                    "end" => f.end,
-                                    "entry" => f.entry,
-                                    _ => f.modified,
-                                };
-                                values.extend(ts.map(|t| crate::helpers::format_date("YMDTHNSZ", t, 0, false)));
-                            }
-                            uda => values.extend(f.extra.get(uda).cloned()),
-                        }
-                    }
-                    lines = values.into_iter().collect();
-                }
-            }
-            ok(CliResult::Text { lines })
-        }
+        | ZshAttributes => lists::names_list(cfg, kind),
+        ListIds | ListUuids | UrgencyList | ZshIds | ZshUuids | Unique => lists::id_lists(cfg, ctx, all, kind, p),
         Help => ok(CliResult::Text { lines: help(cfg) }),
         Reports => ok(CliResult::Table(TableOut {
             footer: vec![],
@@ -2270,451 +2120,16 @@ async fn builtin<S: Storage>(
                 })
                 .collect(),
         })),
-        Udas => {
-            // `priority` is a user defined attribute that every installation has, unless the taskrc redefines it.
-            let mut names: Vec<&str> = cfg.udas.keys().map(String::as_str).collect();
-            if !cfg.udas.contains_key("priority") {
-                names.push("priority");
-            }
-            names.sort_unstable();
-            let rows: Vec<Vec<String>> = names
-                .iter()
-                .map(|name| {
-                    let def = cfg.udas.get(*name);
-                    let count = all
-                        .iter()
-                        .filter(|f| {
-                            if *name == "priority" {
-                                f.priority.is_some()
-                            } else {
-                                f.extra.contains_key(*name)
-                            }
-                        })
-                        .count();
-                    let (ty, label, values, default) = match def {
-                        Some(u) => (
-                            format!("{:?}", u.ty).to_lowercase(),
-                            u.label.clone().unwrap_or_else(|| (*name).to_owned()),
-                            u.values.join(","),
-                            u.default.clone().unwrap_or_default(),
-                        ),
-                        None => ("string".into(), "Priority".into(), "H,M,L,".into(), String::new()),
-                    };
-                    vec![(*name).to_owned(), ty, label, values, default, count.to_string()]
-                })
-                .collect();
-            let mut footer = vec![if rows.len() == 1 {
-                format!("{} UDA defined", rows.len())
-            } else {
-                format!("{} UDAs defined", rows.len())
-            }];
-            // Attributes of tasks that the taskrc does not define, and how many tasks have each.
-            let mut orphans: BTreeMap<&str, usize> = BTreeMap::new();
-            for f in all {
-                for key in f.orphan_keys(cfg) {
-                    if let Some((k, _)) = f.extra.get_key_value(&key) {
-                        *orphans.entry(k.as_str()).or_insert(0) += 1;
-                    }
-                }
-            }
-            if !orphans.is_empty() {
-                footer.push(format!(
-                    "Orphan UDA: {}",
-                    orphans
-                        .iter()
-                        .map(|(k, n)| format!("{k} ({n})"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-                // (Taskwarrior's own word for it follows the number of defined UDAs, not of orphans.)
-                footer.push(format!(
-                    "{} Orphan UDA{}",
-                    orphans.len(),
-                    if rows.len() == 1 { "" } else { "s" }
-                ));
-            }
-            ok(CliResult::Table(TableOut {
-                footer,
-                highlight: vec![],
-                right: vec![5],
-                title: None,
-                headers: ["Name", "Type", "Label", "Allowed Values", "Default", "Usage Count"]
-                    .map(String::from)
-                    .to_vec(),
-                rows,
-            }))
-        }
+        Udas => tables::udas(cfg, all),
         // `show`, `config` and `context` are answered before the tasks are loaded (see `settings_command`).
-        Commands => {
-            let mut rows: Vec<Vec<String>> = COMMAND_INFO
-                .iter()
-                .map(|(n, c, f, d)| command_row(n, c, f, d))
-                .collect();
-            for name in report::names(cfg)
-                .into_iter()
-                .filter(|n| !COMMAND_INFO.iter().any(|i| i.0 == n))
-            {
-                let description = report::resolve(cfg, &name)
-                    .and_then(|r| r.description)
-                    .unwrap_or_default();
-                rows.push(command_row(&name, "report", "IGRCF", &description));
-            }
-            rows.sort_unstable();
-            ok(CliResult::Table(TableOut {
-                title: None,
-                footer: vec![],
-                highlight: vec![],
-                right: vec![],
-                headers: [
-                    "Command",
-                    "Category",
-                    "R/W",
-                    "ID",
-                    "GC",
-                    "Recur",
-                    "Context",
-                    "Filter",
-                    "Mods",
-                    "Misc",
-                    "Description",
-                ]
-                .map(String::from)
-                .to_vec(),
-                rows,
-            }))
-        }
-        // `_get 1.due rc.bulk`: the value of each DOM reference, space-separated. One with no value is empty.
-        Get => {
-            let is_override = |w: &str| w.starts_with("rc.") && w.contains([':', '=']);
-            let words: Vec<&String> = p.filter.iter().filter(|w| !is_override(w)).collect();
-            // `annotations` is a column but no DOM attribute: only `annotations.count` and `annotations.<N>.…` are.
-            let attribute = |a: &str| {
-                (COLUMN_NAMES.contains(&a) && a != "annotations") || DOM_ONLY.contains(&a) || cfg.udas.contains_key(a)
-            };
-            let date = |a: &str| run::kind_of(a, cfg) == "date";
-            let urgency = |f: &Facts| ctx.urgency(f);
-            let dom = crate::calc::DomSource {
-                tasks: all,
-                ids: ctx.ids,
-                cfg,
-                clock: &ctx.clock,
-                urgency: &urgency,
-                args: args.join(" "),
-                sync_needed: args.iter().any(|a| a == "tw.syncneeded")
-                    && replica.num_local_operations().await.is_ok_and(|n| n > 0),
-            };
-            let mut values = Vec::new();
-            for w in words {
-                if !crate::calc::is_dom_ref(w, &attribute, &date) {
-                    return error(format!("'{w}' is not a DOM reference."));
-                }
-                values.push(
-                    dom.get(w)
-                        .map_or_else(String::new, |v| crate::calc::dom_text(v, &ctx.clock)),
-                );
-            }
-            if values.is_empty() {
-                return error("No DOM reference specified.");
-            }
-            ok(CliResult::Text {
-                lines: vec![values.join(" ")],
-            })
-        }
+        Commands => tables::commands(cfg),
+        Get => dom::get(replica, cfg, ctx, all, p, args).await,
         Show | Config | Context | Journal => error("this command is handled before the tasks are read"),
-        Columns => {
-            // What `task columns` lists: each column, its type, whether it can be set, and the formats it can be
-            // written in, the first being the default; with an example of each.
-            let sample = ctx.clock.now - 125;
-            let date_examples = || -> Vec<(&'static str, String)> {
-                vec![
-                    ("formatted", ctx.clock.format.format(sample, &ctx.clock)),
-                    ("julian", format!("{:.5}", sample as f64 / 86_400.0 + 2_440_587.5)),
-                    ("epoch", sample.to_string()),
-                    ("iso", crate::helpers::format_date("YMDTHNSZ", sample, 0, false)),
-                    ("age", crate::helpers::vague(ctx.clock.now - sample)),
-                    ("relative", crate::helpers::vague(sample - ctx.clock.now)),
-                    ("remaining", String::new()),
-                    ("countdown", crate::helpers::vague(sample - ctx.clock.now)),
-                ]
-            };
-            let uuid = "f30cb9c3-3fc0-483f-bfb2-3bf134f00694";
-            let text = "Move your clothes down on to the lower peg";
-            type Column = (&'static str, &'static str, bool, Vec<(&'static str, String)>);
-            let plain = |name, ty, modifiable, formats: &[(&'static str, &str)]| -> Column {
-                (
-                    name,
-                    ty,
-                    modifiable,
-                    formats.iter().map(|(f, e)| (*f, (*e).to_owned())).collect(),
-                )
-            };
-            let date = |name| -> Column { (name, "date", true, date_examples()) };
-            let mut start = date("start");
-            start.3.push(("active", "*".to_owned()));
-            let columns: Vec<Column> = vec![
-                plain(
-                    "depends",
-                    "string",
-                    true,
-                    &[("list", "1 2 10"), ("count", "[3]"), ("indicator", "D")],
-                ),
-                plain(
-                    "description",
-                    "string",
-                    true,
-                    &[
-                        ("combined", text),
-                        ("desc", text),
-                        ("oneline", text),
-                        ("truncated", "Move your clothes do..."),
-                        ("count", "Move your clothes down on to the lower peg [4]"),
-                        ("truncated_count", "Move your clothes do... [4]"),
-                    ],
-                ),
-                date("due"),
-                date("end"),
-                date("entry"),
-                plain("id", "numeric", false, &[("number", "123")]),
-                plain("imask", "numeric", false, &[("number", "12")]),
-                plain("last", "numeric", false, &[("number", "12")]),
-                plain("mask", "string", false, &[("default", "++++---")]),
-                date("modified"),
-                plain("parent", "string", false, &[("long", uuid), ("short", &uuid[..8])]),
-                plain("priority", "string", true, &[("default", ""), ("indicator", "")]),
-                plain(
-                    "project",
-                    "string",
-                    true,
-                    &[
-                        ("full", "home.garden"),
-                        ("parent", "home"),
-                        ("indented", "  home.garden"),
-                    ],
-                ),
-                plain("recur", "string", true, &[("duration", "weekly"), ("indicator", "R")]),
-                plain(
-                    "rtype",
-                    "string",
-                    false,
-                    &[("default", "periodic"), ("indicator", "chained")],
-                ),
-                date("scheduled"),
-                start,
-                plain("status", "string", true, &[("long", "Pending"), ("short", "P")]),
-                plain(
-                    "tags",
-                    "string",
-                    true,
-                    &[("list", "home @chore next"), ("indicator", "+"), ("count", "[2]")],
-                ),
-                plain("template", "string", false, &[("long", uuid), ("short", &uuid[..8])]),
-                date("until"),
-                plain("urgency", "numeric", false, &[("real", "4.6"), ("integer", "4")]),
-                plain("uuid", "string", false, &[("long", uuid), ("short", &uuid[..8])]),
-                date("wait"),
-                plain("<uda>", "<type>", true, &[("default", ""), ("indicator", "")]),
-            ];
-            let mut rows: Vec<Vec<String>> = Vec::new();
-            for (name, ty, modifiable, formats) in columns {
-                for (n, (format, example)) in formats.into_iter().enumerate() {
-                    let first = n == 0;
-                    rows.push(vec![
-                        if first { name.to_owned() } else { String::new() },
-                        if first { ty.to_owned() } else { String::new() },
-                        if first {
-                            (if modifiable { "Modifiable" } else { "Read Only" }).to_owned()
-                        } else {
-                            String::new()
-                        },
-                        if first { format!("{format}*") } else { format.to_owned() },
-                        example,
-                    ]);
-                }
-            }
-            ok(CliResult::Table(TableOut {
-                title: None,
-                footer: vec![
-                    "* Means default format, and therefore optional.  For example, 'due' and 'due.formatted' are equivalent."
-                        .into(),
-                ],
-                highlight: vec![],
-                right: vec![],
-                headers: ["Columns", "Type", "Modifiable", "Supported Formats", "Example"]
-                    .map(String::from)
-                    .to_vec(),
-                rows,
-            }))
-        }
-        Summary => {
-            // Every task the filter picks, finished ones included: that is what the progress bars count.
-            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
-                Ok(s) => s,
-                Err(e) => return e.into(),
-            };
-            let all_projects = cfg.settings.get("summary.all.projects").is_some_and(|v| {
-                matches!(
-                    v.trim().to_ascii_lowercase().as_str(),
-                    "1" | "on" | "yes" | "y" | "true"
-                )
-            });
-            let out = crate::summary::summarize(&sel, all_projects, &ctx.clock);
-            if out.rows.is_empty() {
-                return ok(CliResult::Text {
-                    lines: vec!["No projects.".into()],
-                });
-            }
-            ok(CliResult::Summary(out))
-        }
-        BurndownDaily | BurndownWeekly | BurndownMonthly | BurndownAnnual => {
-            use crate::burndown::Period;
-            let period = match kind {
-                BurndownDaily => Period::Daily,
-                BurndownWeekly => Period::Weekly,
-                BurndownMonthly => Period::Monthly,
-                _ => Period::Annual,
-            };
-            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
-                Ok(s) => s,
-                Err(e) => return e.into(),
-            };
-            // On unless `burndown.cumulative` turns it off, as in Taskwarrior.
-            let cumulative = cfg.settings.get("burndown.cumulative").is_none_or(|v| {
-                matches!(
-                    v.trim().to_ascii_lowercase().as_str(),
-                    "1" | "on" | "yes" | "y" | "true"
-                )
-            });
-            ok(CliResult::Burndown(Box::new(crate::burndown::burndown(
-                &sel, period, cumulative, &ctx.clock,
-            ))))
-        }
-        Calendar => {
-            // Overrides were applied already; what is left are the months asked for. Taskwarrior's
-            // calendar takes no filter, but a filter-shaped word (`project:Work`, `+next`,
-            // `/pattern/`) narrows which tasks it colours here, so a page can offer one.
-            let (words, filter): (Vec<String>, Vec<String>) = p
-                .filter
-                .iter()
-                .filter(|w| !w.starts_with("rc.") && !w.starts_with("rc:"))
-                .cloned()
-                .partition(|w| crate::calendar::is_argument(w, cfg.abbreviation_minimum()) || !filter_shaped(w));
-            let tasks: Vec<Facts> = if filter.is_empty() {
-                all.to_vec()
-            } else {
-                match selected(all, ctx, cfg, &filter) {
-                    Ok((sel, _)) => sel.into_iter().cloned().collect(),
-                    Err(e) => return e.into(),
-                }
-            };
-            let plan = match crate::calendar::plan(&words, cfg, &ctx.clock, &tasks) {
-                Ok(p) => p,
-                Err(m) => return error(m),
-            };
-            let mut out = plan.out;
-            if let Some(d) = plan.details {
-                if crate::report::resolve(cfg, &d.report).is_none() {
-                    return error("The setting 'calendar.details.report' must contain a single report name.");
-                }
-                match run::run_report(&run::Request {
-                    cfg,
-                    clock: ctx.clock,
-                    all,
-                    report: &d.report,
-                    filter: &[d.filter.clone(), filter].concat(),
-                    seed: opts.seed,
-                }) {
-                    Ok(o) => out.details = Some(o),
-                    Err(e) => return e.into(),
-                }
-            }
-            ok(CliResult::Calendar(Box::new(out)))
-        }
-        Projects | Tags => {
-            // The working set (pending and recurring tasks), and with `list.all.projects` or
-            // `list.all.tags` every other task too.
-            let everything = if kind == Projects {
-                cfg.list_all_projects()
-            } else {
-                cfg.list_all_tags()
-            };
-            let pool: Vec<&Facts> = all
-                .iter()
-                .filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring"))
-                .collect();
-            // `tags` counts the tasks before the filter; `projects` the ones that match it.
-            let before = pool.len();
-            let sel = match select_from(&pool, ctx, cfg, &p.filter, true) {
-                Ok((s, _)) => s,
-                Err(e) => return e.into(),
-            };
-            if kind == Projects {
-                // A project's count includes its sub-projects' tasks; deleted tasks aren't counted.
-                let mut unique: BTreeMap<String, usize> = BTreeMap::new();
-                let mut quantity = sel.len();
-                for f in &sel {
-                    if f.status == "deleted" {
-                        quantity -= 1;
-                        continue;
-                    }
-                    let project = f.project.clone().unwrap_or_default();
-                    let mut chain = crate::summary::extract_parents(&project);
-                    chain.push(project);
-                    for c in chain {
-                        *unique.entry(c).or_default() += 1;
-                    }
-                }
-                if unique.is_empty() {
-                    return ok(CliResult::Text {
-                        lines: vec!["No projects.".into()],
-                    });
-                }
-                let names: BTreeSet<String> = crate::ordered::set_of(unique.keys().cloned());
-                let rows: Vec<Vec<String>> = crate::summary::sort_projects(&names)
-                    .into_iter()
-                    .map(|name| {
-                        let label = if name.is_empty() {
-                            "(none)".to_owned()
-                        } else {
-                            let (last, depth) = crate::summary::indent(&name);
-                            format!("{}{last}", "  ".repeat(depth))
-                        };
-                        vec![label, unique.get(&name).copied().unwrap_or(0).to_string()]
-                    })
-                    .collect();
-                let projects = unique.len() - usize::from(unique.contains_key(""));
-                return ok(CliResult::Table(TableOut {
-                    title: None,
-                    footer: vec![format!(
-                        "{} {}",
-                        plural(projects, "project"),
-                        format!("({})", plural(quantity, "task"))
-                    )],
-                    highlight: vec![],
-                    right: vec![],
-                    headers: vec!["Project".into(), "Tasks".into()],
-                    rows,
-                }));
-            }
-            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-            for f in &sel {
-                for t in &f.tags {
-                    *counts.entry(t.clone()).or_default() += 1;
-                }
-            }
-            if counts.is_empty() {
-                return ok(CliResult::Text {
-                    lines: vec!["No tags.".into()],
-                });
-            }
-            ok(CliResult::Table(TableOut {
-                title: None,
-                footer: vec![plural(counts.len(), "tag"), format!("({})", plural(before, "task"))],
-                highlight: vec![],
-                right: vec![],
-                headers: vec!["Tag".into(), "Count".into()],
-                rows: counts.into_iter().map(|(k, n)| vec![k, n.to_string()]).collect(),
-            }))
-        }
+        Columns => tables::columns(ctx),
+        Summary => views::summary(cfg, ctx, all, p),
+        BurndownDaily | BurndownWeekly | BurndownMonthly | BurndownAnnual => views::burndown(cfg, ctx, all, kind, p),
+        Calendar => views::calendar(cfg, ctx, all, p, opts.seed),
+        Projects | Tags => lists::projects_or_tags(cfg, ctx, all, kind, p),
         // The lists shell completion asks for: just the names, one a line. They look at the filter
         // alone (no context), and `_projects` also lists the projects of deleted tasks.
         CompleteProjects | CompleteTags => match completion_names(kind == CompleteProjects, all, ctx, cfg, &p.filter) {
@@ -2724,970 +2139,28 @@ async fn builtin<S: Storage>(
             Err(e) => e.into(),
         },
         // Both lists in one request.
-        Names => {
-            let (projects, tags) = match (
-                completion_names(true, all, ctx, cfg, &p.filter),
-                completion_names(false, all, ctx, cfg, &p.filter),
-            ) {
-                (Ok(p), Ok(t)) => (p, t),
-                (Err(e), _) | (_, Err(e)) => return e.into(),
-            };
-            ok(CliResult::Json {
-                value: serde_json::json!({ "tags": tags, "projects": projects }),
-            })
-        }
-        // `calc 1 + 2`: Taskwarrior's calculator. `expressions=postfix` reads `1 2 +` instead.
-        Calc => {
-            // `rc.bulk:5` is a setting for this command; a bare `rc.bulk` is something to look up.
-            let is_override = |w: &str| w.starts_with("rc.") && w.contains([':', '=']);
-            let expression = p
-                .filter
-                .iter()
-                // A word of just `--` ends the options of the command line and is no part of the expression.
-                .filter(|w| !is_override(w) && w.as_str() != "--")
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(" ");
-            let sync_needed =
-                expression.contains("tw.syncneeded") && replica.num_local_operations().await.is_ok_and(|n| n > 0);
-            let urgency = |f: &Facts| ctx.urgency(f);
-            let dom = crate::calc::DomSource {
-                tasks: all,
-                ids: ctx.ids,
-                cfg,
-                clock: &ctx.clock,
-                urgency: &urgency,
-                args: args.join(" "),
-                sync_needed,
-            };
-            match crate::calc::calc(&expression, cfg.expressions_postfix(), &ctx.clock, &|n| dom.get(n)) {
-                Ok(v) => ok(CliResult::Text { lines: vec![v] }),
-                Err(m) => error(m),
-            }
-        }
+        Names => lists::names(cfg, ctx, all, p),
+        Calc => dom::calc(replica, cfg, ctx, all, p, args).await,
         Export => export(replica, cfg, ctx, all, p).await,
         Import => ok(CliResult::Import),
-        Stats => {
-            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
-                Ok(s) => s,
-                Err(e) => return e.into(),
-            };
-            // The web app syncs after every write, so this is normally nothing.
-            let backlog = replica.num_local_operations().await.unwrap_or(0);
-            ok(CliResult::Table(crate::stats::stats(
-                &sel,
-                &ctx.clock,
-                undo.0.len(),
-                backlog,
-            )))
-        }
-        Colors => {
-            let words: Vec<&String> = p.filter.iter().filter(|w| !w.starts_with("rc.")).collect();
-            if !cfg.color() {
-                return ok(CliResult::Text {
-                    lines: vec![crate::color::OFF.to_owned()],
-                });
-            }
-            if words.iter().any(|w| !w.is_empty() && "legend".starts_with(w.as_str())) {
-                return ok(CliResult::Styled {
-                    lines: crate::color::legend(&crate::color::effective(cfg)),
-                    swatch: true,
-                });
-            }
-            if words.is_empty() {
-                return ok(CliResult::Styled {
-                    lines: crate::color::palette(),
-                    swatch: true,
-                });
-            }
-            let words: Vec<String> = words.into_iter().cloned().collect();
-            match crate::color::sample(&words) {
-                Ok(lines) => ok(CliResult::Styled { lines, swatch: true }),
-                Err(m) => error(m),
-            }
-        }
-        Timesheet => {
-            // With no filter of its own, the last four weeks (or `report.timesheet.filter`); and the active
-            // context only if `report.timesheet.context` says so.
-            let hasfilter = p.filter.iter().any(|w| !w.starts_with("rc."));
-            let filter = if hasfilter {
-                p.filter.clone()
-            } else {
-                split_words(&cfg.timesheet_filter())
-            };
-            let pool: Vec<&Facts> = all.iter().collect();
-            let (sel, _) = match select_from(&pool, ctx, cfg, &filter, cfg.timesheet_context()) {
-                Ok(s) => s,
-                Err(e) => return e.into(),
-            };
-            ok(CliResult::Table(crate::activity::timesheet(&sel, ctx.ids, &ctx.clock)))
-        }
+        Stats => views::stats(replica, cfg, ctx, all, p, undo.0.len()).await,
+        Colors => views::colors(cfg, p),
+        Timesheet => views::timesheet(cfg, ctx, all, p),
         HistoryDaily | HistoryWeekly | HistoryMonthly | HistoryAnnual | GHistoryDaily | GHistoryWeekly
-        | GHistoryMonthly | GHistoryAnnual => {
-            use crate::activity::Period;
-            let period = match kind {
-                HistoryDaily | GHistoryDaily => Period::Daily,
-                HistoryWeekly | GHistoryWeekly => Period::Weekly,
-                HistoryMonthly | GHistoryMonthly => Period::Monthly,
-                _ => Period::Annual,
-            };
-            let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
-                Ok(s) => s,
-                Err(e) => return e.into(),
-            };
-            let result = if matches!(kind, GHistoryDaily | GHistoryWeekly | GHistoryMonthly | GHistoryAnnual) {
-                if cfg.color() {
-                    let all = crate::color::effective(cfg);
-                    let style = |k: &str| {
-                        all.get(k)
-                            .and_then(|v| crate::color::parse_style(v).ok())
-                            .unwrap_or_default()
-                    };
-                    let colours = [
-                        style("color.history.add"),
-                        style("color.history.done"),
-                        style("color.history.delete"),
-                    ];
-                    crate::activity::history_graph_coloured(&sel, period, &ctx.clock, 80, colours)
-                        .map(|lines| CliResult::Styled { lines, swatch: false })
-                } else {
-                    crate::activity::history_graph(&sel, period, &ctx.clock, 80).map(|lines| CliResult::Text { lines })
-                }
-            } else {
-                crate::activity::history_table(&sel, period, &ctx.clock).map(CliResult::Table)
-            };
-            ok(result.unwrap_or_else(|| CliResult::Text {
-                lines: vec!["No tasks.".into()],
-            }))
-        }
-        Info | Count | Rows | Ids | Uuids | Remind => {
-            let (sel, limit) = match selected(all, ctx, cfg, &p.filter) {
-                Ok(s) => s,
-                Err(e) => return e.into(),
-            };
-            let sel: Vec<&Facts> = match limit {
-                Limit::N(n) => sel.into_iter().take(n).collect(),
-                _ => sel,
-            };
-            let row = |f: &Facts| Row::build_full(f, ctx);
-            match kind {
-                // Taskwarrior's `count` skips recurring parents (the templates), not the instances.
-                Count => ok(CliResult::Text {
-                    lines: vec![sel.iter().filter(|f| f.status != "recurring").count().to_string()],
-                }),
-                Info => {
-                    if sel.is_empty() {
-                        return ok(CliResult::Text {
-                            lines: vec!["No matches.".into()],
-                        });
-                    }
-                    let tasks: Vec<Row> = sel.iter().map(|f| row(f)).collect();
-                    ok(CliResult::Info { tasks })
-                }
-                Rows => ok(CliResult::Json {
-                    value: serde_json::to_value(sel.iter().map(|f| row(f)).collect::<Vec<_>>()).unwrap_or_default(),
-                }),
-                // What the reminders and the timer read, and nothing else: no urgency, colours, annotations or virtual
-                // tags. Only a running task has tracked time worth working out.
-                Remind => {
-                    let journal = cfg.journal();
-                    let items: Vec<serde_json::Value> = sel
-                        .iter()
-                        .map(|f| {
-                            let tracked = f
-                                .start
-                                .and(journal.as_ref())
-                                .and_then(|(s, e)| f.active_seconds(s, e, ctx.clock.now));
-                            serde_json::json!({
-                                "uuid": f.uuid,
-                                "status": f.status,
-                                "description": f.description,
-                                "due": f.due,
-                                "wait": f.wait,
-                                "start": f.start,
-                                "active_seconds": tracked,
-                            })
-                        })
-                        .collect();
-                    ok(CliResult::Json {
-                        value: serde_json::Value::Array(items),
-                    })
-                }
-                // The numbers in order, a run of them as `3-5`: `1 3-5 7`.
-                Ids => {
-                    let mut ids: Vec<u32> = sel.iter().filter_map(|f| ctx.ids.get(&f.uuid).copied()).collect();
-                    ids.sort_unstable();
-                    let mut parts: Vec<String> = Vec::new();
-                    let mut i = 0;
-                    while i < ids.len() {
-                        let mut end = i;
-                        while end + 1 < ids.len() && ids[end] + 1 == ids[end + 1] {
-                            end += 1;
-                        }
-                        parts.push(if end > i {
-                            format!("{}-{}", ids[i], ids[end])
-                        } else {
-                            ids[i].to_string()
-                        });
-                        i = end + 1;
-                    }
-                    ok(CliResult::Text {
-                        lines: vec![parts.join(" ")],
-                    })
-                }
-                // All on one line, with a space between.
-                _ => ok(CliResult::Text {
-                    lines: vec![sel.iter().map(|f| f.uuid.to_string()).collect::<Vec<_>>().join(" ")],
-                }),
-            }
-        }
-        Undo => {
-            let Some(last) = undo.0.last().cloned() else {
-                return ok(CliResult::Text {
-                    lines: vec!["Nothing to undo.".into()],
-                });
-            };
-            if cfg.confirmation() && !opts.confirmed {
-                return ok(CliResult::Confirm {
-                    message:
-                        "The undo command is not reversible.  Are you sure you want to revert to the previous state?"
-                            .into(),
-                    ask: Ask::Plain,
-                    items: vec![],
-                });
-            }
-            let reverse = match invert(
-                replica,
-                &last,
-                Utc.timestamp_opt(ctx.clock.now, 0).single().unwrap_or_else(Utc::now),
-            )
-            .await
-            {
-                Ok(r) => r,
-                Err(m) => return error(m),
-            };
-            if let Err(e) = replica.commit_operations(reverse).await {
-                return error(e.to_string());
-            }
-            undo.0.pop();
-            Done {
-                result: CliResult::Text {
-                    lines: vec!["Undone.".into()],
-                },
-                wrote: true,
-                command: None,
-                config: None,
-                feedback: Vec::new(),
-            }
-        }
+        | GHistoryMonthly | GHistoryAnnual => views::history(cfg, ctx, all, kind, p),
+        Info | Count | Rows | Ids | Uuids | Remind => lists::selection(cfg, ctx, all, kind, p),
+        Undo => write::undo(replica, cfg, ctx, &opts, undo).await,
         // Everything that writes to selected tasks.
         Modify | Done | Delete | Start | Stop | Annotate | Denotate | Append | Prepend | Duplicate | Purge => {
-            write_selected(replica, cfg, ctx, all, kind, p, opts, undo, hk).await
+            let w = Writer {
+                replica,
+                opts,
+                undo,
+                hk,
+            };
+            write::write_selected(w, cfg, ctx, all, kind, p).await
         }
         Add | Log => unreachable!("handled earlier"),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn write_selected<S: Storage>(
-    replica: &mut Replica<S>,
-    cfg: &Config,
-    ctx: &EvalCtx<'_>,
-    all: &[Facts],
-    kind: Kind,
-    p: &Parsed,
-    opts: Options,
-    undo: &mut UndoStack,
-    hk: &crate::hooks::Runner,
-) -> Done {
-    // Taskwarrior's safety net: a command that changes tasks, given no filter, would change them
-    // all (finished and deleted ones too). `allow.empty.filter` forbids that; otherwise it asks,
-    // and with `confirmation` off it refuses. The context's filter counts as a filter.
-    let empty_filter = conjoin(&[context_read(cfg), p.filter.clone()]).is_empty();
-    if empty_filter {
-        if !cfg.allow_empty_filter() {
-            return error("You did not specify a filter, and with the 'allow.empty.filter' value, no action is taken.");
-        }
-        if !cfg.confirmation() {
-            return error("Command prevented from running.");
-        }
-    }
-    let (sel, _) = match selected(all, ctx, cfg, &p.filter) {
-        Ok(s) => s,
-        Err(e) => return e.into(),
-    };
-    if sel.is_empty() {
-        return ok(CliResult::Text {
-            lines: vec!["No matches.".into()],
-        });
-    }
-    if empty_filter && !opts.confirmed {
-        return ok(CliResult::Confirm {
-            message: format!(
-                "This command has no filter, and will modify all (including completed and deleted) tasks.  Are you sure? ({} in all.)",
-                plural(sel.len(), "task")
-            ),
-            ask: Ask::Plain,
-            items: vec![],
-        });
-    }
-
-    // What follows the command word. `modify` reads it all as changes (words replace the
-    // description). `done`, `delete`, `start`, `stop`, `annotate`, `append` and `prepend` read it as
-    // Taskwarrior does: attributes, tags and substitutions are applied to each task (`done
-    // end:-2h`, `start due:eow`, `annotate hello due:eow`), and the plain words that are left
-    // are the annotation or the text. `denotate` takes the whole of it as the text to match.
-    let reads_changes = matches!(
-        kind,
-        Modify | Done | Delete | Start | Stop | Annotate | Append | Prepend | Duplicate
-    );
-    let mods = if reads_changes {
-        match modify::parse_mods(&p.mods, cfg) {
-            Ok(m) => Some(m),
-            Err(e) => return e.into(),
-        }
-    } else {
-        None
-    };
-    let (text, extra): (String, Option<modify::Mods>) = match (&mods, kind) {
-        // A GUI note or addition is text, whatever it looks like.
-        (_, Annotate | Append | Prepend | Duplicate) if !opts.typed => (p.mods.join(" "), None),
-        (Some(m), Done | Delete | Start | Stop | Annotate | Append | Prepend | Duplicate) => {
-            let others =
-                !m.attrs.is_empty() || !m.add_tags.is_empty() || !m.remove_tags.is_empty() || m.subst.is_some();
-            (
-                m.words.join(" "),
-                others.then(|| modify::Mods {
-                    words: Vec::new(),
-                    ..m.clone()
-                }),
-            )
-        }
-        _ => (p.mods.join(" "), None),
-    };
-    if matches!(kind, Annotate | Append | Prepend) && text.trim().is_empty() && extra.is_none() {
-        return error("this command needs some text");
-    }
-    if kind == Denotate && text.trim().is_empty() {
-        return error("this command needs some text");
-    }
-
-    // Whether the command does anything to this task.
-    let acts = |f: &Facts| match kind {
-        Done => f.status == "pending",
-        Delete => f.status != "deleted",
-        // Only a deleted task can be purged: it has to be marked deleted first.
-        Purge => f.status == "deleted",
-        Start => f.status != "recurring" && f.start.is_none(),
-        Stop => f.status != "recurring" && f.start.is_some(),
-        _ => true,
-    };
-
-    // The tasks this command would change: those are the ones Taskwarrior asks about.
-    let mut would_change: Vec<&Facts> = Vec::new();
-    for f in &sel {
-        // A change that can't be made (`done due:nonsense`) is refused before anything is asked.
-        if let Some(x) = &extra {
-            if let Err(e) = modify::plan(x, Mode::Modify, Some(f), ctx, all) {
-                return error(e.0);
-            }
-        }
-        let changes = match kind {
-            Modify => match modify_plan(mods.as_ref(), f, ctx, all) {
-                Ok(c) => !c.is_empty(),
-                Err(e) => return error(e),
-            },
-            _ => acts(f),
-        };
-        if changes {
-            would_change.push(f);
-        }
-    }
-
-    // Permission, task by task (Taskwarrior's yes / no / all / quit, as a table): deleting asks
-    // when `confirmation` is on, and any change asks once it reaches `bulk` tasks.
-    let mut declined: Vec<&Facts> = Vec::new();
-    if !would_change.is_empty() && asks(kind, sel.len(), cfg) {
-        match &opts.approved {
-            None => {
-                let items: Vec<ConfirmItem> = would_change
-                    .iter()
-                    .map(|f| confirm_item(f.uuid.to_string(), f, ctx, permission_question(kind, f, ctx, all)))
-                    .collect();
-                let message = if items.len() == 1 {
-                    items[0].question.clone()
-                } else {
-                    format!(
-                        "This will {} {}. Choose which ones to go ahead with.",
-                        verb_of(kind),
-                        plural(items.len(), "task")
-                    )
-                };
-                return ok(CliResult::Confirm {
-                    message,
-                    ask: Ask::Permission,
-                    items,
-                });
-            }
-            Some(yes) => {
-                declined = would_change
-                    .iter()
-                    .filter(|f| !yes.contains(&f.uuid.to_string()))
-                    .copied()
-                    .collect();
-            }
-        }
-    }
-    if !declined.is_empty() && declined.len() == would_change.len() {
-        return ok(CliResult::Text {
-            lines: declined.iter().map(|_| declined_line(kind).to_owned()).collect(),
-        });
-    }
-    let chosen: Vec<&Facts> = sel
-        .iter()
-        .filter(|f| !declined.iter().any(|d| d.uuid == f.uuid))
-        .copied()
-        .collect();
-    let changing: Vec<&Facts> = would_change
-        .iter()
-        .filter(|f| !declined.iter().any(|d| d.uuid == f.uuid))
-        .copied()
-        .collect();
-
-    // Deleting a task of a recurring series can take the rest of it along (below), as `recurrence.confirmation` says.
-    let mut targets: Vec<&Facts> = chosen.clone();
-
-    // What only comes up once the above is settled, asked in one more table: carrying a change to
-    // the rest of a recurring series (`recurrence.confirmation`), and repairing a dependency
-    // chain that finishing or deleting a task in the middle of it breaks
-    // (`dependency.confirmation`).
-    let asking = opts.extras.is_none();
-    let said_yes = |key: &str| opts.extras.as_ref().is_some_and(|y| y.iter().any(|k| k == key));
-    let mut items: Vec<ConfirmItem> = Vec::new();
-    let mut propagate: BTreeSet<Uuid> = BTreeSet::new();
-    if matches!(kind, Modify | Delete | Append | Prepend | Annotate) {
-        let mode = recur::confirmation(cfg);
-        let verb = match kind {
-            Delete => "delete",
-            Append => "append to",
-            Prepend => "prepend to",
-            Annotate => "annotate",
-            _ => "modify",
-        };
-        for f in &changing {
-            // `modify` and `delete` reach a template's instances too; the others only go from an instance to its series.
-            if series_of(f, all).is_empty() || (!matches!(kind, Modify | Delete) && f.parent.is_none()) {
-                continue;
-            }
-            match mode {
-                recur::Confirmation::Yes => {
-                    propagate.insert(f.uuid);
-                }
-                recur::Confirmation::No => {}
-                recur::Confirmation::Prompt => {
-                    let key = format!("rec:{}", f.uuid);
-                    if asking {
-                        items.push(confirm_item(
-                            key,
-                            f,
-                            ctx,
-                            format!(
-                                "This is a recurring task.  Do you want to {verb} all pending recurrences of this same task?"
-                            ),
-                        ));
-                    } else if said_yes(&key) {
-                        propagate.insert(f.uuid);
-                    }
-                }
-            }
-        }
-    }
-    let mut repairs: Vec<Repair> = Vec::new();
-    if matches!(kind, Done | Delete) {
-        let mut ask = |f: &Facts| -> bool {
-            if !cfg.dependency_confirmation() {
-                return true;
-            }
-            let key = format!("dep:{}", f.uuid);
-            if asking {
-                // Asked on the assumption that the earlier ones are repaired; a later one that
-                // then turns out not to arise is simply never used.
-                items.push(confirm_item(
-                    key,
-                    f,
-                    ctx,
-                    "Would you like the dependency chain fixed?".into(),
-                ));
-                true
-            } else {
-                said_yes(&key)
-            }
-        };
-        repairs = chain_repairs(&changing, all, &mut ask);
-    }
-    // `purge`: a recurring template can only go when all its instances are deleted already, and it takes them
-    // with it (asking first, as `recurrence.confirmation` says; "no" refuses).
-    let mut kids: Vec<&Facts> = Vec::new();
-    if kind == Purge {
-        for f in changing.iter().filter(|f| f.mask.is_some()) {
-            let children: Vec<&Facts> = all.iter().filter(|c| c.parent == Some(f.uuid)).collect();
-            if let Some(live) = children.iter().find(|c| c.status != "deleted") {
-                return error(format!(
-                    "Task '{}' is a recurrence template. Its child task {} must be deleted before it can be purged.",
-                    f.description,
-                    ident(ctx, live)
-                ));
-            }
-            if children.is_empty() {
-                continue;
-            }
-            let key = format!("rec:{}", f.uuid);
-            let go = match recur::confirmation(cfg) {
-                recur::Confirmation::Yes => true,
-                recur::Confirmation::No => false,
-                recur::Confirmation::Prompt if asking => {
-                    let question = format!(
-                        "Task '{}' is a recurrence template. All its {} deleted children tasks will be purged as well. Continue?",
-                        f.description,
-                        children.len()
-                    );
-                    items.push(confirm_item(key, f, ctx, question));
-                    true
-                }
-                recur::Confirmation::Prompt => said_yes(&key),
-            };
-            if !go {
-                return error("Purge operation aborted.");
-            }
-            kids.extend(children);
-        }
-    }
-    if asking && !items.is_empty() {
-        let message = if items.len() == 1 {
-            items[0].question.clone()
-        } else {
-            "A few more questions about these tasks.".to_owned()
-        };
-        return ok(CliResult::Confirm {
-            message,
-            ask: Ask::Extras,
-            items,
-        });
-    }
-
-    // The series follows a delete when it was agreed to: the pending instances of a template, or the template and the
-    // other pending instances of an instance.
-    if kind == Delete {
-        for f in changing.iter().filter(|f| propagate.contains(&f.uuid)) {
-            for c in series_of(f, all) {
-                if c.status != "deleted" && !targets.iter().any(|t| t.uuid == c.uuid) {
-                    targets.push(c);
-                }
-            }
-        }
-    }
-    let mut ops = Operations::new();
-    let mut touched = Vec::new();
-    let mut passed: Vec<String> = Vec::new();
-    if kind == Purge {
-        // Only the deleted tasks, and the instances of a template that goes.
-        targets.clear();
-        for f in changing.iter().copied().chain(kids) {
-            if !targets.iter().any(|t| t.uuid == f.uuid) {
-                targets.push(f);
-            }
-        }
-        // What waited on them no longer does, so nothing points at a task that is gone.
-        let gone: BTreeSet<Uuid> = crate::ordered::set_of(targets.iter().map(|f| f.uuid));
-        for d in all
-            .iter()
-            .filter(|d| !gone.contains(&d.uuid) && d.depends.iter().any(|u| gone.contains(u)))
-        {
-            match replica.get_task(d.uuid).await {
-                Ok(Some(mut t)) => {
-                    for u in d.depends.iter().filter(|u| gone.contains(u)) {
-                        if let Err(e) = t.remove_dependency(*u, &mut ops) {
-                            return error(e.to_string());
-                        }
-                    }
-                }
-                Ok(None) => {}
-                Err(e) => return error(e.to_string()),
-            }
-        }
-    }
-    let journal = cfg.journal();
-    // Parents' masks as they will be after this command; each is written once at the end.
-    let mut masks: BTreeMap<Uuid, String> = BTreeMap::new();
-    let mut mask_dirty: Vec<Uuid> = Vec::new();
-    let mut instances_touched: Vec<Uuid> = Vec::new();
-    // What `duplicate` has to say about the copies it made.
-    let mut notes: Vec<String> = Vec::new();
-    for f in &targets {
-        if kind == Purge {
-            match replica.get_task_data(f.uuid).await {
-                Ok(Some(mut data)) => {
-                    data.delete(&mut ops);
-                    touched.push(f.uuid);
-                }
-                Ok(None) => {}
-                Err(e) => return error(e.to_string()),
-            }
-            continue;
-        }
-        if kind == Duplicate {
-            let (copy, note) = match duplicate(replica, f, extra.as_ref(), &text, ctx, all, hk, &mut ops).await {
-                Ok(c) => c,
-                Err(m) => return error(m),
-            };
-            touched.push(copy);
-            notes.extend(note);
-            continue;
-        }
-        let outcome: Result<bool, String> = async {
-            let mut changed = true;
-            let mut task = replica
-                .get_task(f.uuid)
-                .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("task {} disappeared", f.uuid))?;
-            let e = |e: taskchampion::Error| e.to_string();
-            // The modifications come first, as in Taskwarrior: `done end:-2h` sets the end time
-            // before completing (which only fills it in when it is missing).
-            if acts(f) && matches!(kind, Done | Delete | Start | Stop | Annotate | Append | Prepend) {
-                if let Some(x) = &extra {
-                    let changes = modify::plan(x, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
-                    apply_changes(&mut task, &changes, &mut ops)?;
-                }
-                if matches!(kind, Done | Delete | Start | Stop) && !text.trim().is_empty() {
-                    add_note(&mut task, &text, ctx.clock.now, &mut ops)?;
-                }
-            }
-            match kind {
-                // Only pending tasks can be completed (not templates, not finished ones).
-                Done if f.status != "pending" => changed = false,
-                Delete if f.status == "deleted" => changed = false,
-                Start | Stop if f.status == "recurring" => changed = false,
-                Done => {
-                    task.set_status(Status::Completed, &mut ops).map_err(e)?;
-                    // Completing an active task stops it, like `task done` does.
-                    if f.start.is_some() {
-                        task.stop(&mut ops).map_err(e)?;
-                        if let Some((_, stop)) = &journal {
-                            add_note(&mut task, stop, ctx.clock.now, &mut ops)?;
-                        }
-                    }
-                }
-                Delete => task.set_status(Status::Deleted, &mut ops).map_err(e)?,
-                Start => {
-                    if f.start.is_some() {
-                        changed = false; // already active: nothing to do (and no second journal entry)
-                    } else {
-                        // Starting a completed or deleted task reopens it, as in Taskwarrior.
-                        if f.status == "completed" || f.status == "deleted" {
-                            task.set_status(Status::Pending, &mut ops).map_err(e)?;
-                        }
-                        task.start(&mut ops).map_err(e)?;
-                        if let Some((start, _)) = &journal {
-                            add_note(&mut task, start, ctx.clock.now, &mut ops)?;
-                        }
-                    }
-                }
-                Stop => {
-                    if f.start.is_none() {
-                        changed = false;
-                    } else {
-                        task.stop(&mut ops).map_err(e)?;
-                        if let Some((_, stop)) = &journal {
-                            add_note(&mut task, stop, ctx.clock.now, &mut ops)?;
-                        }
-                    }
-                }
-                Annotate if !text.trim().is_empty() => add_note(&mut task, &text, ctx.clock.now, &mut ops)?,
-                Annotate => {}
-                Denotate => {
-                    let anns: Vec<Annotation> = task.get_annotations().collect();
-                    let hit = anns
-                        .iter()
-                        .find(|a| a.description == text)
-                        .or_else(|| anns.iter().find(|a| a.description.starts_with(&text)));
-                    match hit {
-                        Some(a) => task.remove_annotation(a.entry, &mut ops).map_err(e)?,
-                        None => return Err(format!("no annotation matches '{text}'")),
-                    }
-                }
-                Append | Prepend if text.trim().is_empty() => {}
-                Append | Prepend => {
-                    let d = task.get_description().to_owned();
-                    let new = if kind == Append {
-                        format!("{d} {text}")
-                    } else {
-                        format!("{text} {d}")
-                    };
-                    task.set_description(new, &mut ops).map_err(e)?;
-                }
-                Modify => {
-                    let changes = modify_plan(mods.as_ref(), f, ctx, all)?;
-                    apply_changes(&mut task, &changes, &mut ops)?;
-                }
-                _ => unreachable!(),
-            }
-            // The rest of the series gets the same command when that was agreed to (`recurrence.confirmation`): each
-            // pending member and, from an instance, the template. All of it, dates and `recur` too, as `task` does.
-            let wrote_text = !text.trim().is_empty() || kind == Modify;
-            if changed
-                && propagate.contains(&f.uuid)
-                && matches!(kind, Modify | Append | Prepend | Annotate)
-                && wrote_text
-            {
-                for c in series_of(f, all) {
-                    // A task that is itself being changed got the change already.
-                    if targets.iter().any(|t| t.uuid == c.uuid) || instances_touched.contains(&c.uuid) {
-                        continue;
-                    }
-                    let Some(mut other) = replica.get_task(c.uuid).await.map_err(|x| x.to_string())? else {
-                        continue;
-                    };
-                    match kind {
-                        Modify => {
-                            let changes = modify_plan(mods.as_ref(), c, ctx, all)?;
-                            apply_changes(&mut other, &changes, &mut ops)?;
-                        }
-                        Annotate => add_note(&mut other, &text, ctx.clock.now, &mut ops)?,
-                        _ => {
-                            let d = other.get_description().to_owned();
-                            let new = if kind == Append {
-                                format!("{d} {text}")
-                            } else {
-                                format!("{text} {d}")
-                            };
-                            other.set_description(new, &mut ops).map_err(e)?;
-                        }
-                    }
-                    let hooked = hk.modify(c, Facts::from_task(&other)).await?;
-                    apply_changes(&mut other, &hooked, &mut ops)?;
-                    if kind == Modify {
-                        mirror_mask(&mut masks, &mut mask_dirty, all, c, &other);
-                    }
-                    instances_touched.push(c.uuid);
-                }
-            }
-            // `on-modify`: the hook sees the task as it was and as the command leaves it, and may
-            // change it or refuse.
-            if changed {
-                let hooked = hk.modify(f, Facts::from_task(&task)).await?;
-                apply_changes(&mut task, &hooked, &mut ops)?;
-            }
-            // An instance's state is mirrored in its parent's mask (`+` done, `X` deleted, ...), by the commands that
-            // change a task's state; not by the ones that only add to it or take from it.
-            if changed && !matches!(kind, Annotate | Denotate | Append | Prepend) {
-                mirror_mask(&mut masks, &mut mask_dirty, all, f, &task);
-            }
-            Ok(changed)
-        }
-        .await;
-        match outcome {
-            Err(m) => return error(m),
-            Ok(true) => touched.push(f.uuid),
-            Ok(false) => {
-                // Taskwarrior says which tasks it passed over, when it did something to others.
-                if let Some(why) = passed_over(kind) {
-                    passed.push(format!("Task {} '{}' {why}.", ident(ctx, f), f.description));
-                }
-            }
-        }
-    }
-
-    mask_dirty.sort_unstable();
-    mask_dirty.dedup();
-    for pu in mask_dirty {
-        if let (Some(mask), Ok(Some(mut parent))) = (masks.get(&pu), replica.get_task(pu).await) {
-            if let Err(e) = parent.set_value("mask", Some(mask.clone()), &mut ops) {
-                return error(e.to_string());
-            }
-        }
-    }
-    touched.extend(instances_touched);
-
-    let mut repaired: Vec<Uuid> = Vec::new();
-    if !touched.is_empty() {
-        for r in &repairs {
-            let Ok(Some(mut t)) = replica.get_task(r.task).await else {
-                continue;
-            };
-            let mut changes: Vec<Change> = r.removed.iter().map(|u| Change::RemoveDep(*u)).collect();
-            changes.extend(r.added.iter().map(|u| Change::AddDep(*u)));
-            if let Err(m) = apply_changes(&mut t, &changes, &mut ops) {
-                return error(m);
-            }
-            repaired.push(r.task);
-        }
-    }
-
-    if touched.is_empty() {
-        if kind == Purge {
-            return ok(CliResult::Text {
-                lines: vec![
-                    "Purged 0 tasks.".into(),
-                    "No deleted tasks specified. Maybe you forgot to delete tasks first?".into(),
-                ],
-            });
-        }
-        // Taskwarrior names each task it passed over and why, then counts none done.
-        let why = passed_over(kind);
-        let past = match kind {
-            Start => "Started",
-            Stop => "Stopped",
-            Done => "Completed",
-            Delete => "Deleted",
-            _ => "Modified",
-        };
-        let mut lines: Vec<String> = Vec::new();
-        if let Some(why) = why {
-            lines.extend(
-                sel.iter()
-                    .map(|f| format!("Task {} '{}' {why}.", ident(ctx, f), f.description)),
-            );
-        }
-        lines.push(format!("{past} 0 tasks."));
-        return ok(CliResult::Text { lines });
-    }
-
-    undo.push(&ops);
-    if let Err(e) = replica.commit_operations(ops).await {
-        return error(e.to_string());
-    }
-    let after = warm_facts(replica, opts.warm.as_ref()).await.unwrap_or_default();
-    let past = match kind {
-        Done => "Completed",
-        Delete => "Deleted",
-        Start => "Started",
-        Stop => "Stopped",
-        Annotate => "Annotated",
-        Denotate => "Updated",
-        Duplicate => "Duplicated",
-        Purge => "Purged",
-        _ => "Modified",
-    };
-    // The tasks it passed over are named as it goes, before the count.
-    let mut message = String::new();
-    for n in &passed {
-        message.push_str(&format!("{n} "));
-    }
-    message.push_str(&format!("{past} {}.", plural(touched.len(), "task")));
-    for n in &notes {
-        message.push_str(&format!(" {n}"));
-    }
-    if !declined.is_empty() {
-        message.push_str(&format!(" Skipped {}.", plural(declined.len(), "task")));
-    }
-    if !repaired.is_empty() {
-        message.push_str(&format!(
-            " Repaired the dependencies of {}.",
-            plural(repaired.len(), "task")
-        ));
-        touched.extend(repaired);
-    }
-    Done {
-        result: changed(&after, &touched, message),
-        wrote: true,
-        command: None,
-        config: None,
-        feedback: Vec::new(),
-    }
-}
-
-/// `duplicate`: a copy of `f` as a new task, as in `CmdDuplicate`. It keeps everything but its identity,
-/// `start`, `end` and `entry`, and starts over as pending; a copy of a recurring instance is a plain task,
-/// a copy of a template is a template. What followed the command is applied to the copy, its words as a
-/// note. Returns the copy, and what Taskwarrior notes about it.
-#[allow(clippy::too_many_arguments)]
-async fn duplicate<S: Storage>(
-    replica: &mut Replica<S>,
-    f: &Facts,
-    extra: Option<&modify::Mods>,
-    text: &str,
-    ctx: &EvalCtx<'_>,
-    all: &[Facts],
-    hk: &crate::hooks::Runner,
-    ops: &mut Operations,
-) -> Result<(Uuid, Option<String>), String> {
-    let e = |e: taskchampion::Error| e.to_string();
-    let data = replica.get_task_data(f.uuid).await.map_err(e)?;
-    let data = data.ok_or_else(|| format!("task {} disappeared", f.uuid))?;
-    let template = f.status == "recurring";
-    let instance = f.parent.is_some();
-    let uuid = crate::crypto::new_uuid().map_err(|e| e.to_string())?;
-    let mut task = replica.create_task(uuid, ops).await.map_err(e)?;
-    for (k, v) in data.iter() {
-        let skip = matches!(k.as_str(), "status" | "start" | "end" | "entry" | "modified")
-            || (instance && matches!(k.as_str(), "parent" | "recur" | "until" | "imask"))
-            || (template && k == "mask");
-        if !skip {
-            task.set_value(k.clone(), Some(v.clone()), ops).map_err(e)?;
-        }
-    }
-    task.set_status(
-        if template && !instance {
-            Status::Recurring
-        } else {
-            Status::Pending
-        },
-        ops,
-    )
-    .map_err(e)?;
-    task.set_entry(Utc.timestamp_opt(ctx.clock.now, 0).single(), ops)
-        .map_err(e)?;
-    if let Some(x) = extra {
-        let changes = modify::plan(x, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
-        apply_changes(&mut task, &changes, ops)?;
-    }
-    if !text.trim().is_empty() {
-        add_note(&mut task, text, ctx.clock.now, ops)?;
-    }
-    let hooked = hk.add(Facts::from_task(&task)).await?;
-    apply_changes(&mut task, &hooked, ops)?;
-    let note = match (instance, template) {
-        (true, _) => Some("was a recurring task.  The duplicated task is not."),
-        (_, true) => Some("was a parent recurring task.  The duplicated task is too."),
-        _ => None,
-    };
-    Ok((uuid, note.map(|n| format!("Note: task {} {n}", ident(ctx, f)))))
-}
-
-/// The rest of `f`'s recurring series: for a template its pending instances; for an instance its
-/// pending siblings and the template. Empty for an ordinary task.
-fn series_of<'a>(f: &Facts, all: &'a [Facts]) -> Vec<&'a Facts> {
-    if f.status == "recurring" {
-        all.iter()
-            .filter(|c| c.parent == Some(f.uuid) && c.status == "pending")
-            .collect()
-    } else if let Some(parent) = f.parent {
-        all.iter()
-            .filter(|c| c.uuid != f.uuid && (c.uuid == parent || (c.parent == Some(parent) && c.status == "pending")))
-            .collect()
-    } else {
-        Vec::new()
-    }
-}
-
-/// Write an instance's state (`+` done, `X` deleted, `W` waiting, `-` pending) into its slot of its parent's mask,
-/// to be saved with the other changes. `before` is how it was, `task` how the command leaves it.
-fn mirror_mask(masks: &mut BTreeMap<Uuid, String>, dirty: &mut Vec<Uuid>, all: &[Facts], before: &Facts, task: &Task) {
-    let (Some(parent), Some(index)) = (before.parent, before.imask) else {
-        return;
-    };
-    let ch = recur::mask_char(&model::status_str(&task.get_status()), task.is_waiting());
-    let cur = masks.entry(parent).or_insert_with(|| {
-        all.iter()
-            .find(|x| x.uuid == parent)
-            .and_then(|x| x.mask.clone())
-            .unwrap_or_default()
-    });
-    let next = recur::set_mask(cur, index, ch);
-    if next != *cur {
-        *cur = next;
-        dirty.push(parent);
     }
 }
 
