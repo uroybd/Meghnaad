@@ -102,4 +102,12 @@ describe('another task in the detail pane', () => {
     await settle();
     expect(document.querySelector('[data-testid="depitem-card"]')!.textContent).toContain('not here any more');
   });
+  it('says the request failed, not that the task is gone, when it could not be fetched', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    draw().click();
+    await settle();
+    const card = document.querySelector('[data-testid="depitem-card"]')?.textContent ?? '';
+    expect(card).toContain("Couldn't load this task");
+    expect(card).not.toContain('not here any more');
+  });
 });

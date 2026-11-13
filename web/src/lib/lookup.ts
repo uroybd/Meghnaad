@@ -6,7 +6,10 @@ import type { Row } from './types';
 const cache = new Map<string, Promise<Row | null>>();
 let cachedRev = -1;
 
-/** One task by uuid, or `null` when it is gone or the request failed. Asked for only when someone wants to see it. */
+/**
+ * One task by uuid, or `null` when it is gone. Rejects when the request failed, which is not the same as gone, and is
+ * not kept: the next look asks again. Asked for only when someone wants to see it.
+ */
 export function fetchTask(uuid: string): Promise<Row | null> {
   if (cachedRev !== store.rev) {
     cache.clear();
@@ -16,7 +19,10 @@ export function fetchTask(uuid: string): Promise<Row | null> {
   if (!p) {
     p = runCli({ args: [uuid, 'info'] })
       .then(({ result }) => (result.kind === 'info' ? (result.tasks[0] ?? null) : null))
-      .catch(() => null);
+      .catch((err: unknown) => {
+        cache.delete(uuid);
+        throw err;
+      });
     cache.set(uuid, p);
   }
   return p;

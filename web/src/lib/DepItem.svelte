@@ -17,6 +17,7 @@
   let shown = $state(false);
   let fetched = $state<Row | null>(null);
   let missing = $state(false);
+  let failed = $state<string | null>(null);
 
   const card = $derived(row ?? fetched);
   const name = $derived(card?.description ?? store.tasks.find((t) => t.uuid === uuid)?.description);
@@ -24,9 +25,14 @@
   async function toggle() {
     shown = !shown;
     if (!shown || card) return;
-    const got = await fetchTask(uuid);
-    fetched = got;
-    missing = !got;
+    failed = null;
+    try {
+      const got = await fetchTask(uuid);
+      fetched = got;
+      missing = !got;
+    } catch (err) {
+      failed = err instanceof Error ? err.message : String(err);
+    }
   }
 
   const open = () => (onopen ? onopen(uuid) : store.openDetail(uuid, null));
@@ -42,6 +48,8 @@
     <span class="card" data-testid="depitem-card">
       {#if card}
         <TaskCard row={card} />
+      {:else if failed}
+        <span class="dim">Couldn't load this task ({failed}).</span>
       {:else if missing}
         <span class="dim">This task is not here any more.</span>
       {:else}

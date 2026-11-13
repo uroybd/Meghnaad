@@ -17,6 +17,7 @@
   let shown = $state(false);
   let card = $state<Row | null>(null);
   let missing = $state(false);
+  let failed = $state<string | null>(null);
   let tip: HTMLElement | undefined = $state();
 
   // Until the card arrives, what the page already has of the task.
@@ -26,9 +27,14 @@
     shown = true;
     const anchor = e.currentTarget as HTMLElement;
     void place(anchor);
-    const row = await fetchTask(uuid);
-    card = row;
-    missing = !row;
+    failed = null;
+    try {
+      const row = await fetchTask(uuid);
+      card = row;
+      missing = !row;
+    } catch (err) {
+      failed = err instanceof Error ? err.message : String(err);
+    }
     void place(anchor); // the card has its content now, so its height is known
   }
 
@@ -84,6 +90,8 @@
         <TaskCard row={card} />
       {:else if known && !missing}
         <strong class="desc">{known.description}</strong>
+      {:else if failed}
+        <span class="dim">Couldn't load this task ({failed}).</span>
       {:else if missing}
         <span class="dim">This task is not here any more.</span>
       {:else}
