@@ -47,7 +47,8 @@ once they are over 180 days old and a snapshot covers them.
 
 The engine runs in the page, with a copy saved in the browser (IndexedDB), so the next visit
 pulls only what changed. A new device, or one whose copy was thrown away, downloads the newest snapshot, which takes
-a moment for a long history.
+a moment for a long history. If the browser refuses to keep that copy (a full disk, a private window), a banner says so: what
+you change still reaches the server, but anything not yet pushed is lost if you close the page.
 
 ### Syncing
 

@@ -9,10 +9,17 @@ export type EngineRequest =
   | { op: 'hooks'; defined: string }
   | { op: 'run'; request: string }
   | { op: 'import'; text: string; apply: boolean; tz: number; now: number }
-  /** Pull and push. Answers whether anything of the tasks changed. */
+  /** Pull and push. Answers a `Synced`. */
   | { op: 'sync' }
   /** Forget the saved replica (it is fetched again from the bucket on the next start). */
   | { op: 'forget' };
+
+/** A sync's answer: whether anything of the tasks changed, and why the copy in this browser could not be saved
+ * (`null` when it was, or is not kept here). The push can work while the save fails. */
+export interface Synced {
+  changed: boolean;
+  unkept: string | null;
+}
 
 export type EngineReply = { id: number; ok: true; value: unknown } | { id: number; ok: false; error: string };
 

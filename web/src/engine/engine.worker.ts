@@ -5,14 +5,17 @@
 import init, { Engine } from 'tc-engine';
 import wasmUrl from './pkg/tc_browser_bg.wasm?url';
 import { forgetReplica, loadReplica, saveReplica } from './persist';
-import type { Call, EngineReply } from './protocol';
+import type { Call, EngineReply, Synced } from './protocol';
 
 let engine: Engine | undefined;
 let persist = false;
 /** The engine's change counter when it was last saved. */
 let saved = -1;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+/** Why the last save failed, until one works: told to the page with the next sync. */
+let unkept: string | null = null;
 
+/** Save the replica if it changed. Throws when it cannot be saved, and then counts it as not saved. */
 async function keep(): Promise<void> {
   if (!persist || !engine) return;
   const now = engine.changes();
@@ -26,7 +29,10 @@ function keepSoon(): void {
   if (!persist || saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = undefined;
-    queue = queue.then(keep).catch(() => {});
+    queue = queue.then(keep).then(
+      () => (unkept = null),
+      (err: unknown) => (unkept = String(err)),
+    );
   }, 400);
 }
 
@@ -44,8 +50,9 @@ async function handle(m: Call): Promise<unknown> {
           saved = engine.changes();
           restored = true;
         } catch {
-          // An unusable copy (another version of the engine wrote it): start from the bucket.
-          await forgetReplica();
+          // An unusable copy (another version of the engine wrote it): start from the bucket. If it cannot be thrown
+          // away either, the next start finds it unusable again and does the same.
+          await forgetReplica().catch(() => undefined);
         }
       }
     }
@@ -75,8 +82,11 @@ async function handle(m: Call): Promise<unknown> {
       const before = engine.changes();
       await engine.sync('');
       const changed = engine.changes() !== before;
-      await keep();
-      return changed;
+      await keep().then(
+        () => (unkept = null),
+        (err: unknown) => (unkept = String(err)),
+      );
+      return { changed, unkept } satisfies Synced;
     }
     case 'forget':
       await forgetReplica();

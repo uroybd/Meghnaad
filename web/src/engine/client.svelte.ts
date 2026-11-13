@@ -5,7 +5,7 @@
 // browser has pushed (they tell each other over a BroadcastChannel). A write is already applied and saved here, so a
 // push that fails (offline, a signed-out session) is only tried again later; what is waiting is pushed with it.
 
-import type { Call, EngineReply, EngineRequest, Port } from './protocol';
+import type { Call, EngineReply, EngineRequest, Port, Synced } from './protocol';
 
 /** How often a visible tab pulls what other devices have done. */
 const PULL_EVERY_MS = 30_000;
@@ -24,6 +24,9 @@ export class EngineClient {
   status = $state<SyncStatus>('idle');
   /** Why the last sync failed, until one succeeds. */
   error = $state<string | null>(null);
+  /** Why this browser could not keep its copy of the tasks, until it can again (changes then live only in memory
+   * until they are pushed). */
+  unkept = $state<string | null>(null);
   /** When the last sync succeeded (ms since the epoch). */
   lastSync = $state<number | null>(null);
 
@@ -117,7 +120,8 @@ export class EngineClient {
     const run = async () => {
       this.status = 'syncing';
       try {
-        const changed = (await this.send({ op: 'sync' })) as boolean;
+        const { changed, unkept } = (await this.send({ op: 'sync' })) as Synced;
+        this.unkept = unkept;
         this.error = null;
         this.status = 'idle';
         this.lastSync = Date.now();

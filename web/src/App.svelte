@@ -127,7 +127,16 @@
       "This throws away this browser's copy of your tasks, including any change that has not reached the server yet, and loads them again from the server. Continue?",
     );
     if (!sure) return;
-    await engine.forget();
+    try {
+      await engine.forget();
+    } catch (err) {
+      // Reloading now would only load the copy that could not be thrown away.
+      store.notify(
+        `This browser's copy could not be thrown away (${err instanceof Error ? err.message : String(err)}).`,
+        'err',
+      );
+      return;
+    }
     location.reload();
   }
 
@@ -348,6 +357,15 @@
               deleted.</span
             >
             <button class="ghost" onclick={() => store.openSettings('taskrc')}>Fix it</button>
+          </div>
+        {/if}
+        {#if engine.unkept}
+          <div class="banner" role="alert">
+            <TriangleAlert size={15} />
+            <span
+              >This browser can't keep a copy of your tasks right now ({engine.unkept}). What you change still goes to
+              the server, but anything that has not reached it yet is lost if you close the page.</span
+            >
           </div>
         {/if}
         {#if engine.status === 'failed'}

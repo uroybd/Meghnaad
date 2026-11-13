@@ -1,7 +1,7 @@
 // @vitest-environment node
 // (jsdom does not always carry the streams API the browser has; Node does.)
-import { describe, expect, it } from 'vitest';
-import { pack, unpack } from './persist';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { forgetReplica, loadReplica, pack, saveReplica, unpack } from './persist';
 
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 
@@ -33,5 +33,32 @@ describe('what the engine saves, kept compressed', () => {
   it('keeps small and empty inputs apart from gzip', async () => {
     expect(await unpack(new Uint8Array([0x1f]))).toEqual(new Uint8Array([0x1f]));
     expect(await unpack(new Uint8Array())).toEqual(new Uint8Array());
+  });
+});
+
+describe('when the browser will not keep it (a full disk, a blocked database)', () => {
+  // An IndexedDB whose every open fails, as a private window or a full disk makes it.
+  const broken = {
+    open() {
+      const req: { error: Error; onerror?: () => void } = { error: new Error('QuotaExceededError') };
+      queueMicrotask(() => req.onerror?.());
+      return req;
+    },
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads as no copy at all, so the page starts from the bucket', async () => {
+    vi.stubGlobal('indexedDB', broken);
+    expect(await loadReplica()).toBeUndefined();
+  });
+
+  it('says a save failed rather than letting the page think its changes are kept', async () => {
+    vi.stubGlobal('indexedDB', broken);
+    await expect(saveReplica(new Uint8Array([1, 2, 3]))).rejects.toThrow('QuotaExceededError');
+  });
+
+  it('says a copy could not be thrown away, so the page does not reload into it', async () => {
+    vi.stubGlobal('indexedDB', broken);
+    await expect(forgetReplica()).rejects.toThrow('QuotaExceededError');
   });
 });

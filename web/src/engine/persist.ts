@@ -1,5 +1,6 @@
-// The replica between visits: one record in IndexedDB. Whatever goes wrong here (a private window, a full disk, a
-// blocked database) only means the next visit starts from the bucket, so nothing in here throws.
+// The replica between visits: one record in IndexedDB. A read that fails (a private window, a blocked database) only
+// means this visit starts from the bucket, so reading never throws. A write that fails does: the page tells people
+// that what they change is kept in this browser, and it must know when that stopped being true.
 
 const DB = 'meghnaad-engine';
 const STORE = 'kv';
@@ -14,22 +15,18 @@ function open(): Promise<IDBDatabase> {
   });
 }
 
-async function tx<T>(mode: IDBTransactionMode, use: (s: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
+async function tx<T>(mode: IDBTransactionMode, use: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await open();
   try {
-    const db = await open();
-    try {
-      return await new Promise<T>((resolve, reject) => {
-        const t = db.transaction(STORE, mode);
-        const req = use(t.objectStore(STORE));
-        t.oncomplete = () => resolve(req.result);
-        t.onerror = () => reject(t.error);
-        t.onabort = () => reject(t.error);
-      });
-    } finally {
-      db.close();
-    }
-  } catch {
-    return undefined;
+    return await new Promise<T>((resolve, reject) => {
+      const t = db.transaction(STORE, mode);
+      const req = use(t.objectStore(STORE));
+      t.oncomplete = () => resolve(req.result);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    });
+  } finally {
+    db.close();
   }
 }
 
@@ -65,7 +62,8 @@ export async function unpack(kept: Uint8Array): Promise<Uint8Array> {
 }
 
 export async function loadReplica(): Promise<Uint8Array | undefined> {
-  const found = await tx<unknown>('readonly', (s) => s.get(KEY));
+  // Unreadable is the same as no copy at all: the bucket has everything that was pushed.
+  const found = await tx<unknown>('readonly', (s) => s.get(KEY)).catch(() => undefined);
   if (!(found instanceof Uint8Array)) return undefined;
   try {
     return await unpack(found);

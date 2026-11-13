@@ -29,6 +29,7 @@ vi.mock('./engine/client.svelte', () => ({
   engine: {
     status: 'idle',
     error: null,
+    unkept: null,
     lastSync: null,
     start: async () => undefined,
     stop: () => undefined,

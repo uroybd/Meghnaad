@@ -50,6 +50,8 @@ class FakeChannel {
   close() {}
 }
 
+/** What the Worker answers a sync with. */
+const synced = (changed: boolean, unkept: string | null = null) => ({ changed, unkept });
 const syncs = () => sent.filter((c) => c.op === 'sync').length;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -65,7 +67,7 @@ beforeEach(() => {
   FakeChannel.last = undefined;
   delay = false;
   hold = undefined;
-  replies = (c) => (c.op === 'start' ? false : c.op === 'sync' ? false : c.op === 'run' ? '{}' : null);
+  replies = (c) => (c.op === 'start' ? false : c.op === 'sync' ? synced(false) : c.op === 'run' ? '{}' : null);
   vi.stubGlobal('Worker', FakeWorker);
   vi.stubGlobal('BroadcastChannel', FakeChannel);
 });
@@ -87,7 +89,7 @@ describe('starting', () => {
   });
 
   it('answers at once from the saved copy, and syncs behind it', async () => {
-    replies = (c) => (c.op === 'start' ? true : c.op === 'sync' ? false : null);
+    replies = (c) => (c.op === 'start' ? true : c.op === 'sync' ? synced(false) : null);
     const Engine = await fresh();
     const e = new Engine();
     delay = true;
@@ -189,10 +191,10 @@ describe('syncing', () => {
     await e.start('{}');
     const seen = vi.fn();
     e.onChanged(seen);
-    replies = (c) => (c.op === 'sync' ? false : null);
+    replies = (c) => (c.op === 'sync' ? synced(false) : null);
     await e.sync();
     expect(seen).not.toHaveBeenCalled();
-    replies = (c) => (c.op === 'sync' ? true : null);
+    replies = (c) => (c.op === 'sync' ? synced(true) : null);
     await e.sync();
     expect(seen).toHaveBeenCalledTimes(1);
     e.stop();
@@ -209,11 +211,27 @@ describe('syncing', () => {
     await e.sync();
     expect(e.status).toBe('failed');
     expect(e.error).toBe('push: status 502');
-    replies = () => false;
+    replies = () => synced(false);
     await e.sync();
     expect(e.status).toBe('idle');
     expect(e.error).toBeNull();
     expect(e.lastSync).not.toBeNull();
+    e.stop();
+  });
+
+  it('says when this browser could not keep the changes, and stops saying so once it can', async () => {
+    const Engine = await fresh();
+    const e = new Engine();
+    await e.start('{}');
+    expect(e.unkept).toBeNull();
+    replies = (c) => (c.op === 'sync' ? synced(false, 'QuotaExceededError') : null);
+    await e.sync();
+    // The push worked: the sync itself did not fail, only the copy in this browser.
+    expect(e.status).toBe('idle');
+    expect(e.unkept).toBe('QuotaExceededError');
+    replies = (c) => (c.op === 'sync' ? synced(false) : null);
+    await e.sync();
+    expect(e.unkept).toBeNull();
     e.stop();
   });
 
