@@ -3,8 +3,53 @@
 Taskwarrior 3.5.0 in the browser: a pure engine (`crates/tc-core`) that runs **in the page** as WebAssembly
 (`crates/browser`, in a Web Worker, with its replica saved in IndexedDB), a Svelte 5 app (`web/`) that draws what it
 returns, a small Rust → WASM Cloudflare Worker (`crates/worker`) that checks Access, holds the secret and opens and seals
-versions, and an R2 bucket as the TaskChampion store. The README and `docs/architecture.md` explain the design; this
-file is how to change it.
+versions, and an R2 bucket as the TaskChampion store. The same engine runs natively in the Android app (`crates/android`,
+`app/`), and a terminal app (`crates/tui`) drives the real `task` on the desktop. The README and `docs/architecture.md`
+explain the design; this file is how to change it.
+
+## Architecture map
+
+The terse version of `docs/architecture.md` (which has a diagram per platform). One line per unit: path, what it is,
+what calls it, what it must not do.
+
+```text
+LAYER 1: Taskwarrior/TaskChampion rules
+crates/tc-core      pure Rust lib, no I/O. Engine (cli/{mod,write,lists,tables,views,dom}.rs, filter, report, recur, …),
+                    sync (cloud, wire, crypto, store), replica storage (live, warm), helpers (helpers::call by name, JSON),
+                    board, keymap, sortspec, request (what a request to an engine means), webapi (settings routes),
+                    hooks + lua_hooks (feature "lua"). Hosts only; never knows which front end calls it.
+
+HOSTS of tc-core (add no behaviour)
+crates/browser      tc-core → WASM, run in a Web Worker. Syncs via RemoteServer → Worker /api/tc/* (server.rs);
+                    hooks via POST /api/run (hooks.rs). No "lua" feature. Built to web/src/engine/pkg.
+crates/worker       Cloudflare Worker, Rust → WASM, <1 MB gz (never grow it). auth.rs (Access JWT), session.rs
+                    (derived key), store.rs (R2 ObjectStore), hooknet.rs (Lua fetch/secrets). Runs no commands.
+                    Routes: /api/tc/*, /api/config*, /api/settings, /api/run, /api/hooks*, /api/secrets*, /api/health;
+                    /api/setup is the one route without sign-in (names of missing settings only).
+crates/android      tc-core native + JNI (jni.rs, JSON in/out, handles). engine.rs (replica, save/restore bytes),
+                    s3.rs+sigv4.rs (any S3), syncserver.rs (TaskChampion sync server), files.rs+filesync.rs (settings
+                    folder kept in step with bucket, never secrets), secrets.rs, net.rs, helpers.rs (re-exports).
+crates/hook-shim    meghnaad-hook: the Lua script as `task` hooks (run.rs protocol, convert.rs JSON↔engine task,
+                    net.rs; secrets = env vars by exact name).
+
+LAYER 2: front ends (send command lines, draw results; never touch the replica)
+web/                Svelte 5. src/engine/ (engine.worker.ts, client.svelte.ts, persist.ts → IndexedDB, protocol.ts,
+                    helpers.ts = sync helper calls on page thread), src/lib/ (store.svelte.ts, api.ts, route.ts Place,
+                    pages, boards.ts, taskCommands.ts, review.svelte.ts, keymap.ts). Keys asset: public/keymaps/default.json.
+app/                Kotlin + Compose. shared/commonMain (Store.kt, Sync.kt, screens; ports of web/src/lib with tests),
+                    jvmCommonMain/NativeEngine.kt (JNI names: keep package me.utsob.meghnaad), androidMain (AndroidVault
+                    = Keystore), androidApp (MainActivity, ReminderReceiver, widgets/, SyncWorker). desktopApp = preview.
+crates/tui          meghnaad-tui, ratatui. Backend = real `task` 3.5.0 (task.rs); tc-core for helpers only.
+                    app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,tests}.rs; settings.json in
+                    $MEGHNAAD_CONFIG_DIR or ~/.config/meghnaad; sync = background `task sync`. Never reaches the bucket.
+
+DATA in the bucket: salt, latest, v-<parent>-<child>, s-<version> (TaskChampion), web/rc/* (taskrc files),
+web/config.json (+ rc.prev.json), web/settings.json (taskCommands, boards, homepage, keys), web/hooks.lua (+ previous),
+web/hook-secrets.enc. Secrets: Worker secret TC_ENCRYPTION_SECRET; phone Keystore; never on a page.
+
+SHARED ACROSS FRONT ENDS via tc_core::helpers only: dates/dateformat, command-line split, completion, highlight, cells,
+preview, markdown, urgency names, sortspec, board, keymap. Everything else in layer 2 is ported per front end.
+```
 
 ## Where a feature goes
 

@@ -7,189 +7,499 @@ How Meghnaad is put together, and why. For what it does, see [Using Meghnaad](us
 
 Taskwarrior 3 keeps its data in **TaskChampion**, which syncs through a *server*: a place where every client pushes its
 changes (as numbered "versions") and pulls everyone else's. With `sync.server.type=aws` that place is a bucket, and the
-clients agree on its layout. Meghnaad is one more client of that bucket, written for the browser.
+clients agree on its layout. Meghnaad is more clients of that bucket: one in the browser, one on Android, and a terminal
+app around the real `task` on the desktop.
 
-### A replica, not a copy
+- **A replica, not a copy.** The browser and the phone each hold a full TaskChampion replica and read and write the
+  bucket in TaskChampion's own format and encryption, so `task sync` and Meghnaad see each other's changes.
+- **One library for Taskwarrior's rules.** Filters, reports, urgency, recurrence, confirmations and dates live in one
+  Rust library, `tc-core`, checked against the real `task` 3.5.0. The browser runs it as WebAssembly, the phone as a
+  native library. The screens around it only draw what it returns.
+- **The secret stays in one place.** In the browser, a small Cloudflare **Worker** sits between the page and the bucket:
+  it checks Cloudflare Access, holds the encryption secret, and opens and seals the versions that pass through. It never
+  runs a command and never parses a task. The phone has no Worker and keeps its keys in the Android Keystore.
 
-It reads and writes the same bucket in TaskChampion's own format and encryption, so `task sync` and the web app see each
-other's changes.
+The engine used to run on the Worker, so every request spent the free plan's 10 ms of CPU. Moved into the page, it costs
+the Worker nothing and answers at once.
 
-### The replica lives in your browser
+### Words used here
 
-The engine (Rust compiled to WebAssembly, in a Web Worker in the page) holds your tasks in memory, runs Taskwarrior
-commands against them, and keeps a saved copy in IndexedDB. A small Cloudflare **Worker** sits between the page and the
-bucket: it checks Cloudflare Access, holds the encryption secret, and opens and seals the versions that pass through. It
-never parses a task.
+- **Engine**: `tc-core` built for one host: WebAssembly in the browser, a native library on Android. It runs Taskwarrior
+  commands against a replica and answers in JSON.
+- **Replica**: a full copy of your tasks that TaskChampion keeps in step with the bucket. The one in memory is the one
+  the engine works on; the saved copy (IndexedDB, or a file on the phone) only lets the next start skip the download.
+- **Front end**: anything that draws and sends command lines: the web app, the Android app, the terminal app.
+- **Worker** means the Cloudflare Worker, the small server program. The browser engine runs in a **Web Worker**, the
+  browser's background thread; the two are unrelated.
+- **Access**: Cloudflare Access, which signs you in before any request reaches the Worker.
+- **The secret**: `TC_ENCRYPTION_SECRET`, the passphrase TaskChampion's encryption key is derived from. The same one is
+  set in your taskrc for `task sync`.
+- **Hooks**: your Lua script, run at Taskwarrior's hook points (`on-add`, `on-modify`, …). See [Hooks](#hooks).
 
-### One library for Taskwarrior behaviour
-
-Filters, reports, urgency, recurrence, confirmations and dates live in one Rust library, `tc-core`. The Svelte app draws
-what the engine returns and has no Taskwarrior logic of its own. What it does own is the shell level around `task`: task
-commands, `&&` `||` `;` chains, bulk actions and review, which only send ordinary commands to the engine.
-
-### Why the engine is in the page
-
-It started the other way round: the Worker held the replica and ran every command, so every request spent the free
-plan's 10 ms of CPU. Moving the engine into the page took that cost off the Worker and made reads and writes
-instantaneous. Every current browser has what it needs (Web Workers and WebAssembly), so the Worker no longer runs it.
+## The map
 
 ```mermaid
 flowchart TB
-  subgraph desktop["Desktop: Taskwarrior 3"]
+  subgraph desktop["Desktop"]
     direction TB
-    sh["shell aliases<br/>alias fail='task done outcome:fail'"]
-    tsh["tasksh<br/>review"]
-    tui["meghnaad-tui (terminal)<br/>runs task, completes with tc-core"]
-    cli["task CLI (C++)"]
-    tcd["TaskChampion (Rust)"]
+    sh["shell aliases"]
+    tsh["tasksh review"]
+    tui["meghnaad-tui<br/>terminal app"]
+    cli["task 3.5.0 (C++)"]
+    tcd["TaskChampion"]
     db[("SQLite replica<br/>~/.task")]
-    rc["~/.taskrc"]
     sh -.-> cli
     tsh -.-> cli
-    tui --> cli
-    cli --> tcd --> db
-    rc -.-> cli
+    tui --> cli --> tcd --> db
   end
 
-  subgraph web["Your browser: Meghnaad"]
+  subgraph web["Browser"]
     direction TB
-    cmds["task commands<br/>(settings.json)"]
-    rev["tasksh review"]
-    spa["Svelte app<br/>(draws results)"]
-    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core"]
-    tcw["TaskChampion (Rust)"]
-    mem[("Replica in memory<br/>saved copy in IndexedDB")]
+    cmds["task commands"]
+    rev["review"]
+    spa["Svelte app"]
+    eng["tc-core engine<br/>WebAssembly, in a Web Worker"]
+    tcw["TaskChampion"]
+    mem[("replica in memory<br/>saved in IndexedDB")]
     cmds -.-> spa
     rev -.-> spa
-    spa -- "what you type or click" --> eng --> tcw --> mem
+    spa --> eng --> tcw --> mem
   end
 
-  subgraph phone["Your phone: Meghnaad for Android"]
+  subgraph phone["Android"]
     direction TB
-    wg["Widgets<br/>tasks · burndown · calendar"]
-    app["The app<br/>Kotlin and Compose"]
-    nat["Engine (Rust, native)<br/>tc-core, hooks (Lua)"]
-    rep[("Replica in a file<br/>settings and keys on the phone")]
-    wg --> nat
-    app --> nat --> rep
+    app["Kotlin app<br/>and widgets"]
+    nat["tc-core engine<br/>native, over JNI"]
+    tcn["TaskChampion"]
+    rep[("replica in a file")]
+    app --> nat --> tcn --> rep
   end
 
   subgraph edge["Cloudflare"]
     direction TB
-    access{{"Cloudflare Access<br/>sign-in and token check"}}
-    assets["Static assets<br/>the app and the engine (.wasm)"]
-    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>runs your hooks (Lua)<br/>key in a Worker secret"]
-    access --> assets
+    access{{"Access<br/>sign-in"}}
+    wk["Worker<br/>holds the key · runs Lua hooks"]
     access --> wk
   end
 
-  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
+  bucket[("Bucket<br/>TaskChampion's layout, encrypted<br/>and the app's settings")]
 
-  tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
-  nat <-- "S3 API, signed on the phone<br/>any S3-compatible store" --> bucket
-  tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
-  spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
-  eng -. "a hook call: /api/run" .-> access
+  tcd <-- "task sync" --> bucket
+  tcw <-- "/api/tc/*: versions opened, over HTTPS" --> access
   wk <-- "R2 binding" --> bucket
-  assets -. "loaded once, then cached" .-> spa
-
+  tcn <-- "S3, signed on the phone" --> bucket
   sh <-. "counterpart" .-> cmds
   tsh <-. "counterpart" .-> rev
 
+  classDef ui fill:#d8f0d2,stroke:#40a02b,color:#1e1e2e
+  classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
+  classDef tw fill:#e6e6ea,stroke:#7c7f93,color:#1e1e2e
+  classDef store fill:#d6e4fb,stroke:#1e66f5,color:#1e1e2e
+  classDef bucket fill:#e9d8fb,stroke:#8839ef,color:#1e1e2e
+  classDef edge fill:#fbefc4,stroke:#df8e1d,color:#1e1e2e
   classDef ext fill:transparent,stroke:#999,color:#999,stroke-dasharray:4 3
+  class tui,spa,app ui
+  class eng,nat engine
+  class cli,tcd,tcw,tcn tw
+  class db,mem,rep store
+  class access,wk edge
+  class bucket bucket
   class sh,tsh,cmds,rev ext
 ```
 
-The dashed grey boxes aren't Taskwarrior itself. They are what people add around it: shell aliases and `tasksh` on the
-desktop, and their counterparts here, **task commands** (`settings.json`, expanded in the browser) and **tasksh's
-`review`** (the Settings page sets up the `reviewed` attribute and `_reviewed` report it needs). Both only send ordinary
-commands to the engine, so it knows nothing about them.
+Every diagram on this page uses the same colours for the same kind of thing, so a box on one platform can be matched to
+the box that does its job on another (not every diagram has every colour):
 
-## Where things run
+| Colour | What it is | Where |
+| --- | --- | --- |
+| Green | A front end: draws, sends command lines | Svelte app, Kotlin app, terminal app |
+| Orange | `tc-core` and the Rust that hosts it | the engine in the browser and on the phone, the helpers every front end calls, the Worker's routes, the JNI layer |
+| Grey | Taskwarrior's own pieces | `task`, TaskChampion |
+| Blue | A replica and where it is kept | SQLite, memory and IndexedDB, a file on the phone |
+| Purple | The bucket | R2 or any S3-compatible store |
+| Yellow | Cloudflare | Access and the Worker |
+| Red | Your Lua hooks | the one script, and each place that runs it |
+| Dashed | Not Taskwarrior: what people add around it | shell aliases and tasksh, and their counterparts here |
 
-### In the page
+The dashed boxes are the shell level around `task`: shell aliases and `tasksh` on the desktop, and their counterparts in
+Meghnaad, **task commands** (`settings.json`) and **tasksh's `review`** (the Settings page sets up the `reviewed`
+attribute and `_reviewed` report it needs). Both only send ordinary commands to the engine, so it knows nothing about
+them.
 
-`web/src/engine/` and `crates/browser`: the engine, in a dedicated Web Worker so a big report never blocks the page. The
-Svelte app sends it what you typed or clicked (`{ "line": "…" }` or `{ "args": […] }`, with your time zone and the time)
-and gets back the JSON the app reads. One entry point means one place where Taskwarrior semantics live. A file to import
-goes the same way, as its text, and `tc-core`'s `import` module parses and checks it. The engine answers one message at a
-time, in order.
+| Platform | Code | Runs the engine | Reaches the bucket |
+| --- | --- | --- | --- |
+| [Browser](#in-the-browser) | `web/`, `crates/browser` | in the page, as WebAssembly | through the Worker |
+| [Cloudflare](#on-cloudflare) | `crates/worker` | no; hooks only | an R2 binding |
+| [Android](#on-android) | `app/`, `crates/android` | in the app, natively | itself, over S3 or a TaskChampion sync server |
+| [Desktop](#on-the-desktop) | `crates/tui`, `crates/hook-shim` | no; the real `task` does the work | only through `task sync` |
 
-**Pure helpers.** `tc_core::helpers` holds what needs nothing from the replica, so the page doesn't ask the Worker for
-it: a date in the user's `dateformat`, a command line split and quoted as the engine reads it, a duration in one unit,
-what a header click does to a report's sort, what Tab completes and how a line is coloured, how an urgency coefficient is
-named, what each cell of a report shows, the numbers a board section shows and where its sections sit on the grid, what a
-quick-add line would make (`preview`), and the Markdown of a note. `helpers::call` runs those with structured arguments
-by name, as JSON.
+### Two layers
 
-`web/src/engine/helpers.ts` loads the same WebAssembly module again on the page's own thread (one download, since the
-browser has the bytes) and calls them at once, because a screen asks for a date while it draws and a message is
-asynchronous. `main.ts` loads them before it imports the app, so the first paint waits for the engine's module, which the
-engine needs a moment later anyway. The phone calls the same functions through JNI.
+Every feature belongs to one of two layers.
+
+1. **Taskwarrior and TaskChampion** (`tc-core` and the hosts that carry it). It does what the real `task` 3.5.0 does,
+   command for command, and the sync format. Where `task` is odd, so is Meghnaad.
+2. **The front ends** (`web/`, `app/`, `crates/tui`). Everything a TUI or a shell adds around `task`: screens, the
+   console, task commands, `&&` `||` `;` chains, bulk actions, review, reminders, themes, addresses. They send command
+   lines and draw what comes back; they never reach into the replica. Each front end has its own copy of this logic,
+   ported with its tests, except for a few pure functions every one of them would otherwise write again (below).
+
+`tc_core::helpers` is how layer 1 is handed to the front ends without a command: a date in the user's `dateformat`, a
+command line split and quoted as the engine reads it, a duration in one unit, what a header click does to a report's
+sort (`sortspec`), what Tab completes and how a line is coloured, how an urgency coefficient is named, what each cell of
+a report shows, what a quick-add line would make (`preview`), the Markdown of a note, what a saved board means and the
+numbers its sections show (`board`), and how keys are written and which action one runs (`keymap`). `helpers::call` runs
+them by name with JSON arguments. The browser calls them on the page's own thread, the phone over JNI, the terminal app
+directly.
+
+## In the browser
+
+```mermaid
+flowchart TB
+  subgraph pagethread["The page's thread"]
+    direction TB
+    spa["Svelte app<br/>pages, console, settings, boards"]
+    help["helpers.ts<br/>tc-core helpers, called at once"]
+    client["client.svelte.ts<br/>sends commands, runs syncs"]
+    spa --> help
+    spa --> client
+  end
+
+  subgraph webworker["Web Worker"]
+    direction TB
+    ew["engine.worker.ts"]
+    eng["crates/browser<br/>tc-core engine"]
+    tcw["TaskChampion"]
+    mem[("replica in memory")]
+    ew --> eng --> tcw --> mem
+  end
+
+  idb[("IndexedDB<br/>saved copy, gzipped")]
+  tabs["other tabs"]
+  cf{{"Cloudflare<br/>Access and the Worker"}}
+  assets["static files<br/>app and engine .wasm"]
+
+  client -- "a command line, the time and zone" --> ew
+  ew -- "persist.ts" --> idb
+  tcw -- "RemoteServer: /api/tc/*" --> cf
+  eng -- "a hook call: /api/run" --> cf
+  spa -- "/api/config, /api/settings" --> cf
+  client <-. "BroadcastChannel: I pushed" .-> tabs
+  assets -. "loaded once, then cached" .-> spa
+
+  classDef ui fill:#d8f0d2,stroke:#40a02b,color:#1e1e2e
+  classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
+  classDef tw fill:#e6e6ea,stroke:#7c7f93,color:#1e1e2e
+  classDef store fill:#d6e4fb,stroke:#1e66f5,color:#1e1e2e
+  classDef edge fill:#fbefc4,stroke:#df8e1d,color:#1e1e2e
+  class spa,client,tabs ui
+  class help,ew,eng engine
+  class tcw tw
+  class mem,idb store
+  class cf,assets edge
+```
+
+The engine runs in a dedicated Web Worker so a big report never blocks the page. The Svelte app sends it what you typed
+or clicked (`{ "line": "…" }` or `{ "args": […] }`, with your time zone and the time) and gets back the JSON the app
+reads. One entry point means one place where Taskwarrior's rules live. A file to import goes the same way, as its text,
+and `tc-core`'s `import` module parses and checks it. The engine answers one message at a time, in order.
+
+The helpers need nothing from the replica, so the page doesn't ask the Web Worker for them. `helpers.ts` loads the same
+WebAssembly module again on the page's own thread (one download, since the browser already has the bytes) and calls it
+at once, because a screen asks for a date while it draws and a message would be asynchronous. `main.ts` loads it before
+it imports the app.
+
+`web/src/engine/`:
+
+- `engine.worker.ts` is the Web Worker. It loads the engine's `.wasm` (`crates/browser`, built by
+  `scripts/build-engine.mjs` into `src/engine/pkg`, typed by hand in `tc-engine.d.ts` so type-checking and tests don't
+  need it built), restores the saved replica from IndexedDB (`persist.ts`), and answers `protocol.ts` messages.
+- `client.svelte.ts` is the page's side: it starts the worker once, sends commands, runs the syncs, tells the other tabs
+  when it pushed, and exposes `status`, `error` and `unkept` for the banners.
+- `api.ts` makes the choice: `runCli` and `importTasks` go to the engine in the page when it is available and to the
+  Worker's endpoints when it isn't (the web tests run there, since jsdom has no Web Worker). `getConfig` starts the
+  engine, which needs the settings first, and hands it the settings again whenever they are read again.
+
+If the page can't start the engine (it needs Web Workers, WebAssembly and a Content-Security-Policy that allows
+`'wasm-unsafe-eval'`, which lets the page compile WebAssembly and nothing else), it says so instead of asking the server.
+
+**Start-up isn't a chain of requests.** `main.ts` starts the engine's Web Worker (`preload`: fetch the `.wasm`, read the
+saved copy) and asks the server for what the page needs (`prefetch`: whether it is set up, the settings, which hooks the
+script defines, and `settings.json`) before the app's own code has loaded, so they all travel at once. Each answer is
+used once, by the call that would have asked, and asked for again if it was refused. A read of the settings already on
+its way is joined, not repeated. A `config` command's new settings are saved on the Worker (`PUT /api/config/engine`)
+before the engine takes them up.
+
+The rest of the page is described in [The web app](#the-web-app).
+
+## On Cloudflare
+
+```mermaid
+flowchart LR
+  page["the page"]
+  access{{"Cloudflare Access<br/>sign-in"}}
+  assets["static files<br/>no Worker runs"]
+  page --> access
+  access --> assets
+  access -- "/api/*" --> auth
+
+  subgraph worker["Worker: crates/worker, Rust → WASM"]
+    direction TB
+    auth["auth.rs<br/>checks the Access token"]
+    tc["/api/tc/*<br/>CloudServer: opens and seals versions"]
+    set["/api/config, /api/settings<br/>tc_core::webapi"]
+    hk["/api/run, /api/hooks, /api/secrets<br/>LuaRunner"]
+    sess["session.rs<br/>derived key, config"]
+    net["hooknet.rs<br/>fetch for a script"]
+    auth --> tc
+    auth --> set
+    auth --> hk
+    tc --- sess
+    hk --- net
+  end
+
+  r2[("R2 bucket")]
+  hosts["hosts a script declares"]
+  tc --> r2
+  set --> r2
+  hk --> r2
+  net -. "https, allowlisted" .-> hosts
+
+  classDef ui fill:#d8f0d2,stroke:#40a02b,color:#1e1e2e
+  classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
+  classDef bucket fill:#e9d8fb,stroke:#8839ef,color:#1e1e2e
+  classDef edge fill:#fbefc4,stroke:#df8e1d,color:#1e1e2e
+  classDef hooks fill:#f9d4dc,stroke:#d20f39,color:#1e1e2e
+  class page ui
+  class tc,set engine
+  class r2 bucket
+  class access,assets,auth,sess edge
+  class hk,net hooks
+```
+
+`crates/worker`, behind Cloudflare Access. Nothing on it runs a command; only your hooks run there (a task in and a task
+out, never the replica).
+
+1. **Static files** (the app shell and the engine's `.wasm`) are served by Cloudflare without running the Worker. Only
+   `/api/*` runs it, and every page address gets the app (single-page fallback).
+2. **`auth.rs`** checks the Cloudflare Access token on every `/api/*` request: RS256 signature against your team's
+   published keys, issuer, audience and expiry. Misconfiguration means `403`, never open. The one exception is
+   `GET /api/setup`, which says only whether setup is finished and names the missing settings, never their values.
+3. **`/api/tc/*`** is the sync protocol between the page's replica and the bucket, in plain form over HTTPS (see
+   [Sync](#sync)): `GET pull`, `POST push`, `GET`/`POST snapshot`. The Worker opens and seals each version with the key
+   it derives from the secret (`session.rs` keeps that key between requests), so the secret never leaves it.
+4. **Settings** have routes of their own, because they live in the bucket and not in a replica (below).
+5. **Hooks** run here for the browser (see [Hooks](#hooks)).
+6. **`GET /api/health`** says whether the Worker can reach the bucket and open it with the secret.
+
+### Settings routes
+
+- `/api/config` and `/api/config/*` serve the taskrc and urgency, and `GET`/`PUT /api/settings` serve `settings.json`.
+- `PUT /api/config/engine` saves what a `config` command changed. The engine worked it out in the page; the Worker
+  refuses anything sync- or credential-like and keeps the previous version for a restore.
+- The taskrc is a folder of files, one object each under `web/rc/` (text as written, less sync and credential lines),
+  served by `GET /api/config/files` and `GET`/`PUT`/`DELETE /api/config/files/<path>`, with
+  `POST /api/config/files/import` taking several at once. `web/config.json` is what they add up to, rebuilt on every
+  change, and `web/rc.prev.json` holds the files as they were before the last change.
+- All of these go to `tc_core::webapi::WebSettings`, the same code the phone runs over its own folder.
+- Two routes fetch from elsewhere and are the Worker's alone: `POST /api/config/taskrc/url` (a taskrc, saved as a
+  pasted one is) and `POST /api/config/holidays/calendar` (an `.ics` calendar for Add holidays, returned as text and
+  saved by nothing). Both follow the strict link rules of `rc_url`.
+
+## On Android
+
+```mermaid
+flowchart TB
+  subgraph kotlin["app/: Kotlin and Compose"]
+    direction TB
+    screens["screens, Store, Sync<br/>ported from the web app"]
+    widgets["widgets, quick add,<br/>background sync"]
+    alarm["reminder alarm"]
+    vault["AndroidVault<br/>Android Keystore"]
+  end
+
+  jni["NativeEngine<br/>JNI, JSON in and out"]
+
+  subgraph rust["crates/android: Rust"]
+    direction TB
+    eng["engine.rs<br/>tc-core engine"]
+    help["helpers.rs<br/>tc_core::helpers"]
+    tcn["TaskChampion"]
+    lua["Lua hooks<br/>net.rs, secrets.rs"]
+    files["files.rs, filesync.rs<br/>settings and hooks script"]
+    s3["s3.rs, sigv4.rs"]
+    ss["syncserver.rs"]
+    eng --> tcn
+    eng --> lua
+    tcn --> s3
+    tcn --> ss
+  end
+
+  rep[("replica in a file<br/>the app's own folder")]
+  bucket[("S3-compatible bucket<br/>R2, AWS, MinIO, B2")]
+  server["TaskChampion sync server"]
+
+  screens --> jni
+  widgets --> jni
+  alarm --> jni
+  vault -- "bucket keys, the secrets' key" --> jni
+  jni --> eng
+  jni --> help
+  eng -- "save, restore" --> rep
+  s3 --> bucket
+  ss --> server
+  files <-- "kept in step" --> bucket
+
+  classDef ui fill:#d8f0d2,stroke:#40a02b,color:#1e1e2e
+  classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
+  classDef tw fill:#e6e6ea,stroke:#7c7f93,color:#1e1e2e
+  classDef store fill:#d6e4fb,stroke:#1e66f5,color:#1e1e2e
+  classDef bucket fill:#e9d8fb,stroke:#8839ef,color:#1e1e2e
+  classDef hooks fill:#f9d4dc,stroke:#d20f39,color:#1e1e2e
+  class screens,widgets,alarm,vault ui
+  class jni,eng,help,files,s3,ss engine
+  class tcn,server tw
+  class rep store
+  class bucket bucket
+  class lua hooks
+```
+
+`crates/android` and `app/`. There is no Worker: the engine is `tc-core` as a native library, called from Kotlin over
+JNI, where every engine is a handle and every call answers in JSON, so a failure is an `error` in the answer and never
+an exception across the boundary. It is the browser's engine with another way to reach the bucket, and the same
+`tc_core::request` for what a request means. See [the Android app](android.md).
+
+- **Sync.** It syncs straight with the bucket, signing S3 requests itself (`CloudServer` over an `S3Store`, the same
+  server code the Worker runs over R2), or with a TaskChampion sync server (`syncserver.rs`, the same sealed versions
+  over HTTP, keyed by the client id). `Sync.kt` keeps the web client's rules for when.
+- **Keys.** The connection and the key that seals the hooks' secrets are encrypted with a key that lives in the Android
+  Keystore (`AndroidVault.kt`), and handed to the engine when it starts. No screen can read them.
+- **Settings.** The taskrc files, `settings.json` and the hooks script live in a folder on the phone under the same
+  names the Worker uses in the bucket (`files.rs`), and `filesync.rs` keeps them in step with the bucket's, never the
+  secrets. The folder's routes are `tc_core::webapi`, as on the Worker, answered by the engine's `api` call.
+- **Screens.** Drawn natively in Compose, not in a WebView. `shared` holds the engine's JSON types and API (mirroring
+  `web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's, and the screens; `androidApp` holds the
+  activity, the reminder alarm's receiver and the widgets. Only the web app's own view logic is ported to Kotlin;
+  Taskwarrior's rules are reached through the same library (`Rust.kt` for the helpers). A desktop preview target
+  (`desktopApp`) shows the same screens with hot reload and is not shipped.
+- **Reminders** are the web's rules (`Notify.kt` mirrors `notify.ts`) plus an alarm: after every change the next moment
+  worth a reminder is worked out and `AlarmManager` wakes the app then, so they work with the app closed. See
+  `app/README.md`.
+
+## On the desktop
+
+```mermaid
+flowchart TB
+  tui["meghnaad-tui<br/>crates/tui, ratatui"]
+  help["tc-core helpers<br/>completion, add preview, cells, keys, boards"]
+  set[("settings.json<br/>~/.config/meghnaad")]
+  cli["task 3.5.0 (C++)"]
+  tcd["TaskChampion"]
+  db[("SQLite replica<br/>~/.task")]
+  shim["meghnaad-hook<br/>crates/hook-shim"]
+  bucket[("Bucket")]
+
+  tui -- "every read and change:<br/>_show, export, modify…" --> cli
+  tui -- "task sync, in the background" --> cli
+  tui --> help
+  tui --> set
+  cli -- "on-add, on-modify…" --> shim
+  cli --> tcd --> db
+  tcd <-- "task sync" --> bucket
+
+  classDef ui fill:#d8f0d2,stroke:#40a02b,color:#1e1e2e
+  classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
+  classDef tw fill:#e6e6ea,stroke:#7c7f93,color:#1e1e2e
+  classDef store fill:#d6e4fb,stroke:#1e66f5,color:#1e1e2e
+  classDef bucket fill:#e9d8fb,stroke:#8839ef,color:#1e1e2e
+  classDef hooks fill:#f9d4dc,stroke:#d20f39,color:#1e1e2e
+  class tui ui
+  class help engine
+  class cli,tcd tw
+  class db,set store
+  class bucket bucket
+  class shim hooks
+```
+
+On the desktop the real `task` holds the tasks, and Meghnaad adds two programs around it.
+
+**`meghnaad-tui`** (`crates/tui`) is a terminal front end whose backend is `task`, not the engine. Every read and change
+is a `task` command line: `_show` for the settings (read by `tc_core::taskrc`, so the helpers get the same `Config` the
+engine would), `<filter> export <report>` for a report, `_projects`, `_tags` and the pending tasks for completion, and
+every change captured (a quick action, a console line, `summary`, `calendar`, `burndown`) or run on the terminal itself
+when `task` would ask. It calls `tc-core` only where `task` has no command: completion, the add preview, report cells,
+keys and boards. Turning `export` into rows, chains, task commands, the Projects and Tags lists, the task form, review,
+reminders and the boards' glue are its own, ported from the web app and Android with their tests. Syncing is `task sync`
+run in the background, when the `sync` key of its `settings.json` says. It keeps that file in its config folder and never
+reaches the bucket. See [the terminal app](terminal.md).
+
+**`meghnaad-hook`** (`crates/hook-shim`) runs your Lua hooks script for `task` (see [Hooks](#hooks)). `task` runs an
+executable per hook from `<data>/hooks/`; `install` links this one program there as `on-add.meghnaad` and so on, for the
+hooks the script defines, and it picks the hook to run from the name it was called by.
+
+- It speaks `task`'s hook protocol (`run.rs`): a line of JSON in, a line out, feedback lines, and a non-zero exit to
+  refuse.
+- `convert.rs` turns `task`'s JSON into the engine's task, so the script gets exactly what the Worker gives it. What
+  comes back is turned into `tc_core::hooks::diff`'s changes and applied to the JSON `task` sent, with the same checks,
+  so a field the script may not touch can't be changed here either.
+- The clock is the computer's zone and the taskrc's `dateformat`, `date.iso` and `weekstart`. Nothing about Taskwarrior
+  is decided here.
+
+## Hooks
+
+```mermaid
+flowchart TB
+  script["your Lua script<br/>web/hooks.lua in the bucket"]
+  runner["LuaRunner<br/>tc_core::lua_hooks: sandbox, allowlist, limits, redaction"]
+  wk["on the Worker, for the browser<br/>net: hooknet.rs<br/>secrets: Worker secrets, a sealed file"]
+  ph["on the phone<br/>net: net.rs<br/>secrets: a file sealed by the Keystore"]
+  dt["meghnaad-hook, for task<br/>net: net.rs<br/>secrets: environment variables"]
+  script --> runner
+  runner --> wk
+  runner --> ph
+  runner --> dt
+
+  classDef hooks fill:#f9d4dc,stroke:#d20f39,color:#1e1e2e
+  classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
+  class script,wk,ph,dt hooks
+  class runner engine
+```
+
+Hooks are user code, written in Lua and edited in Settings: one script, kept in the bucket as `web/hooks.lua` with the
+previous one beside it (not in `settings.json`, which the page reads in full, since a script may hold secrets). The same
+runner runs it in three places; only the network and the secrets come from the host.
+
+### When they run
+
+For a command the engine runs `on_launch` (if defined) before anything. `on_add` and `on_modify` run for each task as
+the command builds the change, just before it is committed: each is a request that returns the task, which `diff` turns
+into changes in the same batch (a refusal ends the command and writes nothing). `on_exit` runs last. A hook that can't be
+reached is skipped with a warning, and the command goes on.
+
+The engine's `HookHost` is `async` for this. `RemoteHooks` (`crates/browser`) asks the Worker, and `LuaHooks` runs a
+script in-process, which is how the phone runs it. A script's cold start is 3-10 ms and a warm call under a millisecond
+(measured under Node's V8), which is why the Worker keeps its VM, and a script is bounded by an instruction budget
+(5 million) and 32 MB.
 
 ### On the Worker
 
-`crates/worker`, behind Cloudflare Access. There is no engine here, so nothing on the Worker runs a command; only your
-hooks run there (a task in and a task out, never the replica). If the page can't start the engine (it needs Web Workers,
-WebAssembly and a Content-Security-Policy that allows `'wasm-unsafe-eval'`), it says so instead of asking the server.
-
-1. **Static files** (the app shell and the engine's `.wasm`) are served by Cloudflare without running the Worker. Only
-   `/api/*` runs it.
-2. **`auth.rs`** checks the Cloudflare Access token on every `/api/*` request: RS256 signature against your team's
-   published keys, issuer, audience and expiry. Misconfiguration means `403`, never open.
-3. **`/api/tc/*`** is the sync protocol between the page's replica and the bucket, in plain form over HTTPS (see
-   [Sync](#sync)): `GET pull`, `POST push`, `GET`/`POST snapshot`. The Worker opens and seals each version with the key it
-   derives from the secret (`session.rs` keeps that key between requests), so the secret never leaves it.
-4. **Settings** have routes of their own, because they live in the bucket and not in a replica (below).
-5. **Hooks** (below).
-6. **`GET /api/health`** says whether the Worker can reach the bucket and open it with the secret. It holds no tasks.
-
-#### Settings routes
-
-- `/api/config` and `/api/config/*` serve the taskrc and urgency, and `GET`/`PUT /api/settings` serve `settings.json`.
-- `PUT /api/config/engine` saves what a `config` command changed. The engine worked it out in the page; the Worker refuses
-  anything sync- or credential-like and keeps the previous version for a restore.
-- The taskrc is a folder of files, one object each under `web/rc/` (text as written, less sync and credential lines),
-  served by `GET /api/config/files` and `GET`/`PUT`/`DELETE /api/config/files/<path>`, with `POST
-  /api/config/files/import` taking several at once. `web/config.json` is what they add up to, rebuilt on every change, and
-  `web/rc.prev.json` holds the files as they were before the last change.
-- All of these go to `tc_core::webapi::WebSettings`, the same code the phone runs.
-- Two routes fetch from elsewhere and are the Worker's alone: `POST /api/config/taskrc/url` (a taskrc, saved as a pasted
-  one is) and `POST /api/config/holidays/calendar` (an `.ics` calendar for Add holidays, returned as text and saved by
-  nothing). Both follow the strict link rules of `rc_url`.
-
-#### Hooks routes
-
-The user's Lua script is its own object in the bucket (`web/hooks.lua`, with the previous one beside it), not part of
-`settings.json`, since the page reads that in full and a script may hold secrets.
-
-- `POST /api/run` calls one hook (`{ fn, args, now, tz, … }`) and answers `{ ok, value, say }`, or `{ ok: false, error,
-  say }` for a refusal or failure.
+- `POST /api/run` calls one hook (`{ fn, args, now, tz, … }`) and answers `{ ok, value, say }`, or
+  `{ ok: false, error, say }` for a refusal or failure.
 - `GET /api/hooks/defined` says which of the four hooks the script defines, so the engine asks only for those.
-- `GET`/`PUT /api/hooks` read and save the script (for the editor alone; a script that doesn't load is refused), and `POST
-  /api/hooks/check` says what is wrong with a script and where, as you type.
+- `GET`/`PUT /api/hooks` read and save the script (for the editor alone; a script that doesn't load is refused), and
+  `POST /api/hooks/check` says what is wrong with a script and where, as you type.
 - The Lua VM is built once per Worker instance and reused, and rebuilt when the script changes (or given its own when
   busy waiting on the network for another request).
-- The Worker is the host that gives a script the network and secrets (`hooknet.rs`: `fetch` with a timeout, no automatic
-  redirect, a 1 MB cap on the answer, a log line per call). A secret is looked up as a Worker secret `HOOK_SECRET_<NAME>`
-  first, then in `web/hook-secrets.enc`, a map sealed with the key derived from `TC_ENCRYPTION_SECRET`.
-  `GET`/`PUT`/`DELETE /api/secrets[/<name>]` manage that one, and names only ever come back.
+- `hooknet.rs` gives a script the network: `fetch` with a timeout, no automatic redirect, a 1 MB cap on the answer, a log
+  line per call. A secret is looked up as a Worker secret `HOOK_SECRET_<NAME>` first, then in `web/hook-secrets.enc`, a
+  map sealed with the key derived from `TC_ENCRYPTION_SECRET`. `GET`/`PUT`/`DELETE /api/secrets[/<name>]` manage that
+  one, and names only ever come back.
 
-#### Hooks, in order
-
-For a command the engine runs `on_launch` (if defined) before anything. `on_add` and `on_modify` run for each task as the
-command builds the change, just before it is committed: each is a request that returns the task, which `diff` turns into
-changes in the same batch (a refusal ends the command and writes nothing). `on_exit` runs last. A hook that can't be
-reached is skipped with a warning, and the command goes on.
-
-The engine's `HookHost` is `async` for this. `RemoteHooks` (`crates/browser`) calls the Worker, and `LuaHooks` runs a
-script in-process, which is how a host with no Worker (the Android app) uses the same script and runner. A script's cold
-start is 3-10 ms and a warm call under a millisecond (measured under Node's V8, not on a Worker), which is why the VM is
-kept, and why a script is bounded by an instruction budget (5 million) and 32 MB.
+### What a script may do
 
 `http` and `secret` are `async` functions of the Lua runtime (omnilua's `async` feature: a script's coroutine is
-suspended while the Rust future runs), supplied by a `Net` the host passes to `LuaRunner::load_with`. A host with none (a
-test, a bare runner) gives a script an error. The runner enforces the rules whichever host it is:
+suspended while the Rust future runs), supplied by a `Net` the host passes to `LuaRunner::load_with`. A host with none
+gives a script an error. The runner enforces the rules whichever host it is:
 
 - the script declares the hosts it may call with `allow_hosts` while it loads, and can't widen them later;
 - only `https://` (or `http://` to this machine), at most five requests and 256 KB of body per call, and a timeout of at
@@ -198,116 +508,83 @@ test, a bare runner) gives a script an error. The runner enforces the rules whic
 - a failed request comes back to the script as `nil` and a reason, because an error from an async function ends the call
   and can't be caught with `pcall`.
 
-### On Android
-
-`crates/android` and `app/`. There is no Worker: the engine is `tc-core` as a native library, called from Kotlin over JNI.
-It syncs straight with the bucket, signing S3 requests itself (`CloudServer` over an `S3Store`, the same server code the
-Worker runs over R2), or with a TaskChampion sync server (`syncserver.rs`, the same sealed versions over HTTP, keyed by
-the client id). See [the Android app](android.md).
-
-The app draws that engine natively, not in a WebView. `shared` holds the engine's JSON types and API (mirroring
-`web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's, and the screens. `androidApp` holds the activity,
-the reminder alarm's receiver and the widgets. Taskwarrior behaviour stays in `tc-core`, reached through the same JNI
-library; only the web app's own view logic is ported. Reminders are the web's rules (`Notify.kt` mirrors `notify.ts`) plus
-an alarm: after every change the next moment worth a reminder is worked out and `AlarmManager` wakes the app then, so they
-work with the app closed. See `app/README.md`.
-
-### With the real `task`
-
-`crates/hook-shim` is the program `meghnaad-hook`: the same Lua script runs for the CLI on a computer. `task` runs an
-executable per hook from `<data>/hooks/`; `install` links this one program there as `on-add.meghnaad` and so on, for the
-hooks the script defines, and it picks the hook to run from the name it was called by.
-
-- It speaks `task`'s hook protocol: a line of JSON in, a line out, feedback lines, and a non-zero exit to refuse.
-- `convert.rs` turns `task`'s JSON into the engine's task, so the script gets exactly what `task_to_json` gives the Worker.
-  What comes back is turned into `tc_core::hooks::diff`'s changes and applied to the JSON `task` sent, with the same
-  checks, so a field the script may not touch can't be changed here either.
-- It has a `LuaRunner` and a `Net` of its own (`net.rs`: `ureq`, the script's timeout, no redirects, a 1 MB cap;
-  `secret(name)` is the environment variable of that exact name). The clock is the computer's zone and the taskrc's
-  `dateformat`, `date.iso` and `weekstart`.
-- Nothing about Taskwarrior is decided here.
-
-`crates/tui` is `meghnaad-tui`, a terminal front end whose backend is the real `task` rather than the engine. It runs
-`task` for everything: `_show` for the settings (read by `tc_core::taskrc`, so the helpers get the same `Config` the
-engine would), `<filter> export <report>` for a report, `_projects`, `_tags` and the pending tasks for completion, and
-every change as a command line, captured (a quick action, a console line, `summary`, `calendar`, `burndown`) or run on
-the terminal itself when `task` would ask. It calls `tc-core` only where `task` has no command: `complete`, `preview`
-and `cells`. Turning `export` into the rows `cells` reads, the zone offsets, chains, task commands, the Projects and Tags
-lists, tasksh's review and the reminders are its own (layer 2, ported from the web app with their tests). It keeps its
-`settings.json` in its config folder and never reaches the bucket. Nothing of it is in the browser engine or
-the Worker. See [the terminal app](terminal.md).
+Nothing in the prelude or the host functions reaches a file or a real clock.
 
 ## `tc-core`: the engine
 
-Pure Rust with no I/O of its own, tested natively. Its hosts are the browser engine, the Node harness
-(`scripts/engine-cli.mjs`) and the tests. The Worker uses its settings, report and protocol code but runs no commands.
+Pure Rust with no I/O of its own, tested natively. Its hosts are the browser engine, the phone's library, the Node
+harness (`scripts/engine-cli.mjs`) and the tests. The Worker uses its settings, protocol and hooks code but runs no
+commands; the terminal app and `meghnaad-hook` use only its helpers and hooks.
 
 | Area | Modules | What they do |
 | --- | --- | --- |
-| **Protocol** | `cloud`, `crypto`, `names`, `store`, `wire` | TaskChampion's cloud server over an object store; PBKDF2 → ChaCha20-Poly1305; object names; the storage trait the Worker implements over R2; and `wire`, the plain protocol between the page's replica and the Worker (a batched pull, a push, snapshots), with both halves so a test can run a whole sync through them |
-| **Replica storage** | `live` | The in-memory database. TaskChampion's own copies every task on the first write of each transaction; this one changes its data in place and keeps a short journal to undo a dropped transaction. A test runs random transactions against both and compares them. It can be saved to bytes and loaded again (`save`, `load`), which is what the browser keeps in IndexedDB |
+| **Protocol** | `cloud`, `crypto`, `names`, `store`, `wire` | TaskChampion's cloud server over an object store; PBKDF2 → ChaCha20-Poly1305; object names; the storage trait the Worker implements over R2 and the phone over S3; and `wire`, the plain protocol between the page's replica and the Worker (a batched pull, a push, snapshots), with both halves so a test can run a whole sync through them |
+| **Replica storage** | `live`, `warm` | The in-memory database. TaskChampion's own copies every task on the first write of each transaction; this one changes its data in place and keeps a short journal to undo a dropped transaction. A test runs random transactions against both and compares them. It can be saved to bytes and loaded again (`save`, `load`), which is what the browser keeps in IndexedDB and the phone in a file. `warm` keeps the tasks between commands (see [Limits of the platform](#limits-of-the-platform)) |
+| **Requests** | `request`, `webapi` | What a request to an engine means, shared by the browser and the phone, and the settings routes the Worker and the phone both answer |
 | **Tasks** | `model`, `filter`, `modify`, `dates`, `rx`, `recur` | A plain view of a task; filter expressions; planning `modify` and `add`; Taskwarrior's date and duration parsing and regular expressions; recurring tasks |
-| **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides), the write path with its confirmations, undo, the `commands` listing, and dispatch to everything below |
+| **Commands** | `cli` | Parsing a command line (aliases, abbreviations, contexts, `rc.` overrides) and dispatch to everything below. The commands are grouped in its modules: `write` (the write path as a series of steps, from the selection through the confirmations to one commit, and undo), `lists` (names and ids for completion, `projects`, `tags`, `info`, `count`), `tables` (`udas`, `commands`, `columns`), `views` (`summary`, `burndown`, `calendar`, `stats`, `colors`, `timesheet`, `history`) and `dom` (`_get`, `calc`) |
 | **Reports** | `report`, `run`, `urgency`, `history` | Built-in and custom reports, running one (filter, sort, limit, columns), urgency, and a task's change history |
 | **Colour** | `color` | Colour specifications and how they blend, the rules that colour a task, the `colors` command and the history graph's colours; checked against the real `task`'s escape codes |
 | **Views** | `summary`, `calendar`, `burndown`, `activity`, `stats`, `calc`, `export`, `import` | Each a port of its Taskwarrior counterpart: `summary`, `calendar`, `burndown.*`, `history.*`/`ghistory.*`/`timesheet` (`activity`), `stats`, `calc` (and `_get`, which reads the same DOM), `export` (Taskwarrior's own JSON) and `import` (a port of `CmdImport`, checking the whole file before writing). The app's pages use a separate hidden `_rows`, and the detail view's History a hidden `_history <uuid>` |
-| **Hooks** | `hooks`, `lua_hooks` (+ `lua/prelude.lua`) | `hooks` runs user code at Taskwarrior's four hook points through an async `HookHost` or plain `Hooks`, with what they print returned to the Console, the task as JSON (`task_to_json` / `task_from_json`) and `diff` turning what came back into changes. `lua_hooks` (the `lua` feature) runs a script in a sandbox (`LuaRunner`: JSON in, JSON out) and as in-process hooks (`LuaHooks`); the prelude is the Lua library a script gets |
+| **Helpers** | `helpers`, `sortspec`, `keymap`, `complete`, `highlight`, `cells`, `urgency_settings`, `markdown` | What every front end calls instead of keeping a copy (see [Two layers](#two-layers)). `keymap` lays the user's keys over the defaults, which are an asset each front end carries as it carries the colour themes (`web/public/keymaps/default.json`) |
+| **Hooks** | `hooks`, `lua_hooks` (+ `lua/prelude.lua`) | `hooks` runs user code at Taskwarrior's four hook points through an async `HookHost` or plain `Hooks`, with what they print returned to the Console, the task as JSON (`task_to_json` / `task_from_json`) and `diff` turning what came back into changes. `lua_hooks` (the `lua` feature, which the Worker, the phone and `meghnaad-hook` turn on and the browser engine does not) runs a script in a sandbox (`LuaRunner`: JSON in, JSON out) and as in-process hooks (`LuaHooks`); the prelude is the Lua library a script gets |
 | **Boards** | `board` (see below) | The saved boards of `settings.json` and what a board section shows, for every front end |
-| **Add preview** | `preview` | What `add <line>` would make without making it: the line is split as `add` reads it and run through `parse_mods` and `plan` (same default project, UDA defaults, context `write` rule, date and priority checks and repeat rules). A bad attribute is left out and named, so the rest still shows, which lets the quick add draw a card while you type. It needs only the config and the time, so the page and Android call it through `helpers::call` |
-| **Taskrc highlight** | `rc_highlight` | The pieces of a taskrc file as the parser cuts each line: a setting's name, `=`, its value, a comment, the `[unsupported]` marker, `include` and its path, a line that is no setting (`bad`) and a credential-like name (`secret`). Shape only, so a half-typed file is coloured too. The web's CodeMirror and the phone's text field draw them |
-| **Holiday clash** | `clash` (with `calendar::holidays_on`) | Whether a due or scheduled date falls on a holiday. The date is resolved as `add` and `modify` read it (so `eod`, `som`, `eow-2d`, abbreviations and the user's zone mean what they mean there), then looked up in the `holiday.*` settings whatever `calendar.holidays` says. `value` answers for one form field, and `line` finds the date words of a command line in the commands that set attributes. A pure function of the config and the time |
+| **Add preview** | `preview` | What `add <line>` would make without making it: the line is split as `add` reads it and run through `parse_mods` and `plan` (same default project, UDA defaults, context `write` rule, date and priority checks and repeat rules). A bad attribute is left out and named, so the rest still shows, which lets the quick add draw a card while you type |
+| **Taskrc highlight** | `rc_highlight` | The pieces of a taskrc file as the parser cuts each line: a setting's name, `=`, its value, a comment, the `[unsupported]` marker, `include` and its path, a line that is no setting (`bad`) and a credential-like name (`secret`). Shape only, so a half-typed file is coloured too |
+| **Holiday clash** | `clash` (with `calendar::holidays_on`) | Whether a due or scheduled date falls on a holiday. The date is resolved as `add` and `modify` read it (so `eod`, `som`, `eow-2d`, abbreviations and the user's zone mean what they mean there), then looked up in the `holiday.*` settings whatever `calendar.holidays` says |
 | **Holidays** | `holidays`, `holidata`, `nager`, `ics` | The holiday file Add holidays makes, from three sources, as `holiday.<id>.name` / `.date` (or `.start` and `.end`) lines under a header recording the source, regions, left-out names and (when it holds no secret) the link, so `settings_of` can read it back. All pure; each front end does the fetching (the page's `connect-src` allows `https://holidata.net` and `https://date.nager.at`; a calendar goes through the Worker's `POST /api/config/holidays/calendar`; the phone uses `HttpURLConnection` with `rc_url`'s checks on every redirect) and saves the result through the folder's routes |
 | **Settings** | `taskrc`, `rcfiles`, `rc_url`, `settings`, `appsettings` | The allowlisted subset of a taskrc (what is accepted, what is refused, a verdict per line) and the typed `Config`. `rcfiles` is the taskrc as a folder: path rules, `sanitize` (removes sync and credential lines, comments out what can't be used), `resolve` (follows `include` as Taskwarrior does) and the text edits `config` makes. `rc_url` is which links the Worker may fetch (HTTPS to a public host, redirects included) and the GitHub/GitLab page-to-raw rewrite. `show`, `config` and `context` list and edit it under the same rules. `appsettings` checks that `settings.json` is a JSON object of a sensible size |
 
 ### Boards
 
-`board` is pure, with no replica; the page asks for it through `helpers::call`, as an Android screen does. Sorting and
-keeping the first few groups is each screen's job.
+`board` is pure, with no replica; every front end asks for it through the helpers. Sorting and keeping the first few
+groups is each screen's job.
 
 - **`normalize`** keeps the valid boards and sections, fits them to the 12-column grid and says what it dropped.
 - **`aggregate`** reads an `export` (Taskwarrior's JSON: `20261007T123000Z` dates, ISO durations, numbers) and counts,
   sums, averages or compares it as a whole and per value of an attribute or per day, week, month, quarter or year of a
   date. A period with nothing in it is kept; `weekstart` and the zone come from the caller. A series may carry a `span`
-  (`from`, `to`, `unless`: dates of a task), and `chart` then counts the tasks in that state as of the end of each period,
-  which is how `task burndown` counts pending, started and done.
+  (`from`, `to`, `unless`: dates of a task), and `chart` then counts the tasks in that state as of the end of each
+  period, which is how `task burndown` counts pending, started and done.
 - **`chart`** lays several series (each its own `export` and measure) on one axis in Chart.js's shape: labels, and a
-  dataset of values per series, with every period from the first to the last so a series with nothing in one still has a
-  place.
+  dataset of values per series, with every period from the first to the last so a series with nothing in one still has
+  a place. It is the contract every front end draws from with its own chart library.
 - **`ranges`** works out a board's named date ranges (a start and end, each a date as Taskwarrior reads one, in the
-  caller's zone and week) and writes `$name.start`, `$name.end` and the counts of periods it touches (`$name.day_count`,
-  for a chart's `limit`, resolved by `board_limit`). `$name.lg_group.name` is the step a chart over the range is cut into
-  (the largest of day, week, month and year with two whole periods in it); a `by.time.step` may be written as it, kept as
-  `TimeBy.var` until the page has worked it out. A `by.time.range` (a range's name, or two dates of the chart's own) makes
-  the axis every period of that range, with a state series stopping at today: `board_chart` takes the board's ranges as a
-  fourth argument and works the range into `TimeBy.window`, which is never saved. A name that is no range, or a date that
-  can't be read, is refused.
-- **`layout`** places, moves and resizes a section so that what it lands on is pushed down and everything floats up, and
-  orders sections for a narrow screen.
-- **`heat`** makes a heatmap's grids (reached as `board_heatmap`). The columns are `chart`'s; the rows are the value of an
-  attribute or a part of a date (weekday, hour, day of the month, month). Each series' tasks are cut into the rows and each
-  row is laid on one axis by `chart`, so the columns agree. It makes a grid per series, or one with them added up.
-- **`flow`** lays sections out on a phone's 4 or 6 columns (reading order kept, a number as wide as its share of the row, a
-  table or chart half a row or a whole one, none under two of the 12). `resize_flow` and `reorder` change the saved layout
-  from a phone's steps.
+  caller's zone and week) and writes `$name.start`, `$name.end` and the counts of periods it touches
+  (`$name.day_count`, for a chart's `limit`, resolved by `board_limit`). `$name.lg_group.name` is the step a chart over
+  the range is cut into (the largest of day, week, month and year with two whole periods in it); a `by.time.step` may be
+  written as it, kept as `TimeBy.var` until the page has worked it out. A `by.time.range` (a range's name, or two dates
+  of the chart's own) makes the axis every period of that range, with a state series stopping at today: `board_chart`
+  takes the board's ranges as a fourth argument and works the range into `TimeBy.window`, which is never saved. A name
+  that is no range, or a date that can't be read, is refused.
+- **`layout`** places, moves and resizes a section so that what it lands on is pushed down and everything floats up,
+  and orders sections for a narrow screen.
+- **`heat`** makes a heatmap's grids (reached as `board_heatmap`). The columns are `chart`'s; the rows are the value of
+  an attribute or a part of a date (weekday, hour, day of the month, month). Each series' tasks are cut into the rows
+  and each row is laid on one axis by `chart`, so the columns agree. It makes a grid per series, or one with them added
+  up.
+- **`flow`** lays sections out on a phone's 4 or 6 columns (reading order kept, a number as wide as its share of the
+  row, a table or chart half a row or a whole one, none under two of the 12). `resize_flow` and `reorder` change the
+  saved layout from a phone's steps.
 
 ### How a command runs
 
 `execute` does the same things in the same order every time:
 
-1. Apply the command line's `rc.<key>:<value>` overrides to a copy of the config, then the active context's own settings
-   (which win, as in Taskwarrior).
+1. Apply the command line's `rc.<key>:<value>` overrides to a copy of the config, then the active context's own
+   settings (which win, as in Taskwarrior).
 2. Read the first day of the week, `date.iso` and `dateformat` into the clock, and expand aliases (typed lines only).
 3. Parse into a filter, a command and modifications. A word shorter than `abbreviation.minimum` is just a word.
 4. Run the `on_launch` hook, which can refuse the command (`show`, `config` and `context` skip it: they are about
    settings).
 5. Do Taskwarrior's housekeeping first: create the recurring instances that are due and expire tasks past `until`.
-6. Load the tasks as plain "facts", number the pending ones, and run the command. `on_add` and `on_modify` fire inside it,
-   just before a write is committed.
+6. Load the tasks as plain "facts", number the pending ones, and run the command. `on_add` and `on_modify` fire inside
+   it, just before a write is committed.
 7. Run the `on_exit` hook, and return what the hooks printed with the result (`feedback`) for the Console to show.
 
 #### Writes
 
-Writes go through one path (`write_selected`), so the safety rules are in one place.
+Writes go through one path (`cli::write`), so the safety rules are in one place.
 
 **Questions are data, not prompts.** A write that needs an answer returns a `Confirm` result and changes nothing. There
 are three kinds: `plain` (yes/no: undo, a command with no filter), `permission` (one row per task the command would
@@ -315,58 +592,49 @@ change: Taskwarrior's yes/no/all/quit becomes ticks in a table) and `extras` (fo
 answered: repair a dependency chain, carry a change to a recurring series). The client re-sends the command with the
 answers (`Options { confirmed, approved, extras }`).
 
-**Hooks** run inside this path, before the commit: `on_add` and `on_modify` see the task as the command leaves it, and what
-they hand back is diffed and applied into the same batch, or the command is refused and nothing is saved.
+**Hooks** run inside this path, before the commit: `on_add` and `on_modify` see the task as the command leaves it, and
+what they hand back is diffed and applied into the same batch, or the command is refused and nothing is saved.
 
 **One batch, one undo step.** Everything the command changes is built as one batch of operations and committed once.
-TaskChampion's own undo only covers unsynced changes, and the page syncs after every write, so the inverse operations are
-committed as new changes instead. The undo stack lives in the page's memory.
+TaskChampion's own undo only covers unsynced changes, and the page syncs after every write, so the inverse operations
+are committed as new changes instead. The undo stack lives in the engine's memory.
 
 ## Sync
 
 `CloudServer` is TaskChampion's server interface over the bucket, wire-compatible with the CLI's own AWS/GCP backends
-(`salt`, `latest`, `v-<parent>-<child>`, `s-<version>`; encrypted with a key from your secret and the bucket's salt). The
-Worker runs it. Because the page's engine is a *replica*, it never needs the CLI's cooperation.
+(`salt`, `latest`, `v-<parent>-<child>`, `s-<version>`; encrypted with a key from your secret and the bucket's salt).
+The Worker runs it for the browser, and the phone runs it itself. Because each engine is a *replica*, it never needs the
+CLI's cooperation.
 
-### Cheap when idle
-
-One `GET latest`. Catching up lists the versions once and fetches them in batches of 32, rather than one at a time.
-
-### Conditional writes
-
-`latest` is swapped with its ETag, so two clients pushing at once can't both win; the loser re-syncs and retries.
-
-### Snapshots, like the CLI
-
-After a push the Worker occasionally (about one push in ten) writes a snapshot and removes the ones it supersedes, so a
-cold start restores one snapshot plus a few versions instead of replaying history. A failed snapshot is ignored on
-purpose: failing the sync would make the replica send an already-sent version again.
-
-### Tidying up, like the CLI
-
-About one push in twenty is followed by a cleanup, as in TaskChampion's own server. It deletes versions that lost a race
-(but not one a writer may be about to make `latest`), every snapshot but the newest, and versions older than about 180
-days that the newest snapshot covers.
-
-It uses each object's upload time from R2's listing and deletes up to 1,000 objects per cleanup in one request, so a
-cleanup costs a handful of requests however much it removes; the next one carries on. The oldest versions go first, so
-what is left is always one unbroken chain up to `latest`: a replica that is behind finds the next version or none, never a
-gap. A failure is ignored, since the push it follows has already happened. A replica last synced before the oldest
-surviving version can no longer catch up from versions alone, which is the same for the CLI's own server.
+- **Cheap when idle.** One `GET latest`. Catching up lists the versions once and fetches them in batches of 32, rather
+  than one at a time.
+- **Conditional writes.** `latest` is swapped with its ETag, so two clients pushing at once can't both win; the loser
+  re-syncs and retries.
+- **Snapshots, like the CLI.** After a push the server occasionally (about one push in ten) writes a snapshot and
+  removes the ones it supersedes, so a cold start restores one snapshot plus a few versions instead of replaying
+  history. A failed snapshot is ignored on purpose: failing the sync would make the replica send an already-sent
+  version again.
+- **Tidying up, like the CLI.** About one push in twenty is followed by a cleanup, as in TaskChampion's own server. It
+  deletes versions that lost a race (but not one a writer may be about to make `latest`), every snapshot but the newest,
+  and versions older than about 180 days that the newest snapshot covers. It uses each object's upload time from the
+  listing and deletes up to 1,000 objects in one request, so a cleanup costs a handful of requests however much it
+  removes; the next one carries on. The oldest versions go first, so what is left is always one unbroken chain up to
+  `latest`. A failure is ignored, since the push it follows has already happened. A replica last synced before the
+  oldest surviving version can no longer catch up from versions alone, which is the same for the CLI's own server.
 
 ### Between the browser and the Worker
 
-The page's replica syncs through `RemoteServer`, a TaskChampion `Server` that speaks `tc_core::wire` to the Worker instead
-of touching the bucket. The Worker runs `CloudServer` and answers from it, so everything above (conditional writes,
-snapshots, cleanup) happens there, and the page never holds the key.
+The page's replica syncs through `RemoteServer`, a TaskChampion `Server` that speaks `tc_core::wire` to the Worker
+instead of touching the bucket. The Worker runs `CloudServer` and answers from it, so everything above happens there,
+and the page never holds the key.
 
-- **Pull in batches.** TaskChampion asks for the version after the one it has, one at a time. `GET /api/tc/pull?since=`
-  answers with up to 24 versions in one body (each 16 bytes of id, 16 of parent, a length and the version), and
-  `RemoteServer` hands them out as asked, so a replica 80 versions behind costs about four requests. The limit is the 50
-  subrequests a request may make on the free plan: each version is a read from R2.
-- **Push** is `POST /api/tc/push?parent=`, answered with the new version and how much the server would like a snapshot, or
-  with `behind` and the newest version when somebody else got there first, which makes TaskChampion pull and push again.
-  Snapshots go the same way (`GET`/`POST /api/tc/snapshot`) and are what a new device starts from.
+- **Pull in batches.** TaskChampion asks for the version after the one it has, one at a time.
+  `GET /api/tc/pull?since=` answers with up to 24 versions in one body (each 16 bytes of id, 16 of parent, a length and
+  the version), and `RemoteServer` hands them out as asked, so a replica 80 versions behind costs about four requests.
+  The limit is the 50 subrequests a request may make on the free plan: each version is a read from R2.
+- **Push** is `POST /api/tc/push?parent=`, answered with the new version and how much the server would like a snapshot,
+  or with `behind` and the newest version when somebody else got there first, which makes TaskChampion pull and push
+  again. Snapshots go the same way (`GET`/`POST /api/tc/snapshot`) and are what a new device starts from.
 - **When.** After every write, when you return to the tab, every 30 seconds while it is visible, and when another tab of
   the same browser says it pushed (over a `BroadcastChannel`; only a write is announced, so tabs don't answer each other
   forever). Before the first command there is nothing to answer from unless a saved copy was found, so the first pull is
@@ -377,18 +645,20 @@ snapshots, cleanup) happens there, and the page never holds the key.
 
 #### The saved copy
 
-`LiveStorage::save` writes the tasks, the working set, the version it is based on and the changes not yet pushed, as JSON,
-in one IndexedDB record, soon after a change and after every sync. The browser gzips it when it can (`CompressionStream`;
-about 17 times smaller, because most of it is the log of changes made on this device, which TaskChampion keeps for a
-task's history), and an older uncompressed record is still read. It is only the browser's own copy: nothing in the bucket
-or the sync format depends on it. A copy that can't be read (another format, damaged) is dropped and fetched again.
+`LiveStorage::save` writes the tasks, the working set, the version it is based on and the changes not yet pushed, as
+JSON, in one IndexedDB record, soon after a change and after every sync. The browser gzips it when it can
+(`CompressionStream`; about 17 times smaller, because most of it is the log of changes made on this device, which
+TaskChampion keeps for a task's history), and an older uncompressed record is still read. It is only the browser's own
+copy: nothing in the bucket or the sync format depends on it. A copy that can't be read (another format, damaged) is
+dropped and fetched again. A save that fails (a full disk, a blocked database) is not hidden: the next sync's answer
+carries why (`Synced.unkept`), and the page says that changes not yet pushed live only in memory until it can save
+again. "Start over from the server" reloads only once the copy is really gone.
 
 ## Limits of the platform
 
-A Worker request has hard limits, and this app is shaped by them. They bind the Worker, and since the engine moved into
-the page the Worker does very little: it checks a token, opens or seals a few objects and, on a cold instance, derives the
-key. The measurements below are of the engine from when it ran in the Worker; they show what the engine costs (now in the
-browser, where there is no such limit) and what it took to keep it under 10 ms.
+A Worker request has hard limits. They bind only the Worker, which does very little: it checks a token, opens or
+seals a few objects and, on a cold instance, derives the key. The engine runs in the page or on the phone, where there
+is no such limit, but it is still kept as fast as it was when it had to fit in 10 ms.
 
 | | Workers Free | Workers Paid |
 | --- | --- | --- |
@@ -400,117 +670,98 @@ browser, where there is no such limit) and what it took to keep it under 10 ms.
 
 Measured with `crates/tc-core/tests/memory.rs` and a local `workerd`:
 
-- **The key.** Deriving it (PBKDF2, 600,000 rounds) is the heaviest thing a *cold* instance does. The Worker asks the
-  runtime's native Web Crypto, which takes about 40 ms; the same in WebAssembly took about 250 ms. A warm instance reuses it.
-- **A warm request** was a few milliseconds of CPU for a hundred tasks and, before the cache below, tens for thousands
-  (filtering, sorting, urgency, serialising).
-- **Memory** is small. Restoring a snapshot of 3,000 tasks peaks near 6 MB, replaying 1,200 versions from nothing near 6
-  MB, and a request over 3,000 tasks 8 MB (19 MB for a full `export`). An `import` of the most one takes (5,000 tasks, a 2
-  MB file) peaks near 51 MB, and its `undo` step keeps about 8 MB while the instance lives, which is why the request is
-  capped. The test fails if a change makes any of these much worse.
+- **The key.** Deriving it (PBKDF2, 600,000 rounds) is the heaviest thing a *cold* Worker does. It asks the runtime's
+  native Web Crypto, which takes about 40 ms; the same in WebAssembly took about 250 ms. A warm instance reuses it.
+- **Memory** is small. Restoring a snapshot of 3,000 tasks peaks near 6 MB, replaying 1,200 versions from nothing near
+  6 MB, and a command over 3,000 tasks 8 MB (19 MB for a full `export`). An `import` of the most one takes (5,000 tasks,
+  a 2 MB file) peaks near 51 MB, and its `undo` step keeps about 8 MB, which is why imports are capped. The test fails if
+  a change makes any of these much worse.
 
 ### It runs on Workers Free
 
-So does its author's deployment, with R2 and Access on their free plans too. What is left for the Worker is a token check,
-a read or two from R2 and, on the first request after an idle spell, deriving the key. One such request on a real
-deployment, back when the Worker also restored the snapshot and ran the command, used about 550 ms and still completed,
-because Cloudflare tolerates a Worker that only *infrequently* runs over, and ends requests with error 1102 only when it
-keeps doing so. The app retries a read-only request once, because the retry meets a warm instance. Workers Paid ($5/month)
-lifts the limit if that ever bothers you. R2 calls count toward the 50 subrequests, which is why a pull carries at most 24
-versions (see [Sync](#sync)).
+So does its author's deployment, with R2 and Access on their free plans too. A cold request that runs over 10 ms (the
+key) still completes: Cloudflare tolerates a Worker that only *infrequently* runs over, and ends requests with error
+1102 only when it keeps doing so. The app retries a read-only request once, because the retry meets a warm instance.
+Workers Paid ($5/month) lifts the limit if that ever bothers you. R2 calls count toward the 50 subrequests, which is why
+a pull carries at most 24 versions (see [Sync](#sync)).
 
-For scale, one personal deployment over its first nine days of a billing cycle used about 1,100 requests a day (1% of the
-free plan's 100,000), about 460 R2 writes and listings and 1,100 R2 reads a day (roughly 1.4% and 0.35% of R2's free 1
-million and 10 million a month) and next to no storage, and was billed $0.00.
+For scale, one personal deployment over its first nine days of a billing cycle used about 1,100 requests a day (1% of
+the free plan's 100,000), about 460 R2 writes and listings and 1,100 R2 reads a day (roughly 1.4% and 0.35% of R2's
+free 1 million and 10 million a month) and next to no storage, and was billed $0.00.
 
-### What is done about CPU
+### Keeping commands fast
 
-Turning every stored task into the engine's form (`Facts`) took about 2 µs a task, and every command began with it, which
-at 3,000 tasks was most of a read. The engine now keeps that list between commands (`tc_core::warm`, next to the replica)
-and rebuilds it only when the storage's change counter (`LiveStorage::generation`, bumped when a transaction that changed
-anything commits or is taken back) has moved. Most requests change nothing, so they skip it. `tests/warm.rs` checks, after
-every step of a long random run of commands, direct writes and pulls, that the cached list equals a fresh read.
+Turning every stored task into the engine's form (`Facts`) takes about 2 µs a task, and every command needs it. The
+engine keeps that list between commands (`tc_core::warm`, next to the replica) and rebuilds it only when the storage's
+change counter (`LiveStorage::generation`, bumped when a transaction that changed anything commits or is taken back) has
+moved. Most commands change nothing, so they skip it. `tests/warm.rs` checks, after every step of a long random run of
+commands, direct writes and pulls, that the cached list equals a fresh read.
 
-The page's own requests were trimmed to match: `_names` is `_tags` and `_projects` in one request, and the reminder poll
-asks `_remind` (seven fields) instead of `_rows` (a full row with every virtual tag for each task). Measured natively at
-3,000 tasks (WebAssembly is somewhat slower, but the proportions hold):
+A write doesn't rebuild the list either. The storage keeps which tasks each of its last 32 transactions touched
+(`Generation::touched_since`), and a list a few changes behind is brought up to date by reading just those tasks and
+moving them into place (`warm::patch`). That is done only when no touched task depends on another or has another
+depending on it, since a dependency changes whether tasks are blocked or blocking, which is worked out for the whole
+list; then the list is rebuilt, as after a long pull or an import.
 
-| Request | Before | After |
+The page's own requests are small too: `_names` is `_tags` and `_projects` in one request, and the reminder poll asks
+`_remind` (seven fields) instead of `_rows` (a full row with every virtual tag for each task). Measured natively at 3,000
+tasks (WebAssembly is somewhat slower, but the proportions hold):
+
+| Request | Without | With |
 | --- | --- | --- |
 | `next`, `list`, `count` | about 8 ms | about 2 ms |
 | the name lists (`_tags` and `_projects`) | 2 × 6.2 ms | one request, 0.5 ms |
 | the reminder poll | 13.3 ms (`_rows`) | 0.9 ms (`_remind`) |
 | a write (`modify` on one task) | about 8 ms | about 1.7 ms |
 
-A write doesn't rebuild the list either. The storage keeps which tasks each of its last 32 transactions touched
-(`Generation::touched_since`), and a list a few changes behind is brought up to date by reading just those tasks and
-moving them into place (`warm::patch`). That is done only when no touched task depends on another or has another depending
-on it, since a dependency changes whether tasks are blocked or blocking, which is worked out for the whole list; then the
-list is rebuilt, as after a long pull or an import. The same random run checks the patched list against a fresh read after
-every step, including steps that add and remove dependencies.
-
 ## The web app
 
-A Svelte 5 single-page app (`web/`), built with Vite and served as static assets.
-
-### The engine in the page
-
-`web/src/engine/`:
-
-- `engine.worker.ts` is the Web Worker that loads the engine's `.wasm` (`crates/browser`, built by
-  `scripts/build-engine.mjs` into `src/engine/pkg`, typed by hand in `tc-engine.d.ts` so type-checking and tests don't need
-  it built), restores the saved replica from IndexedDB (`persist.ts`), and answers `protocol.ts` messages one at a time.
-- `client.svelte.ts` is the page's side: it starts the worker once, sends commands, runs the syncs, and exposes `status` /
-  `error` for the banner shown when a sync fails.
-- `api.ts` makes the choice: `runCli` and `importTasks` go to the engine in the page when it is available and to the
-  Worker's endpoints when it isn't. `getConfig` starts it (the engine needs the settings first) and hands it the settings
-  again whenever they are read again.
-
-**Start-up isn't a chain of requests.** `main.ts` loads the engine's Worker (`preload`: it fetches the `.wasm` and reads the
-saved copy) and asks the server for what the page needs (`prefetch`: whether it is set up, the settings, which hooks the
-script defines, and `settings.json`) before the app's own code has loaded, so they all travel at once. Each answer is used
-once, by the call that would have asked, and asked for again if it was refused (a deployment that isn't set up refuses all
-of them). A read of the settings already on its way is joined, not repeated. A `config` command's new settings are saved on
-the Worker (`PUT /api/config/engine`) before the engine takes them up. The CSP allowance is `'wasm-unsafe-eval'`, which lets
-the page compile WebAssembly and nothing else.
+A Svelte 5 single-page app (`web/`), built with Vite and served as static assets. How it runs the engine is in
+[In the browser](#in-the-browser).
 
 ### Stores and pages
 
-`store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the answers to
-questions in flight, and the toast.
+`store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the answers
+to questions in flight, and the toast.
 
 The pages (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`,
 `SettingsPage`) are thin. Each asks the engine for a result and hands it to a shared component, so the console and the
 pages draw the same thing. `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`,
 `BurndownView`, `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the
-console, ran the command). A report's cells are written by the engine (`tc_core::cells`), in one call for the whole table
-through `formatCells` in `format.ts`, which only tells it the browser's zone at each moment so summer time is right.
+console, ran the command). A report's cells are written by the engine (`tc_core::cells`), in one call for the whole
+table through `formatCells` in `format.ts`, which only tells it the browser's zone at each moment so summer time is
+right.
 
 The filter box (`FilterInput`, `FilterChips`) and the prompt share `completion.ts`; both feed the same engine.
+
+**Keys.** The default keys are `web/public/keymaps/default.json`, fetched with the app's version in the address so a new
+release is never hidden by a cached copy; `tc_core::keymap` lays the user's keys over them and says which action a key
+runs in each context. `App.svelte` runs the actions. No page puts the cursor in a field when it opens, so a key always
+reaches the page, and Escape takes the cursor out of a field.
 
 ### Settings
 
 One page, `SettingsPage`, with a tab per panel: `TaskrcPanel` (the folder of taskrc files: a list, the text of one,
 themes, import of files, a folder or a link; `rcpaths.ts` has the path helpers; `HolidaysForm` and `holidays.ts` fetch a
-country's holidays and save them as a file), `TaskshPanel`, `CommandsPanel`, `HooksPanel` and `UrgencyPanel`. Each has its
-own Apply and tells the page when it has edits, and all stay mounted so edits survive a change of tab. `tasksh.ts` decides
-what the `reviewed` UDA and `_reviewed` report need and which `config` lines write them; the panel sends those to the
-engine like any command, so nothing about tasksh is in the Worker.
+country's holidays and save them as a file), `TaskshPanel`, `CommandsPanel`, `HooksPanel`, `UrgencyPanel` and the keys.
+Each has its own Apply and tells the page when it has edits, and all stay mounted so edits survive a change of tab.
+`tasksh.ts` decides what the `reviewed` UDA and `_reviewed` report need and which `config` lines write them; the panel
+sends those to the engine like any command, so nothing about tasksh is in the Worker.
 
 ### The hooks editor
 
 `HooksPanel` and `hookEditor.ts`: CodeMirror with Lua highlighting, loaded only when the tab opens (about 107 KB
-compressed, its own chunk). The panel asks the Worker whether the script is all right a moment after typing (`POST
-/api/hooks/check`, the same Lua that will run it) and marks the line. A script that doesn't load can't be saved, and an
-empty one removes the hooks. `api.ts` tells the engine which hooks the saved script defines (`refreshHooks`).
+compressed, its own chunk). The panel asks the Worker whether the script is all right a moment after typing
+(`POST /api/hooks/check`, the same Lua that will run it) and marks the line. A script that doesn't load can't be saved,
+and an empty one removes the hooks. `api.ts` tells the engine which hooks the saved script defines (`refreshHooks`).
 
 ### Review
 
 tasksh's `review` is the browser's too, and only a client of the engine. `review.svelte.ts` is the session: it asks for
-the `_reviewed` report (the uuids), shows each task with `info`, and carries out the menu with ordinary commands (`modify
-reviewed:now`, `done`, `delete`, with `rc.confirmation:no`), so undo, hooks and the settings work as for any command. A
-question Taskwarrior asks mid-step (the recurring series) comes back as a `confirm` result and is put to the person
-(`asking`), then the same command is sent again with the answer.
+the `_reviewed` report (the uuids), shows each task with `info`, and carries out the menu with ordinary commands
+(`modify reviewed:now`, `done`, `delete`, with `rc.confirmation:no`), so undo, hooks and the settings work as for any
+command. A question Taskwarrior asks mid-step (the recurring series) comes back as a `confirm` result and is put to the
+person (`asking`), then the same command is sent again with the answer.
 
 Two surfaces drive it, with one `ReviewBar` of buttons between them:
 
@@ -524,91 +775,90 @@ the `e` choice opens reports its closing through `App.svelte` (`review.editClose
 
 ### Addresses
 
-Every page has one, in `route.ts`: a `Place` (a report, a plain page, the boards or one board, Settings or one tab, a task)
-with `parsePath` and `placePath` to turn it into a path and back. The Worker serves the app for them all (single-page
-fallback). `store.place` is where the app is, derived from the page, report, board, tab and drawer. `store.openFromAddress`
-goes where an address says (a page that needs the reports or boards waits until they are read, and the start asks again).
+Every page has one, in `route.ts`: a `Place` (a report, a plain page, the boards or one board, Settings or one tab, a
+task) with `parsePath` and `placePath` to turn it into a path and back. `store.place` is where the app is, derived from
+the page, report, board, tab and drawer. `store.openFromAddress` goes where an address says (a page that needs the
+reports or boards waits until they are read, and the start asks again).
 
 One effect in `App.svelte` keeps the address in step with `store.place` the other way, pushing a history entry for each
-move but replacing the address when the front page finds where it is, when the drawer closes over the page under it, and
-when Settings changes tab. A new page adds a `Place`, a test of its round trip, and a row in `docs/using/pages.md`.
+move but replacing the address when the front page finds where it is, when the drawer closes over the page under it,
+and when Settings changes tab. A new page adds a `Place`, a test of its round trip, and a row in `docs/using/pages.md`.
 
 A task is `/task/<8 characters of its uuid>`; `store.openFromAddress` finds it with `uuid.startswith:<prefix> uuids`.
-`DepLink` is the id of another task (a dependency, a parent) with a hover, focus or tap card; in the drawer `DepItem` is a
-line that expands to the same `TaskCard`, and the tasks that wait on this one are looked up with `depends.has:<uuid>` only
-when asked. A project part or tag chip jumps to its entry on the Projects or Tags page (`store.showProject` / `showTag`).
+`DepLink` is the id of another task (a dependency, a parent) with a hover, focus or tap card; in the drawer `DepItem` is
+a line that expands to the same `TaskCard`, and the tasks that wait on this one are looked up with `depends.has:<uuid>`
+only when asked. A lookup that fails says so rather than claiming the task is gone. A project part or tag chip jumps to
+its entry on the Projects or Tags page (`store.showProject` / `showTag`).
 
 ### The home page
 
-A `homepage` key of `settings.json` (`{ report }` or `{ board }`, read by `parseHomepage`). `store.goHome()` runs once the
-settings have loaded, from the front page only, and does nothing for a task's address or a report or board that is gone.
-The General tab of Settings writes it.
+A `homepage` key of `settings.json` (`{ report }` or `{ board }`, read by `parseHomepage`). `store.goHome()` runs once
+the settings have loaded, from the front page only, and does nothing for a task's address or a report or board that is
+gone. The General tab of Settings writes it.
 
 ### Boards
 
 The browser's pages over the engine's `board` module.
 
-- `appsettings.ts` reads `settings.json`'s `boards` with `board_normalize` (the problems are kept apart from the commands')
-  and `serializeBoards` writes them back with the other keys as they were.
-- `boards.ts` runs `<filter> export` for each distinct filter (sections with the same one share it) and a table's report,
-  hands the text to `board_aggregate`, and sorts and trims the groups. Before it runs a filter it writes the board's date
-  ranges into it (`board_substitute`; the dates typed above the board take the place of the board's own).
-- `BoardView` is the grid and the drag, resize and keyboard handling. Each step is worked out from where the drag began, on
-  the layout as it was then, by `board_place`, or on a narrow screen by `board_resize_flow`, which resizes in the phone's
-  columns; sections are drawn where `board_flow` puts them there. A section's settings are in `Drawer`, a modal panel that
-  slides in from the side.
-- `SectionInfo`, a modal `<dialog>`, is drawn from what the load already had: `loadBoard` keeps, beside each result, the
-  filter each series ran and the `export` text it got, so the panel parses and lists the tasks only when opened.
+- `appsettings.ts` reads `settings.json`'s `boards` with `board_normalize` (the problems are kept apart from the
+  commands') and `serializeBoards` writes them back with the other keys as they were.
+- `boards.ts` runs `<filter> export` for each distinct filter (sections with the same one share it) and a table's
+  report, hands the text to `board_aggregate`, and sorts and trims the groups. Before it runs a filter it writes the
+  board's date ranges into it (`board_substitute`; the dates typed above the board take the place of the board's own).
+- `BoardView` is the grid and the drag, resize and keyboard handling. Each step is worked out from where the drag
+  began, on the layout as it was then, by `board_place`, or on a narrow screen by `board_resize_flow`, which resizes in
+  the phone's columns; sections are drawn where `board_flow` puts them there. A section's settings are in `Drawer`, a
+  modal panel that slides in from the side.
+- `SectionInfo`, a modal `<dialog>`, is drawn from what the load already had: `loadBoard` keeps, beside each result,
+  the filter each series ran and the `export` text it got, so the panel parses and lists the tasks only when opened.
 
-**Charts.** `BoardChart` is [Chart.js](https://www.chartjs.org/) on a canvas at the size of its box, loaded as a chunk of
-its own (`chartjs.ts`: only the controllers and scales the boards use, and the matrix plugin that makes a heatmap; about 67
-KB compressed, fetched when a board first draws a chart). Bar, line, area, pie, donut, radar, polar and heatmap charts are
-one library's work, and only the table is the app's own. (On Android a heatmap is the one chart the app lays out itself,
-as Koala Plot has none, and the widget's `BoardRenderer` draws it on its canvas.)
-
-What `BoardChart` is given, `chartConfig` in `boardChart.ts`, is a change of names and colours from the engine's `Chart`
-(labels, and a dataset of values per series), which already has Chart.js's shape on purpose. It is the contract any front
-end draws from, mapping it to its own chart library. Nothing reads the replica.
+**Charts.** `BoardChart` is [Chart.js](https://www.chartjs.org/) on a canvas at the size of its box, loaded as a chunk
+of its own (`chartjs.ts`: only the controllers and scales the boards use, and the matrix plugin that makes a heatmap;
+about 67 KB compressed, fetched when a board first draws a chart). What it is given, `chartConfig` in `boardChart.ts`,
+is a change of names and colours from the engine's `Chart`. On Android the charts are Koala Plot's, except the heatmap,
+which Koala Plot lacks and the app lays out as a grid of cells; the terminal app draws with ratatui's charts.
 
 ### Task commands
 
 The browser's own. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name, command, icon? }] }`,
-other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s `appsettings` checks that it is a
-JSON object under 64 KB and nothing more).
+other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s `appsettings` checks that it is
+a JSON object under 64 KB and nothing more).
 
-`taskCommands.ts` writes a command out on the line you typed: the first word that is not part of the filter, as the engine
-reads a line, is the command word, and only that word can be one, so `add fail the test` is untouched. A name is written
-out once per line, so a command can extend the Taskwarrior command of the same name. `ConsoleInput` expands before it
-decides where the result goes and hands `store.run` what was typed for the history. The same commands are the **⋯** menu
-(`MoreMenu`) in a table row, the task drawer and the bulk bar, which send `<tasks> <the command's words>` like any button.
+`taskCommands.ts` writes a command out on the line you typed: the first word that is not part of the filter, as the
+engine reads a line, is the command word, and only that word can be one, so `add fail the test` is untouched. A name is
+written out once per line, so a command can extend the Taskwarrior command of the same name. `ConsoleInput` expands
+before it decides where the result goes and hands `store.run` what was typed for the history. The same commands are the
+**⋯** menu (`MoreMenu`) in a table row, the task drawer and the bulk bar, which send `<tasks> <the command's words>`
+like any button.
 
 **Icons** are Lucide's, picked in `IconPicker`. The app's own are bundled and found by name (`bundledIcons` in
-`lucide.ts`). Any other is fetched as one SVG file from jsdelivr at the Lucide version pinned there (`LUCIDE_VERSION`), then
-read into a short list of plain shapes (`svgToShapes`: only `path`, `circle`, `rect`, `line`, `polyline`, `polygon` and
-`ellipse`, with numeric or path attributes; anything else refuses the whole file) and drawn inline by `NodeIcon` in the
-page's colour. So the CDN supplies data and never code, and the CSP needs only `connect-src` for that host (and for
-`holidata.net` and `date.nager.at`, which supply holiday dates as text). `lucideLib.svelte.ts` keeps what was fetched (in
-memory, and the last 150 in `localStorage`) and the picker's list of names and search words (`tags.json`, about 50 KB
-compressed, fetched when the picker opens).
+`lucide.ts`). Any other is fetched as one SVG file from jsdelivr at the Lucide version pinned there
+(`LUCIDE_VERSION`), then read into a short list of plain shapes (`svgToShapes`: only `path`, `circle`, `rect`, `line`,
+`polyline`, `polygon` and `ellipse`, with numeric or path attributes; anything else refuses the whole file) and drawn
+inline by `NodeIcon` in the page's colour. So the CDN supplies data and never code, and the CSP needs only `connect-src`
+for that host (and for `holidata.net` and `date.nager.at`, which supply holiday dates as text). `lucideLib.svelte.ts`
+keeps what was fetched (in memory, and the last 150 in `localStorage`) and the picker's list of names and search words
+(`tags.json`, about 50 KB compressed, fetched when the picker opens).
 
 ### Bulk actions
 
-`BulkBar`, `BulkModify`, `selection.svelte.ts` and `bulk.ts`: the table's checkboxes feed one selection, and the bar sends
-ordinary commands (the whole uuids of the ticked tasks side by side, which Taskwarrior reads as one group, then `done`,
-`delete` or `modify` with the words the editor made), so the engine needs nothing of its own. **CLI** hands the prompt a
-line through `store.requestPrompt`.
+`BulkBar`, `BulkModify`, `selection.svelte.ts` and `bulk.ts`: the table's checkboxes feed one selection, and the bar
+sends ordinary commands (the whole uuids of the ticked tasks side by side, which Taskwarrior reads as one group, then
+`done`, `delete` or `modify` with the words the editor made), so the engine needs nothing of its own. **CLI** hands the
+prompt a line through `store.requestPrompt`.
 
 ### Colours
 
 The engine sends each row's colour as palette indexes (`Row.style`) and the chart colours with the config. `colors.ts`
-draws them (the soft basic sixteen per light/dark page, exact xterm colours otherwise, a contrast guard), `scheme.svelte.ts`
-says which page it is, and `themes.ts` and the taskrc tab's picker put a bundled theme's lines into the taskrc (the theme
-files are static assets).
+draws them (the soft basic sixteen per light/dark page, exact xterm colours otherwise, a contrast guard),
+`scheme.svelte.ts` says which page it is, and `themes.ts` and the taskrc tab's picker put a bundled theme's lines into
+the taskrc (the theme files are static assets).
 
 ### What the browser stores
 
-The replica (one IndexedDB record, see [Sync](#the-saved-copy)) and small conveniences (command history, reminder
-settings). Settings live in the bucket: `web/config.json` (with one backup) and the app's own `web/settings.json` (none).
+The replica (one IndexedDB record, see [The saved copy](#the-saved-copy)) and small conveniences (command history,
+reminder settings). Settings live in the bucket: `web/config.json` (with one backup) and the app's own
+`web/settings.json` (none).
 
 ## How correctness is kept
 
@@ -623,6 +873,7 @@ burndown charts bar by bar, `summary`/`projects`/`tags` output, `calc` results, 
 | `tests/cli_exec.rs` | Real command lines against a real replica: writes, reports, confirmations, recurrence, calc, `show`/`config`, hooks (injected through `Options.hooks`) |
 | `tests/sync_cost.rs`, `replica_sync.rs` | R2 call counts per sync; two replicas converging |
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
+| `tests/warm.rs` | The cached task list equals a fresh read after every step of a long random run |
 | `tests/lua_net.rs` | `http` and `secret()` against a fake host: the allowlist (exact, wildcard, no user-info tricks), https only, request limits, a failed request as `nil` and a reason, a secret's value kept out of everything, and a second call while one waits on the network |
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `crates/hook-shim/tests/protocol.rs` | `meghnaad-hook` as `task` runs it, from a task on standard input to what it prints and exits with: each hook, the changes written back in `task`'s form, refusing, a script that doesn't load, secrets by exact name, `http` against a local server, the zone, `install` and `uninstall` |
@@ -630,7 +881,9 @@ burndown charts bar by bar, `summary`/`projects`/`tags` output, `calc` results, 
 | `tests/remote.rs`, `wire` unit tests | A replica syncing through the plain protocol (both halves, bytes encoded and decoded) ends where a direct one does: batches longer than one pull, pushing, losing a race, snapshots both ways, an empty bucket |
 | `board` unit tests, and `a_board_reads_what_export_writes`, `finished_tasks_split_into_succeeded_and_failed_by_a_uda` and `spans_over_an_export_are_what_the_weekly_burndown_counts` in `cli_exec` | Grid placement (the moved section wins, the overlapped are pushed down, everything floats up, clamping, the two-column minimum, keyboard steps, reading order, the phone's flow and resizing), the saved format (what is valid, what is dropped and named), counts, sums, averages and comparisons of numbers and durations, grouping by value, by each tag and by a date in each step, zone and week start with empty periods kept, and the refusals. The last of the three checks pending, started and done against `burndown.weekly` week by week |
 | `tc_core::helpers`, `sortspec`, `keymap`, `complete`, `highlight`, `urgency_settings`, `cells`, `preview` and `markdown` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, every header click, grouping and sort-override case, how a key is written and which action it runs where (the keymap asset with the user's keys), what Tab completes, how a line is coloured, how urgency terms are named, what every column format shows, what a typed `add` line comes to, and the Markdown subset (nesting, checklists, safe links, the limits that keep a hostile text quick) |
-| `npm --prefix web test` | The browser-side logic (it loads the built engine for the helpers): formatting, completion, the store, the API client, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync shows and clears) |
+| `npm --prefix web test` | The browser-side logic (it loads the built engine for the helpers): formatting, completion, the store, the API client, the keys, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync or save shows and clears) |
+| `cd app && ./gradlew :shared:testDebugUnitTest` | The Kotlin ports of the web app's logic with their tests, against the host build of the engine's library, and the phone's copy of the keymap asset |
+| `crates/tui` tests | The terminal app's ports with the web app's tests, and its reads and writes against the real `task` 3.5.0 on a scratch `TASKRC` and `TASKDATA` (skipped where `task` is missing) |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |
 | `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused |
 | `scripts/*.test.mjs` | The build and deploy scripts, including `package-release.mjs`: the prebuilt release has the built Worker and app, the scripts, and a config with no build step, and none of the sources |

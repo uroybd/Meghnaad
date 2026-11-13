@@ -142,81 +142,84 @@ The same pages are a searchable site at **[meghnaad.utsob.me](https://meghnaad.u
 | **[Deploying](docs/deploy.md)** | Setup, GitHub Actions deploy, Access, connecting `task`, troubleshooting |
 | **[The Android app](docs/android.md)** | Install, connect (a bucket or a TaskChampion sync server, or neither), the four widgets, sharing settings and hooks, building it |
 | **[The terminal app](docs/terminal.md)** | Install, the pages and keys, the command line, review, where its settings are kept |
-| **[Architecture](docs/architecture.md)** | The engine, sync, platform limits, how correctness is kept |
+| **[Architecture](docs/architecture.md)** | A diagram per platform, the engine, sync, hooks, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
 
 ## How it works
 
 ```mermaid
 flowchart TB
-  subgraph desktop["Desktop: Taskwarrior 3"]
+  subgraph desktop["Desktop"]
     direction TB
-    sh["shell aliases<br/>alias fail='task done outcome:fail'"]
-    tsh["tasksh<br/>review"]
-    tui["meghnaad-tui (terminal)<br/>runs task, completes with tc-core"]
-    cli["task CLI (C++)"]
-    tcd["TaskChampion (Rust)"]
+    sh["shell aliases"]
+    tsh["tasksh review"]
+    tui["meghnaad-tui<br/>terminal app"]
+    cli["task 3.5.0 (C++)"]
+    tcd["TaskChampion"]
     db[("SQLite replica<br/>~/.task")]
-    rc["~/.taskrc"]
     sh -.-> cli
     tsh -.-> cli
-    tui --> cli
-    cli --> tcd --> db
-    rc -.-> cli
+    tui --> cli --> tcd --> db
   end
 
-  subgraph web["Your browser: Meghnaad"]
+  subgraph web["Browser"]
     direction TB
-    cmds["task commands<br/>(settings.json)"]
-    rev["tasksh review"]
-    spa["Svelte app<br/>(draws results)"]
-    eng["Engine in a Web Worker (Rust → WASM)<br/>command engine in tc-core"]
-    tcw["TaskChampion (Rust)"]
-    mem[("Replica in memory<br/>saved copy in IndexedDB")]
+    cmds["task commands"]
+    rev["review"]
+    spa["Svelte app"]
+    eng["tc-core engine<br/>WebAssembly, in a Web Worker"]
+    tcw["TaskChampion"]
+    mem[("replica in memory<br/>saved in IndexedDB")]
     cmds -.-> spa
     rev -.-> spa
-    spa -- "what you type or click" --> eng --> tcw --> mem
+    spa --> eng --> tcw --> mem
   end
 
-  subgraph phone["Your phone: Meghnaad for Android"]
+  subgraph phone["Android"]
     direction TB
-    wg["Widgets<br/>tasks · burndown · calendar"]
-    app["The app<br/>Kotlin and Compose"]
-    nat["Engine (Rust, native)<br/>tc-core, hooks (Lua)"]
-    rep[("Replica in a file<br/>settings and keys on the phone")]
-    wg --> nat
-    app --> nat --> rep
+    app["Kotlin app<br/>and widgets"]
+    nat["tc-core engine<br/>native, over JNI"]
+    tcn["TaskChampion"]
+    rep[("replica in a file")]
+    app --> nat --> tcn --> rep
   end
 
   subgraph edge["Cloudflare"]
     direction TB
-    access{{"Cloudflare Access<br/>sign-in and token check"}}
-    assets["Static assets<br/>the app and the engine (.wasm)"]
-    wk["Worker (Rust → WASM)<br/>opens and seals versions<br/>runs your hooks (Lua)<br/>key in a Worker secret"]
-    access --> assets
+    access{{"Access<br/>sign-in"}}
+    wk["Worker<br/>holds the key · runs Lua hooks"]
     access --> wk
   end
 
-  bucket[("R2 bucket<br/>salt · latest<br/>v-parent-child · s-version<br/>web/config.json · web/settings.json")]
+  bucket[("Bucket<br/>TaskChampion's layout, encrypted<br/>and the app's settings")]
 
-  tcd <-- "task sync (when you run it)<br/>S3 API, key on your machine" --> bucket
-  nat <-- "S3 API, signed on the phone<br/>any S3-compatible store" --> bucket
-  tcw <-- "after every write, when you return,<br/>every 30 s: /api/tc/*, plain versions" --> access
-  spa -. "taskrc settings, settings.json<br/>/api/config, /api/settings" .-> access
-  eng -. "a hook call: /api/run" .-> access
+  tcd <-- "task sync" --> bucket
+  tcw <-- "/api/tc/*: versions opened, over HTTPS" --> access
   wk <-- "R2 binding" --> bucket
-  assets -. "loaded once, then cached" .-> spa
-
+  tcn <-- "S3, signed on the phone" --> bucket
   sh <-. "counterpart" .-> cmds
   tsh <-. "counterpart" .-> rev
 
+  classDef ui fill:#d8f0d2,stroke:#40a02b,color:#1e1e2e
+  classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
+  classDef tw fill:#e6e6ea,stroke:#7c7f93,color:#1e1e2e
+  classDef store fill:#d6e4fb,stroke:#1e66f5,color:#1e1e2e
+  classDef bucket fill:#e9d8fb,stroke:#8839ef,color:#1e1e2e
+  classDef edge fill:#fbefc4,stroke:#df8e1d,color:#1e1e2e
   classDef ext fill:transparent,stroke:#999,color:#999,stroke-dasharray:4 3
+  class tui,spa,app ui
+  class eng,nat engine
+  class cli,tcd,tcw,tcn tw
+  class db,mem,rep store
+  class access,wk edge
+  class bucket bucket
   class sh,tsh,cmds,rev ext
 ```
 
-- **Dashed grey boxes** are not Taskwarrior: your own words for command lines (shell aliases on the desktop, task commands
-  here) and tasksh's `review` (tasksh there, built in here). They only ever send ordinary
-  commands.
+- **Colours** match across the diagrams: green is a front end, orange `tc-core`, grey Taskwarrior's own pieces, blue a
+  replica, purple the bucket, yellow Cloudflare. **Dashed grey boxes** are not Taskwarrior: your own words for command
+  lines (shell aliases on the desktop, task commands here) and tasksh's `review` (tasksh there, built in here). They only
+  ever send ordinary commands.
 - **The engine runs in your browser.** Taskwarrior's rules live in one place, `tc-core`, compiled to WebAssembly and run
   in a Web Worker in the page. It holds your tasks in memory, so a command costs no round trip and uses none of the
   Worker's CPU. Only your hooks run elsewhere, on the Worker (below). The Svelte app only draws.
@@ -229,7 +232,7 @@ flowchart TB
   It syncs after every write, when you come back to the tab, and every 30 seconds while you look at it; other tabs are
   told when one pushes.
 - **Imported taskrc files** are stored in the bucket (as written, less sync and credential lines), so they survive restarts and follow you between devices.
-  The app's own `settings.json` (task commands, so far) is stored beside them; the Worker keeps its text as it is and
+  The app's own `settings.json` (task commands, boards, keys) is stored beside them; the Worker keeps its text as it is and
   only the browser reads it.
 
 |                | Desktop Taskwarrior        | Meghnaad                                                                                                      |
