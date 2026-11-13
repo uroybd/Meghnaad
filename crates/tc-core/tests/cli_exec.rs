@@ -4674,7 +4674,7 @@ mod report_defaults {
     }
 
     #[tokio::test]
-    async fn due_soon_is_plain_white_and_only_due_today_stands_out_and_priority_colours_no_row() {
+    async fn due_soon_is_plain_white_and_only_due_today_stands_out_and_priority_colours_the_rest() {
         let mut r = replica();
         let cfg = Config::default();
         run(&mut r, &cfg, "add soon due:3d priority:H").await;
@@ -4688,11 +4688,17 @@ mod report_defaults {
         // Due today: the one that stands out.
         let t = style_of(&list, "today").expect("due today is coloured");
         assert_eq!((t.fg, t.bold), (Some(3), true), "{t:?}");
-        // A priority no longer colours the row (the page colours the Priority cell, from the same setting).
-        assert_eq!(style_of(&list, "urgent"), None);
+        // A priority colours a row no other rule claims (`uda.`, last in the order, as in Taskwarrior).
+        let u = style_of(&list, "urgent").expect("priority H is coloured");
+        assert_eq!((u.fg, u.bold), (Some(1), true), "{u:?}");
         // Recurring still has its own colour when nothing about its date claims the row.
         assert_eq!(style_of(&list, "repeats").map(|s| s.fg), Some(Some(5)));
-        // And the setting the page reads for that cell is still there.
+        // The taskrc's own priority colour, as the real `task` draws it.
+        let own = parse("color.uda.priority.H=bold blue\n").config;
+        let list = rows(run(&mut r, &own, "all").await.0);
+        let u = style_of(&list, "urgent").expect("the taskrc's priority colour");
+        assert_eq!((u.fg, u.bold), (Some(4), true), "{u:?}");
+        // And the setting the page reads for the Priority cell is there too.
         let colours = tc_core::color::palette_for_page(&cfg);
         for (v, fg) in [("H", 1), ("M", 3), ("L", 2)] {
             assert_eq!(colours[&format!("uda.priority.{v}")].fg, Some(fg), "{v}");

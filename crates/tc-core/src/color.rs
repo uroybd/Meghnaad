@@ -992,16 +992,13 @@ mod tests {
                 parse_style(v).unwrap_or_else(|e| panic!("{k}={v}: {e}"));
             }
         }
-        // The same order as Taskwarrior's, except that priority is no row rule: the page colours that cell itself.
+        // The same order as Taskwarrior's, `uda.` (and so priority) included.
         let tw = crate::taskrc::COLOR_DEFAULTS
             .iter()
             .find(|(k, _)| *k == "rule.precedence.color")
             .unwrap()
             .1;
-        assert_eq!(
-            app["rule.precedence.color"],
-            tw.strip_suffix(",uda.").expect("it ends with uda.")
-        );
+        assert_eq!(app["rule.precedence.color"], tw);
     }
 
     fn lines_of(real: &str) -> String {

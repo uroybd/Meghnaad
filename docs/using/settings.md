@@ -223,9 +223,9 @@ history graph. With nothing set you get **Meghnaad's own theme**:
 - the active task on soft green, overdue in coral, due **today** in bold amber (due later this week is plain white, so
   today's tasks stand out),
 - blocked tasks dimmed, recurring ones in orchid, `+next` marked, and no zebra,
-- **priority** coloured on its own cell (`color.uda.priority.H`, `.M`, `.L`: coral, amber, green), whatever colour the rest
-  of the row has. Taskwarrior's rules colour a whole row; colouring one field is the app's addition, from the same
-  settings.
+- **priority** (`color.uda.priority.H`, `.M`, `.L`: coral, amber, green) as Taskwarrior has it: priority is a UDA, so
+  `uda.`, last in `rule.precedence.color`, colours a row no other rule colours. The Priority cell always shows its
+  colour too, whatever colour the rest of the row has; that one field is the app's addition, from the same settings.
 
 Colours don't blend (`rule.color.merge=no`): a row takes the colour of the first rule in `rule.precedence.color` that
 applies, so a keyword or tag rule you add replaces that colour instead of mixing. Put `rule.color.merge=yes` in your
