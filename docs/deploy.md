@@ -186,7 +186,10 @@ builds once and publishes:
 
 - a new commit on the `release` branch holding the built Worker (`worker/`), the web app and engine (`app/`), the scripts
   and a `wrangler.jsonc` without a build step (the branch only gains commits; nothing is force-pushed),
-- a GitHub release titled with the version, holding the same files as `meghnaad-<version>.tar.gz`,
+- a GitHub release titled with the version, holding the same files as `meghnaad-<version>.tar.gz`, whose notes list
+  what changed since the release before: each commit's subject, grouped by its conventional type (Features for `feat:`,
+  Fixes for `fix:`, then `perf:`, `refactor:` and `doc:`; chores, CI and the bumps are left out). So write the subject
+  for someone reading the notes. `just notes` shows them for what is on `main` now (`scripts/release-notes.mjs`),
 - the Android APK, added to that release when its build finishes ([signing it](android.md#releases-and-signing)).
 - `meghnaad-hook` and `meghnaad-tui` for Linux and macOS (x86_64 and arm64), as `<program>-<version>-<platform>.tar.gz`,
   added to that release when their builds finish.

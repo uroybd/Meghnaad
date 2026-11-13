@@ -34,6 +34,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history and its tags, for the release notes (the commits since the previous tag).
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -131,6 +134,12 @@ jobs:
 
           NOTES
           sed -i 's/^          //' "$RUNNER_TEMP/notes.md"
+          # What changed: the commits since the previous release, by type (scripts/release-notes.mjs), above the downloads.
+          changes="$(node scripts/release-notes.mjs "$TAG")"
+          if [ -n "$changes" ]; then
+            { printf '%s\n\n' "$changes"; cat "$RUNNER_TEMP/notes.md"; } > "$RUNNER_TEMP/notes.full.md"
+            mv "$RUNNER_TEMP/notes.full.md" "$RUNNER_TEMP/notes.md"
+          fi
           gh release create "$TAG" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "Meghnaad $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
 

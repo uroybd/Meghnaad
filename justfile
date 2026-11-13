@@ -73,6 +73,10 @@ bump level="patch":
     npm version {{ level }} --no-git-tag-version --silent >/dev/null
     @echo "Version $(just version)"
 
+# The release notes for what is on main now: commits since the last tag, by conventional type
+notes ref="HEAD":
+    @node scripts/release-notes.mjs {{ ref }}
+
 # Bump, commit, tag v<version> and push main and the tag; `just release minor tidy` lints and tests first
 release level="patch" tidy="": _clean
     #!/usr/bin/env bash

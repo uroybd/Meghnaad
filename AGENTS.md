@@ -182,7 +182,8 @@ script runs `node scripts/version.mjs sync` for Cargo.toml and Cargo.lock); a sc
 refuse a mismatch. `just release [level] [tidy]` does the whole release: bumps, commits `chore: bump to <version>`,
 tags `v<version>` and pushes both (the Release workflow refuses a tag that does not match); with `tidy` it runs `just tidy`
 (lint and test) first. `just ship` takes the same arguments and deploys after.
-Don't hard-code a version anywhere else.
+Don't hard-code a version anywhere else. A release's notes are its commits since the previous tag, grouped by conventional
+type (`scripts/release-notes.mjs`, `just notes` to preview), so a `feat:`/`fix:` subject is written for the person reading them.
 
 ## The Android app
 
