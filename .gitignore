@@ -16,3 +16,6 @@ web/src/engine/pkg
 
 # The documentation site (mdBook): built into docs/book.
 /docs/book
+
+# macOS Finder
+.DS_Store
