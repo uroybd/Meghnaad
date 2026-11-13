@@ -37,15 +37,16 @@ one group is said (on **Keybindings**, and in the terminal app's Settings page) 
 also says in a line what each action does (`about`), which is what the lists of keys show.
 
 `/` puts the cursor in the prompt everywhere (`app.prompt`; the terminal app also keeps `:`). The web app has the
-terminal app's keys for what it can do, away from a text field and a dialog, and `?` lists them:
+terminal app's keys for what it can do, away from a text field and a dialog (Escape leaves a field), and `?` lists
+them:
 
 | Key | Does |
 | --- | --- |
 | `/` | Put the cursor in the prompt |
 | `?` | Every key and what it does |
 | `1` to `9` | Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings |
-| `a` | Add a task (on Tasks) |
-| `f` | The filter (on Tasks) |
+| `a` | Add a task, from any page (`app.add`) |
+| `f` | The page's filter (`app.filter`) |
 | `r` | Another report (on Tasks) |
 | `C` | The context of the page |
 | `v` | Review |

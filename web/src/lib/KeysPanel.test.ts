@@ -53,7 +53,7 @@ describe('the Keybindings tab', () => {
     const toggle = document.querySelector('.top input[type=checkbox]') as HTMLInputElement;
     toggle.click();
     flushSync();
-    expect(rows('Web')).toContain('tasks.add');
+    expect(rows('Web')).toContain('app.add');
     expect(section('Web').querySelector('tr.default kbd.muted')).not.toBeNull();
     expect(localStorage.getItem('tw-web-keys-defaults')).toBe('1');
   });
@@ -74,7 +74,7 @@ describe('the Keybindings tab', () => {
     flushSync();
     type(section('Web').querySelector('input[aria-label="Search actions"]') as HTMLInputElement, 'add');
     const result = [...section('Web').querySelectorAll('.result')].find((b) =>
-      b.textContent?.includes('tasks.add'),
+      b.textContent?.includes('app.add'),
     ) as HTMLButtonElement;
     expect(result.querySelector('kbd')?.textContent).toBe('a');
     result.click();
@@ -84,14 +84,14 @@ describe('the Keybindings tab', () => {
     type(section('Web').querySelector('input[aria-label="Key"]') as HTMLInputElement, 'Ctrl-N');
     button('Add key').click();
     flushSync();
-    expect(rows('Web')).toEqual(['tasks.add']);
+    expect(rows('Web')).toEqual(['app.add']);
     expect(section('Web').querySelector('kbd')?.textContent).toBe('Ctrl+Shift+N');
 
     button('Apply').click();
     await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
     expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({
       taskCommands: [],
-      web: { keys: { 'tasks.add': 'ctrl+shift+n' } },
+      web: { keys: { 'app.add': 'ctrl+shift+n' } },
     });
   });
 

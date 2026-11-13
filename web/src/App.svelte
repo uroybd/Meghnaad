@@ -205,6 +205,11 @@
     const t = e.target as HTMLElement | null;
     const typing =
       t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    // Escape leaves a field of the page (a dialog's own Escape closes the dialog), so its keys work again.
+    if (typing && e.key === 'Escape' && !e.defaultPrevented && !t.closest('dialog')) {
+      t.blur();
+      return;
+    }
     if (typing || e.defaultPrevented || e.repeat || document.querySelector('dialog[open]')) return;
     const action = actionOf(store.keymap, e, store.view === 'tasks' ? 'tasks' : 'app');
     if (action && action !== 'app.prompt' && runKey(action)) e.preventDefault();
@@ -251,11 +256,12 @@
       case 'app.sync':
         void refreshPage();
         return true;
-      case 'tasks.add':
+      case 'app.add':
         store.quickAdd();
         return true;
-      case 'tasks.filter':
-        void focusField('#fb-filter');
+      case 'app.filter':
+        // The page's own filter: the Tasks page's in its bar, the others' above their list.
+        void focusField(store.view === 'tasks' ? '#fb-filter' : 'main .filter input');
         return true;
       case 'tasks.report':
         void focusField('#fb-report');

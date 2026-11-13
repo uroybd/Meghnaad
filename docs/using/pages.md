@@ -32,8 +32,8 @@ the address.
 ## Filters and the prompt
 
 Summary, Calendar, Burndown, Projects and Tags have the same filter box as Tasks: Tab completes, filters become chips,
-and the filter helpers sit below. It is focused when the page opens (not on a phone, where that would raise the
-keyboard). Every page except the Console has the prompt in a bar at the bottom. The header also has the running
+and the filter helpers sit below. It does not take the keyboard when the page opens, so the page's keys work at once:
+`f` puts the cursor in it, and Escape takes it out again. Every page except the Console has the prompt in a bar at the bottom. The header also has the running
 **timer**, the **bell** (reminders) and **Settings**.
 
 The **last command** appears above the prompt, including what a click ran. Pick a report or sort a column and you can

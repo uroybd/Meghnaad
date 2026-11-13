@@ -116,8 +116,8 @@
       "page.boards": "7",
       "page.console": "8",
       "page.settings": "9",
-      "tasks.add": "a",
-      "tasks.filter": "f",
+      "app.add": "a",
+      "app.filter": "f",
       "tasks.report": "r"
     },
     "contexts": {
@@ -143,6 +143,8 @@
     "app.undo": "task undo, on the terminal",
     "app.reload": "read everything again",
     "app.help": "every key and what it does",
+    "app.add": "add a task, from any page",
+    "app.filter": "put the cursor in the page's filter",
     "app.quit": "quit",
     "page.tasks": "the Tasks page",
     "page.projects": "the Projects page",

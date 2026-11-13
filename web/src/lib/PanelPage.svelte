@@ -54,7 +54,7 @@
 <section class="bar" aria-label={label}>
   <div class="row top">
     {#if controls}{@render controls(entry)}{/if}
-    <FilterInput bind:value={filter} id="{which}-filter" {placeholder} autofocus />
+    <FilterInput bind:value={filter} id="{which}-filter" {placeholder} />
     <ContextPicker scope={which} />
   </div>
   <FilterChips bind:value={filter} />

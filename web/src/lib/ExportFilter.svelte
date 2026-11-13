@@ -67,7 +67,7 @@
 
 <section class="bar" aria-label={label}>
   <div class="top">
-    <div class="field"><FilterInput bind:value={filter} {id} {placeholder} autofocus /></div>
+    <div class="field"><FilterInput bind:value={filter} {id} {placeholder} /></div>
     <ContextPicker {scope} />
   </div>
   <FilterChips bind:value={filter} />

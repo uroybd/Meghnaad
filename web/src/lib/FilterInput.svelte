@@ -11,17 +11,10 @@
     value = $bindable(''),
     id,
     placeholder = 'Add filters: project:Home +work due.before:eow  (Tab completes)',
-    autofocus = false,
-  }: { value: string; id: string; placeholder?: string; autofocus?: boolean } = $props();
+  }: { value: string; id: string; placeholder?: string } = $props();
 
   const completer = new Completer();
   let el: HTMLInputElement;
-
-  // Focus the box when the page opens, so you can start typing. Not on a phone: that would raise the
-  // on-screen keyboard over the page you just opened.
-  $effect(() => {
-    if (autofocus && !window.matchMedia('(pointer: coarse)').matches) el?.focus();
-  });
 
   function onkeydown(e: KeyboardEvent) {
     const open = !!completer.menu;
@@ -39,7 +32,9 @@
     } else if (e.key === 'Enter' && open) {
       e.preventDefault();
       completer.close();
-    } else if (e.key === 'Escape') {
+    } else if (e.key === 'Escape' && open) {
+      // The menu first; a second Escape leaves the box (App), so the page's keys work again.
+      e.preventDefault();
       completer.close();
     }
   }

@@ -815,7 +815,7 @@ mod tests {
             web.contains(&("app.prompt", &["/".to_owned()][..])),
             "the shared default"
         );
-        assert!(web.contains(&("tasks.add", &["a".to_owned()][..])), "its own");
+        assert!(web.contains(&("app.add", &["a".to_owned()][..])), "its own");
         assert!(
             !web.iter().any(|(a, _)| *a == "tasks.done"),
             "only the web app's actions"

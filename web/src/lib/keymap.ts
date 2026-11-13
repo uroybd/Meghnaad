@@ -39,7 +39,8 @@ const NONE: Keymap = { keys: {}, contexts: {}, problems: [] };
 
 /** The default keys of every front end, as the page serves them. */
 export async function fetchKeymapDefaults(): Promise<Record<string, unknown>> {
-  const r = await fetch('/keymaps/default.json');
+  // With the app's version, so a browser or a cache that kept an older file does not leave new keys out.
+  const r = await fetch(`/keymaps/default.json?v=${encodeURIComponent(__APP_VERSION__)}`);
   if (!r.ok) throw new Error('The default keys could not be loaded.');
   return (await r.json()) as Record<string, unknown>;
 }

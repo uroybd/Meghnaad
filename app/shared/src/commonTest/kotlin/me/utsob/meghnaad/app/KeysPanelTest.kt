@@ -18,7 +18,7 @@ class KeysPanelTest {
         assertEquals(listOf("tasks.done"), bindingRows(b.sections["tui"].orEmpty(), false, "").map { it.action })
         assertEquals(emptyList(), bindingRows(b.sections["general"].orEmpty(), false, "").map { it.action })
         val web = bindingRows(b.sections["web"].orEmpty(), true, "")
-        assertTrue(web.any { it.action == "tasks.add" && it.keys == null && it.defaults == listOf("a") })
+        assertTrue(web.any { it.action == "app.add" && it.keys == null && it.defaults == listOf("a") })
     }
 
     @Test
@@ -31,10 +31,10 @@ class KeysPanelTest {
     @Test
     fun aKeyIsSetAndTakenOutAndTheRestStaysInItsOrder() {
         val s = settings("""{ "taskCommands": [], "appearance": {} }""")
-        val one = withBinding(s, "web", "tasks.add", listOf("ctrl+shift+n"))
+        val one = withBinding(s, "web", "app.add", listOf("ctrl+shift+n"))
         assertEquals(listOf("taskCommands", "appearance", "web"), one.keys.toList())
-        assertEquals(JsonPrimitive("ctrl+shift+n"), one["web"]!!.jsonObject["keys"]!!.jsonObject["tasks.add"])
-        assertEquals(s, withBinding(one, "web", "tasks.add", null))
+        assertEquals(JsonPrimitive("ctrl+shift+n"), one["web"]!!.jsonObject["keys"]!!.jsonObject["app.add"])
+        assertEquals(s, withBinding(one, "web", "app.add", null))
         assertEquals(JsonObject(emptyMap()), withBinding(JsonObject(emptyMap()), "mobile", "app.prompt", null))
     }
 
