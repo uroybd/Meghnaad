@@ -4,7 +4,7 @@
 
 use crate::ansi;
 use crate::boards;
-use crate::chain::{runs, Statement};
+use crate::chain::Statement;
 use crate::commands::{plan_chain, TaskCommand};
 use crate::completer::{Completer, Input};
 use crate::form::{Form, Kind};
@@ -29,6 +29,7 @@ use tc_core::sortspec::{self, Key};
 use tc_core::taskrc::Config;
 
 mod actions;
+mod job;
 mod keyhelp;
 mod menus;
 mod prompt;
@@ -197,6 +198,8 @@ pub enum Mode {
     Sort(SortEdit),
     /// Adding a key on the Keybindings section, in a box.
     KeyAdd(KeyAdd),
+    /// `task` asked something and waits for the answer, in a box.
+    Question(Box<job::Asking>),
 }
 
 /// A key being added: the section of the keys, the search for the action and the action chosen, then the key pressed.
@@ -444,18 +447,9 @@ fn scrolled(at: u16, step: Step) -> u16 {
     }
 }
 
-/// Taskwarrior's commands that ask before they act (or open an editor), so they run on the terminal.
-const ASKS: &[&str] = &[
-    "delete",
-    "edit",
-    "undo",
-    "purge",
-    "import",
-    "import-v2",
-    "config",
-    "news",
-    "execute",
-];
+/// Taskwarrior's commands that need the terminal itself (an editor, a pager, input read to its end, a shell command),
+/// so they run there. Its questions (`delete`, `undo`, `purge`, a bulk `modify`) are asked here, in a box.
+const TERMINAL: &[&str] = &["edit", "import", "import-v2", "news", "execute"];
 
 /// Taskwarrior's commands that change tasks, after which the app syncs when set to.
 const CHANGES: &[&str] = &[
@@ -855,25 +849,6 @@ impl App {
             .filter(|u| !u.is_empty())
     }
 
-    /// Run `task` with `args` here, show what it said, and read everything again.
-    fn quick(&mut self, args: &[String]) {
-        self.status = match self.task.capture(args) {
-            Ok(out) => {
-                let line = out.summary();
-                if out.ok || !line.is_empty() {
-                    line
-                } else {
-                    "task said no.".into()
-                }
-            }
-            Err(e) => e,
-        };
-        self.reload();
-        if self.changes_tasks(&args.join(" ")) {
-            self.after_change();
-        }
-    }
-
     /// Start `task sync` in the background (`S`, or `sync` typed).
     pub fn sync(&mut self) {
         self.syncer.start(&self.task);
@@ -1020,6 +995,10 @@ impl App {
             }
             Mode::Sort(edit) => self.in_sort(edit, key),
             Mode::KeyAdd(add) => self.in_key_add(add, key),
+            Mode::Question(asking) => {
+                self.in_question(asking, key);
+                Action::None
+            }
             Mode::Home { options, sel } => {
                 if let Some(step) = self.step_of(key) {
                     self.mode = Mode::Home {
@@ -1118,13 +1097,6 @@ fn this_month() -> i32 {
     use chrono::Datelike;
     let d = chrono::Local::now();
     d.year() * 12 + i32::try_from(d.month0()).unwrap_or(0)
-}
-
-fn plain(line: &str) -> Statement {
-    Statement {
-        line: line.to_owned(),
-        join: None,
-    }
 }
 
 #[cfg(test)]

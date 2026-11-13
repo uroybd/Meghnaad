@@ -18,6 +18,86 @@ fn app() -> App {
     a
 }
 
+/// The app over a stand-in for `task`: a script that asks as `delete` does (twice for a bulk `modify`), says what it
+/// was answered, and fails at anything else (the reads after a change).
+#[cfg(unix)]
+fn asking_app(name: &str) -> (App, std::path::PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let path = std::env::temp_dir().join(format!("meghnaad-tui-asks-{}-{name}", std::process::id()));
+    let script = r#"#!/bin/sh
+case "$*" in
+  *delete*) printf "Delete task 1 'x'? (yes/no) "; read a; echo "said $a" | tee -a "$0.heard" ;;
+  *modify*) for n in 1 2; do printf "Modify task $n? (yes/no/all/quit) "; read a; echo "said $a"; done ;;
+  *) exit 1 ;;
+esac
+"#;
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut a = app();
+    a.task = Task::new(&path);
+    (a, path)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_question_task_asks_is_answered_in_a_box() {
+    let (mut app, _) = asking_app("delete");
+    app.report.uuids = vec!["1499a653-f3c1-4764-b952-39d3a165870f".into()];
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "1 delete");
+    assert_eq!(
+        app.key(key(KeyCode::Enter)),
+        Action::None,
+        "no longer handed to the terminal"
+    );
+    let Mode::Question(asking) = &app.mode else {
+        panic!("expected the question");
+    };
+    assert_eq!(asking.question.text, "Delete task 1 'x'?");
+    assert_eq!(asking.question.choices, ["yes", "no"]);
+    app.key(key(KeyCode::Char('x')));
+    assert!(
+        matches!(app.mode, Mode::Question(_)),
+        "a key that answers nothing keeps asking"
+    );
+    app.key(key(KeyCode::Char('y')));
+    assert!(matches!(app.mode, Mode::Normal));
+    let log: Vec<String> = app.log.iter().map(ToString::to_string).collect();
+    assert!(log.contains(&"Delete task 1 'x'? (yes/no) yes".to_owned()), "{log:?}");
+    assert!(log.contains(&"said yes".to_owned()), "{log:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_bulk_change_asks_for_each_task_and_esc_quits() {
+    let (mut app, _) = asking_app("bulk");
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "1-2 modify +x");
+    app.key(key(KeyCode::Enter));
+    app.key(key(KeyCode::Char('a')));
+    let Mode::Question(asking) = &app.mode else {
+        panic!("expected the second question");
+    };
+    assert_eq!(asking.question.text, "said all\nModify task 2?");
+    app.key(key(KeyCode::Esc));
+    assert!(matches!(app.mode, Mode::Normal));
+    assert!(app.log.iter().any(|l| l.to_string() == "said quit"));
+}
+
+#[cfg(unix)]
+#[test]
+fn the_delete_key_asks_in_a_box() {
+    let (mut app, script) = asking_app("key");
+    app.report.uuids = vec!["1499a653-f3c1-4764-b952-39d3a165870f".into()];
+    app.key(key(KeyCode::Char('D')));
+    assert!(matches!(app.mode, Mode::Question(_)), "{:?}", app.mode);
+    app.key(key(KeyCode::Char('n')));
+    assert!(matches!(app.mode, Mode::Normal));
+    let heard = format!("{}.heard", script.display());
+    assert_eq!(std::fs::read_to_string(&heard).unwrap(), "said no\n");
+    std::fs::remove_file(heard).ok();
+}
+
 #[test]
 fn the_sort_box_adds_reverses_and_reorders_keys_and_writes_the_override() {
     let mut app = app();
@@ -88,17 +168,17 @@ fn e_on_the_settings_page_opens_settings_json_in_the_editor() {
 }
 
 #[test]
-fn a_line_with_a_command_that_asks_runs_on_the_terminal() {
+fn a_line_with_a_command_that_needs_the_terminal_runs_there() {
     let mut app = app();
-    app.settings = AppSettings::parse(r#"{ "taskCommands": [ { "name": "fail", "command": "delete" } ] }"#).unwrap();
+    app.settings = AppSettings::parse(r#"{ "taskCommands": [ { "name": "fix", "command": "edit" } ] }"#).unwrap();
     app.key(key(KeyCode::Char(':')));
-    typing(&mut app, "3 fail ; next");
+    typing(&mut app, "3 fix ; next");
     let Action::Run(steps) = app.key(key(KeyCode::Enter)) else {
         panic!("expected a run");
     };
     let lines: Vec<&str> = steps.iter().map(|s| s.line.as_str()).collect();
-    assert_eq!(lines, ["3 delete", "next"]);
-    for line in ["1 del", "+x edit", "!next"] {
+    assert_eq!(lines, ["3 edit", "next"]);
+    for line in ["+x edit", "!next", "!1 delete"] {
         app.key(key(KeyCode::Char(':')));
         typing(&mut app, line);
         assert!(matches!(app.key(key(KeyCode::Enter)), Action::Run(_)), "{line}");
@@ -438,10 +518,11 @@ fn c_lists_the_task_commands_and_runs_the_one_chosen_on_the_task() {
     assert!(matches!(app.mode, Mode::Commands { .. }));
     typing(&mut app, "del");
     assert_eq!(app.matching_commands("del").len(), 1);
-    let action = app.key(key(KeyCode::Enter));
-    let Action::Run(steps) = action else {
-        panic!("delete asks, so it runs on the terminal: {action:?} {}", app.status);
-    };
-    assert_eq!(steps[0].line, "1499a653-f3c1-4764-b952-39d3a165870f delete");
+    // It runs here: what it would ask comes up in a box (this stand-in `task` cannot be started).
+    assert_eq!(app.key(key(KeyCode::Enter)), Action::None);
+    assert!(app
+        .log
+        .iter()
+        .any(|l| l.to_string() == "$ task 1499a653-f3c1-4764-b952-39d3a165870f delete"));
     assert!(matches!(app.mode, Mode::Normal));
 }

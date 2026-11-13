@@ -118,7 +118,7 @@ On every page:
 | `T` | Stop the started task the timer shows |
 | `N` | Reminders on or off |
 | `S` | [Sync](#sync) now, in the background |
-| `u` | `task undo`, on the terminal so `task` can ask first |
+| `u` | `task undo`; its question opens in a box |
 | `R` | Read everything again |
 | `?` | Every key |
 | `q` | Quit |
@@ -134,7 +134,7 @@ On the Tasks page:
 | `A` | Annotate the selected task, in a box that shows it as it is |
 | `d` | Mark the selected task done |
 | `s` `x` | Start, stop the selected task |
-| `D` | Delete the selected task, on the terminal so `task` can ask first |
+| `D` | Delete the selected task; its question opens in a box |
 | `c` | Run one of your [task commands](#settings) on the selected task: a box lists them, typing narrows the list, `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
 | `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
@@ -148,9 +148,10 @@ when there is more than one. `export` leaves out the context, so the app puts th
 report itself, in parentheses, as `task <report>` does (and not for a report with `report.<name>.context=0`).
 
 The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
-(`Created task 3.`) in the status line. They add no overrides. If `task` or a hook asks a question there, it gets no
-answer, which is no, and nothing changes; use the command line with `!` when you want to answer. After every command
-the pages and what completion offers are read again.
+(`Created task 3.`) in the status line. They add no overrides. When `task` asks a question (`Delete task 3 'x'? (yes/no)`, or whether to
+change every recurrence of a recurring task), the question opens in a box: `y` or `n` answers it, and `a` or `q` where
+it offers `all` and `quit`; `Esc` is `quit` where it is offered, else `no`. After every command the pages and what
+completion offers are read again.
 
 ![a opens the add box over the report; it shows the task the line will make](screenshots/terminal-add.png)
 
@@ -184,11 +185,11 @@ from what `task` lists (`_show`, `_projects`, `_tags` and the pending tasks).
 `:` takes a whole command line without the `task` in front, as the web app's console does.
 
 - **Where it runs.** A line runs here, and what `task` prints goes to the Console page (opened for you when it is more
-  than a line; a single line goes to the status line). A line whose command asks before it acts or opens an editor
-  (`delete`, `edit`, `undo`, `purge`, `import`, `config`, and their abbreviations) hands the terminal to `task`
-  instead, so its output and questions are exactly the CLI's, and the app comes back when you press Enter. Put `!` in
-  front of any line to run it on the terminal, for example a bulk `modify` that asks for each task. A question asked of
-  a line run here is answered no, and the console says so.
+  than a line; a single line goes to the status line). Its questions (`delete`, `undo`, `purge`, a bulk `modify`
+  asking `(yes/no/all/quit)` for each task) open in the same box as the quick keys', and the console keeps each
+  question with the answer given, as the terminal would show it. A line whose command needs the terminal itself
+  (`edit`, `import`, `news`, `execute`, and their abbreviations) hands the terminal to `task` instead, and the app comes
+  back when you press Enter. Put `!` in front of any line to run it on the terminal.
 - **Chains.** `1 done && 2 start ; next` runs each statement as a shell would: `&&` after a success, `||` after a
   failure, `;` always. Quote an operator to keep it (`add 'a && b'`). A chain with one statement that needs the terminal
   runs there as a whole.

@@ -1,7 +1,7 @@
 //! What a key does on a page: the action it names, and the task actions.
 
 use super::{
-    colored, keys, moved, plain, scrolled, sortspec, this_month, Action, App, Focus, KeyEvent, Mode, Page, PromptKind,
+    colored, keys, moved, scrolled, sortspec, this_month, Action, App, Focus, KeyEvent, Mode, Page, PromptKind,
     SortEdit, Step,
 };
 
@@ -44,7 +44,7 @@ impl App {
             }
             // Taskwarrior's own sync, with its own settings.
             "app.sync" => self.sync(),
-            "app.undo" => return Action::Run(vec![plain("undo")]),
+            "app.undo" => self.quick(&["undo".into()]),
             "app.review" => self.start_review(0),
             "app.context" => {
                 let mut options = vec!["none".to_owned()];
@@ -200,8 +200,8 @@ impl App {
                     // `start` on an active task says so and changes nothing; `stop` is its own key.
                     "tasks.start" => self.quick(&[u, "start".into()]),
                     "tasks.stop" => self.quick(&[u, "stop".into()]),
-                    // `delete` asks first, so it runs on the terminal where it can.
-                    "tasks.delete" => return Action::Run(vec![plain(&format!("{u} delete"))]),
+                    // `delete` asks first; the question comes up in a box.
+                    "tasks.delete" => self.quick(&[u, "delete".into()]),
                     "tasks.info" => {
                         let mut args = colored(self.width, self.height);
                         args.extend([u, "info".into()]);

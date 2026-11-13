@@ -126,6 +126,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Form(form) => form_box(f, app, form, main),
         Mode::Sort(edit) => sort_box(f, app, edit, main),
         Mode::KeyAdd(add) => key_add_box(f, app, add, main),
+        Mode::Question(asking) => question_box(f, &asking.question, main),
         _ => {}
     }
     if !app.status.is_empty() {
@@ -152,6 +153,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             dock,
         ),
         Mode::Prompt(p) => prompt(f, p, main, dock),
+        Mode::Question(asking) => f.render_widget(hints(&question_keys(&asking.question.choices)), dock),
         Mode::Commands { .. } => {
             f.render_widget(hints("a-z narrow · ↑/↓ choose · ↵ run on the task · Esc cancel"), dock);
         }
@@ -967,6 +969,40 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
 }
 
 /// A short list over the page's top right to choose from (the context, the home page).
+/// What `task` asked, in a box across the page, the question at its foot: as much of what it printed before as fits.
+fn question_box(f: &mut Frame, q: &crate::task::Question, main: Rect) {
+    let w = main.width.min(84);
+    let inner = usize::from(w.saturating_sub(4)).max(1);
+    let lines = ansi::lines(&q.text);
+    let rows: usize = lines.iter().map(|l| l.width().max(1).div_ceil(inner)).sum();
+    let h = u16::try_from(rows + 2).unwrap_or(u16::MAX).min(main.height);
+    let area = Rect::new(
+        main.x + (main.width - w) / 2,
+        main.y + main.height.saturating_sub(h) / 3,
+        w,
+        h,
+    );
+    let hidden = u16::try_from(rows + 2).unwrap_or(u16::MAX).saturating_sub(h);
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((hidden, 0))
+            .block(boxed(" task asks ".into())),
+        area,
+    );
+}
+
+/// The keys that answer: the first letter of each choice, and Esc for the one that changes nothing more.
+fn question_keys(choices: &[String]) -> String {
+    let mut keys: Vec<String> = choices
+        .iter()
+        .filter_map(|c| c.chars().next().map(|k| format!("{k} {c}")))
+        .collect();
+    keys.push(format!("Esc {}", crate::task::Question::declined(choices)));
+    keys.join(" · ")
+}
+
 fn picker(f: &mut Frame, title: &str, options: &[String], sel: usize, main: Rect) {
     let h = u16::try_from(options.len() + 2).unwrap_or(3).min(main.height);
     let w = options.iter().map(|o| o.chars().count()).max().unwrap_or(0).max(9) + 6 + MARK.chars().count();

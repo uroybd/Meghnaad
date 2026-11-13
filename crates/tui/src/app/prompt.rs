@@ -1,8 +1,8 @@
 //! The prompt and the task form: completing, checking and running what is typed.
 
 use super::{
-    colored, edit_field, plan_chain, review, runs, settings, shown, split_words, Action, App, Completer, Form, Input,
-    KeyCode, KeyEvent, KeyModifiers, Line, Mode, Page, Phase, Prompt, PromptKind, TaskCommand, ASKS, CHANGES,
+    edit_field, plan_chain, review, settings, split_words, Action, App, Completer, Form, Input, KeyCode, KeyEvent,
+    KeyModifiers, Mode, Phase, Prompt, PromptKind, TaskCommand, CHANGES, TERMINAL,
 };
 
 impl App {
@@ -124,33 +124,7 @@ impl App {
             self.status = "Nothing changed.".into();
             return Action::None;
         }
-        let mut status = String::new();
-        for (i, words) in statements.iter().enumerate() {
-            let shown_line: Vec<String> = words.iter().map(|w| crate::form::quote(w)).collect();
-            self.log.push(Line::from(format!("$ task {}", shown_line.join(" "))));
-            let (ok, said) = match self.task.capture(words) {
-                Ok(out) => {
-                    self.log.extend(shown(&out));
-                    (out.ok, out.summary())
-                }
-                Err(e) => (false, e),
-            };
-            if !ok {
-                self.status = if said.is_empty() { "task said no.".into() } else { said };
-                if i == 0 {
-                    self.mode = Mode::Form(f);
-                    return Action::None;
-                }
-                status.clone_from(&self.status);
-                break;
-            }
-            if i == 0 {
-                status = said;
-            }
-        }
-        self.reload();
-        self.status = status;
-        self.after_change();
+        self.run_form(f, statements);
         Action::None
     }
 
@@ -257,8 +231,8 @@ impl App {
     }
 
     /// Whether `task` would ask before running `line` (or open an editor): its command is one of those.
-    pub(super) fn asks(&self, line: &str) -> bool {
-        self.command_of(line).is_some_and(|c| ASKS.contains(&c.as_str()))
+    pub(super) fn needs_terminal(&self, line: &str) -> bool {
+        self.command_of(line).is_some_and(|c| TERMINAL.contains(&c.as_str()))
     }
 
     /// Whether `line` changes tasks: its command is one of those that do.
@@ -309,48 +283,10 @@ impl App {
             self.sync();
             return Action::None;
         }
-        if own || steps.iter().any(|s| self.asks(&s.line)) {
+        if own || steps.iter().any(|s| self.needs_terminal(&s.line)) {
             return Action::Run(steps);
         }
-        let before = self.log.len();
-        let mut ok = true;
-        let mut changed = false;
-        for s in &steps {
-            if !runs(s.join, ok) {
-                continue;
-            }
-            changed |= self.changes_tasks(&s.line);
-            self.log.push(Line::from(format!("$ task {}", s.line)));
-            let mut args = colored(self.width, self.height);
-            args.extend(split_words(&s.line));
-            match self.task.capture(&args) {
-                Ok(out) => {
-                    ok = out.ok;
-                    let asked = out.stdout.contains("(yes/no") || out.stderr.contains("(yes/no");
-                    self.status = out.summary();
-                    self.log.extend(shown(&out));
-                    if asked {
-                        self.log.push(Line::from(
-                            "task asked a question here and was answered no. Put ! in front to answer it yourself.",
-                        ));
-                    }
-                }
-                Err(e) => {
-                    ok = false;
-                    self.log.push(Line::from(e.clone()));
-                    self.status = e;
-                }
-            }
-        }
-        self.log_back = 0;
-        // More than a line to read: show it.
-        if self.log.len() - before > 2 {
-            self.open(Page::Console);
-        }
-        self.reload();
-        if changed {
-            self.after_change();
-        }
+        self.run_console(steps);
         Action::None
     }
 }
