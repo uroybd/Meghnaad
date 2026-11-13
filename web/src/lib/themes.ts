@@ -8,10 +8,10 @@ export interface Theme {
   note?: string;
 }
 
-/** The app's own theme first (it is what applies when nothing is set), then Taskwarrior's. */
+/** Taskwarrior's defaults first (what applies when nothing is set, as in `task`), then the app's own, then the rest. */
 export const THEMES: Theme[] = [
-  { id: 'meghnaad', label: 'Meghnaad', note: 'soft colours for the web (the default)' },
-  { id: 'default', label: 'Taskwarrior default', note: "Taskwarrior's own default colours" },
+  { id: 'default', label: 'Taskwarrior default', note: "Taskwarrior's own default colours (the default)" },
+  { id: 'meghnaad', label: 'Meghnaad', note: 'soft colours for the web' },
   { id: 'dark-16', label: 'Dark, 16 colours' },
   { id: 'dark-256', label: 'Dark, 256 colours' },
   { id: 'dark-blue-256', label: 'Dark blue' },
@@ -43,13 +43,13 @@ export function themeLines(file: string): string[] {
 }
 
 /**
- * `text` with its colour lines replaced by the theme's. The Meghnaad theme is the engine's default, so choosing
- * it just clears the colour lines. The `color=on|off` line and everything else are kept.
+ * `text` with its colour lines replaced by the theme's. Taskwarrior's defaults are what applies when no colour is set,
+ * so choosing them just clears the colour lines. The `color=on|off` line and everything else are kept.
  */
 export function applyTheme(text: string, id: string, file: string): string {
   const kept = text.split('\n').filter((l) => !colourLine(l));
   while (kept.length && kept[kept.length - 1].trim() === '') kept.pop();
-  if (id === 'meghnaad') return kept.join('\n') + (kept.length ? '\n' : '');
+  if (id === 'default') return kept.join('\n') + (kept.length ? '\n' : '');
   return [...kept, ...(kept.length ? [''] : []), `# theme: ${id}`, ...themeLines(file)].join('\n') + '\n';
 }
 

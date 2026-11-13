@@ -192,7 +192,7 @@ class TaskrcState(private val store: Store) {
     fun pickTheme(id: String) {
         error = null
         try {
-            text = applyTheme(text, id, if (id == "meghnaad") "" else loadTheme(id))
+            text = applyTheme(text, id, if (id == "default") "" else loadTheme(id))
             result = null
         } catch (e: Exception) {
             error = e.message ?: e.toString()

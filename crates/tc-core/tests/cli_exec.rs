@@ -4632,10 +4632,16 @@ mod report_defaults {
             .map(|s| s.resolved())
     }
 
+    /// Taskwarrior's defaults, without `color.alternate`'s shading of every other row (which depends on the order).
+    fn unshaded() -> Config {
+        parse("color.alternate=\n").config
+    }
+
     #[tokio::test]
-    async fn rows_come_back_coloured_by_the_apps_default_theme() {
+    async fn rows_come_back_coloured_by_taskwarriors_defaults() {
+        // As the real `task` 3.5.0 draws them with no colour settings at all.
         let mut r = replica();
-        let cfg = Config::default();
+        let cfg = unshaded();
         run(&mut r, &cfg, "add plain").await;
         run(&mut r, &cfg, "add working").await;
         run(&mut r, &cfg, "description:working start").await;
@@ -4643,70 +4649,67 @@ mod report_defaults {
         run(&mut r, &cfg, "add hidden due:2020-01-01 +nocolor").await;
         let list = rows(run(&mut r, &cfg, "all").await.0);
         assert_eq!(style_of(&list, "plain"), None, "no rule applies");
-        // active: bold on sage (basic green background)
+        // active: rgb555 on rgb410
         let a = style_of(&list, "working").expect("active is coloured");
-        assert!(a.bold && a.fg.is_none() && a.bg == Some(2), "{a:?}");
-        // overdue: bold coral (red)
-        let o = style_of(&list, "late").expect("overdue is coloured");
-        assert!(o.bold && o.fg == Some(1), "{o:?}");
+        assert_eq!((a.fg, a.bg, a.bold), (Some(231), Some(166), false), "{a:?}");
+        // overdue: color9
+        assert_eq!(style_of(&list, "late").and_then(|s| s.fg), Some(9));
         // `nocolor` beats everything
         assert_eq!(style_of(&list, "hidden"), None);
     }
 
     #[tokio::test]
-    async fn the_default_theme_does_not_blend_so_the_first_rule_that_applies_decides() {
+    async fn rules_blend_as_in_taskwarrior_unless_merge_is_off() {
         let mut r = replica();
-        let cfg = Config::default();
-        // Active and overdue at once: active comes first in the precedence order.
+        let cfg = unshaded();
+        // Active and overdue at once: active comes first in the precedence order, and sets both colours.
         run(&mut r, &cfg, "add both due:2020-01-01").await;
         run(&mut r, &cfg, "description:both start").await;
-        let list = rows(run(&mut r, &cfg, "all").await.0);
-        let s = style_of(&list, "both").expect("coloured");
-        assert!(
-            s.bold && s.fg.is_none() && s.bg == Some(2),
-            "just the active rule: {s:?}"
-        );
-        // Taskwarrior's own way is a setting away: the two rules lay one on the other.
-        let blend = parse("rule.color.merge=yes\n").config;
-        let list = rows(run(&mut r, &blend, "all").await.0);
-        let s = style_of(&list, "both").expect("coloured");
-        assert!(s.bold && s.fg == Some(1) && s.bg == Some(2), "both rules: {s:?}");
+        for merge in ["yes", "no"] {
+            let cfg = parse(&format!("color.alternate=\nrule.color.merge={merge}\n")).config;
+            let list = rows(run(&mut r, &cfg, "all").await.0);
+            let s = style_of(&list, "both").expect("coloured");
+            assert_eq!((s.fg, s.bg), (Some(231), Some(166)), "merge={merge}: {s:?}");
+        }
+        // With merge off, the first rule decides: a bold one under it adds nothing.
+        let cfg = parse("color.alternate=\nrule.color.merge=no\ncolor.overdue=bold red\n").config;
+        let s = style_of(&rows(run(&mut r, &cfg, "all").await.0), "both").expect("coloured");
+        assert!(!s.bold, "{s:?}");
+        let cfg = parse("color.alternate=\ncolor.overdue=bold red\n").config;
+        let s = style_of(&rows(run(&mut r, &cfg, "all").await.0), "both").expect("coloured");
+        assert!(s.bold, "blended: {s:?}");
     }
 
     #[tokio::test]
-    async fn due_soon_is_plain_white_and_only_due_today_stands_out_and_priority_colours_the_rest() {
+    async fn due_soon_claims_the_row_before_priority_as_in_taskwarrior() {
         let mut r = replica();
-        let cfg = Config::default();
+        let cfg = unshaded();
         run(&mut r, &cfg, "add soon due:3d priority:H").await;
+        run(&mut r, &cfg, "add later due:3d").await;
         run(&mut r, &cfg, "add today due:eod").await;
         run(&mut r, &cfg, "add urgent priority:H").await;
         run(&mut r, &cfg, "add repeats due:40d recur:monthly priority:M").await;
         let list = rows(run(&mut r, &cfg, "all").await.0);
-        // Due within the week: white (basic colour 7), not bold, whatever its priority is.
-        let s = style_of(&list, "soon").expect("due soon is coloured");
-        assert_eq!((s.fg, s.bold), (Some(7), false), "{s:?}");
-        // Due today: the one that stands out.
-        let t = style_of(&list, "today").expect("due today is coloured");
-        assert_eq!((t.fg, t.bold), (Some(3), true), "{t:?}");
-        // A priority colours a row no other rule claims (`uda.`, last in the order, as in Taskwarrior).
-        let u = style_of(&list, "urgent").expect("priority H is coloured");
-        assert_eq!((u.fg, u.bold), (Some(1), true), "{u:?}");
-        // Recurring still has its own colour when nothing about its date claims the row.
-        assert_eq!(style_of(&list, "repeats").map(|s| s.fg), Some(Some(5)));
-        // The taskrc's own priority colour, as the real `task` draws it.
-        let own = parse("color.uda.priority.H=bold blue\n").config;
+        let fg = |d: &str| style_of(&list, d).and_then(|s| s.fg);
+        // `due` (color1) comes before `uda.` in the order, so a task due this week is red whatever its priority.
+        assert_eq!(fg("soon"), Some(1));
+        assert_eq!(fg("later"), Some(1));
+        assert_eq!(fg("today"), Some(160), "due.today: rgb400");
+        assert_eq!(fg("urgent"), Some(255), "uda.priority.H: color255");
+        assert_eq!(fg("repeats"), Some(25), "recurring: rgb013");
+        // A taskrc that leaves `color.due` empty lets the priority through, as the real `task` does.
+        let own = parse("color.alternate=\ncolor.due=\ncolor.uda.priority.H=bold blue\n").config;
         let list = rows(run(&mut r, &own, "all").await.0);
-        let u = style_of(&list, "urgent").expect("the taskrc's priority colour");
-        assert_eq!((u.fg, u.bold), (Some(4), true), "{u:?}");
+        let s = style_of(&list, "soon").expect("its priority colours it");
+        assert_eq!((s.fg, s.bold), (Some(4), true), "{s:?}");
+        assert_eq!(style_of(&list, "later"), None);
         // And the setting the page reads for the Priority cell is there too.
         let colours = tc_core::color::palette_for_page(&cfg);
-        for (v, fg) in [("H", 1), ("M", 3), ("L", 2)] {
-            assert_eq!(colours[&format!("uda.priority.{v}")].fg, Some(fg), "{v}");
-        }
+        assert_eq!(colours["uda.priority.H"].fg, Some(255));
     }
 
     #[tokio::test]
-    async fn the_taskrc_overrides_the_theme_and_color_off_turns_it_all_off() {
+    async fn the_taskrc_overrides_the_defaults_and_color_off_turns_it_all_off() {
         let mut r = replica();
         let cfg = parse("color.active=bold red\ncolor.overdue=\n").config;
         run(&mut r, &cfg, "add working").await;
@@ -4778,7 +4781,7 @@ mod report_defaults {
         let CliResult::Table(t) = res else { panic!("{res:?}") };
         assert_eq!(t.rows[0], ["color.active", "bold red"]);
         assert!(t.highlight.contains(&0));
-        assert_eq!(t.rows[1], ["  Default value", "bold on sage"]);
+        assert_eq!(t.rows[1], ["  Default value", "rgb555 on rgb410"]);
     }
 
     #[tokio::test]
@@ -4813,9 +4816,9 @@ mod report_defaults {
             legend.contains("color.active") && legend.contains("bold red"),
             "{legend}"
         );
-        // The names are Taskwarrior's, the colours the ones in force (the theme's, with the taskrc's on top).
+        // The colours in force: Taskwarrior's defaults, with the taskrc's on top.
         assert!(
-            legend.contains("color.overdue") && legend.contains("bold coral"),
+            legend.contains("color.overdue") && legend.contains("color9"),
             "{legend}"
         );
         let off = parse("color=off\n").config;

@@ -38,8 +38,8 @@ color.tag.next=rgb440
     }
 
     @Test
-    fun theAppsOwnThemeJustClearsTheColourLines() {
-        assertEquals("bulk=5\ncolor=off\nuda.size.type=string\n", applyTheme(rc, "meghnaad", ""))
+    fun taskwarriorsDefaultsJustClearTheColourLines() {
+        assertEquals("bulk=5\ncolor=off\nuda.size.type=string\n", applyTheme(rc, "default", ""))
     }
 
     @Test
@@ -84,8 +84,8 @@ color.tag.next=rgb440
     }
 
     @Test
-    fun theListHasTheAppThemeFirstAndEachThemeOnce() {
-        assertEquals("meghnaad", THEMES[0].id)
+    fun theListHasTaskwarriorsDefaultsFirstAndEachThemeOnce() {
+        assertEquals("default", THEMES[0].id)
         assertEquals(THEMES.size, THEMES.map { it.id }.toSet().size)
         assertEquals(17, THEMES.size)
     }

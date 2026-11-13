@@ -191,7 +191,7 @@
     if (!id) return;
     error = null;
     try {
-      setText(applyTheme(text, id, id === 'meghnaad' ? '' : await fetchTheme(id)));
+      setText(applyTheme(text, id, id === 'default' ? '' : await fetchTheme(id)));
       result = null;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

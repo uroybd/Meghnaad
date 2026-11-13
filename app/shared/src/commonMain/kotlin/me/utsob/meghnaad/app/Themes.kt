@@ -6,10 +6,10 @@ package me.utsob.meghnaad.app
 
 class Theme(val id: String, val label: String, val note: String? = null)
 
-/** The app's own theme first (it is what applies when nothing is set), then Taskwarrior's. */
+/** Taskwarrior's defaults first (what applies when nothing is set, as in `task`), then the app's own, then the rest. */
 val THEMES = listOf(
-    Theme("meghnaad", "Meghnaad", "soft colours (the default)"),
-    Theme("default", "Taskwarrior default", "Taskwarrior's own default colours"),
+    Theme("default", "Taskwarrior default", "Taskwarrior's own default colours (the default)"),
+    Theme("meghnaad", "Meghnaad", "soft colours"),
     Theme("dark-16", "Dark, 16 colours"),
     Theme("dark-256", "Dark, 256 colours"),
     Theme("dark-blue-256", "Dark blue"),
@@ -40,13 +40,13 @@ private fun dropTrailingBlanks(lines: MutableList<String>) {
 }
 
 /**
- * [text] with its colour lines replaced by the theme's. The Meghnaad theme is the engine's default, so choosing it just clears
- * the colour lines. The `color=on|off` line and everything else are kept.
+ * [text] with its colour lines replaced by the theme's. Taskwarrior's defaults are what applies when no colour is set, so
+ * choosing them just clears the colour lines. The `color=on|off` line and everything else are kept.
  */
 fun applyTheme(text: String, id: String, file: String): String {
     val kept = text.split('\n').filter { !colourLine(it) }.toMutableList()
     dropTrailingBlanks(kept)
-    if (id == "meghnaad") return kept.joinToString("\n") + if (kept.isNotEmpty()) "\n" else ""
+    if (id == "default") return kept.joinToString("\n") + if (kept.isNotEmpty()) "\n" else ""
     return (kept + (if (kept.isNotEmpty()) listOf("") else emptyList()) + "# theme: $id" + themeLines(file)).joinToString("\n") + "\n"
 }
 

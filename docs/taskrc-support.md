@@ -195,9 +195,9 @@ for bright black. `bold coral on sky` is `bold red on blue`.
 | `fontunderline` | N/A | The table header underline of a terminal |
 | Themes | Done | `web/public/themes/` has the 16 standard Taskwarrior themes and the app's own. The taskrc tab's **Colour theme** picker puts a theme's lines into the box, and a pasted `include dark-256.theme` is expanded to them. The files are static assets, not part of the Worker |
 
-Where the app differs from the desktop: with no `color.*` lines the rows follow **Meghnaad's own theme**
-(`meghnaad.theme`: soft colours, no zebra), not Taskwarrior's defaults, which are the `default` theme in the picker. And a
-`#` starts a comment anywhere in a taskrc line (`bulk=5 # five`), as in Taskwarrior, which several themes rely on.
+A colour the taskrc doesn't set has Taskwarrior's default, as on the desktop; **Meghnaad's own theme** (`meghnaad.theme`:
+soft colours, no zebra) is a choice in the picker. A `#` starts a comment anywhere in a taskrc line (`bulk=5 # five`), as
+in Taskwarrior, which several themes rely on.
 
 ## Urgency
 

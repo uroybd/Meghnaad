@@ -689,21 +689,6 @@ pub const COLOR_DEFAULTS: &[(&str, &str)] = &[
     ("rule.precedence.color", "deleted,completed,active,keyword.,tag.,project.,overdue,scheduled,due.today,due,blocked,blocking,recurring,tagged,uda."),
 ];
 
-/// The app's own default colours: `web/public/themes/meghnaad.theme`, the same file the theme picker offers,
-/// read as `name=value` lines. These apply where the taskrc says nothing; Taskwarrior's own defaults are
-/// [`COLOR_DEFAULTS`] and the `taskwarrior` theme.
-pub fn app_colors() -> &'static [(&'static str, &'static str)] {
-    static COLORS: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
-    COLORS.get_or_init(|| {
-        include_str!("../../../web/public/themes/meghnaad.theme")
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty() && !l.starts_with('#'))
-            .filter_map(|l| l.split_once('='))
-            .collect()
-    })
-}
-
 /// Taskwarrior's default `report.timesheet.filter`.
 pub const TIMESHEET_FILTER: &str =
     "(+PENDING -WAITING start.after:now-4wks) or (+COMPLETED -WAITING end.after:now-4wks)";

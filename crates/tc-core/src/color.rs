@@ -208,10 +208,10 @@ impl Style {
     }
 }
 
-/// Every `color.*` setting in force: the app's defaults, overlaid with the taskrc's (an empty value is a
+/// Every `color.*` setting in force: Taskwarrior's defaults, overlaid with the taskrc's (an empty value is a
 /// colour switched off).
 pub fn effective(cfg: &crate::taskrc::Config) -> std::collections::BTreeMap<String, String> {
-    effective_with(cfg, crate::taskrc::app_colors())
+    effective_with(cfg, crate::taskrc::COLOR_DEFAULTS)
 }
 
 fn effective_with(
@@ -337,12 +337,13 @@ fn auto_complete(partial: &str, names: &[&String]) -> Vec<String> {
 }
 
 impl Rules {
-    /// The effective `color.*` settings (defaults, then the taskrc, then `rc.`), or `None` when `color` is off.
+    /// The effective `color.*` settings (Taskwarrior's defaults, then the taskrc, then `rc.`), or `None` when `color`
+    /// is off.
     pub fn from_config(cfg: &crate::taskrc::Config) -> Option<Rules> {
-        Rules::from_config_with(cfg, crate::taskrc::app_colors())
+        Rules::from_config_with(cfg, crate::taskrc::COLOR_DEFAULTS)
     }
 
-    /// The same with other defaults for the colours the taskrc leaves alone (Taskwarrior's own, in tests).
+    /// The same with other defaults for the colours the taskrc leaves alone.
     pub fn from_config_with(cfg: &crate::taskrc::Config, defaults: &[(&str, &str)]) -> Option<Rules> {
         if !cfg.color() {
             return None;
@@ -982,8 +983,13 @@ mod tests {
 
     #[test]
     fn the_apps_default_theme_covers_every_colour_and_every_value_is_valid() {
-        let app: BTreeMap<&str, &str> = crate::taskrc::app_colors().iter().copied().collect();
-        // It sets every colour Taskwarrior has (so `show` and the picker have the whole list).
+        let app: BTreeMap<&str, &str> = include_str!("../../../web/public/themes/meghnaad.theme")
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .filter_map(|l| l.split_once('='))
+            .collect();
+        // It sets every colour Taskwarrior has, so choosing it replaces every one of Taskwarrior's defaults.
         for (k, _) in crate::taskrc::COLOR_DEFAULTS {
             assert!(app.contains_key(k), "the theme does not mention {k}");
         }

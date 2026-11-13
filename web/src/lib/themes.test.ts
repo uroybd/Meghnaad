@@ -32,8 +32,8 @@ describe('applyTheme', () => {
     expect(out).toContain('# theme: dark-256\ncolor.active=rgb555 on rgb410');
   });
 
-  it("choosing the app's own theme just clears the colour lines (it is what applies when none are set)", () => {
-    const out = applyTheme(rc, 'meghnaad', '');
+  it("choosing Taskwarrior's defaults just clears the colour lines (they are what applies when none are set)", () => {
+    const out = applyTheme(rc, 'default', '');
     expect(out).toBe('bulk=5\ncolor=off\nuda.size.type=string\n');
   });
 
@@ -80,8 +80,8 @@ describe('include', () => {
 });
 
 describe('the list', () => {
-  it('has the app theme first and each theme once', () => {
-    expect(THEMES[0].id).toBe('meghnaad');
+  it("has Taskwarrior's defaults first and each theme once", () => {
+    expect(THEMES[0].id).toBe('default');
     expect(new Set(THEMES.map((t) => t.id)).size).toBe(THEMES.length);
     expect(THEMES.length).toBe(17);
   });

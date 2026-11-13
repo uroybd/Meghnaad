@@ -218,18 +218,19 @@ command-line `rc.` override.
 ## Colours
 
 Rows are coloured by Taskwarrior's colour rules, and the same colours reach the calendar, burndown, summary bar and
-history graph. With nothing set you get **Meghnaad's own theme**:
+history graph. They are resolved as the real `task` resolves them: a setting your taskrc leaves out has Taskwarrior's
+default (the `default` theme in the picker), so a row looks as it would in `task` with the same taskrc.
 
-- the active task on soft green, overdue in coral, due **today** in bold amber (due later this week is plain white, so
-  today's tasks stand out),
-- blocked tasks dimmed, recurring ones in orchid, `+next` marked, and no zebra,
-- **priority** (`color.uda.priority.H`, `.M`, `.L`: coral, amber, green) as Taskwarrior has it: priority is a UDA, so
-  `uda.`, last in `rule.precedence.color`, colours a row no other rule colours. The Priority cell always shows its
+- The rules in `rule.precedence.color` blend (`rule.color.merge=yes`, the default), the first in the list on top; with
+  `rule.color.merge=no` the first rule that applies decides alone. A rule set to nothing (`color.due=`) is off, and
+  the rules after it show through.
+- **Priority** is a UDA, as in Taskwarrior: `color.uda.priority.H` colours a row through `uda.`, last in the order, so
+  `due` (a task due within `rc.due` days) or `project.` claims the row first. The Priority cell always shows its
   colour too, whatever colour the rest of the row has; that one field is the app's addition, from the same settings.
+- **Meghnaad's own theme** (soft colours, due today in bold amber, nothing for due later this week, no zebra) is in
+  the picker below; choosing it writes its lines into your taskrc.
 
-Colours don't blend (`rule.color.merge=no`): a row takes the colour of the first rule in `rule.precedence.color` that
-applies, so a keyword or tag rule you add replaces that colour instead of mixing. Put `rule.color.merge=yes` in your
-taskrc to blend as Taskwarrior does. Your `color.*` lines work as on the desktop:
+Your `color.*` lines work as on the desktop:
 
 ```
 color.active=bold on sage                  # a rule: `sage` is a softer name for green
