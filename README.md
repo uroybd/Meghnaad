@@ -410,8 +410,8 @@ docs/             the guides above
 ```
 
 The common tasks are also recipes for [`just`](https://just.systems) (`just` lists them): `just check` runs every check
-CI runs, `just release` bumps, tags and pushes a version, `just deploy` starts the Deploy workflow and `just ship` does
-both.
+CI runs, `just tidy` lints and tests without fixing anything, `just release` bumps, tags and pushes a version (`just
+release patch tidy` lints and tests first), `just deploy` starts the Deploy workflow and `just ship` does both.
 
 ```bash
 npm run dev                   # the dev server: engine build and rebuild, Worker, app with hot reload

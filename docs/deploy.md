@@ -170,13 +170,14 @@ takes it as its version name (and a code that rises with it), and the prebuilt p
 [`just`](https://just.systems) and everything committed on `main`:
 
 ```bash
-just release          # check, bump the patch version, commit "chore: bump to <version>", tag v<version>, push both
+just release          # bump the patch version, commit "chore: bump to <version>", tag v<version>, push both
 just release minor    # or major, or an exact version: just release 0.7.0
-just ship             # the same, then start the Deploy workflow
+just release patch tidy   # lint and test first (`just tidy`), and release only if they pass
+just ship             # the same, then start the Deploy workflow (`just ship minor tidy` and so on)
 ```
 
-`release` refuses to run off `main`, with changes not committed, or behind `origin/main`, and runs `just check` (format,
-lint, tests, type checks) first; a check that fixes files stops it, so the fixes can be committed. By hand it is the
+`release` refuses to run off `main`, with changes not committed, or behind `origin/main`. It runs no checks unless you
+pass `tidy` after the level; run `just check` (format, lint, tests, type checks) before committing. By hand it is the
 same steps: `npm version <x> --no-git-tag-version` (which writes the version into `Cargo.toml` and `Cargo.lock` too),
 commit, then `git tag v<version> && git push origin main v<version>`.
 

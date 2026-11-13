@@ -179,8 +179,9 @@ versionCode (`scripts/version.mjs`), the prebuilt package, and the crates (`[wor
 `meghnaad-tui --version` and `meghnaad-hook --version` print). Cargo cannot read `package.json`, so that one copy is
 written for you: `just bump [patch|minor|major|1.2.3]` (`npm version <x> --no-git-tag-version`, whose `version`
 script runs `node scripts/version.mjs sync` for Cargo.toml and Cargo.lock); a script test and the Release workflow
-refuse a mismatch. `just release [level]` does the whole release: checks, bumps, commits `chore: bump to <version>`,
-tags `v<version>` and pushes both (the Release workflow refuses a tag that does not match); `just ship` deploys after.
+refuse a mismatch. `just release [level] [tidy]` does the whole release: bumps, commits `chore: bump to <version>`,
+tags `v<version>` and pushes both (the Release workflow refuses a tag that does not match); with `tidy` it runs `just tidy`
+(lint and test) first. `just ship` takes the same arguments and deploys after.
 Don't hard-code a version anywhere else.
 
 ## The Android app

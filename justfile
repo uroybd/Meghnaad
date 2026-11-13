@@ -56,6 +56,9 @@ test-android:
     CARGO_PROFILE_ANDROID_STRIP=none cargo build --profile android -p tc-android
     cd app && ./gradlew :shared:testDebugUnitTest :androidApp:assembleDebug
 
+# Lint and test, fixing nothing: what a release can run first (`just ship patch tidy`)
+tidy: lint test
+
 # Everything before a change is done: format, lint, test, typecheck
 check: format lint test typecheck
 
@@ -70,24 +73,29 @@ bump level="patch":
     npm version {{ level }} --no-git-tag-version --silent >/dev/null
     @echo "Version $(just version)"
 
-# Check, bump, commit, tag v<version> and push main and the tag (the Release workflow builds it)
-release level="patch": _clean
-    just check
-    @just _clean
+# Bump, commit, tag v<version> and push main and the tag; `just release minor tidy` lints and tests first
+release level="patch" tidy="": _clean
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{ tidy }}" in
+      "") ;;
+      tidy) just tidy ;;
+      *) echo "The second argument is \`tidy\` or nothing, not \`{{ tidy }}\`." >&2; exit 1 ;;
+    esac
     just bump {{ level }}
     git add package.json package-lock.json Cargo.toml Cargo.lock
     git commit -q -m "chore: bump to $(just version)"
     git tag "v$(just version)"
     git push -q origin main "v$(just version)"
-    @echo "Released v$(just version)"
+    echo "Released v$(just version)"
 
 # Deploy main with the Deploy workflow (it does not wait for CI)
 deploy:
     gh workflow run deploy.yml --ref main
     @echo "Deploy started: gh run list --workflow deploy.yml"
 
-# Release, then deploy
-ship level="patch": (release level) deploy
+# Release, then deploy. `just ship patch tidy` lints and tests first
+ship level="patch" tidy="": (release level tidy) deploy
 
 # On main, nothing uncommitted, and nothing on origin/main that isn't here
 [private]
