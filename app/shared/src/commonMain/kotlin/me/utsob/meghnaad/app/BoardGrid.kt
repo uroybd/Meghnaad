@@ -167,8 +167,13 @@ private fun BoardCard(store: Store, section: Section, data: SectionData?, width:
                     is SectionData.Chart -> {
                         val grids = data.grids?.let { orderGrids(it, section, data.limit) }
                         val shown = grids?.firstOrNull() ?: orderChart(data.chart, section, data.limit)
-                        // A chart of the values of a UDA is in the colours the taskrc gives them.
-                        val own = valueColors(section.by?.field, shown.labels, store.config?.colors ?: emptyMap(), extras.dark, colors.background)
+                        // Groups the board writes are in their own colours; the values of a UDA in the ones the taskrc gives them.
+                        val written = section.by?.groups
+                        val own = if (!written.isNullOrEmpty()) {
+                            shown.labels.map { l -> chartColor(written.firstOrNull { it.label.trim() == l.key }?.color, extras.dark) }
+                        } else {
+                            valueColors(section.by?.field, shown.labels, store.config?.colors ?: emptyMap(), extras.dark, colors.background)
+                        }
                         BoardChartView(shown, section, extras.dark, height = height - 34.dp - 8.dp, labelColors = own, grids = grids)
                     }
                     is SectionData.Table -> {

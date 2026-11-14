@@ -6,7 +6,7 @@
 use crate::task::Task;
 use serde_json::Value;
 use std::collections::HashMap;
-use tc_core::board::aggregate::{self, Answer, By, Chart, Ctx, Dataset, Query, SeriesInput};
+use tc_core::board::aggregate::{self, Answer, By, Chart, Ctx, Dataset, Query, SeriesInput, WrittenGroup};
 use tc_core::board::controls::{self, Control};
 use tc_core::board::heat::{self, Grid};
 use tc_core::board::ranges::{self, Range};
@@ -38,16 +38,21 @@ pub fn read(boards: &Value) -> (Vec<Board>, Vec<String>) {
 
 /// The filter a section (or one of its series) runs: the board's (unless the section ignores it), its own, the series',
 /// each in parentheses so an `or` cannot leak.
-pub fn effective_filter(board: &Board, section: &Section, series: Option<&Series>) -> String {
-    let board_filter = if section.ignore_board_filter == Some(true) {
-        None
-    } else {
-        board.filter.as_deref()
-    };
+pub fn effective_filter(
+    board: &Board,
+    section: &Section,
+    series: Option<&Series>,
+    group: Option<&WrittenGroup>,
+) -> String {
+    let no_board = section.ignore_board_filter == Some(true)
+        || series.is_some_and(|s| s.ignore_board_filter)
+        || group.is_some_and(|g| g.ignore_board_filter);
+    let no_section = series.is_some_and(|s| s.ignore_section_filter) || group.is_some_and(|g| g.ignore_section_filter);
     [
-        board_filter,
-        section.filter.as_deref(),
+        (!no_board).then_some(board.filter.as_deref()).flatten(),
+        (!no_section).then_some(section.filter.as_deref()).flatten(),
         series.and_then(|s| s.filter.as_deref()),
+        group.and_then(|g| g.filter.as_deref()),
     ]
     .into_iter()
     .flatten()
@@ -67,6 +72,8 @@ pub fn series_of(section: &Section) -> Vec<Series> {
             measure: Some(section.measure.clone()),
             color: None,
             span: None,
+            ignore_section_filter: false,
+            ignore_board_filter: false,
         }]
     } else {
         section.series.clone()
@@ -118,7 +125,9 @@ fn shown(section: &Section, key: &str, label: &str) -> bool {
 /// many as it keeps (for dates in time order, the latest): `orderChart` of the web app.
 pub fn order(chart: &Chart, section: &Section, keep: Option<usize>) -> Vec<usize> {
     let time = section.by.as_ref().is_some_and(|b| b.time.is_some());
-    let sort = section.sort.clone().or_else(|| (!time).then(|| "value-".to_owned()));
+    // Values come largest first; dates in time order, and groups the board writes in theirs.
+    let field = section.by.as_ref().is_some_and(|b| b.field.is_some());
+    let sort = section.sort.clone().or_else(|| field.then(|| "value-".to_owned()));
     let total = |i: usize| -> f64 {
         chart
             .datasets
@@ -237,11 +246,13 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
     let date_ranges = controls::ranges(&board.controls);
     for s in &board.sections {
         let data = (|| -> Result<Data, String> {
-            let filter_of = |x: Option<&Series>| substitute(&effective_filter(board, s, x), &board.controls, ctx);
+            let filter_of = |x: Option<&Series>, g: Option<&WrittenGroup>| {
+                substitute(&effective_filter(board, s, x, g), &board.controls, ctx)
+            };
             match s.kind {
                 Kind::Table => {
                     let mut args = crate::app::colored(width(s), 200);
-                    args.extend(split_words(&filter_of(None)?));
+                    args.extend(split_words(&filter_of(None, None)?));
                     args.push(s.report.clone().unwrap_or_else(|| "next".into()));
                     let out = task.capture(&args)?;
                     if out.ok {
@@ -251,7 +262,7 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
                     }
                 }
                 Kind::Number => {
-                    let text = tasks_of(&filter_of(None)?)?;
+                    let text = tasks_of(&filter_of(None, None)?)?;
                     let query = Query {
                         measure: Some(s.measure.clone()),
                         by: None,
@@ -260,13 +271,26 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
                 }
                 _ => {
                     let mut inputs = Vec::new();
+                    // With groups the board writes, each series runs a filter for each group, and its tasks are those of each.
+                    let groups = s.by.as_ref().map_or(&[][..], |b| b.groups.as_slice());
                     for x in series_of(s) {
-                        let text = tasks_of(&filter_of(Some(&x))?).map_err(|e| format!("{}: {e}", x.label))?;
+                        let mut parts = Vec::with_capacity(groups.len());
+                        for g in groups {
+                            let text = tasks_of(&filter_of(Some(&x), Some(g))?)
+                                .map_err(|e| format!("{} / {}: {e}", x.label, g.label))?;
+                            parts.push(text);
+                        }
+                        let tasks = if groups.is_empty() {
+                            tasks_of(&filter_of(Some(&x), None)?).map_err(|e| format!("{}: {e}", x.label))?
+                        } else {
+                            String::new()
+                        };
                         inputs.push(SeriesInput {
                             label: x.label.clone(),
-                            tasks: text,
+                            tasks,
                             measure: Some(x.measure.clone().unwrap_or_else(|| s.measure.clone())),
                             span: x.span.clone(),
+                            parts,
                         });
                     }
                     let by = resolve_by(s.by.as_ref(), &date_ranges, ctx)?;
@@ -378,7 +402,7 @@ mod tests {
         }));
         let s = &b.sections[0];
         assert_eq!(
-            effective_filter(&b, s, None),
+            effective_filter(&b, s, None, None),
             "( project:Home or +x ) ( status:pending )"
         );
         let x = Series {
@@ -387,12 +411,30 @@ mod tests {
             measure: None,
             color: None,
             span: None,
+            ignore_section_filter: false,
+            ignore_board_filter: false,
         };
         assert_eq!(
-            effective_filter(&b, s, Some(&x)),
+            effective_filter(&b, s, Some(&x), None),
             "( project:Home or +x ) ( status:pending ) ( +OVERDUE )"
         );
-        assert_eq!(effective_filter(&b, &b.sections[1], None), "");
+        assert_eq!(effective_filter(&b, &b.sections[1], None, None), "");
+        // A series or a group the board writes may leave out the chart's filter or the board's.
+        let g: WrittenGroup = serde_json::from_value(json!({ "label": "Done", "filter": "status:completed",
+            "ignoreBoardFilter": true }))
+        .unwrap();
+        assert_eq!(
+            effective_filter(&b, s, Some(&x), Some(&g)),
+            "( status:pending ) ( +OVERDUE ) ( status:completed )"
+        );
+        let x = Series {
+            ignore_section_filter: true,
+            ..x
+        };
+        assert_eq!(
+            effective_filter(&b, s, Some(&x), None),
+            "( project:Home or +x ) ( +OVERDUE )"
+        );
         assert_eq!(
             series_of(s)[0].measure.as_ref().map(describe_measure).as_deref(),
             Some("Count of tasks")

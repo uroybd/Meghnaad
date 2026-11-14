@@ -203,6 +203,23 @@ average or comparison, and a group where none has one shows `–`, not zero. Any
 Grouping by an attribute makes a bar per value, and a task with none is counted under `(none)`. A task with several
 tags counts once under each, so bars can add up to more than the tasks (the figure above them doesn't).
 
+### Groups you write
+
+**Groups you write** makes the groups yourself, as Chart.js has labels: each is a label and a filter, and is a slice of
+a pie, a bar or a point, in the order they are written. A donut of what came of the work:
+
+| Label | Filter |
+| --- | --- |
+| Succeeded | `status:completed outcome:success` |
+| Failed | `status:completed outcome:failed` |
+| Pending | `status:pending` |
+
+A group's filter is added to the board's, the chart's and each series' (so a bar chart with series has a bar for each
+group in each series). **Without the chart's filter** and **Without the board's filter** leave those out for the group,
+so one group can count what the others are kept from. A group may have a colour of its own, for its slice or bar.
+**Order** keeps them as written unless it says otherwise; **Show only** and **Leave out** take their labels. A heatmap's
+columns are a date or a value, so it has no groups of yours.
+
 ### Date periods
 
 A date is cut into days, weeks, months, quarters or years in your time zone, with weeks starting on `weekstart`.
@@ -222,8 +239,9 @@ the same with **Show only** `feature, bugfix`. A group is matched by its value o
 ## Series
 
 A chart can have several series, like Chart.js datasets. Each has a label and a filter (added to the board's and the
-section's) and is drawn as its own line or bars on the same axis, with a legend. A pie, donut or polar chart has one
-series, whose slices are the values. All series of a chart must measure the same kind of thing (numbers or durations),
+section's, unless it is **Without the chart's filter** or **Without the board's filter**) and is drawn as its own line
+or bars on the same axis, with a legend. A pie, donut or polar chart has one series, whose slices are the values or the
+groups you write. All series of a chart must measure the same kind of thing (numbers or durations),
 and they share the grouping, so a period where one has nothing still has a place for it (zero, or `–` for an average).
 
 ### Stacking
@@ -347,7 +365,12 @@ want to keep what was left out.
           "by": { "time": { "field": "end", "step": "$daterange.lg_group.name", "range": "daterange" } } },
         { "id": "own", "title": "Done in October, per week", "x": 0, "y": 16, "w": 12, "h": 4, "type": "bar",
           "filter": "status:completed",
-          "by": { "time": { "field": "end", "step": "week", "range": { "start": "2026-10-01", "end": "2026-10-31T23:59" } } } }
+          "by": { "time": { "field": "end", "step": "week", "range": { "start": "2026-10-01", "end": "2026-10-31T23:59" } } } },
+        { "id": "outcome", "title": "Outcome", "type": "donut", "x": 0, "y": 14, "w": 4, "h": 4,
+          "by": { "groups": [
+            { "label": "Succeeded", "filter": "status:completed outcome:success", "color": "green", "ignoreBoardFilter": true },
+            { "label": "Failed", "filter": "status:completed outcome:failed", "color": "red", "ignoreBoardFilter": true },
+            { "label": "Pending", "filter": "status:pending" } ] } }
       ]
     }
   ]
@@ -375,4 +398,5 @@ anything Taskwarrior reads; a number may be written as a number or as text.
 
 `x` and `w` are columns (0 to 11, and 2 to 12); `y` and `h` are rows. `measure` is `{ "fn": "count" }` unless it says
 otherwise, and `estimate` above is a duration UDA of yours. A chart by a value may have `only` and `except`, lists of
-the groups it shows or leaves out.
+the groups it shows or leaves out. `by.groups` are groups you write (a `label`, a `filter`, a `color`, and
+`ignoreSectionFilter` or `ignoreBoardFilter`), and a series may have `ignoreSectionFilter` and `ignoreBoardFilter` too.

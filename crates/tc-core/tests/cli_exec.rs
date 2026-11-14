@@ -4214,6 +4214,7 @@ mod export_command {
             tasks,
             measure: None,
             span: None,
+            parts: Vec::new(),
         };
         let by: By = serde_json::from_str(r#"{"time":{"field":"end","step":"week"}}"#).unwrap();
         let ctx = Ctx {
@@ -4267,6 +4268,7 @@ mod export_command {
                 to: to.map(Into::into),
                 unless: unless.map(Into::into),
             }),
+            parts: Vec::new(),
         };
         let by: By = serde_json::from_str(r#"{"time":{"field":"end","step":"week"}}"#).unwrap();
         let ctx = Ctx {

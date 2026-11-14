@@ -22,6 +22,7 @@
     type SectionType,
     type Series,
     type Span,
+    type WrittenGroup,
   } from './boards';
   import { ArrowDown, ArrowUp, Plus, Trash2 } from './icons';
   import { store } from './store.svelte';
@@ -54,14 +55,15 @@
   ]);
   const GROUPABLE = $derived(['project', 'tags', 'priority', 'status', ...names(['string', 'numeric'])]);
 
-  const grouping = $derived(section.by?.time ? 'time' : 'field');
+  const grouping = $derived(section.by?.time ? 'time' : section.by?.groups ? 'groups' : 'field');
   const chart = $derived(isChartType(section.type));
   /** Several series are for charts that draw them side by side; a pie has one, its slices being the values. */
   const manySeries = $derived(chart && !isRoundType(section.type));
 
   function pickType(type: SectionType) {
     const patch: Partial<Section> = { type };
-    if (isChartType(type) && !section.by) {
+    // A heatmap's columns are a date or a value, never groups the board writes.
+    if (isChartType(type) && (!section.by || (type === 'heatmap' && section.by.groups))) {
       patch.by =
         type === 'line' || type === 'area' || type === 'heatmap'
           ? { time: { field: 'entry', step: 'week' } }
@@ -80,9 +82,29 @@
     set({ measure: fn === 'count' ? { fn } : { fn, field: section.measure.field ?? MEASURABLE[0] } });
   }
 
-  function pickGrouping(kind: 'field' | 'time') {
-    set({ by: kind === 'time' ? { time: { field: 'entry', step: 'week' } } : { field: 'project' } });
+  function pickGrouping(kind: 'field' | 'time' | 'groups') {
+    set({
+      by:
+        kind === 'time'
+          ? { time: { field: 'entry', step: 'week' } }
+          : kind === 'groups'
+            ? { groups: [{ label: 'Group 1' }] }
+            : { field: 'project' },
+    });
   }
+
+  /** The groups the board writes, as Chart.js has labels: each a label, a filter, and a colour of its own. */
+  const MAX_GROUPS = 24;
+  const written = $derived(section.by?.groups ?? []);
+  const setGroups = (list: WrittenGroup[]) => set({ by: { groups: list } });
+  const patchGroup = (i: number, patch: Partial<WrittenGroup>) =>
+    setGroups(written.map((g, j) => (j === i ? { ...g, ...patch } : g)));
+  const addGroup = () => {
+    const taken = new Set(written.map((g) => g.label.trim()));
+    let n = written.length + 1;
+    while (taken.has(`Group ${n}`)) n++;
+    setGroups([...written, { label: `Group ${n}` }]);
+  };
 
   /** What a heatmap's rows are, as the choice it is in the list: none, a part of a date, or the value of an attribute. */
   const rowsKind = $derived(section.rows?.time ? section.rows.time.part : section.rows ? 'field' : '');
@@ -202,9 +224,10 @@
   {#if chart}
     <label>
       Group by
-      <select value={grouping} onchange={(e) => pickGrouping(e.currentTarget.value as 'field' | 'time')}>
+      <select value={grouping} onchange={(e) => pickGrouping(e.currentTarget.value as 'field' | 'time' | 'groups')}>
         <option value="field">The value of</option>
         <option value="time">A date, by</option>
+        {#if section.type !== 'heatmap'}<option value="groups">Groups you write</option>{/if}
       </select>
     </label>
     {#if section.by?.time}
@@ -257,7 +280,7 @@
           />
         </label>
       {/if}
-    {:else}
+    {:else if !section.by?.groups}
       <label>
         Attribute
         <input
@@ -303,7 +326,9 @@
     <label>
       Order
       <select value={section.sort ?? ''} onchange={(e) => set({ sort: e.currentTarget.value || undefined })}>
-        <option value="">{section.by?.time ? 'In time order' : 'Largest first'}</option>
+        <option value=""
+          >{section.by?.time ? 'In time order' : section.by?.groups ? 'In their order' : 'Largest first'}</option
+        >
         <option value="value-">Largest first</option>
         <option value="value+">Smallest first</option>
         <option value="key+">By name, A to Z</option>
@@ -348,6 +373,83 @@
         />
       </label>
     {/if}
+  {/if}
+
+  {#if chart && section.by?.groups}
+    <fieldset class="wide series">
+      <legend>Groups</legend>
+      <p class="dim hint">
+        Each group is a slice of a pie, a bar or a point: the tasks its filter picks (added to the filters of the board,
+        the chart and each series, unless it leaves them out), in this order.
+      </p>
+      {#each written as g, i (i)}
+        <div class="series-item">
+          <div class="row-series">
+            <input
+              class="label"
+              aria-label="Label of group {i + 1}"
+              placeholder="Label"
+              value={g.label}
+              oninput={(e) => patchGroup(i, { label: e.currentTarget.value })}
+            />
+            <div class="grow">
+              <FilterInput
+                bind:value={() => g.filter ?? '', (v) => patchGroup(i, { filter: v || undefined })}
+                id="group-filter-{section.id}-{i}"
+                placeholder="Which tasks: status:completed outcome:success"
+              />
+            </div>
+          </div>
+          <ColorPicker
+            value={g.color}
+            position={i}
+            label="Colour of group {i + 1}"
+            onchange={(color) => patchGroup(i, { color })}
+          />
+          <div class="row-series">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!!g.ignoreSectionFilter}
+                onchange={(e) => patchGroup(i, { ignoreSectionFilter: e.currentTarget.checked || undefined })}
+              />
+              Without the chart's filter
+            </label>
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!!g.ignoreBoardFilter}
+                onchange={(e) => patchGroup(i, { ignoreBoardFilter: e.currentTarget.checked || undefined })}
+              />
+              Without the board's filter
+            </label>
+          </div>
+          <div class="row-series">
+            <button
+              aria-label="Move group {i + 1} up"
+              title="Move earlier"
+              disabled={i === 0}
+              onclick={() => setGroups(moveSeries(written, i, -1))}><ArrowUp size={14} /></button
+            >
+            <button
+              aria-label="Move group {i + 1} down"
+              title="Move later"
+              disabled={i === written.length - 1}
+              onclick={() => setGroups(moveSeries(written, i, 1))}><ArrowDown size={14} /></button
+            >
+            <button
+              class="danger"
+              aria-label="Remove group {i + 1}"
+              disabled={written.length === 1}
+              onclick={() => setGroups(written.filter((_, j) => j !== i))}><Trash2 size={14} /> Remove group</button
+            >
+          </div>
+        </div>
+      {/each}
+      <div class="row-series">
+        <button onclick={addGroup} disabled={written.length >= MAX_GROUPS}><Plus size={14} /> Add group</button>
+      </div>
+    </fieldset>
   {/if}
 
   {#if manySeries}
@@ -417,6 +519,24 @@
             label="Colour of series {i + 1}"
             onchange={(color) => patchSeries(i, { color })}
           />
+          <div class="row-series">
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!!x.ignoreSectionFilter}
+                onchange={(e) => patchSeries(i, { ignoreSectionFilter: e.currentTarget.checked || undefined })}
+              />
+              Without the chart's filter
+            </label>
+            <label class="check">
+              <input
+                type="checkbox"
+                checked={!!x.ignoreBoardFilter}
+                onchange={(e) => patchSeries(i, { ignoreBoardFilter: e.currentTarget.checked || undefined })}
+              />
+              Without the board's filter
+            </label>
+          </div>
           <div class="row-series">
             <button
               aria-label="Move series {i + 1} up"

@@ -548,7 +548,10 @@ groups is each screen's job.
   period, which is how `task burndown` counts pending, started and done.
 - **`chart`** lays several series (each its own `export` and measure) on one axis in Chart.js's shape: labels, and a
   dataset of values per series, with every period from the first to the last so a series with nothing in one still has
-  a place. It is the contract every front end draws from with its own chart library.
+  a place. It is the contract every front end draws from with its own chart library. With groups the board writes
+  (`by.groups`, each a label and a filter, as Chart.js has labels) a series carries the `export` of each group (`parts`,
+  which the front end runs with the board's, the chart's, the series' and the group's filters, leaving out what each
+  says to), and the labels are the groups in their order.
 - **`ranges`** works out a board's named date ranges (a start and end, each a date as Taskwarrior reads one, in the
   caller's zone and week) and writes `$name.start`, `$name.end` and the counts of periods it touches
   (`$name.day_count`, for a chart's `limit`, resolved by `board_limit`). `$name.lg_group.name` is the step a chart over

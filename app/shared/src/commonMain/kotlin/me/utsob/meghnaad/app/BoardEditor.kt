@@ -335,8 +335,22 @@ private fun SectionForm(store: Store, s: Section, controls: List<Control>, onCha
         if (isChartType(s.type)) {
             val dates = dateFields(udas)
             val time = s.by?.time
-            Pick("Group by", listOf("field" to "The value of", "time" to "A date, by"), if (time != null) "time" else "field") { kind ->
-                onChange(s.copy(by = if (kind == "time") By(time = TimeBy("entry", "week")) else By(field = "project")))
+            val kinds = listOf("field" to "The value of", "time" to "A date, by") + if (s.type != "heatmap") listOf("groups" to "Groups you write") else emptyList()
+            val kind = when {
+                time != null -> "time"
+                s.by?.groups != null -> "groups"
+                else -> "field"
+            }
+            Pick("Group by", kinds, kind) { k ->
+                onChange(
+                    s.copy(
+                        by = when (k) {
+                            "time" -> By(time = TimeBy("entry", "week"))
+                            "groups" -> By(groups = listOf(WrittenGroup("Group 1")))
+                            else -> By(field = "project")
+                        },
+                    ),
+                )
             }
             if (time != null) {
                 Pick("Date", dates.map { it to it }, time.field) { onChange(s.copy(by = By(time = time.copy(field = it ?: time.field)))) }
@@ -365,7 +379,7 @@ private fun SectionForm(store: Store, s: Section, controls: List<Control>, onCha
                     TextBox("From", r.start, { onChange(s.copy(by = By(time = time.copy(range = r.copy(start = it.trim()))))) }, mono = true, placeholder = "sow, 2026-10-01")
                     TextBox("To", r.end, { onChange(s.copy(by = By(time = time.copy(range = r.copy(end = it.trim()))))) }, mono = true, placeholder = "eow, 2026-10-31")
                 }
-            } else {
+            } else if (s.by?.groups == null) {
                 TextBox("Attribute", s.by?.field.orEmpty(), { onChange(s.copy(by = By(field = it.trim()))) })
                 Suggestions(groupableFields(udas)) { onChange(s.copy(by = By(field = it))) }
             }
@@ -401,6 +415,7 @@ private fun SectionForm(store: Store, s: Section, controls: List<Control>, onCha
             }
         }
 
+        if (isChartType(s.type) && s.by?.groups != null) GroupsEditor(store, s, onChange)
         if (hasManySeries(s.type)) SeriesEditor(store, s, onChange)
     }
 }
@@ -434,6 +449,9 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
                     }
                 }
                 ColorChoice(x.color, i, extras.dark) { c -> patch(i) { it.copy(color = c) } }
+                LeaveOut(x.ignoreSectionFilter == true, x.ignoreBoardFilter == true) { section, board ->
+                    patch(i) { it.copy(ignoreSectionFilter = section.takeIf { b -> b }, ignoreBoardFilter = board.takeIf { b -> b }) }
+                }
                 // The order is the order of stacking: the first is at the bottom, the next on it.
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton({ setSeries(moveSeries(s.series, i, -1)) }, enabled = i > 0) { Text("Move series ${i + 1} up", fontSize = 12.sp) }
@@ -451,6 +469,55 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
                 }
             }
         }
+    }
+}
+
+/** The groups the board writes (SectionForm.svelte), as Chart.js has labels: each a label, a filter, a colour, and what it leaves out. */
+@Composable
+private fun GroupsEditor(store: Store, s: Section, onChange: (Section) -> Unit) {
+    val groups = s.by?.groups.orEmpty()
+    fun setGroups(list: List<WrittenGroup>) = onChange(s.copy(by = By(groups = list)))
+    fun patch(i: Int, f: (WrittenGroup) -> WrittenGroup) = setGroups(groups.mapIndexed { j, g -> if (j == i) f(g) else g })
+    Column(Modifier.fillMaxWidth().border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(8.dp)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Groups", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Dim("Each group is a slice of a pie, a bar or a point: the tasks its filter picks (added to the filters of the board, the chart and each series, unless it leaves them out), in this order.", size = 11)
+        groups.forEachIndexed { i, g ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextBox("Label of group ${i + 1}", g.label, { v -> patch(i) { it.copy(label = v) } })
+                Labeled("Filter") {
+                    CompletingField(g.filter.orEmpty(), { v -> patch(i) { it.copy(filter = v.ifEmpty { null }) } }, store.vocab, placeholder = "status:completed outcome:success")
+                }
+                ColorChoice(g.color, i, extras.dark) { c -> patch(i) { it.copy(color = c) } }
+                LeaveOut(g.ignoreSectionFilter == true, g.ignoreBoardFilter == true) { section, board ->
+                    patch(i) { it.copy(ignoreSectionFilter = section.takeIf { b -> b }, ignoreBoardFilter = board.takeIf { b -> b }) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton({ setGroups(moveGroup(groups, i, -1)) }, enabled = i > 0) { Text("Move group ${i + 1} up", fontSize = 12.sp) }
+                    TextButton({ setGroups(moveGroup(groups, i, 1)) }, enabled = i < groups.size - 1) { Text("Move group ${i + 1} down", fontSize = 12.sp) }
+                }
+                if (groups.size > 1) {
+                    TextButton({ setGroups(groups.filterIndexed { j, _ -> j != i }) }) { Text("Remove group ${i + 1}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        }
+        OutlinedButton({
+            val taken = groups.map { it.label.trim() }.toSet()
+            val n = generateSequence(groups.size + 1) { it + 1 }.first { "Group $it" !in taken }
+            setGroups(groups + WrittenGroup("Group $n"))
+        }, enabled = groups.size < MAX_GROUPS) { Text("+ Add group", fontSize = 12.sp) }
+    }
+}
+
+/** A series' or a group's two boxes: leave out the chart's filter, and the board's. */
+@Composable
+private fun LeaveOut(section: Boolean, board: Boolean, onChange: (Boolean, Boolean) -> Unit) {
+    Row(Modifier.clickable { onChange(!section, board) }, verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(section, onCheckedChange = null)
+        Text("Without the chart's filter", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
+    }
+    Row(Modifier.clickable { onChange(section, !board) }, verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(board, onCheckedChange = null)
+        Text("Without the board's filter", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
     }
 }
 

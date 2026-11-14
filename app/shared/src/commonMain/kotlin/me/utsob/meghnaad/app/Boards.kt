@@ -69,7 +69,20 @@ data class TimeBy(val field: String, val step: String, val range: AxisRange? = n
 
 /** One of the two: the value of an attribute, or a date cut into days, weeks, months, quarters or years. */
 @Serializable
-data class By(val field: String? = null, val time: TimeBy? = null)
+data class By(val field: String? = null, val time: TimeBy? = null, val groups: List<WrittenGroup>? = null)
+
+/** A group of a chart the board writes (boards.ts `WrittenGroup`), as Chart.js has a label: its label, and the filter that picks its tasks. */
+@Serializable
+data class WrittenGroup(
+    val label: String,
+    val filter: String? = null,
+    /** A Taskwarrior colour name (`red`, `bright blue`), drawn in the page's palette, or `#rrggbb`. */
+    val color: String? = null,
+    /** Its tasks are not picked by the section's filter. */
+    val ignoreSectionFilter: Boolean? = null,
+    /** Its tasks are not picked by the board's filter. */
+    val ignoreBoardFilter: Boolean? = null,
+)
 
 /** A state as of the end of each period, as `task burndown` counts them (see `tc_core::board::aggregate::Span`). */
 @Serializable
@@ -84,6 +97,10 @@ data class Series(
     /** A Taskwarrior colour name (`red`, `bright blue`), drawn in the page's palette, or `#rrggbb`. */
     val color: String? = null,
     val span: StateSpan? = null,
+    /** Its tasks are not picked by the section's filter. */
+    val ignoreSectionFilter: Boolean? = null,
+    /** Its tasks are not picked by the board's filter. */
+    val ignoreBoardFilter: Boolean? = null,
 )
 
 /** A chart's Keep in `settings.json`: a number, or text (`$week.day_count`). A number is written as one. */
@@ -362,10 +379,13 @@ fun slugProblem(slug: String, others: Collection<String>): String? {
 // ---- What a section runs
 
 /** The filter a section runs: the board's (unless the section ignores it), then its own, then a series', each in parentheses so an `or` cannot leak. */
-fun effectiveFilter(board: Board, section: Section, series: Series? = null): String =
-    listOf(if (section.ignoreBoardFilter == true) null else board.filter, section.filter, series?.filter)
+fun effectiveFilter(board: Board, section: Section, series: Series? = null, group: WrittenGroup? = null): String {
+    val noBoard = section.ignoreBoardFilter == true || series?.ignoreBoardFilter == true || group?.ignoreBoardFilter == true
+    val noSection = series?.ignoreSectionFilter == true || group?.ignoreSectionFilter == true
+    return listOf(if (noBoard) null else board.filter, if (noSection) null else section.filter, series?.filter, group?.filter)
         .mapNotNull { it?.trim()?.takeIf { f -> f.isNotEmpty() } }
         .joinToString(" ") { "( $it )" }
+}
 
 /** A range's name as a label: `sprint_week` is `Sprint week`. The name itself is what a filter writes. */
 fun rangeLabel(name: String): String = name.replace(Regex("_+"), " ").trim().replaceFirstChar { it.uppercase() }
@@ -478,6 +498,7 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, controls: List<Cont
                 put("tasks", it.tasks)
                 put("measure", measureJson(it.measure))
                 it.span?.let { s -> put("span", boardsJson.encodeToJsonElement(StateSpan.serializer(), s)) }
+                if (it.parts.isNotEmpty()) put("parts", JsonArray(it.parts.map(::JsonPrimitive)))
             }
         },
     )
@@ -485,7 +506,8 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, controls: List<Cont
     return boardsJson.decodeFromJsonElement(BoardChart.serializer(), callHelper("board_chart", series, byJson, zone.toJson(), controlsJson(controls)))
 }
 
-class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?)
+/** A series' tasks, or with groups the board writes, the tasks of each group ([parts]) in place of [tasks]. */
+class SeriesInput(val label: String, val tasks: String, val measure: Measure, val span: StateSpan?, val parts: List<String> = emptyList())
 
 /** A heatmap: a grid for each series (one, when they are stacked), the columns the same in each. With no rows a series is a row, and stacked they are one row. */
 fun layHeatmap(inputs: List<SeriesInput>, by: By, rows: Rows?, stacked: Boolean, zone: Zone, controls: List<Control> = emptyList()): List<BoardChart> {
@@ -539,7 +561,8 @@ fun groupShown(section: Section, key: String, label: String): Boolean {
 }
 
 fun orderChart(chart: BoardChart, section: Section, limit: Int? = section.limit?.toIntOrNull()): BoardChart {
-    val sort = section.sort ?: if (section.by?.time != null) null else "value-"
+    // Values come largest first; dates in time order, and groups the board writes in theirs.
+    val sort = section.sort ?: if (section.by?.field != null) "value-" else null
     fun total(i: Int) = chart.datasets.sumOf { it.data.getOrNull(i) ?: 0.0 }
     fun nothing(i: Int) = chart.datasets.all { it.data.getOrNull(i) == null }
     var order = chart.labels.indices.filter { groupShown(section, chart.labels[it].key, chart.labels[it].label) }
@@ -583,7 +606,7 @@ sealed interface SectionData {
 suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData> {
     val exports = HashMap<String, CliResult>()
     /** The filter a section (or one of its series) runs, with the board's controls in it. */
-    fun filterOf(s: Section, x: Series? = null) = substituteControls(effectiveFilter(board, s, x), board.controls, zone)
+    fun filterOf(s: Section, x: Series? = null, g: WrittenGroup? = null) = substituteControls(effectiveFilter(board, s, x, g), board.controls, zone)
     suspend fun exportOf(filter: String): CliResult =
         exports.getOrPut(filter) { tw.run(args = rustHelpers().splitWords(filter) + "export").result }
 
@@ -615,7 +638,26 @@ suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData
                     val inputs = ArrayList<SeriesInput>()
                     val sources = ArrayList<Source>()
                     var failure: String? = null
-                    for (x in seriesOf(s)) {
+                    // With groups the board writes, each series runs a filter for each group, and its tasks are those of each.
+                    val groups = s.by?.groups.orEmpty()
+                    val many = seriesOf(s).size > 1
+                    series@ for (x in seriesOf(s)) {
+                        if (groups.isNotEmpty()) {
+                            val parts = ArrayList<String>()
+                            for (g in groups) {
+                                val filter = filterOf(s, x, g)
+                                val (text, error) = tasksOf(filter)
+                                val label = if (many) "${x.label} / ${g.label}" else g.label
+                                if (text == null) {
+                                    failure = "$label: $error"
+                                    break@series
+                                }
+                                parts += text
+                                sources += Source(label, filter, text)
+                            }
+                            inputs += SeriesInput(x.label, "", x.measure ?: s.measure, x.span, parts)
+                            continue
+                        }
                         val filter = filterOf(s, x)
                         val (text, error) = tasksOf(filter)
                         if (text == null) {

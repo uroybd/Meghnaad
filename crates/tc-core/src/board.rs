@@ -76,6 +76,12 @@ pub struct Series {
     /// what happened in the period. Needs a chart grouped by a date.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+    /// The series' tasks are not picked by the section's filter.
+    #[serde(default, rename = "ignoreSectionFilter", skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_section_filter: bool,
+    /// The series' tasks are not picked by the board's filter.
+    #[serde(default, rename = "ignoreBoardFilter", skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_board_filter: bool,
 }
 
 /// The colour names a series may use: Taskwarrior's basic colours, drawn in the page's own palette (so they follow a light
@@ -250,7 +256,23 @@ fn section_problem(s: &Section, ranges: &[Range]) -> Option<String> {
         return Some("a chart needs something to group by".into());
     }
     if let Some(p) = s.by.as_ref().and_then(By::problem) {
-        return Some(p.into());
+        return Some(p);
+    }
+    if let Some(by) = s.by.as_ref().filter(|b| !b.groups.is_empty()) {
+        if s.kind == Kind::Heatmap {
+            return Some("a heatmap's columns are a date or the value of an attribute".into());
+        }
+        if let Some((i, _)) = by
+            .groups
+            .iter()
+            .enumerate()
+            .find(|(_, g)| g.color.as_deref().is_some_and(|c| !valid_color(c)))
+        {
+            return Some(format!(
+                "group {}: a colour is a name (red, bright blue, …) or #rrggbb",
+                i + 1
+            ));
+        }
     }
     if !s.series.is_empty() && !s.kind.is_chart() {
         return Some("only a chart has series".into());
@@ -793,6 +815,45 @@ mod tests {
         let n = normalize(&json!([{ "id": "b", "name": "B", "sections": [
             { "id": "n", "type": "number", "x": 0, "y": 0, "w": 3, "h": 2, "series": [{ "label": "a" }] }] }]));
         assert!(n.errors[0].contains("only a chart"), "{:?}", n.errors);
+    }
+
+    #[test]
+    fn a_chart_may_be_grouped_into_groups_of_its_own() {
+        let sec = |kind: &str, groups: Value| {
+            normalize(&json!([{ "id": "b", "name": "B", "sections": [{
+                "id": "c", "type": kind, "x": 0, "y": 0, "w": 4, "h": 4, "by": { "groups": groups },
+                "series": [{ "label": "All", "ignoreBoardFilter": true }] }] }]))
+        };
+        let good = json!([
+            { "label": "Succeeded", "filter": "status:completed outcome:success", "color": "green",
+              "ignoreSectionFilter": true, "ignoreBoardFilter": true },
+            { "label": "Pending", "filter": "status:pending" }
+        ]);
+        for kind in ["pie", "donut", "polar", "bar", "line", "radar"] {
+            let n = sec(kind, good.clone());
+            assert!(n.errors.is_empty(), "{kind}: {:?}", n.errors);
+        }
+        let n = sec("donut", good.clone());
+        assert_eq!(normalize(&serde_json::to_value(&n.boards).unwrap()).boards, n.boards);
+        assert!(n.boards[0].sections[0].series[0].ignore_board_filter);
+        for (kind, groups, said) in [
+            ("heatmap", good.clone(), "heatmap"),
+            ("pie", json!([{ "label": "a" }, { "label": " a " }]), "used twice"),
+            ("pie", json!([{ "label": "" }]), "needs a label"),
+            ("pie", json!([{ "label": "a", "color": "sparkly" }]), "colour"),
+        ] {
+            let n = sec(kind, groups);
+            assert!(
+                n.errors.first().is_some_and(|e| e.contains(said)),
+                "{kind}: {:?}",
+                n.errors
+            );
+        }
+        let both = normalize(
+            &json!([{ "id": "b", "name": "B", "sections": [{ "id": "c", "type": "pie", "x": 0,
+            "y": 0, "w": 4, "h": 4, "by": { "field": "project", "groups": [{ "label": "a" }] } }] }]),
+        );
+        assert!(both.errors[0].contains("one thing"), "{:?}", both.errors);
     }
 
     #[test]

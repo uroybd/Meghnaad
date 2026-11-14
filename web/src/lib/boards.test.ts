@@ -79,6 +79,18 @@ describe('the filter a section runs', () => {
     const s = sec('a', 0, 0, 3, 2, { filter: '+a or +b' });
     expect(effectiveFilter(board([s], { filter: 'project:Home' }), s)).toBe('( project:Home ) ( +a or +b )');
     expect(effectiveFilter(board([s]), s)).toBe('( +a or +b )');
+    // A series or a group may leave out the chart's filter or the board's.
+    const b = board([s], { filter: 'project:Home' });
+    const g = { label: 'Done', filter: 'status:completed' };
+    expect(effectiveFilter(b, s, { label: 'x', filter: '+x' }, g)).toBe(
+      '( project:Home ) ( +a or +b ) ( +x ) ( status:completed )',
+    );
+    expect(effectiveFilter(b, s, { label: 'x', ignoreSectionFilter: true }, g)).toBe(
+      '( project:Home ) ( status:completed )',
+    );
+    expect(effectiveFilter(b, s, undefined, { ...g, ignoreBoardFilter: true })).toBe(
+      '( +a or +b ) ( status:completed )',
+    );
     // A section can leave the board's filter out, and is then asked about its own tasks only.
     const own = { ...s, ignoreBoardFilter: true };
     expect(effectiveFilter(board([own], { filter: 'project:Home' }), own)).toBe('( +a or +b )');
@@ -372,6 +384,42 @@ describe('loading a board', () => {
     expect(data.n.kind).toBe('answer');
     expect(data.t).toMatchObject({ kind: 'table', filter: '( due.before:20261011T235959Z )' });
     expect(data.bad).toEqual({ kind: 'error', message: "this board has no control called 'nope'" });
+  });
+
+  it('runs a filter for each group the board writes, and has a slice for each in their order', async () => {
+    const run = vi.fn(async ({ args }: { args: string[] }) => {
+      const line = args.join(' ');
+      const rows = line.includes('pending') ? [{}, {}, {}] : line.includes('failed') ? [{}] : [{}, {}];
+      return respond({ kind: 'file', name: 't.json', mime: '', text: JSON.stringify(rows), count: rows.length });
+    });
+    const b = board(
+      [
+        sec('d', 0, 0, 4, 4, {
+          type: 'donut',
+          filter: '+work',
+          by: {
+            groups: [
+              { label: 'Succeeded', filter: 'status:completed outcome:success', ignoreSectionFilter: true },
+              { label: 'Failed', filter: 'status:completed outcome:failed', ignoreBoardFilter: true },
+              { label: 'Pending', filter: 'status:pending' },
+            ],
+          },
+        }),
+      ],
+      { filter: 'project:Home' },
+    );
+    const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
+    expect(run.mock.calls.map(([i]) => i.args.join(' '))).toEqual([
+      '( project:Home ) ( status:completed outcome:success ) export',
+      '( +work ) ( status:completed outcome:failed ) export',
+      '( project:Home ) ( +work ) ( status:pending ) export',
+    ]);
+    const d = data.d;
+    if (d.kind !== 'chart') throw new Error(JSON.stringify(d));
+    const shown = orderChart(d.chart, b.sections[0]);
+    expect(shown.labels.map((l) => l.label)).toEqual(['Succeeded', 'Failed', 'Pending']);
+    expect(shown.datasets[0].data).toEqual([2, 1, 3]);
+    expect(d.sources.map((x) => x.label)).toEqual(['Succeeded', 'Failed', 'Pending']);
   });
 
   it('puts a selection, a number, a date and a switch into the filters as what they are now', async () => {

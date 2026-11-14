@@ -131,23 +131,60 @@ impl From<TimeBy> for TimeByWire {
     }
 }
 
-/// How to group: by the value of an attribute (`field`), or by a date's day, week, month, quarter or year (`time`). One of
-/// the two.
+/// How to group: by the value of an attribute (`field`), by a date's day, week, month, quarter or year (`time`), or into
+/// groups the board writes (`groups`), each the tasks a filter picks. One of the three.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct By {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time: Option<TimeBy>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<WrittenGroup>,
 }
+
+/// A group of a chart the board writes, as Chart.js has a label: what it is called and the filter that picks its tasks
+/// (with each series' own). It may leave out the chart's filter or the board's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WrittenGroup {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    /// A colour name (`red`, `bright blue`) or `#rrggbb`; the chart's own colours otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, rename = "ignoreSectionFilter", skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_section_filter: bool,
+    #[serde(default, rename = "ignoreBoardFilter", skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_board_filter: bool,
+}
+
+/// The most groups a board may write for one chart.
+pub const MAX_GROUPS: usize = 24;
 
 impl By {
     /// Why this is not a way to group, or `None`.
-    pub fn problem(&self) -> Option<&'static str> {
-        match (&self.field, &self.time) {
-            (Some(f), None) if !f.is_empty() => None,
-            (None, Some(t)) if !t.field.is_empty() => None,
-            _ => Some("group by one thing: a field, or a date with a step"),
+    pub fn problem(&self) -> Option<String> {
+        match (&self.field, &self.time, self.groups.is_empty()) {
+            (Some(f), None, true) if !f.is_empty() => None,
+            (None, Some(t), true) if !t.field.is_empty() => None,
+            (None, None, false) => {
+                if self.groups.len() > MAX_GROUPS {
+                    return Some(format!("a chart has at most {MAX_GROUPS} groups"));
+                }
+                let mut seen = std::collections::BTreeSet::new();
+                for (i, g) in self.groups.iter().enumerate() {
+                    let label = g.label.trim();
+                    if label.is_empty() {
+                        return Some(format!("group {}: needs a label", i + 1));
+                    }
+                    if !seen.insert(label) {
+                        return Some(format!("group {}: the label '{label}' is used twice", i + 1));
+                    }
+                }
+                None
+            }
+            _ => Some("group by one thing: a field, a date with a step, or groups of your own".into()),
         }
     }
 }
@@ -399,7 +436,7 @@ pub fn aggregate(tasks: &str, query: &Query, ctx: &Ctx) -> Result<Answer, String
     let mut groups: BTreeMap<String, (String, Acc)> = BTreeMap::new();
     let mut time_step: Option<Step> = None;
     if let Some(p) = query.by.as_ref().and_then(By::problem) {
-        return Err(p.into());
+        return Err(p);
     }
     match query.by.as_ref().map(|b| (&b.field, &b.time)) {
         None | Some((None, None) | (Some(_), Some(_))) => {}
@@ -509,6 +546,9 @@ pub struct SeriesInput {
     pub measure: Option<Measure>,
     #[serde(default)]
     pub span: Option<Span>,
+    /// With groups the board writes: the tasks of each (an `export` text), in their order, in place of `tasks`.
+    #[serde(default)]
+    pub parts: Vec<String>,
 }
 
 /// A place on a chart's axis: a value of the attribute, or a period.
@@ -640,11 +680,14 @@ fn span_answer(s: &SeriesInput, span: &Span, time: &TimeBy, until: Option<i64>, 
 /// in a period still has a place there) any series has.
 pub fn chart(series: &[SeriesInput], by: Option<&By>, ctx: &Ctx) -> Result<Chart, String> {
     unworked(by)?;
+    if series.is_empty() {
+        return Err("a chart needs a series".into());
+    }
     let Some(by) = by else {
         return Err("a chart needs something to group by".into());
     };
-    if series.is_empty() {
-        return Err("a chart needs a series".into());
+    if !by.groups.is_empty() {
+        return by_groups(series, &by.groups, ctx);
     }
     if series.iter().any(|s| s.span.is_some()) && by.time.is_none() {
         return Err("a series that counts what is open at the end of each period needs a date to group by".into());
@@ -764,9 +807,104 @@ pub fn chart(series: &[SeriesInput], by: Option<&By>, ctx: &Ctx) -> Result<Chart
     })
 }
 
+/// A chart of groups the board writes: a label for each group, in its order, and for each series what it measures over the
+/// tasks of each group (`parts`). A pie of `status:pending`, `status:completed` and `status:deleted` has a slice for each.
+fn by_groups(series: &[SeriesInput], groups: &[WrittenGroup], ctx: &Ctx) -> Result<Chart, String> {
+    let mut unit: Option<(Unit, &str)> = None;
+    let mut datasets = Vec::with_capacity(series.len());
+    for s in series {
+        if s.span.is_some() {
+            return Err(format!("{}: a series of states needs a date to group by", s.label));
+        }
+        if s.parts.len() != groups.len() {
+            return Err(format!(
+                "{}: needs the tasks of each of the {} groups",
+                s.label,
+                groups.len()
+            ));
+        }
+        let query = Query {
+            measure: s.measure.clone(),
+            by: None,
+        };
+        let (mut data, mut counts) = (Vec::with_capacity(groups.len()), Vec::with_capacity(groups.len()));
+        let mut tasks = 0;
+        for part in &s.parts {
+            let a = aggregate(part, &query, ctx).map_err(|e| format!("{}: {e}", s.label))?;
+            match unit {
+                Some((u, first)) if a.unit_seen && u != a.unit => {
+                    return Err(format!(
+                        "'{}' and '{first}' measure different things (a number and a duration)",
+                        s.label
+                    ));
+                }
+                None if a.unit_seen => unit = Some((a.unit, &s.label)),
+                _ => {}
+            }
+            data.push(a.total);
+            counts.push(a.tasks);
+            tasks += a.tasks;
+        }
+        datasets.push(Dataset {
+            label: s.label.clone(),
+            data,
+            counts,
+            total: None,
+            tasks,
+            parts: Vec::new(),
+        });
+    }
+    Ok(Chart {
+        unit: unit.map_or(Unit::Number, |(u, _)| u),
+        labels: groups
+            .iter()
+            .map(|g| Label {
+                key: g.label.trim().to_owned(),
+                label: g.label.trim().to_owned(),
+            })
+            .collect(),
+        datasets,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn groups_of_the_boards_own_are_the_labels_in_their_order_and_each_series_measures_each() {
+        let by: By = serde_json::from_value(serde_json::json!({ "groups": [
+            { "label": "Done" }, { "label": "Open" }, { "label": "None" }
+        ] }))
+        .unwrap();
+        let input = |label: &str, measure: Option<Measure>| SeriesInput {
+            label: label.into(),
+            tasks: String::new(),
+            measure,
+            span: None,
+            parts: vec![
+                r#"[{"urgency":2},{"urgency":3}]"#.into(),
+                r#"[{"urgency":4}]"#.into(),
+                "[]".into(),
+            ],
+        };
+        let sum = Some(Measure {
+            func: Func::Sum,
+            field: Some("urgency".into()),
+        });
+        let c = chart(&[input("Tasks", None), input("Urgency", sum)], Some(&by), &ctx()).unwrap();
+        let labels: Vec<&str> = c.labels.iter().map(|l| l.label.as_str()).collect();
+        assert_eq!(labels, ["Done", "Open", "None"]);
+        assert_eq!(c.datasets[0].data, [Some(2.0), Some(1.0), Some(0.0)]);
+        assert_eq!(c.datasets[0].counts, [2, 1, 0]);
+        assert_eq!(c.datasets[1].data[..2], [Some(5.0), Some(4.0)]);
+        assert_eq!(c.datasets[1].tasks, 3);
+        let mut short = input("Short", None);
+        short.parts.pop();
+        assert!(chart(&[short], Some(&by), &ctx())
+            .unwrap_err()
+            .contains("each of the 3 groups"));
+    }
 
     // 2026-10-07 12:30:00 UTC, a Wednesday.
     const NOW: i64 = 1_791_376_200;
@@ -1162,6 +1300,7 @@ mod tests {
                     tasks: later.into(),
                     measure: None,
                     span: None,
+                    parts: Vec::new(),
                 },
                 span("Done", "end", None, None),
             ],

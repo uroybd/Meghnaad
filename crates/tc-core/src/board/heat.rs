@@ -238,6 +238,7 @@ pub fn heat(
                 tasks: serde_json::to_string(&mine).map_err(|e| e.to_string())?,
                 measure: s.measure.clone(),
                 span: s.span.clone(),
+                parts: Vec::new(),
             });
         }
     }

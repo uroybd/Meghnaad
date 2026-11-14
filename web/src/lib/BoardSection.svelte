@@ -2,7 +2,7 @@
   import BoardChart from './BoardChart.svelte';
   import type { ChartKind } from './boardChart';
   import { describeChart, formatValue, orderChart, orderGrids, type Section, type SectionData } from './boards';
-  import { valueColors } from './colors';
+  import { chartColor, valueColors } from './colors';
   import { compactDuration } from './dates';
   import { Info } from './icons';
   import ResultView from './ResultView.svelte';
@@ -38,6 +38,14 @@
   const unit = $derived(answer?.unit ?? chart?.unit ?? 'number');
   const fmt = (v: number | null) => formatValue(v, unit, compactDuration);
   const total = $derived(answer ? fmt(answer.total) : '');
+  /** A slice's or bar's own colour: a written group's, or a value's from the taskrc. */
+  const labelColors = $derived.by(() => {
+    if (!chart) return [];
+    const groups = section.by?.groups;
+    if (groups?.length)
+      return chart.labels.map((l) => chartColor(groups.find((g) => g.label.trim() === l.key)?.color, scheme.dark));
+    return valueColors(section.by?.field, chart.labels, store.config?.colors, scheme.dark);
+  });
   const summary = $derived(chart ? describeChart(section.title, chart, fmt) : section.title);
 
   // A table is drawn by the component the Tasks page uses, which wants an entry like the ones the console keeps.
@@ -111,7 +119,7 @@
           time={!!section.by?.time}
           stacked={!!section.stacked}
           colors={section.series?.map((x) => x.color)}
-          labelColors={valueColors(section.by?.field, chart.labels, store.config?.colors, scheme.dark)}
+          {labelColors}
           format={fmt}
           {summary}
         />

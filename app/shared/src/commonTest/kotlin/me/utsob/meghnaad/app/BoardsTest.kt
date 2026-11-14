@@ -72,6 +72,13 @@ class BoardsTest {
         // A section can leave the board's filter out.
         assertEquals("( +a or +b )", effectiveFilter(board, s.copy(ignoreBoardFilter = true)))
         assertEquals("", effectiveFilter(Board("b", "B", filter = "  "), sec("y")))
+        // A series or a group the board writes may leave out the chart's filter or the board's.
+        val g = WrittenGroup("Done", "status:completed")
+        assertEquals("( project:Home ) ( status:completed )", effectiveFilter(board, s, Series("x", ignoreSectionFilter = true), g))
+        assertEquals("( +a or +b ) ( status:completed )", effectiveFilter(board, s, null, g.copy(ignoreBoardFilter = true)))
+        // Groups the board writes keep their order unless asked.
+        val c = BoardChart("number", listOf(ChartLabel("b", "b"), ChartLabel("a", "a")), listOf(Dataset("s", listOf(1.0, 5.0), listOf(1, 1))))
+        assertEquals(listOf("b", "a"), orderChart(c, s.copy(by = By(groups = listOf(WrittenGroup("b"), WrittenGroup("a"))))).labels.map { it.key })
     }
 
     @Test

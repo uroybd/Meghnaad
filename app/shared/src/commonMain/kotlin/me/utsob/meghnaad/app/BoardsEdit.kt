@@ -42,6 +42,9 @@ val SPAN_PRESETS = listOf(
 /** The most series a chart may have (the engine's limit). */
 const val MAX_SERIES = 12
 
+/** The most groups a board may write for one chart (`tc_core::board::aggregate::MAX_GROUPS`). */
+const val MAX_GROUPS = 24
+
 fun isRoundType(type: String) = type == "pie" || type == "donut" || type == "polar"
 
 /** A pie, donut or polar chart has one series; the others may have several. */
@@ -84,6 +87,15 @@ fun newBoard(name: String, boards: List<Board>): Board = Board(freshId(name, boa
  * [series] with the one at [i] moved [delta] places (moveSeries in boards.ts). The order is the order of stacking: the first is at the
  * bottom, the next on it. A series with no colour of its own has the colour its place gives it, so one that changes places keeps it.
  */
+/** A written group moved as [moveSeries] moves a series: one that had the default colour of its place keeps that colour. */
+fun moveGroup(groups: List<WrittenGroup>, i: Int, delta: Int): List<WrittenGroup> {
+    val j = i + delta
+    if (i == j || i !in groups.indices || j !in groups.indices) return groups
+    val kept = groups.mapIndexed { k, g -> if (g.color != null || (k != i && k != j)) g else g.copy(color = defaultSeriesName(k)) }.toMutableList()
+    kept[i] = kept[j].also { kept[j] = kept[i] }
+    return kept
+}
+
 fun moveSeries(series: List<Series>, i: Int, delta: Int): List<Series> {
     val j = i + delta
     if (i == j || i !in series.indices || j !in series.indices) return series
@@ -146,7 +158,8 @@ fun newSection(board: Board, type: String): Section {
 /** A section's type changed: a chart gets something to group by, a table a report, a round chart loses what it cannot have. */
 fun withType(section: Section, type: String): Section {
     var next = section.copy(type = type)
-    if (isChartType(type) && next.by == null) {
+    // A heatmap's columns are a date or a value, never groups the board writes.
+    if (isChartType(type) && (next.by == null || (type == "heatmap" && next.by?.groups != null))) {
         next = next.copy(by = if (type == "line" || type == "area" || type == "heatmap") By(time = TimeBy("entry", "week")) else By(field = "project"))
     }
     if (type == "table" && next.report == null) next = next.copy(report = "next")

@@ -38,6 +38,20 @@ export interface By {
    * chart's own.
    */
   time?: { field: string; step: Step | string; range?: AxisRange };
+  /** Groups the board writes, as Chart.js has labels: a pie of these is a slice for each, in their order. */
+  groups?: WrittenGroup[];
+}
+
+/** A group of a chart the board writes: its label, and the filter that picks its tasks (with each series' own). */
+export interface WrittenGroup {
+  label: string;
+  filter?: string;
+  /** A Taskwarrior colour name (`red`, `bright blue`), drawn in the page's palette, or `#rrggbb`. */
+  color?: string;
+  /** Its tasks are not picked by the section's filter. */
+  ignoreSectionFilter?: boolean;
+  /** Its tasks are not picked by the board's filter. */
+  ignoreBoardFilter?: boolean;
 }
 
 /** The range a chart's date axis covers: a board range by its name, or two dates written as a range's are. */
@@ -78,6 +92,10 @@ export interface Series {
   color?: string;
   /** Count the tasks in a state as of the end of each period, not what happened in it. */
   span?: Span;
+  /** Its tasks are not picked by the section's filter. */
+  ignoreSectionFilter?: boolean;
+  /** Its tasks are not picked by the board's filter. */
+  ignoreBoardFilter?: boolean;
 }
 
 /**
@@ -494,8 +512,10 @@ export function newBoard(name: string, boards: Board[]): Board {
  * The filter a section runs: the board's (unless the section ignores it), then its own, then a series', each in parentheses
  * so an `or` in one cannot leak into the next.
  */
-export function effectiveFilter(board: Board, section: Section, series?: Series): string {
-  return [section.ignoreBoardFilter ? undefined : board.filter, section.filter, series?.filter]
+export function effectiveFilter(board: Board, section: Section, series?: Series, group?: WrittenGroup): string {
+  const noBoard = section.ignoreBoardFilter || series?.ignoreBoardFilter || group?.ignoreBoardFilter;
+  const noSection = series?.ignoreSectionFilter || group?.ignoreSectionFilter;
+  return [noBoard ? undefined : board.filter, noSection ? undefined : section.filter, series?.filter, group?.filter]
     .map((f) => f?.trim())
     .filter((f): f is string => !!f)
     .map((f) => `( ${f} )`)
@@ -710,7 +730,8 @@ export function orderChart(
   section: Section,
   limit: number | null = typeof section.limit === 'number' ? section.limit : null,
 ): Chart {
-  const sort = section.sort ?? (section.by?.time ? null : 'value-');
+  // Values come largest first; dates in time order, and groups the board writes in theirs.
+  const sort = section.sort ?? (section.by?.field ? 'value-' : null);
   const total = (i: number) => chart.datasets.reduce((sum, d) => sum + (d.data[i] ?? 0), 0);
   const nothing = (i: number) => chart.datasets.every((d) => d.data[i] === null);
   let order = chart.labels.map((_, i) => i).filter((i) => groupShown(section, chart.labels[i]));
@@ -796,7 +817,8 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
   const exports = new Map<string, Promise<CliResult>>();
   /** The filter a section (or one of its series) runs, with the board's controls in it. */
   const controls = board.controls ?? [];
-  const filterOf = (s: Section, x?: Series) => substituteControls(effectiveFilter(board, s, x), controls, zone);
+  const filterOf = (s: Section, x?: Series, g?: WrittenGroup) =>
+    substituteControls(effectiveFilter(board, s, x, g), controls, zone);
   const exportOf = (filter: string) => {
     let p = exports.get(filter);
     if (!p) exports.set(filter, (p = run({ args: [...splitWords(filter), 'export'] }).then((r) => r.result)));
@@ -829,9 +851,25 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
         return [s.id, { kind: 'answer', answer: aggregate(got.text, s, zone), sources }];
       }
       // A chart: each series runs its own filter (those that share one share its export), and they are laid on one axis.
-      const inputs: { label: string; tasks: string; measure: Measure; span?: Span }[] = [];
+      // With groups the board writes, each series runs one for each group, and its tasks are those of each.
+      const inputs: { label: string; tasks: string; measure: Measure; span?: Span; parts?: string[] }[] = [];
       const sources: Source[] = [];
+      const groups = s.by?.groups ?? [];
+      const many = seriesOf(s).length > 1;
       for (const x of seriesOf(s)) {
+        if (groups.length) {
+          const parts: string[] = [];
+          for (const g of groups) {
+            const filter = filterOf(s, x, g);
+            const got = await tasksOf(filter);
+            const label = many ? `${x.label} / ${g.label}` : g.label;
+            if ('error' in got) return [s.id, { kind: 'error', message: `${label}: ${got.error}` }];
+            parts.push(got.text);
+            sources.push({ label, filter, text: got.text });
+          }
+          inputs.push({ label: x.label, tasks: '', measure: x.measure ?? s.measure, span: x.span, parts });
+          continue;
+        }
         const filter = filterOf(s, x);
         const got = await tasksOf(filter);
         if ('error' in got) return [s.id, { kind: 'error', message: `${x.label}: ${got.error}` }];
