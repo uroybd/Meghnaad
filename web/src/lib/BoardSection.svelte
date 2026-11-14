@@ -165,6 +165,28 @@
     min-height: 0;
     overflow: auto;
   }
+  /*
+   * A table scrolls inside the section with its header row kept at the top. The table's own box does not scroll here (a
+   * box that scrolls sideways is what a sticky header would stick to), so the section's body scrolls both ways. Phones
+   * show cards, which have no header row.
+   */
+  @media (min-width: 761px) {
+    .body :global(.wrap) {
+      overflow-x: visible;
+    }
+    .body :global(.wrap thead th) {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--panel);
+      /* A collapsed border stays behind with the rows; a shadow moves with the cell. */
+      box-shadow: inset 0 -1px 0 var(--line);
+    }
+    .body :global(.wrap.pinned thead th.actions) {
+      z-index: 3;
+      background: var(--panel);
+    }
+  }
   /* A heatmap's grids share the body, each with a plot that is positioned for the chart to fill. */
   .grids {
     display: flex;
