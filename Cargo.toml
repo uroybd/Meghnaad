@@ -102,3 +102,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.pbkdf2]
 opt-level = 3
+
+# Dependencies carry no debug info in debug builds and tests: our own crates keep it (backtraces, a debugger), and the
+# debug build is a fraction of the size. `just cleanup` clears what is left of old builds.
+[profile.dev.package."*"]
+debug = false

@@ -413,7 +413,9 @@ docs/             the guides above
 
 The common tasks are also recipes for [`just`](https://just.systems) (`just` lists them): `just check` runs every check
 CI runs, `just tidy` lints and tests without fixing anything, `just release` bumps, tags and pushes a version (`just
-release patch tidy` lints and tests first), `just deploy` starts the Deploy workflow and `just ship` does both.
+release patch tidy` lints and tests first), `just deploy` starts the Deploy workflow and `just ship` does both. `just
+cleanup` frees the disk old builds of our own crates take (as `just release` does after each bump; `just cleanup debug`:
+the whole debug build, `just cleanup all`: every build).
 
 ```bash
 npm run dev                   # the dev server: engine build and rebuild, Worker, app with hot reload

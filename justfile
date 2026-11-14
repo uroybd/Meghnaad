@@ -29,6 +29,21 @@ tui *args:
 docs:
     mdbook build docs
 
+# Free disk: old builds of our crates (`debug`: the whole debug build; `all`: every Rust, Android and docs build)
+cleanup what="ours":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{ what }}" in
+      ours) node scripts/prune-target.mjs ;;
+      debug) cargo clean --profile dev ;;
+      all)
+        cargo clean
+        rm -rf app/build app/shared/build app/androidApp/build app/desktopApp/build docs/book
+        ;;
+      *) echo "The argument is \`ours\`, \`debug\` or \`all\`, not \`{{ what }}\`." >&2; exit 1 ;;
+    esac
+    df -h . | tail -1
+
 # --- Checks (what CI runs, in AGENTS.md's order) ---
 
 # Fix what clippy, rustfmt and Prettier can fix themselves
@@ -87,6 +102,8 @@ release level="patch" tidy="": _clean
       *) echo "The second argument is \`tidy\` or nothing, not \`{{ tidy }}\`." >&2; exit 1 ;;
     esac
     just bump {{ level }}
+    # The bump makes every build of our own crates stale (the version is in their hash); nothing would use them again.
+    node scripts/prune-target.mjs
     git add package.json package-lock.json Cargo.toml Cargo.lock
     git commit -q -m "chore: bump to $(just version)"
     git tag "v$(just version)"
