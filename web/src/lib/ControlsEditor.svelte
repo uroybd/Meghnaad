@@ -98,6 +98,20 @@
             />
             Several at once
           </label>
+          {#if c.multiple}
+            <label>
+              Join with
+              <input
+                class="mono join"
+                value={c.join ?? ''}
+                placeholder="or"
+                oninput={(e) => set(i, { join: e.currentTarget.value || undefined })}
+                spellcheck="false"
+                autocomplete="off"
+                aria-label="What joins the values of {called(c, i)}"
+              />
+            </label>
+          {/if}
           <label class="check">
             <input
               type="checkbox"
@@ -105,6 +119,14 @@
               onchange={(e) => set(i, { completed: e.currentTarget.checked || undefined })}
             />
             Offer values of completed tasks
+          </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={!!c.typed}
+              onchange={(e) => set(i, { typed: e.currentTarget.checked || undefined })}
+            />
+            Typed in at first
           </label>
         </div>
       {:else if c.type === 'boolean'}
@@ -149,8 +171,12 @@
   <span class="dim small">
     Any filter on the board can use a control: <code>due.after:$daterange.start</code>,
     <code>urgency.above:$number</code>,
-    <code>$select</code> (the clause that picks what is chosen: <code>project:Home</code>), <code>$boolean</code> (its text
-    for on or off). A selection with nothing chosen, or an empty text, picks every task.
+    <code>project:$select</code> (what is chosen, the term written for each value and joined:
+    <code>( project:A or project:B )</code>; an <code>or</code> is put in parentheses, any other join such as
+    <code>|</code> joins the values in the one term), <code>$boolean</code> (its text for on or off). A selection can
+    also be typed as an expression, <code>a and (b or c)</code>, and <code>$select.asNative</code> is short for the term
+    its source writes (<code>project:$select</code>, <code>+$tags</code>). A selection with nothing chosen, or an empty
+    text, picks every task.
   </span>
 </fieldset>
 
@@ -187,6 +213,9 @@
     align-items: center;
     font-size: 12px;
     color: var(--dim);
+  }
+  .join {
+    width: 8ch;
   }
   .kind {
     font-size: 12px;

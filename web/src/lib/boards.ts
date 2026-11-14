@@ -139,8 +139,8 @@ export interface DateRange {
 
 /**
  * What a control holds, by its kind (`tc_core::board::controls`). A filter on the board uses it as `$name`: a date range as
- * `$name.start` and `$name.end`, a number range as `$name.min` and `$name.max`, a selection as the clause that picks its
- * values (`project:Home`, `( +a or +b )`), and a switch as its text for on or off.
+ * `$name.start` and `$name.end`, a number range as `$name.min` and `$name.max`, a selection as its values (the term it is
+ * in written for each, joined: `project:$p` is `( project:A or project:B )`), and a switch as its text for on or off.
  */
 export type ControlKind =
   | { type: 'daterange'; start: string; end: string }
@@ -155,6 +155,12 @@ export type ControlKind =
       /** The choices include the values only completed tasks have. */
       completed?: boolean;
       values?: string[];
+      /** What goes between the values: `or` (none), `and`, `xor`, or any text, which joins them inside the term. */
+      join?: string;
+      /** An expression of values (`a and (b or c)`) typed in place of picking, which then takes their place. */
+      expr?: string;
+      /** The page offers the field to type in first, rather than the choices. */
+      typed?: boolean;
     }
   | { type: 'boolean'; on?: string; off?: string; value?: boolean };
 
@@ -171,6 +177,7 @@ export interface ControlValue {
   min?: string;
   max?: string;
   values?: string[];
+  expr?: string;
 }
 
 export const CONTROL_TYPES: { id: ControlType; label: string }[] = [
@@ -579,10 +586,23 @@ export function valueOf(c: Control): ControlValue {
     case 'numrange':
       return { min: c.min, max: c.max };
     case 'select':
-      return { values: c.values ?? [] };
+      return { values: c.values ?? [], expr: c.expr || undefined };
     case 'boolean':
       return { value: !!c.value };
   }
+}
+
+/**
+ * What is picked in a selection as an expression to type on from, when its join is an operator a filter reads (`a or b`);
+ * otherwise nothing, for there is no expression that says it.
+ */
+export function exprOf(c: Control): string | undefined {
+  if (c.type !== 'select' || !c.values?.length) return undefined;
+  const join = (c.join ?? 'or').trim();
+  if (!['and', 'or', 'xor'].includes(join)) return undefined;
+  const quoted = (v: string) =>
+    !/[\s()'"]/.test(v) && !['and', 'or', 'xor'].includes(v) ? v : v.includes("'") ? `"${v}"` : `'${v}'`;
+  return c.values.map(quoted).join(` ${join} `);
 }
 
 /** A new control of a kind, with values that work at once. */
@@ -610,6 +630,8 @@ export function usage(c: Control): string {
       return `$${c.name}.start and $${c.name}.end`;
     case 'numrange':
       return `$${c.name}.min and $${c.name}.max`;
+    case 'select':
+      return `${c.source === 'tags' ? '+' : `${c.source}:`}$${c.name} or $${c.name}.asNative`;
     default:
       return `$${c.name}`;
   }

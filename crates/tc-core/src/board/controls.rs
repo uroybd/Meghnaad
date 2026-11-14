@@ -4,13 +4,19 @@
 //! - `daterange`: a start and an end (`$name.start`, `$name.end`, and the counts of `ranges`).
 //! - `date`: one date or moment (`$name`).
 //! - `number`: one number (`$name`); `numrange`: a least and a most (`$name.min`, `$name.max`).
-//! - `select`: one value, or with `multiple` any number, of a project, the tags or a UDA (`source`). `$name` is the clause
-//!   that picks them: `project:Home`, `( +a or +b )`, `( priority:H or priority:M )`. The choices the page offers are the
-//!   values open tasks have, or with `completed` completed tasks' too; that is the page's to look up.
-//! - `boolean`: a text for on and one for off, and `$name` is the one in effect (`+next`, or nothing).
+//! - `select`: one value, or with `multiple` any number, of a project, the tags or a UDA (`source`), or an expression of
+//!   them (`expr`: `a and (b or c)`) typed in place of picking. `$name` is the values: the term it is in (`project:$p`,
+//!   `+$tags`) is written once for each, joined with `join` (`or` unless set): `( project:A or project:B )`. An `or` or
+//!   `xor` is put in parentheses; any other join (`,`, `|`) joins the values inside the one term (`description~a|b`). An
+//!   expression keeps its operators and parentheses and writes the term for each value in it. The choices the page offers
+//!   are the values open tasks have, or with `completed` completed tasks' too; that is the page's to look up.
+//!   `$name.asNative` writes the term as the source does natively, so `$p.asNative` is `project:$p` and `$t.asNative`
+//!   is `+$t`.
+//! - `boolean`: a text for on and one for off, and `$name` is the one in effect (`+next`, or nothing), in parentheses when
+//!   it is a term of its own and more than one word.
 //!
-//! A clause with nothing in it (no value picked, or an empty text) is written as `uuid.any:`, which every task matches, so
-//! `a or $proj` and `$proj and b` still read.
+//! A term with nothing to put in it (no value picked, or an empty text) is written as `uuid.any:`, which every task matches,
+//! so `a or project:$proj` and `+$tags and b` still read.
 
 use super::aggregate::Ctx;
 use super::ranges::{self, Range};
@@ -51,6 +57,12 @@ pub enum Kind {
         /// The choices include the values only completed tasks have.
         completed: bool,
         values: Vec<String>,
+        /// What goes between the values: `or`, `and`, `xor`, or any text, which joins them inside the term.
+        join: String,
+        /// An expression of values typed in place of picking them, which then takes their place.
+        expr: String,
+        /// The page offers the field to type in first, rather than the choices. It changes nothing in a filter.
+        typed: bool,
     },
     Boolean {
         on: String,
@@ -86,6 +98,12 @@ struct Wire {
     completed: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     values: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    join: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expr: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    typed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     on: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,6 +159,13 @@ fn read(v: &Value) -> Result<Control, String> {
                 multiple: flag("multiple"),
                 completed: flag("completed"),
                 values,
+                // A join's spaces may be meant (`, `); one of only spaces, or none, is `or`.
+                join: match o.get("join").and_then(Value::as_str) {
+                    Some(j) if !j.trim().is_empty() => j.to_owned(),
+                    _ => DEFAULT_JOIN.to_owned(),
+                },
+                expr: s("expr"),
+                typed: flag("typed"),
             }
         }
         "boolean" => Kind::Boolean {
@@ -184,8 +209,14 @@ impl From<Control> for Wire {
                 multiple,
                 completed,
                 values,
+                join,
+                expr,
+                typed,
             } => {
                 (w.source, w.multiple, w.completed, w.values) = (Some(source), multiple, completed, values);
+                w.typed = typed;
+                w.join = Some(join).filter(|j| j != DEFAULT_JOIN);
+                w.expr = Some(expr).filter(|e| !e.is_empty());
                 ("select", None)
             }
             Kind::Boolean { on, off, value } => {
@@ -201,6 +232,12 @@ impl From<Control> for Wire {
 
 /// What a filter gets for a clause with nothing in it: every task.
 const EVERY_TASK: &str = "uuid.any:";
+
+/// The word after a selection's name that writes it as its source's own term: `$project.asNative` is `project:Home`.
+const AS_NATIVE: &str = "asNative";
+
+/// What joins a selection's values unless it says otherwise.
+const DEFAULT_JOIN: &str = "or";
 
 /// The longest label kept.
 const MAX_LABEL: usize = 80;
@@ -262,6 +299,8 @@ pub fn problem(c: &Control) -> Option<String> {
             source,
             multiple,
             values,
+            join,
+            expr,
             ..
         } => {
             let named = !source.is_empty()
@@ -275,8 +314,10 @@ pub fn problem(c: &Control) -> Option<String> {
                 Some("picks one value; make it a multiple selection to pick several".into())
             } else if source == "tags" && values.iter().any(|v| v.contains(char::is_whitespace)) {
                 Some("a tag has no spaces".into())
+            } else if join.contains(['\n', '\r']) || join.chars().count() > 10 {
+                Some("a join is one line of at most 10 characters".into())
             } else {
-                None
+                expression(expr).err()
             }
         }
         Kind::Boolean { .. } => None,
@@ -330,19 +371,110 @@ fn word(value: &str) -> String {
     }
 }
 
-/// The clause that picks tasks with one of `values` in `source`.
-fn clause(source: &str, values: &[String]) -> String {
-    let one = |v: &String| {
-        if source == "tags" {
-            format!("+{v}")
+/// A piece of a selection's expression: a value, or an operator or parenthesis as it is written.
+enum Piece<'a> {
+    Value(String),
+    Op(&'a str),
+}
+
+/// A selection's expression in pieces: values (a quoted one may have spaces), `and`, `or`, `xor`, `(` and `)`; or why it
+/// cannot be read.
+fn expression(expr: &str) -> Result<Vec<Piece<'_>>, String> {
+    let mut pieces = Vec::new();
+    let mut depth = 0usize;
+    let mut rest = expr.trim_start();
+    while let Some(c) = rest.chars().next() {
+        let len = if c == '(' || c == ')' {
+            if c == '(' {
+                depth += 1;
+            } else {
+                depth = depth.checked_sub(1).ok_or("a ) closes nothing")?;
+            }
+            pieces.push(Piece::Op(&rest[..1]));
+            1
+        } else if c == '"' || c == '\'' {
+            let Some(close) = rest[1..].find(c) else {
+                return Err(format!("a {c} is not closed"));
+            };
+            pieces.push(Piece::Value(rest[1..=close].to_owned()));
+            close + 2
         } else {
-            format!("{source}:{}", word(v))
+            let len = rest
+                .find(|c: char| c.is_whitespace() || c == '(' || c == ')')
+                .unwrap_or(rest.len());
+            let w = &rest[..len];
+            if is_operator(w) {
+                pieces.push(Piece::Op(w));
+            } else {
+                pieces.push(Piece::Value(w.to_owned()));
+            }
+            len
+        };
+        rest = rest[len..].trim_start();
+    }
+    if depth > 0 {
+        return Err("a ( is not closed".into());
+    }
+    Ok(pieces)
+}
+
+/// `and`, `or` or `xor`, which a filter reads as an operator; as in `task`, only in lower case (`OR` is a word).
+fn is_operator(w: &str) -> bool {
+    matches!(w, "and" | "or" | "xor")
+}
+
+/// A selection written into the term it is in, `prefix` before `$name` and `suffix` after it: the term for each value,
+/// joined, or an expression with the term for each value in it.
+fn select_text(prefix: &str, suffix: &str, values: &[String], join: &str, expr: &str) -> Result<String, String> {
+    let term = |v: &str| format!("{prefix}{}{suffix}", word(v));
+    if !expr.is_empty() {
+        let pieces = expression(expr)?;
+        let mut out: Vec<String> = Vec::with_capacity(pieces.len());
+        let mut terms = 0;
+        for p in pieces {
+            match p {
+                Piece::Value(v) => {
+                    terms += 1;
+                    out.push(term(&v));
+                }
+                Piece::Op(o) => out.push(o.to_owned()),
+            }
         }
-    };
-    match values {
+        return Ok(match terms {
+            0 => EVERY_TASK.to_owned(),
+            1 if out.len() == 1 => out.join(" "),
+            _ => format!("( {} )", out.join(" ")),
+        });
+    }
+    let op = join.trim();
+    Ok(match values {
         [] => EVERY_TASK.to_owned(),
-        [v] => one(v),
-        _ => format!("( {} )", values.iter().map(one).collect::<Vec<_>>().join(" or ")),
+        [v] => term(v),
+        _ if is_operator(op) => {
+            let joined = values
+                .iter()
+                .map(|v| term(v))
+                .collect::<Vec<_>>()
+                .join(&format!(" {op} "));
+            // An `and` binds before `or` and `xor`, so only they need holding together.
+            if op == "and" {
+                joined
+            } else {
+                format!("( {joined} )")
+            }
+        }
+        _ => term(&values.join(join)),
+    })
+}
+
+/// A switch's text written into the term it is in: in parentheses when it is the whole term and more than one word.
+fn switch_text(prefix: &str, suffix: &str, text: &str) -> String {
+    if text.is_empty() {
+        EVERY_TASK.to_owned()
+    } else if prefix.is_empty() && suffix.is_empty() && text.contains(char::is_whitespace) {
+        format!("( {text} )")
+    } else {
+        format!("{prefix}{text}{suffix}")
     }
 }
 
@@ -359,15 +491,22 @@ fn variable(s: &str) -> Option<(&str, Option<&str>, usize)> {
     if !name.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
         return None;
     }
+    // A word may have capitals (`asNative`); a name may not.
     let word = body[name_len..]
         .strip_prefix('.')
-        .map(|after| &after[..ident(after)])
+        .map(|after| {
+            let len = after
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(after.len());
+            &after[..len]
+        })
         .filter(|w| !w.is_empty());
     Some((name, word, 1 + name_len + word.map_or(0, |w| 1 + w.len())))
 }
 
-/// What one variable is written as, for a control that is not a date range.
-fn value_of(c: &Control, word: Option<&str>, ctx: &Ctx) -> Result<String, String> {
+/// What one variable is written as, for a control that is not a date range. A selection and a switch are written into the
+/// term they are in, `prefix` before the variable and `suffix` after it, and take their place.
+fn value_of(c: &Control, word: Option<&str>, ctx: &Ctx, prefix: &str, suffix: &str) -> Result<String, String> {
     let name = &c.name;
     if let Some(p) = problem(c) {
         return Err(format!("control '{name}': {p}"));
@@ -380,18 +519,34 @@ fn value_of(c: &Control, word: Option<&str>, ctx: &Ctx) -> Result<String, String
         (Kind::Numrange { min, .. }, Some("min")) => Ok(min.clone()),
         (Kind::Numrange { max, .. }, Some("max")) => Ok(max.clone()),
         (Kind::Numrange { .. }, _) => Err(format!("'{name}' is a number range: write ${name}.min or ${name}.max")),
-        (Kind::Select { source, values, .. }, None) => Ok(clause(source, values)),
-        (Kind::Boolean { on, off, value }, None) => {
-            let text = if *value { on } else { off };
-            Ok(if text.is_empty() {
-                EVERY_TASK.to_owned()
+        (Kind::Select { values, join, expr, .. }, None) => select_text(prefix, suffix, values, join, expr),
+        (
+            Kind::Select {
+                source,
+                values,
+                join,
+                expr,
+                ..
+            },
+            Some(AS_NATIVE),
+        ) => {
+            // The term the source is written as natively: `project:A`, `+a`, `priority:H`.
+            let native = if source == "tags" {
+                format!("{prefix}+")
             } else {
-                format!("( {text} )")
-            })
+                format!("{prefix}{source}:")
+            };
+            select_text(&native, suffix, values, join, expr)
         }
+        (Kind::Boolean { on, off, value }, None) => Ok(switch_text(prefix, suffix, if *value { on } else { off })),
         (_, Some(w)) => Err(format!("'{name}' has no .{w}: write ${name}")),
         (Kind::Daterange { .. }, None) => Err(format!("'{name}' is a date range: write ${name}.start or ${name}.end")),
     }
+}
+
+/// Where a term of a filter ends: a space or a parenthesis.
+fn is_edge(c: char) -> bool {
+    c.is_whitespace() || c == '(' || c == ')'
 }
 
 /// `filter` with every control it names written as what it is now: a date range's moments and counts (see `ranges`), a
@@ -422,8 +577,17 @@ pub fn substitute(filter: &str, controls: &[Control], ctx: &Ctx) -> Result<Strin
             };
             out.push_str(&ranges::substitute(&rest[..len], &date_ranges, ctx)?);
             len
+        } else if matches!(c.kind, Kind::Select { .. } | Kind::Boolean { .. }) {
+            // The term the variable is in: from the space or parenthesis before it to the one after it.
+            let starts = out.rfind(is_edge).map_or(0, |i| i + 1);
+            let prefix = out.split_off(starts);
+            let after = &rest[len..];
+            let suffix_len = after.find(is_edge).unwrap_or(after.len());
+            let suffix = substitute(&after[..suffix_len], controls, ctx)?;
+            out.push_str(&value_of(c, word, ctx, &prefix, &suffix)?);
+            len + suffix_len
         } else {
-            out.push_str(&value_of(c, word, ctx)?);
+            out.push_str(&value_of(c, word, ctx, "", "")?);
             len
         };
         rest = &rest[len..];
@@ -476,12 +640,55 @@ mod tests {
             s("estimate.above:$est.min estimate.below:$est.max").unwrap(),
             "estimate.above:1 estimate.below:2.5"
         );
-        assert_eq!(s("$proj").unwrap(), "project:\"My Home\"");
-        assert_eq!(s("$tags").unwrap(), "( +a or +b )");
-        assert_eq!(s("status:pending $pri").unwrap(), "status:pending uuid.any:");
+        assert_eq!(s("project:$proj").unwrap(), "project:\"My Home\"");
+        assert_eq!(s("$proj.asNative").unwrap(), "project:\"My Home\"");
+        assert_eq!(s("($tags.asNative)").unwrap(), "(( +a or +b ))");
+        assert_eq!(s("$pri.asNative").unwrap(), "uuid.any:");
+        assert_eq!(s("+$tags").unwrap(), "( +a or +b )");
+        assert_eq!(s("(+$tags)").unwrap(), "(( +a or +b ))");
+        assert_eq!(s("status:pending priority:$pri").unwrap(), "status:pending uuid.any:");
         assert_eq!(s("$next").unwrap(), "uuid.any:");
         // A sentence's full stop, and a regular expression's end, are left as they are.
         assert_eq!(s("description~done$ $urg.").unwrap(), "description~done$ 5.");
+    }
+
+    fn select(join: &str, values: &[&str], expr: &str) -> Vec<Control> {
+        vec![control(serde_json::json!({
+            "name": "s", "type": "select", "source": "project", "multiple": true,
+            "values": values, "join": join, "expr": expr, "typed": true,
+        }))]
+    }
+
+    #[test]
+    fn a_selection_is_joined_as_its_join_says() {
+        let s = |join: &str, values: &[&str], f: &str| substitute(f, &select(join, values, ""), &ctx()).unwrap();
+        assert_eq!(s("and", &["a", "b"], "+$s"), "+a and +b");
+        assert_eq!(s(" xor ", &["a", "b"], "+$s"), "( +a xor +b )");
+        assert_eq!(s("|", &["a", "b c"], "description~$s"), "description~\"a|b c\"");
+        assert_eq!(s(", ", &["a", "b"], "x:$s."), "x:\"a, b\".");
+        assert_eq!(s("or", &["a"], "+$s"), "+a");
+        assert_eq!(s("or", &[], "x or +$s"), "x or uuid.any:");
+        // Another variable in the same term is written as well.
+        assert_eq!(s("or", &["a", "b"], "$s$s"), "( a( a or b ) or b( a or b ) )");
+    }
+
+    #[test]
+    fn an_expression_takes_the_place_of_the_values() {
+        let s = |expr: &str, f: &str| substitute(f, &select("or", &["x"], expr), &ctx());
+        assert_eq!(s("a and (b or c)", "+$s").unwrap(), "( +a and ( +b or +c ) )");
+        assert_eq!(s("+a and (+b or +c)", "$s").unwrap(), "( +a and ( +b or +c ) )");
+        // `OR` is no operator to `task`, so it is a value here too.
+        assert_eq!(s("a OR b", "+$s").unwrap(), "( +a +OR +b )");
+        assert_eq!(s("a or b", "$s.asNative").unwrap(), "( project:a or project:b )");
+        assert_eq!(s("'My Home'", "project:$s").unwrap(), "project:\"My Home\"");
+        for (bad, said) in [
+            ("(a", "( is not closed"),
+            ("a)", ") closes nothing"),
+            ("\"a", "is not closed"),
+        ] {
+            let e = s(bad, "+$s").unwrap_err();
+            assert!(e.contains(said), "{bad}: {e}");
+        }
     }
 
     #[test]
@@ -494,7 +701,19 @@ mod tests {
         {
             *value = true;
         }
-        assert_eq!(substitute("$next", &b, &ctx()).unwrap(), "( +next )");
+        assert_eq!(substitute("$next", &b, &ctx()).unwrap(), "+next");
+        if let Some(Control {
+            kind: Kind::Boolean { on, .. },
+            ..
+        }) = b.last_mut()
+        {
+            *on = "H".into();
+        }
+        assert_eq!(substitute("priority:$next", &b, &ctx()).unwrap(), "priority:H");
+        let two = [control(
+            serde_json::json!({ "name": "n", "type": "boolean", "on": "+a or +b", "value": true }),
+        )];
+        assert_eq!(substitute("$n", &two, &ctx()).unwrap(), "( +a or +b )");
     }
 
     #[test]
@@ -564,7 +783,7 @@ mod tests {
 
     #[test]
     fn a_control_is_written_out_as_it_was_read() {
-        for c in board() {
+        for c in board().into_iter().chain(select("and", &["a"], "a or b")) {
             let again: Control = serde_json::from_value(serde_json::to_value(&c).unwrap()).unwrap();
             assert_eq!(again, c);
         }

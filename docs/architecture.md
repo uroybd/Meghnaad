@@ -559,8 +559,9 @@ groups is each screen's job.
   that is no range, or a date that can't be read, is refused.
 - **`controls`** is a board's named values, of which a date range is one kind: a date, a number, a number range, a
   selection of a project, tags or a UDA's values, and a switch, each with an optional label. `board_substitute` writes
-  every `$name` in a filter as what it is now (a moment, a number, the clause that picks a selection's values, a switch's
-  text for on or off, `uuid.any:` for an empty one), and hands `$name.start` and the counts to `ranges`; `board_controls`
+  every `$name` in a filter as what it is now (a moment, a number, a selection's values with the term around `$name`
+  written for each and joined by its `join`, or its typed `expr` with the term written for each value in it, a switch's
+  text for on or off, `uuid.any:` in place of a term with nothing to put in it), and hands `$name.start` and the counts to `ranges`; `board_controls`
   works out what a date range or a date is now, for the page. A control is read from the JSON by hand (`read`), which
   costs the WebAssembly much less than an internally tagged enum. `normalize` reads a board's old `ranges` as date-range
   controls and writes `controls`. The choices a selection offers are the front end's to ask for (`_unique`).

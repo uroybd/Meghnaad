@@ -85,8 +85,8 @@ with none, the name is shown as a label (`sprint_week` is "Sprint week"). What a
 | **Date** | one date or moment | `$name` | the moment, as Taskwarrior writes one (`20261009T000000Z`) |
 | **Number** | one number | `$name` | the number as typed |
 | **Number range** | a least and a most | `$name.min`, `$name.max` | the numbers |
-| **Selection** | a value of projects, tags or a UDA with values; or several, with **Several at once** | `$name` | `project:Home`, `( +a or +b )`, `( priority:H or priority:M )` |
-| **Switch** | on or off, and a filter for each | `$name` | the filter in effect, in parentheses |
+| **Selection** | a value of projects, tags or a UDA with values; or several, with **Several at once**; or an expression of them | `$name`, `$name.asNative` | the values: `project:$name` is `project:Home`, `+$name` is `( +a or +b )`; `$name.asNative` is the term its source writes, the same |
+| **Switch** | on or off, and a filter for each | `$name` | the filter in effect |
 
 For a range named `daterange` (`sow` to `eow`):
 
@@ -98,24 +98,50 @@ and a board of open work, cut by a project picked above it, by tags, by urgency,
 a switch for what is next:
 
 ```
-status:pending $project $tags urgency.above:$urgency.min urgency.below:$urgency.max due.before:$cutoff estimate.above:$least $next
+status:pending project:$project +$tags urgency.above:$urgency.min urgency.below:$urgency.max due.before:$cutoff estimate.above:$least $next
 ```
 
-A date, a number and a range's ends are values, written after an attribute (`due.before:$cutoff`). A selection and a
-switch are whole terms: write `$project`, not `project:$project`.
+Every control is a value, written where the value goes: after an attribute (`due.before:$cutoff`,
+`project:$project`, `priority:$pri`), after a `+` (`+$tags`), or alone (`$next`).
 
 ### Selections
 
 A selection offers the values open tasks have (`task _unique`): their projects (each with its parents: `FUL` before `FUL.Chores`, picking both, as `project:FUL` does), their tags, or a UDA's. **Offer values of
 completed tasks** adds those that only completed tasks have. A UDA can be picked from when it has `uda.<name>.values`,
-and offers those of its values in use, in their order. Several values are joined with `or`, so a task with any of them
-is picked. A value with a space is quoted (`project:"My Home"`). Nothing chosen picks every task: `$name` is then
-`uuid.any:`, as an empty switch is.
+and offers those of its values in use, in their order. A value with a space is quoted (`project:"My Home"`).
+
+The term `$name` is in (from the space or parenthesis before it to the one after it) is written once for each value
+chosen, joined with **Join with**, which is `or` unless set, so a task with any of them is picked:
+
+| Join with | `+$tags` with `a` and `b` | |
+| --- | --- | --- |
+| `or` (none set) | `( +a or +b )` | any of them |
+| `xor` | `( +a xor +b )` | |
+| `and` | `+a and +b` | all of them; no parentheses are needed |
+| any other text, such as `,` | `+a,b` | the values joined inside the one term |
+
+Any other join makes one value of them, so with `|` a regular expression can pick any of them:
+`description~$words` is `description~a|b`.
+
+In place of picking, a selection can be typed: the small button beside it swaps the choices for a field, which starts
+from what is picked (`a or b`) and takes any value, one no task has yet too, or an expression of values: `a and (b or
+c)`, with `+$tags`, is `( +a and ( +b or +c ) )`. Its words `and`, `or` and `xor` (in lower case, as `task` reads them)
+and its parentheses are kept, each other word is a value (quote one with a space, `'My Home'`), and the term is written
+for each. Written with a bare `$tags`, an expression's values are terms already: `+a and (+b or +c)`. Swapping back, or
+picking a value, clears it. **Typed in at first** opens the selection with the field rather than the choices; one with
+an expression always opens with it. Nothing chosen picks every task: the term is then `uuid.any:`, as for an empty
+switch.
+
+`$name.asNative` is short for the term the source writes natively: `$project.asNative` is `project:$project`,
+`$tags.asNative` is `+$tags`, and for a UDA `$pri.asNative` is `priority:$pri`. Joins and expressions work the same, so
+`$project.asNative` with two projects is `( project:A or project:B )`.
 
 ### Switches
 
 A switch has a filter for **When on** and one for **When off**, such as `+next` and nothing. An empty one picks every task:
-`$name` is then `uuid.any:`, which every task matches, so `$next or +urgent` and `status:pending $next` still read.
+the term is then `uuid.any:`, which every task matches, so `$next or +urgent` and `status:pending $next` still read. A
+switch alone in its term, with more than one word (`+a or +b`), is put in parentheses; within a term it is its text
+as it is, so on `H` and off `L` make `priority:$level` a switch between two priorities.
 
 ### Dates
 
@@ -333,11 +359,13 @@ are read as date-range controls and written back under `controls` when the board
 { "name": "least", "type": "number", "value": "2" }
 { "name": "urgency", "type": "numrange", "min": "1", "max": "10" }
 { "name": "project", "type": "select", "source": "project", "values": ["Home"] }
-{ "name": "tags", "type": "select", "source": "tags", "multiple": true, "completed": true, "values": ["a", "b"] }
+{ "name": "tags", "type": "select", "source": "tags", "multiple": true, "completed": true, "values": ["a", "b"], "join": "and" }
+{ "name": "areas", "type": "select", "source": "tags", "expr": "a and (b or c)", "typed": true }
 { "name": "next", "type": "boolean", "on": "+next", "off": "", "value": false }
 ```
 
-`source` is `project`, `tags` or the name of a UDA; `values` is what is chosen (none: any). Dates are anything
+`source` is `project`, `tags` or the name of a UDA; `values` is what is chosen (none: any), `join` what joins them
+(none: `or`), `expr` an expression typed in their place, and `typed` that the field to type in is shown first. Dates are anything
 Taskwarrior reads; a number may be written as a number or as text.
 
 `x` and `w` are columns (0 to 11, and 2 to 12); `y` and `h` are rows. `measure` is `{ "fn": "count" }` unless it says

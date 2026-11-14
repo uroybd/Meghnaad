@@ -132,7 +132,8 @@ data class Section(
  * A named value set above the board (boards.ts `Control`, `tc_core::board::controls`), which any filter on it uses as `$name`: a
  * date range (`daterange`: [start], [end]; `$name.start`, `$name.end`), a date (`date`: [value]), a number (`number`: [value]), a
  * number range (`numrange`: [min], [max]; `$name.min`, `$name.max`), a selection (`select`: [values] of [source], one or with
- * [multiple] several; the clause that picks them) or a switch (`boolean`: [value], and the text [on] or [off] it is). [label] is
+ * [multiple] several joined with [join] (`or` when none), or an expression of them typed in [expr]; the term `$name` is in is
+ * written for each value) or a switch (`boolean`: [value], and the text [on] or [off] it is). [label] is
  * what is shown, any text; the name what a filter writes. [value] is text, or for a switch true or false.
  */
 @Serializable
@@ -149,6 +150,10 @@ data class Control(
     val multiple: Boolean? = null,
     val completed: Boolean? = null,
     val values: List<String>? = null,
+    val join: String? = null,
+    val expr: String? = null,
+    /** A selection offers the field to type in first, rather than the choices. */
+    val typed: Boolean? = null,
     val on: String? = null,
     val off: String? = null,
 ) {
@@ -160,12 +165,13 @@ data class Control(
 
     /** This control's settings with the values (not the settings) of [typed]: what is set above the board over the board's own. */
     fun withValues(typed: Control): Control =
-        copy(start = typed.start, end = typed.end, value = typed.value, min = typed.min, max = typed.max, values = typed.values)
+        copy(start = typed.start, end = typed.end, value = typed.value, min = typed.min, max = typed.max, values = typed.values, expr = typed.expr)
 
     /** The same values as [other]'s. */
     fun sameValues(other: Control): Boolean =
         start?.trim() == other.start?.trim() && end?.trim() == other.end?.trim() && value == other.value &&
-            min?.trim() == other.min?.trim() && max?.trim() == other.max?.trim() && values.orEmpty() == other.values.orEmpty()
+            min?.trim() == other.min?.trim() && max?.trim() == other.max?.trim() && values.orEmpty() == other.values.orEmpty() &&
+            expr.orEmpty() == other.expr.orEmpty()
 }
 
 /** The kinds of control, and what each is called. */
@@ -188,10 +194,29 @@ fun newControl(type: String, name: String): Control = when (type) {
     else -> Control(name, type, on = "", off = "")
 }
 
+/**
+ * What is picked in a selection as an expression to type on from (boards.ts `exprOf`), when its join is an operator a filter reads
+ * (`a or b`); otherwise null, for there is no expression that says it.
+ */
+fun exprOf(c: Control): String? {
+    val values = c.values.orEmpty()
+    if (c.type != "select" || values.isEmpty()) return null
+    val join = (c.join ?: "or").trim()
+    val ops = listOf("and", "or", "xor")
+    if (join !in ops) return null
+    fun quoted(v: String) = when {
+        v.none { it.isWhitespace() || it in "()'\"" } && v !in ops -> v
+        '\'' in v -> "\"$v\""
+        else -> "'$v'"
+    }
+    return values.joinToString(" $join ") { quoted(it) }
+}
+
 /** How a filter writes a control, for a hint beside it. */
 fun usage(c: Control): String = when (c.type) {
     "daterange" -> "\$${c.name}.start and \$${c.name}.end"
     "numrange" -> "\$${c.name}.min and \$${c.name}.max"
+    "select" -> "${if (c.source == "tags") "+" else "${c.source}:"}\$${c.name} or \$${c.name}.asNative"
     else -> "\$${c.name}"
 }
 

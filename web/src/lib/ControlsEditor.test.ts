@@ -76,9 +76,33 @@ describe('the controls of a board, in its settings', () => {
     )!;
     several.querySelector('input')!.click();
     flushSync();
+    type('input[aria-label="What joins the values of tags"]', 'and');
     expect(p.controls).toEqual([
       { name: 'next', type: 'boolean', on: '+next' },
-      { name: 'tags', type: 'select', source: 'tags', multiple: true },
+      { name: 'tags', type: 'select', source: 'tags', multiple: true, join: 'and' },
     ]);
+  });
+
+  it('swaps a selection’s choices for a field to type in, starting from what is picked', () => {
+    const p = draw([{ name: 'tags', type: 'select', source: 'tags', multiple: true, values: ['a', 'My Home'] }]);
+    const swap = () => document.querySelector<HTMLButtonElement>('button.swap')!;
+    expect(document.querySelector('input[aria-label="Expression of Tags"]')).toBeNull();
+    swap().click();
+    flushSync();
+    expect(p.controls[0]).toMatchObject({ expr: "a or 'My Home'" });
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Expression of Tags"]')!.value).toBe(
+      "a or 'My Home'",
+    );
+    swap().click();
+    flushSync();
+    expect(p.controls[0]).toMatchObject({ values: ['a', 'My Home'], expr: undefined });
+    expect(document.querySelector('input[aria-label="Expression of Tags"]')).toBeNull();
+    // A board can open it typed.
+    const typed = [...document.querySelectorAll<HTMLLabelElement>('label.check')].find((l) =>
+      l.textContent?.includes('Typed in at first'),
+    )!;
+    typed.querySelector('input')!.click();
+    flushSync();
+    expect(p.controls[0]).toMatchObject({ typed: true });
   });
 });

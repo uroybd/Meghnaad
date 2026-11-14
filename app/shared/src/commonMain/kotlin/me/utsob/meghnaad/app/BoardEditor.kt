@@ -93,9 +93,16 @@ private fun BoardControlsEditor(store: Store, controls: List<Control>, onChange:
                             Checkbox(c.multiple == true, onCheckedChange = null)
                             Text("Several at once", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
                         }
+                        if (c.multiple == true) {
+                            TextBox("What joins the values of $called", c.join.orEmpty(), { set(c.copy(join = it.ifEmpty { null })) }, mono = true, placeholder = "or")
+                        }
                         Row(Modifier.clickable { set(c.copy(completed = if (c.completed == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(c.completed == true, onCheckedChange = null)
                             Text("Offer values of completed tasks", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
+                        }
+                        Row(Modifier.clickable { set(c.copy(typed = if (c.typed == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(c.typed == true, onCheckedChange = null)
+                            Text("Typed in at first", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
                         }
                     }
                     if (c.type == "boolean") {
@@ -118,8 +125,10 @@ private fun BoardControlsEditor(store: Store, controls: List<Control>, onChange:
                 }
             }
             Dim(
-                "Any filter on the board can use a control: due.after:\$daterange.start, urgency.above:\$number, \$select (the clause that picks " +
-                    "what is chosen: project:Home), \$boolean (its text for on or off). A selection with nothing chosen, or an empty text, picks every task.",
+                "Any filter on the board can use a control: due.after:\$daterange.start, urgency.above:\$number, project:\$select (what is chosen, " +
+                    "the term written for each value and joined: ( project:A or project:B ); an or is put in parentheses, any other join such as | " +
+                    "joins the values in the one term), \$boolean (its text for on or off). A selection can also be typed as an expression, " +
+                    "a and (b or c), and \$select.asNative is short for the term its source writes (project:\$select, +\$tags). A selection with nothing chosen, or an empty text, picks every task.",
                 size = 11,
             )
         }

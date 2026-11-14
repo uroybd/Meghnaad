@@ -105,7 +105,7 @@ class BoardsTest {
         assertEquals("Which project", controlLabel(board.controls[0]))
         assertEquals("1", board.controls[2].min)
         val z = Zone(0, true, 1_791_376_200L)
-        val filter = "\$proj \$tags urgency.above:\$urg.min due.before:\$due \$next"
+        val filter = "project:\$proj +\$tags urgency.above:\$urg.min due.before:\$due \$next"
         assertEquals(
             "project:\"My Home\" ( +a or +b ) urgency.above:1 due.before:20261009T000000Z uuid.any:",
             substituteControls(filter, board.controls, z),
@@ -113,7 +113,13 @@ class BoardsTest {
         // What is set above the board takes the place of the board's own, its settings kept.
         val set = mapOf("next" to board.controls[4].copy(value = JsonPrimitive(true), on = "ignored"), "proj" to board.controls[0].copy(values = null))
         val viewed = viewedBoard(board, null, set)
-        assertEquals("uuid.any: ( +next )", substituteControls("\$proj \$next", viewed.controls, z))
+        assertEquals("uuid.any: +next", substituteControls("project:\$proj \$next", viewed.controls, z))
+        val typed = viewedBoard(board, null, mapOf("tags" to board.controls[1].copy(expr = "a and (b or c)")))
+        assertEquals("( +a and ( +b or +c ) )", substituteControls("+\$tags", typed.controls, z))
+        assertTrue(!board.controls[1].sameValues(typed.controls[1]))
+        assertEquals("a or b", exprOf(board.controls[1]))
+        assertEquals("a and 'or' and 'x(y)'", exprOf(board.controls[1].copy(values = listOf("a", "or", "x(y)"), join = "and")))
+        assertEquals(null, exprOf(board.controls[1].copy(join = "|")))
         assertTrue(board.controls[0].sameValues(board.controls[0].copy(label = "x")))
         // Written out and read again it is the same.
         assertEquals(n.boards, normalizeBoards(boardsToJson(n.boards)).boards)

@@ -11,6 +11,7 @@ import {
   freshId,
   choicesOf,
   controlLabel,
+  exprOf,
   largestGroups,
   loadBoard,
   moveBy,
@@ -369,24 +370,33 @@ describe('loading a board', () => {
     const run = vi.fn(async (_input: { args: string[] }) =>
       respond({ kind: 'file', name: 't.json', mime: '', text: FILE, count: 3 }),
     );
-    const b = board([sec('n', 0, 0, 3, 2, { filter: '$proj $tags urgency.above:$urg due.before:$due $next' })], {
-      controls: [
-        { name: 'proj', label: 'Which project', type: 'select', source: 'project', values: ['My Home'] },
-        { name: 'tags', type: 'select', source: 'tags', multiple: true, values: ['a', 'b'] },
-        { name: 'urg', type: 'number', value: '5' },
-        { name: 'due', type: 'date', value: '2026-10-09' },
-        { name: 'next', type: 'boolean', on: '+next', off: '' },
-      ],
-    });
+    const b = board(
+      [sec('n', 0, 0, 3, 2, { filter: 'project:$proj +$tags urgency.above:$urg due.before:$due $next' })],
+      {
+        controls: [
+          { name: 'proj', label: 'Which project', type: 'select', source: 'project', values: ['My Home'] },
+          { name: 'tags', type: 'select', source: 'tags', multiple: true, values: ['a', 'b'] },
+          { name: 'urg', type: 'number', value: '5' },
+          { name: 'due', type: 'date', value: '2026-10-09' },
+          { name: 'next', type: 'boolean', on: '+next', off: '' },
+        ],
+      },
+    );
     const zone = { tz: 0, week_starts_monday: true, now: 1_791_376_200 };
     await loadBoard(b, zone, run);
     await loadBoard(viewed(b, undefined, { next: { value: true }, proj: { values: [] } }), zone, run);
+    await loadBoard(viewed(b, undefined, { tags: { values: ['a'], expr: 'a and (b or c)' } }), zone, run);
     const ran = run.mock.calls.map(([i]) => i.args.join(' '));
     expect(ran).toEqual([
       '( project:My Home ( +a or +b ) urgency.above:5 due.before:20261009T000000Z uuid.any: ) export',
-      '( uuid.any: ( +a or +b ) urgency.above:5 due.before:20261009T000000Z ( +next ) ) export',
+      '( uuid.any: ( +a or +b ) urgency.above:5 due.before:20261009T000000Z +next ) export',
+      '( project:My Home ( +a and ( +b or +c ) ) urgency.above:5 due.before:20261009T000000Z uuid.any: ) export',
     ]);
     expect(controlLabel(b.controls![0])).toBe('Which project');
+    expect(exprOf({ name: 't', type: 'select', source: 'tags', values: ['a', 'or', 'x(y)'], join: 'and' })).toBe(
+      "a and 'or' and 'x(y)'",
+    );
+    expect(exprOf({ name: 't', type: 'select', source: 'tags', values: ['a', 'b'], join: '|' })).toBeUndefined();
     expect(controlLabel(b.controls![1])).toBe('Tags');
   });
 

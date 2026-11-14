@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { choicesOf, controlLabel, valueOf, type Control, type ControlValue } from './boards';
+  import { choicesOf, controlLabel, exprOf, valueOf, type Control, type ControlValue } from './boards';
   import DateField from './DateField.svelte';
+  import { List, TextCursorInput } from './icons';
   import { store } from './store.svelte';
 
   /**
    * One control of a board, as it is set above it: a date range's two dates, a date, a number, a least and a most, a selection
-   * of the values its source has (one, or several), or a switch. What is set goes to `onchange`; the control itself is not
-   * changed here. A selection asks for its choices when it is drawn and when a task changes.
+   * of the values its source has (one, or several) or an expression of them typed in, or a switch. What is set goes to
+   * `onchange`; the control itself is not changed here. A selection asks for its choices when it is drawn and when a task
+   * changes; a small button swaps its choices for the field to type in, which it opens with when it has an expression or
+   * the board says so (`typed`).
    */
   let {
     control,
@@ -36,10 +39,27 @@
     };
   });
 
+  /** The other way of setting a selection from the one the board opens with. */
+  let swapped = $state(false);
+  const typing = $derived(control.type === 'select' && (!!control.expr || !!control.typed !== swapped));
+
+  /** Typing starts from what is picked; picking drops what was typed. */
+  function swap() {
+    if (control.type !== 'select') return;
+    if (typing) {
+      swapped = !!control.typed;
+      if (control.expr) set({ expr: undefined });
+    } else {
+      swapped = !control.typed;
+      const expr = exprOf(control);
+      if (expr) set({ expr });
+    }
+  }
+
   function toggle(value: string, on: boolean) {
     if (control.type !== 'select') return;
     const was = control.values ?? [];
-    set({ values: on ? [...was.filter((v) => v !== value), value] : was.filter((v) => v !== value) });
+    set({ values: on ? [...was.filter((v) => v !== value), value] : was.filter((v) => v !== value), expr: undefined });
   }
 </script>
 
@@ -76,11 +96,22 @@
     aria-label="Most of {label}"
     oninput={(e) => set({ max: e.currentTarget.value })}
   />
+{:else if control.type === 'select' && typing}
+  <input
+    class="expr mono"
+    class:bad={invalid}
+    value={control.expr ?? ''}
+    placeholder="a and (b or c)"
+    spellcheck="false"
+    autocomplete="off"
+    aria-label="Expression of {label}"
+    onchange={(e) => set({ expr: e.currentTarget.value.trim() || undefined })}
+  />
 {:else if control.type === 'select' && !control.multiple}
   <select
     value={control.values?.[0] ?? ''}
     aria-label={label}
-    onchange={(e) => set({ values: e.currentTarget.value ? [e.currentTarget.value] : [] })}
+    onchange={(e) => set({ values: e.currentTarget.value ? [e.currentTarget.value] : [], expr: undefined })}
   >
     <option value="">Any</option>
     {#each choices as c (c)}<option value={c}>{c}</option>{/each}
@@ -112,6 +143,17 @@
   />
 {/if}
 
+{#if control.type === 'select'}
+  <button
+    type="button"
+    class="ghost swap"
+    title={typing ? 'Pick from the choices' : 'Type values or an expression'}
+    aria-label={typing ? `Pick ${label} from the choices` : `Type ${label}`}
+    onclick={swap}
+    >{#if typing}<List size={14} />{:else}<TextCursorInput size={14} />{/if}</button
+  >
+{/if}
+
 <style>
   .num {
     width: 7ch;
@@ -121,6 +163,13 @@
   }
   .multi {
     position: relative;
+  }
+  .swap {
+    padding: 2px 4px;
+    line-height: 0;
+  }
+  .expr {
+    width: 22ch;
   }
   .multi summary {
     cursor: pointer;
