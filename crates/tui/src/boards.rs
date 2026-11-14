@@ -107,6 +107,13 @@ fn keep(limit: Option<&Limit>, ranges: &[Range], ctx: &Ctx) -> Result<Option<usi
     }
 }
 
+/// Whether a chart by the value of an attribute shows a group: one of its `only` (when it has some) and none of its
+/// `except` (`groupShown` of the web app).
+fn shown(section: &Section, key: &str, label: &str) -> bool {
+    let is = |v: &String| v == key || v == label;
+    (section.only.is_empty() || section.only.iter().any(is)) && !section.except.iter().any(is)
+}
+
 /// The order of a chart's labels the section asks for (the largest total first for values, time order for dates) and as
 /// many as it keeps (for dates in time order, the latest): `orderChart` of the web app.
 pub fn order(chart: &Chart, section: &Section, keep: Option<usize>) -> Vec<usize> {
@@ -125,7 +132,9 @@ pub fn order(chart: &Chart, section: &Section, keep: Option<usize>) -> Vec<usize
             .iter()
             .all(|d| d.data.get(i).copied().flatten().is_none())
     };
-    let mut idx: Vec<usize> = (0..chart.labels.len()).collect();
+    let mut idx: Vec<usize> = (0..chart.labels.len())
+        .filter(|&i| time || shown(section, &chart.labels[i].key, &chart.labels[i].label))
+        .collect();
     if let Some(sort) = &sort {
         let down = sort.ends_with('-');
         if sort.starts_with("key") {
@@ -398,7 +407,9 @@ mod tests {
                 { "id": "p", "x": 0, "y": 0, "w": 6, "h": 4, "type": "bar", "by": { "field": "project" } },
                 { "id": "d", "x": 6, "y": 0, "w": 6, "h": 4, "type": "line",
                   "by": { "time": { "field": "end", "step": "week" } } },
-                { "id": "k", "x": 0, "y": 4, "w": 6, "h": 4, "type": "bar", "by": { "field": "project" }, "sort": "key+" }
+                { "id": "k", "x": 0, "y": 4, "w": 6, "h": 4, "type": "bar", "by": { "field": "project" }, "sort": "key+" },
+                { "id": "o", "x": 6, "y": 4, "w": 6, "h": 4, "type": "bar", "by": { "field": "project" },
+                  "only": ["a", "b", "c"], "except": ["c"] }
             ]
         }));
         let c = chart(&[("b", Some(1.0)), ("a", None), ("c", Some(5.0)), ("d", Some(3.0))]);
@@ -410,6 +421,11 @@ mod tests {
         assert_eq!(order(&c, &b.sections[0], Some(2)), vec![2, 3]);
         assert_eq!(order(&c, &b.sections[1], Some(2)), vec![2, 3], "the latest periods");
         assert_eq!(order(&c, &b.sections[2], None), vec![1, 0, 2, 3]);
+        assert_eq!(
+            order(&c, &b.sections[3], None),
+            vec![0, 1],
+            "only some, and some left out"
+        );
         let r = reordered(&c, &[2, 0]);
         assert_eq!(r.datasets[0].data, vec![Some(5.0), Some(1.0)]);
         assert_eq!(r.labels[0].key, "c");

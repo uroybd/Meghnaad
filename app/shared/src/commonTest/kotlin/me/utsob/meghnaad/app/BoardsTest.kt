@@ -306,6 +306,9 @@ class BoardsTest {
         val keyed = orderChart(c, by.copy(sort = "key-", limit = "2"))
         assertEquals(listOf("d", "c"), keyed.labels.map { it.key })
         assertEquals(listOf(1.0, null), keyed.datasets[0].data)
+        // Only some groups, or some left out, before keeping the first few.
+        assertEquals(listOf("b", "d", "c"), orderChart(c, by.copy(except = listOf("a"))).labels.map { it.key })
+        assertEquals(listOf("a"), orderChart(c, by.copy(only = listOf("d", "a"), limit = "1")).labels.map { it.key })
         // A date stays in time order unless asked.
         val time = by.copy(by = By(time = TimeBy("due", "day")))
         assertEquals(listOf("b", "a", "c", "d"), orderChart(c, time).labels.map { it.key })

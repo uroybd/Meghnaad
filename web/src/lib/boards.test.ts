@@ -252,6 +252,14 @@ describe('the order of a chart', () => {
     expect(keys(c, by({ sort: 'value+' }))).toEqual(['d', 'b', 'a', 'c']);
   });
 
+  it('shows only the groups asked for, and leaves some out, before keeping the first few', () => {
+    expect(keys(c, by({ except: ['a', 'zzz'] }))).toEqual(['b', 'd', 'c']);
+    expect(keys(c, by({ only: ['d', 'a'], limit: 1 }))).toEqual(['a']);
+    expect(keys(c, by({ only: ['a', 'b'], except: ['a'] }))).toEqual(['b']);
+    // A date's periods are all shown.
+    expect(keys(c, by({ by: { time: { field: 'due', step: 'day' } }, except: ['a'] }))).toEqual(['b', 'a', 'c', 'd']);
+  });
+
   it('sorts by name, and keeps the first few, in every series alike', () => {
     const out = orderChart(c, by({ sort: 'key-', limit: 2 }));
     expect(out.labels.map((l) => l.key)).toEqual(['d', 'c']);

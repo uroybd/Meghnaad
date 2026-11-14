@@ -144,6 +144,11 @@
   const num = (v: string) => (v.trim() === '' ? undefined : Math.max(0, Math.floor(Number(v))) || undefined);
   /** What is typed for Keep: a number, or the count of a date range as text (the engine says if it is not one the board has). */
   const keep = (v: string) => (/^\s*\d*\s*$/.test(v) ? num(v) : v.trim());
+  /** Groups written with commas between them; none is undefined, which is not written. */
+  const groupList = (v: string) => {
+    const got = [...new Set(v.split(',').map((g) => g.trim()))].filter(Boolean);
+    return got.length ? got : undefined;
+  };
   /** The step each range's largest group is now, from the dates the board has (or has been given on the page). */
   const groups = $derived(largestGroups(controls, zoneNow(store.config?.config.settings)));
   /** `Largest group (currently week)`; with several ranges, whose. */
@@ -317,6 +322,32 @@
         oninput={(e) => set({ limit: keep(e.currentTarget.value) })}
       />
     </label>
+    {#if section.by && !section.by.time}
+      <label>
+        Show only
+        <input
+          class="mono"
+          placeholder="all; or feature, bugfix"
+          title="The groups to show, separated by commas; none shows them all"
+          spellcheck="false"
+          autocomplete="off"
+          value={section.only?.join(', ') ?? ''}
+          onchange={(e) => set({ only: groupList(e.currentTarget.value) })}
+        />
+      </label>
+      <label>
+        Leave out
+        <input
+          class="mono"
+          placeholder="none; or jira, work"
+          title="The groups to leave out, separated by commas"
+          spellcheck="false"
+          autocomplete="off"
+          value={section.except?.join(', ') ?? ''}
+          onchange={(e) => set({ except: groupList(e.currentTarget.value) })}
+        />
+      </label>
+    {/if}
   {/if}
 
   {#if manySeries}

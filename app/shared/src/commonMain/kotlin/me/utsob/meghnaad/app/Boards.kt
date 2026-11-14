@@ -126,6 +126,10 @@ data class Section(
     @Serializable(with = KeepSerializer::class) val limit: String? = null,
     /** A heatmap's rows (`by` is its columns): a series is then a colour and a grid of its own, or, stacked, added into one. None: a row for each series. */
     val rows: Rows? = null,
+    /** A chart by the value of an attribute shows only these groups (none: all), before it is ordered and kept. */
+    val only: List<String>? = null,
+    /** A chart by the value of an attribute leaves these groups out, before it is ordered and kept. */
+    val except: List<String>? = null,
 )
 
 /**
@@ -527,11 +531,18 @@ fun describeRows(rows: Rows?): String? {
 }
 
 /** The chart with its labels in the order the section asks for (the largest total first for a value, time order for a date), and as many as it keeps (for a date in time order, the latest). */
+/** Whether a chart by the value of an attribute shows a group (boards.ts `groupShown`): one of its `only` (when it has some) and none of its `except`. */
+fun groupShown(section: Section, key: String, label: String): Boolean {
+    if (section.by?.time != null) return true
+    fun isIt(v: String) = v == key || v == label
+    return (section.only.isNullOrEmpty() || section.only.any(::isIt)) && section.except.orEmpty().none(::isIt)
+}
+
 fun orderChart(chart: BoardChart, section: Section, limit: Int? = section.limit?.toIntOrNull()): BoardChart {
     val sort = section.sort ?: if (section.by?.time != null) null else "value-"
     fun total(i: Int) = chart.datasets.sumOf { it.data.getOrNull(i) ?: 0.0 }
     fun nothing(i: Int) = chart.datasets.all { it.data.getOrNull(i) == null }
-    var order = chart.labels.indices.toList()
+    var order = chart.labels.indices.filter { groupShown(section, chart.labels[it].key, chart.labels[it].label) }
     if (sort != null) {
         val sign = if (sort.endsWith("-")) -1 else 1
         order = if (sort.startsWith("key")) {

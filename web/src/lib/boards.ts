@@ -128,6 +128,10 @@ export interface Section extends Rect {
   sort?: string;
   /** Keep this many groups, after sorting. */
   limit?: number | string;
+  /** A chart by the value of an attribute shows only these groups (none: all), before it is ordered and kept. */
+  only?: string[];
+  /** A chart by the value of an attribute leaves these groups out, before it is ordered and kept. */
+  except?: string[];
 }
 
 /** A named pair of dates any filter on the board can use: `$name.start` and `$name.end`. Each is a date as Taskwarrior reads one. */
@@ -690,9 +694,16 @@ export function seriesOf(section: Section): Series[] {
   return section.series?.length ? section.series : [{ label: section.title, measure: section.measure }];
 }
 
+/** Whether a chart by the value of an attribute shows a group: one of its `only` (when it has some) and none of its `except`. */
+export function groupShown(section: Section, label: { key: string; label: string }): boolean {
+  if (section.by?.time) return true;
+  const is = (v: string) => v === label.key || v === label.label;
+  return (!section.only?.length || section.only.some(is)) && !section.except?.some(is);
+}
+
 /**
  * The chart with its labels in the order the section asks for (the largest total first for a value, time order for a
- * date), and as many as it keeps (for a date in time order, the latest). A label's total is what its series add up to, so a stacked bar is as tall as it is sorted.
+ * date), only the groups it shows, and as many as it keeps (for a date in time order, the latest). A label's total is what its series add up to, so a stacked bar is as tall as it is sorted.
  */
 export function orderChart(
   chart: Chart,
@@ -702,7 +713,7 @@ export function orderChart(
   const sort = section.sort ?? (section.by?.time ? null : 'value-');
   const total = (i: number) => chart.datasets.reduce((sum, d) => sum + (d.data[i] ?? 0), 0);
   const nothing = (i: number) => chart.datasets.every((d) => d.data[i] === null);
-  let order = chart.labels.map((_, i) => i);
+  let order = chart.labels.map((_, i) => i).filter((i) => groupShown(section, chart.labels[i]));
   if (sort) {
     const sign = sort.endsWith('-') ? -1 : 1;
     if (sort.startsWith('key')) order.sort((a, b) => sign * chart.labels[a].key.localeCompare(chart.labels[b].key));

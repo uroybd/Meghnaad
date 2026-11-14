@@ -139,6 +139,12 @@ pub struct Section {
     pub sort: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<Limit>,
+    /// A chart by the value of an attribute shows only these groups (none: all), before it is ordered and kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub only: Vec<String>,
+    /// A chart by the value of an attribute leaves these groups out, before it is ordered and kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub except: Vec<String>,
 }
 
 /// How many groups a chart keeps: a number, or the count of a board's date range (`$week.day_count`) which is worked out when the
@@ -408,6 +414,17 @@ pub fn normalize(value: &Value) -> Normalized {
                 Some(Limit::Count(0)) => None,
                 other => other,
             };
+            // The groups shown or left out, trimmed, with empty ones and repeats left out.
+            for list in [&mut section.only, &mut section.except] {
+                let mut kept: Vec<String> = Vec::with_capacity(list.len());
+                for v in list.drain(..) {
+                    let v = v.trim();
+                    if !v.is_empty() && !kept.iter().any(|k| k == v) {
+                        kept.push(v.to_owned());
+                    }
+                }
+                *list = kept;
+            }
             // Off is the default, and is not written.
             if section.ignore_board_filter == Some(false) {
                 section.ignore_board_filter = None;
@@ -505,6 +522,20 @@ mod tests {
             .unwrap()
             .get("controls")
             .is_none());
+    }
+
+    #[test]
+    fn the_groups_a_chart_shows_or_leaves_out_are_kept_tidied() {
+        let n = normalize(
+            &json!([{ "id": "b", "name": "B", "sections": [{ "id": "c", "type": "pie", "x": 0, "y": 0,
+            "w": 6, "h": 4, "by": { "field": "tags" }, "only": [" a ", "", "a", "b"], "except": ["jira"] }] }]),
+        );
+        let s = &n.boards[0].sections[0];
+        assert_eq!(
+            (s.only.as_slice(), s.except.as_slice()),
+            (&["a".to_owned(), "b".to_owned()][..], &["jira".to_owned()][..])
+        );
+        assert_eq!(normalize(&serde_json::to_value(&n.boards).unwrap()).boards, n.boards);
     }
 
     #[test]

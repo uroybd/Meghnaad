@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -32,9 +33,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -133,6 +136,28 @@ private fun BoardControlsEditor(store: Store, controls: List<Control>, onChange:
             )
         }
     }
+}
+
+/** Groups of a chart written with commas between them (SectionForm.svelte), kept when the field is left or done; none is null. */
+@Composable
+private fun GroupsBox(label: String, groups: List<String>?, placeholder: String, onChange: (List<String>?) -> Unit) {
+    val saved = groups.orEmpty().joinToString(", ")
+    var text by remember(saved) { mutableStateOf(saved) }
+    fun keep() {
+        val got = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (got != groups.orEmpty()) onChange(got.ifEmpty { null })
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) keep() },
+        label = { Text(label, fontSize = 12.sp) },
+        placeholder = { Text(placeholder, fontSize = 13.sp) },
+        textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { keep() }),
+    )
 }
 
 /** A field with a label above it, for the dropdowns. */
@@ -370,6 +395,10 @@ private fun SectionForm(store: Store, s: Section, controls: List<Control>, onCha
             }
             Pick("Order", ORDERS, s.sort) { onChange(s.copy(sort = it)) }
             TextBox("Keep", s.limit.orEmpty(), { v -> onChange(s.copy(limit = v.trim().ifEmpty { null })) }, mono = true, placeholder = "all, 12 or \$range.day_count")
+            if (s.by != null && s.by.time == null) {
+                GroupsBox("Show only", s.only, "all; or feature, bugfix") { onChange(s.copy(only = it)) }
+                GroupsBox("Leave out", s.except, "none; or jira, work") { onChange(s.copy(except = it)) }
+            }
         }
 
         if (hasManySeries(s.type)) SeriesEditor(store, s, onChange)

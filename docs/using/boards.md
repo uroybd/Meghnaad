@@ -214,6 +214,11 @@ A chart of values puts the largest first; **Order** changes that (smallest first
 and **Keep** shows only the first few. A date chart is in time order, and there **Keep** shows the latest periods:
 `per day` with **Keep** 7 is the last week, ending today.
 
+A chart by the value of an attribute can show only some of its groups, or leave some out, before they are ordered and
+kept: **Show only** and **Leave out** take groups with commas between them. Tasks tagged `feature` or `bugfix` that all
+carry `jira` and `work` too make a chart by `tags` with **Leave out** `jira, work` show just `feature` and `bugfix`, or
+the same with **Show only** `feature, bugfix`. A group is matched by its value or by the name it is shown with.
+
 ## Series
 
 A chart can have several series, like Chart.js datasets. Each has a label and a filter (added to the board's and the
@@ -365,8 +370,9 @@ are read as date-range controls and written back under `controls` when the board
 ```
 
 `source` is `project`, `tags` or the name of a UDA; `values` is what is chosen (none: any), `join` what joins them
-(none: `or`), `expr` an expression typed in their place, and `typed` that the field to type in is shown first. Dates are anything
-Taskwarrior reads; a number may be written as a number or as text.
+(none: `or`), `expr` an expression typed in their place, and `typed` that the field to type in is shown first. Dates are
+anything Taskwarrior reads; a number may be written as a number or as text.
 
 `x` and `w` are columns (0 to 11, and 2 to 12); `y` and `h` are rows. `measure` is `{ "fn": "count" }` unless it says
-otherwise, and `estimate` above is a duration UDA of yours.
+otherwise, and `estimate` above is a duration UDA of yours. A chart by a value may have `only` and `except`, lists of
+the groups it shows or leaves out.
