@@ -106,7 +106,7 @@ switch are whole terms: write `$project`, not `project:$project`.
 
 ### Selections
 
-A selection offers the values open tasks have (`task _unique`): their projects, their tags, or a UDA's. **Offer values of
+A selection offers the values open tasks have (`task _unique`): their projects (each with its parents: `FUL` before `FUL.Chores`, picking both, as `project:FUL` does), their tags, or a UDA's. **Offer values of
 completed tasks** adds those that only completed tasks have. A UDA can be picked from when it has `uda.<name>.values`,
 and offers those of its values in use, in their order. Several values are joined with `or`, so a task with any of them
 is picked. A value with a space is quoted (`project:"My Home"`). Nothing chosen picks every task: `$name` is then

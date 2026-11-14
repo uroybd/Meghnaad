@@ -413,12 +413,18 @@ fun resolveBy(by: By?, controls: List<Control>, zone: Zone): By? {
 
 /**
  * The values a selection offers (boards.ts `choicesOf`): those open tasks have in its source (or, with `completed`, completed tasks'
- * too), by `_unique`. A UDA with values offers those of them in use, in their order. What is picked is always offered.
+ * too), by `_unique`, a project's parents before it. A UDA with values offers those of them in use, in their order. What is picked is always offered.
  */
 suspend fun choicesOf(tw: Tw, c: Control, defined: List<String>?): List<String> {
     val which = if (c.completed == true) listOf("status.not:deleted") else listOf("status.not:deleted", "status.not:completed")
     val result = tw.run(args = which + "_unique" + c.source.orEmpty()).result
-    val used = (result as? CliResult.Text)?.value?.lines.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }
+    val listed = (result as? CliResult.Text)?.value?.lines.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }
+    // A project's parents are offered before it: `project:FUL` picks `FUL.Chores` too.
+    val used = if (c.source == "project") {
+        listed.flatMap { p -> val a = p.split('.'); a.indices.map { a.subList(0, it + 1).joinToString(".") } }.distinct()
+    } else {
+        listed
+    }
     val offered = if (!defined.isNullOrEmpty()) defined.filter { it.isNotEmpty() && it in used } else used
     return offered + c.values.orEmpty().filter { it !in offered }
 }

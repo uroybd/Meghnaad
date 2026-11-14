@@ -617,7 +617,7 @@ export function usage(c: Control): string {
 
 /**
  * The values a selection offers: those open tasks have in its source (or, with `completed`, completed tasks' too), by
- * `_unique`. A UDA with values offers those of them in use, in their order. What is picked is always offered.
+ * `_unique`, a project's parents before it. A UDA with values offers those of them in use, in their order. What is picked is always offered.
  */
 export async function choicesOf(
   c: Control & { type: 'select' },
@@ -626,7 +626,10 @@ export async function choicesOf(
 ): Promise<string[]> {
   const which = c.completed ? ['status.not:deleted'] : ['status.not:deleted', 'status.not:completed'];
   const result = (await run({ args: [...which, '_unique', c.source] })).result;
-  const used = result.kind === 'text' ? result.lines.map((l) => l.trim()).filter(Boolean) : [];
+  let used = result.kind === 'text' ? result.lines.map((l) => l.trim()).filter(Boolean) : [];
+  // A project's parents are offered before it: `project:FUL` picks `FUL.Chores` too.
+  if (c.source === 'project')
+    used = [...new Set(used.flatMap((p) => p.split('.').map((_, i, a) => a.slice(0, i + 1).join('.'))))];
   const offered = defined?.length ? defined.filter((v) => v && used.includes(v)) : used;
   return [...offered, ...(c.values ?? []).filter((v) => !offered.includes(v))];
 }

@@ -397,6 +397,15 @@ describe('loading a board', () => {
     const c = { name: 'p', type: 'select' as const, source: 'priority', values: ['X'] };
     expect(await choicesOf(c, ['H', 'M', 'L'], run)).toEqual(['H', 'M', 'X']);
     expect(await choicesOf({ ...c, completed: true }, undefined, run)).toEqual(['L', 'M', 'H', 'X']);
+    const projects = vi.fn(async (_: { args: string[] }) =>
+      respond({ kind: 'text', lines: ['FUL.Chores', 'FUL.WME', 'Home'] }),
+    );
+    expect(await choicesOf({ name: 'p', type: 'select', source: 'project' }, undefined, projects)).toEqual([
+      'FUL',
+      'FUL.Chores',
+      'FUL.WME',
+      'Home',
+    ]);
     expect(run.mock.calls.map(([i]) => i.args.join(' '))).toEqual([
       'status.not:deleted status.not:completed _unique priority',
       'status.not:deleted _unique priority',
