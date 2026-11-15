@@ -160,11 +160,6 @@
 
   <button type="button" class="btn" onclick={add}><Plus size={14} /> Add a command</button>
 
-  <details class="json">
-    <summary class="dim">settings.json</summary>
-    <pre class="mono">{text}</pre>
-  </details>
-
   {#if tooLarge}<p class="err" role="alert">
       That is more than {MAX_SETTINGS_BYTES / 1024} KB, which is the most that can be saved.
     </p>{/if}
@@ -230,17 +225,6 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-  }
-  .json {
-    margin: 14px 0;
-  }
-  .json pre {
-    margin: 6px 0 0;
-    padding: 10px 12px;
-    background: var(--panel-2);
-    border-radius: var(--radius);
-    font-size: 12.5px;
-    overflow: auto;
   }
   footer {
     margin-top: 16px;

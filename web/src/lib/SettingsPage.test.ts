@@ -271,3 +271,31 @@ describe('the commands tab', () => {
     expect(panel('commands').querySelector('[role=alert]')?.textContent).toContain('One entry in settings.json can');
   });
 });
+
+describe('the general tab', () => {
+  it('shows the saved settings.json, folded, and copies it', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    store.appSettings = parseSettings('{ "homepage": { "report": "list" }, "future": 1 }');
+    store.settingsTab = 'general';
+    app = mount(SettingsPage, { target: document.body });
+    await tick();
+    const details = panel('general').querySelector('details') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toBe('settings.json');
+    const shown = details.querySelector('pre')?.textContent ?? '';
+    expect(JSON.parse(shown)).toEqual({ homepage: { report: 'list' }, future: 1 });
+
+    button(details as unknown as HTMLElement, 'Copy').click();
+    await tick();
+    expect(writeText).toHaveBeenCalledWith(shown);
+    expect(button(details as unknown as HTMLElement, 'Copied')).toBeTruthy();
+  });
+
+  it('is not on the commands tab', async () => {
+    store.settingsTab = 'commands';
+    app = mount(SettingsPage, { target: document.body });
+    await tick();
+    expect(panel('commands').querySelector('details')).toBeNull();
+  });
+});

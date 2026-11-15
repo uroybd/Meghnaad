@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { sameHomepage, type Homepage } from './appsettings';
-  import { Check } from './icons';
+  import { Check, Copy } from './icons';
   import { store } from './store.svelte';
 
   /** There are edits not yet applied (the tab shows a dot). */
@@ -41,6 +41,19 @@
         ? !store.boards.some((b) => b.id === saved.board)
         : false,
   );
+
+  // The whole of settings.json as it is saved, for reading and for copying to the terminal app or the phone.
+  const file = $derived(JSON.stringify(store.appSettings?.raw ?? {}, null, 2) + '\n');
+  let copied = $state(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(file);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      store.notify('Could not copy: select the text and copy it by hand.', 'err');
+    }
+  }
 
   async function apply() {
     busy = true;
@@ -93,6 +106,20 @@
     <button class="primary" onclick={apply} disabled={busy || !edited}>Apply</button>
     {#if done}<span class="ok"><Check size={14} /> Saved</span>{/if}
   </div>
+
+  <details class="json">
+    <summary>settings.json</summary>
+    <p class="dim">
+      This app's own settings as saved: the home page, appearance, task commands, boards and keys. The terminal app
+      reads the same file from <code>~/.config/meghnaad</code>.
+    </p>
+    <div class="file">
+      <button type="button" class="ghost copy" onclick={copy} aria-label="Copy settings.json">
+        {#if copied}<Check size={13} /> Copied{:else}<Copy size={13} /> Copy{/if}
+      </button>
+      <pre class="mono">{file}</pre>
+    </div>
+  </details>
 </section>
 
 <style>
@@ -108,6 +135,36 @@
   .field select {
     font-size: 14px;
     color: var(--text);
+  }
+  .json {
+    margin-top: 20px;
+  }
+  .json summary {
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .file {
+    position: relative;
+  }
+  .file pre {
+    margin: 6px 0 0;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border-radius: var(--radius);
+    font-size: 12.5px;
+    overflow: auto;
+    max-height: 60vh;
+  }
+  .copy {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    background: var(--panel);
   }
   h2 {
     font-size: 16px;

@@ -11,6 +11,10 @@ The default is `next`. It is kept in the app's own `settings.json` (`"homepage":
 still opens that task, and a report or board that is gone opens `next`. (The taskrc's `default.command` is different: it
 is the command a line runs when it names none.)
 
+Below it, **settings.json** unfolds to the whole of the app's own settings file as saved (home page, appearance, task
+commands, boards and keys), with a **Copy** button, for pasting into the terminal app's `~/.config/meghnaad` or keeping a
+copy.
+
 ## Keys
 
 Every front end has its keys in one place: the defaults are `keymaps/default.json` (in the repository,
@@ -298,7 +302,7 @@ Delete, then the commands) fold into that menu, and open out again when there's 
 
 ![The menu under the ellipsis on a task: fail, later and urgent, each with its icon and what it runs](../screenshots/task-commands-menu.png)
 
-The tab shows the `settings.json` it will save. Other keys in the file are kept, and entries it can't use are listed and
+Other keys in `settings.json` are kept (**General** shows the whole file), and entries it can't use are listed and
 dropped when you apply. The file is at most 64 KB.
 
 ## tasksh
