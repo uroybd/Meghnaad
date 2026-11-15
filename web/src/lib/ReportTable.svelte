@@ -386,7 +386,13 @@
                 {:else if c.segments}
                   <ProjectPath segments={c.segments} />
                 {:else if c.chips}
-                  {#each c.chips as t (t)}<TagChip tag={t} active={activeTags.includes(t)} onclick={ontag} />{/each}
+                  <span class="cap chips"
+                    >{#each c.chips as t (t)}<TagChip
+                        tag={t}
+                        active={activeTags.includes(t)}
+                        onclick={ontag}
+                      />{/each}</span
+                  >
                 {:else if c.blocks}
                   <div class="md">
                     <MarkdownNodes
@@ -397,8 +403,10 @@
                 {:else if progressOf(col.name, c.text)}
                   {@const p = progressOf(col.name, c.text)}
                   {#if p}<ProgressBar value={p.value} text={c.text} range={p.range} label={col.label} />{/if}
-                {:else}
+                {:else if col.name === 'description'}
                   {c.text}
+                {:else}
+                  <span class="cap">{c.text}</span>
                 {/if}
                 {#if col.name === 'description' && row.recur}
                   <span
@@ -586,6 +594,16 @@
     font-size: 10px;
     margin-left: 2px;
     vertical-align: middle;
+  }
+  /*
+   * A cell keeps to one line up to a width, then wraps (between tags, or between words), so one long value does not
+   * widen its column without end. The description wraps already.
+   */
+  .cap {
+    display: inline-block;
+    max-width: 22em;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   td.description,
   th.description {
@@ -794,6 +812,10 @@
   @media (max-width: 760px) {
     .sortbar {
       display: flex;
+    }
+    /* A card lays out its marks itself: the cap is not a box there. */
+    .cap {
+      display: contents;
     }
     .desc {
       display: none;

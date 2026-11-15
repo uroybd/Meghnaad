@@ -3,6 +3,7 @@
   import { Plus, X } from './icons';
   import { store } from './store.svelte';
   import SuggestInput from './SuggestInput.svelte';
+  import TagsInput from './TagsInput.svelte';
 
   let {
     count,
@@ -84,7 +85,7 @@
         {#if f?.kind === 'project'}
           <SuggestInput id="bm-{e.rk}" bind:value={e.value} names={store.projects} noun="project" placeholder="none" />
         {:else if f?.kind === 'tags'}
-          <SuggestInput id="bm-{e.rk}" bind:value={e.value} names={store.tags} noun="tag" list placeholder="tags" />
+          <TagsInput id="bm-{e.rk}" bind:value={e.value} names={store.tags} placeholder="tags" />
         {:else if f?.values}
           <select bind:value={e.value} aria-label="Value of {f.label}">
             <option value="">clear</option>

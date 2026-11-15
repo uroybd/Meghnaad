@@ -3,6 +3,7 @@
   import DateField from './DateField.svelte';
   import { priorityValues as priorityLevels } from './priority';
   import SuggestInput from './SuggestInput.svelte';
+  import TagsInput from './TagsInput.svelte';
   import { formatFor } from './dateformat';
   import { formatMoment, fromParts, toParts } from './dates';
   import { clashOf } from './holidayClash';
@@ -295,7 +296,7 @@
       </div>
       <div class="cell">
         <label for="te-tags">Tags</label>
-        <SuggestInput id="te-tags" bind:value={tags} names={store.tags} noun="tag" list placeholder="space separated" />
+        <TagsInput id="te-tags" bind:value={tags} names={store.tags} placeholder="space separated" />
       </div>
     </div>
 

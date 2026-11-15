@@ -32,7 +32,8 @@ use the **Group** picker beside **Sort**. Underneath it is the same command: gro
 
 - Finished tasks are tinted, not struck through: green for completed, red for deleted.
 - IDs are bold, and hovering one shows the uuid with a Copy button.
-- Project names are split at the dots, each part in its own colour. Tags are pills.
+- Project names are split at the dots, each part in its own colour. Tags are pills, wrapping onto more lines past a
+  width, as any long value does, so one cell never makes its column wide.
 - Urgency is coloured by level (under 5, to 10, to 15, from 15).
 - The `start.active`, `tags.indicator` and `depends.indicator` columns follow `active.indicator`, `tag.indicator` and
   `dependency.indicator`.
@@ -93,6 +94,8 @@ until, repeat, tags, dependencies, UDAs, "start now" and a first note.
   date words complete with Tab or a tap), pick a keyword, or choose a day and optional time from the calendar.
 - Project and tags suggest every name you have, not just those on screen: ↑/↓ to pick, Enter or Tab to take it, Esc to
   close the list. You can always type something new; that is how a new project or tag is made, and the field says so.
+- Tags are pills in the field too: a space, a comma, Enter or Tab finishes one, its × takes it off, and Backspace in an
+  empty field takes the last one back to edit.
 - Annotations and string UDAs can span lines. In an annotation box Enter saves and Shift+Enter starts a new line. In a
   UDA field Enter starts a new line and Ctrl/Cmd+Enter saves.
 
