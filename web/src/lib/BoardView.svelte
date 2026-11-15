@@ -162,6 +162,7 @@
   let grid: HTMLDivElement | undefined = $state();
   let announce = $state('');
   let drag: {
+    pointer: number;
     id: string;
     mode: 'move' | 'resize';
     x: number;
@@ -179,8 +180,14 @@
   function begin(e: PointerEvent, s: Section, mode: 'move' | 'resize') {
     if (!editing) return;
     e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    // Followed on the window, not by capturing the pointer on the handle: a move that changes the reading order moves
+    // the cell in the page, which lets the capture go, and the drag would then never end and come back to life (from
+    // the layout it began on) the next time the pointer crossed a handle.
+    window.addEventListener('pointermove', track);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
     drag = {
+      pointer: e.pointerId,
       id: s.id,
       mode,
       x: e.clientX,
@@ -193,7 +200,7 @@
   }
 
   function track(e: PointerEvent) {
-    if (!drag || !grid) return;
+    if (!drag || !grid || e.pointerId !== drag.pointer) return;
     // One grid step is a column (or row) and its gap. Each step is worked out from where the drag began, on the layout
     // as it was then, so dragging back puts what was pushed aside back where it was.
     const dx = Math.round((e.clientX - drag.x) / ((grid.clientWidth + gap) / cols));
@@ -217,12 +224,18 @@
     onchange?.(place(drag.base, drag.id, r));
   }
 
-  function end() {
-    if (!drag) return;
+  function end(e?: PointerEvent) {
+    if (!drag || (e && e.pointerId !== drag.pointer)) return;
+    window.removeEventListener('pointermove', track);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
     const s = board.sections.find((x) => x.id === drag?.id);
     drag = null;
     if (s) announce = describe(s);
   }
+
+  // A board closed in the middle of a drag leaves nothing listening.
+  $effect(() => () => end());
 
   const ARROWS: Record<string, [number, number]> = {
     ArrowLeft: [-1, 0],
@@ -295,9 +308,6 @@
               aria-label="Move {s.title}. Drag, or use the arrow keys."
               title="Drag to move, or use the arrow keys"
               onpointerdown={(e) => begin(e, s, 'move')}
-              onpointermove={track}
-              onpointerup={end}
-              onpointercancel={end}
               onkeydown={(e) => key(e, s, 'move')}><Move size={15} /></button
             >
           {/if}
@@ -324,9 +334,6 @@
           aria-label="Resize {s.title}. Drag, or use the arrow keys."
           title="Drag to resize, or use the arrow keys"
           onpointerdown={(e) => begin(e, s, 'resize')}
-          onpointermove={track}
-          onpointerup={end}
-          onpointercancel={end}
           onkeydown={(e) => key(e, s, 'resize')}
         ></button>
       {/if}

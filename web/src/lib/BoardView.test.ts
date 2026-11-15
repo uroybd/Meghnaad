@@ -122,6 +122,27 @@ describe('editing the layout', () => {
     expect(onchange.mock.calls[0][0].find((s: Section) => s.id === 'a')).toMatchObject({ w: 6, h: 3 });
   });
 
+  it('follows a drag wherever the pointer goes, and a drag that has ended moves nothing more', () => {
+    const onchange = vi.fn();
+    draw({ editing: true, onchange });
+    // jsdom has no PointerEvent: a mouse event with the pointer's id is what the handlers read.
+    const pointer = (type: string, target: EventTarget, y = 0) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 0, clientY: y });
+      Object.defineProperty(e, 'pointerId', { value: 1 });
+      target.dispatchEvent(e);
+      flushSync();
+    };
+    pointer('pointerdown', button('Move A'));
+    // Off the handle, as when the cell has moved in the page under the pointer.
+    pointer('pointermove', window, 1000);
+    expect(onchange).toHaveBeenCalledTimes(1);
+    pointer('pointerup', window, 1000);
+    // Crossing a handle later is not a drag.
+    pointer('pointermove', button('Move B'), 2000);
+    pointer('pointermove', window, 3000);
+    expect(onchange).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores other keys', () => {
     const onchange = vi.fn();
     draw({ editing: true, onchange });
