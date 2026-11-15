@@ -141,10 +141,13 @@
     margin: 0.5em 0;
   }
   /* A link is a chip: the words in the accent on a quiet pill, with an arrow that says it leaves the app. */
+  /* It stays on one line (a chip broken across lines reads as letters), and a long one ends in an ellipsis. */
   a.link {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
+    display: inline-block;
+    max-width: 22em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0 6px;
     border: 1px solid var(--line);
     border-radius: 999px;
@@ -153,8 +156,11 @@
     font-size: 0.92em;
     line-height: 1.5;
     text-decoration: none;
-    overflow-wrap: anywhere;
-    vertical-align: baseline;
+    vertical-align: bottom;
+  }
+  a.link :global(svg) {
+    margin-left: 2px;
+    vertical-align: -1px;
   }
   a.link:hover {
     border-color: var(--accent);

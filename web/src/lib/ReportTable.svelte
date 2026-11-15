@@ -632,6 +632,10 @@
     white-space: normal;
     min-width: 16em;
   }
+  /* A text column never squeezes below a few words, however wide the description wants to be. */
+  td.string {
+    min-width: 6em;
+  }
   td.id,
   td.number {
     font-variant-numeric: tabular-nums;
