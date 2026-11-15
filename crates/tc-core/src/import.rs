@@ -183,6 +183,10 @@ fn convert(
                 let (k, text) = (if k == "modification" { "modified" } else { k }, text_of(value));
                 if crate::run::kind_of(k, cfg) == "date" {
                     props.insert(k.to_owned(), date(k, &text)?.to_string());
+                } else if let Value::Number(n) = value {
+                    // A JSON number is kept as Taskwarrior writes a double (`std::to_string`, `%f`): `0` is stored as
+                    // `0.000000`, and a report shows it so, as the real `task` does.
+                    props.insert(k.to_owned(), format!("{:.6}", n.as_f64().unwrap_or(0.0)));
                 } else if !text.is_empty() {
                     props.insert(k.to_owned(), text);
                 }
@@ -531,7 +535,8 @@ mod tests {
         // Two notes in the same second keep both.
         assert_eq!(p["annotation_1790899200"], "n");
         assert_eq!(p["annotation_1790899201"], "m");
-        assert_eq!((p["est"].as_str(), p["mystery"].as_str()), ("3.5", "orphan"));
+        // A number is written as `task import` writes a double; text stays as it is.
+        assert_eq!((p["est"].as_str(), p["mystery"].as_str()), ("3.500000", "orphan"));
         assert!(!p.contains_key("project") && !p.contains_key("id") && !p.contains_key("urgency"));
         assert!(p.contains_key("modified") && warnings.is_empty());
     }

@@ -5766,11 +5766,15 @@ mod import_command {
             .find(|t| t["uuid"] == "11111111-1111-4111-8111-111111111111")
             .unwrap();
         assert_eq!(template["rtype"], "chained");
-        // And importing the export again changes nothing.
+        // Importing the export again skips the template. The instance's `imask` goes out as a number and comes back
+        // written as a double (`0.000000`), so the real `task` reports it modified, and so do we.
         let CliResult::File { text, .. } = run(&mut r, &cfg, "export").await.0 else {
             panic!()
         };
-        assert_eq!(counts(&go(&mut r, &cfg, &text, true).await.unwrap()), (0, 0, all.len()));
+        assert_eq!(
+            counts(&go(&mut r, &cfg, &text, true).await.unwrap()),
+            (0, 1, all.len() - 1)
+        );
     }
 
     #[tokio::test]
