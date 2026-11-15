@@ -689,6 +689,19 @@ pub const COLOR_DEFAULTS: &[(&str, &str)] = &[
     ("rule.precedence.color", "deleted,completed,active,keyword.,tag.,project.,overdue,scheduled,due.today,due,blocked,blocking,recurring,tagged,uda."),
 ];
 
+/// The colours that apply where the taskrc says nothing: Taskwarrior's [`COLOR_DEFAULTS`], except `color.alternate`,
+/// which is off. Shading every other row suits a terminal; on a page it reads as noise, so it is the one default
+/// Meghnaad leaves out. A taskrc that sets it (or a theme that does) still shades the rows, as `task` does.
+pub fn color_defaults() -> &'static [(&'static str, &'static str)] {
+    static COLORS: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
+    COLORS.get_or_init(|| {
+        COLOR_DEFAULTS
+            .iter()
+            .map(|&(k, v)| if k == "color.alternate" { (k, "") } else { (k, v) })
+            .collect()
+    })
+}
+
 /// Taskwarrior's default `report.timesheet.filter`.
 pub const TIMESHEET_FILTER: &str =
     "(+PENDING -WAITING start.after:now-4wks) or (+COMPLETED -WAITING end.after:now-4wks)";

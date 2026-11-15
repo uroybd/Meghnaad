@@ -57,7 +57,7 @@ pub fn defaults() -> BTreeMap<String, String> {
         put("filter", r.filter.clone().unwrap_or_default());
         put("context", "1".into());
     }
-    for (k, v) in crate::taskrc::COLOR_DEFAULTS {
+    for (k, v) in crate::taskrc::color_defaults() {
         d.insert((*k).to_owned(), (*v).to_owned());
     }
     // `timesheet` is a command with report settings of its own.

@@ -208,10 +208,10 @@ impl Style {
     }
 }
 
-/// Every `color.*` setting in force: Taskwarrior's defaults, overlaid with the taskrc's (an empty value is a
+/// Every `color.*` setting in force: Taskwarrior's defaults (bar `color.alternate`), overlaid with the taskrc's (an empty value is a
 /// colour switched off).
 pub fn effective(cfg: &crate::taskrc::Config) -> std::collections::BTreeMap<String, String> {
-    effective_with(cfg, crate::taskrc::COLOR_DEFAULTS)
+    effective_with(cfg, crate::taskrc::color_defaults())
 }
 
 fn effective_with(
@@ -337,10 +337,10 @@ fn auto_complete(partial: &str, names: &[&String]) -> Vec<String> {
 }
 
 impl Rules {
-    /// The effective `color.*` settings (Taskwarrior's defaults, then the taskrc, then `rc.`), or `None` when `color`
+    /// The effective `color.*` settings (Taskwarrior's defaults bar `color.alternate`, then the taskrc, then `rc.`), or `None` when `color`
     /// is off.
     pub fn from_config(cfg: &crate::taskrc::Config) -> Option<Rules> {
-        Rules::from_config_with(cfg, crate::taskrc::COLOR_DEFAULTS)
+        Rules::from_config_with(cfg, crate::taskrc::color_defaults())
     }
 
     /// The same with other defaults for the colours the taskrc leaves alone.

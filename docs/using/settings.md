@@ -219,7 +219,8 @@ command-line `rc.` override.
 
 Rows are coloured by Taskwarrior's colour rules, and the same colours reach the calendar, burndown, summary bar and
 history graph. They are resolved as the real `task` resolves them: a setting your taskrc leaves out has Taskwarrior's
-default (the `default` theme in the picker), so a row looks as it would in `task` with the same taskrc.
+default (the `default` theme in the picker), so a row looks as it would in `task` with the same taskrc. The one
+exception is `color.alternate`: rows are not shaded every other one unless your taskrc (or a theme) sets it.
 
 - The rules in `rule.precedence.color` blend (`rule.color.merge=yes`, the default), the first in the list on top; with
   `rule.color.merge=no` the first rule that applies decides alone. A rule set to nothing (`color.due=`) is off, and

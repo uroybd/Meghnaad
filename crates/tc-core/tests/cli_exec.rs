@@ -4737,6 +4737,18 @@ mod report_defaults {
     }
 
     #[tokio::test]
+    async fn rows_are_not_shaded_unless_the_taskrc_sets_color_alternate() {
+        // Taskwarrior's default is `on gray2`; it is the one default the app leaves out.
+        let mut r = replica();
+        let cfg = Config::default();
+        for t in ["a", "b", "c"] {
+            run(&mut r, &cfg, &format!("add {t}")).await;
+        }
+        let list = rows(run(&mut r, &cfg, "oldest").await.0);
+        assert!(list.iter().all(|r| r.style.is_none()), "no row is shaded");
+    }
+
+    #[tokio::test]
     async fn every_other_row_of_a_report_is_shaded_by_color_alternate() {
         let mut r = replica();
         let cfg = parse("color.alternate=on gray2\ncolor.tag.x=bold red\n").config;
