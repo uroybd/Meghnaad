@@ -603,7 +603,7 @@
     display: inline-block;
     max-width: 22em;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
   td.description,
   th.description {
