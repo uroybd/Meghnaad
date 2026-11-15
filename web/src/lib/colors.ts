@@ -167,11 +167,19 @@ export function readable(fg: string, bg: string, min = 3): string {
   return target;
 }
 
-/** A background colour: the soft basic colours are tinted into the page, the others used as they are. */
+/**
+ * A background colour: the soft basic colours are tinted into the page, the cube used as it is. The gray ramp is a shade
+ * measured from the page, as a terminal's is from its black: on a light page it runs down from white, so `on gray2`
+ * (Taskwarrior's `color.alternate`) is the faint stripe it is in a terminal, not a near-black bar.
+ */
 function backgroundHex(i: number, dark: boolean): string {
   const page = PAGE[dark ? 'dark' : 'light'].bg;
   if (i < 8) return mix(paletteHex(i, dark), page, dark ? 0.3 : 0.2);
   if (i < 16) return mix(paletteHex(i, dark), page, dark ? 0.45 : 0.32);
+  if (i >= 232 && !dark) {
+    const v = 255 - (8 + 10 * (i - 232));
+    return toHex([v, v, v]);
+  }
   return paletteHex(i, dark);
 }
 

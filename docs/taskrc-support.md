@@ -178,8 +178,9 @@ The `calendar` command takes Taskwarrior's arguments (`calendar`, `calendar y`, 
 
 Taskwarrior's colour rules work, drawn on a web page instead of a terminal. A colour is a palette index underneath, as in
 a terminal (`rgb440`, `gray12`, `color214` are the exact xterm colours). The basic sixteen are drawn in a softer palette
-that follows the light or dark page, a background in them is tinted into the page, and a foreground that wouldn't show is
-moved toward readable. Besides Taskwarrior's names (`red`, `cyan`, …) the basic colours have friendlier ones: `ink`,
+that follows the light or dark page, a background in them is tinted into the page, a gray background is a shade measured
+from the page (on a light page `on gray2` is a faint stripe, as on a black terminal, not a near-black bar), and a
+foreground that wouldn't show is moved toward readable. Besides Taskwarrior's names (`red`, `cyan`, …) the basic colours have friendlier ones: `ink`,
 `coral`/`rose`, `sage`/`moss`, `amber`/`sand`, `sky`/`ocean`, `orchid`/`plum`, `teal`/`aqua`, `snow`/`pearl`, and `slate`
 for bright black. `bold coral on sky` is `bold red on blue`.
 

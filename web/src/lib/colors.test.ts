@@ -76,6 +76,14 @@ describe('look', () => {
     expect(look({ bg: 196 }, false)!.background).toBe('#ff0000');
   });
 
+  it('a gray background is a shade from the page: a faint stripe on a light page, not a dark bar', () => {
+    // Taskwarrior's default `color.alternate=on gray2` (index 234).
+    expect(look({ bg: 234 }, false)!.background).toBe('#e3e3e3');
+    expect(look({ bg: 234 }, true)!.background).toBe('#1c1c1c');
+    // A swatch still shows the gray as it is.
+    expect(look({ bg: 234 }, false, undefined, true)!.background).toBe('#1c1c1c');
+  });
+
   it('inverse swaps the two', () => {
     const l = look({ fg: 196, bg: 46, inverse: true }, false, undefined, true)!;
     expect(l.background).toBe('#ff0000');
