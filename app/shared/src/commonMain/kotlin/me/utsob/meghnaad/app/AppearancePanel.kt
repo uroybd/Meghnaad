@@ -221,7 +221,7 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
             }
         }
         state.ruleProblems.forEach { Text(it, color = colors.error, fontSize = 13.sp) }
-        OutlinedButton(onClick = state::addRule) { LucideIcon("plus", size = 14.dp); Text("  Add a transformation") }
+        OutlinedButton(onClick = state::addRule, modifier = Modifier.padding(bottom = 10.dp)) { LucideIcon("plus", size = 14.dp); Text("  Add a transformation") }
 
         state.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {

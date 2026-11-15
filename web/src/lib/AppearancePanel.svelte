@@ -236,7 +236,7 @@
       {#each ruleProblems as p, i (i)}<li>{p}</li>{/each}
     </ul>
   {/if}
-  <button type="button" class="btn" onclick={addRule}><Plus size={14} /> Add a transformation</button>
+  <button type="button" class="btn add" onclick={addRule}><Plus size={14} /> Add a transformation</button>
 
   {#if error}<p class="err" role="alert">{error}</p>{/if}
   <div class="row">
@@ -278,6 +278,9 @@
   }
   .fields .pick {
     min-width: 0;
+  }
+  .add {
+    margin-bottom: 16px;
   }
   ul.err {
     margin: 0 0 12px;
