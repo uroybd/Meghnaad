@@ -1,0 +1,35 @@
+# Specs
+
+A spec says what a change is for and how we will know it is done, before any code is written. Write one when a change
+is bigger than a sentence: it crosses front ends, touches the engine or the sync format, adds a page, or needs a
+decision you want written down. Small fixes don't need one.
+
+These files are for working on Meghnaad, not for people using it, so they live outside `docs/` and the documentation
+site never sees them. What a finished feature does belongs in the guides (`docs/using/`, the reference pages); a spec
+links to them once they exist.
+
+## How to write one
+
+1. Copy [`TEMPLATE.md`](TEMPLATE.md) to `NNNN-short-name.md`, taking the next free number (`0001-board-filters.md`).
+2. Fill in what you know. Leave a section as `TBD` rather than guessing, and put anything undecided under
+   **Open questions**.
+3. Add a row to the table below.
+4. Set **Status** to `ready` when you want it built. Then point the agent at it: "implement specs/0001-board-filters.md".
+
+## Status
+
+| Status        | Meaning                                                               |
+| ------------- | --------------------------------------------------------------------- |
+| `draft`       | Being written; questions open. Not to be built yet.                   |
+| `ready`       | Agreed. Can be built as written.                                      |
+| `in progress` | Being built. The **Implementation notes** say how far it has got.     |
+| `done`        | Built, checked against every acceptance criterion, docs updated.      |
+| `dropped`     | Not doing it. The spec stays, with a line saying why.                 |
+
+A spec is never deleted or renumbered: a later one that replaces it says `Supersedes 0003` and the old one is set to
+`dropped` with a link forward.
+
+## Index
+
+| No. | Spec | Status | Layer | Front ends |
+| --- | ---- | ------ | ----- | ---------- |

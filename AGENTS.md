@@ -90,6 +90,30 @@ or a TUI around `task`? Layer 2.
   Plot has no plot for it. The web draws it with Chart.js's matrix plugin. The engine's `Chart` (labels and a dataset for each series, `tc_core::board::aggregate::chart`) is the
   shared contract, shaped like Chart.js's `data`: a front end maps it to its library and never computes chart data itself.
 
+## Working from a spec
+
+Bigger changes may come as a spec in `specs/` at the root (`NNNN-name.md`, from `TEMPLATE.md`; the index and the
+statuses are in `specs/README.md`). When pointed at one:
+
+1. Read it, the index, and any spec it supersedes or relates to. Its **Status** must be `ready` or `in progress`; for a
+   `draft`, or where an **Open question** changes what you would build, ask before writing code.
+2. Check it against this file: which layer it is (the test under "Where a feature goes"), and for layer 1 run the real
+   `task` 3.5.0 on a scratch `TASKRC` and data directory. Where the spec disagrees with `task` or with the rules here,
+   say so and ask; don't quietly follow either.
+3. If **Design** is empty or `TBD`, write your proposal there and wait for a yes before building. Then set **Status** to
+   `in progress` in the spec and in the index row.
+4. Build to the **Acceptance criteria**, no more: anything under **Not doing** stays out, and a good idea the spec
+   doesn't ask for goes under **Open questions** instead of into the code.
+5. Keep **Implementation notes** current as you go (dated: what was done and where, departures from the design and why,
+   sizes measured, what is left), so the work can be picked up in another session.
+6. Tick each criterion only once it is verified (the checks below pass, the docs it names are updated). When all are
+   ticked, set **Status** to `done` in the spec and the index. Never rewrite **Why**, **What** or the criteria
+   yourself; propose the change and let the person edit them.
+
+Asked to write a spec, copy the template to the next free number, fill it from the conversation, leave what is
+undecided as `TBD` or an open question, set it to `draft` and add its row to the index. Specs are working notes kept in the repository; never move
+them under `docs/`, which the documentation site publishes whole.
+
 ## Before you say a change is done
 
 Format, lint and test, in that order. CI runs the same checks and fails on any of them. `just check` runs them all
