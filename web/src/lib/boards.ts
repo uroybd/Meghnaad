@@ -813,7 +813,17 @@ type Run = (input: { args: string[] }) => Promise<CliResponse>;
  * Every section's data. Sections that run the same filter share one `export`; a table runs its report, as the Tasks
  * page does, with the section's filter.
  */
-export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Promise<Record<string, SectionData>> {
+export async function loadBoard(
+  board: Board,
+  zone: Zone,
+  run: Run = runCli,
+  /**
+   * The context's read filter for a filter's `export`, in parentheses (`contextWords`): `export` leaves the context
+   * out, as Taskwarrior's does, and a board follows it unless its filter says `rc.context=`. A table runs its report,
+   * which applies the context itself.
+   */
+  contextOf: (filter: string[]) => string[] = () => [],
+): Promise<Record<string, SectionData>> {
   const exports = new Map<string, Promise<CliResult>>();
   /** The filter a section (or one of its series) runs, with the board's controls in it. */
   const controls = board.controls ?? [];
@@ -821,7 +831,11 @@ export async function loadBoard(board: Board, zone: Zone, run: Run = runCli): Pr
     substituteControls(effectiveFilter(board, s, x, g), controls, zone);
   const exportOf = (filter: string) => {
     let p = exports.get(filter);
-    if (!p) exports.set(filter, (p = run({ args: [...splitWords(filter), 'export'] }).then((r) => r.result)));
+    if (!p) {
+      const words = splitWords(filter);
+      p = run({ args: [...contextOf(words), ...words, 'export'] }).then((r) => r.result);
+      exports.set(filter, p);
+    }
     return p;
   };
   /** The tasks a filter picks, as the text `export` prints; or why they could not be had. */

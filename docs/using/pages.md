@@ -52,6 +52,21 @@ A report of hundreds of tasks takes a while to lay out, so the table draws the f
 you scroll near the end, or press **Show more** or **Show all**. The report is still whole: select-all, the count and
 the sort cover every task, drawn or not.
 
+## Exporting a table
+
+Under every table (a report page, a report in the console, a table on a board) is a quiet **Export** beside the count. It
+exports the tasks that table shows: its filter and report as `<filter> export <report>`, so the report's own filter, sort
+and limit apply, with the context the table ran in put in front (`export` itself leaves the context out, as
+Taskwarrior's does). The dialog shows the command line it ran, then asks how the file should look:
+
+- **Format**: JSON (the default) or CSV. JSON starts as a list or one task to a line as your taskrc's `json.array`
+  says, and you can change it for this file.
+- **Fields**: all of them, only the table's columns (`due.relative` is `due`), or the ones you tick.
+
+CSV has a header of the fields; tags and dependencies are separated by spaces, and annotations by their text, with `; `
+between them. The file is named for what it holds and when, as `export` names it (`tasks-next-project-Home-20261116-015300.json`),
+with `.csv` for CSV. The browser remembers your last choice of format and fields.
+
 ## Tag chips
 
 In the Tasks table, clicking a tag chip toggles `+tag` in that report's filter, as typing it would. A pressed chip is in

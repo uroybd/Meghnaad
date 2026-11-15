@@ -48,6 +48,7 @@ pub mod sortspec;
 pub mod stats;
 pub mod store;
 pub mod summary;
+pub mod table_export;
 pub mod taskrc;
 pub mod urgency;
 pub mod urgency_settings;

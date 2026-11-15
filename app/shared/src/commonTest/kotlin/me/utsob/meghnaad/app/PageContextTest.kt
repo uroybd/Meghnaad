@@ -41,4 +41,22 @@ class PageContextTest {
         assertEquals(NO_CONTEXT, contextOfFilter("rc.context= +x"))
         assertEquals(null, contextOfFilter("project:Home +x"))
     }
+
+    // As web/src/lib/exportScope.test.ts: the context in front of a filter's `export`, which leaves it out.
+    @Test
+    fun anExportTakesTheContextItRunsIn() {
+        val cfg = ConfigBody(
+            contexts = mapOf(
+                "work" to ContextDef("work", read = "+work or project:Work"),
+                "home" to ContextDef("home", read = "project:Home"),
+            ),
+            activeContext = "work",
+        )
+        assertEquals(listOf("(", "+work", "or", "project:Work", ")"), contextWords(emptyList(), cfg))
+        assertEquals(listOf("(", "project:Home", ")"), contextWords(emptyList(), cfg, "home"))
+        assertEquals(listOf("(", "project:Home", ")"), contextWords(listOf("rc.context=home"), cfg, "work"))
+        assertEquals(emptyList(), contextWords(emptyList(), cfg, NO_CONTEXT))
+        assertEquals(emptyList(), contextWords(emptyList(), cfg.copy(activeContext = null)))
+        assertEquals(emptyList(), contextWords(emptyList(), null))
+    }
 }

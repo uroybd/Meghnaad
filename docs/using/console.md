@@ -133,6 +133,9 @@ tasks) or 5,000 tasks at a time, so split a bigger one. Missing `entry`, `end` a
 **`export` gives you a file.** It prints a summary and a **Download** button. The file is Taskwarrior's own JSON, as
 `task export` writes it (ids and urgency included), so `task import` reads it. It takes a filter (`project:Home export`)
 and a report's name (`export next` uses that report's filter and sort), and `json.array=off` makes it one task per line.
+As in Taskwarrior, it never applies the active context, even with a report's name: put the context's filter in the
+line if you want it, or use **Export** under a table, which does. The file is named for what it holds and when:
+`tasks-next-project-Home-20261116-015300.json` for `project:Home export next`.
 
 **History and the timesheet.** `history.monthly` (also `.daily`, `.weekly`, `.annual`) counts the tasks added, completed
 and deleted in each period, with the net change and averages. `ghistory.*` draws the same as a bar of `+` (added), `X`

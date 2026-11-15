@@ -391,3 +391,37 @@ describe('a UDA shown as a progress bar', () => {
     expect(cellOf('task0', 'description').querySelector('[role=progressbar]')).toBeNull();
   });
 });
+
+describe('the Export button', () => {
+  const result = (): ReportResult => ({
+    kind: 'report',
+    report: 'next',
+    description: null,
+    columns: [{ spec: 'description', name: 'description', format: null, label: 'Description', kind: 'description' }],
+    rows: [row('one', null)],
+    breaks: [false],
+    matched: 1,
+    sort: null,
+  });
+  const exportButton = () => document.querySelector('button[aria-label="Export these tasks"]');
+  const config = () =>
+    (store.config = {
+      colors: {},
+      config: { udas: {}, settings: {}, reports: {}, contexts: {}, active_context: null },
+    } as unknown as ConfigResponse);
+
+  it('is under a table drawn by a report’s command line', () => {
+    config();
+    const entry = { id: 1, input: { line: '+x next' }, title: '', result: null, loading: false, failure: null, at: 0 };
+    app = mount(ReportTable, { target: document.body, props: { result: result(), entry } });
+    flushSync();
+    expect(exportButton()?.textContent?.trim()).toBe('Export');
+  });
+
+  it('is not there when what drew the table can’t be told', () => {
+    config();
+    app = mount(ReportTable, { target: document.body, props: { result: result() } });
+    flushSync();
+    expect(exportButton()).toBeNull();
+  });
+});

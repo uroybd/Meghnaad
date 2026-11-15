@@ -524,7 +524,10 @@ class Store(
     }
 
     /** What each section of [board] shows now: their filters run, their numbers worked out (see [loadBoard]). */
-    suspend fun loadBoardData(board: Board): Map<String, SectionData> = loadBoard(tw, board, boardZone())
+    suspend fun loadBoardData(board: Board): Map<String, SectionData> {
+        val cfg = config?.config
+        return loadBoard(tw, board, boardZone()) { contextWords(it, cfg) }
+    }
 
     /** What a selection control offers: the values its source has (`choicesOf`), a UDA's in the order of its values. */
     suspend fun selectChoices(c: Control): List<String> = choicesOf(tw, c, udas.firstOrNull { it.name == c.source }?.values)

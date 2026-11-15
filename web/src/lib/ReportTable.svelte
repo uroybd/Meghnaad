@@ -5,11 +5,13 @@
   import { formatTable, rowClass } from './format';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import ProgressBar from './ProgressBar.svelte';
-  import { ArrowDown, ArrowUp, Check, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
+  import { ArrowDown, ArrowUp, Check, Download, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
   import MoreMenu, { type MenuAction } from './MoreMenu.svelte';
   import ProjectPath from './ProjectPath.svelte';
   import TagChip from './TagChip.svelte';
   import DepLink from './DepLink.svelte';
+  import ExportDialog from './ExportDialog.svelte';
+  import { exportArgs } from './exportScope';
   import UuidTip from './UuidTip.svelte';
   import { describeRecur } from './recurrence';
   import { groupHeads } from './groups';
@@ -44,6 +46,13 @@
     /** Provided for the focused report only: a checkbox on each row, to select several for the bulk actions. */
     selectable?: boolean;
   } = $props();
+
+  // What the Export button exports: the tasks this table shows (its filter, report and context), when the command
+  // line that drew it can be told.
+  const exportLine = $derived(
+    entry ? exportArgs(entry.input, entry.scope && store.contextChoice(entry.scope), store.config?.config) : null,
+  );
+  let exporting = $state(false);
 
   const udas = $derived(store.config?.config.udas ?? {});
   /** A cell of a UDA shown as a progress bar: its number and range, or null (some other column, or no number in it). */
@@ -505,7 +514,19 @@
       >
       <button type="button" class="ghost more" onclick={() => (drawn = total)}>Show all</button>
     {/if}
+    {#if exportLine}
+      <button
+        type="button"
+        class="ghost export"
+        onclick={() => (exporting = true)}
+        title="Export these tasks as JSON or CSV"
+        aria-label="Export these tasks"><Download size={13} /> Export</button
+      >
+    {/if}
   </p>
+  {#if exporting && exportLine}
+    <ExportDialog args={exportLine} columns={result.columns} onclose={() => (exporting = false)} />
+  {/if}
 {/if}
 
 <style>
@@ -790,6 +811,20 @@
   .more {
     margin-left: 6px;
     text-decoration: underline;
+  }
+  .export {
+    margin-left: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--dim);
+    opacity: 0.8;
+  }
+  .export:hover,
+  .export:focus-visible {
+    opacity: 1;
+    color: var(--text);
   }
   .sortbar {
     display: none;

@@ -23,6 +23,7 @@
     type SectionData,
   } from './boards';
   import { store } from './store.svelte';
+  import { contextWords } from './exportScope';
 
   /**
    * A board: its sections on a 12-column grid, or on 6 columns (4 on a small phone) in reading order on a narrow screen, each
@@ -67,8 +68,11 @@
     void store.rev;
     const mine = ++asked;
     const zone = zoneNow(store.config?.config.settings);
+    // The numbers and charts follow the context (the one their filter names, else the console's).
+    const cfg = store.config?.config;
+    const contextOf = (words: string[]) => contextWords(words, undefined, cfg);
     const t = setTimeout(() => {
-      void loadBoard($state.snapshot(board) as Board, zone).then((d) => {
+      void loadBoard($state.snapshot(board) as Board, zone, undefined, contextOf).then((d) => {
         if (mine === asked) data = d;
       });
     }, 150);

@@ -6,6 +6,7 @@
   import { compactDuration } from './dates';
   import { Info } from './icons';
   import ResultView from './ResultView.svelte';
+  import { splitWords } from './cmdline';
   import { scheme } from './scheme.svelte';
   import { store, type Entry } from './store.svelte';
 
@@ -53,7 +54,8 @@
     data?.kind === 'table'
       ? {
           id: 0,
-          input: { args: [] },
+          // What it ran, so its Export button exports the same tasks.
+          input: { args: [...splitWords(data.filter), section.report || 'next'] },
           title: section.report || 'next',
           result: data.result,
           loading: false,

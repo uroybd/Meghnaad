@@ -89,6 +89,7 @@ pub(super) fn calendar(cfg: &Config, ctx: &EvalCtx<'_>, all: &[Facts], p: &Parse
             report: &d.report,
             filter: &[d.filter.clone(), filter].concat(),
             seed,
+            context: true,
         }) {
             Ok(o) => out.details = Some(o),
             Err(e) => return e.into(),

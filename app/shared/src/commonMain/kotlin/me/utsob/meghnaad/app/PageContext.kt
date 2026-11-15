@@ -53,3 +53,15 @@ fun contextOfFilter(filter: String): String? {
     }
     return found
 }
+
+/**
+ * The read filter of the context a filter's `export` runs in, as words in parentheses (web/src/lib/exportScope.ts):
+ * `export` leaves the context out, as Taskwarrior's does, so a screen that wants it puts it in front, as `task <report>`
+ * does. The context is the one [filter] names with `rc.context=`, else [choice] (a page's), else the active one.
+ */
+fun contextWords(filter: List<String>, cfg: ConfigBody?, choice: String? = null): List<String> {
+    if (cfg == null) return emptyList()
+    val name = contextOfFilter(filter.joinToString(" ")) ?: choice ?: cfg.activeContext ?: NO_CONTEXT
+    val read = if (name == NO_CONTEXT) null else cfg.contexts[name]?.read
+    return if (read.isNullOrBlank()) emptyList() else listOf("(") + rustHelpers().splitWords(read) + ")"
+}

@@ -603,12 +603,21 @@ sealed interface SectionData {
  * Every section's data. Sections that run the same filter share one `export`; a table runs its report, as the Tasks page does,
  * with the section's filter.
  */
-suspend fun loadBoard(tw: Tw, board: Board, zone: Zone): Map<String, SectionData> {
+suspend fun loadBoard(
+    tw: Tw,
+    board: Board,
+    zone: Zone,
+    /** The context's read filter for a filter's `export` ([contextWords]): `export` leaves it out, as Taskwarrior's does. */
+    contextOf: (List<String>) -> List<String> = { emptyList() },
+): Map<String, SectionData> {
     val exports = HashMap<String, CliResult>()
     /** The filter a section (or one of its series) runs, with the board's controls in it. */
     fun filterOf(s: Section, x: Series? = null, g: WrittenGroup? = null) = substituteControls(effectiveFilter(board, s, x, g), board.controls, zone)
     suspend fun exportOf(filter: String): CliResult =
-        exports.getOrPut(filter) { tw.run(args = rustHelpers().splitWords(filter) + "export").result }
+        exports.getOrPut(filter) {
+            val words = rustHelpers().splitWords(filter)
+            tw.run(args = contextOf(words) + words + "export").result
+        }
 
     /** The tasks a filter picks, as the text `export` prints; or why they could not be had. */
     suspend fun tasksOf(filter: String): Pair<String?, String?> = when (val r = exportOf(filter)) {

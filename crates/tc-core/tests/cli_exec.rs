@@ -4342,6 +4342,62 @@ mod export_command {
     }
 
     #[tokio::test]
+    async fn export_takes_only_the_filter_given_and_never_the_context() {
+        // As the real `task` 3.5.0 does: with a context active, `export` and `export next` still see every task, and
+        // a filter on the command line still narrows them.
+        let mut r = replica();
+        let none = Config::default();
+        run(&mut r, &none, "add Keep project:Home").await;
+        run(&mut r, &none, "add Other project:Work").await;
+        run(&mut r, &none, "add Gone project:Home").await;
+        run(&mut r, &none, "3 done").await;
+        let cfg = parse("context.home.read=project:Home\ncontext=home\n").config;
+        let names = |text: &str| {
+            let mut v: Vec<String> = serde_json::from_str::<Vec<serde_json::Value>>(text)
+                .unwrap()
+                .iter()
+                .map(|t| t["description"].as_str().unwrap().to_owned())
+                .collect();
+            v.sort();
+            v
+        };
+        let (res, _) = run(&mut r, &cfg, "export").await;
+        assert_eq!(names(file(&res).1), ["Gone", "Keep", "Other"]);
+        let (res, _) = run(&mut r, &cfg, "export next").await;
+        assert_eq!(names(file(&res).1), ["Keep", "Other"]);
+        let (res, _) = run(&mut r, &cfg, "project:Work export").await;
+        assert_eq!(names(file(&res).1), ["Other"]);
+        let (res, _) = run(&mut r, &cfg, "project:Home export next").await;
+        assert_eq!(names(file(&res).1), ["Keep"]);
+        // The file is named for what it holds and when: the report, the filter (without its settings), the time.
+        let stamp = |name: &str, scope: &str| {
+            let rest = name
+                .strip_prefix(scope)
+                .and_then(|r| r.strip_suffix(".json"))
+                .unwrap_or("x");
+            rest.len() == 15
+                && rest
+                    .chars()
+                    .enumerate()
+                    .all(|(i, c)| if i == 8 { c == '-' } else { c.is_ascii_digit() })
+        };
+        assert!(stamp(file(&res).0, "tasks-next-project-Home-"), "{}", file(&res).0);
+        let (res, _) = run(&mut r, &cfg, "rc.json.array=on ( +a or /x y/ ) export").await;
+        assert!(stamp(file(&res).0, "tasks-a-or-x-y-"), "{}", file(&res).0);
+        let (res, _) = run(&mut r, &cfg, "export").await;
+        assert!(stamp(file(&res).0, "tasks-"), "{}", file(&res).0);
+        // The page's own example: ids, then the setting after the command.
+        let (res, _) = run(&mut r, &cfg, "1-2 export rc.json.array=off").await;
+        assert_eq!(file(&res).1.lines().count(), 2);
+        // A report still keeps the context outside `export`.
+        let (res, _) = run(&mut r, &cfg, "next").await;
+        let CliResult::Report(o) = res else {
+            panic!("not a report: {res:?}")
+        };
+        assert_eq!(o.rows.len(), 1);
+    }
+
+    #[tokio::test]
     async fn information_is_info_and_so_is_any_abbreviation_of_either() {
         let mut r = replica();
         let cfg = Config::default();

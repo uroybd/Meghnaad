@@ -344,6 +344,13 @@ describe('loading a board', () => {
     const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_790_000_000 }, run);
     const exports = run.mock.calls.filter(([i]) => i.args.at(-1) === 'export').map(([i]) => i.args.join(' '));
     expect(exports).toEqual(['( +work ) export', '( +work ) ( project:Home ) export']);
+
+    // The context goes in front of each filter's `export`, which leaves it out; a table's report applies it itself.
+    run.mockClear();
+    await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_790_000_000 }, run, () => ['(', '+ctx', ')']);
+    const withCtx = run.mock.calls.map(([i]) => i.args.join(' '));
+    expect(withCtx).toContain('( +ctx ) ( +work ) export');
+    expect(withCtx.some((l) => l.endsWith(' list') && !l.includes('+ctx'))).toBe(true);
     expect(run.mock.calls.some(([i]) => i.args.at(-1) === 'list')).toBe(true);
 
     expect(data.n).toMatchObject({ kind: 'answer', answer: { total: 3, tasks: 3 } });

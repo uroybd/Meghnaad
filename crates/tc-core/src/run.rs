@@ -520,6 +520,9 @@ pub struct Request<'a> {
     /// The user's extra filter, already split into words.
     pub filter: &'a [String],
     pub seed: u64,
+    /// The active context's read filter applies (as the report's `context` setting allows). `export` turns it off:
+    /// Taskwarrior's `CmdExport` never applies the context, with a report name or without.
+    pub context: bool,
 }
 
 pub fn run_report(req: &Request) -> Result<Output, FilterError> {
@@ -529,7 +532,7 @@ pub fn run_report(req: &Request) -> Result<Output, FilterError> {
     let ctx = EvalCtx::new(cfg, req.clock, &ids).with_inheritance(req.all);
 
     let report_filter = def.filter.as_deref().map(split_words).unwrap_or_default();
-    let context_filter = if def.context {
+    let context_filter = if req.context && def.context {
         cfg.active_context
             .as_ref()
             .and_then(|c| cfg.contexts.get(c))
@@ -650,6 +653,7 @@ mod tests {
             report,
             filter: &split_words(filter),
             seed: 7,
+            context: true,
         })
         .unwrap()
     }
@@ -907,6 +911,7 @@ mod tests {
                 report: name,
                 filter: &split_words(f),
                 seed: 0,
+                context: true,
             })
         };
         assert!(r("nope", "").unwrap_err().0.contains("not a report"));

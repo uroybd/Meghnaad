@@ -1607,7 +1607,7 @@ async fn maintain<S: Storage>(
 }
 
 /// `cfg` with the `rc.<key>:<value>` words of `args` applied, or `None` if there are none.
-fn with_overrides(cfg: &Config, args: &[String]) -> Result<Option<Config>, String> {
+pub(crate) fn with_overrides(cfg: &Config, args: &[String]) -> Result<Option<Config>, String> {
     let overrides: Vec<(&str, &str)> = args
         .iter()
         .filter_map(|t| t.strip_prefix("rc."))
@@ -1767,6 +1767,7 @@ async fn execute_inner<S: Storage>(
                 report: &name,
                 filter: &parsed.filter,
                 seed: opts.seed,
+                context: true,
             }) {
                 Ok(o) => ok(CliResult::Report(o)),
                 Err(e) => e.into(),
@@ -1795,7 +1796,7 @@ async fn execute_inner<S: Storage>(
 
 /// `task [filter] export [report]`: the tasks as Taskwarrior's own JSON, ready for `task import`. With a
 /// report name the report's filter, sort and limit apply; otherwise they come in id order (those without
-/// one, finished ones, first by uuid), as in `CmdExport`.
+/// one, finished ones, first by uuid), as in `CmdExport`. The active context never applies, with a report or without.
 async fn export<S: Storage>(
     replica: &mut Replica<S>,
     cfg: &Config,
@@ -1813,22 +1814,25 @@ async fn export<S: Storage>(
         _ => None,
     };
 
-    let order: Vec<Uuid> = match report {
+    let order: Vec<Uuid> = match &report {
         Some(name) => {
             match run::run_report(&run::Request {
                 cfg,
                 clock: ctx.clock,
                 all,
-                report: &name,
+                report: name,
                 filter: &shaped,
                 seed: 0,
+                context: false,
             }) {
                 Ok(o) => o.rows.iter().map(|r| r.facts.uuid).collect(),
                 Err(e) => return e.into(),
             }
         }
         None => {
-            let (sel, limit) = match selected(all, ctx, cfg, &p.filter) {
+            // Only the filter given: `export` never applies the context, as in `CmdExport`.
+            let pool: Vec<&Facts> = all.iter().collect();
+            let (sel, limit) = match select_from(&pool, ctx, cfg, &p.filter, false) {
                 Ok(s) => s,
                 Err(e) => return e.into(),
             };
@@ -1859,13 +1863,38 @@ async fn export<S: Storage>(
         let id = ctx.ids.get(uuid).copied().unwrap_or(0);
         tasks.push(crate::export::compose(&raw, id, ctx.urgency(f), &uda));
     }
-    let (y, m, d, ..) = ctx.clock.ymd_hms(ctx.clock.now);
+    let scope = if report.is_some() { &shaped } else { &p.filter };
     ok(CliResult::File {
-        name: format!("tasks-{y:04}-{m:02}-{d:02}.json"),
+        name: export_name(report.as_deref(), scope, &ctx.clock),
         mime: "application/json".into(),
         count: tasks.len(),
         text: crate::export::render(&tasks, cfg.json_array()),
     })
+}
+
+/// The name of an export's file: what it holds and when, `tasks-next-project-Home-20261116-015300.json`. The report
+/// (if any) and the filter, without its `rc.` settings, each run of characters a file name may not hold made one `-`,
+/// cut to a sensible length; then the local date and time.
+fn export_name(report: Option<&str>, filter: &[String], clock: &Clock) -> String {
+    const MOST: usize = 60;
+    let words = report
+        .into_iter()
+        .chain(filter.iter().map(String::as_str).filter(|w| !w.starts_with("rc.")));
+    let mut scope = String::new();
+    for w in words {
+        for c in w.chars().chain([' ']) {
+            if c.is_alphanumeric() || matches!(c, '.' | '_') {
+                scope.push(c);
+            } else if !scope.is_empty() && !scope.ends_with('-') {
+                scope.push('-');
+            }
+        }
+    }
+    let scope: String = scope.chars().take(MOST).collect();
+    let scope = scope.trim_matches(['-', '.']);
+    let (y, m, d, h, mi, s) = clock.ymd_hms(clock.now);
+    let sep = if scope.is_empty() { "" } else { "-" };
+    format!("tasks-{scope}{sep}{y:04}{m:02}{d:02}-{h:02}{mi:02}{s:02}.json")
 }
 
 fn selected<'a>(

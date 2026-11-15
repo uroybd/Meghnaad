@@ -370,6 +370,30 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             Ok(limit) => json!({ "limit": limit }),
             Err(error) => json!({ "message": error }),
         },
+        // The Export button over a table (`table_export`): the line that exports what it shows (null when it is not a
+        // report's), the context in front of a filter's `export`, the fields in an export, and the file.
+        "export_line" => json!(crate::table_export::export_line(
+            &a.req::<Vec<String>>(0)?,
+            &a.req::<crate::taskrc::Config>(1)?,
+            a.opt::<String>(2)?.as_deref()
+        )),
+        "export_context" => json!(crate::table_export::context_words(
+            &a.req::<Vec<String>>(0)?,
+            &a.req::<crate::taskrc::Config>(1)?,
+            a.opt::<String>(2)?.as_deref()
+        )),
+        "export_fields" => json!(crate::table_export::fields_of(&crate::table_export::parse(
+            &a.req::<String>(0)?
+        )?)),
+        "json_array" => json!(a.req::<crate::taskrc::Config>(0)?.json_array()),
+        "table_fields" => json!(crate::table_export::table_fields(&a.req::<Vec<String>>(0)?)),
+        "export_file" => json!(crate::table_export::render(
+            &a.req::<String>(0)?,
+            &a.req::<String>(1)?,
+            &a.req::<crate::table_export::Choice>(2)?,
+            &a.req::<Vec<String>>(3)?,
+            &a.req::<crate::taskrc::Config>(4)?
+        )?),
         "board_place" => json!(crate::board::layout::place(
             &a.req::<Vec<Cell>>(0)?,
             &a.req::<String>(1)?,
