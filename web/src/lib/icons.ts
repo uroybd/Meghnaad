@@ -5,6 +5,7 @@ export { default as ArrowLeft } from '@lucide/svelte/icons/arrow-left';
 export { default as ArrowRight } from '@lucide/svelte/icons/arrow-right';
 export { default as ArrowRightToLine } from '@lucide/svelte/icons/arrow-right-to-line';
 export { default as ArrowUp } from '@lucide/svelte/icons/arrow-up';
+export { default as ArrowUpRight } from '@lucide/svelte/icons/arrow-up-right';
 export { default as Bell } from '@lucide/svelte/icons/bell';
 export { default as BellOff } from '@lucide/svelte/icons/bell-off';
 export { default as Calendar } from '@lucide/svelte/icons/calendar';

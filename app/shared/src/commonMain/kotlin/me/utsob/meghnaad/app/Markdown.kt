@@ -141,8 +141,13 @@ private fun AnnotatedString.Builder.inlines(nodes: List<Md>, look: Look) {
         "a" -> {
             val href = n.href
             if (href == null) inlines(n.c, look) else {
-                val style = TextLinkStyles(SpanStyle(color = look.link, textDecoration = TextDecoration.Underline))
-                withLink(LinkAnnotation.Url(href, style)) { inlines(n.c, look) }
+                // A chip, as on the web: the words in the accent on a quiet tint, with an arrow that says it leaves the app.
+                val style = TextLinkStyles(SpanStyle(color = look.link, background = look.link.copy(alpha = 0.12f)))
+                withLink(LinkAnnotation.Url(href, style)) {
+                    append('\u2009')
+                    inlines(n.c, look)
+                    append(" \u2197\u2009")
+                }
             }
         }
     }

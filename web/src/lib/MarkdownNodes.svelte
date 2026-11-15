@@ -2,6 +2,7 @@
   // Draws a tree from `tc_core::markdown`. Nothing is put into the page as HTML: every piece is an element made here, so
   // what a note says cannot add markup, and a link is only ever one the engine allowed (http, https, mailto).
   import MarkdownNodes from './MarkdownNodes.svelte';
+  import { ArrowUpRight } from './icons';
   import type { MdNode } from './markdown';
 
   let {
@@ -21,8 +22,8 @@
   {:else if n.t === 'i'}<em><MarkdownNodes nodes={n.c ?? []} {ontoggle} /></em>
   {:else if n.t === 'del'}<del><MarkdownNodes nodes={n.c ?? []} {ontoggle} /></del>
   {:else if n.t === 'code'}<code>{n.s}</code>
-  {:else if n.t === 'a'}<a href={n.href} target="_blank" rel="noopener noreferrer nofollow"
-      ><MarkdownNodes nodes={n.c ?? []} {ontoggle} /></a
+  {:else if n.t === 'a'}<a class="link" href={n.href} target="_blank" rel="noopener noreferrer nofollow"
+      ><MarkdownNodes nodes={n.c ?? []} {ontoggle} /><ArrowUpRight size={11} aria-hidden="true" /></a
     >
   {:else if n.t === 'p'}<p><MarkdownNodes nodes={n.c ?? []} {ontoggle} /></p>
   {:else if n.t === 'h'}
@@ -139,9 +140,24 @@
     opacity: 0.4;
     margin: 0.5em 0;
   }
-  a {
+  /* A link is a chip: the words in the accent on a quiet pill, with an arrow that says it leaves the app. */
+  a.link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel-2);
     color: var(--accent, inherit);
-    text-decoration: underline;
+    font-size: 0.92em;
+    line-height: 1.5;
+    text-decoration: none;
     overflow-wrap: anywhere;
+    vertical-align: baseline;
+  }
+  a.link:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
   }
 </style>
