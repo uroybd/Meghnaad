@@ -50,6 +50,7 @@ pub mod store;
 pub mod summary;
 pub mod table_export;
 pub mod taskrc;
+pub mod transform;
 pub mod urgency;
 pub mod urgency_settings;
 pub mod warm;

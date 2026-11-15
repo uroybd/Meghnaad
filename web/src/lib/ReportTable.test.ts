@@ -392,6 +392,62 @@ describe('a UDA shown as a progress bar', () => {
   });
 });
 
+describe('field transformations', () => {
+  it('draw a whitelisted description, note and string UDA as the Markdown a rule made, and leave other fields alone', () => {
+    store.appSettings = parseSettings(
+      JSON.stringify({
+        appearance: {
+          transformations: [
+            {
+              match: '\\b(BOR-\\d+)\\b',
+              replace: '[$1](https://j.example/$1)',
+              fields: ['description', 'annotations', 'jira'],
+            },
+          ],
+        },
+      }),
+    );
+    const uda = (name: string) => ({ name, type: 'string', label: name, values: [], default: null });
+    store.config = {
+      colors: {},
+      config: { udas: { jira: uda('jira'), other: uda('other') }, settings: {}, reports: {} },
+    } as unknown as ConfigResponse;
+    const rows = [
+      {
+        ...row('fix BOR-7', null),
+        annotations: [{ entry: 1, text: 'see BOR-8' }],
+        extra: { jira: 'BOR-9', other: 'BOR-10' },
+      },
+    ];
+    const result: ReportResult = {
+      kind: 'report',
+      report: 'next',
+      description: null,
+      columns: ['description', 'jira', 'other'].map((name) => ({
+        spec: name,
+        name,
+        format: null,
+        label: name,
+        kind: name === 'description' ? 'description' : 'string',
+      })),
+      rows,
+      breaks: [false],
+      matched: 1,
+      sort: null,
+    };
+    app = mount(ReportTable, { target: document.body, props: { result } });
+    flushSync();
+    const hrefs = (col: string) =>
+      [...document.querySelector(`td.col-${col}`)!.querySelectorAll('a[href^="https://j.example"]')].map((a) =>
+        a.getAttribute('href'),
+      );
+    expect(hrefs('description')).toEqual(['https://j.example/BOR-7', 'https://j.example/BOR-8']);
+    expect(hrefs('jira')).toEqual(['https://j.example/BOR-9']);
+    expect(hrefs('other')).toEqual([]);
+    expect(document.querySelector('td.col-other')!.textContent).toContain('BOR-10');
+  });
+});
+
 describe('the Export button', () => {
   const result = (): ReportResult => ({
     kind: 'report',

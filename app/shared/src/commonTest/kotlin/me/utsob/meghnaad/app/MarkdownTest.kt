@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** The engine's Markdown as the app reads it: the parser is `tc_core::markdown` (tested there), so these check the hand-over. */
 class MarkdownTest {
@@ -33,6 +34,19 @@ class MarkdownTest {
         assertEquals("a\n- [ ] b\n- [ ] c", toggledBox("a\n- [ ] b\n- [x] c", 2))
         assertNull(toggledBox("a\n- [ ] b", 0))
         assertNull(toggledBox("```\n- [ ] in code\n```", 1))
+    }
+
+    @Test
+    fun transformationsRunOnTheFieldsTheyNameAndTheEngineSaysWhatIsWrong() {
+        val rules = listOf(Transformation("\\b(BOR-\\d+)\\b", "[\$1](https://j.example/\$1)", listOf("description", "jira")))
+        val (desc, note, plainDesc) = markdownTrees(listOf("fix BOR-7", "BOR-8", "no ticket"), listOf("description", "annotations", "description"), rules)
+        assertEquals("https://j.example/BOR-7", desc!!.single().c.single { it.t == "a" }.href)
+        assertNull(note)
+        assertNull(plainDesc)
+        val problems = transformProblems(listOf(Transformation("(", "", listOf("other"))), listOf("jira"))
+        assertEquals(2, problems.size)
+        assertTrue(problems.all { it.startsWith("transformation 1: ") })
+        assertEquals(emptyList(), transformProblems(rules, listOf("jira")))
     }
 
     @Test

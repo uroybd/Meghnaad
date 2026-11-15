@@ -90,7 +90,10 @@ fun DetailScreen(store: Store, ref: DetailRef) {
     Sheet(drawer = true, width = 560.dp, color = colors.surfaceContainerLow) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(live?.description ?: "Task", Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 3)
+                val title = live?.description ?: "Task"
+                val rules = store.appearance.transformations
+                val tree = remember(title, rules) { if (live == null) null else markdownTrees(listOf(title), listOf("description"), rules).firstOrNull() }
+                DescriptionText(title, tree, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 3)
                 IconAction("link", "Copy a link to this task", { clipboard.setText(AnnotatedString(taskLink(uuid))); store.notify("Link copied.") }, size = 20.dp)
                 IconAction("x", "Close details", { store.detail = null }, size = 20.dp)
             }

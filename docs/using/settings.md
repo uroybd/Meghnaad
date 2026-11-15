@@ -88,6 +88,30 @@ Only numeric UDAs are offered (`uda.progress.type=numeric`).
 { "appearance": { "progress": { "progress": { "min": 0, "max": 100 } } } }
 ```
 
+### Transformations
+
+Find and replace in a text field before it is drawn, so a ticket number can be shown as a link to the ticket. Each rule
+has a **Match** (a regular expression), a **Replace** (which may use `$1`, or `${name}` for a named group) and the
+**fields** it runs on, ticked: `description`, `annotations`, or any string UDA. There is no "all fields": a field no rule
+names is never searched. The result is drawn as [Markdown](tasks.md#notes-and-markdown), so the replacement can make a
+link, bold, code and so on.
+
+```json
+{ "appearance": { "transformations": [
+  { "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://jira.example.com/browse/$1)", "fields": ["description", "annotations"] }
+] } }
+```
+
+shows `fix BOR-23434` as `fix` and a link named `BOR-23434`. The rules run in order, each on what the one before left;
+the arrows move a rule up and down. Patterns match as Taskwarrior's do, on the bytes of the text: `\w`, `\d` and `\b` are
+ASCII, and `(?i)` at the start makes a rule ignore case. A rule whose pattern does not compile, or that names a field that
+is not text, is reported under it and skipped; the others still run, and **Apply** waits until it is fixed.
+
+Only how a field is shown changes: the task, filters, `export`, editing and sync all see the text as you typed it. A
+description is drawn as Markdown only when a rule changed it. Where a rule changes how many lines a field has, its
+checkboxes are shown but can't be clicked. They apply to tables, the phone's cards, the task's details and, in the
+[terminal app](../terminal.md), report rows (where a link is a terminal hyperlink).
+
 ![The Settings page, on its taskrc tab: the saved settings as text to edit, with a colour theme picker and import from a file or a link](../screenshots/settings-taskrc.png)
 
 (The screenshot predates the list of files beside the text, described under [Your taskrc](#your-taskrc).)

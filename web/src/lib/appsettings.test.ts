@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  emptyAppearance,
   nameProblem,
+  sameAppearance,
   parseAppearance,
   progressFraction,
   serializeAppearance,
@@ -199,17 +201,36 @@ describe('appearance', () => {
     expect(errors.join('\n')).toContain('flat: min must be less than max');
     expect(parseAppearance('x').errors).toHaveLength(1);
     expect(parseAppearance({ progress: [] }).errors).toHaveLength(1);
-    expect(parseAppearance(undefined)).toEqual({ appearance: { progress: {} }, errors: [] });
+    expect(parseAppearance(undefined)).toEqual({ appearance: { progress: {}, transformations: [] }, errors: [] });
   });
 
   it('is kept when the rest of the settings are saved, and saved without touching them', () => {
     const raw = { homepage: { report: 'list' }, taskCommands: [{ name: 'a', command: 'done' }], keep: 1 };
-    const text = serializeAppearance(raw, { progress: { progress: { min: 0, max: 100 } } });
+    const text = serializeAppearance(raw, { progress: { progress: { min: 0, max: 100 } }, transformations: [] });
     expect(JSON.parse(text)).toEqual({ ...raw, appearance: { progress: { progress: { min: 0, max: 100 } } } });
     // None left leaves the key out.
-    expect(JSON.parse(serializeAppearance({ ...raw, appearance: { progress: {} } }, { progress: {} }))).toEqual(raw);
+    expect(JSON.parse(serializeAppearance({ ...raw, appearance: { progress: {} } }, emptyAppearance()))).toEqual(raw);
     const kept = parseSettings(text);
     expect(serializeSettings(kept.raw, kept.commands)).toContain('"appearance"');
+  });
+
+  it('reads the transformations in order, keeps a bad pattern for the engine to report, and saves them', () => {
+    const jira = { match: '\\b(BOR-\\d+)\\b', replace: '[$1](https://j.example/$1)', fields: ['description'] };
+    const { appearance, errors } = parseAppearance({
+      transformations: [jira, { match: '(', fields: ['jira'] }, { match: 'x' }, 'nope', { match: 1, fields: [] }],
+    });
+    expect(appearance.transformations).toEqual([jira, { match: '(', replace: '', fields: ['jira'] }]);
+    expect(errors).toEqual([
+      'appearance.transformations[2]: fields must be a list of field names',
+      'appearance.transformations[3]: must be { "match": "…", "replace": "…", "fields": [ … ] }',
+      'appearance.transformations[4]: must be { "match": "…", "replace": "…", "fields": [ … ] }',
+    ]);
+    expect(parseAppearance({ transformations: {} }).errors).toHaveLength(1);
+    const text = serializeAppearance({}, { progress: {}, transformations: [jira] });
+    expect(JSON.parse(text)).toEqual({ appearance: { transformations: [jira] } });
+    expect(parseSettings(text).appearance.transformations).toEqual([jira]);
+    expect(sameAppearance(appearance, { ...appearance, transformations: [jira] })).toBe(false);
+    expect(sameAppearance(appearance, structuredClone(appearance))).toBe(true);
   });
 
   it('fills a bar from empty at the min to full at the max', () => {

@@ -346,6 +346,10 @@ pub struct App {
     /// The numeric UDAs drawn as progress bars (`appearance.progress`), and what was wrong with the rest.
     pub progress: std::collections::BTreeMap<String, Progress>,
     pub progress_errors: Vec<String>,
+    /// The field transformations (`appearance.transformations`) the report's cells are drawn with, and what is wrong
+    /// with them.
+    pub transformations: Vec<tc_core::transform::Rule>,
+    pub transform_errors: Vec<String>,
     /// Whether the terminal is light or dark (what the theme's `auto` draws), the system's appearance when last looked
     /// at, when that was, and when `settings.json` was last changed, to follow either when it changes.
     pub appearance: crate::appearance::Mode,
@@ -533,6 +537,8 @@ impl App {
             theme_errors: Vec::new(),
             progress: std::collections::BTreeMap::new(),
             progress_errors: Vec::new(),
+            transformations: Vec::new(),
+            transform_errors: Vec::new(),
             appearance: crate::appearance::Mode::default(),
             system_mode: None,
             last_look: 0,
@@ -569,7 +575,14 @@ impl App {
                 };
             }
             let pending = model::pending(&self.task)?;
-            let report = model::report(&self.task, &cfg, &self.report_name, &split_words(&self.filter), now())?;
+            let report = model::report(
+                &self.task,
+                &cfg,
+                &self.report_name,
+                &split_words(&self.filter),
+                now(),
+                &self.transformations,
+            )?;
             let vocab = model::vocab(&self.task, &cfg, &pending)?;
             Ok((cfg, pending, report, vocab))
         });
@@ -589,6 +602,24 @@ impl App {
         self.last_read = now();
         self.selected = self.selected.min(self.report.uuids.len().saturating_sub(1));
         self.load_page();
+    }
+
+    /// Build the report again from `task`, as it is (after the transformations change).
+    fn refresh_report(&mut self) {
+        if self.report_name.is_empty() {
+            return;
+        }
+        match model::report(
+            &self.task,
+            &self.cfg,
+            &self.report_name,
+            &split_words(&self.filter),
+            now(),
+            &self.transformations,
+        ) {
+            Ok(report) => self.report = report,
+            Err(e) => self.status = e,
+        }
     }
 
     /// When `settings.json` was last changed.
@@ -667,6 +698,21 @@ impl App {
         let (mode, odd) = self.settings.sync_mode();
         self.sync_mode = mode;
         (self.progress, self.progress_errors) = self.settings.progress();
+        let (rules, mut errors) = self.settings.transformations();
+        let string_udas: Vec<String> = self
+            .cfg
+            .udas
+            .iter()
+            .filter(|(_, u)| u.ty == tc_core::taskrc::UdaType::String)
+            .map(|(name, _)| name.clone())
+            .collect();
+        errors.extend(tc_core::transform::check(&rules, &string_udas));
+        self.transform_errors = errors;
+        // The report's cells were drawn with the rules there were: draw them again with these.
+        if rules != self.transformations {
+            self.transformations = rules;
+            self.refresh_report();
+        }
         if let Some(p) = problem.as_ref().or(odd.as_ref()) {
             p.clone_into(&mut self.status);
         }

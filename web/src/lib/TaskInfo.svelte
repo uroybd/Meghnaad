@@ -6,6 +6,7 @@
   import { projectSegments, shortUuid, udaLabel, urgencyLevel } from './format';
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
   import { visibleNotes } from './journal';
+  import Description from './Description.svelte';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import { trees } from './markdown';
   import ProjectPath from './ProjectPath.svelte';
@@ -88,11 +89,21 @@
     Object.fromEntries(
       (() => {
         const names = udaKeys.filter((k) => defs[k].type === 'string');
-        return trees(names.map((k) => task.extra[k])).map((t, i) => [names[i], t]);
+        return trees(
+          names.map((k) => task.extra[k]),
+          names,
+          store.appearance.transformations,
+        ).map((t, i) => [names[i], t]);
       })(),
     ),
   );
-  const noteTrees = $derived(trees(notes.map((a) => a.text)));
+  const noteTrees = $derived(
+    trees(
+      notes.map((a) => a.text),
+      notes.map(() => 'annotations'),
+      store.appearance.transformations,
+    ),
+  );
   const totalTracked = $derived(task.active_seconds ?? task.sessions.reduce((n, s) => n + s.seconds, 0));
   // A recurring template lists its instances (newest first); an instance links back to it.
   let instances = $state<Row[]>([]);
@@ -144,7 +155,7 @@
 <article class:card={!embedded}>
   {#if !embedded}
     <header class="row">
-      <strong class="grow">{task.description}</strong>
+      <strong class="grow"><Description text={task.description} /></strong>
       {#if onedit}<button class="ghost btn" onclick={() => onedit(task)}><Pencil size={14} /> Edit</button>{/if}
     </header>
   {/if}

@@ -5,7 +5,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 // The app's own settings (`settings.json`), kept beside the taskrc settings. The engine only checks that the text is a JSON
 // object of a sensible size; the app reads it. It holds `taskCommands`, words you type (or tap) that stand for a whole
@@ -53,10 +55,18 @@ data class Progress(val min: Double, val max: Double) {
     }
 }
 
+/**
+ * A find-and-replace run on a text field before it is drawn as Markdown (`tc_core::transform`): [match] is a regex,
+ * [replace] may use `$1` and `${name}`, and [fields] names where it runs (`description`, `annotations` or a string UDA).
+ */
+data class Transformation(val match: String, val replace: String, val fields: List<String>)
+
 /** How the app draws things, kept in `settings.json` under `appearance`. */
 data class Appearance(
     /** The numeric UDAs shown as progress bars in reports, by name. */
     val progress: Map<String, Progress> = emptyMap(),
+    /** The field transformations, in the order they run. */
+    val transformations: List<Transformation> = emptyList(),
 )
 
 val DEFAULT_PROGRESS = Progress(0.0, 100.0)
@@ -65,10 +75,12 @@ val DEFAULT_PROGRESS = Progress(0.0, 100.0)
 fun parseAppearance(v: JsonElement?): Pair<Appearance, List<String>> {
     if (v == null) return Appearance() to emptyList()
     val o = v as? JsonObject ?: return Appearance() to listOf("appearance must be an object: { \"progress\": { … } }")
-    val list = o["progress"] ?: return Appearance() to emptyList()
+    val (rules, ruleErrors) = parseTransformations(o["transformations"])
+    val list = o["progress"] ?: return Appearance(transformations = rules) to ruleErrors
     val bars = list as? JsonObject
-        ?: return Appearance() to listOf("appearance.progress must be an object: { \"<uda>\": { \"min\": 0, \"max\": 100 } }")
-    val errors = mutableListOf<String>()
+        ?: return Appearance(transformations = rules) to
+            ruleErrors + "appearance.progress must be an object: { \"<uda>\": { \"min\": 0, \"max\": 100 } }"
+    val errors = ruleErrors.toMutableList()
     val out = LinkedHashMap<String, Progress>()
     for ((name, r) in bars) {
         val at = "appearance.progress.$name"
@@ -83,7 +95,32 @@ fun parseAppearance(v: JsonElement?): Pair<Appearance, List<String>> {
         val bad = p.problem()
         if (bad != null) errors += "$at: $bad" else out[name] = p
     }
-    return Appearance(out) to errors
+    return Appearance(out, rules) to errors
+}
+
+/**
+ * The well-formed transformations, and what is wrong with the rest. Only the shape is checked here; whether a pattern
+ * compiles and the fields exist is the engine's to say ([transformProblems]), and such a rule is kept so it can be fixed.
+ */
+fun parseTransformations(v: JsonElement?): Pair<List<Transformation>, List<String>> {
+    if (v == null) return emptyList<Transformation>() to emptyList()
+    val list = v as? JsonArray ?: return emptyList<Transformation>() to
+        listOf("appearance.transformations must be a list: [ { \"match\": …, \"replace\": …, \"fields\": [ … ] } ]")
+    val out = mutableListOf<Transformation>()
+    val errors = mutableListOf<String>()
+    list.forEachIndexed { i, r ->
+        val at = "appearance.transformations[$i]"
+        val o = r as? JsonObject
+        val match = o?.get("match")?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        val replace = o?.get("replace").let { if (it == null) "" else (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        val fields = (o?.get("fields") as? JsonArray)?.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        when {
+            match == null || replace == null -> errors += "$at: must be { \"match\": \"…\", \"replace\": \"…\", \"fields\": [ … ] }"
+            fields == null || fields.any { it == null } -> errors += "$at: fields must be a list of field names"
+            else -> out += Transformation(match, replace, fields.filterNotNull())
+        }
+    }
+    return out to errors
 }
 
 class ParsedSettings(
@@ -256,23 +293,39 @@ private fun homepageJson(h: Homepage): JsonObject = buildJsonObject {
 fun serializeAppearance(raw: JsonObject, appearance: Appearance): String {
     val next = buildJsonObject {
         for ((k, v) in raw) if (k != "appearance") put(k, v)
-        if (appearance.progress.isNotEmpty()) {
+        if (appearance.progress.isNotEmpty() || appearance.transformations.isNotEmpty()) {
             put(
                 "appearance",
                 buildJsonObject {
-                    put(
-                        "progress",
-                        buildJsonObject {
-                            for ((name, p) in appearance.progress) {
-                                put(name, buildJsonObject { put("min", number(p.min)); put("max", number(p.max)) })
-                            }
-                        },
-                    )
+                    if (appearance.progress.isNotEmpty()) {
+                        put(
+                            "progress",
+                            buildJsonObject {
+                                for ((name, p) in appearance.progress) {
+                                    put(name, buildJsonObject { put("min", number(p.min)); put("max", number(p.max)) })
+                                }
+                            },
+                        )
+                    }
+                    if (appearance.transformations.isNotEmpty()) put("transformations", transformationsJson(appearance.transformations))
                 },
             )
         }
     }
     return pretty.encodeToString(JsonObject.serializer(), next) + "\n"
+}
+
+/** The rules as `settings.json` and the engine take them. */
+fun transformationsJson(rules: List<Transformation>): JsonArray = buildJsonArray {
+    for (r in rules) {
+        add(
+            buildJsonObject {
+                put("match", r.match)
+                put("replace", r.replace)
+                put("fields", JsonArray(r.fields.map(::JsonPrimitive)))
+            },
+        )
+    }
 }
 
 /** A number the way the web writes it: `100`, not `100.0`. */

@@ -17,5 +17,6 @@ fun Store.cellCtx(name: String): Ctx {
             dependency = settings["dependency.indicator"],
         ),
         journal = config?.journal,
+        transformations = appearance.transformations,
     )
 }

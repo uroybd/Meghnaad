@@ -70,6 +70,8 @@ data class Ctx(
     val indicators: Indicators = Indicators(),
     /** `journal.time` marker texts: those annotations are bookkeeping and are left out of lists. */
     val journal: Journal? = null,
+    /** The user's field transformations (`appearance.transformations`), run before a text is drawn as Markdown. */
+    val transformations: List<Transformation> = emptyList(),
 )
 
 fun shortUuid(u: String): String = u.take(8)
@@ -127,6 +129,7 @@ private fun Ctx.json(rows: List<Row>): JsonObject = buildJsonObject {
     put("recur_indicator", recurIndicator)
     put("indicators", buildJsonObject { put("active", indicators.active); put("tag", indicators.tag); put("dependency", indicators.dependency) })
     put("journal", journal?.let { buildJsonObject { put("start", it.start); put("stop", it.stop) } } ?: JsonNull)
+    put("transformations", transformationsJson(transformations))
 }
 
 /** The cells of a table, and which of its columns have nothing in them. */

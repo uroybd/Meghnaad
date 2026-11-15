@@ -2,6 +2,7 @@
 // changes the text when a checkbox is ticked; what is here is the shape of its tree and a call each.
 
 import { callHelper } from '../engine/helpers';
+import type { Transformation } from './appsettings';
 
 /** A piece of the tree: a block (`p`, `h`, `ul`, `ol`, `li`, `q`, `pre`, `hr`) or an inline (`text`, `b`, `i`, `del`, `code`, `a`, `br`). */
 export interface MdNode {
@@ -20,9 +21,21 @@ export interface MdNode {
   lang?: string;
 }
 
-/** The trees of some texts, in order; null for one that is only words (it is drawn as it is). */
-export function trees(texts: string[]): (MdNode[] | null)[] {
-  return texts.length ? callHelper<(MdNode[] | null)[]>('markdown', texts) : [];
+/**
+ * The trees of some texts, in order; null for one that is only words (it is drawn as it is). With the field each text is
+ * in (`description`, `annotations` or a UDA's name) and the user's transformations, each is transformed first; a
+ * description gets a tree only when a transformation changed it.
+ */
+export function trees(texts: string[], fields?: string[], rules?: Transformation[]): (MdNode[] | null)[] {
+  if (!texts.length) return [];
+  return rules?.length && fields
+    ? callHelper<(MdNode[] | null)[]>('markdown', texts, fields, rules)
+    : callHelper<(MdNode[] | null)[]>('markdown', texts);
+}
+
+/** What is wrong with some transformations, one line each; `fields` are the string UDAs a rule may name. */
+export function transformProblems(rules: Transformation[], fields: string[]): string[] {
+  return rules.length ? callHelper<string[]>('transform_check', rules, fields) : [];
 }
 
 /** The text with the checkbox on `line` flipped, or null when that line is not a checklist item. */

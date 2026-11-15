@@ -137,13 +137,14 @@ fun TaskCard(
                     Column(Modifier.weight(1f)) {
                         val description = cells.firstOrNull { it.first.name == "description" }?.second
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
+                            DescriptionText(
                                 description?.text ?: row.description,
+                                description?.blocks,
+                                Modifier.weight(1f, fill = false),
                                 color = textColor,
                                 fontSize = 15.5.sp,
                                 lineHeight = 21.sp,
                                 fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
-                                modifier = Modifier.weight(1f, fill = false),
                             )
                             if (row.orphans.isNotEmpty()) Pill("+${row.orphans.size}", height = 18.dp)
                         }

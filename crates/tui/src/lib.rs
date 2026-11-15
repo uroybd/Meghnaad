@@ -14,6 +14,7 @@ pub mod completer;
 pub mod form;
 pub mod keys;
 pub mod lists;
+pub mod md;
 pub mod model;
 pub mod remind;
 pub mod review;

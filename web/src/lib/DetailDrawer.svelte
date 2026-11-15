@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Description from './Description.svelte';
   import { submitOnEnter } from './multiline';
   import { runCli } from './api';
   import { formatSeconds } from './dates';
@@ -109,7 +110,9 @@
 
 <aside class="drawer" bind:this={el} tabindex="-1" aria-label="Task details" data-testid="drawer">
   <header class="row">
-    <strong class="grow title">{task?.description ?? 'Task'}</strong>
+    <strong class="grow title"
+      >{#if task}<Description text={task.description} />{:else}Task{/if}</strong
+    >
     <button class="ghost" aria-label="Copy a link to this task" title="Copy a link to this task" onclick={copyLink}
       ><Link size={17} /></button
     >

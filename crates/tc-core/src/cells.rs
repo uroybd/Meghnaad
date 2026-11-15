@@ -4,7 +4,8 @@
 //! result, not once per cell.
 
 use crate::helpers::{format_date, vague};
-use crate::markdown::{self, Node};
+use crate::markdown::Node;
+use crate::transform::{self, Rule, Rules};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -112,6 +113,9 @@ pub struct Ctx {
     indicators: Indicators,
     /// `journal.time` marker texts: those annotations are bookkeeping and are left out of lists.
     journal: Option<Journal>,
+    /// The user's field transformations (`appearance.transformations`), run on a description, a note or a string UDA
+    /// before it is drawn as Markdown.
+    transformations: Vec<Rule>,
 }
 
 impl Ctx {
@@ -153,7 +157,7 @@ pub struct Cell {
     /// The notes under the text (annotations).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<Vec<NoteCell>>,
-    /// The text as Markdown, in a string UDA that uses any.
+    /// The text as Markdown: a string UDA that uses any, or a description a transformation changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocks: Option<Vec<Node>>,
     /// How to style it: `dim`, `multiline`, `pri-h`, `urg-crit`, …
@@ -218,7 +222,7 @@ fn date_cell(ts: Option<i64>, format: Option<&str>, ctx: &Ctx) -> Cell {
     })
 }
 
-fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx) -> Cell {
+fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx, rules: &Rules) -> Cell {
     let shown: Vec<&Note> = row
         .annotations
         .iter()
@@ -237,7 +241,10 @@ fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx) -> Cell {
         format!(" [{}]", shown.len())
     };
     match format {
-        Some("desc") => Cell::text(&row.description),
+        Some("desc") => Cell {
+            blocks: rules.tree(Some(transform::DESCRIPTION), &row.description),
+            ..Cell::text(&row.description)
+        },
         // Like Taskwarrior: each annotation follows the description with its date.
         Some("oneline") => Cell::text(
             std::iter::once(row.description.clone())
@@ -257,19 +264,14 @@ fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx) -> Cell {
                         at: at(n),
                         text: n.text.clone(),
                         entry: n.entry,
-                        blocks: markup(&n.text),
+                        blocks: rules.tree(Some(transform::ANNOTATIONS), &n.text),
                     })
                     .collect(),
             ),
+            blocks: rules.tree(Some(transform::DESCRIPTION), &row.description),
             ..Cell::text(&row.description)
         },
     }
-}
-
-/// The tree of a text that uses Markdown; none for one that is only words.
-pub fn markup(text: &str) -> Option<Vec<Node>> {
-    let tree = markdown::parse(text);
-    (!markdown::is_plain(&tree)).then_some(tree)
 }
 
 fn project_cell(project: Option<&str>, format: Option<&str>) -> Cell {
@@ -292,7 +294,7 @@ fn project_cell(project: Option<&str>, format: Option<&str>) -> Cell {
 }
 
 /// UDA values for date-typed UDAs are stored as epoch seconds.
-fn uda_cell(row: &Row, col: &Col, ctx: &Ctx) -> Cell {
+fn uda_cell(row: &Row, col: &Col, ctx: &Ctx, rules: &Rules) -> Cell {
     let Some(raw) = row.extra.get(&col.name) else {
         return Cell::text("");
     };
@@ -308,7 +310,9 @@ fn uda_cell(row: &Row, col: &Col, ctx: &Ctx) -> Cell {
     }
     // A string may hold Markdown; a multi-line value keeps its lines instead of running them together.
     let cell = Cell {
-        blocks: def.filter(|d| d.kind == "string").and_then(|_| markup(raw)),
+        blocks: def
+            .filter(|d| d.kind == "string")
+            .and_then(|_| rules.tree(Some(&col.name), raw)),
         ..Cell::text(raw)
     };
     if raw.contains('\n') {
@@ -329,7 +333,7 @@ fn urgency_level(u: f64) -> &'static str {
     }
 }
 
-fn cell(col: &Col, row: &Row, ctx: &Ctx) -> Cell {
+fn cell(col: &Col, row: &Row, ctx: &Ctx, rules: &Rules) -> Cell {
     let f = col.format.as_deref();
     let flag = |on: bool, mark: &Option<String>, default: &str| {
         Cell::text(if on {
@@ -368,7 +372,7 @@ fn cell(col: &Col, row: &Row, ctx: &Ctx) -> Cell {
             row.status.chars().take(1).collect::<String>().to_uppercase()
         }),
         ("status", _) => Cell::text(if row.waiting { "waiting" } else { &row.status }),
-        ("description", _) => description_cell(row, f, ctx),
+        ("description", _) => description_cell(row, f, ctx, rules),
         ("project", _) => project_cell(row.project.as_deref(), f),
         ("priority", _) => {
             let p = row.priority.clone().unwrap_or_default();
@@ -426,7 +430,7 @@ fn cell(col: &Col, row: &Row, ctx: &Ctx) -> Cell {
                 .join("; "),
         ),
         // A UDA, an orphan, or something Taskwarrior has that is not drawn specially.
-        _ => uda_cell(row, col, ctx),
+        _ => uda_cell(row, col, ctx, rules),
     }
 }
 
@@ -442,9 +446,11 @@ pub struct Table {
 
 /// The cells of a table.
 pub fn format(cols: &[Col], rows: &[Row], ctx: &Ctx) -> Table {
+    // Compiled once for the whole table.
+    let rules = Rules::new(&ctx.transformations);
     let cells: Vec<Vec<Cell>> = rows
         .iter()
-        .map(|r| cols.iter().map(|c| cell(c, r, ctx)).collect())
+        .map(|r| cols.iter().map(|c| cell(c, r, ctx, &rules)).collect())
         .collect();
     let empty = (0..cols.len())
         .map(|j| cells.iter().all(|r| r[j].text.is_empty() && r[j].notes.is_none()))
@@ -537,6 +543,44 @@ mod tests {
         );
         assert_eq!(notes[0].blocks, None);
         assert_eq!(one("description", json!({ "description": "a" }), json!({})).notes, None);
+    }
+
+    #[test]
+    fn transformations_run_on_the_fields_they_name() {
+        let ctx = json!({
+            "udas": { "jira": { "type": "string" }, "other": { "type": "string" } },
+            "transformations": [{ "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://j.example/$1)",
+                                  "fields": ["description", "annotations", "jira"] }]
+        });
+        let row = json!({ "description": "fix BOR-7", "annotations": [{ "entry": NOW, "text": "see BOR-8" }],
+                          "extra": { "jira": "BOR-9", "other": "BOR-10" } });
+        let link = |blocks: &Option<Vec<Node>>| {
+            blocks
+                .as_ref()
+                .and_then(|b| b[0].c.iter().find(|n| n.t == "a"))
+                .and_then(|a| a.href.clone())
+        };
+        let d = one("description", row.clone(), ctx.clone());
+        // The text stays what was typed: editing and copying see it.
+        assert_eq!(d.text, "fix BOR-7");
+        assert_eq!(link(&d.blocks).as_deref(), Some("https://j.example/BOR-7"));
+        assert_eq!(
+            link(&d.notes.unwrap()[0].blocks).as_deref(),
+            Some("https://j.example/BOR-8")
+        );
+        assert_eq!(
+            link(&one("description.desc", row.clone(), ctx.clone()).blocks).as_deref(),
+            Some("https://j.example/BOR-7")
+        );
+        let j = one("jira", row.clone(), ctx.clone());
+        assert_eq!(
+            (j.text.as_str(), link(&j.blocks).as_deref()),
+            ("BOR-9", Some("https://j.example/BOR-9"))
+        );
+        // A field the rule does not name is left alone, and so is a description with no rules.
+        assert_eq!(one("other", row.clone(), ctx.clone()).blocks, None);
+        assert_eq!(one("description.truncated", row.clone(), ctx).blocks, None);
+        assert_eq!(one("description", row, json!({})).blocks, None);
     }
 
     #[test]

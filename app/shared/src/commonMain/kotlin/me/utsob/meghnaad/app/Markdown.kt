@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
@@ -42,8 +43,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
@@ -71,11 +74,54 @@ data class Md(
     val lang: String? = null,
 )
 
-/** The trees of some texts, in order; null for one that is only words (it is drawn as it is). */
-fun markdownTrees(texts: List<String>): List<List<Md>?> {
+/**
+ * The trees of some texts, in order; null for one that is only words (it is drawn as it is). With the field each text is
+ * in (`description`, `annotations` or a UDA's name) and the user's transformations, each is transformed first; a
+ * description gets a tree only when a transformation changed it.
+ */
+fun markdownTrees(texts: List<String>, fields: List<String>? = null, rules: List<Transformation> = emptyList()): List<List<Md>?> {
     if (texts.isEmpty()) return emptyList()
-    val out = callHelper("markdown", JsonArray(texts.map(::JsonPrimitive)))
+    val args = mutableListOf<JsonElement>(JsonArray(texts.map(::JsonPrimitive)))
+    if (fields != null && rules.isNotEmpty()) {
+        args.add(JsonArray(fields.map(::JsonPrimitive)))
+        args.add(transformationsJson(rules))
+    }
+    val out = callHelper("markdown", *args.toTypedArray())
     return engineJson.decodeFromJsonElement(ListSerializer(ListSerializer(Md.serializer()).nullable), out)
+}
+
+/** What is wrong with some transformations, one line each; [fields] are the string UDAs a rule may name. */
+fun transformProblems(rules: List<Transformation>, fields: List<String>): List<String> {
+    if (rules.isEmpty()) return emptyList()
+    val out = callHelper("transform_check", transformationsJson(rules), JsonArray(fields.map(::JsonPrimitive)))
+    return engineJson.decodeFromJsonElement(ListSerializer(String.serializer()), out)
+}
+
+/**
+ * A description as a title: drawn from its [tree] (what a transformation made of it) when there is one, inline when it is
+ * one paragraph, else as the [text] typed.
+ */
+@Composable
+fun DescriptionText(
+    text: String,
+    tree: List<Md>?,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    fontSize: TextUnit = 14.sp,
+    fontWeight: FontWeight? = null,
+    lineHeight: TextUnit = TextUnit.Unspecified,
+    maxLines: Int = Int.MAX_VALUE,
+) {
+    val colors = MaterialTheme.colorScheme
+    val one = tree?.singleOrNull()?.takeIf { it.t == "p" }
+    when {
+        tree == null -> Text(text, modifier, color = color, fontSize = fontSize, fontWeight = fontWeight, lineHeight = lineHeight, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+        one != null -> Text(
+            buildAnnotatedString { inlines(one.c, Look(color, fontSize, colors.onSurface.copy(alpha = 0.09f), colors.primary, false)) },
+            modifier, color = color, fontSize = fontSize, fontWeight = fontWeight, lineHeight = lineHeight, maxLines = maxLines, overflow = TextOverflow.Ellipsis,
+        )
+        else -> MarkdownView(tree, modifier, color = color, size = fontSize)
+    }
 }
 
 /** The text with the checkbox on [line] flipped, or null when that line is not a checklist item. */

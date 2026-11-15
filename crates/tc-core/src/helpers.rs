@@ -249,14 +249,23 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             Ok(link) => json!({ "link": link }),
             Err(problem) => json!({ "problem": problem }),
         },
-        "markdown" => json!(a
-            .req::<Vec<String>>(0)?
-            .iter()
-            .map(|t| {
-                let tree = crate::markdown::parse(t);
-                (!crate::markdown::is_plain(&tree)).then_some(tree)
-            })
-            .collect::<Vec<_>>()),
+        // The trees of some texts; with the field each is in and the user's transformations, each transformed first
+        // (`tc_core::transform`: a description gets a tree only when a rule changed it).
+        "markdown" => {
+            let texts = a.req::<Vec<String>>(0)?;
+            let fields = a.opt::<Vec<Option<String>>>(1)?.unwrap_or_default();
+            let rules = crate::transform::Rules::new(&a.opt::<Vec<crate::transform::Rule>>(2)?.unwrap_or_default());
+            json!(texts
+                .iter()
+                .enumerate()
+                .map(|(i, t)| rules.tree(fields.get(i).and_then(|f| f.as_deref()), t))
+                .collect::<Vec<_>>())
+        }
+        // What is wrong with the transformations, one line each; the second argument names the string UDAs.
+        "transform_check" => json!(crate::transform::check(
+            &a.req::<Vec<crate::transform::Rule>>(0)?,
+            &a.opt::<Vec<String>>(1)?.unwrap_or_default()
+        )),
         "markdown_toggle" => json!(crate::markdown::toggle(&a.req::<String>(0)?, a.req::<usize>(1)?)),
         "format_cells" => json!(crate::cells::format(
             &a.req::<Vec<crate::cells::Col>>(0)?,

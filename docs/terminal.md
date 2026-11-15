@@ -296,7 +296,10 @@ The file is optional; without it there are no task commands or boards, syncing i
 default. The terminal app uses what it shares with the web app and the phone: `taskCommands` (words that stand for a
 command line, which you can also add, change and delete on the Settings page), `boards` ([Boards](#boards)),
 `homepage` (the report or board it opens on, chosen in the General section), `appearance.progress` (numeric UDAs drawn
-in a report as a bar with the number beside it, as on the web: [Progress bars](using/settings.md#progress-bars)) and
+in a report as a bar with the number beside it, as on the web: [Progress bars](using/settings.md#progress-bars)),
+`appearance.transformations` (find and replace in a description, a note or a string UDA, drawn as Markdown in report
+rows: [Transformations](using/settings.md#transformations); a link is an OSC 8 hyperlink, which most terminals open with
+a click or Cmd/Ctrl+click and the rest show as its words; `task info` is shown as `task` prints it) and
 `keys` ([Keys](using/settings.md#keys)). Its own settings are all under `tui`: `sync` ([Sync](#sync)), `theme` and
 `shading` ([Colours](#colours)), and `keys`, which apply here only.
 

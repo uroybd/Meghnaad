@@ -169,6 +169,29 @@ class AppSettingsTest {
     }
 
     @Test
+    fun readsTheTransformationsInOrderKeepsABadPatternForTheEngineAndSavesThem() {
+        val jira = Transformation("\\b(BOR-\\d+)\\b", "[\$1](https://j.example/\$1)", listOf("description"))
+        val p = parseSettings(
+            """{ "appearance": { "transformations": [
+                { "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://j.example/$1)", "fields": ["description"] },
+                { "match": "(", "fields": ["jira"] }, { "match": "x" }, "nope", { "match": 1, "fields": [] } ] } }""",
+        )
+        assertEquals(listOf(jira, Transformation("(", "", listOf("jira"))), p.appearance.transformations)
+        assertEquals(
+            listOf(
+                "appearance.transformations[2]: fields must be a list of field names",
+                "appearance.transformations[3]: must be { \"match\": \"…\", \"replace\": \"…\", \"fields\": [ … ] }",
+                "appearance.transformations[4]: must be { \"match\": \"…\", \"replace\": \"…\", \"fields\": [ … ] }",
+            ),
+            p.appearanceErrors,
+        )
+        assertEquals(1, parseSettings("""{ "appearance": { "transformations": {} } }""").appearanceErrors.size)
+        val text = serializeAppearance(JsonObject(emptyMap()), Appearance(transformations = listOf(jira)))
+        assertEquals(listOf(jira), parseSettings(text).appearance.transformations)
+        assertTrue("progress" !in text)
+    }
+
+    @Test
     fun aBarFillsFromEmptyAtTheMinToFullAtTheMax() {
         val r = Progress(0.0, 50.0)
         assertEquals(0.5f, r.fraction(25.0))

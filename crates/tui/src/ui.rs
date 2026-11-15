@@ -6,6 +6,7 @@
 use crate::ansi;
 use crate::app::{now, App, Focus, KeyAdd, KeyLine, Mode, Page, Prompt, PromptKind, SettingsSection, SortEdit};
 use crate::form::{self, Form, Kind};
+use crate::md;
 use crate::model::local_offset;
 use crate::remind::format_seconds;
 use crate::review::Phase;
@@ -95,6 +96,12 @@ fn hints(text: &str) -> Line<'static> {
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
+    md::begin();
+    screen(f, app);
+    md::hyperlinks(f.buffer_mut());
+}
+
+fn screen(f: &mut Frame, app: &App) {
     let [top, side, main, status, dock] = areas(f.area());
     top_bar(f, app, top);
     if side.width > 0 {
@@ -530,9 +537,10 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     let swatches = theme_lines(&t);
     let theme_rows = u16::try_from(swatches.len() + app.theme_errors.len()).unwrap_or(4) + 2;
     let problems = u16::from(app.settings_problem.is_some())
-        + u16::try_from(app.keymap.problems.len() + app.progress_errors.len()).unwrap_or(0);
+        + u16::try_from(app.keymap.problems.len() + app.progress_errors.len() + app.transform_errors.len())
+            .unwrap_or(0);
     let [general, sync, theme_area, cmds, boards, keys_area] = Layout::vertical([
-        Constraint::Length(4 + problems),
+        Constraint::Length(5 + problems),
         Constraint::Length(3),
         Constraint::Length(theme_rows),
         Constraint::Length(rows(commands, 10) + 1),
@@ -566,6 +574,14 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(vec![Span::from("Progress bars  ").quiet(), Span::from(bars)]),
+        Line::from(vec![
+            Span::from("Transforms     ").quiet(),
+            Span::from(match app.transformations.len() {
+                0 => "none (appearance.transformations in settings.json)".to_owned(),
+                1 => "1 rule".to_owned(),
+                n => format!("{n} rules"),
+            }),
+        ]),
     ];
     if let Some(p) = &app.settings_problem {
         lines.push(Line::from(p.clone()).bad());
@@ -575,6 +591,7 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             .problems
             .iter()
             .chain(&app.progress_errors)
+            .chain(&app.transform_errors)
             .map(|p| Line::from(p.clone()).bad()),
     );
     f.render_widget(
@@ -1031,12 +1048,30 @@ fn lines(c: &Cell) -> Vec<Line<'static>> {
         Some(cls) if cls.split(' ').any(|x| x == "dim") => Style::default().add_modifier(Modifier::DIM),
         _ => Style::default(),
     };
-    let mut out: Vec<Line<'static>> = c.text.lines().map(|l| Line::styled(l.to_owned(), style)).collect();
+    // Markdown (a string UDA, or what a transformation made of a description) is drawn from the engine's tree.
+    let mut out: Vec<Line<'static>> = match &c.blocks {
+        Some(tree) => md::lines(tree, style),
+        None => c.text.lines().map(|l| Line::styled(l.to_owned(), style)).collect(),
+    };
     if out.is_empty() {
         out.push(Line::default());
     }
     for n in c.notes.iter().flatten() {
-        out.push(Line::from(format!("  {} {}", n.at, n.text)).quiet());
+        match &n.blocks {
+            Some(tree) => {
+                let at = format!("  {} ", n.at);
+                let pad = " ".repeat(at.chars().count());
+                for (i, l) in md::lines(tree, theme::dim()).into_iter().enumerate() {
+                    let mut spans = vec![Span::styled(
+                        if i == 0 { at.clone() } else { pad.clone() },
+                        theme::dim(),
+                    )];
+                    spans.extend(l.spans);
+                    out.push(Line::from(spans));
+                }
+            }
+            None => out.push(Line::from(format!("  {} {}", n.at, n.text)).quiet()),
+        }
     }
     out
 }

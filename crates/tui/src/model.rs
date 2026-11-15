@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use tc_core::cells::{self, Cell, Col, Ctx, Row};
 use tc_core::complete::Vocab;
 use tc_core::taskrc::{self, Config, UdaType};
+use tc_core::transform::Rule;
 
 use crate::task::Task;
 
@@ -144,7 +145,7 @@ fn pattern(cfg: &Config, key: &str) -> Value {
 
 /// What a cell needs besides the task, with the local zone's offset at each moment the rows hold (it changes with
 /// summer time).
-pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64) -> Option<Ctx> {
+pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64, rules: &[Rule]) -> Option<Ctx> {
     let mut at: BTreeSet<i64> = moments.collect();
     at.insert(now);
     let offsets: Vec<(i64, i32)> = at.into_iter().map(|t| (t, local_offset(t))).collect();
@@ -169,6 +170,7 @@ pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64) -> Option
             "dependency": cfg.indicator("dependency.indicator"),
         },
         "journal": journal,
+        "transformations": rules.iter().map(|r| json!({ "match": r.pattern, "replace": r.replace, "fields": r.fields })).collect::<Vec<_>>(),
     }))
     .ok()
 }
@@ -230,7 +232,14 @@ pub fn columns(cfg: &Config, report: &str) -> (Vec<Col>, Vec<String>) {
 /// # Errors
 ///
 /// `task` could not be run, or what it wrote was not JSON.
-pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64) -> Result<Report, String> {
+pub fn report(
+    task: &Task,
+    cfg: &Config,
+    name: &str,
+    filter: &[String],
+    now: i64,
+    rules: &[Rule],
+) -> Result<Report, String> {
     let mut args: Vec<String> = context_filter(cfg, name);
     args.extend(filter.iter().cloned());
     args.extend(["export".to_owned(), name.to_owned()]);
@@ -240,7 +249,7 @@ pub fn report(task: &Task, cfg: &Config, name: &str, filter: &[String], now: i64
     let pending: BTreeSet<String> = task.lines(&["+PENDING", "_uuids"])?.into_iter().collect();
     let (cols, mut labels) = columns(cfg, name);
     let rows: Vec<Row> = tasks.iter().filter_map(|t| row(t, cfg, &pending, now)).collect();
-    let ctx = ctx(cfg, tasks.iter().flat_map(moments), now).unwrap_or_default();
+    let ctx = ctx(cfg, tasks.iter().flat_map(moments), now, rules).unwrap_or_default();
     let table = cells::format(&cols, &rows, &ctx);
     // Taskwarrior leaves out a column with nothing in it unless `print.empty.columns` is on.
     let keep: Vec<bool> = table.empty.iter().map(|e| !e || cfg.print_empty_columns()).collect();
@@ -396,7 +405,7 @@ mod tests {
             &cfg("report.x.columns=id,project,due.relative,depends.indicator,estimate,when\n"),
             "x",
         );
-        let ctx = ctx(&c, [NOW + 86_400].into_iter(), NOW).unwrap();
+        let ctx = ctx(&c, [NOW + 86_400].into_iter(), NOW, &[]).unwrap();
         let table = cells::format(&cols, &[r], &ctx);
         let texts: Vec<&str> = table.cells[0].iter().map(|c| c.text.as_str()).collect();
         assert_eq!(texts[0], "2");
@@ -408,11 +417,34 @@ mod tests {
     }
 
     #[test]
+    fn the_transformations_reach_the_cells() {
+        let t = json!({ "id": 1, "uuid": "u", "status": "pending", "description": "fix BOR-7" });
+        let r = row(&t, &Config::default(), &BTreeSet::new(), NOW).unwrap();
+        let (cols, _) = columns(&cfg("report.x.columns=id,description\n"), "x");
+        let rules = [Rule {
+            pattern: r"\b(BOR-\d+)\b".into(),
+            replace: "[$1](https://j.example/$1)".into(),
+            fields: vec!["description".into()],
+        }];
+        let table = cells::format(
+            &cols,
+            &[r],
+            &ctx(&Config::default(), std::iter::empty(), NOW, &rules).unwrap(),
+        );
+        assert_eq!(table.cells[0][1].text, "fix BOR-7");
+        assert!(table.cells[0][1].blocks.is_some());
+    }
+
+    #[test]
     fn a_finished_task_has_no_id() {
         let t = json!({ "id": 0, "uuid": "u", "status": "pending", "description": "d", "wait": "20261008T000000Z" });
         let r = row(&t, &Config::default(), &BTreeSet::new(), NOW).unwrap();
         let (cols, _) = columns(&cfg("report.x.columns=id,description\n"), "x");
-        let table = cells::format(&cols, &[r], &ctx(&Config::default(), std::iter::empty(), NOW).unwrap());
+        let table = cells::format(
+            &cols,
+            &[r],
+            &ctx(&Config::default(), std::iter::empty(), NOW, &[]).unwrap(),
+        );
         // No id: the engine's id cell shows the short uuid instead.
         assert_eq!(table.cells[0][0].text, "u");
     }

@@ -75,8 +75,11 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
     val notes = visibleNotes(task.annotations, store.config?.journal)
     // A string UDA and a note may hold Markdown: its tree, or null for text that is only words.
     val stringUdas = udaKeys.filter { defs.getValue(it).type == "string" }
-    val udaTrees = remember(task.uuid, task.modified) { stringUdas.zip(markdownTrees(stringUdas.map { task.extra.getValue(it) })).toMap() }
-    val noteTrees = remember(task.uuid, task.modified) { markdownTrees(notes.map { it.text }) }
+    val rules = store.appearance.transformations
+    val udaTrees = remember(task.uuid, task.modified, rules) {
+        stringUdas.zip(markdownTrees(stringUdas.map { task.extra.getValue(it) }, stringUdas, rules)).toMap()
+    }
+    val noteTrees = remember(task.uuid, task.modified, rules) { markdownTrees(notes.map { it.text }, notes.map { "annotations" }, rules) }
     val totalTracked = task.activeSeconds ?: task.sessions.sumOf { it.seconds }
 
     Column(Modifier.fillMaxWidth()) {

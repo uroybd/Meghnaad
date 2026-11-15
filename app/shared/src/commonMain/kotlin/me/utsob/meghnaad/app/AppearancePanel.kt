@@ -3,6 +3,8 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -14,6 +16,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,12 +30,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-/** How the app draws things, kept in `settings.json` (AppearancePanel.svelte): the numeric UDAs shown as progress bars. */
+/** A transformation as typed, with a key of its own for the list. */
+data class RuleDraft(val key: Int, val match: String, val replace: String, val fields: List<String>)
+
+/**
+ * How the app draws things, kept in `settings.json` (AppearancePanel.svelte): the numeric UDAs shown as progress bars, and
+ * the field transformations.
+ */
 class AppearanceState(private val store: Store) {
     private val saved get() = store.appearance
 
     /** The UDAs shown as bars, with the min and max as typed (so a half-typed number is not lost). */
     val draft = mutableStateMapOf<String, Pair<String, String>>().also { it.putAll(toDraft(saved)) }
+
+    private var nextKey = 0
+    private fun toRules(a: Appearance) = a.transformations.map { RuleDraft(nextKey++, it.match, it.replace, it.fields) }
+
+    /** The transformations, in the order they run. */
+    val rules = mutableStateListOf<RuleDraft>().also { it.addAll(toRules(saved)) }
 
     var busy by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
@@ -59,8 +74,22 @@ class AppearanceState(private val store: Store) {
         return range(name)?.problem()
     }
 
-    private val current get() = Appearance(draft.keys.mapNotNull { n -> range(n)?.let { n to it } }.toMap())
-    val invalid get() = draft.keys.any { problem(it) != null }
+    /** The string UDAs the taskrc defines: the fields a transformation may name besides the description and the notes. */
+    val stringUdas: List<String>
+        get() = store.config?.config?.udas?.values?.filter { it.type == "string" }?.map { it.name } ?: emptyList()
+
+    /** The fields to offer a rule: the text fields, and any it names that are not (any more), so they can be taken off. */
+    fun fieldsOf(r: RuleDraft): List<String> = (listOf("description", "annotations") + stringUdas + r.fields).distinct()
+
+    private val current
+        get() = Appearance(
+            draft.keys.mapNotNull { n -> range(n)?.let { n to it } }.toMap(),
+            rules.map { Transformation(it.match, it.replace, it.fields) },
+        )
+
+    /** What the engine says is wrong with the rules (a pattern that does not compile, no fields, a field that is not text). */
+    val ruleProblems get() = transformProblems(current.transformations, stringUdas)
+    val invalid get() = draft.keys.any { problem(it) != null } || ruleProblems.isNotEmpty()
     val edited get() = current != saved
 
     /** Saved somewhere else (the console, a sync): follow it, unless there are edits here. */
@@ -72,8 +101,27 @@ class AppearanceState(private val store: Store) {
         if (untouched) {
             draft.clear()
             draft.putAll(toDraft(now))
+            rules.clear()
+            rules.addAll(toRules(now))
         }
     }
+
+    fun addRule() {
+        done = false
+        rules += RuleDraft(nextKey++, "", "", listOf("description"))
+    }
+
+    fun moveRule(i: Int, by: Int) {
+        done = false
+        rules.add(i + by, rules.removeAt(i))
+    }
+
+    fun edit(i: Int, change: (RuleDraft) -> RuleDraft) {
+        done = false
+        rules[i] = change(rules[i])
+    }
+
+    fun pickField(i: Int, field: String, on: Boolean) = edit(i) { r -> r.copy(fields = if (on) r.fields + field else r.fields - field) }
 
     fun toggle(name: String, on: Boolean) {
         done = false
@@ -99,6 +147,7 @@ class AppearanceState(private val store: Store) {
 /** A number as it is typed: `100`, not `100.0`. */
 fun numberText(d: Double): String = if (d == kotlin.math.floor(d) && kotlin.math.abs(d) < 1e15) d.toLong().toString() else d.toString()
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppearancePanel(store: Store, state: AppearanceState) {
     state.follow()
@@ -134,6 +183,46 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
                 state.problem(name)?.let { Text(it, Modifier.padding(start = 16.dp), color = colors.error, fontSize = 13.sp) }
             }
         }
+
+        Text("Transformations", Modifier.padding(top = 16.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Dim(
+            "Find and replace in a text field before it is drawn, so BOR-23434 can become a link: the result is shown as Markdown. " +
+                "Match is a regular expression, Replace may use \$1 or \${name}, and each runs only on the fields ticked. They run in " +
+                "order, on what the one before left. Only how a field is shown changes: the task, filters and exports keep what you typed.",
+        )
+        if (state.rules.isEmpty()) Dim("No transformations yet.")
+        state.rules.forEachIndexed { i, r ->
+            Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i + 1}.", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    IconAction("arrow-up", "Move up", { state.moveRule(i, -1) }, size = 16.dp, enabled = i > 0)
+                    IconAction("arrow-down", "Move down", { state.moveRule(i, 1) }, size = 16.dp, enabled = i < state.rules.size - 1)
+                    IconAction("x", "Remove transformation ${i + 1}", { state.rules.removeAt(i); state.done = false }, size = 16.dp)
+                }
+                OutlinedTextField(
+                    r.match, { v -> state.edit(i) { it.copy(match = v) } }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("Match") }, placeholder = { Text("\\b(BOR-\\d+)\\b") },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                )
+                OutlinedTextField(
+                    r.replace, { v -> state.edit(i) { it.copy(replace = v) } }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("Replace") }, placeholder = { Text("[\$1](https://jira.example.com/browse/\$1)") },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                )
+                FlowRow {
+                    for (f in state.fieldsOf(r)) {
+                        val on = f in r.fields
+                        Row(Modifier.heightIn(min = 40.dp).clickable { state.pickField(i, f, !on) }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(on, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
+                            Text(f, Modifier.padding(end = 8.dp), fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                }
+            }
+        }
+        state.ruleProblems.forEach { Text(it, color = colors.error, fontSize = 13.sp) }
+        OutlinedButton(onClick = state::addRule) { LucideIcon("plus", size = 14.dp); Text("  Add a transformation") }
+
         state.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Button({ scope.launch { state.apply() } }, enabled = !state.busy && state.edited && !state.invalid) { Text("Apply") }

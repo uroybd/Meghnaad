@@ -76,6 +76,7 @@
       tag: settings?.['tag.indicator'],
       dependency: settings?.['dependency.indicator'],
     },
+    transformations: store.appearance.transformations,
   });
   // What every cell shows, worked out by the engine for the whole table at once.
   const table = $derived(formatTable(result.columns, result.rows, ctx));

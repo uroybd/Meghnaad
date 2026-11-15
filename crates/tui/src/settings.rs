@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
+use tc_core::transform::Rule;
 
 /// Why `settings.json` could not be read, edited or written. Each says it as the app shows it.
 #[derive(Debug, thiserror::Error)]
@@ -239,6 +240,45 @@ impl AppSettings {
                 errors.push(format!("{at}: min must be less than max"));
             } else {
                 out.insert(name.clone(), Progress { min, max });
+            }
+        }
+        (out, errors)
+    }
+
+    /// The field transformations (`appearance.transformations`), in order, and what is wrong with the shape of the rest,
+    /// one line each, as the web app reads them. Whether a pattern compiles is the engine's to say
+    /// (`tc_core::transform::check`); such a rule is kept, and the engine leaves it out when it draws.
+    pub fn transformations(&self) -> (Vec<Rule>, Vec<String>) {
+        let mut out = Vec::new();
+        let mut errors = Vec::new();
+        let Some(list) = self.raw.get("appearance").and_then(|a| a.get("transformations")) else {
+            return (out, errors);
+        };
+        let Some(list) = list.as_array() else {
+            errors.push(
+                "appearance.transformations must be a list: [ { \"match\": …, \"replace\": …, \"fields\": [ … ] } ]"
+                    .to_owned(),
+            );
+            return (out, errors);
+        };
+        for (i, r) in list.iter().enumerate() {
+            let at = format!("appearance.transformations[{i}]");
+            let pattern = r.get("match").and_then(Value::as_str);
+            let replace = r.get("replace").map_or(Some(""), Value::as_str);
+            let fields: Option<Vec<String>> = r
+                .get("fields")
+                .and_then(Value::as_array)
+                .and_then(|f| f.iter().map(|x| x.as_str().map(str::to_owned)).collect());
+            match (pattern, replace, fields) {
+                (Some(pattern), Some(replace), Some(fields)) => out.push(Rule {
+                    pattern: pattern.to_owned(),
+                    replace: replace.to_owned(),
+                    fields,
+                }),
+                (Some(_), Some(_), None) => errors.push(format!("{at}: fields must be a list of field names")),
+                _ => errors.push(format!(
+                    "{at}: must be {{ \"match\": \"…\", \"replace\": \"…\", \"fields\": [ … ] }}"
+                )),
             }
         }
         (out, errors)
@@ -563,6 +603,31 @@ mod tests {
         assert_eq!(editor_from(None, s("nano")), ["nano"]);
         assert_eq!(editor_from(s(""), s("hx")), ["hx"]);
         assert_eq!(editor_from(None, None), ["vi"]);
+    }
+
+    #[test]
+    fn the_transformations_are_read_as_the_web_app_reads_them() {
+        let s = AppSettings::parse(
+            r#"{ "appearance": { "transformations": [
+                 { "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://j.example/$1)", "fields": ["description"] },
+                 { "match": "(", "fields": ["jira"] }, { "match": "x" }, "nope" ] } }"#,
+        )
+        .unwrap();
+        let (rules, errors) = s.transformations();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].pattern, r"\b(BOR-\d+)\b");
+        assert_eq!(rules[1].replace, "");
+        assert_eq!(
+            errors,
+            [
+                "appearance.transformations[2]: fields must be a list of field names",
+                "appearance.transformations[3]: must be { \"match\": \"…\", \"replace\": \"…\", \"fields\": [ … ] }",
+            ]
+        );
+        assert_eq!(
+            AppSettings::parse("{}").unwrap().transformations(),
+            (Vec::new(), Vec::new())
+        );
     }
 
     #[test]

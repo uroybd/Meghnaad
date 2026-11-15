@@ -2,6 +2,7 @@
 // (`tc_core::cells`); what is here is the zone the browser is in, and the styling hints a row has.
 
 import { callHelper } from '../engine/helpers';
+import type { Transformation } from './appsettings';
 import type { DateFmt } from './dateformat';
 import type { Markers } from './journal';
 import type { MdNode } from './markdown';
@@ -11,7 +12,7 @@ export interface Cell {
   text: string;
   /** The notes under the text (annotations): when each was made, its text, the moment that names it, and its Markdown. */
   notes?: { at: string; text: string; entry: number; blocks?: MdNode[] }[];
-  /** The text as Markdown, in a string UDA that uses any. */
+  /** The text as Markdown: a string UDA that uses any, or a description a transformation changed. */
   blocks?: MdNode[];
   cls?: string;
   /** A project path as coloured parts, so the dots between them can be muted. */
@@ -48,6 +49,8 @@ export interface Ctx {
   indicators?: { active?: string; tag?: string; dependency?: string };
   /** `journal.time` marker texts: those annotations are bookkeeping and are left out of lists. */
   journal?: Markers | null;
+  /** The user's field transformations (`appearance.transformations`), run before a text is drawn as Markdown. */
+  transformations?: Transformation[];
 }
 
 export function shortUuid(u: string): string {
@@ -127,6 +130,7 @@ export function formatTable(columns: Column[], rows: Row[], ctx: Ctx): Table {
     recur_indicator: ctx.recurIndicator,
     indicators: ctx.indicators,
     journal: ctx.journal,
+    transformations: ctx.transformations,
   };
   const cols = columns.map(({ name, format, kind }) => ({ name, format, kind }));
   type Wire = Omit<Cell, 'segments'> & { segments?: string[] };

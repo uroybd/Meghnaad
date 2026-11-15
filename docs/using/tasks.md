@@ -106,7 +106,9 @@ until, repeat, tags, dependencies, UDAs, "start now" and a first note.
 Notes and string UDAs are drawn as Markdown in the detail view and in reports (tables and, on Android, cards):
 paragraphs, `#` headings, `**bold**`, `*italic*`, `~~strike~~`, `` `code` `` and fenced code, `[links](https://…)` and bare
 web addresses, nested bullet and numbered lists, `>` quotes and `---`. Not tables, images, footnotes or HTML; those show
-as typed, and links are made only for `http`, `https` and `mailto`. Showing text never changes what is stored.
+as typed, and links are made only for `http`, `https` and `mailto`. Showing text never changes what is stored. A
+description is plain text unless one of your [transformations](settings.md#transformations) changes it; they can also
+turn words in a note or a UDA into links.
 
 **Checklists** (`- [ ] milk`, `- [x] eggs`) have boxes you can click in a string UDA. The app changes that box and saves
 the whole text with an ordinary `modify <uda>:<text>`, so the CLI, a hook and the history see a normal edit. On a

@@ -2,6 +2,7 @@ import { engine } from '../engine/client.svelte';
 import { loadChoices, saveChoices, withContext, NO_CONTEXT, type Scope } from './pageContext';
 import { ApiError, getAppSettings, getConfig, putAppSettings, runCli, type Answers, type CliInput } from './api';
 import {
+  emptyAppearance,
   MAX_SETTINGS_BYTES,
   parseSettings,
   serializeAppearance,
@@ -333,7 +334,7 @@ class Store {
   );
 
   /** How the app draws things, from `settings.json`: the numeric UDAs shown as progress bars, by name. */
-  appearance = $derived<Appearance>(this.appSettings?.appearance ?? { progress: {} });
+  appearance = $derived<Appearance>(this.appSettings?.appearance ?? emptyAppearance());
 
   /** Save how the app draws things, the rest of `settings.json` as it was. Throws what the server refused. */
   async saveAppearance(appearance: Appearance) {

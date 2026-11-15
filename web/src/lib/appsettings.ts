@@ -4,7 +4,9 @@
 //
 //   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ],
 //     "boards": [ … ],             (what a board is: boards.ts and tc_core::board)
-//     "appearance": { "progress": { "progress": { "min": 0, "max": 100 } } } }
+//     "appearance": { "progress": { "progress": { "min": 0, "max": 100 } },
+//                     "transformations": [ { "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://…/$1)",
+//                                            "fields": ["description"] } ] } }
 
 import { normalizeBoards, type Board } from './boards';
 import { ChainError, splitChain } from './compound';
@@ -44,11 +46,25 @@ export interface Progress {
   max: number;
 }
 
+/**
+ * A find-and-replace run on a text field before it is drawn as Markdown (`tc_core::transform`): `match` is a regex,
+ * `replace` may use `$1` and `${name}`, and `fields` names where it runs (`description`, `annotations` or a string UDA).
+ */
+export interface Transformation {
+  match: string;
+  replace: string;
+  fields: string[];
+}
+
 /** How the app draws things, kept in `settings.json` under `appearance`. */
 export interface Appearance {
   /** The numeric UDAs shown as progress bars in reports, by name. */
   progress: Record<string, Progress>;
+  /** The field transformations, in the order they run. */
+  transformations: Transformation[];
 }
+
+export const emptyAppearance = (): Appearance => ({ progress: {}, transformations: [] });
 
 export const DEFAULT_PROGRESS: Progress = { min: 0, max: 100 };
 
@@ -69,6 +85,7 @@ export function sameAppearance(a: Appearance, b: Appearance): boolean {
   const names = Object.keys(a.progress).sort();
   const other = Object.keys(b.progress).sort();
   return (
+    JSON.stringify(a.transformations) === JSON.stringify(b.transformations) &&
     names.join('\n') === other.join('\n') &&
     names.every((n) => a.progress[n].min === b.progress[n].min && a.progress[n].max === b.progress[n].max)
   );
@@ -76,12 +93,15 @@ export function sameAppearance(a: Appearance, b: Appearance): boolean {
 
 /** The valid part of a saved `appearance`, and what is wrong with the rest, one line each. */
 export function parseAppearance(v: unknown): { appearance: Appearance; errors: string[] } {
-  const appearance: Appearance = { progress: {} };
+  const appearance = emptyAppearance();
   const errors: string[] = [];
   if (v === undefined) return { appearance, errors };
   if (!v || typeof v !== 'object' || Array.isArray(v)) {
     return { appearance, errors: ['appearance must be an object: { "progress": { … } }'] };
   }
+  const rules = parseTransformations((v as Record<string, unknown>).transformations);
+  appearance.transformations = rules.transformations;
+  errors.push(...rules.errors);
   const list = (v as Record<string, unknown>).progress;
   if (list === undefined) return { appearance, errors };
   if (!list || typeof list !== 'object' || Array.isArray(list)) {
@@ -103,6 +123,38 @@ export function parseAppearance(v: unknown): { appearance: Appearance; errors: s
     else appearance.progress[name] = { min, max };
   }
   return { appearance, errors };
+}
+
+/**
+ * The well-formed transformations, and what is wrong with the rest. Only the shape is checked here; whether a pattern
+ * compiles and the fields exist is the engine's to say (`transformProblems`), and such a rule is kept so it can be fixed.
+ */
+export function parseTransformations(v: unknown): { transformations: Transformation[]; errors: string[] } {
+  const transformations: Transformation[] = [];
+  const errors: string[] = [];
+  if (v === undefined) return { transformations, errors };
+  if (!Array.isArray(v)) {
+    return {
+      transformations,
+      errors: ['appearance.transformations must be a list: [ { "match": …, "replace": …, "fields": [ … ] } ]'],
+    };
+  }
+  v.forEach((r, i) => {
+    const at = `appearance.transformations[${i}]`;
+    const {
+      match,
+      replace = '',
+      fields,
+    } = (r && typeof r === 'object' && !Array.isArray(r) ? r : {}) as Record<string, unknown>;
+    if (typeof match !== 'string' || typeof replace !== 'string') {
+      errors.push(`${at}: must be { "match": "…", "replace": "…", "fields": [ … ] }`);
+    } else if (!Array.isArray(fields) || !fields.every((f) => typeof f === 'string')) {
+      errors.push(`${at}: fields must be a list of field names`);
+    } else {
+      transformations.push({ match, replace, fields: fields as string[] });
+    }
+  });
+  return { transformations, errors };
 }
 
 export interface ParsedSettings {
@@ -158,7 +210,7 @@ export function parseSettings(text: string): ParsedSettings {
     commands: [],
     boards: [],
     homepage: null,
-    appearance: { progress: {} },
+    appearance: emptyAppearance(),
     appearanceErrors: [],
     boardErrors: [],
     errors: [],
@@ -249,6 +301,9 @@ export function serializeHomepage(raw: Record<string, unknown>, homepage: Homepa
 export function serializeAppearance(raw: Record<string, unknown>, appearance: Appearance): string {
   const { appearance: _old, ...rest } = raw;
   const next: Record<string, unknown> = { ...rest };
-  if (Object.keys(appearance.progress).length) next.appearance = { progress: appearance.progress };
+  const out: Partial<Appearance> = {};
+  if (Object.keys(appearance.progress).length) out.progress = appearance.progress;
+  if (appearance.transformations.length) out.transformations = appearance.transformations;
+  if (Object.keys(out).length) next.appearance = out;
   return JSON.stringify(next, null, 2) + '\n';
 }
