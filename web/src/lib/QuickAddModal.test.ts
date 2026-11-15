@@ -138,3 +138,36 @@ describe('a slow add (a hook)', () => {
     expect(store.adding).toMatchObject({ quick: true, line: 'Buy milk +home' });
   });
 });
+
+describe('Tab in the one-line add', () => {
+  const tab = (shiftKey = false) => {
+    const e = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true });
+    field().dispatchEvent(e);
+    flushSync();
+    return e;
+  };
+
+  it('completes the word, as `add` reads it, and stays in the box', async () => {
+    store.projects = ['Home', 'Work'];
+    open();
+    type('Buy milk project:Ho');
+    field().setSelectionRange(field().value.length, field().value.length);
+    const e = tab();
+    expect(e.defaultPrevented).toBe(true);
+    expect(field().value).toBe('Buy milk project:Home ');
+    expect(document.activeElement).toBe(field());
+  });
+
+  it('stays in the box even with nothing to complete', () => {
+    store.projects = [];
+    open();
+    type('Buy milk ');
+    expect(tab().defaultPrevented).toBe(true);
+  });
+
+  it('lets Shift-Tab leave when there is no menu', () => {
+    open();
+    type('Buy milk');
+    expect(tab(true).defaultPrevented).toBe(false);
+  });
+});

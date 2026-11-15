@@ -1,5 +1,7 @@
 <script lang="ts">
   import AddPreviewCard from './AddPreviewCard.svelte';
+  import { Completer } from './completer.svelte';
+  import CompletionMenu from './CompletionMenu.svelte';
   import { Plus, SlidersHorizontal } from './icons';
   import { addArgs, previewAdd, seedOf } from './addPreview';
   import { store, type Entry } from './store.svelte';
@@ -40,6 +42,33 @@
     } else if (res && res.result.kind !== 'error') onclose();
   }
 
+  // Tab completes as the console does for `add` (projects, tags, attributes, dates): the line is completed with `add `
+  // in front, so the first word is read as part of the task and not as a command. Tab stays in the box; Shift-Tab
+  // goes back through the options, or leaves the box when there are none to go through.
+  const PREFIX = 'add ';
+  const completer = new Completer();
+  const caret = () => PREFIX.length + (input.selectionStart ?? line.length);
+  function take(r: { line: string; caret: number } | null) {
+    if (!r) return;
+    line = r.line.slice(PREFIX.length);
+    const at = Math.max(0, r.caret - PREFIX.length);
+    queueMicrotask(() => input.setSelectionRange(at, at));
+  }
+  function onkeydown(e: KeyboardEvent) {
+    const open = !!completer.menu;
+    if (e.key === 'Tab' && (!e.shiftKey || open)) {
+      e.preventDefault();
+      take(completer.tab(PREFIX + line, caret(), store.vocab, e.shiftKey));
+    } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && open) {
+      e.preventDefault();
+      take(completer.move(e.key === 'ArrowDown' ? 1 : -1));
+    } else if ((e.key === 'Enter' || e.key === 'Escape') && open) {
+      // The menu first: Enter keeps the option, Escape the line; a second one adds, or closes the form.
+      e.preventDefault();
+      completer.close();
+    }
+  }
+
   function more() {
     store.addWithForm(seedOf(preview, text, store.config?.config.udas));
   }
@@ -53,14 +82,20 @@
 <dialog bind:this={dialog} {onclose} aria-label="New task">
   <form onsubmit={add}>
     <h3>New task</h3>
-    <input
-      bind:this={input}
-      bind:value={line}
-      aria-label="Task"
-      placeholder="Buy milk due:tomorrow +home"
-      autocomplete="off"
-      autocapitalize="sentences"
-    />
+    <div class="field">
+      <input
+        bind:this={input}
+        bind:value={line}
+        {onkeydown}
+        oninput={() => completer.suggest(PREFIX + line, caret(), store.vocab)}
+        onblur={() => completer.close()}
+        aria-label="Task"
+        placeholder="Buy milk due:tomorrow +home  (Tab completes)"
+        autocomplete="off"
+        autocapitalize="sentences"
+      />
+      <CompletionMenu {completer} placement="below" onpick={(i) => take(completer.pick(i))} />
+    </div>
     <p class="hint dim">
       Words are the description; <code>project:</code> <code>due:</code> <code>priority:</code> <code>+tag</code> set the
       rest.
@@ -81,6 +116,12 @@
 </dialog>
 
 <style>
+  .field {
+    position: relative;
+  }
+  .field input {
+    width: 100%;
+  }
   dialog {
     border: 1px solid var(--line);
     border-radius: var(--radius);

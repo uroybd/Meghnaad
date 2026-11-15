@@ -85,7 +85,9 @@ as in the console: `Buy milk due:tomorrow +home project:Home priority:H`. The wo
 
 As you type, a card under the line shows the task as it will be made, read by the engine's own `add`, so what it shows is
 what is added. A part that is wrong (a date that isn't one, a priority that isn't allowed, a repeat with no due date) is
-named under the card, and Add waits until it is fixed. Enter adds.
+named under the card, and Add waits until it is fixed. Enter adds. **Tab** completes the word you are on (a project,
+a tag, an attribute, a date word), as in the console, and stays in the box; with several options it opens a menu, and
+Tab or the arrow keys go through it. Shift-Tab leaves the box when no menu is open.
 
 **More fields** opens the full form with the line already broken into fields: project, priority, due, wait, scheduled,
 until, repeat, tags, dependencies, UDAs, "start now" and a first note.
