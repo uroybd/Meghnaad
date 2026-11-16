@@ -483,6 +483,38 @@ fn stack_tops(parts: &[Vec<Option<(f64, f64)>>], labels: usize) -> Vec<f64> {
         .collect()
 }
 
+/// The name of each stacked bar: the series with a value in it, joined by slashes, as the web app names them; a bar with
+/// nothing in it keeps its own label.
+fn bar_names(chart: &Chart) -> Vec<String> {
+    chart
+        .labels
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let parts: Vec<&str> = chart
+                .datasets
+                .iter()
+                .filter(|d| d.data.get(i).copied().flatten().is_some_and(|v| v != 0.0))
+                .map(|d| d.label.as_str())
+                .collect();
+            if parts.is_empty() {
+                l.label.clone()
+            } else {
+                parts.join(" / ")
+            }
+        })
+        .collect()
+}
+
+/// A label cut to `room` characters, with an ellipsis where it was cut.
+fn trim_label(label: &str, room: usize) -> String {
+    if label.chars().count() <= room {
+        return label.to_owned();
+    }
+    let kept: String = label.chars().take(room.saturating_sub(1).max(1)).collect();
+    format!("{}…", kept.trim_end())
+}
+
 /// A length in eighths of a cell: `v` of `max` along `cells`.
 fn eighths(v: f64, max: f64, cells: u16) -> u32 {
     #[expect(
@@ -539,6 +571,7 @@ fn stacked_bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, a
     let max = tops.iter().copied().fold(0.0, f64::max);
     let max = if max > 0.0 { max } else { 1.0 };
     let total = |i: usize| boards::format_value(tops.get(i).copied(), chart.unit);
+    let names = bar_names(chart);
     if time {
         let groups = u16::try_from(labels).unwrap_or(u16::MAX).max(1);
         let width = (area.width.saturating_sub(groups) / groups).clamp(1, 8);
@@ -570,23 +603,25 @@ fn stacked_bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, a
                 }
             }
         }
-        let names: Vec<&str> = chart.labels.iter().map(|l| l.label.as_str()).collect();
-        Line::from(label_line(&names, 0, usize::from(width + 1), usize::from(area.width)))
-            .quiet()
-            .render(axis, buf);
+        // Each name under its own bar, cut short of the next (a date's shortening would keep only the last series' name).
+        let slot = usize::from(width + 1);
+        let line: String = names
+            .iter()
+            .map(|name| format!("{:<slot$}", trim_label(name, slot.saturating_sub(1).max(1))))
+            .collect();
+        Line::from(line.trim_end().to_owned()).quiet().render(axis, buf);
     } else {
-        let name_width = chart.labels.iter().map(|l| l.label.chars().count()).max().unwrap_or(0);
+        let name_width = names.iter().map(|l| l.chars().count()).max().unwrap_or(0);
         let name_width = u16::try_from(name_width).unwrap_or(u16::MAX).min(area.width / 3);
         let value_width = (0..labels).map(|i| total(i).chars().count()).max().unwrap_or(0);
         let value_width = u16::try_from(value_width).unwrap_or(u16::MAX).min(area.width / 4);
         let cells = area.width.saturating_sub(name_width + value_width + 2).max(1);
         let bars_x = area.x + name_width + 1;
-        for (i, l) in chart.labels.iter().enumerate() {
+        for (i, l) in names.iter().enumerate() {
             let Some(y) = u16::try_from(i).ok().map(|i| area.y + i).filter(|y| *y < area.bottom()) else {
                 break;
             };
-            let name: String = l.label.chars().take(usize::from(name_width)).collect();
-            Line::from(name).render(Rect::new(area.x, y, name_width, 1), buf);
+            Line::from(trim_label(l, usize::from(name_width))).render(Rect::new(area.x, y, name_width, 1), buf);
             let bar = bar_parts(&parts, colors, i, max, cells);
             let end = bar.last().map_or(0, |p| p.1);
             let mut col = 0;
@@ -1046,38 +1081,45 @@ mod tests {
         // The second is half as tall, a line of each, with its total just above.
         assert_eq!(&column(3)[3..5], [full(Color::Red), full(Color::Blue)]);
         assert_eq!(column(3)[2].0, "2");
-        assert!(row(&buf, 5)
-            .iter()
-            .map(|c| c.0.as_str())
-            .collect::<String>()
-            .starts_with("d1 d2"));
+        // Each bar is named by its series, cut to the room under it.
+        let axis: String = row(&buf, 5).iter().map(|c| c.0.as_str()).collect();
+        assert!(axis.starts_with("s… s…"), "{axis}");
     }
 
     #[test]
-    fn stacked_bars_down_the_page_run_from_the_name_with_the_total_after() {
+    fn a_stacked_bar_is_named_by_the_series_in_it_and_a_long_name_is_cut() {
+        let chart = chart_of(
+            &["a", "b", "c"],
+            &[&[Some(1.0), Some(2.0), None], &[Some(3.0), Some(0.0), None]],
+        );
+        assert_eq!(bar_names(&chart), ["s0 / s1", "s0", "c"]);
+        assert_eq!(trim_label("Succeeded / Failed", 12), "Succeeded /…");
+        assert_eq!(trim_label("short", 12), "short");
+    }
+
+    #[test]
+    fn stacked_bars_down_the_page_run_from_their_series_names_with_the_total_after() {
         let chart = chart_of(&["home", "work"], &[&[Some(1.0), Some(2.0)], &[Some(1.0), None]]);
         let colors = [Color::Blue, Color::Red];
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 2));
         stacked_bars(&mut buf, &chart, &colors, false, Rect::new(0, 0, 20, 2));
         let text = |y| row(&buf, y).iter().map(|c| c.0.clone()).collect::<String>();
-        // Names 4 wide, a space, 13 cells of bar, a space and a total 1 wide: 2 of 2 is all 13, half and half (the cell
-        // where they meet takes the colour at its middle).
+        // Each bar is named by its series ("s0 / s1", cut to a third of the width: 6), then a space, 11 cells of bar, a
+        // space and a total 1 wide: 2 of 2 is all 11, half and half (the cell where they meet takes the colour at its middle).
         let first = row(&buf, 0);
+        assert!(text(0).starts_with("s0 /… "), "{}", text(0));
         assert!(
-            first[5..11].iter().all(|c| c == &("█".to_owned(), Color::Blue)),
+            first[7..12].iter().all(|c| c == &("█".to_owned(), Color::Blue)),
             "{first:?}"
         );
         assert!(
-            first[11..18].iter().all(|c| c == &("█".to_owned(), Color::Red)),
+            first[12..18].iter().all(|c| c == &("█".to_owned(), Color::Red)),
             "{first:?}"
         );
         assert_eq!(first[19].0, "2");
-        assert!(
-            text(0).starts_with("home ") && text(0).trim_end().ends_with('2'),
-            "{}",
-            text(0)
-        );
-        assert!(row(&buf, 1)[5..18].iter().all(|c| c.1 == Color::Blue), "{:?}", text(1));
+        // The second has one series in it, so it is named by that one.
+        assert!(text(1).starts_with("s0 "), "{}", text(1));
+        assert!(row(&buf, 1)[7..18].iter().all(|c| c.1 == Color::Blue), "{:?}", text(1));
     }
 
     #[test]

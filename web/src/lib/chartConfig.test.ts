@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chartConfig, isRound, withAlpha, type ChartInput, type ChartKind } from './boardChart';
+import { barLabels, chartConfig, isRound, trimLabel, withAlpha, type ChartInput, type ChartKind } from './boardChart';
 import { defaultSeriesColor, namedColorHex } from './colors';
 import type { Chart } from './boards';
 
@@ -275,5 +275,34 @@ describe('a heatmap for the matrix plugin', () => {
     const flat = heat({ chart: { ...chart(1), datasets: [{ ...chart(1).datasets[0], data: [0, 0, 0] }] } });
     const cells = flat.data.datasets[0].data as Cell[];
     expect(colorOfCell(flat)({ raw: cells[0] })).toBe(withAlpha(defaultSeriesColor(0, false), 0x26));
+  });
+});
+
+describe('the labels of a stacked bar chart', () => {
+  it('name each bar by the series in it, joined by slashes, and a bar with none keeps its own', () => {
+    const c = chart(3);
+    c.datasets[1].data = [0, 3, null];
+    expect(barLabels(c, 'bar', true)).toEqual(['s0 / s2', 's0 / s1 / s2', '(none)']);
+    expect(cfg(input('bar', { chart: c, stacked: true })).data.labels).toEqual(['s0 / s2', 's0 / s1 / s2', '(none)']);
+  });
+
+  it('leave bars side by side, one series, and other kinds to their own labels', () => {
+    const own = ['Home', 'Work', '(none)'];
+    expect(barLabels(chart(2), 'bar', false)).toEqual(own);
+    expect(barLabels(chart(1), 'bar', true)).toEqual(own);
+    expect(barLabels(chart(2), 'area', true)).toEqual(own);
+  });
+
+  it('cut a long label short along the axis and keep it whole for the tooltip', () => {
+    const c = chart(2);
+    c.datasets[0].label = 'Succeeded with a long name';
+    const config = cfg(input('bar', { chart: c, stacked: true }));
+    const whole = 'Succeeded with a long name / s1';
+    expect(config.data.labels[0]).toBe(whole);
+    const tick = config.options.scales.y.ticks.callback(0);
+    expect(tick).toBe(trimLabel(whole));
+    expect(tick.length).toBeLessThanOrEqual(24);
+    expect(tick.endsWith('…')).toBe(true);
+    expect(trimLabel('short')).toBe('short');
   });
 });

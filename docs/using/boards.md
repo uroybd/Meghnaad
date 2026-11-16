@@ -250,6 +250,10 @@ and they share the grouping, so a period where one has nothing still has a place
 change the order, and a series with no colour of its own keeps its colour when it moves. **Add series** puts a new one
 at the end and **Remove series** deletes one.
 
+A stacked bar is named by the series in it, joined by slashes (`Succeeded / Pending`); a series with nothing there is
+left out, and a bar with nothing in it keeps its own name. A long name is cut short along the axis; the tooltip (a tap
+on the phone) has the whole of it.
+
 ### Stack by a field
 
 **Stack by** makes the series from an attribute instead: a bar, line or area chart gets a series for each of its values,

@@ -21,6 +21,7 @@ import me.utsob.meghnaad.app.heatCellColor
 import me.utsob.meghnaad.app.heatRowsAreSeries
 import me.utsob.meghnaad.app.heatColors
 import me.utsob.meghnaad.app.defaultSeriesColor
+import me.utsob.meghnaad.app.stackedBarLabels
 import me.utsob.meghnaad.app.stackedValues
 import kotlin.math.cos
 import kotlin.math.max
@@ -86,7 +87,9 @@ object BoardRenderer {
         if (shown.datasets.size > 1 && section.type !in listOf("pie", "donut", "polar", "heatmap")) top = legend(canvas, shown, colors, text, width)
         val area = RectF(0f, top, width.toFloat(), height.toFloat())
         when (section.type) {
-            "bar" -> if (section.by?.time != null) verticalBars(canvas, shown, colors, stacked, area, text, palette) else horizontalBars(canvas, shown, colors, stacked, area, text, palette, labelColors)
+            "bar" -> stackedBarLabels(shown, section.type, stacked).let { bars ->
+                if (section.by?.time != null) verticalBars(canvas, bars, colors, stacked, area, text, palette) else horizontalBars(canvas, bars, colors, stacked, area, text, palette, labelColors)
+            }
             "line", "area" -> lines(canvas, shown, colors, stacked, section.type == "area", area, text, palette)
             "radar" -> radar(canvas, shown, colors, area, text, palette)
             "heatmap" -> heatmap(canvas, shown, seriesColors(shown, section, palette.dark), heatRowsAreSeries(section), area, text, palette)

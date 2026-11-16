@@ -102,6 +102,24 @@ fun stackedValues(chart: BoardChart): List<List<Double>> =
         chart.datasets.map { d -> sum += d.data.getOrNull(i) ?: 0.0; sum }
     }
 
+/**
+ * A stacked bar chart with each bar named by the series it is made of (those with a value in it), joined by slashes; a bar with nothing
+ * in it keeps its own label. Any other chart is as it was (web/src/lib/boardChart.ts `barLabels`).
+ */
+fun stackedBarLabels(chart: BoardChart, type: String, stacked: Boolean): BoardChart {
+    if (type != "bar" || !stacked || chart.datasets.size < 2) return chart
+    return chart.copy(
+        labels = chart.labels.mapIndexed { i, l ->
+            val parts = chart.datasets.filter { (it.data.getOrNull(i) ?: 0.0) != 0.0 }.map { it.label }
+            if (parts.isEmpty()) l else l.copy(label = parts.joinToString(" / "))
+        },
+    )
+}
+
+/** A label cut to [room] characters, with an ellipsis where it was cut; a tap on its bar says the whole of it. */
+fun trimLabel(label: String, room: Int): String =
+    if (label.length <= room) label else label.take((room - 1).coerceAtLeast(1)).trimEnd() + "…"
+
 /** The top of the value axis: the tallest stack when stacked, else the largest value. */
 fun chartTop(chart: BoardChart, stacked: Boolean): Float {
     val tallest = if (stacked) stackedValues(chart).maxOfOrNull { it.lastOrNull() ?: 0.0 } else chart.datasets.maxOfOrNull { d -> d.data.maxOfOrNull { it ?: 0.0 } ?: 0.0 }
@@ -193,7 +211,9 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
         // A legend names the series; a round chart's names its slices instead.
         if (legend) Legend(chart.datasets.map { it.label }, series)
         when (section.type) {
-            "bar" -> if (section.by?.time != null) VerticalBars(chart, series, stacked, plot) else HorizontalBars(chart, series, stacked, plot, labelColors)
+            "bar" -> stackedBarLabels(chart, section.type, stacked).let { bars ->
+                if (section.by?.time != null) VerticalBars(bars, series, stacked, plot) else HorizontalBars(bars, series, stacked, plot, labelColors)
+            }
             "line", "area" -> Lines(chart, series, stacked, section.type == "area", plot)
             "radar" -> Radar(chart, series, plot)
             "heatmap" -> Heatmap(chart, series, section.rows == null && section.stacked != true, plot)
@@ -274,7 +294,7 @@ private fun Legend(labels: List<String>, colors: List<Color>) {
  * (centred on its place), and [skip] leaves the room.
  */
 private fun indexLabels(chart: BoardChart, skip: Int, width: Int, spread: Boolean = false): @Composable (Int) -> Unit = { i ->
-    if (i % skip == 0) AxisText(chart.labels[i].label.take(width), if (spread) Modifier.wrapContentWidth(Alignment.CenterHorizontally, unbounded = true) else Modifier)
+    if (i % skip == 0) AxisText(trimLabel(chart.labels[i].label, width), if (spread) Modifier.wrapContentWidth(Alignment.CenterHorizontally, unbounded = true) else Modifier)
 }
 
 /** The widest label, in characters, as far as [cap]. */

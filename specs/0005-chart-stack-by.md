@@ -103,3 +103,9 @@ while it is set. The terminal app has no board editor; it draws what `settings.j
   - `lines` draws the stacked tops, and fills the areas from the top series down so each shows as a band.
   - Buffer tests for each. Checked on a screen in a private tmux with scratch data (bars both ways, area and a date axis).
     `docs/terminal.md` is updated.
+- 2026-11-16: A stacked bar is named by the series in it, joined by " / " (asked: every stacked bar, dates and values
+  alike), leaving out a series with nothing there; a bar with nothing keeps its label. Web: `barLabels` and `trimLabel`
+  in `boardChart.ts` (the axis cuts at 24 characters, the tooltip's title is whole). Android: `stackedBarLabels` and
+  `trimLabel` in `BoardCharts.kt`, used by the screens and the widget (`BoardRenderer.kt`); a tap's tip is whole. Terminal:
+  `bar_names` and `trim_label` in `boardui.rs`, the date axis cutting each name to its bar rather than shortening it as
+  a date. Tests on each. `docs/using/boards.md` and `docs/terminal.md` say so.

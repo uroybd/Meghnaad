@@ -230,6 +230,26 @@ function heatmapConfig(input: ChartInput): ChartConfiguration {
   } as unknown as ChartConfiguration;
 }
 
+/** The longest a label is written along an axis; the tooltip has the whole of it. */
+export const LABEL_ROOM = 24;
+
+/** A label cut to `room` characters, with an ellipsis where it was cut. */
+export const trimLabel = (label: string, room = LABEL_ROOM): string =>
+  label.length > room ? `${label.slice(0, Math.max(room - 1, 1)).trimEnd()}…` : label;
+
+/**
+ * The name of each bar of a stacked bar chart: the series it is made of (those with a value in it), joined by slashes. A bar
+ * with nothing in it keeps its own label. Any other chart's labels are its own.
+ */
+export function barLabels(chart: Chart, kind: ChartKind, stacked: boolean): string[] {
+  const own = chart.labels.map((l) => l.label);
+  if (kind !== 'bar' || !stacked || chart.datasets.length < 2) return own;
+  return own.map((label, j) => {
+    const parts = chart.datasets.filter((d) => (d.data[j] ?? 0) !== 0).map((d) => d.label);
+    return parts.length ? parts.join(' / ') : label;
+  });
+}
+
 /** What Chart.js is given for this chart. */
 export function chartConfig(input: ChartInput): ChartConfiguration {
   const { chart, kind, time, stacked, format, theme, dark } = input;
@@ -238,6 +258,7 @@ export function chartConfig(input: ChartInput): ChartConfiguration {
   const many = chart.datasets.length > 1;
   const colorOf = (i: number) => chartColor(input.colors?.[i], dark) ?? defaultSeriesColor(i, dark);
   const horizontal = kind === 'bar' && !time;
+  const labels = barLabels(chart, kind, stacked);
 
   const datasets = chart.datasets.map((d, i) => {
     if (round) {
@@ -310,7 +331,17 @@ export function chartConfig(input: ChartInput): ChartConfiguration {
     };
   } else if (!round) {
     // The axis along the labels, and the axis of the values (the other way round for bars that lie down).
-    const along = { stacked, grid: { display: false }, ticks: { color: theme.text, autoSkip: true, maxRotation: 0 } };
+    // A long label is cut short along the axis; the tooltip's title is the whole of it.
+    const along = {
+      stacked,
+      grid: { display: false },
+      ticks: {
+        color: theme.text,
+        autoSkip: true,
+        maxRotation: 0,
+        callback: (v: string | number) => trimLabel(labels[Number(v)] ?? String(v)),
+      },
+    };
     const across = {
       stacked,
       beginAtZero: true,
@@ -325,7 +356,7 @@ export function chartConfig(input: ChartInput): ChartConfiguration {
 
   return {
     type: JS_TYPE[kind],
-    data: { labels: chart.labels.map((l) => l.label), datasets },
+    data: { labels, datasets },
     options,
   } as ChartConfiguration;
 }

@@ -77,6 +77,24 @@ class BoardChartsTest {
     }
 
     @Test
+    fun aStackedBarIsNamedByTheSeriesInItJoinedBySlashes() {
+        val c = chart(listOf(4.0, 3.0), listOf(1.0, 0.0), listOf(null, null))
+        assertEquals(listOf("s0 / s1", "s0", "L2"), stackedBarLabels(c, "bar", stacked = true).labels.map { it.label })
+        // Side by side, one series, or another kind: its own labels.
+        assertEquals(c, stackedBarLabels(c, "bar", stacked = false))
+        assertEquals(c, stackedBarLabels(c, "area", stacked = true))
+        val one = c.copy(datasets = c.datasets.take(1))
+        assertEquals(one, stackedBarLabels(one, "bar", stacked = true))
+    }
+
+    @Test
+    fun aLongLabelIsCutWithAnEllipsis() {
+        assertEquals("short", trimLabel("short", 12))
+        assertEquals("Succeeded /…", trimLabel("Succeeded / Failed", 12))
+        assertEquals(12, trimLabel("Succeeded / Failed", 12).length)
+    }
+
+    @Test
     fun aSeriesColourIsItsOwnOrThePalettes() {
         val c = chart(listOf(1.0, 1.0))
         val section = Section("x", "X", 0, 0, 6, 4, "bar", series = listOf(Series("a", color = "red"), Series("b")))
