@@ -8,6 +8,8 @@
     STEPS,
     isChartType,
     isRoundType,
+    isStackableType,
+    isStacked,
     largestGroups,
     moveSeries,
     ROW_PARTS,
@@ -22,6 +24,7 @@
     type SectionType,
     type Series,
     type Span,
+    type StackBy,
     type WrittenGroup,
   } from './boards';
   import { ArrowDown, ArrowUp, Plus, Trash2 } from './icons';
@@ -75,7 +78,15 @@
       if (!section.rows) patch.rows = { time: { field: section.by?.time?.field ?? 'entry', part: 'weekday' } };
     } else patch.rows = undefined;
     if (type === 'table' && !section.report) patch.report = 'next';
+    // Only a bar, line or area chart is stacked by a field.
+    if (!isStackableType(type)) patch.stackBy = undefined;
     set(patch);
+  }
+
+  /** Stacked by a field, or (an empty field) not. */
+  function setStack(patch: Partial<StackBy>) {
+    const next = { ...(section.stackBy ?? { field: '' }), ...patch };
+    set({ stackBy: next.field ? next : undefined });
   }
 
   function pickFn(fn: Fn) {
@@ -118,6 +129,8 @@
 
   const MAX_SERIES = 12;
   const series = $derived(section.series ?? []);
+  /** Stacked by a field has one series at most: its values are the series. */
+  const seriesFull = $derived(series.length >= (section.stackBy ? 1 : MAX_SERIES));
   const setSeries = (list: Series[]) => set({ series: list.length ? list : undefined });
   const patchSeries = (i: number, patch: Partial<Series>) =>
     setSeries(series.map((x, j) => (j === i ? { ...x, ...patch } : x)));
@@ -319,6 +332,45 @@
             list="{uid}-groupable"
             value={section.rows.field ?? ''}
             oninput={(e) => setRows({ field: e.currentTarget.value.trim() })}
+          />
+        </label>
+      {/if}
+    {/if}
+    {#if isStackableType(section.type)}
+      <label>
+        Stack by
+        <input
+          list="{uid}-groupable"
+          placeholder="nothing; or project"
+          title="A series of each value of this attribute, stacked; it takes the place of several series"
+          value={section.stackBy?.field ?? ''}
+          disabled={series.length > 1}
+          oninput={(e) => setStack({ field: e.currentTarget.value.trim() })}
+        />
+      </label>
+      {#if section.stackBy}
+        <label>
+          Stack only
+          <input
+            class="mono"
+            placeholder="all; or home, work"
+            title="The values stacked, separated by commas; none stacks them all"
+            spellcheck="false"
+            autocomplete="off"
+            value={section.stackBy.only?.join(', ') ?? ''}
+            onchange={(e) => setStack({ only: groupList(e.currentTarget.value) })}
+          />
+        </label>
+        <label>
+          Stack leaving out
+          <input
+            class="mono"
+            placeholder="none; or (none)"
+            title="The values left out of the stack, separated by commas"
+            spellcheck="false"
+            autocomplete="off"
+            value={section.stackBy.except?.join(', ') ?? ''}
+            onchange={(e) => setStack({ except: groupList(e.currentTarget.value) })}
           />
         </label>
       {/if}
@@ -559,13 +611,21 @@
         </div>
       {/each}
       <div class="row-series">
-        <button onclick={addSeries} disabled={series.length >= MAX_SERIES}><Plus size={14} /> Add series</button>
-        {#if series.length > 1 || section.stacked}
+        <button onclick={addSeries} disabled={seriesFull}><Plus size={14} /> Add series</button>
+        {#if series.length > 1 || section.stacked || section.stackBy}
           <label class="check">
             <input
               type="checkbox"
-              checked={!!section.stacked}
-              onchange={(e) => set({ stacked: e.currentTarget.checked || undefined })}
+              checked={isStacked(section)}
+              onchange={(e) =>
+                set({
+                  // Stacked by a field is stacked unless it says not.
+                  stacked: section.stackBy
+                    ? e.currentTarget.checked
+                      ? undefined
+                      : false
+                    : e.currentTarget.checked || undefined,
+                })}
             />
             Stacked
           </label>

@@ -1,7 +1,16 @@
 <script lang="ts">
   import BoardChart from './BoardChart.svelte';
   import type { ChartKind } from './boardChart';
-  import { describeChart, formatValue, orderChart, orderGrids, type Section, type SectionData } from './boards';
+  import {
+    describeChart,
+    formatValue,
+    isStacked,
+    orderChart,
+    orderGrids,
+    stackKey,
+    type Section,
+    type SectionData,
+  } from './boards';
   import { chartColor, valueColors } from './colors';
   import { compactDuration } from './dates';
   import { Info } from './icons';
@@ -46,6 +55,15 @@
     if (groups?.length)
       return chart.labels.map((l) => chartColor(groups.find((g) => g.label.trim() === l.key)?.color, scheme.dark));
     return valueColors(section.by?.field, chart.labels, store.config?.colors, scheme.dark);
+  });
+  /**
+   * The series' own colours, by position. Stacked by a field, the series are its values: a UDA's value has the colour the
+   * taskrc gives it, as a bar of it would.
+   */
+  const seriesColors = $derived.by(() => {
+    if (!section.stackBy || !chart) return section.series?.map((x) => x.color);
+    const keys = chart.datasets.map((d) => ({ key: stackKey(d.label) }));
+    return valueColors(section.stackBy.field, keys, store.config?.colors, scheme.dark);
   });
   const summary = $derived(chart ? describeChart(section.title, chart, fmt) : section.title);
 
@@ -119,8 +137,8 @@
           {chart}
           kind={section.type as ChartKind}
           time={!!section.by?.time}
-          stacked={!!section.stacked}
-          colors={section.series?.map((x) => x.color)}
+          stacked={isStacked(section)}
+          colors={seriesColors}
           {labelColors}
           format={fmt}
           {summary}

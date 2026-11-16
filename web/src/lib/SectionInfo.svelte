@@ -7,6 +7,7 @@
     describeMeasure,
     describeSpan,
     formatValue,
+    isStacked,
     orderChart,
     parseTasks,
     seriesOf,
@@ -109,6 +110,14 @@
       <dt>Grouped by</dt>
       <dd>{describeBy(section.by)}</dd>
     {/if}
+    {#if section.stackBy}
+      <dt>Stacked by</dt>
+      <dd>
+        the value of {section.stackBy.field}{section.stackBy.only?.length
+          ? `, only ${section.stackBy.only.join(', ')}`
+          : ''}{section.stackBy.except?.length ? `, leaving out ${section.stackBy.except.join(', ')}` : ''}
+      </dd>
+    {/if}
     {#if describeRows(section.rows)}
       <dt>Rows</dt>
       <dd>{describeRows(section.rows)}</dd>
@@ -120,7 +129,7 @@
         data.kind === 'chart' &&
         data.limit
           ? `, the ${section.by?.time && !section.sort ? 'latest' : 'first'} ${data.limit}${typeof section.limit === 'string' ? ` (${section.limit})` : ''}`
-          : ''}{section.stacked ? ', stacked' : ''}
+          : ''}{isStacked(section) ? ', stacked' : ''}
       </dd>
     {/if}
   </dl>

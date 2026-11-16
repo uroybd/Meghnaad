@@ -13,6 +13,7 @@ import {
   controlLabel,
   exprOf,
   largestGroups,
+  isStacked,
   loadBoard,
   moveBy,
   moveSeries,
@@ -25,6 +26,7 @@ import {
   parseTasks,
   rangeLabel,
   viewed,
+  stackKey,
   stampEpoch,
   SPAN_PRESETS,
   seriesOf,
@@ -427,6 +429,31 @@ describe('loading a board', () => {
     expect(shown.labels.map((l) => l.label)).toEqual(['Succeeded', 'Failed', 'Pending']);
     expect(shown.datasets[0].data).toEqual([2, 1, 3]);
     expect(d.sources.map((x) => x.label)).toEqual(['Succeeded', 'Failed', 'Pending']);
+  });
+
+  it('stacks a chart by a field: one export, a series of each value, stacked unless it says not', async () => {
+    const rows = [{ project: 'home' }, { project: 'work' }, { project: 'work' }, {}];
+    const run = vi.fn(async (_input: { args: string[] }) =>
+      respond({ kind: 'file', name: 't.json', mime: '', text: JSON.stringify(rows), count: rows.length }),
+    );
+    const s = sec('c', 0, 0, 6, 4, {
+      type: 'bar',
+      by: { field: 'status' },
+      stackBy: { field: 'project', except: ['home'] },
+    });
+    const b = board([s]);
+    const data = await loadBoard(b, { tz: 0, week_starts_monday: true, now: 1_791_376_200 }, run);
+    expect(run).toHaveBeenCalledTimes(1);
+    const d = data.c;
+    if (d.kind !== 'chart') throw new Error(JSON.stringify(d));
+    expect(d.chart.datasets.map((x) => [x.label, x.data])).toEqual([
+      ['work', [2]],
+      ['(none)', [1]],
+    ]);
+    expect(isStacked(s)).toBe(true);
+    expect(isStacked({ ...s, stacked: false })).toBe(false);
+    expect(isStacked({ ...s, stackBy: undefined })).toBe(false);
+    expect(stackKey('(none)')).toBe('');
   });
 
   it('puts a selection, a number, a date and a switch into the filters as what they are now', async () => {

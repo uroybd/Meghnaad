@@ -218,3 +218,60 @@ describe('grouping a chart by a date', () => {
     expect(changed.mock.calls.at(-1)![0].limit).toBeUndefined();
   });
 });
+
+describe('stacking a chart by a field', () => {
+  const input = (label: string) =>
+    [...document.querySelectorAll('label')]
+      .find((l) => l.textContent?.trim().startsWith(label))
+      ?.querySelector('input');
+
+  it('sets the field, its values and clears it, with one series at most while it is set', () => {
+    const changed = vi.fn();
+    const one = { ...section, series: [{ label: 'Only' }] };
+    app = mount(SectionForm, { target: document.body, props: { section: one, onchange: changed } });
+    flushSync();
+    const field = input('Stack by')!;
+    expect(field.disabled).toBe(false);
+    field.value = 'project';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(changed.mock.calls[0][0].stackBy).toEqual({ field: 'project' });
+
+    unmount(app);
+    const stacked = { ...one, stackBy: { field: 'project' } };
+    app = mount(SectionForm, { target: document.body, props: { section: stacked, onchange: changed } });
+    flushSync();
+    const add = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Add series'))!;
+    expect(add.disabled).toBe(true);
+    const box = [...document.querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find((c) =>
+      c.parentElement?.textContent?.includes('Stacked'),
+    )!;
+    expect(box.checked).toBe(true);
+    box.click();
+    expect(changed.mock.lastCall![0].stacked).toBe(false);
+    const except = input('Stack leaving out')!;
+    except.value = '(none), home';
+    except.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(changed.mock.lastCall![0].stackBy).toEqual({ field: 'project', except: ['(none)', 'home'] });
+    const f = input('Stack by')!;
+    f.value = '';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(changed.mock.lastCall![0].stackBy).toBeUndefined();
+  });
+
+  it('is not offered with two series or on a pie, and a pie leaves it out', () => {
+    const changed = vi.fn();
+    app = mount(SectionForm, {
+      target: document.body,
+      props: { section: { ...section, stackBy: undefined }, onchange: changed },
+    });
+    flushSync();
+    expect(input('Stack by')!.disabled).toBe(true);
+    unmount(app);
+    app = mount(SectionForm, {
+      target: document.body,
+      props: { section: { ...section, type: 'pie', series: undefined }, onchange: changed },
+    });
+    flushSync();
+    expect(input('Stack by')).toBeUndefined();
+  });
+});

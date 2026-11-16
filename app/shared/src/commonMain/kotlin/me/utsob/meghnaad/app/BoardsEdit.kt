@@ -47,6 +47,20 @@ const val MAX_GROUPS = 24
 
 fun isRoundType(type: String) = type == "pie" || type == "donut" || type == "polar"
 
+/** A bar, line or area chart can be stacked by a field. */
+fun isStackableType(type: String) = type == "bar" || type == "line" || type == "area"
+
+/** Stacked by a field, or (an empty field) not (SectionForm.svelte, `setStack`). */
+fun withStack(section: Section, change: (StackBy) -> StackBy): Section =
+    section.copy(stackBy = change(section.stackBy ?: StackBy("")).takeIf { it.field.isNotEmpty() })
+
+/** No more series can be added: stacked by a field has one series at most, as its values are the series. */
+fun seriesFull(section: Section) = section.series.size >= if (section.stackBy != null) 1 else MAX_SERIES
+
+/** The Stacked box ticked or not: stacked by a field is stacked unless it says not, so only `false` is written for it. */
+fun withStacked(section: Section, checked: Boolean): Section =
+    section.copy(stacked = if (section.stackBy != null) (if (checked) null else false) else (if (checked) true else null))
+
 /** A pie, donut or polar chart has one series; the others may have several. */
 fun hasManySeries(type: String) = isChartType(type) && !isRoundType(type)
 
@@ -165,6 +179,8 @@ fun withType(section: Section, type: String): Section {
     if (type == "table" && next.report == null) next = next.copy(report = "next")
     // A pie has one series, and none stacks. Only a heatmap has rows: it starts with the weekday of the date it is cut by.
     if (isRoundType(type)) next = next.copy(series = emptyList(), stacked = null)
+    // Only a bar, line or area chart is stacked by a field.
+    if (!isStackableType(type)) next = next.copy(stackBy = null)
     next = if (type == "heatmap") next.copy(rows = next.rows ?: Rows(time = PartBy(next.by?.time?.field ?: "entry", "weekday"))) else next.copy(rows = null)
     return next
 }

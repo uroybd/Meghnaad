@@ -368,9 +368,11 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             if let Some(by) = by.as_mut() {
                 crate::board::ranges::attach(by, &ranges, &ctx)?;
             }
-            json!(crate::board::aggregate::chart(
+            // A section stacked by a field: its one series split into one for each value.
+            json!(crate::board::aggregate::chart_by(
                 &a.req::<Vec<crate::board::aggregate::SeriesInput>>(0)?,
                 by.as_ref(),
+                a.opt::<crate::board::aggregate::StackBy>(4)?.as_ref(),
                 &ctx
             )?)
         }
@@ -752,6 +754,14 @@ mod tests {
         assert_eq!(got["labels"].as_array().map(Vec::len), Some(7));
         let got = call("board_chart", &format!("[{series},{by},{ctx}]"));
         assert!(got.contains("no date range called 'week'"), "{got}");
+        // Stacked by a field: a series for each value.
+        let one = r#"[{"label":"Done","tasks":"[{\"project\":\"a\"},{\"project\":\"b\"}]"}]"#;
+        let got: serde_json::Value = serde_json::from_str(&call(
+            "board_chart",
+            &format!(r#"[{one},{{"field":"project"}},{ctx},null,{{"field":"project"}}]"#),
+        ))
+        .unwrap();
+        assert_eq!(got["datasets"].as_array().map(Vec::len), Some(2));
 
         // A heatmap is grids of rows by columns.
         let by = r#"{"time":{"field":"end","step":"day","range":"week"}}"#;

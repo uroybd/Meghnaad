@@ -299,7 +299,7 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
                     let keep = keep(s.limit.as_ref(), &date_ranges, ctx)?;
                     if s.kind == Kind::Heatmap {
                         let by = by.ok_or("a heatmap needs something to group by")?;
-                        let grids = heat::heat(&inputs, &by, s.rows.as_ref(), s.stacked == Some(true), ctx)?;
+                        let grids = heat::heat(&inputs, &by, s.rows.as_ref(), s.is_stacked(), ctx)?;
                         let grids = order_grids(&grids, s, keep);
                         let chart = grids.first().map_or_else(
                             || Chart {
@@ -315,7 +315,7 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
                         );
                         Ok(Data::Chart { chart, grids })
                     } else {
-                        let chart = aggregate::chart(&inputs, by.as_ref(), ctx)?;
+                        let chart = aggregate::chart_by(&inputs, by.as_ref(), s.stack_by.as_ref(), ctx)?;
                         let idx = order(&chart, s, keep);
                         Ok(Data::Chart {
                             chart: reordered(&chart, &idx),
@@ -473,6 +473,48 @@ mod tests {
         let r = reordered(&c, &[2, 0]);
         assert_eq!(r.datasets[0].data, vec![Some(5.0), Some(1.0)]);
         assert_eq!(r.labels[0].key, "c");
+    }
+
+    #[test]
+    fn a_chart_stacked_by_a_field_has_a_dataset_for_each_value_and_is_stacked() {
+        let b = board(&json!({
+            "id": "w", "name": "W",
+            "sections": [
+                { "id": "s", "x": 0, "y": 0, "w": 6, "h": 4, "type": "bar", "title": "Open",
+                  "by": { "field": "status" }, "stackBy": { "field": "project", "except": ["c"] } },
+                { "id": "u", "x": 6, "y": 0, "w": 6, "h": 4, "type": "bar", "stacked": false,
+                  "by": { "field": "status" }, "stackBy": { "field": "project" } }
+            ]
+        }));
+        let s = &b.sections[0];
+        assert!(s.is_stacked(), "stacked unless it says not");
+        assert!(!b.sections[1].is_stacked());
+        let tasks = json!([
+            { "uuid": "1", "status": "pending", "project": "a" },
+            { "uuid": "2", "status": "pending", "project": "a" },
+            { "uuid": "3", "status": "pending", "project": "b" },
+            { "uuid": "4", "status": "pending" },
+            { "uuid": "5", "status": "pending", "project": "c" }
+        ]);
+        let inputs: Vec<SeriesInput> = series_of(s)
+            .into_iter()
+            .map(|x| SeriesInput {
+                label: x.label,
+                tasks: tasks.to_string(),
+                measure: x.measure,
+                span: x.span,
+                parts: Vec::new(),
+            })
+            .collect();
+        let ctx = Ctx {
+            tz: 0,
+            week_starts_monday: true,
+            now: 1_794_000_000,
+        };
+        let c = aggregate::chart_by(&inputs, s.by.as_ref(), s.stack_by.as_ref(), &ctx).unwrap();
+        let names: Vec<&str> = c.datasets.iter().map(|d| d.label.as_str()).collect();
+        assert_eq!(names, ["a", "(none)", "b"], "the most tasks first, `c` left out");
+        assert_eq!(c.datasets[0].data, vec![Some(2.0)]);
     }
 
     #[test]

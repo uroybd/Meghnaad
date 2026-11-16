@@ -60,6 +60,13 @@ export type AxisRange = string | { start: string; end: string };
 /** The part of a date a heatmap's row is: it comes round again, so a week by weekday is the grid of commits on GitHub. */
 export type RowPart = 'weekday' | 'hour' | 'monthday' | 'month';
 
+/** What a chart is stacked by: a field, and which of its values are shown. */
+export interface StackBy {
+  field: string;
+  only?: string[];
+  except?: string[];
+}
+
 /** A heatmap's rows: one of the two, the value of an attribute or a part of a date. */
 export interface Rows {
   field?: string;
@@ -140,6 +147,11 @@ export interface Section extends Rect {
   rows?: Rows;
   /** A chart's series; none is one series, the section's own measure. */
   series?: Series[];
+  /**
+   * A bar, line or area chart's series made from a field: one for each of its values, with only those in `only` (when it has
+   * some) and none in `except`. It is stacked unless `stacked` is false.
+   */
+  stackBy?: StackBy;
   /** The series are piled on each other (bars) or added up (lines), not side by side. */
   stacked?: boolean;
   /** `value-`, `value+`, `key+` or `key-`: how the groups of a chart are ordered. A date is in time order by default. */
@@ -709,6 +721,15 @@ export const isChartType = (t: SectionType): boolean => t !== 'number' && t !== 
 /** A pie, a donut or a polar chart has one series: its slices are the values. */
 export const isRoundType = (t: SectionType): boolean => t === 'pie' || t === 'donut' || t === 'polar';
 
+/** A bar, line or area chart can be stacked by a field. */
+export const isStackableType = (t: SectionType): boolean => t === 'bar' || t === 'line' || t === 'area';
+
+/** Whether a section's series are piled on each other: as `stacked` says, and by default when it is stacked by a field. */
+export const isStacked = (section: Section): boolean => section.stacked ?? !!section.stackBy;
+
+/** The key of a value a chart stacked by a field drew as a series (`(none)` is the empty value), for its colour. */
+export const stackKey = (label: string): string => (label === '(none)' ? '' : label);
+
 /** The series of a chart section: its own, or the one the section itself measures. */
 export function seriesOf(section: Section): Series[] {
   return section.series?.length ? section.series : [{ label: section.title, measure: section.measure }];
@@ -902,7 +923,8 @@ export async function loadBoard(
         s.id,
         {
           kind: 'chart',
-          chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone, controls),
+          // Stacked by a field, the engine makes a series of each value.
+          chart: callHelper<Chart>('board_chart', inputs, s.by ?? null, zone, controls, s.stackBy ?? null),
           sources,
           limit,
         },

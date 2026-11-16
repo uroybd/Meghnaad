@@ -250,6 +250,28 @@ and they share the grouping, so a period where one has nothing still has a place
 change the order, and a series with no colour of its own keeps its colour when it moves. **Add series** puts a new one
 at the end and **Remove series** deletes one.
 
+### Stack by a field
+
+**Stack by** makes the series from an attribute instead: a bar, line or area chart gets a series for each of its values,
+in its own colour, on the same axis. "Done per week, by project" is a bar chart of `status:completed`, per week of
+`end`, stacked by `project`, with no series written and none to keep up as projects come and go.
+
+- It is the same as grouping by the attribute: a task with no value is under `(none)`, and a task with several tags is
+  under each. A date can't be stacked by; group by it instead.
+- **Stack only** and **Stack leaving out** pick values (by the value, or `(none)`), as **Show only** and **Leave out**
+  do for the groups along the axis.
+- The value with the most tasks is at the bottom. Past 12 values the 11 largest keep their own series and the rest are
+  one, **Other**.
+- A value of a UDA has the colour your taskrc gives it (`color.uda.<name>.<value>`); the others take the palette's in
+  turn.
+- It is stacked unless **Stacked** is turned off, which puts the values side by side.
+
+A chart stacked by a field has one series at most (its filter and measure are what is split), so **Add series** is off
+while it is set. Series are still the way for what one attribute's values can't say: filters of their own
+(`outcome:success or outcome:` beside `outcome:failed`), the burndown states under **Counts**, or a measure of their
+own. In the file it is `"stackBy": { "field": "project", "only": ["home", "work"], "except": ["(none)"] }`, with `only`
+and `except` left out when empty.
+
 ### Colour
 
 Choose one of Taskwarrior's basic colours by name (`red`, `bright blue`, …), drawn in the page's palette so
@@ -358,15 +380,18 @@ want to keep what was left out.
             { "label": "Succeeded", "filter": "outcome:success or outcome:", "color": "green" },
             { "label": "Failed", "filter": "outcome:failed", "color": "red" }
           ] },
-        { "id": "effort", "title": "Estimate by project", "x": 0, "y": 8, "w": 12, "h": 4, "type": "bar",
+        { "id": "projects", "title": "Done per week, by project", "x": 0, "y": 8, "w": 12, "h": 4, "type": "bar",
+          "filter": "status:completed", "by": { "time": { "field": "end", "step": "week" } },
+          "stackBy": { "field": "project" } },
+        { "id": "effort", "title": "Estimate by project", "x": 0, "y": 12, "w": 12, "h": 4, "type": "bar",
           "measure": { "fn": "sum", "field": "estimate" }, "by": { "field": "project" }, "limit": 10 },
-        { "id": "days", "title": "Done per day, this range", "x": 0, "y": 12, "w": 12, "h": 4, "type": "bar",
+        { "id": "days", "title": "Done per day, this range", "x": 0, "y": 16, "w": 12, "h": 4, "type": "bar",
           "filter": "status:completed",
           "by": { "time": { "field": "end", "step": "$daterange.lg_group.name", "range": "daterange" } } },
-        { "id": "own", "title": "Done in October, per week", "x": 0, "y": 16, "w": 12, "h": 4, "type": "bar",
+        { "id": "own", "title": "Done in October, per week", "x": 0, "y": 20, "w": 12, "h": 4, "type": "bar",
           "filter": "status:completed",
           "by": { "time": { "field": "end", "step": "week", "range": { "start": "2026-10-01", "end": "2026-10-31T23:59" } } } },
-        { "id": "outcome", "title": "Outcome", "type": "donut", "x": 0, "y": 14, "w": 4, "h": 4,
+        { "id": "outcome", "title": "Outcome", "type": "donut", "x": 0, "y": 24, "w": 4, "h": 4,
           "by": { "groups": [
             { "label": "Succeeded", "filter": "status:completed outcome:success", "color": "green", "ignoreBoardFilter": true },
             { "label": "Failed", "filter": "status:completed outcome:failed", "color": "red", "ignoreBoardFilter": true },

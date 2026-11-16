@@ -174,7 +174,9 @@ private fun BoardCard(store: Store, section: Section, data: SectionData?, width:
                         } else {
                             valueColors(section.by?.field, shown.labels, store.config?.colors ?: emptyMap(), extras.dark, colors.background)
                         }
-                        BoardChartView(shown, section, extras.dark, height = height - 34.dp - 8.dp, labelColors = own, grids = grids)
+                        // Stacked by a field, its values are the series, a UDA's in the colours the taskrc gives them.
+                        val stack = stackColors(section, shown, store.config?.colors ?: emptyMap(), extras.dark, colors.background)
+                        BoardChartView(shown, section, extras.dark, height = height - 34.dp - 8.dp, labelColors = own, grids = grids, stackColors = stack)
                     }
                     is SectionData.Table -> {
                         // What it ran, so its Export button exports the same tasks (BoardSection.svelte).

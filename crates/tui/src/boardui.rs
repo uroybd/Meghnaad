@@ -253,18 +253,36 @@ fn section_block(section: &Section, legend: Option<Line<'static>>) -> Block<'sta
     b
 }
 
-fn draw_section(buf: &mut Buffer, section: &Section, data: Option<&Data>, area: Rect) {
-    let series = boards::series_of(section);
-    let colors: Vec<Color> = series
-        .iter()
+/// The names and colours of the series a section draws: its own, or, stacked by a field, the chart's datasets (one for each
+/// value) in the default colours.
+fn drawn_series(section: &Section, data: Option<&Data>) -> (Vec<String>, Vec<Color>) {
+    if section.stack_by.is_some() {
+        if let Some(Data::Chart { chart, .. }) = data {
+            return chart
+                .datasets
+                .iter()
+                .enumerate()
+                .map(|(i, d)| (d.label.clone(), color(None, i)))
+                .unzip();
+        }
+    }
+    boards::series_of(section)
+        .into_iter()
         .enumerate()
-        .map(|(i, s)| color(s.color.as_deref(), i))
-        .collect();
-    let legend = (series.len() > 1 && !matches!(section.kind, Kind::Heatmap)).then(|| {
+        .map(|(i, s)| {
+            let c = color(s.color.as_deref(), i);
+            (s.label, c)
+        })
+        .unzip()
+}
+
+fn draw_section(buf: &mut Buffer, section: &Section, data: Option<&Data>, area: Rect) {
+    let (names, colors) = drawn_series(section, data);
+    let legend = (names.len() > 1 && !matches!(section.kind, Kind::Heatmap)).then(|| {
         let mut spans = vec![Span::from(" ")];
-        for (s, c) in series.iter().zip(&colors) {
+        for (name, c) in names.iter().zip(&colors) {
             spans.push(Span::from("■ ").fg(*c));
-            spans.push(Span::from(format!("{}  ", s.label)));
+            spans.push(Span::from(format!("{name}  ")));
         }
         Line::from(spans)
     });
@@ -736,6 +754,38 @@ mod tests {
         assert_eq!(color(Some("#f80"), 0), Color::Rgb(0xff, 0x88, 0x00));
         assert_eq!(color(None, 1), Color::Red);
         assert_eq!(color(Some("teal"), 2), Color::Green);
+    }
+
+    #[test]
+    fn a_chart_stacked_by_a_field_names_and_colours_its_values() {
+        let (boards, errors) = boards::read(&serde_json::json!([{
+            "id": "w", "name": "W",
+            "sections": [{ "id": "s", "x": 0, "y": 0, "w": 6, "h": 4, "type": "bar", "title": "Open",
+                "by": { "field": "status" }, "stackBy": { "field": "project" } }]
+        }]));
+        assert!(errors.is_empty(), "{errors:?}");
+        let s = &boards[0].sections[0];
+        let dataset = |label: &str| tc_core::board::aggregate::Dataset {
+            label: label.into(),
+            data: vec![Some(1.0)],
+            counts: vec![1],
+            total: None,
+            tasks: 1,
+            parts: Vec::new(),
+        };
+        let data = Data::Chart {
+            chart: Chart {
+                unit: Unit::Number,
+                labels: Vec::new(),
+                datasets: vec![dataset("a"), dataset("(none)")],
+            },
+            grids: Vec::new(),
+        };
+        let (names, colors) = drawn_series(s, Some(&data));
+        assert_eq!(names, ["a", "(none)"]);
+        assert_eq!(colors, [color(None, 0), color(None, 1)]);
+        // Before its data comes, the section's one series.
+        assert_eq!(drawn_series(s, None).0, ["Open"]);
     }
 
     #[test]

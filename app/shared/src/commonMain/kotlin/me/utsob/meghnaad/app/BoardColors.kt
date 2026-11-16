@@ -81,6 +81,15 @@ fun valueColors(field: String?, labels: List<ChartLabel>, colors: Map<String, Re
         readableOn(paletteColor(index, dark), page, 1.8)
     }
 
+/**
+ * The colours of the series of a chart stacked by a field (BoardSection.svelte, `seriesColors`): its series are the field's values, and
+ * a UDA's value has the colour the taskrc gives it, as a bar of it would; null where it has none. Nothing when it is not stacked by one.
+ */
+fun stackColors(section: Section, chart: BoardChart, colors: Map<String, Resolved>, dark: Boolean, page: Color): List<Color?> {
+    val stack = section.stackBy ?: return emptyList()
+    return valueColors(stack.field, chart.datasets.map { ChartLabel(stackKey(it.label), it.label) }, colors, dark, page)
+}
+
 /** The taskrc's colours (`uda.priority.H` and the like, as palette indexes) from the body of the engine's `/api/config` answer; none when it is not one. */
 fun parseColors(body: String): Map<String, Resolved> =
     runCatching { engineJson.decodeFromString(ConfigResponse.serializer(), body).colors }.getOrDefault(emptyMap())

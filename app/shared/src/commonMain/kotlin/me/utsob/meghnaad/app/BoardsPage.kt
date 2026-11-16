@@ -59,7 +59,7 @@ fun BoardsPage(store: Store) {
 @Composable
 fun rememberBoardData(store: Store, board: Board, wait: Boolean): Map<String, SectionData> {
     var data by remember { mutableStateOf<Map<String, SectionData>>(emptyMap()) }
-    val asks = listOf(board.filter, board.controls, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.ignoreBoardFilter, it.measure, it.by, it.series) })
+    val asks = listOf(board.filter, board.controls, board.sections.map { listOf(it.id, it.type, it.report, it.filter, it.ignoreBoardFilter, it.measure, it.by, it.series, it.stackBy) })
     LaunchedEffect(asks, store.rev) {
         // While a board is being edited, a keystroke in a filter is not a question.
         if (wait) delay(250)
@@ -225,8 +225,15 @@ private fun SectionInfoDialog(store: Store, section: Section, data: SectionData,
                 if (section.type == "table") InfoLine("Report", section.report ?: "next") else InfoLine("Measure", describeMeasure(section.measure))
                 InfoLine("Context", (inForce ?: "none") + if (named == null) " (the console's)" else " (set in the filter)")
                 describeBy(section.by)?.let { InfoLine("Grouped by", it) }
+                section.stackBy?.let { st ->
+                    InfoLine(
+                        "Stacked by",
+                        "the value of ${st.field}" + (st.only?.takeIf { it.isNotEmpty() }?.let { ", only ${it.joinToString(", ")}" } ?: "") +
+                            (st.except?.takeIf { it.isNotEmpty() }?.let { ", leaving out ${it.joinToString(", ")}" } ?: ""),
+                    )
+                }
                 if (chart != null) {
-                    InfoLine("Order", (section.sort ?: if (section.by?.time != null) "in time order" else "largest first") + ((data as? SectionData.Chart)?.limit?.let { ", the ${if (section.by?.time != null && section.sort == null) "latest" else "first"} $it" + (if (section.limit?.toIntOrNull() == null) " (${section.limit})" else "") } ?: "") + if (section.stacked == true) ", stacked" else "")
+                    InfoLine("Order", (section.sort ?: if (section.by?.time != null) "in time order" else "largest first") + ((data as? SectionData.Chart)?.limit?.let { ", the ${if (section.by?.time != null && section.sort == null) "latest" else "first"} $it" + (if (section.limit?.toIntOrNull() == null) " (${section.limit})" else "") } ?: "") + if (isStacked(section)) ", stacked" else "")
                 }
 
                 if (data is SectionData.Failed) {

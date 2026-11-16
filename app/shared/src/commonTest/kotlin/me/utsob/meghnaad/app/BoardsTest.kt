@@ -343,6 +343,44 @@ class BoardsTest {
     }
 
     @Test
+    fun aChartStackedByAFieldHasASeriesForEachValue() {
+        val tasks = """[{"project":"Home","priority":"H"},{"project":"Home"},{"project":"Work","priority":"H"},{"project":"Work","priority":"L"}]"""
+        val inputs = listOf(SeriesInput("Tasks", tasks, Measure("count"), null))
+        val c = layChart(inputs, By(field = "project"), zone, stackBy = StackBy("priority"))
+        assertEquals(listOf("Home", "Work"), c.labels.map { it.label })
+        // The most tasks first; a task with no value is under (none).
+        assertEquals(listOf("H", "(none)", "L"), c.datasets.map { it.label })
+        assertEquals(listOf(listOf(1.0, 1.0), listOf(1.0, 0.0), listOf(0.0, 1.0)), c.datasets.map { it.data })
+        // Only and except pick values, (none) among them.
+        val picked = layChart(inputs, By(field = "project"), zone, stackBy = StackBy("priority", only = listOf("H", "(none)"), except = listOf("(none)")))
+        assertEquals(listOf("H"), picked.datasets.map { it.label })
+        // With none, the one series is as it was.
+        assertEquals(listOf("Tasks"), layChart(inputs, By(field = "project"), zone).datasets.map { it.label })
+    }
+
+    @Test
+    fun aChartStackedByAFieldIsReadBackAndStackedUnlessItSaysNot() {
+        val stack = StackBy("project", only = listOf("Home", "Work"), except = listOf("(none)"))
+        val section = sec("s", "bar") { it.copy(by = By(time = TimeBy("end", "week")), stackBy = stack) }
+        val back = normalizeBoards(boardsToJson(listOf(Board("b", "B", sections = listOf(section)))))
+        assertEquals(emptyList(), back.errors)
+        assertEquals(stack, back.boards[0].sections[0].stackBy)
+        assertTrue("\"stackBy\":{\"field\":\"project\"" in boardsToJson(listOf(Board("b", "B", sections = listOf(section)))).toString())
+        // Written by the web app with only a field, it is read the same.
+        val read = normalizeBoards(
+            Json.parseToJsonElement("""[{"id":"b","name":"B","sections":[{"id":"s","type":"line","x":0,"y":0,"w":12,"h":4,"by":{"time":{"field":"end","step":"week"}},"stackBy":{"field":"tags"}}]}]"""),
+        )
+        assertEquals(StackBy("tags"), read.boards[0].sections[0].stackBy)
+        // Stacked by a field is stacked unless `stacked` says not; without one, only when it says so.
+        assertTrue(isStacked(section))
+        assertTrue(!isStacked(section.copy(stacked = false)))
+        assertTrue(!isStacked(sec("t", "bar")))
+        assertTrue(isStacked(sec("t", "bar") { it.copy(stacked = true) }))
+        assertEquals("", stackKey("(none)"))
+        assertEquals("Home", stackKey("Home"))
+    }
+
+    @Test
     fun aSeriesOfStatesCountsWhatIsOpenAtTheEndOfEachWeek() {
         val tasks = """[{"entry":"20261006T100000Z","start":"20261008T100000Z","end":"20261014T100000Z"},{"entry":"20261013T100000Z"}]"""
         val now = exportedStampEpoch("20261015T120000Z")!!

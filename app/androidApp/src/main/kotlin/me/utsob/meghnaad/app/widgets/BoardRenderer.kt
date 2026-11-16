@@ -14,6 +14,7 @@ import me.utsob.meghnaad.app.formatBoardValue
 import me.utsob.meghnaad.app.heatAlpha
 import me.utsob.meghnaad.app.heatStrengths
 import me.utsob.meghnaad.app.pieSweeps
+import me.utsob.meghnaad.app.isStacked
 import me.utsob.meghnaad.app.seriesColors
 import me.utsob.meghnaad.app.chartColor
 import me.utsob.meghnaad.app.heatCellColor
@@ -58,13 +59,13 @@ object BoardRenderer {
     }
 
     /** A chart of the card's type. A polar area chart is drawn as a pie, as in the app. */
-    fun chart(chart: BoardChart, section: Section, width: Int, height: Int, palette: Palette, labelColors: List<Color?> = emptyList(), grids: List<BoardChart>? = null): Bitmap {
+    fun chart(chart: BoardChart, section: Section, width: Int, height: Int, palette: Palette, labelColors: List<Color?> = emptyList(), grids: List<BoardChart>? = null, stackColors: List<Color?> = emptyList()): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         if (chart.labels.isEmpty()) return bitmap
         val shown = cut(chart)
-        val stacked = section.stacked == true
-        val colors = seriesColors(shown, section, palette.dark).map { it.toArgb() }
+        val stacked = isStacked(section)
+        val colors = seriesColors(shown, section, palette.dark, stackColors).map { it.toArgb() }
         val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette.dim
             textSize = (height * 0.075f).coerceIn(16f, 30f)

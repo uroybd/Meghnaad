@@ -82,9 +82,14 @@ fun pieSweeps(values: List<Double>): List<Float> {
     return values.map { if (total <= 0.0) 0f else (it.coerceAtLeast(0.0) / total * 360.0).toFloat() }
 }
 
-/** The colours of a chart's series (or, for a round chart, of its slices), by position. */
-fun seriesColors(chart: BoardChart, section: Section, dark: Boolean): List<Color> =
-    chart.datasets.indices.map { i -> chartColor(section.series.getOrNull(i)?.color, dark) ?: defaultSeriesColor(i, dark) }
+/**
+ * The colours of a chart's series (or, for a round chart, of its slices), by position. Stacked by a field, the series are its values:
+ * each in the colour [stackColors] gives it (the taskrc's for a UDA's value), else the default one for its position.
+ */
+fun seriesColors(chart: BoardChart, section: Section, dark: Boolean, stackColors: List<Color?> = emptyList()): List<Color> =
+    chart.datasets.indices.map { i ->
+        (if (section.stackBy != null) stackColors.getOrNull(i) else chartColor(section.series.getOrNull(i)?.color, dark)) ?: defaultSeriesColor(i, dark)
+    }
 
 /** The colour of the bar of series [d] at label [i]: with one series, the taskrc's colour for the label's value when it has one; else the series'. */
 fun barColor(chart: BoardChart, series: List<Color>, labelColors: List<Color?>, d: Int, i: Int): Color =
@@ -161,7 +166,7 @@ fun tipText(chart: BoardChart, i: Int, d: Int): String {
 
 @OptIn(ExperimentalKoalaPlotApi::class, ExperimentalLayoutApi::class)
 @Composable
-fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier: Modifier = Modifier, height: Dp? = null, labelColors: List<Color?> = emptyList(), grids: List<BoardChart>? = null) {
+fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier: Modifier = Modifier, height: Dp? = null, labelColors: List<Color?> = emptyList(), grids: List<BoardChart>? = null, stackColors: List<Color?> = emptyList()) {
     val colors = MaterialTheme.colorScheme
     if (chart.labels.isEmpty()) {
         Dim("Nothing to show.", modifier)
@@ -178,8 +183,8 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
         }
         return
     }
-    val stacked = section.stacked == true
-    val series = seriesColors(chart, section, dark)
+    val stacked = isStacked(section)
+    val series = seriesColors(chart, section, dark, stackColors)
     val round = section.type == "pie" || section.type == "donut" || section.type == "polar"
     val legend = !round && section.type != "heatmap" && chart.datasets.size > 1
     // A chart in a card that has a size fills what the legend leaves; one without is as tall as it likes.

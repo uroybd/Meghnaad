@@ -19,6 +19,7 @@ import me.utsob.meghnaad.app.placeLink
 import me.utsob.meghnaad.app.AppPlace
 import me.utsob.meghnaad.app.Resolved
 import me.utsob.meghnaad.app.parseColors
+import me.utsob.meghnaad.app.stackColors
 import me.utsob.meghnaad.app.valueColors
 import androidx.compose.ui.graphics.Color
 import org.json.JSONObject
@@ -39,7 +40,7 @@ class BoardWidget : ImageWidget() {
         val data = BoardsData.section(context, board, section)
             ?: return Rendered(section.title, message = context.getString(R.string.widget_not_ready), link = link)
         val look = WidgetPrefs.look(context, id)
-        val colors = if (data is SectionData.Chart && section.by?.field != null) BoardsData.colors(context) else emptyMap()
+        val colors = if (data is SectionData.Chart && (section.by?.field != null || section.stackBy != null)) BoardsData.colors(context) else emptyMap()
         fun draw(palette: Palette) = when (data) {
             is SectionData.Number -> BoardRenderer.number(formatBoardValue(data.answer.total, data.answer.unit), data.answer.tasks, width, height, palette)
             is SectionData.Chart -> {
@@ -47,7 +48,9 @@ class BoardWidget : ImageWidget() {
                 val shown = grids?.firstOrNull() ?: orderChart(data.chart, section, data.limit)
                 // A chart of the values of a UDA is in the colours the taskrc gives them, as in the app.
                 val own = valueColors(section.by?.field, shown.labels, colors, palette.dark, Color(palette.background))
-                BoardRenderer.chart(shown, section, width, height, palette, own, grids)
+                // Stacked by a field, its values are the series, a UDA's in the colours the taskrc gives them.
+                val stack = stackColors(section, shown, colors, palette.dark, Color(palette.background))
+                BoardRenderer.chart(shown, section, width, height, palette, own, grids, stack)
             }
             else -> null
         }

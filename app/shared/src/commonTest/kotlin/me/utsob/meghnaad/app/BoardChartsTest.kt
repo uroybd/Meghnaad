@@ -86,6 +86,20 @@ class BoardChartsTest {
     }
 
     @Test
+    fun aChartStackedByAUdaHasItsValuesInTheTaskrcsColours() {
+        val c = BoardChart("number", listOf(ChartLabel("a", "a")), listOf(Dataset("H", listOf(1.0)), Dataset("(none)", listOf(1.0)), Dataset("L", listOf(1.0))))
+        val colors = mapOf("uda.priority.H" to Resolved(fg = 9), "uda.priority.none" to Resolved(fg = 2))
+        // The section's own series colours are not the values': a value with none of its own has the palette's colour for its place.
+        val section = Section("x", "X", 0, 0, 6, 4, "bar", series = listOf(Series("a", color = "red")), stackBy = StackBy("priority"))
+        val stack = stackColors(section, c, colors, false, Color.White)
+        assertEquals(listOf(paletteColor(9, false), paletteColor(2, false), null), stack)
+        assertEquals(listOf(paletteColor(9, false), paletteColor(2, false), defaultSeriesColor(2, false)), seriesColors(c, section, false, stack))
+        // Not stacked by a field: nothing, and the series' own colours.
+        assertEquals(emptyList(), stackColors(section.copy(stackBy = null), c, colors, false, Color.White))
+        assertEquals(namedColor("red", false), seriesColors(c, section.copy(stackBy = null), false)[0])
+    }
+
+    @Test
     fun theSlicesOfAPieAddUpToAFullCircleAndNothingSweepsNothing() {
         val sweeps = pieSweeps(listOf(1.0, 1.0, 2.0, 0.0, -3.0))
         assertEquals(listOf(90f, 90f, 180f, 0f, 0f), sweeps)

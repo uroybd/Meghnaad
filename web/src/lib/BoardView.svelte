@@ -59,7 +59,17 @@
     JSON.stringify([
       board.filter,
       board.controls,
-      board.sections.map((s) => [s.id, s.type, s.report, s.filter, s.ignoreBoardFilter, s.measure, s.by, s.series]),
+      board.sections.map((s) => [
+        s.id,
+        s.type,
+        s.report,
+        s.filter,
+        s.ignoreBoardFilter,
+        s.measure,
+        s.by,
+        s.series,
+        s.stackBy,
+      ]),
     ]),
   );
   let asked = 0;

@@ -130,6 +130,40 @@ class BoardsEditTest {
     }
 
     @Test
+    fun aBarLineOrAreaChartIsStackedByAFieldAndLosesItAsAnotherType() {
+        assertTrue(isStackableType("bar") && isStackableType("line") && isStackableType("area"))
+        assertTrue(listOf("pie", "donut", "polar", "radar", "heatmap", "number", "table").none(::isStackableType))
+        val bar = sec("c", type = "bar").copy(by = By(field = "project"))
+        // Set: a field; then the values it shows; an empty field clears all of it.
+        val set = withStack(bar) { it.copy(field = "priority") }
+        assertEquals(StackBy("priority"), set.stackBy)
+        val picked = withStack(withStack(set) { it.copy(only = listOf("H", "M")) }) { it.copy(except = listOf("(none)")) }
+        assertEquals(StackBy("priority", listOf("H", "M"), listOf("(none)")), picked.stackBy)
+        assertNull(withStack(picked) { it.copy(field = "") }.stackBy)
+        // Another chart that can be stacked by a field keeps it; any other loses it.
+        assertEquals(picked.stackBy, withType(picked, "line").stackBy)
+        for (t in listOf("pie", "radar", "heatmap", "number", "table")) assertNull(withType(picked, t).stackBy, t)
+    }
+
+    @Test
+    fun aChartStackedByAFieldHasOneSeriesAndIsStackedUnlessTurnedOff() {
+        val bar = sec("c", type = "bar").copy(by = By(field = "project"))
+        val stack = withStack(bar) { it.copy(field = "priority") }
+        assertTrue(!seriesFull(bar) && !seriesFull(stack))
+        assertTrue(seriesFull(stack.copy(series = listOf(Series("a")))))
+        assertTrue(seriesFull(bar.copy(series = (1..MAX_SERIES).map { Series("s$it") })))
+        // Unticking writes `false`; ticking again writes nothing, as stacked is its default.
+        val off = withStacked(stack, false)
+        assertEquals(false, off.stacked)
+        assertTrue(!isStacked(off))
+        assertNull(withStacked(off, true).stacked)
+        assertTrue(isStacked(withStacked(off, true)))
+        // Without a field, ticking writes `true` and unticking nothing.
+        assertEquals(true, withStacked(bar, true).stacked)
+        assertNull(withStacked(bar.copy(stacked = true), false).stacked)
+    }
+
+    @Test
     fun whichSeriesMayHaveSeveral() {
         assertTrue(hasManySeries("bar") && hasManySeries("line") && hasManySeries("area") && hasManySeries("radar"))
         assertTrue(!hasManySeries("pie") && !hasManySeries("donut") && !hasManySeries("polar") && !hasManySeries("number") && !hasManySeries("table"))

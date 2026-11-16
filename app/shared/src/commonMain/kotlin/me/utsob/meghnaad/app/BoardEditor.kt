@@ -52,11 +52,12 @@ import kotlinx.coroutines.launch
 // burndown, the state a series counts. The engine says whether the draft is valid (BoardsEdit.kt).
 
 @Composable
-private fun TextBox(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, mono: Boolean = false, error: String? = null, prefix: String? = null, number: Boolean = false, placeholder: String? = null) {
+private fun TextBox(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, mono: Boolean = false, error: String? = null, prefix: String? = null, number: Boolean = false, placeholder: String? = null, enabled: Boolean = true) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
         label = { Text(label, fontSize = 12.sp) },
         placeholder = placeholder?.let { { Text(it, fontSize = 13.sp) } },
         prefix = prefix?.let { { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
@@ -407,6 +408,16 @@ private fun SectionForm(store: Store, s: Section, controls: List<Control>, onCha
                     Suggestions(groupableFields(udas)) { onChange(s.copy(rows = Rows(field = it))) }
                 }
             }
+            if (isStackableType(s.type)) {
+                // A series of each value of a field, stacked: it takes the place of several series.
+                val free = s.series.size <= 1
+                TextBox("Stack by", s.stackBy?.field.orEmpty(), { v -> onChange(withStack(s) { it.copy(field = v.trim()) }) }, placeholder = "nothing; or project", enabled = free)
+                if (free) Suggestions(groupableFields(udas)) { f -> onChange(withStack(s) { it.copy(field = f) }) }
+                if (s.stackBy != null) {
+                    GroupsBox("Stack only", s.stackBy.only, "all; or home, work") { v -> onChange(withStack(s) { it.copy(only = v) }) }
+                    GroupsBox("Stack leaving out", s.stackBy.except, "none; or (none)") { v -> onChange(withStack(s) { it.copy(except = v) }) }
+                }
+            }
             Pick("Order", ORDERS, s.sort) { onChange(s.copy(sort = it)) }
             TextBox("Keep", s.limit.orEmpty(), { v -> onChange(s.copy(limit = v.trim().ifEmpty { null })) }, mono = true, placeholder = "all, 12 or \$range.day_count")
             if (s.by != null && s.by.time == null) {
@@ -461,10 +472,10 @@ private fun SeriesEditor(store: Store, s: Section, onChange: (Section) -> Unit) 
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton({ setSeries(s.series + Series("Series ${s.series.size + 1}")) }, enabled = s.series.size < MAX_SERIES) { Text("+ Add series", fontSize = 12.sp) }
-            if (s.series.size > 1 || s.stacked == true) {
-                Row(Modifier.clickable { onChange(s.copy(stacked = if (s.stacked == true) null else true)) }, verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(s.stacked == true, onCheckedChange = null)
+            OutlinedButton({ setSeries(s.series + Series("Series ${s.series.size + 1}")) }, enabled = !seriesFull(s)) { Text("+ Add series", fontSize = 12.sp) }
+            if (s.series.size > 1 || s.stacked == true || s.stackBy != null) {
+                Row(Modifier.clickable { onChange(withStacked(s, !isStacked(s))) }, verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(isStacked(s), onCheckedChange = null)
                     Text("Stacked", fontSize = 13.sp, modifier = Modifier.padding(start = 6.dp))
                 }
             }

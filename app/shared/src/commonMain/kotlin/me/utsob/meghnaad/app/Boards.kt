@@ -119,6 +119,10 @@ data class PartBy(val field: String, val part: String)
 @Serializable
 data class Rows(val field: String? = null, val time: PartBy? = null)
 
+/** What a chart is stacked by (boards.ts `StackBy`): a field, and which of its values are shown (none in [only]: all). */
+@Serializable
+data class StackBy(val field: String, val only: List<String>? = null, val except: List<String>? = null)
+
 val ROW_PARTS = listOf("weekday" to "The weekday of a date", "hour" to "The hour of a date", "monthday" to "The day of the month of a date", "month" to "The month of a date")
 
 @Serializable
@@ -137,6 +141,11 @@ data class Section(
     val measure: Measure = Measure("count"),
     val by: By? = null,
     val series: List<Series> = emptyList(),
+    /**
+     * A bar, line or area chart's series made from a field: one for each of its values, with only those in `only` (when it has
+     * some) and none in `except`. It is stacked unless [stacked] is false.
+     */
+    val stackBy: StackBy? = null,
     val stacked: Boolean? = null,
     val sort: String? = null,
     /** How many groups a chart keeps: a number, or the count of a date range of the board (`$week.day_count`), as text. */
@@ -489,8 +498,14 @@ fun aggregateNumber(text: String, section: Section, zone: Zone): BoardAnswer {
     return boardsJson.decodeFromJsonElement(BoardAnswer.serializer(), callHelper("board_aggregate", JsonPrimitive(text), query, zone.toJson()))
 }
 
-/** What a chart section's series, laid on one axis. */
-fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, controls: List<Control> = emptyList()): BoardChart {
+/** Whether a section's series are piled on each other: as `stacked` says, and by default when it is stacked by a field. */
+fun isStacked(section: Section): Boolean = section.stacked ?: (section.stackBy != null)
+
+/** The key of a value a chart stacked by a field drew as a series (`(none)` is the empty value), for its colour. */
+fun stackKey(label: String): String = if (label == "(none)") "" else label
+
+/** What a chart section's series, laid on one axis; stacked by a field, the engine makes a series of each of its values. */
+fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, controls: List<Control> = emptyList(), stackBy: StackBy? = null): BoardChart {
     val series = JsonArray(
         inputs.map {
             buildJsonObject {
@@ -503,7 +518,8 @@ fun layChart(inputs: List<SeriesInput>, by: By?, zone: Zone, controls: List<Cont
         },
     )
     val byJson: JsonElement = by?.let { boardsJson.encodeToJsonElement(By.serializer(), it) } ?: JsonNull
-    return boardsJson.decodeFromJsonElement(BoardChart.serializer(), callHelper("board_chart", series, byJson, zone.toJson(), controlsJson(controls)))
+    val stackJson: JsonElement = stackBy?.let { boardsJson.encodeToJsonElement(StackBy.serializer(), it) } ?: JsonNull
+    return boardsJson.decodeFromJsonElement(BoardChart.serializer(), callHelper("board_chart", series, byJson, zone.toJson(), controlsJson(controls), stackJson))
 }
 
 /** A series' tasks, or with groups the board writes, the tasks of each group ([parts]) in place of [tasks]. */
@@ -682,7 +698,7 @@ suspend fun loadBoard(
                         // A heatmap: a grid for each series (one when stacked), the columns the same in each.
                         val grids = layHeatmap(inputs, by, s.rows, s.stacked == true, zone, board.controls)
                         SectionData.Chart(grids.first(), sources, keepOf(s.limit, board.controls, zone), grids)
-                    } else SectionData.Chart(layChart(inputs, s.by, zone, board.controls), sources, keepOf(s.limit, board.controls, zone))
+                    } else SectionData.Chart(layChart(inputs, s.by, zone, board.controls, s.stackBy), sources, keepOf(s.limit, board.controls, zone))
                 }
             }
         } catch (e: Exception) {

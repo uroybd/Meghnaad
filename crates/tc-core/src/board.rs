@@ -138,6 +138,9 @@ pub struct Section {
     /// A chart's series. None is one series: the section's own measure.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub series: Vec<Series>,
+    /// A bar, line or area chart's series made from a field: one for each of its values. Stacked unless `stacked` is false.
+    #[serde(default, rename = "stackBy", skip_serializing_if = "Option::is_none")]
+    pub stack_by: Option<aggregate::StackBy>,
     /// Series are drawn on top of each other (bars) or added up (lines), not side by side.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stacked: Option<bool>,
@@ -186,6 +189,11 @@ pub struct Normalized {
 }
 
 impl Section {
+    /// Whether its series are piled on each other: as `stacked` says, and by default when it is stacked by a field.
+    pub fn is_stacked(&self) -> bool {
+        self.stacked.unwrap_or(self.stack_by.is_some())
+    }
+
     pub fn rect(&self) -> Rect {
         Rect {
             x: self.x,
@@ -279,6 +287,17 @@ fn section_problem(s: &Section, ranges: &[Range]) -> Option<String> {
     }
     if s.kind.is_round() && s.series.len() > 1 {
         return Some("a pie, donut or polar chart has one series: its slices are the values".into());
+    }
+    if let Some(stack) = &s.stack_by {
+        if !matches!(s.kind, Kind::Bar | Kind::Line | Kind::Area) {
+            return Some("only a bar, line or area chart is stacked by a field".into());
+        }
+        if stack.field.trim().is_empty() {
+            return Some("stack by needs a field".into());
+        }
+        if s.series.len() > 1 {
+            return Some("a chart stacked by a field has one series: its values are the series".into());
+        }
     }
     if s.series.len() > MAX_SERIES {
         return Some(format!("a chart has at most {MAX_SERIES} series"));
@@ -437,7 +456,14 @@ pub fn normalize(value: &Value) -> Normalized {
                 other => other,
             };
             // The groups shown or left out, trimmed, with empty ones and repeats left out.
-            for list in [&mut section.only, &mut section.except] {
+            if let Some(stack) = section.stack_by.as_mut() {
+                stack.field = stack.field.trim().to_owned();
+            }
+            let stack_lists = section.stack_by.as_mut().map(|st| [&mut st.only, &mut st.except]);
+            for list in [&mut section.only, &mut section.except]
+                .into_iter()
+                .chain(stack_lists.into_iter().flatten())
+            {
                 let mut kept: Vec<String> = Vec::with_capacity(list.len());
                 for v in list.drain(..) {
                     let v = v.trim();
@@ -754,6 +780,55 @@ mod tests {
                 h: 1
             }
         );
+    }
+
+    #[test]
+    fn a_bar_line_or_area_chart_of_one_series_may_be_stacked_by_a_field() {
+        let sec = |kind: &str, extra: Value| {
+            let mut s = json!({ "id": "c", "type": kind, "x": 0, "y": 0, "w": 6, "h": 4,
+                "by": { "time": { "field": "end", "step": "week" } } });
+            s.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            normalize(&json!([{ "id": "b", "name": "B", "sections": [s] }]))
+        };
+        let stack = json!({ "stackBy": { "field": " project ", "only": [" a ", "", "a", "b"], "except": [] } });
+        for kind in ["bar", "line", "area"] {
+            let n = sec(kind, stack.clone());
+            assert!(n.errors.is_empty(), "{kind}: {:?}", n.errors);
+            let s = &n.boards[0].sections[0];
+            assert!(s.is_stacked(), "stacked unless it says not");
+            let st = s.stack_by.as_ref().unwrap();
+            assert_eq!(
+                (st.field.as_str(), st.only.clone()),
+                ("project", vec!["a".to_owned(), "b".to_owned()])
+            );
+            assert_eq!(
+                serde_json::to_value(s).unwrap()["stackBy"],
+                json!({ "field": "project", "only": ["a", "b"] })
+            );
+        }
+        let n = sec(
+            "bar",
+            json!({ "stackBy": { "field": "project" }, "stacked": false,
+            "series": [{ "label": "Done", "filter": "status:completed" }] }),
+        );
+        assert!(n.errors.is_empty(), "{:?}", n.errors);
+        assert!(!n.boards[0].sections[0].is_stacked());
+        for (kind, extra, said) in [
+            ("pie", json!({ "stackBy": { "field": "project" } }), "bar, line or area"),
+            ("bar", json!({ "stackBy": { "field": " " } }), "needs a field"),
+            (
+                "bar",
+                json!({ "stackBy": { "field": "project" }, "series": [{ "label": "a" }, { "label": "b" }] }),
+                "one series",
+            ),
+        ] {
+            let n = sec(kind, extra);
+            assert!(
+                n.errors.first().is_some_and(|e| e.contains(said)),
+                "{said}: {:?}",
+                n.errors
+            );
+        }
     }
 
     #[test]

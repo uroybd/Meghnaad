@@ -442,17 +442,8 @@ pub fn aggregate(tasks: &str, query: &Query, ctx: &Ctx) -> Result<Answer, String
         None | Some((None, None) | (Some(_), Some(_))) => {}
         Some((Some(field), None)) => {
             for (t, v) in tasks.iter().zip(&values) {
-                let keys: Vec<String> = match t.get(field) {
-                    Some(Value::Array(items)) => items.iter().filter_map(text_of).collect(),
-                    Some(Value::String(s)) if parse_stamp(s).is_some() => {
-                        return Err(format!("'{field}' is a date: group by a day, week or month of it"));
-                    }
-                    Some(other) => text_of(other).into_iter().collect(),
-                    None => Vec::new(),
-                };
                 // A task with none of it is counted under `(none)`; one with several (tags) once under each.
-                let keys = if keys.is_empty() { vec![String::new()] } else { keys };
-                for k in keys {
+                for k in keys_of(t, field)? {
                     let label = if k.is_empty() { "(none)".to_owned() } else { k.clone() };
                     groups.entry(k).or_insert_with(|| (label, Acc::new())).1.add(*v);
                 }
@@ -805,6 +796,139 @@ pub fn chart(series: &[SeriesInput], by: Option<&By>, ctx: &Ctx) -> Result<Chart
         labels,
         datasets,
     })
+}
+
+/// A chart's series made from a field: a series for each of its values (`project`, `priority`, `tags`). `only` and
+/// `except` pick values, matched by the value or the name it is shown with (`(none)`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StackBy {
+    pub field: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub only: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub except: Vec<String>,
+}
+
+/// What the series past the largest are put into, when a field has more values than a chart has series.
+pub const OTHER: &str = "Other";
+
+/// The keys a task is grouped under by `field`: its value, each of a list's (tags), or `""` when it has none.
+fn keys_of(t: &Value, field: &str) -> Result<Vec<String>, String> {
+    let keys: Vec<String> = match t.get(field) {
+        Some(Value::Array(items)) => items.iter().filter_map(text_of).collect(),
+        Some(Value::String(s)) if parse_stamp(s).is_some() => {
+            return Err(format!("'{field}' is a date: group by a day, week or month of it"));
+        }
+        Some(other) => text_of(other).into_iter().collect(),
+        None => Vec::new(),
+    };
+    Ok(if keys.is_empty() { vec![String::new()] } else { keys })
+}
+
+/// `series` as a series for each value of `stack.field`, the most tasks first: each has the tasks with that value (a task
+/// with none under `(none)`, one with several tags under each) and the series' measure and span. Past [`MAX_SERIES`](super::MAX_SERIES)
+/// the largest keep their own and the rest are one [`OTHER`]. With groups the board writes, each group's tasks are split.
+pub fn split(series: &SeriesInput, stack: &StackBy) -> Result<Vec<SeriesInput>, String> {
+    let field = stack.field.trim();
+    if field.is_empty() {
+        return Err("stack by needs a field".into());
+    }
+    let label_of = |k: &str| {
+        if k.is_empty() {
+            "(none)".to_owned()
+        } else {
+            k.to_owned()
+        }
+    };
+    let picked = |k: &str| {
+        let named = |list: &[String]| list.iter().any(|x| x.trim() == k || x.trim() == label_of(k));
+        (stack.only.is_empty() || named(&stack.only)) && !named(&stack.except)
+    };
+    let texts: Vec<&str> = if series.parts.is_empty() {
+        vec![series.tasks.as_str()]
+    } else {
+        series.parts.iter().map(String::as_str).collect()
+    };
+    // Each text's tasks with the values they are under, and how many tasks each value has in all.
+    let mut read: Vec<Vec<(Value, Vec<String>)>> = Vec::with_capacity(texts.len());
+    let mut sizes: BTreeMap<String, usize> = BTreeMap::new();
+    for text in texts {
+        let mut tasks = Vec::new();
+        for t in read_tasks(text)? {
+            let keys: Vec<String> = keys_of(&t, field)?.into_iter().filter(|k| picked(k)).collect();
+            for k in &keys {
+                *sizes.entry(k.clone()).or_default() += 1;
+            }
+            if !keys.is_empty() {
+                tasks.push((t, keys));
+            }
+        }
+        read.push(tasks);
+    }
+    if sizes.is_empty() {
+        return Ok(vec![series.clone()]);
+    }
+    let mut order: Vec<(String, usize)> = sizes.into_iter().collect();
+    // The most tasks first, then by value; a stable sort keeps the value order among equals.
+    order.sort_by_key(|b| std::cmp::Reverse(b.1));
+    let kept: Vec<String> = if order.len() > super::MAX_SERIES {
+        order.into_iter().take(super::MAX_SERIES - 1).map(|(k, _)| k).collect()
+    } else {
+        order.into_iter().map(|(k, _)| k).collect()
+    };
+    let others = read
+        .iter()
+        .flatten()
+        .any(|(_, keys)| keys.iter().any(|k| !kept.contains(k)));
+    let mut out: Vec<(String, Vec<Vec<Value>>)> = kept
+        .iter()
+        .map(|k| (label_of(k), vec![Vec::new(); read.len()]))
+        .chain(others.then(|| (OTHER.to_owned(), vec![Vec::new(); read.len()])))
+        .collect();
+    for (i, tasks) in read.into_iter().enumerate() {
+        for (t, keys) in tasks {
+            let mut other = false;
+            for k in &keys {
+                match kept.iter().position(|x| x == k) {
+                    Some(at) => out[at].1[i].push(t.clone()),
+                    None => other = true,
+                }
+            }
+            // A task under several values past the largest is in `Other` once.
+            if other {
+                if let Some(last) = out.last_mut() {
+                    last.1[i].push(t);
+                }
+            }
+        }
+    }
+    let text = |tasks: Vec<Value>| Value::Array(tasks).to_string();
+    Ok(out
+        .into_iter()
+        .map(|(label, mut parts)| {
+            let (tasks, parts) = if series.parts.is_empty() {
+                (parts.pop().map(text).unwrap_or_default(), Vec::new())
+            } else {
+                (String::new(), parts.into_iter().map(text).collect())
+            };
+            SeriesInput {
+                label,
+                tasks,
+                measure: series.measure.clone(),
+                span: series.span.clone(),
+                parts,
+            }
+        })
+        .collect())
+}
+
+/// [`chart`], with the one series split into a series for each value of a field when the section is stacked by one.
+pub fn chart_by(series: &[SeriesInput], by: Option<&By>, stack: Option<&StackBy>, ctx: &Ctx) -> Result<Chart, String> {
+    match (stack, series) {
+        (None, _) => chart(series, by, ctx),
+        (Some(stack), [one]) => chart(&split(one, stack)?, by, ctx),
+        (Some(_), _) => Err("a chart stacked by a field has one series: its values are the series".into()),
+    }
 }
 
 /// A chart of groups the board writes: a label for each group, in its order, and for each series what it measures over the
@@ -1483,6 +1607,115 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&b).unwrap(),
             r#"{"time":{"field":"end","step":"day","range":"week"}}"#
+        );
+    }
+
+    fn stack(json: serde_json::Value) -> StackBy {
+        serde_json::from_value(json).unwrap()
+    }
+
+    const MIXED: &str = r#"[
+        {"end":"20261005T100000Z","project":"home","tags":["a","b"]},
+        {"end":"20261006T100000Z","project":"work","tags":["a"]},
+        {"end":"20261013T100000Z","project":"work"},
+        {"end":"20261013T100000Z"}
+    ]"#;
+
+    #[test]
+    fn a_series_split_by_a_field_is_a_series_for_each_value_the_most_tasks_first() {
+        let one = series("Done", MIXED, r#"{"fn":"count"}"#);
+        let got = split(&one, &stack(serde_json::json!({ "field": "project" }))).unwrap();
+        let labels: Vec<_> = got.iter().map(|s| s.label.as_str()).collect();
+        assert_eq!(labels, ["work", "(none)", "home"]);
+        assert_eq!(read_tasks(&got[0].tasks).unwrap().len(), 2);
+        assert_eq!(got[0].measure, one.measure);
+
+        // Tags: a task is under each of its tags; `only` and `except` pick values, `(none)` by its name.
+        let got = split(
+            &one,
+            &stack(serde_json::json!({ "field": "tags", "except": ["(none)"] })),
+        )
+        .unwrap();
+        let sizes: Vec<_> = got
+            .iter()
+            .map(|s| (s.label.as_str(), read_tasks(&s.tasks).unwrap().len()))
+            .collect();
+        assert_eq!(sizes, [("a", 2), ("b", 1)]);
+        let got = split(&one, &stack(serde_json::json!({ "field": "tags", "only": ["b"] }))).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].label, "b");
+
+        // Laid on one axis, stacked by project: each week has each project's tasks.
+        let c = chart_by(
+            std::slice::from_ref(&one),
+            Some(&by(r#"{"time":{"field":"end","step":"week"}}"#)),
+            Some(&stack(serde_json::json!({ "field": "project" }))),
+            &ctx(),
+        )
+        .unwrap();
+        let data: Vec<_> = c.datasets.iter().map(|d| (d.label.as_str(), d.data.clone())).collect();
+        assert_eq!(
+            data,
+            [
+                ("work", vec![Some(1.0), Some(1.0)]),
+                ("(none)", vec![Some(0.0), Some(1.0)]),
+                ("home", vec![Some(1.0), Some(0.0)])
+            ]
+        );
+    }
+
+    #[test]
+    fn past_the_most_series_the_rest_are_other_and_each_task_is_there_once() {
+        let tasks: Vec<_> = (0..14)
+            .map(|i| serde_json::json!({ "project": format!("p{i:02}"), "tags": [format!("t{i:02}"), format!("u{i:02}")] }))
+            .collect();
+        let text = serde_json::Value::Array(tasks).to_string();
+        let one = series("All", &text, r#"{"fn":"count"}"#);
+        let got = split(&one, &stack(serde_json::json!({ "field": "project" }))).unwrap();
+        assert_eq!(got.len(), crate::board::MAX_SERIES);
+        assert_eq!(got.last().map(|s| s.label.as_str()), Some(OTHER));
+        assert_eq!(read_tasks(&got[11].tasks).unwrap().len(), 3);
+        // Kept: t00 to t10. Other: task 11 (t11) and task 12, whose two tags are both past the largest but which is there once.
+        let got = split(&one, &stack(serde_json::json!({ "field": "tags", "only": ["t00","t01","t02","t03","t04","t05","t06","t07","t08","t09","t10","t11","u12","t12"] }))).unwrap();
+        assert_eq!(got.last().map(|s| s.label.as_str()), Some(OTHER));
+        assert_eq!(read_tasks(&got[11].tasks).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn groups_the_board_writes_are_split_each_and_what_cannot_be_stacked_is_refused() {
+        let one = SeriesInput {
+            parts: vec![MIXED.into(), r#"[{"project":"home"}]"#.into()],
+            ..series("All", "", r#"{"fn":"count"}"#)
+        };
+        let got = split(&one, &stack(serde_json::json!({ "field": "project" }))).unwrap();
+        let home = got.iter().find(|s| s.label == "home").unwrap();
+        assert_eq!(home.parts.len(), 2);
+        assert_eq!(read_tasks(&home.parts[1]).unwrap().len(), 1);
+
+        let e = split(&one, &stack(serde_json::json!({ "field": "end" }))).unwrap_err();
+        assert!(e.contains("is a date"), "{e}");
+        let e = split(&one, &stack(serde_json::json!({ "field": " " }))).unwrap_err();
+        assert!(e.contains("needs a field"), "{e}");
+        let two = [
+            one.clone(),
+            SeriesInput {
+                label: "b".into(),
+                ..one.clone()
+            },
+        ];
+        let e = chart_by(
+            &two,
+            None,
+            Some(&stack(serde_json::json!({ "field": "project" }))),
+            &ctx(),
+        )
+        .unwrap_err();
+        assert!(e.contains("one series"), "{e}");
+        // Nothing to split: the series as it was.
+        let empty = series("None", "[]", r#"{"fn":"count"}"#);
+        assert_eq!(
+            split(&empty, &stack(serde_json::json!({ "field": "project" }))).unwrap()[0].label,
+            "None"
         );
     }
 }
