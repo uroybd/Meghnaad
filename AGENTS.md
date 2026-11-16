@@ -40,7 +40,7 @@ app/                Kotlin + Compose. shared/commonMain (Store.kt, Sync.kt, scre
                     jvmCommonMain/NativeEngine.kt (JNI names: keep package me.utsob.meghnaad), androidMain (AndroidVault
                     = Keystore), androidApp (MainActivity, ReminderReceiver, widgets/, SyncWorker). desktopApp = preview.
 crates/tui          meghnaad (crate meghnaad-tui), ratatui. Backend = real `task` 3.5.0 (task.rs); tc-core for helpers only.
-                    app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,tests}.rs; settings.json in
+                    app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,taskinfo,tests}.rs, info.rs; settings.json in
                     $MEGHNAAD_CONFIG_DIR or ~/.config/meghnaad; sync = background `task sync`. Never reaches the bucket.
 
 DATA in the bucket: salt, latest, v-<parent>-<child>, s-<version> (TaskChampion), web/rc/* (taskrc files),
@@ -48,7 +48,7 @@ web/config.json (+ rc.prev.json), web/settings.json (taskCommands, boards, homep
 web/hook-secrets.enc. Secrets: Worker secret TC_ENCRYPTION_SECRET; phone Keystore; never on a page.
 
 SHARED ACROSS FRONT ENDS via tc_core::helpers only: dates/dateformat, command-line split, completion, highlight, cells,
-preview, markdown, urgency names, sortspec, board, keymap. Everything else in layer 2 is ported per front end.
+preview, markdown, time log, urgency names, sortspec, board, keymap. Everything else in layer 2 is ported per front end.
 ```
 
 ## Where a feature goes
@@ -107,8 +107,9 @@ statuses are in `specs/README.md`). When pointed at one:
 5. Keep **Implementation notes** current as you go (dated: what was done and where, departures from the design and why,
    sizes measured, what is left), so the work can be picked up in another session.
 6. Tick each criterion only once it is verified (the checks below pass, the docs it names are updated). When all are
-   ticked, set **Status** to `done` in the spec and the index. Never rewrite **Why**, **What** or the criteria
-   yourself; propose the change and let the person edit them.
+   ticked, set **Status** to `done` in the spec and the index. Change **Why**, **What** or the criteria only
+   with the person's explicit yes to that change: show the exact wording, then apply it once they confirm it. A yes
+   covers that change alone, not the next one; without it, leave them as they are.
 
 Asked to write a spec, copy the template to the next free number, fill it from the conversation, leave what is
 undecided as `TBD` or an open question, set it to `draft` and add its row to the index. Specs are working notes kept in the repository; never move
