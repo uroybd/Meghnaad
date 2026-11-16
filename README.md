@@ -155,7 +155,7 @@ flowchart TB
     direction TB
     sh["shell aliases"]
     tsh["tasksh review"]
-    tui["meghnaad-tui<br/>terminal app"]
+    tui["meghnaad<br/>terminal app"]
     cli["task 3.5.0 (C++)"]
     tcd["TaskChampion"]
     db[("SQLite replica<br/>~/.task")]
@@ -309,7 +309,7 @@ the secrets for hooks never are. Everything about it, including building it your
 
 ## Terminal app
 
-On the desktop, `meghnaad-tui` is a full-screen terminal app around the real `task` 3.5.0: your own `~/.task` and
+On the desktop, `meghnaad` is a full-screen terminal app around the real `task` 3.5.0: your own `~/.task` and
 `~/.taskrc`, with no replica or server of its own: it syncs with `task sync`, in the background, by hand or when it
 opens and closes or after every change, as you set it. It is laid out as the web app is: pages along the top (Tasks,
 Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings), the reports down the side and a command line at the
@@ -318,8 +318,8 @@ makes it and opens into the full task form, which modifying always uses, your bo
 reports in `task`'s own colours, tasksh's review, a timer and reminders.
 
 ```bash
-brew install uroybd/tap/meghnaad-tui   # or a prebuilt from the release, or cargo install (see the guide)
-meghnaad-tui
+brew install uroybd/tap/meghnaad   # or a prebuilt from the release, or cargo install (see the guide)
+meghnaad
 ```
 
 ![The terminal app on the Tasks page: the reports down the side, the next report in task's colours, and the page's keys along the bottom](docs/screenshots/terminal-tasks.png)

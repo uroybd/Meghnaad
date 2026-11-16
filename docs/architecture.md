@@ -44,7 +44,7 @@ flowchart TB
     direction TB
     sh["shell aliases"]
     tsh["tasksh review"]
-    tui["meghnaad-tui<br/>terminal app"]
+    tui["meghnaad<br/>terminal app"]
     cli["task 3.5.0 (C++)"]
     tcd["TaskChampion"]
     db[("SQLite replica<br/>~/.task")]
@@ -390,7 +390,7 @@ an exception across the boundary. It is the browser's engine with another way to
 
 ```mermaid
 flowchart TB
-  tui["meghnaad-tui<br/>crates/tui, ratatui"]
+  tui["meghnaad<br/>crates/tui, ratatui"]
   help["tc-core helpers<br/>completion, add preview, cells, keys, boards"]
   set[("settings.json<br/>~/.config/meghnaad")]
   cli["task 3.5.0 (C++)"]
@@ -423,8 +423,8 @@ flowchart TB
 
 On the desktop the real `task` holds the tasks, and Meghnaad adds two programs around it.
 
-**`meghnaad-tui`** (`crates/tui`) is a terminal front end whose backend is `task`, not the engine. Every read and change
-is a `task` command line: `_show` for the settings (read by `tc_core::taskrc`, so the helpers get the same `Config` the
+**`meghnaad`** (`crates/tui`, the crate `meghnaad-tui`) is a terminal front end whose backend is `task`, not the
+engine. Every read and change is a `task` command line: `_show` for the settings (read by `tc_core::taskrc`, so the helpers get the same `Config` the
 engine would), `<filter> export <report>` for a report, `_projects`, `_tags` and the pending tasks for completion, and
 every change captured (a quick action, a console line, `summary`, `calendar`, `burndown`) or run on the terminal itself
 when `task` would ask. It calls `tc-core` only where `task` has no command: completion, the add preview, report cells,

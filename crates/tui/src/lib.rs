@@ -157,7 +157,7 @@ pub fn run() -> io::Result<()> {
     let result = event_loop(&mut terminal, &mut app);
     restore();
     if let Some(why) = result? {
-        writeln!(io::stderr(), "meghnaad-tui: {why}")?;
+        writeln!(io::stderr(), "meghnaad: {why}")?;
     }
     Ok(())
 }

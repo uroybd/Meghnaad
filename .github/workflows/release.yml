@@ -2,7 +2,7 @@
 #   - the web app, ready to deploy with no Rust or build needed: the `release` branch holds the built files (it is what the
 #     Deploy to Cloudflare button points at), and a tag also attaches them to a GitHub release as a .tar.gz;
 #   - the Android app, as an APK: attached to the release for a tag, or kept as the run's artifact;
-#   - meghnaad-hook, the Lua hooks script for the real `task`, and meghnaad-tui, the terminal app around the real `task`, as
+#   - meghnaad-hook, the Lua hooks script for the real `task`, and meghnaad, the terminal app around the real `task`, as
 #     programs for Linux and macOS (x86_64 and arm64), the same way, and, when the repository names a Homebrew tap
 #     (docs/deploy.md), their formulas there.
 # The version is the one in package.json. To release: change it there, commit, then tag that commit `v<version>` and push
@@ -128,7 +128,7 @@ jobs:
 
           **Hooks with the real \`task\`**: \`meghnaad-hook-$VERSION-<platform>.tar.gz\` is the program that runs your Lua hooks script for \`task\` ([the same script with the real task](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/using/hooks.md#the-same-script-with-the-real-task)); the builds are added to this release when they finish.
 
-          **Terminal app**: \`meghnaad-tui-$VERSION-<platform>.tar.gz\` is Meghnaad in the terminal, around the real \`task\` ([the terminal app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/terminal.md)); the builds are added to this release when they finish.
+          **Terminal app**: \`meghnaad-$VERSION-<platform>.tar.gz\` (the program \`meghnaad\`, once \`meghnaad-tui\`) is Meghnaad in the terminal, around the real \`task\` ([the terminal app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/terminal.md)); the builds are added to this release when they finish.
 
           **Android app**: install \`meghnaad-$VERSION.apk\` ([the Android app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/android.md)); it is added to this release when its build finishes.
 
@@ -143,9 +143,9 @@ jobs:
           gh release create "$TAG" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "Meghnaad $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
 
-  # meghnaad-hook (the Lua hooks script for the real `task`) and meghnaad-tui (the terminal app) as programs per platform,
-  # so that they install with no Rust: `<program>-<version>-<target>.tar.gz`, attached to a tag's release or kept as the
-  # run's artifacts.
+  # meghnaad-hook (the Lua hooks script for the real `task`) and meghnaad (the terminal app, the crate meghnaad-tui) as
+  # programs per platform, so that they install with no Rust: `<program>-<version>-<target>.tar.gz`, attached to a tag's
+  # release or kept as the run's artifacts.
   programs:
     needs: release
     runs-on: ${{ matrix.os }}
@@ -181,14 +181,14 @@ jobs:
           declared="$(node scripts/version.mjs)"
           if [ "$REF_TYPE" = tag ]; then version="$declared"; else version="$declared-dev.${GITHUB_SHA::7}"; fi
           cargo build --release --locked -p tc-hook -p meghnaad-tui --target "$TARGET"
-          for program in meghnaad-hook meghnaad-tui; do
+          for program in meghnaad-hook meghnaad; do
             name="$program-$version-$TARGET"
             mkdir "$name"
             cp "target/$TARGET/release/$program" "$name/"
             tar -czf "$name.tar.gz" "$name"
           done
           echo "HOOK=meghnaad-hook-$version-$TARGET.tar.gz" >> "$GITHUB_ENV"
-          echo "TUI=meghnaad-tui-$version-$TARGET.tar.gz" >> "$GITHUB_ENV"
+          echo "TUI=meghnaad-$version-$TARGET.tar.gz" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -197,7 +197,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: meghnaad-tui-${{ matrix.target }}
+          name: meghnaad-${{ matrix.target }}
           path: ${{ env.TUI }}
 
       - name: Attach to the GitHub release
@@ -207,9 +207,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: gh release upload "$TAG" "$HOOK" "$TUI" --clobber
 
-  # meghnaad-hook and meghnaad-tui in a Homebrew tap, so `brew install <owner>/tap/meghnaad-hook` (or `meghnaad-tui`)
+  # meghnaad-hook and meghnaad in a Homebrew tap, so `brew install <owner>/tap/meghnaad-hook` (or `meghnaad`)
   # installs them: the formulas are rewritten for the tag from the builds above (so they wait for all four, and a partial
-  # release makes none). It runs only for a release version
+  # release makes none). The terminal app's formula was `meghnaad-tui`: the tap's `formula_renames.json` says so, so
+  # `brew update` moves an installed one to `meghnaad`, and the old formula file is removed. It runs only for a release version
   # (not `1.2.3-rc.1`), in a repository that says which tap (the variable HOMEBREW_TAP, `owner/homebrew-tap`) and has a token
   # that can push to it (the secret HOMEBREW_TAP_TOKEN: a fine-grained token with Contents read and write on that repository).
   tap:
@@ -247,16 +248,18 @@ jobs:
           version="$(node scripts/version.mjs)"
           git clone --depth 1 "https://x-access-token:$TAP_TOKEN@github.com/$TAP.git" tap
           mkdir -p tap/Formula
-          for program in meghnaad-hook meghnaad-tui; do
+          for program in meghnaad-hook meghnaad; do
             node scripts/homebrew-formula.mjs --repo "$GITHUB_REPOSITORY" --version "$version" --program "$program" builds \
               > "tap/Formula/$program.rb"
           done
+          node scripts/homebrew-formula.mjs --renames > tap/formula_renames.json
           cd tap
+          git rm -q --ignore-unmatch Formula/meghnaad-tui.rb
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/meghnaad-hook.rb Formula/meghnaad-tui.rb
+          git add Formula/meghnaad-hook.rb Formula/meghnaad.rb formula_renames.json
           if git diff --cached --quiet; then echo "The formulas are already for $version."; exit 0; fi
-          git commit -m "Update meghnaad-hook and meghnaad-tui to v$version"
+          git commit -m "Update meghnaad-hook and meghnaad to v$version"
           git push
 
   # After the release exists, so that a tag's APK can be added to it.

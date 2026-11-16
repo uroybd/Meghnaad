@@ -39,7 +39,7 @@ web/                Svelte 5. src/engine/ (engine.worker.ts, client.svelte.ts, p
 app/                Kotlin + Compose. shared/commonMain (Store.kt, Sync.kt, screens; ports of web/src/lib with tests),
                     jvmCommonMain/NativeEngine.kt (JNI names: keep package me.utsob.meghnaad), androidMain (AndroidVault
                     = Keystore), androidApp (MainActivity, ReminderReceiver, widgets/, SyncWorker). desktopApp = preview.
-crates/tui          meghnaad-tui, ratatui. Backend = real `task` 3.5.0 (task.rs); tc-core for helpers only.
+crates/tui          meghnaad (crate meghnaad-tui), ratatui. Backend = real `task` 3.5.0 (task.rs); tc-core for helpers only.
                     app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,tests}.rs; settings.json in
                     $MEGHNAAD_CONFIG_DIR or ~/.config/meghnaad; sync = background `task sync`. Never reaches the bucket.
 
@@ -200,7 +200,7 @@ bucket), and `setup.mjs`, `deploy.mjs` and `deploy-lib.mjs` must keep working in
 
 One version, the root `package.json`'s: the web app's label in Settings (`__APP_VERSION__`), the Android versionName and
 versionCode (`scripts/version.mjs`), the prebuilt package, and the crates (`[workspace.package]` in `Cargo.toml`, which
-`meghnaad-tui --version` and `meghnaad-hook --version` print). Cargo cannot read `package.json`, so that one copy is
+`meghnaad --version` and `meghnaad-hook --version` print). Cargo cannot read `package.json`, so that one copy is
 written for you: `just bump [patch|minor|major|1.2.3]` (`npm version <x> --no-git-tag-version`, whose `version`
 script runs `node scripts/version.mjs sync` for Cargo.toml and Cargo.lock); a script test and the Release workflow
 refuse a mismatch. `just release [level] [tidy]` does the whole release: bumps, commits `chore: bump to <version>`,
@@ -235,8 +235,8 @@ with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) open
 
 ## The terminal app
 
-`crates/tui` (`meghnaad-tui`, ratatui) is a front end whose backend is the real `task` 3.5.0, not the engine: every read
-and change is a `task` command line (`_show`, `<filter> export <report>`, `_projects`, …) on the desktop's own data. It
+`crates/tui` (the program `meghnaad`, the crate `meghnaad-tui`; ratatui) is a front end whose backend is the real
+`task` 3.5.0, not the engine: every read and change is a `task` command line (`_show`, `<filter> export <report>`, `_projects`, …) on the desktop's own data. It
 links `tc-core` only for helpers `task` has no command for (completion, the add preview, report cells) and adds nothing to
 `tc-core` for itself; its glue (export to rows, chains, task commands, the Projects and Tags lists, the task form,
 review, reminders, and boards' glue from Android's `Boards.kt`, drawn with ratatui's charts) lives in the crate, ported with the web app's tests. Syncing is `task sync` run in the background, when

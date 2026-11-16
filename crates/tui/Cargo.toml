@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "meghnaad-tui"
+name = "meghnaad"
 path = "src/main.rs"
 
 [lints]

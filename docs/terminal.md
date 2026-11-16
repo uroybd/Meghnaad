@@ -1,6 +1,6 @@
 # The terminal app
 
-`meghnaad-tui` is Meghnaad on the desktop, beside its web app and Android app: a full-screen terminal app around the
+`meghnaad` is Meghnaad on the desktop, beside its web app and Android app: a full-screen terminal app around the
 real `task` 3.5.0, laid out as the web app is. It has no engine, replica or sync of its own. Every report it shows is
 `task <filter> export <report>` and every change it makes is a `task` command line, so it works on whatever data and
 taskrc your `task` uses (`~/.task` and `~/.taskrc`, or `TASKDATA`, `TASKRC` and `rc.data.location`), and your hooks run
@@ -9,20 +9,26 @@ own task commands, an add line that shows the task it will make, tasksh's review
 
 ## Install
 
-It needs `task` 3.5.0 on the `PATH` (or `MEGHNAAD_TASK` set to the binary). Get `meghnaad-tui` any of three ways, then
-run `meghnaad-tui`:
+It needs `task` 3.5.0 on the `PATH` (or `MEGHNAAD_TASK` set to the binary). Get `meghnaad` any of three ways, then
+run `meghnaad`:
 
-- **Homebrew**, for macOS and Linux: `brew install uroybd/tap/meghnaad-tui`, which brings `task` with it, and
+- **Homebrew**, for macOS and Linux: `brew install uroybd/tap/meghnaad`, which brings `task` with it, and
   `brew upgrade` for a newer one.
-- **Prebuilt**, no Rust needed: download `meghnaad-tui-<version>-<platform>.tar.gz` from the
+- **Prebuilt**, no Rust needed: download `meghnaad-<version>-<platform>.tar.gz` from the
   [latest release](https://github.com/uroybd/Meghnaad/releases/latest) (Linux or macOS, x86_64 or arm64) and put
-  `meghnaad-tui` where you keep programs, for example `~/.local/bin`. On macOS, if it is blocked for coming from the
-  internet, run `xattr -d com.apple.quarantine ~/.local/bin/meghnaad-tui` (or fetch it with `curl`).
+  `meghnaad` where you keep programs, for example `~/.local/bin`. On macOS, if it is blocked for coming from the
+  internet, run `xattr -d com.apple.quarantine ~/.local/bin/meghnaad` (or fetch it with `curl`).
 - **From source**, with Rust 1.91 or later: `cargo install --git https://github.com/uroybd/Meghnaad meghnaad-tui --locked`
-  puts it in `~/.cargo/bin` (add `--tag v<version>` for a release instead of the latest commit), and
-  `cargo uninstall meghnaad-tui` removes it.
+  puts `meghnaad` in `~/.cargo/bin` (add `--tag v<version>` for a release instead of the latest commit), and
+  `cargo uninstall meghnaad-tui` removes it. The crate keeps its old name; the program it installs is `meghnaad`.
 
-`meghnaad-tui --help` says where it keeps its settings, and `meghnaad-tui --version` which release it is. It also starts with another version of `task`, says in the status line which
+**It was called `meghnaad-tui`.** Up to 0.6.71 the program was `meghnaad-tui`. With Homebrew there is nothing to do:
+`brew update` moves the old formula to `meghnaad`, and it keeps a `meghnaad-tui` link to the program for a while, so
+scripts that run it still work. A prebuilt you put in place yourself is replaced by hand: delete `meghnaad-tui` and put
+`meghnaad` there. With Cargo, install again as above; if `meghnaad-tui` is still in `~/.cargo/bin` afterwards, delete it.
+Its settings stay where they were (`~/.config/meghnaad`).
+
+`meghnaad --help` says where it keeps its settings, and `meghnaad --version` which release it is. It also starts with another version of `task`, says in the status line which
 one it found, and then behaves as that version does.
 
 ![The Tasks page: the reports down the side, the next report in task's colours, and the page's keys along the bottom](screenshots/terminal-tasks.png)

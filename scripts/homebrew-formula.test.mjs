@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { formula, sumsIn } from './homebrew-formula.mjs';
+import { formula, renames, sumsIn } from './homebrew-formula.mjs';
 
 const sum = (c) => c.repeat(64);
 const sums = {
@@ -29,16 +29,23 @@ test('the formula names each platform’s archive and checks it', () => {
 });
 
 test('the terminal app has its own formula, needing task', () => {
-  const text = formula({ repo: 'uroybd/Meghnaad', version: '0.6.51', sums, program: 'meghnaad-tui' });
-  const base = 'https://github.com/uroybd/Meghnaad/releases/download/v0.6.51/meghnaad-tui-0.6.51';
+  const text = formula({ repo: 'uroybd/Meghnaad', version: '0.6.51', sums, program: 'meghnaad' });
+  const base = 'https://github.com/uroybd/Meghnaad/releases/download/v0.6.51/meghnaad-0.6.51';
   for (const [target, s] of Object.entries(sums))
     assert.ok(text.includes(`url "${base}-${target}.tar.gz"\n      sha256 "${s}"`), target);
-  assert.match(text, /class MeghnaadTui < Formula/);
+  assert.match(text, /class Meghnaad < Formula/);
   assert.match(text, /\n {2}depends_on "task"\n/);
-  assert.match(text, /bin\.install "meghnaad-tui"/);
-  assert.match(text, /meghnaad-tui --help/);
+  assert.match(text, /bin\.install "meghnaad"\n/);
+  assert.match(text, /#\{bin\}\/meghnaad --help/);
   assert.doesNotMatch(formula({ repo: 'uroybd/Meghnaad', version: '0.6.51', sums }), /depends_on/);
   assert.throws(() => formula({ repo: 'uroybd/Meghnaad', version: '0.6.51', sums, program: 'other' }), /not one of/);
+});
+
+test('the terminal app’s old name moves across and still runs it', () => {
+  const text = formula({ repo: 'uroybd/Meghnaad', version: '0.6.72', sums, program: 'meghnaad' });
+  assert.match(text, /bin\.install "meghnaad"\n {4}bin\.install_symlink "meghnaad" => "meghnaad-tui"\n {2}end/);
+  assert.doesNotMatch(formula({ repo: 'uroybd/Meghnaad', version: '0.6.72', sums }), /install_symlink/);
+  assert.deepEqual(JSON.parse(renames()), { 'meghnaad-tui': 'meghnaad' });
 });
 
 test('a formula is not made from what is missing or wrong', () => {
@@ -58,6 +65,6 @@ test('the checksums are those of the archives in a folder', () => {
   assert.ok(Object.values(got).every((s) => /^[0-9a-f]{64}$/.test(s)));
   assert.notEqual(got['aarch64-apple-darwin'], got['x86_64-apple-darwin']);
   assert.throws(() => sumsIn(dir, '9.9.9'), /ENOENT/);
-  writeFileSync(join(dir, 'meghnaad-tui-1.0.0-x86_64-apple-darwin.tar.gz'), 'tui');
-  assert.throws(() => sumsIn(dir, '1.0.0', 'meghnaad-tui'), /ENOENT/);
+  writeFileSync(join(dir, 'meghnaad-1.0.0-x86_64-apple-darwin.tar.gz'), 'tui');
+  assert.throws(() => sumsIn(dir, '1.0.0', 'meghnaad'), /ENOENT/);
 });
