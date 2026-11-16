@@ -83,7 +83,7 @@ while it is set. The terminal app has no board editor; it draws what `settings.j
     - `BoardGrid.kt`, `BoardsPage.kt` (the reload key and the info panel) and the widget (`BoardWidget.kt`, `BoardRenderer.kt`).
   - **Terminal app:** `boards.rs` calls `chart_by` and `is_stacked`; `boardui.rs` has `drawn_series`, the legend and colours from the datasets.
   - **Departures:**
-    - The terminal app draws bars side by side, stacked or not, as it already did. It doesn't colour a UDA's values, as it doesn't for a one-series chart either. The side-by-side bars are noted in `docs/terminal.md`.
+    - The terminal app doesn't colour a UDA's values, as it doesn't for a one-series chart either. (It first drew bars side by side, stacked or not; fixed below.)
     - Android offers the field as the editor's suggestion chips, not a list.
   - **Checks:** all pass.
     - `cargo test`: 1045.
@@ -95,4 +95,11 @@ while it is set. The terminal app has no board editor; it draws what `settings.j
     - Engine: 849,674 → 855,925 bytes (+6,251).
     - Worker: 759,883 → 759,895 bytes (+12).
   - **Left:** the first criterion. The charts haven't been looked at on a screen on any platform (web, the phone and its widget, the terminal); only tests cover them so far.
-
+- 2026-11-16: The terminal app stacks. `boardui.rs` never read `is_stacked`, so a stacked chart there was grouped bars
+  and overlapping lines. ratatui 0.30's `BarChart` and `Chart` can't stack, so:
+  - `stack` computes each series' part (base and top, Chart.js style: positive and negative values stack separately).
+  - `stacked_bars` draws the bars cell by cell: columns for dates with the total above, rows for values with the total
+    after. Where two parts meet inside one cell, that cell takes the colour of the part at its middle.
+  - `lines` draws the stacked tops, and fills the areas from the top series down so each shows as a band.
+  - Buffer tests for each. Checked on a screen in a private tmux with scratch data (bars both ways, area and a date axis).
+    `docs/terminal.md` is updated.

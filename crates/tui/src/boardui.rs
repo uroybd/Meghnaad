@@ -1,5 +1,5 @@
 //! Drawing a board: its sections on the board's grid, each in a pane, the charts with ratatui's own (`BarChart`, `Chart`,
-//! `Canvas`) and a heatmap as a grid of shaded cells. What the numbers are comes from `boards` (and `tc_core::board`); this only
+//! `Canvas`), stacked bars and a heatmap cell by cell. What the numbers are comes from `boards` (and `tc_core::board`); this only
 //! draws them. The board is drawn whole into a buffer of its own and the part that fits is shown, so it scrolls.
 
 use crate::ansi;
@@ -315,9 +315,11 @@ fn draw_section(buf: &mut Buffer, section: &Section, data: Option<&Data>, area: 
                 return;
             }
             let time = section.by.as_ref().is_some_and(|b| b.time.is_some());
+            let stacked = section.is_stacked() && chart.datasets.len() > 1;
             match section.kind {
+                Kind::Bar if stacked => stacked_bars(buf, chart, &colors, time, inner),
                 Kind::Bar => bars(buf, chart, &colors, time, inner),
-                Kind::Line | Kind::Area => lines(buf, chart, &colors, section.kind == Kind::Area, inner),
+                Kind::Line | Kind::Area => lines(buf, chart, &colors, section.kind == Kind::Area, stacked, inner),
                 Kind::Pie | Kind::Donut | Kind::Polar => round(buf, chart, section.kind, inner),
                 Kind::Radar => radar(buf, chart, &colors, inner),
                 Kind::Heatmap => heatmap(buf, grids, &colors, inner),
@@ -447,26 +449,207 @@ fn bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, area: Rec
     }
 }
 
+/// Each series' part of each label, stacked on the series before it as Chart.js stacks them: where it starts and where it
+/// ends, a value above zero on the ones above zero and one below on the ones below; nothing where the series has no value.
+fn stack(chart: &Chart) -> Vec<Vec<Option<(f64, f64)>>> {
+    let n = chart.labels.len();
+    let (mut above, mut below) = (vec![0.0; n], vec![0.0; n]);
+    chart
+        .datasets
+        .iter()
+        .map(|d| {
+            (0..n)
+                .map(|i| {
+                    let v = d.data.get(i).copied().flatten()?;
+                    let run = if v < 0.0 { below.get_mut(i)? } else { above.get_mut(i)? };
+                    let base = *run;
+                    *run += v;
+                    Some((base, *run))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// The top of each label's stack of bars (what is below zero is not drawn, as an unstacked bar's is not).
+fn stack_tops(parts: &[Vec<Option<(f64, f64)>>], labels: usize) -> Vec<f64> {
+    (0..labels)
+        .map(|i| {
+            parts
+                .iter()
+                .filter_map(|p| p.get(i).copied().flatten())
+                .fold(0.0, |top, (_, end)| f64::max(top, end))
+        })
+        .collect()
+}
+
+/// A length in eighths of a cell: `v` of `max` along `cells`.
+fn eighths(v: f64, max: f64, cells: u16) -> u32 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "rounded and clamped to 0..=cells × 8"
+    )]
+    let e = (v.max(0.0) / max * f64::from(cells) * 8.0)
+        .round()
+        .min(f64::from(cells) * 8.0) as u32;
+    e
+}
+
+/// What a cell of a stacked bar is: how many eighths of it are filled (from `at` on, where the bar is `end` long) and the
+/// colour of the part at the middle of that.
+fn stacked_cell(parts: &[(u32, u32, Color)], at: u32, end: u32) -> Option<(u32, Color)> {
+    let filled = end.checked_sub(at).filter(|f| *f > 0)?.min(8);
+    let mid = at + filled / 2;
+    let (_, _, c) = parts
+        .iter()
+        .find(|(lo, hi, _)| *lo <= mid && mid < *hi)
+        .or(parts.last())?;
+    Some((filled, *c))
+}
+
+/// The parts of label `i`'s stacked bar in eighths along `cells`, each in its series' colour, bottom first.
+fn bar_parts(
+    parts: &[Vec<Option<(f64, f64)>>],
+    colors: &[Color],
+    i: usize,
+    max: f64,
+    cells: u16,
+) -> Vec<(u32, u32, Color)> {
+    parts
+        .iter()
+        .enumerate()
+        .filter_map(|(d, p)| {
+            let (base, end) = p.get(i).copied().flatten()?;
+            let (lo, hi) = (eighths(base, max, cells), eighths(end, max, cells));
+            (hi > lo).then(|| (lo, hi, colors.get(d).copied().unwrap_or(Color::Blue)))
+        })
+        .collect()
+}
+
+/// Bars with the series stacked on each other, the first at the bottom: across the page for dates (a column for each,
+/// its total above it), down it for values (a row for each, its total after it). A terminal cell has one colour, so where
+/// two parts meet in one, it takes the colour of the part at its middle.
+fn stacked_bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, area: Rect) {
+    const UP: [&str; 9] = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+    const ACROSS: [&str; 9] = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"];
+    let labels = chart.labels.len();
+    let parts = stack(chart);
+    let tops = stack_tops(&parts, labels);
+    let max = tops.iter().copied().fold(0.0, f64::max);
+    let max = if max > 0.0 { max } else { 1.0 };
+    let total = |i: usize| boards::format_value(tops.get(i).copied(), chart.unit);
+    if time {
+        let groups = u16::try_from(labels).unwrap_or(u16::MAX).max(1);
+        let width = (area.width.saturating_sub(groups) / groups).clamp(1, 8);
+        // A line above for the totals and one below for the dates.
+        let [_, plot, axis] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1)]).areas(area);
+        for i in 0..labels {
+            let x = plot.x + u16::try_from(i).unwrap_or(u16::MAX).saturating_mul(width + 1);
+            if x >= plot.right() {
+                break;
+            }
+            let bar = bar_parts(&parts, colors, i, max, plot.height);
+            let end = bar.last().map_or(0, |p| p.1);
+            for row in 0..plot.height {
+                let Some((filled, c)) = stacked_cell(&bar, u32::from(row) * 8, end) else {
+                    break;
+                };
+                let y = plot.bottom() - 1 - row;
+                for dx in 0..width.min(plot.right() - x) {
+                    put(buf, x + dx, y, UP[filled as usize], Style::new().fg(c));
+                }
+            }
+            let text = total(i);
+            if end > 0 && text.chars().count() <= usize::from(width) {
+                let rows = u16::try_from(end.div_ceil(8)).unwrap_or(plot.height);
+                let y = plot.bottom().saturating_sub(rows + 1).max(area.y);
+                for (dx, ch) in (0..).zip(text.chars()) {
+                    put(buf, x + dx, y, ch.encode_utf8(&mut [0; 4]), theme::dim());
+                }
+            }
+        }
+        let names: Vec<&str> = chart.labels.iter().map(|l| l.label.as_str()).collect();
+        Line::from(label_line(&names, 0, usize::from(width + 1), usize::from(area.width)))
+            .quiet()
+            .render(axis, buf);
+    } else {
+        let name_width = chart.labels.iter().map(|l| l.label.chars().count()).max().unwrap_or(0);
+        let name_width = u16::try_from(name_width).unwrap_or(u16::MAX).min(area.width / 3);
+        let value_width = (0..labels).map(|i| total(i).chars().count()).max().unwrap_or(0);
+        let value_width = u16::try_from(value_width).unwrap_or(u16::MAX).min(area.width / 4);
+        let cells = area.width.saturating_sub(name_width + value_width + 2).max(1);
+        let bars_x = area.x + name_width + 1;
+        for (i, l) in chart.labels.iter().enumerate() {
+            let Some(y) = u16::try_from(i).ok().map(|i| area.y + i).filter(|y| *y < area.bottom()) else {
+                break;
+            };
+            let name: String = l.label.chars().take(usize::from(name_width)).collect();
+            Line::from(name).render(Rect::new(area.x, y, name_width, 1), buf);
+            let bar = bar_parts(&parts, colors, i, max, cells);
+            let end = bar.last().map_or(0, |p| p.1);
+            let mut col = 0;
+            while let Some((filled, c)) = stacked_cell(&bar, u32::from(col) * 8, end) {
+                put(buf, bars_x + col, y, ACROSS[filled as usize], Style::new().fg(c));
+                col += 1;
+            }
+            Line::from(total(i)).style(theme::dim()).render(
+                Rect::new(
+                    bars_x + col + 1,
+                    y,
+                    value_width.min(area.right().saturating_sub(bars_x + col + 1)),
+                    1,
+                ),
+                buf,
+            );
+        }
+    }
+}
+
+/// A cell, where it is on the buffer.
+fn put(buf: &mut Buffer, x: u16, y: u16, symbol: &str, style: Style) {
+    if let Some(cell) = buf.cell_mut((x, y)) {
+        cell.set_symbol(symbol).set_style(style);
+    }
+}
+
 /// The value axis: from zero (or below, if a value is) to a little above the largest.
-fn y_bounds(chart: &Chart) -> [f64; 2] {
-    let values = chart.datasets.iter().flat_map(|d| d.data.iter().flatten().copied());
+fn y_bounds(values: impl Iterator<Item = f64>) -> [f64; 2] {
     let (lo, hi) = values.fold((0.0_f64, 0.0_f64), |(lo, hi), v| (lo.min(v), hi.max(v)));
     [lo, if hi > lo { hi * 1.1 } else { lo + 1.0 }]
 }
 
-/// Lines (or areas, filled under) over the labels, with the first, middle and last named on the axis.
-fn lines(buf: &mut Buffer, chart: &Chart, colors: &[Color], area_fill: bool, area: Rect) {
-    let points: Vec<Vec<(f64, f64)>> = chart
-        .datasets
-        .iter()
-        .map(|d| {
-            d.data
-                .iter()
-                .enumerate()
-                .filter_map(|(i, v)| v.map(|v| (to_f64(i), v)))
-                .collect()
-        })
-        .collect();
+fn chart_values(chart: &Chart) -> impl Iterator<Item = f64> + '_ {
+    chart.datasets.iter().flat_map(|d| d.data.iter().flatten().copied())
+}
+
+/// Lines (or areas, filled under) over the labels, with the first, middle and last named on the axis. Stacked, each
+/// series is drawn on top of the ones before it.
+fn lines(buf: &mut Buffer, chart: &Chart, colors: &[Color], area_fill: bool, stacked: bool, area: Rect) {
+    let points: Vec<Vec<(f64, f64)>> = if stacked {
+        stack(chart)
+            .iter()
+            .map(|p| {
+                p.iter()
+                    .enumerate()
+                    .filter_map(|(i, part)| part.map(|(_, end)| (to_f64(i), end)))
+                    .collect()
+            })
+            .collect()
+    } else {
+        chart
+            .datasets
+            .iter()
+            .map(|d| {
+                d.data
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, v)| v.map(|v| (to_f64(i), v)))
+                    .collect()
+            })
+            .collect()
+    };
     // An area is filled by bars standing under a line as thick as the terminal draws: a point for each dot across.
     let fills: Vec<Vec<(f64, f64)>> = if area_fill {
         let dots = usize::from(area.width) * 2;
@@ -486,7 +669,12 @@ fn lines(buf: &mut Buffer, chart: &Chart, colors: &[Color], area_fill: bool, are
         Vec::new()
     };
     let mut sets = Vec::new();
-    for (i, p) in fills.iter().enumerate() {
+    // Stacked, the top series is filled first and each one under it over that, so each shows as a band.
+    let mut fills: Vec<(usize, &Vec<(f64, f64)>)> = fills.iter().enumerate().collect();
+    if stacked {
+        fills.reverse();
+    }
+    for (i, p) in fills {
         let c = colors.get(i).copied().unwrap_or(Color::Blue);
         sets.push(
             CDataset::default()
@@ -514,7 +702,7 @@ fn lines(buf: &mut Buffer, chart: &Chart, colors: &[Color], area_fill: bool, are
         2 => vec![Line::from(name(0)), Line::from(name(1))],
         _ => vec![Line::from(name(0)), Line::from(name(n / 2)), Line::from(name(n - 1))],
     };
-    let [lo, hi] = y_bounds(chart);
+    let [lo, hi] = y_bounds(points.iter().flatten().map(|p| p.1));
     let y_labels = vec![
         Line::from(boards::format_value(Some(lo), chart.unit)),
         Line::from(boards::format_value(Some(hi / 1.1), chart.unit)),
@@ -631,7 +819,7 @@ fn radar(buf: &mut Buffer, chart: &Chart, colors: &[Color], area: Rect) {
     if n == 0 {
         return;
     }
-    let [_, hi] = y_bounds(chart);
+    let [_, hi] = y_bounds(chart_values(chart));
     let aspect = to_f64(usize::from(area.width) * 2) / to_f64(usize::from(area.height).max(1) * 4);
     let at = |i: usize, r: f64| {
         let a = std::f64::consts::TAU * to_f64(i) / to_f64(n);
@@ -786,6 +974,129 @@ mod tests {
         assert_eq!(colors, [color(None, 0), color(None, 1)]);
         // Before its data comes, the section's one series.
         assert_eq!(drawn_series(s, None).0, ["Open"]);
+    }
+
+    fn chart_of(labels: &[&str], series: &[&[Option<f64>]]) -> Chart {
+        Chart {
+            unit: Unit::Number,
+            labels: labels
+                .iter()
+                .map(|l| tc_core::board::aggregate::Label {
+                    key: (*l).into(),
+                    label: (*l).into(),
+                })
+                .collect(),
+            datasets: series
+                .iter()
+                .enumerate()
+                .map(|(i, data)| tc_core::board::aggregate::Dataset {
+                    label: format!("s{i}"),
+                    data: data.to_vec(),
+                    counts: vec![1; data.len()],
+                    total: None,
+                    tasks: 1,
+                    parts: Vec::new(),
+                })
+                .collect(),
+        }
+    }
+
+    /// The symbol and colour of each cell of a row.
+    fn row(buf: &Buffer, y: u16) -> Vec<(String, Color)> {
+        (0..buf.area.width)
+            .map(|x| {
+                let c = &buf[(x, y)];
+                (c.symbol().to_owned(), c.fg)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn series_stack_on_the_ones_before_them_above_and_below_zero_apart() {
+        let chart = chart_of(
+            &["a", "b"],
+            &[&[Some(2.0), Some(1.0)], &[Some(3.0), None], &[Some(-1.0), Some(4.0)]],
+        );
+        assert_eq!(
+            stack(&chart),
+            [
+                vec![Some((0.0, 2.0)), Some((0.0, 1.0))],
+                vec![Some((2.0, 5.0)), None],
+                vec![Some((0.0, -1.0)), Some((1.0, 5.0))],
+            ]
+        );
+        assert_eq!(stack_tops(&stack(&chart), 2), [5.0, 5.0]);
+    }
+
+    #[test]
+    fn stacked_bars_across_the_page_put_the_first_series_at_the_bottom_and_the_total_on_top() {
+        let chart = chart_of(&["d1", "d2"], &[&[Some(2.0), Some(1.0)], &[Some(2.0), Some(1.0)]]);
+        let colors = [Color::Blue, Color::Red];
+        // A line for the totals, four for the bars, one for the dates.
+        let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
+        stacked_bars(&mut buf, &chart, &colors, true, Rect::new(0, 0, 6, 6));
+        let column = |x: usize| -> Vec<(String, Color)> { (0..6).map(|y| row(&buf, y)[x].clone()).collect() };
+        let full = |c: Color| ("█".to_owned(), c);
+        // Two columns of two: the first is 4 tall (the whole plot), blue under red, its total in the line above.
+        assert_eq!(
+            &column(0)[1..5],
+            [full(Color::Red), full(Color::Red), full(Color::Blue), full(Color::Blue)]
+        );
+        assert_eq!(row(&buf, 0)[0].0, "4");
+        // The second is half as tall, a line of each, with its total just above.
+        assert_eq!(&column(3)[3..5], [full(Color::Red), full(Color::Blue)]);
+        assert_eq!(column(3)[2].0, "2");
+        assert!(row(&buf, 5)
+            .iter()
+            .map(|c| c.0.as_str())
+            .collect::<String>()
+            .starts_with("d1 d2"));
+    }
+
+    #[test]
+    fn stacked_bars_down_the_page_run_from_the_name_with_the_total_after() {
+        let chart = chart_of(&["home", "work"], &[&[Some(1.0), Some(2.0)], &[Some(1.0), None]]);
+        let colors = [Color::Blue, Color::Red];
+        let mut buf = Buffer::empty(Rect::new(0, 0, 20, 2));
+        stacked_bars(&mut buf, &chart, &colors, false, Rect::new(0, 0, 20, 2));
+        let text = |y| row(&buf, y).iter().map(|c| c.0.clone()).collect::<String>();
+        // Names 4 wide, a space, 13 cells of bar, a space and a total 1 wide: 2 of 2 is all 13, half and half (the cell
+        // where they meet takes the colour at its middle).
+        let first = row(&buf, 0);
+        assert!(
+            first[5..11].iter().all(|c| c == &("█".to_owned(), Color::Blue)),
+            "{first:?}"
+        );
+        assert!(
+            first[11..18].iter().all(|c| c == &("█".to_owned(), Color::Red)),
+            "{first:?}"
+        );
+        assert_eq!(first[19].0, "2");
+        assert!(
+            text(0).starts_with("home ") && text(0).trim_end().ends_with('2'),
+            "{}",
+            text(0)
+        );
+        assert!(row(&buf, 1)[5..18].iter().all(|c| c.1 == Color::Blue), "{:?}", text(1));
+    }
+
+    #[test]
+    fn stacked_areas_are_bands_one_on_another() {
+        let chart = chart_of(&["a", "b"], &[&[Some(2.0), Some(2.0)], &[Some(2.0), Some(2.0)]]);
+        let colors = [Color::Blue, Color::Red];
+        let mut buf = Buffer::empty(Rect::new(0, 0, 30, 12));
+        lines(&mut buf, &chart, &colors, true, true, Rect::new(0, 0, 30, 12));
+        // Down the middle of the plot: red above, blue below, and nothing of either the wrong way round.
+        let down: Vec<Color> = (0..12)
+            .map(|y| buf[(15, y)].fg)
+            .filter(|c| colors.contains(c))
+            .collect();
+        let first_blue = down.iter().position(|c| *c == Color::Blue);
+        assert!(first_blue.is_some() && down.contains(&Color::Red), "{down:?}");
+        assert!(
+            down.iter().skip(first_blue.unwrap_or(0)).all(|c| *c == Color::Blue),
+            "{down:?}"
+        );
     }
 
     #[test]
