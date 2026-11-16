@@ -16,6 +16,10 @@ In the browser the tab has to be open, because a page can't wake up in the backg
 HTTPS (or `localhost`) and your permission. In the Android app reminders work with the app closed; the digest comes at
 the hour you chose for dates without a time (Menu → Reminders).
 
+A reminder goes away once its task is done or deleted, wherever you did it: the app takes it away the next time it
+looks at the tasks. On the phone an alarm syncs first (for a few seconds at most), so a task done on another device isn't
+announced.
+
 **A task's own reminders.** Give a task `remind_in` to choose when it reminds you, instead of the heads-up setting:
 
 ```text

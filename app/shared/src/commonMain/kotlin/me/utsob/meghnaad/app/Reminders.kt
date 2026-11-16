@@ -31,6 +31,18 @@ interface ReminderHost {
 
     /** Wake the app at this time (seconds since 1970) to look at the tasks again; null cancels. */
     fun scheduleAt(epochSeconds: Long?)
+
+    /** The tasks the notifications on show are for. */
+    val shownTasks: List<String> get() = emptyList()
+
+    /** Take away the notifications on show for these tasks. */
+    fun clear(uuids: Set<String>) {}
+}
+
+/** Take away the notifications of tasks that are done (or deleted, or have nothing left to remind of). */
+private fun ReminderHost.clearDone(rows: List<Reminder>) {
+    val gone = noticesToClear(shownTasks, rows)
+    if (gone.isNotEmpty()) clear(gone)
 }
 
 fun loadSettings(prefs: Prefs): NotifySettings = try {
@@ -68,6 +80,7 @@ suspend fun runReminders(tw: Tw, prefs: Prefs, host: ReminderHost, clock: Clock)
     val s = loadSettings(prefs)
     if (!s.enabled) return host.scheduleAt(null)
     val rows = fetchReminders(tw)
+    host.clearDone(rows)
     val now = clock.nowSeconds().toLong()
     val tz = clock.utcOffsetSeconds()
     var seen = loadSeen(prefs)
@@ -157,6 +170,7 @@ class Notifier(
     suspend fun poll() {
         try {
             rows = fetchReminders(tw)
+            host?.clearDone(rows)
             active = rows.filter { it.start != null }
             polledAt = clock.nowSeconds().toLong()
             lastError = null

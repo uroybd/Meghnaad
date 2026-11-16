@@ -199,3 +199,12 @@ fun nextTrigger(rows: List<Reminder>, now: Long, s: NotifySettings, seen: Set<St
 
 /** Drop dedup keys older than [maxAge] so the stored set doesn't grow forever. */
 fun prune(seen: Map<String, Long>, now: Long, maxAge: Long = 3 * DAY): Map<String, Long> = seen.filterValues { now - it < maxAge }
+
+/**
+ * The tasks whose notifications should be taken away, of those [shown]: each that is no longer pending or waiting among [rows]
+ * (done or deleted, here or on another device, or left with no date to remind of).
+ */
+fun noticesToClear(shown: Collection<String>, rows: List<Reminder>): Set<String> {
+    val open = rows.filter { it.status == "pending" || it.status == "waiting" }.map { it.uuid }.toSet()
+    return shown.filterNot { it in open }.toSet()
+}

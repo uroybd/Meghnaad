@@ -1,5 +1,13 @@
 import { runCli, tzOffsetSeconds } from './api';
-import { DEFAULT_SETTINGS, dueNotices, prune, type Notice, type NotifySettings, type Reminder } from './notify';
+import {
+  DEFAULT_SETTINGS,
+  dueNotices,
+  noticesToClear,
+  prune,
+  type Notice,
+  type NotifySettings,
+  type Reminder,
+} from './notify';
 import { store } from './store.svelte';
 
 const SETTINGS_KEY = 'tw-notify';
@@ -87,6 +95,7 @@ class Notifier {
       });
       if (res.result.kind === 'json' && Array.isArray(res.result.value)) {
         this.#rows = res.result.value as Reminder[];
+        this.clearDone();
         this.active = this.#rows.filter((r) => r.start != null);
         this.polledAt = Math.floor(Date.now() / 1000);
         this.lastError = null;
@@ -113,6 +122,17 @@ class Notifier {
     write(SEEN_KEY, this.#seen);
   }
 
+  /** The system notifications on show, by the task each is for. */
+  #shown = new Map<string, Notification[]>();
+
+  /** Take away the notifications of tasks that are done (or deleted, or have nothing left to remind of). */
+  clearDone() {
+    for (const uuid of noticesToClear(this.#shown.keys(), this.#rows)) {
+      for (const note of this.#shown.get(uuid) ?? []) note.close();
+      this.#shown.delete(uuid);
+    }
+  }
+
   show(n: Notice) {
     // In the page: always. With the tab in front and focused, that's enough; otherwise also use
     // the system notification so it reaches you while you're in another window.
@@ -123,6 +143,7 @@ class Notifier {
     if (!focused && this.permission === 'granted') {
       try {
         const note = new Notification(n.title, { body: n.body, tag: n.key });
+        if (n.uuid) this.#shown.set(n.uuid, [...(this.#shown.get(n.uuid) ?? []), note]);
         note.onclick = () => {
           window.focus();
           if (n.uuid) store.openDetail(n.uuid);

@@ -230,4 +230,12 @@ class NotifyTest {
         val sched = now + 3600
         assertEquals(sched - 15 * 60, nextTrigger(listOf(row(scheduled = sched)), now, on, emptySet(), 0))
     }
+
+    @Test
+    fun aDoneTasksNotificationIsTakenAway() {
+        val rows = listOf(row("a", "pending", due = now + 60), row("b", "waiting", wait = now + 60), row("c", "completed"))
+        // c is done, d is no longer among the tasks with something to remind of; a and b stay.
+        assertEquals(setOf("c", "d"), noticesToClear(listOf("a", "b", "c", "d"), rows))
+        assertEquals(emptySet(), noticesToClear(emptyList(), rows))
+    }
 }

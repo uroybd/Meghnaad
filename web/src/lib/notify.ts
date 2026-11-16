@@ -176,3 +176,12 @@ export function dueNotices(
 export function prune(seen: Record<string, number>, now: number, maxAge = 3 * DAY): Record<string, number> {
   return Object.fromEntries(Object.entries(seen).filter(([, at]) => now - at < maxAge));
 }
+
+/**
+ * The tasks whose notifications should be taken away, of those `shown`: each that is no longer pending or waiting among
+ * `rows` (done or deleted, here or on another device, or left with no date to remind of).
+ */
+export function noticesToClear(shown: Iterable<string>, rows: Reminder[]): Set<string> {
+  const open = new Set(rows.filter((r) => r.status === 'pending' || r.status === 'waiting').map((r) => r.uuid));
+  return new Set([...shown].filter((u) => !open.has(u)));
+}

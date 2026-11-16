@@ -47,7 +47,15 @@ class AndroidReminders(context: Context, private val ask: ((Boolean) -> Unit) ->
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_REMINDER)
             .build()
-        notifications.notify(notice.key.hashCode(), built)
+        // Tagged with its task, so it can be taken away once the task is done.
+        notifications.notify(notice.uuid, notice.key.hashCode(), built)
+    }
+
+    override val shownTasks: List<String>
+        get() = notifications.activeNotifications.mapNotNull { it.tag }
+
+    override fun clear(uuids: Set<String>) {
+        for (n in notifications.activeNotifications) if (n.tag in uuids) notifications.cancel(n.tag, n.id)
     }
 
     /** The bell the app carries, or the system's own when it has none. */

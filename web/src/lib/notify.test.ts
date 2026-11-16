@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, dueNotices, isAllDay, prune, reached, remindOffsets, type NotifySettings } from './notify';
+import {
+  DEFAULT_SETTINGS,
+  dueNotices,
+  isAllDay,
+  noticesToClear,
+  prune,
+  reached,
+  remindOffsets,
+  type NotifySettings,
+} from './notify';
 import type { Row } from './types';
 
 const DAY = 86400;
@@ -125,6 +134,19 @@ describe('overdue digest', () => {
 describe('only pending tasks', () => {
   it('ignores completed and deleted tasks', () => {
     expect(kinds([row({ status: 'completed', due: NOW - 60 }), row({ status: 'deleted', due: NOW + 60 })])).toEqual([]);
+  });
+});
+
+describe('a done task', () => {
+  it('has its notification taken away', () => {
+    const rows = [
+      row({ uuid: 'a', due: NOW + 60 }),
+      row({ uuid: 'b', status: 'waiting', wait: NOW + 60 }),
+      row({ uuid: 'c', status: 'completed' }),
+    ];
+    // c is done, d is no longer among the tasks with something to remind of; a and b stay.
+    expect(noticesToClear(['a', 'b', 'c', 'd'], rows)).toEqual(new Set(['c', 'd']));
+    expect(noticesToClear([], rows)).toEqual(new Set());
   });
 });
 
