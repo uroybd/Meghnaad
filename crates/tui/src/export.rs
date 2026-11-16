@@ -17,7 +17,7 @@ that is not one (or `--`) starts task's words.
 
   -f, --format json|csv|tsv     the output (json)
   -F, --fields all|table|a,b,c  every field, the report's columns (needs -r), or these, in order
-  -r, --report NAME             task <filter> export NAME: the report's filter, sort and limit
+  -r, --report NAME             task <filter> export NAME: the report's filter and sort
   -a, --array / -A, --no-array  JSON: a list, or a task to a line (as json.array says)
   -H, --no-header               CSV and TSV: no header line
   -0, --null                    TSV: end each task with NUL instead of a newline (xargs -0)

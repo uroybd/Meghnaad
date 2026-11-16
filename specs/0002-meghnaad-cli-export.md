@@ -78,7 +78,7 @@ it is what a shell script around `task export` would do, and it adds nothing to 
 | --- | --- | --- |
 | `-f` | `--format json\|csv\|tsv` | The output. JSON when left out. |
 | `-F` | `--fields all\|table\|a,b,c` | Every field the tasks have (the default), the report's columns (needs `-r`), or the ones named, in that order. |
-| `-r` | `--report NAME` | Export as `task <filter> export NAME`: the report's filter, sort and limit apply. |
+| `-r` | `--report NAME` | Export as `task <filter> export NAME`: the report's filter and sort apply (`task export` ignores the limit). |
 | `-a` / `-A` | `--array` / `--no-array` | JSON only: a list, or one task to a line. As `json.array` says when left out. |
 | `-H` | `--no-header` | CSV and TSV: no header line. |
 | `-0` | `--null` | TSV only: each task ends with NUL instead of a newline, for `xargs -0`. |

@@ -300,7 +300,7 @@ meghnaad export [options] [--] [filter and rc. words]
 | --- | --- |
 | `-f`, `--format json\|csv\|tsv` | The output; JSON when left out |
 | `-F`, `--fields all\|table\|a,b,c` | Every field (the default), the report's columns (needs `-r`), or these, in this order |
-| `-r`, `--report NAME` | `task <filter> export NAME`: the report's filter, sort and limit apply |
+| `-r`, `--report NAME` | `task <filter> export NAME`: the report's filter and sort apply (`export` ignores its limit) |
 | `-a`, `--array` / `-A`, `--no-array` | JSON: a list, or one task to a line; as `json.array` says when left out |
 | `-H`, `--no-header` | CSV and TSV: no header line |
 | `-0`, `--null` | TSV: end each task with NUL instead of a newline, for `xargs -0` |
@@ -319,6 +319,14 @@ for `cut`, `awk` and `read`; `printf '%b'` turns a value back.
 meghnaad export -f tsv -F id,due,description -r next +work | column -t -s $'\t'
 meghnaad export -f tsv -F uuid -H -0 +old | xargs -0 -I{} task {} done
 meghnaad export -f csv -F table -r list > tasks.csv
+```
+
+To export in another order, give `task` the sort with an `rc.` word: with `-r`, override the report's own; without a
+report, make one on the line (with an empty filter it exports the same tasks as plain `export`, in that order).
+
+```bash
+meghnaad export -f tsv -r next rc.report.next.sort=due+,priority- +work
+meghnaad export -f csv -r _x rc.report._x.columns=id rc.report._x.filter= rc.report._x.sort=entry- > tasks.csv
 ```
 
 ## The Settings page
