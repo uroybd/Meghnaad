@@ -35,3 +35,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | --- | ---- | ------ | ----- | ---------- |
 | 0001 | [Field transformation](0001-field-transform.md) | in progress | 2 (UI) | all |
 | 0002 | [CLI export](0002-meghnaad-cli-export.md) | in progress | 2 (UI) | all |
+| 0003 | [Custom reminder](0003-custom-reminder.md) | in progress | 2 (UI) | all |
