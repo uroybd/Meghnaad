@@ -100,6 +100,31 @@ impl Task {
         })
     }
 
+    /// Run `task` with `args`, its output and status as they are (for `meghnaad export`, which hands them on).
+    ///
+    /// # Errors
+    ///
+    /// `task` could not be started.
+    pub fn raw<S: AsRef<std::ffi::OsStr>>(&self, args: &[S]) -> Result<std::process::Output, String> {
+        let _turn = self.turn();
+        self.command(args)
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| format!("could not run {}: {e}", self.bin.display()))
+    }
+
+    /// Run `task` with `args` on this terminal's own input and output, as a shell would; its exit status.
+    ///
+    /// # Errors
+    ///
+    /// `task` could not be started.
+    pub fn inherit<S: AsRef<std::ffi::OsStr>>(&self, args: &[S]) -> Result<std::process::ExitStatus, String> {
+        let _turn = self.turn();
+        self.command(args)
+            .status()
+            .map_err(|e| format!("could not run {}: {e}", self.bin.display()))
+    }
+
     /// The output of a read that must succeed (`_show`, `export`, `_projects`), with Taskwarrior's own messages off.
     ///
     /// # Errors

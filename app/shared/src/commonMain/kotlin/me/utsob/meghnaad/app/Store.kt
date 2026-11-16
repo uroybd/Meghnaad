@@ -348,6 +348,14 @@ class Store(
      */
     fun go(block: suspend Store.() -> Unit): Job = scope.launch { block() }
 
+    /** Run [args] for the Export button (`<filter> export <report>`): its answer, kept out of the console. */
+    suspend fun exportTasks(args: List<String>): CliResult = tw.run(args = args).result
+
+    /** The Export dialog's last choice, as kept on this device ([keepExportChoice]). */
+    fun exportChoice(): String? = prefs.get(EXPORT_CHOICE_KEY)
+
+    fun keepExportChoice(text: String) = prefs.put(EXPORT_CHOICE_KEY, text)
+
     /** Now in seconds, fresh (not the half-minute value of [now]): for a timer. */
     fun clockNow(): Long = clock.nowSeconds().toLong()
 

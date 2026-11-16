@@ -123,11 +123,14 @@ fun TasksView(store: Store) {
         }
         // The count, under the cards or the table.
         if (result != null && result.rows.isNotEmpty() && entry?.failure == null) item {
-            Dim(
-                if (result.rows.size == result.matched) "${result.matched} ${if (result.matched == 1) "task" else "tasks"}"
-                else "showing ${result.rows.size} of ${result.matched}",
-                Modifier.padding(vertical = 8.dp),
-            )
+            Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Dim(
+                    if (result.rows.size == result.matched) "${result.matched} ${if (result.matched == 1) "task" else "tasks"}"
+                    else "showing ${result.rows.size} of ${result.matched}",
+                    Modifier.weight(1f),
+                )
+                ExportButton(store, entry, result.columns)
+            }
         }
     }
     }

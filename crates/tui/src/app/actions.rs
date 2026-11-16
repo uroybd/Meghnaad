@@ -108,6 +108,7 @@ impl App {
             }
             "boards.list.open" => self.open_board(),
             "boards.close" => self.close_board(),
+            "boards.export" => self.export_board(),
             "boards.prev" | "boards.next" if !self.boards.is_empty() => {
                 let n = self.boards.len();
                 self.board = if action == "boards.prev" {
@@ -165,6 +166,7 @@ impl App {
                 self.prompt(PromptKind::Filter, &f);
             }
             "tasks.report" => self.prompt(PromptKind::Report, ""),
+            "tasks.export" => self.export_report(),
             "tasks.sort" => {
                 let keys = sortspec::parse(self.sort_in_force().as_deref());
                 self.mode = Mode::Sort(SortEdit {

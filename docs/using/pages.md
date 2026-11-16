@@ -59,13 +59,17 @@ exports the tasks that table shows: its filter and report as `<filter> export <r
 and limit apply, with the context the table ran in put in front (`export` itself leaves the context out, as
 Taskwarrior's does). The dialog shows the command line it ran, then asks how the file should look:
 
-- **Format**: JSON (the default) or CSV. JSON starts as a list or one task to a line as your taskrc's `json.array`
-  says, and you can change it for this file.
+- **Format**: JSON (the default), CSV or TSV. JSON starts as a list or one task to a line as your taskrc's
+  `json.array` says, and you can change it for this file.
 - **Fields**: all of them, only the table's columns (`due.relative` is `due`), or the ones you tick.
 
-CSV has a header of the fields; tags and dependencies are separated by spaces, and annotations by their text, with `; `
-between them. The file is named for what it holds and when, as `export` names it (`tasks-next-project-Home-20261116-015300.json`),
-with `.csv` for CSV. The browser remembers your last choice of format and fields.
+CSV and TSV have a header of the fields; tags and dependencies are separated by spaces, and annotations by their text,
+with `; ` between them. Dates are written `2026-11-19 18:00:00`, in UTC, which a spreadsheet reads as a date in any
+locale. CSV keeps a value's line breaks inside quotes (a spreadsheet shows them in one cell); TSV writes a tab, line
+break or backslash as `\t`, `\n`, `\\`, so each line is one task for tools that read lines. The file is named for
+what it holds and when, as `export` names it (`tasks-next-project-Home-20261116-015300.json`), with `.csv` or `.tsv`.
+The browser remembers your last choice of format and fields; the phone and [the terminal app](../terminal.md#export)
+have the same dialog, and the terminal app has `meghnaad export` for scripts.
 
 ## Tag chips
 

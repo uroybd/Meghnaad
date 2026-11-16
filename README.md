@@ -320,6 +320,7 @@ reports in `task`'s own colours, tasksh's review, a timer and reminders.
 ```bash
 brew install uroybd/tap/meghnaad   # or a prebuilt from the release, or cargo install (see the guide)
 meghnaad
+meghnaad export -f tsv -F id,due,description -r next   # task export for scripts: JSON, CSV or TSV
 ```
 
 ![The terminal app on the Tasks page: the reports down the side, the next report in task's colours, and the page's keys along the bottom](docs/screenshots/terminal-tasks.png)

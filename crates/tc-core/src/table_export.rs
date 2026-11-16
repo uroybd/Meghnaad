@@ -1,5 +1,5 @@
 //! The Export button over a table, for every front end (through `helpers`): which command line exports what a table
-//! shows, and the file it makes, shaped as the person chooses (JSON or CSV, which fields).
+//! shows, and the file it makes, shaped as the person chooses (JSON, CSV or TSV, which fields); also `meghnaad export`.
 //!
 //! A table is a report run with a filter, so its export is `<filter> export <report>`: the report's own filter, sort and
 //! limit apply. `export` itself never applies the context (as Taskwarrior's `CmdExport`), so the context the table ran
@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::cli::{expand_aliases, parse_command, with_overrides, Cmd};
 use crate::filter::split_words;
-use crate::taskrc::Config;
+use crate::taskrc::{Config, UdaType};
 
 /// The settings a line runs with: `rc.` words, a page's own context (`choice`, a name or `none`), then the active
 /// context's own settings.
@@ -64,6 +64,17 @@ pub fn export_line(words: &[String], cfg: &Config, choice: Option<&str>) -> Opti
     line.push("export".to_owned());
     line.push(report);
     Some(line)
+}
+
+/// The name of the file for `<filter> export <report>`, as the engine names an export's
+/// (`tasks-next-project-Home-20261116-015300.json`), at `now` in the zone `tz_offset` seconds east of UTC: for a front
+/// end whose `export` is the real `task`'s, which names nothing.
+pub fn file_name(report: Option<&str>, filter: &[String], now: i64, tz_offset: i32) -> String {
+    let clock = crate::dates::Clock {
+        tz_offset,
+        ..crate::dates::Clock::utc(now)
+    };
+    crate::cli::export_name(report, filter, &clock)
 }
 
 /// One task as `export` wrote it, its fields in their order.
@@ -142,6 +153,8 @@ pub enum Format {
     #[default]
     Json,
     Csv,
+    /// Tab-separated: a task to a line, its tabs, line breaks and backslashes escaped (`\t`, `\n`, `\r`, `\\`).
+    Tsv,
 }
 
 /// Every field the tasks have, the table's columns, or the ones picked.
@@ -214,7 +227,45 @@ fn cell(v: Option<&Value>) -> String {
     }
 }
 
-/// A field as CSV writes it (RFC 4180): in quotes, quotes doubled, when it holds a comma, a quote or a line break.
+/// The date attributes Taskwarrior has; a UDA of `type=date` is one too.
+const DATES: [&str; 8] = ["entry", "start", "end", "due", "wait", "scheduled", "until", "modified"];
+
+fn is_date(field: &str, cfg: &Config) -> bool {
+    DATES.contains(&field) || cfg.udas.get(field).is_some_and(|u| u.ty == UdaType::Date)
+}
+
+/// A date as `export` writes it (`20261119T180000Z`, UTC) as a spreadsheet reads it in any locale:
+/// `2026-11-19 18:00:00`, still UTC. `None` for anything else.
+fn sheet_date(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let digits = |r: std::ops::Range<usize>| b.get(r).is_some_and(|d| d.iter().all(u8::is_ascii_digit));
+    if b.len() != 16 || b[8] != b'T' || b[15] != b'Z' || !digits(0..8) || !digits(9..15) {
+        return None;
+    }
+    Some(format!(
+        "{}-{}-{} {}:{}:{}",
+        &s[0..4],
+        &s[4..6],
+        &s[6..8],
+        &s[9..11],
+        &s[11..13],
+        &s[13..15]
+    ))
+}
+
+/// A field of a task as a sheet (CSV or TSV) holds it: a date as a spreadsheet reads it, else as [`cell`] writes it.
+fn sheet_cell(t: &Task, field: &str, cfg: &Config) -> String {
+    let v = t.get(field);
+    if is_date(field, cfg) {
+        if let Some(d) = v.and_then(Value::as_str).and_then(sheet_date) {
+            return d;
+        }
+    }
+    cell(v)
+}
+
+/// A field as CSV writes it (RFC 4180): in quotes, quotes doubled, when it holds a comma, a quote or a line break. The
+/// line breaks stay, so a spreadsheet shows them in one cell.
 fn quote(s: &str) -> String {
     if s.contains([',', '"', '\r', '\n']) {
         format!("\"{}\"", s.replace('"', "\"\""))
@@ -223,8 +274,8 @@ fn quote(s: &str) -> String {
     }
 }
 
-/// The tasks as CSV: a header of the fields, then a line for each task.
-pub fn to_csv(tasks: &[Task], fields: &[String]) -> String {
+/// The tasks as CSV: a header of the fields, then a line for each task; dates for a spreadsheet, in UTC.
+pub fn to_csv(tasks: &[Task], fields: &[String], cfg: &Config) -> String {
     let mut out = String::new();
     let mut line = |cells: Vec<String>| {
         out.push_str(&cells.iter().map(|c| quote(c)).collect::<Vec<_>>().join(","));
@@ -232,7 +283,40 @@ pub fn to_csv(tasks: &[Task], fields: &[String]) -> String {
     };
     line(fields.to_vec());
     for t in tasks {
-        line(fields.iter().map(|f| cell(t.get(f))).collect());
+        line(fields.iter().map(|f| sheet_cell(t, f, cfg)).collect());
+    }
+    out
+}
+
+/// A field as TSV writes it: a backslash, tab, line feed or carriage return escaped, so a tab always ends a field and a
+/// line is always one task. `printf '%b'` undoes it.
+fn escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// The tasks as TSV: a header of the fields unless `header` is off, then a task to a line, each line ended by `end`
+/// (a newline, or NUL for `xargs -0`); dates for a spreadsheet, in UTC.
+pub fn to_tsv(tasks: &[Task], fields: &[String], cfg: &Config, header: bool, end: char) -> String {
+    let mut out = String::new();
+    let mut line = |cells: Vec<String>| {
+        out.push_str(&cells.iter().map(|c| escape(c)).collect::<Vec<_>>().join("\t"));
+        out.push(end);
+    };
+    if header {
+        line(fields.to_vec());
+    }
+    for t in tasks {
+        line(fields.iter().map(|f| sheet_cell(t, f, cfg)).collect());
     }
     out
 }
@@ -252,12 +336,22 @@ pub fn render(name: &str, text: &str, choice: &Choice, columns: &[String], cfg: 
     let tasks = parse(text)?;
     let fields = chosen_fields(choice, &fields_of(&tasks), columns);
     let base = name.strip_suffix(".json").unwrap_or(name);
-    if choice.format == Format::Csv {
-        return Ok(File {
-            name: format!("{base}.csv"),
-            text: to_csv(&tasks, &fields),
-            mime: "text/csv".into(),
-        });
+    match choice.format {
+        Format::Csv => {
+            return Ok(File {
+                name: format!("{base}.csv"),
+                text: to_csv(&tasks, &fields, cfg),
+                mime: "text/csv".into(),
+            })
+        }
+        Format::Tsv => {
+            return Ok(File {
+                name: format!("{base}.tsv"),
+                text: to_tsv(&tasks, &fields, cfg, true, '\n'),
+                mime: "text/tab-separated-values".into(),
+            })
+        }
+        Format::Json => {}
     }
     let as_rc = cfg.json_array();
     let array = choice.array.unwrap_or(as_rc);
@@ -413,7 +507,11 @@ mod tests {
     fn csv_has_a_header_quotes_where_it_must_and_puts_lists_and_notes_in_one_cell() {
         let tasks = parse(TEXT).unwrap();
         assert_eq!(
-            to_csv(&tasks, &w("id description tags annotations urgency")),
+            to_csv(
+                &tasks,
+                &w("id description tags annotations urgency"),
+                &Config::default()
+            ),
             "id,description,tags,annotations,urgency\r\n1,\"Buy, \"\"milk\"\"\",a b,,2\r\n2,Call,,note,1.5\r\n"
         );
         let choice = Choice {
@@ -425,5 +523,67 @@ mod tests {
             (f.name.as_str(), f.mime.as_str()),
             ("tasks-20261116-010203.csv", "text/csv")
         );
+    }
+
+    const DATED: &str = "[\n{\"description\":\"two\\nlines\\twith a tab, and \\\\ one\",\"due\":\"20261119T180000Z\",\
+        \"entry\":\"20261116T090406Z\",\"review\":\"20261201T000000Z\",\"note\":\"20261201T000000Z\",\
+        \"recur\":\"P1W\",\"annotations\":[{\"entry\":\"20261116T000000Z\",\"description\":\"a\\nb\"}]}\n]\n";
+
+    fn dated_cfg() -> Config {
+        rc("uda.review.type=date\nuda.note.type=string\n").config
+    }
+
+    #[test]
+    fn dates_in_a_sheet_are_for_a_spreadsheet_in_utc_date_udas_too_and_nothing_else() {
+        let tasks = parse(DATED).unwrap();
+        let fields = w("due entry review note recur");
+        assert_eq!(
+            to_csv(&tasks, &fields, &dated_cfg()),
+            "due,entry,review,note,recur\r\n2026-11-19 18:00:00,2026-11-16 09:04:06,2026-12-01 00:00:00,20261201T000000Z,P1W\r\n"
+        );
+        assert_eq!(sheet_date("20261119T180000"), None);
+        assert_eq!(sheet_date("2026111xT180000Z"), None);
+        assert_eq!(sheet_date("20261119T180000Z").as_deref(), Some("2026-11-19 18:00:00"));
+    }
+
+    #[test]
+    fn a_value_with_line_breaks_is_one_quoted_cell_in_csv_and_escaped_on_one_line_in_tsv() {
+        let tasks = parse(DATED).unwrap();
+        let fields = w("description annotations");
+        assert_eq!(
+            to_csv(&tasks, &fields, &dated_cfg()),
+            "description,annotations\r\n\"two\nlines\twith a tab, and \\ one\",\"a\nb\"\r\n"
+        );
+        let tsv = to_tsv(&tasks, &fields, &dated_cfg(), true, '\n');
+        assert_eq!(
+            tsv,
+            "description\tannotations\ntwo\\nlines\\twith a tab, and \\\\ one\ta\\nb\n"
+        );
+        assert_eq!(tsv.lines().count(), 2);
+        // Undone as `printf '%b'` does, a value is the text it was.
+        let unescape = |v: &str| {
+            v.replace("\\\\", "\0")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace('\0', "\\")
+        };
+        let first = tsv.lines().nth(1).unwrap().split('\t').next().unwrap();
+        assert_eq!(unescape(first), "two\nlines\twith a tab, and \\ one");
+    }
+
+    #[test]
+    fn tsv_can_leave_out_the_header_and_end_each_task_with_nul() {
+        let tasks = parse(TEXT).unwrap();
+        assert_eq!(to_tsv(&tasks, &w("uuid"), &Config::default(), false, '\0'), "u1\0u2\0");
+        let choice = Choice {
+            format: Format::Tsv,
+            ..Choice::default()
+        };
+        let f = render("tasks-20261116-010203.json", TEXT, &choice, &[], &Config::default()).unwrap();
+        assert_eq!(
+            (f.name.as_str(), f.mime.as_str()),
+            ("tasks-20261116-010203.tsv", "text/tab-separated-values")
+        );
+        assert!(f.text.starts_with("id\tdescription\t"));
     }
 }

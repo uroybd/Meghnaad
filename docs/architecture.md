@@ -431,7 +431,9 @@ when `task` would ask. It calls `tc-core` only where `task` has no command: comp
 keys and boards. Turning `export` into rows, chains, task commands, the Projects and Tags lists, the task form, review,
 reminders and the boards' glue are its own, ported from the web app and Android with their tests. Syncing is `task sync`
 run in the background, when the `sync` key of its `settings.json` says. It keeps that file in its config folder and never
-reaches the bucket. See [the terminal app](terminal.md).
+reaches the bucket. Its Export dialog (`app/export.rs`) and `meghnaad export` (`export.rs`, `task export` for scripts)
+shape what `task export` wrote with `tc_core::table_export`, as the web app and the phone do. See
+[the terminal app](terminal.md).
 
 **`meghnaad-hook`** (`crates/hook-shim`) runs your Lua hooks script for `task` (see [Hooks](#hooks)). `task` runs an
 executable per hook from `<data>/hooks/`; `install` links this one program there as `on-add.meghnaad` and so on, for the

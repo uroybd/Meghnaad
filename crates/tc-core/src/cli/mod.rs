@@ -1875,7 +1875,7 @@ async fn export<S: Storage>(
 /// The name of an export's file: what it holds and when, `tasks-next-project-Home-20261116-015300.json`. The report
 /// (if any) and the filter, without its `rc.` settings, each run of characters a file name may not hold made one `-`,
 /// cut to a sensible length; then the local date and time.
-fn export_name(report: Option<&str>, filter: &[String], clock: &Clock) -> String {
+pub(crate) fn export_name(report: Option<&str>, filter: &[String], clock: &Clock) -> String {
     const MOST: usize = 60;
     let words = report
         .into_iter()

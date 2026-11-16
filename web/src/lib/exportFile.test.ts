@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exportFields, renderExport, tableFields } from './exportFile';
+import { exportFields, renderExport, tableFields, type ExportChoice } from './exportFile';
 import { contextWords, exportArgs } from './exportScope';
 import type { ConfigResponse } from './types';
 
@@ -43,5 +43,17 @@ describe('the Export button, through the engine', () => {
       cfg,
     );
     expect(same.text).toBe(TEXT);
+  });
+
+  it('writes TSV, a task to a line, and dates a spreadsheet reads, in UTC', () => {
+    const text = '[\n{"description":"two\\nlines","due":"20261119T180000Z","uuid":"u1"}\n]\n';
+    const choice: ExportChoice = { format: 'tsv', array: null, fields: 'all', picked: [] };
+    expect(renderExport({ name: 'tasks.json', text }, choice, [], cfg)).toEqual({
+      name: 'tasks.tsv',
+      text: 'description\tdue\tuuid\ntwo\\nlines\t2026-11-19 18:00:00\tu1\n',
+      mime: 'text/tab-separated-values',
+    });
+    const csv = renderExport({ name: 'tasks.json', text }, { ...choice, format: 'csv' }, [], cfg);
+    expect(csv.text).toBe('description,due,uuid\r\n"two\nlines",2026-11-19 18:00:00,u1\r\n');
   });
 });

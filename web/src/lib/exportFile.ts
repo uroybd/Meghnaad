@@ -4,7 +4,7 @@ import type { ConfigResponse } from './types';
 // The file the Export button over a table makes, from what `export` wrote: the engine's (`tc_core::table_export`),
 // shared with the phone and the terminal app. The engine says which tasks; the person says how the file looks.
 
-export type Format = 'json' | 'csv';
+export type Format = 'json' | 'csv' | 'tsv';
 /** Every field the tasks have, the table's columns, or the ones picked. */
 export type Fields = 'all' | 'table' | 'custom';
 

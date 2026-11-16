@@ -22,8 +22,9 @@ pub enum Data {
         chart: Chart,
         grids: Vec<Grid>,
     },
-    /// The report as `task` printed it, in its colours.
-    Table(String),
+    /// The report as `task` printed it, in its colours, and the words it ran (its filter, then its report), which its
+    /// Export exports.
+    Table(String, Vec<String>),
     Failed(String),
 }
 
@@ -251,12 +252,13 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
             };
             match s.kind {
                 Kind::Table => {
+                    let mut words = split_words(&filter_of(None, None)?);
+                    words.push(s.report.clone().unwrap_or_else(|| "next".into()));
                     let mut args = crate::app::colored(width(s), 200);
-                    args.extend(split_words(&filter_of(None, None)?));
-                    args.push(s.report.clone().unwrap_or_else(|| "next".into()));
+                    args.extend(words.iter().cloned());
                     let out = task.capture(&args)?;
                     if out.ok {
-                        Ok(Data::Table(out.stdout))
+                        Ok(Data::Table(out.stdout, words))
                     } else {
                         Err(out.summary())
                     }

@@ -445,4 +445,9 @@ data class ConfigResponse(
     @SerialName("urgency_inherit") val urgencyInherit: Boolean = false,
     /** Saved settings exist but could not be read (they are left untouched). */
     @SerialName("config_error") val configError: String? = null,
+    /**
+     * The settings as the engine sent them, whole (the web's `config.config`): what the engine's helpers take where they need
+     * more than [config] keeps, such as the reports for the Export button.
+     */
+    @kotlinx.serialization.Transient val raw: JsonElement? = null,
 )

@@ -520,7 +520,7 @@
         type="button"
         class="ghost export"
         onclick={() => (exporting = true)}
-        title="Export these tasks as JSON or CSV"
+        title="Export these tasks as JSON, CSV or TSV"
         aria-label="Export these tasks"><Download size={13} /> Export</button
       >
     {/if}

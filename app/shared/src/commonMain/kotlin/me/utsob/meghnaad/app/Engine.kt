@@ -83,7 +83,7 @@ class Tw(private val port: EnginePort, private val clock: Clock) {
         val config = body.getValue("config")
         val started = engineJson.parseToJsonElement(port.call("config", config.toString())).jsonObject
         started["error"]?.let { throw EngineError(it.jsonPrimitive.content) }
-        return engineJson.decodeFromJsonElement(ConfigResponse.serializer(), body)
+        return engineJson.decodeFromJsonElement(ConfigResponse.serializer(), body).copy(raw = config)
     }
 
     /** Run a command line as typed, or pre-split arguments. */

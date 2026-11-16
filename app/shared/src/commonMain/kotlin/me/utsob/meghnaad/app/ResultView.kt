@@ -119,9 +119,13 @@ fun ReportSection(store: Store, e: Entry, result: ReportResult) {
             }
         }
     }
-    Dim(
-        if (result.rows.size == result.matched) "${result.matched} ${if (result.matched == 1) "task" else "tasks"}" else "showing ${result.rows.size} of ${result.matched}",
-    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Dim(
+            if (result.rows.size == result.matched) "${result.matched} ${if (result.matched == 1) "task" else "tasks"}" else "showing ${result.rows.size} of ${result.matched}",
+            Modifier.weight(1f),
+        )
+        ExportButton(store, e, result.columns)
+    }
 }
 
 /**

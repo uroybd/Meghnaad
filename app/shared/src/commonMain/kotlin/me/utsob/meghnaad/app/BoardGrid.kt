@@ -177,7 +177,11 @@ private fun BoardCard(store: Store, section: Section, data: SectionData?, width:
                         BoardChartView(shown, section, extras.dark, height = height - 34.dp - 8.dp, labelColors = own, grids = grids)
                     }
                     is SectionData.Table -> {
-                        val e = remember(data) { Entry(0, CliInput(args = emptyList()), section.report ?: "next").also { it.result = data.result } }
+                        // What it ran, so its Export button exports the same tasks (BoardSection.svelte).
+                        val e = remember(data) {
+                            val words = rustHelpers().splitWords(data.filter) + (section.report ?: "next")
+                            Entry(0, CliInput(args = words), section.report ?: "next").also { it.result = data.result }
+                        }
                         ResultBlock(store, e)
                     }
                 }

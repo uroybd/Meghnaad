@@ -280,7 +280,7 @@ fn draw_section(buf: &mut Buffer, section: &Section, data: Option<&Data>, area: 
             .bad()
             .wrap(Wrap { trim: true })
             .render(inner, buf),
-        Data::Table(text) => Paragraph::new(ansi::lines(text)).render(inner, buf),
+        Data::Table(text, _) => Paragraph::new(ansi::lines(text)).render(inner, buf),
         Data::Number(answer) => {
             let value = boards::format_value(answer.total, answer.unit);
             let lines = vec![

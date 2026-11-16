@@ -4,7 +4,9 @@
 //! itself (`info`, `summary`, `calendar`, `burndown`, the console) is drawn as it coloured it.
 
 use crate::ansi;
-use crate::app::{now, App, Focus, KeyAdd, KeyLine, Mode, Page, Prompt, PromptKind, SettingsSection, SortEdit};
+use crate::app::{
+    now, App, ExportBox, ExportRow, Focus, KeyAdd, KeyLine, Mode, Page, Prompt, PromptKind, SettingsSection, SortEdit,
+};
 use crate::form::{self, Form, Kind};
 use crate::md;
 use crate::model::local_offset;
@@ -134,6 +136,8 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::Sort(edit) => sort_box(f, app, edit, main),
         Mode::KeyAdd(add) => key_add_box(f, app, add, main),
         Mode::Question(asking) => question_box(f, &asking.question, main),
+        Mode::Export(b) => export_box(f, b, main),
+        Mode::ExportPick { options, sel, .. } => picker(f, " export which table ", options, *sel, main),
         _ => {}
     }
     if !app.status.is_empty() {
@@ -164,6 +168,17 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::Commands { .. } => {
             f.render_widget(hints("a-z narrow · ↑/↓ choose · ↵ run on the task · Esc cancel"), dock);
         }
+        Mode::Export(b) => {
+            let keys = if b.replacing {
+                "↵ replace the file · any other key back"
+            } else if b.current() == ExportRow::Path {
+                "type the path · ↑/↓ line · ↵ save · Esc cancel · Ctrl+U clear"
+            } else {
+                "↑/↓ line · Space pick · ↵ save · Esc cancel"
+            };
+            f.render_widget(hints(keys), dock);
+        }
+        Mode::ExportPick { .. } => f.render_widget(hints("↑/↓ choose · ↵ export it · Esc cancel"), dock),
         Mode::KeyAdd(add) => {
             let keys = match (&add.picked, &add.key) {
                 (None, _) => "a-z narrow · ↑/↓ choose · ↵ pick · Esc cancel",
@@ -478,6 +493,81 @@ fn sort_box(f: &mut Frame, app: &App, edit: &SortEdit, main: Rect) {
     if let Some((columns, at)) = &edit.adding {
         picker(f, " sort by ", columns, *at, main);
     }
+}
+
+/// The Export dialog, as the web app's: what it read, the format, JSON's shape, the fields, and where the file goes.
+fn export_box(f: &mut Frame, b: &ExportBox, main: Rect) {
+    let rows = b.rows();
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(match &b.text {
+        Ok(_) => format!(
+            "{} {}, as the table shows them.",
+            b.count,
+            if b.count == 1 { "task" } else { "tasks" }
+        ),
+        Err(why) => why.clone(),
+    }));
+    lines.push(Line::styled(b.line.join(" "), theme::dim()));
+    let mut at_row = Vec::new();
+    for (i, row) in rows.iter().enumerate() {
+        let radio = |on: bool| if on { "(•) " } else { "( ) " };
+        let tick = |on: bool| if on { "[x] " } else { "[ ] " };
+        let (head, text) = match row {
+            ExportRow::Format(fmt) => (
+                (i == 0).then_some("Format"),
+                format!("{}{}", radio(b.format == *fmt), crate::app::export_format_name(*fmt)),
+            ),
+            ExportRow::Array => (
+                None,
+                format!(
+                    "{}As a list (json.array, {} in your taskrc)",
+                    tick(b.array),
+                    if b.rc_array { "on" } else { "off" }
+                ),
+            ),
+            ExportRow::Fields(fl) => {
+                let first = *fl == tc_core::table_export::Fields::All;
+                let name = match fl {
+                    tc_core::table_export::Fields::All => "All fields",
+                    tc_core::table_export::Fields::Table => "Only the table's columns",
+                    tc_core::table_export::Fields::Custom => "Choose",
+                };
+                (first.then_some("Fields"), format!("{}{name}", radio(b.fields == *fl)))
+            }
+            ExportRow::Pick(field) => (None, format!("    {}{field}", tick(b.picked.contains(field)))),
+            ExportRow::Path => (Some("Save to"), format!("{}▏", b.path)),
+        };
+        if let Some(h) = head {
+            lines.push(Line::default());
+            lines.push(Line::styled(h, theme::accent()));
+        }
+        at_row.push(lines.len());
+        let mark = if i == b.sel { MARK } else { "  " };
+        let style = if i == b.sel { theme::selected() } else { Style::new() };
+        lines.push(Line::styled(format!("{mark}{text}"), style));
+    }
+    if b.replacing {
+        lines.push(Line::styled(
+            format!("{} is there already: ↵ replaces it.", b.path),
+            theme::accent(),
+        ));
+    }
+    let w = u16::try_from(lines.iter().map(Line::width).max().unwrap_or(0).clamp(44, 96) + 4)
+        .unwrap_or(60)
+        .min(main.width);
+    let h = u16::try_from(lines.len() + 2).unwrap_or(10).min(main.height);
+    // Keep the line with the focus in sight when the fields to tick are more than fit.
+    let inner = usize::from(h.saturating_sub(2));
+    let focus = at_row.get(b.sel).copied().unwrap_or(0);
+    let top = (focus + 2).saturating_sub(inner);
+    let area = Rect::new(main.x + main.width.saturating_sub(w), main.y, w, h);
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(lines)
+            .scroll((u16::try_from(top).unwrap_or(0), 0))
+            .block(boxed(" export ".to_owned())),
+        area,
+    );
 }
 
 fn items(f: &mut Frame, app: &App, area: Rect) {

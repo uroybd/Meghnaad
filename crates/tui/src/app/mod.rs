@@ -29,12 +29,15 @@ use tc_core::sortspec::{self, Key};
 use tc_core::taskrc::Config;
 
 mod actions;
+mod export;
 mod job;
 mod keyhelp;
 mod menus;
 mod prompt;
 mod settings_page;
 mod sort;
+
+pub use export::{format_name as export_format_name, ExportBox, Row as ExportRow};
 
 /// The pages, in the order of the top bar; each is opened by its number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,6 +203,14 @@ pub enum Mode {
     KeyAdd(KeyAdd),
     /// `task` asked something and waits for the answer, in a box.
     Question(Box<job::Asking>),
+    /// The Export dialog: what a table shows, as a file.
+    Export(Box<ExportBox>),
+    /// Choosing which of a board's tables to export: their titles, and the words each ran.
+    ExportPick {
+        options: Vec<String>,
+        words: Vec<Vec<String>>,
+        sel: usize,
+    },
 }
 
 /// A key being added: the section of the keys, the search for the action and the action chosen, then the key pressed.
@@ -396,6 +407,9 @@ The command line
   Tab/Shift+Tab complete · Ctrl+A/E start/end · Ctrl+W delete a word · Ctrl+U clear · Esc cancel
   A line whose command asks first (delete, edit, undo, …) runs on the terminal; sync runs in the background;
   put ! in front of any line to run it there.
+
+The Export dialog (e)
+  ↑/↓ a line · Space picks · type the path on its line · ↵ save (twice to replace a file) · Esc cancel
 
 Review
   The keys tasksh's review asks for, on its card.
@@ -1041,6 +1055,21 @@ impl App {
             }
             Mode::Sort(edit) => self.in_sort(edit, key),
             Mode::KeyAdd(add) => self.in_key_add(add, key),
+            Mode::Export(b) => self.in_export(b, key),
+            Mode::ExportPick { options, words, sel } => {
+                if let Some(step) = self.step_of(key) {
+                    self.mode = Mode::ExportPick {
+                        sel: moved(sel, options.len(), step),
+                        options,
+                        words,
+                    };
+                } else if key.code == KeyCode::Enter {
+                    if let Some(w) = words.into_iter().nth(sel) {
+                        self.export_words(&w);
+                    }
+                }
+                Action::None
+            }
             Mode::Question(asking) => {
                 self.in_question(asking, key);
                 Action::None

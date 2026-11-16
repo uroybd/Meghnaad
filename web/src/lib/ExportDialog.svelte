@@ -37,7 +37,7 @@
     try {
       const v = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<ExportChoice>;
       return {
-        format: v.format === 'csv' ? 'csv' : 'json',
+        format: v.format === 'csv' || v.format === 'tsv' ? v.format : 'json',
         fields: v.fields === 'table' || v.fields === 'custom' ? v.fields : 'all',
         picked: Array.isArray(v.picked) ? v.picked.filter((x) => typeof x === 'string') : [],
       };
@@ -118,6 +118,7 @@
     <legend>Format</legend>
     <label><input type="radio" bind:group={format} value="json" /> JSON</label>
     <label><input type="radio" bind:group={format} value="csv" /> CSV</label>
+    <label><input type="radio" bind:group={format} value="tsv" /> TSV</label>
     {#if format === 'json'}
       <label class="sub">
         <input type="checkbox" bind:checked={array} />

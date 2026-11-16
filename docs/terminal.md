@@ -145,6 +145,7 @@ On the Tasks page:
 | `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
 | `o` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
+| `e` | [Export](#export) the report as a file: JSON, CSV or TSV, with the fields you choose |
 
 Over the table a line says what `task` adds to your filter: the report's own filter, the sort in force (and the
 report's own when you changed it) and the context; `f`, `o` and `C` change them. A sort is put in the filter as
@@ -263,6 +264,55 @@ radars are drawn in braille dots; a heatmap is a grid of shaded cells; a table i
 the section's width. A series' colour is the one it names, else blue, red, green, yellow, magenta and cyan in turn. On a
 page narrower than 100 columns the board has six columns, as on a phone, and the sections keep their order. A board
 is read when its page opens, and again with `R`.
+
+## Export
+
+`e` on the Tasks page opens the Export dialog, the same one the web app and the phone have
+([Exporting a table](using/pages.md#exporting-a-table)): it exports the tasks the report shows, as
+`<filter> export <report>` with the context in front, and asks how the file should look. On a board, `e` exports one of
+its tables (a box asks which when there are several).
+
+- **Format**: JSON (the default), CSV or TSV; for JSON, a list or one task to a line, starting as your `json.array`.
+- **Fields**: all of them, only the table's columns, or the ones you tick.
+- **Save to**: a path, filled in with the file's name (`tasks-next-20261116-015300.tsv`) in the folder the app started
+  in; `~/` is your home folder. A file already there is only replaced after a second `Enter`.
+
+`↑` `↓` (or `j` `k`, `Tab`) move between the lines, `Space` picks, typing on the path line edits it, `Enter` saves and
+`Esc` cancels. The last format and fields are kept in `settings.json`, as `tui.export`.
+
+### `meghnaad export`, from a shell
+
+`meghnaad export` is `task export` for scripts, with the dialog's choices as options. With no options it is
+`task <words> export` exactly: the same output, messages and exit status, and, like `task export`, no context.
+
+```text
+meghnaad export [options] [--] [filter and rc. words]
+```
+
+| Option | Does |
+| --- | --- |
+| `-f`, `--format json\|csv\|tsv` | The output; JSON when left out |
+| `-F`, `--fields all\|table\|a,b,c` | Every field (the default), the report's columns (needs `-r`), or these, in this order |
+| `-r`, `--report NAME` | `task <filter> export NAME`: the report's filter, sort and limit apply |
+| `-a`, `--array` / `-A`, `--no-array` | JSON: a list, or one task to a line; as `json.array` says when left out |
+| `-H`, `--no-header` | CSV and TSV: no header line |
+| `-0`, `--null` | TSV: end each task with NUL instead of a newline, for `xargs -0` |
+| `-h`, `--help` | The usage |
+
+Options come first. The first word that is not one (a filter word such as `-home` included) starts `task`'s words, and
+`--` ends the options on purpose. A word starting with `--` that is not an option is an error, as is a choice that does
+not fit (`--null` with CSV, `--fields table` without a report): it says so and exits with 2 before `task` runs.
+
+CSV and TSV write dates as `2026-11-19 18:00:00`, in UTC, which a spreadsheet reads as a date in any locale (a date UDA
+too). CSV keeps a value's line breaks inside quotes, so a spreadsheet shows them in one cell; use CSV for a spreadsheet.
+TSV writes a tab, newline, carriage return and backslash as `\t`, `\n`, `\r` and `\\`, so one line is always one task
+for `cut`, `awk` and `read`; `printf '%b'` turns a value back.
+
+```bash
+meghnaad export -f tsv -F id,due,description -r next +work | column -t -s $'\t'
+meghnaad export -f tsv -F uuid -H -0 +old | xargs -0 -I{} task {} done
+meghnaad export -f csv -F table -r list > tasks.csv
+```
 
 ## The Settings page
 

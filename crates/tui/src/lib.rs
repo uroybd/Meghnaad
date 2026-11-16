@@ -11,6 +11,7 @@ pub mod boardui;
 pub mod chain;
 pub mod commands;
 pub mod completer;
+pub mod export;
 pub mod form;
 pub mod keys;
 pub mod lists;

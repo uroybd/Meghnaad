@@ -10,6 +10,8 @@ Below about 760 px (a phone, or a narrow window) the layout changes:
   A card has a **Done** button and a **⋯** menu with start or stop, edit, delete and your task commands.
 - **Pull down** at the top of a page to sync and redraw it.
 - **Sorting** is a **Sort** picker, since there are no column headers to tap. Forms and a task's detail go full screen.
+- **Export** is beside the count under a report, a console report and a board's table, as on a desktop
+  ([Exporting a table](pages.md#exporting-a-table)); the Android app saves the file where you choose.
 - **Complete** (⇥) and **Previous command** (⌃) stand in for keys a phone lacks. They sit beside Edit and Copy on the
   line that shows the last command. The prompt grows to show a long command, and suggestions can be tapped.
 
