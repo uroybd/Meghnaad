@@ -129,3 +129,6 @@ what is left. Dated entries, newest last.
 - Checks: `cargo test` (1014), `lua_hooks`, web (798), svelte-check, scripts, both wasm checks, Kotlin `testDebugUnitTest`
   (394) and `assembleDebug`, lint and `mdbook build docs` clean. Locally the Kotlin tests needed JDK 21 and an unstripped
   dylib (`CARGO_PROFILE_ANDROID_STRIP=false`): the stripped one fails to load on this macOS ("mis-aligned LINKEDIT").
+
+2026-11-16: The open criterion (the TUI's info view) waits on 0006, the terminal app's own info view in sections, which
+draws transformed text where `task info` can't.
