@@ -31,10 +31,10 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 
 ## Index
 
-| No. | Spec | Status | Layer | Front ends |
-| --- | ---- | ------ | ----- | ---------- |
-| 0001 | [Field transformation](0001-field-transform.md) | in progress | 2 (UI) | all |
-| 0002 | [CLI export](0002-meghnaad-cli-export.md) | in progress | 2 (UI) | all |
-| 0003 | [Custom reminder](0003-custom-reminder.md) | in progress | 2 (UI) | all |
-| 0004 | [Export filter and sort](0004-export-filter-sort.md) | dropped | 2 (UI) | all |
-| 0005 | [Stack a chart by a field](0005-chart-stack-by.md) | in progress | 2 (UI) | all |
+| No. | Spec | Status | Layer | Front ends | Left |
+| --- | ---- | ------ | ----- | ---------- | ---- |
+| 0001 | [Field transformation](0001-field-transform.md) | in progress | 2 (UI) | all | The terminal's info view is `task info` verbatim, so the criterion for it is open until it is reworded |
+| 0002 | [CLI export](0002-meghnaad-cli-export.md) | in progress | 2 (UI) | all | Seen by a person: CSV dates and multiline cells in a spreadsheet; the Android dialog |
+| 0003 | [Custom reminder](0003-custom-reminder.md) | in progress | 2 (UI) | all | Seen by a person: the Android alarm with the app closed, its Reminders dialog; a Linux notification |
+| 0004 | [Export filter and sort](0004-export-filter-sort.md) | dropped | 2 (UI) | all | |
+| 0005 | [Stack a chart by a field](0005-chart-stack-by.md) | in progress | 2 (UI) | all | Seen by a person: stacked charts on the web and Android (the terminal was checked) |
