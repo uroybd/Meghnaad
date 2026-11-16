@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatCells, projectSegments, rowClass, urgencyLevel, type Ctx } from './format';
+import { formatCells, projectSegments, rowClass, trimNumber, urgencyLevel, type Ctx } from './format';
 import type { Column, Row } from './types';
 
 const NOW = 1_791_376_200; // 2026-10-07T12:30:00Z
@@ -133,5 +133,15 @@ describe('rowClass', () => {
 describe('urgencyLevel', () => {
   it('has thresholds at 5, 10 and 15', () => {
     expect([4.99, 5, 10, 15].map(urgencyLevel)).toEqual(['low', 'mid', 'high', 'crit']);
+  });
+});
+
+describe('trimNumber', () => {
+  it('drops the zeros a decimal ends in and leaves anything else', () => {
+    expect(trimNumber('0.000000')).toBe('0');
+    expect(trimNumber('2.500000')).toBe('2.5');
+    expect(trimNumber(' -0.125000 ')).toBe('-0.125');
+    expect(trimNumber('0.333333')).toBe('0.333333');
+    for (const t of ['3', '100', '', '1e5', 'PT2H', 'v1.0']) expect(trimNumber(t)).toBe(t);
   });
 });

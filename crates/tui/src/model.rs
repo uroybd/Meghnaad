@@ -61,6 +61,17 @@ const CORE: &[&str] = &[
     "last",
 ];
 
+/// A number as it is drawn: without the zeros a decimal ends in (`0.000000` and `0.0` are `0`, `2.500000` is `2.5`), as
+/// the web app's `trimNumber`. Anything but a plain decimal is left as it is.
+pub fn trim_number(text: &str) -> String {
+    let t = text.trim();
+    let plain = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    match t.strip_prefix('-').unwrap_or(t).split_once('.') {
+        Some((whole, frac)) if plain(whole) && plain(frac) => t.trim_end_matches('0').trim_end_matches('.').to_owned(),
+        _ => text.to_owned(),
+    }
+}
+
 /// A task of `export` as the row `tc_core::cells` reads.
 pub fn row(task: &Value, cfg: &Config, pending: &BTreeSet<String>, now: i64) -> Option<Row> {
     let t = task.as_object()?;
@@ -128,6 +139,8 @@ pub fn row(task: &Value, cfg: &Config, pending: &BTreeSet<String>, now: i64) -> 
                 _ => s.clone(),
             },
             Value::Null => continue,
+            // A number as it is drawn: `task export` writes what `import` stored (`0.000000`), read here as `0.0`.
+            Value::Number(n) => trim_number(&n.to_string()),
             other => other.to_string(),
         };
         extra.insert(key.clone(), text);
@@ -414,6 +427,18 @@ mod tests {
         assert_eq!(texts[3], "D");
         assert_eq!(texts[4], "3");
         assert_eq!(texts[5], "2026-10-07");
+    }
+
+    #[test]
+    fn a_number_is_drawn_without_the_zeros_it_ends_in() {
+        assert_eq!(trim_number("0.000000"), "0");
+        assert_eq!(trim_number("0.0"), "0");
+        assert_eq!(trim_number("2.500000"), "2.5");
+        assert_eq!(trim_number(" -0.125000 "), "-0.125");
+        assert_eq!(trim_number("0.333333"), "0.333333");
+        for t in ["3", "100", "", "1e5", "PT2H", "v1.0", "-.5"] {
+            assert_eq!(trim_number(t), t);
+        }
     }
 
     #[test]

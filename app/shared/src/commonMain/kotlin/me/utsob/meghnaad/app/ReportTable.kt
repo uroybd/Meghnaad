@@ -335,7 +335,7 @@ private fun TableCell(
     // A numeric UDA the settings show as a progress bar (Settings → Appearance), where the cell has a number in it.
     val bar = store.appearance.progress[col.name]?.let { range -> c.text.trim().toDoubleOrNull()?.let { range to it } }
     when {
-        bar != null -> ProgressBar(bar.second, c.text, bar.first, col.label, tone)
+        bar != null -> ProgressBar(bar.second, trimNumber(c.text), bar.first, col.label, tone)
         c.uuid != null -> Text(
             c.text, Modifier.clickable { clipboard.setText(AnnotatedString(c.uuid)); store.notify("uuid copied") },
             color = tone, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
@@ -375,7 +375,8 @@ private fun TableCell(
         }
         else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                c.text,
+                // A numeric UDA's number without the zeros it ends in.
+                if (store.config?.config?.udas?.get(baseColumn(col.name))?.type == "numeric") trimNumber(c.text) else c.text,
                 Modifier.weight(1f, fill = false),
                 color = if (col.name == "due" && overdue) colors.error else tone,
                 fontWeight = if (col.name == "due" && overdue) FontWeight.SemiBold else weight,

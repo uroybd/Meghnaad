@@ -84,6 +84,10 @@ Mark a numeric UDA as a progress bar and every report shows it as a bar, with th
 value outside the range fills or empties the bar, and a task with no value shows nothing. The bar turns green when full.
 Only numeric UDAs are offered (`uda.progress.type=numeric`).
 
+A numeric UDA's number is drawn without the zeros a decimal ends in, beside a bar or not, on every screen: `task import`
+stores a JSON number as Taskwarrior writes a double (`0` as `0.000000`, `2.5` as `2.500000`), and it is shown as `0` and
+`2.5`. Only the drawing changes; the task and its exports keep what is stored.
+
 ```json
 { "appearance": { "progress": { "progress": { "min": 0, "max": 100 } } } }
 ```

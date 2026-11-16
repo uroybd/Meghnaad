@@ -238,10 +238,10 @@ private fun Mark(
             if (icon != null) LucideIcon(icon, size = 13.dp, tint = if (col.name == "due" && overdue) colors.error else dim.copy(alpha = 0.85f))
             else Text(col.label.uppercase(), fontSize = 11.sp, letterSpacing = 0.6.sp, color = dim.copy(alpha = 0.75f))
             if (bar != null) {
-                ProgressBar(bar.second, c.text, bar.first, col.label, dim, Modifier.width(120.dp))
+                ProgressBar(bar.second, trimNumber(c.text), bar.first, col.label, dim, Modifier.width(120.dp))
             } else if (!iconOnly) {
                 Text(
-                    c.text,
+                    if (store.config?.config?.udas?.get(baseColumn(col.name))?.type == "numeric") trimNumber(c.text) else c.text,
                     fontSize = 13.sp,
                     color = if (col.name == "due" && overdue) colors.error else dim,
                     fontWeight = if (col.name == "due" && overdue) FontWeight.SemiBold else FontWeight.Normal,

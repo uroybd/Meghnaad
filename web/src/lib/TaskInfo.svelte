@@ -3,7 +3,7 @@
   import { formatFor } from './dateformat';
   import { formatMoment, formatSeconds, formatStamp } from './dates';
   import { describeChange } from './history';
-  import { projectSegments, shortUuid, udaLabel, urgencyLevel } from './format';
+  import { projectSegments, shortUuid, trimNumber, udaLabel, urgencyLevel } from './format';
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
   import { visibleNotes } from './journal';
   import Description from './Description.svelte';
@@ -244,7 +244,7 @@
           />
         </dd>
       {:else}
-        <dd class="pre">{task.extra[k]}</dd>
+        <dd class="pre">{defs[k].type === 'numeric' ? trimNumber(task.extra[k]) : task.extra[k]}</dd>
       {/if}
     {/each}
     <dt>Urgency</dt>

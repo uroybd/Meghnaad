@@ -166,7 +166,8 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
             if (tree != null) {
                 MarkdownView(tree, onToggle = { line -> store.go { tickBox(null, task.uuid, k, task.extra.getValue(k), line) } })
             } else {
-                Text(task.extra.getValue(k), fontSize = 14.sp)
+                val v = task.extra.getValue(k)
+                Text(if (defs.getValue(k).type == "numeric") trimNumber(v) else v, fontSize = 14.sp)
             }
         }
         Field("Urgency") { UrgencyText(task.urgency) }

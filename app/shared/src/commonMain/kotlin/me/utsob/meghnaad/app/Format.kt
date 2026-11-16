@@ -200,3 +200,14 @@ fun rowClass(row: Row): String {
 
 /** A UDA's display label, falling back to its name. */
 fun udaLabel(def: UdaDef): String = def.label?.takeIf { it.isNotEmpty() } ?: def.name
+
+/**
+ * A number as it is drawn: without the zeros a decimal ends in. `task import` stores a JSON number as Taskwarrior writes a
+ * double (`0` as `0.000000`, `2.5` as `2.500000`), and a screen shows `0` and `2.5`; anything but a plain decimal is left as
+ * it is. Only the drawing: the task and its exports keep what is stored. As the web app's `trimNumber`.
+ */
+fun trimNumber(text: String): String {
+    val t = text.trim()
+    return if (Regex("^-?\\d+\\.\\d+$").matches(t)) t.trimEnd('0').trimEnd('.') else text
+}
+

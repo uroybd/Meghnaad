@@ -162,3 +162,12 @@ export function rowClass(row: Row): string {
 export function udaLabel(def: UdaDef): string {
   return def.label || def.name;
 }
+
+/**
+ * A number as it is drawn: without the zeros a decimal ends in. `task import` stores a JSON number as Taskwarrior writes a
+ * double (`0` as `0.000000`, `2.5` as `2.500000`), and a screen shows `0` and `2.5`; anything but a plain decimal is left as
+ * it is. Only the drawing: the task and its exports keep what is stored.
+ */
+export function trimNumber(text: string): string {
+  return /^\s*-?\d+\.\d+\s*$/.test(text) ? text.trim().replace(/0+$/, '').replace(/\.$/, '') : text;
+}

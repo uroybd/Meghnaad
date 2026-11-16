@@ -153,4 +153,13 @@ class FormatTest {
         // A table with no rows keeps its columns.
         assertEquals(listOf(0, 1, 2), shownColumns(result.copy(rows = emptyList()), ctx))
     }
+
+    @Test
+    fun aNumberIsDrawnWithoutTheZerosItEndsIn() {
+        assertEquals("0", trimNumber("0.000000"))
+        assertEquals("2.5", trimNumber("2.500000"))
+        assertEquals("-0.125", trimNumber(" -0.125000 "))
+        assertEquals("0.333333", trimNumber("0.333333"))
+        for (t in listOf("3", "100", "", "1e5", "PT2H", "v1.0")) assertEquals(t, trimNumber(t))
+    }
 }

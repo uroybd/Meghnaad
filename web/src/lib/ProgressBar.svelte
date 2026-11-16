@@ -1,10 +1,12 @@
 <script lang="ts">
   import { progressFraction, type Progress } from './appsettings';
+  import { trimNumber } from './format';
 
   /** A value drawn as a bar between `range.min` (empty) and `range.max` (full), with the value written beside it. */
   let { value, text, range, label }: { value: number; text: string; range: Progress; label: string } = $props();
 
   const fraction = $derived(progressFraction(value, range));
+  const shown = $derived(trimNumber(text));
 </script>
 
 <span
@@ -14,10 +16,10 @@
   aria-valuemin={range.min}
   aria-valuemax={range.max}
   aria-valuenow={Math.min(range.max, Math.max(range.min, value))}
-  aria-valuetext={text}
+  aria-valuetext={shown}
 >
   <span class="track"><span class="fill" class:full={fraction >= 1} style="width:{fraction * 100}%"></span></span>
-  <span class="num">{text}</span>
+  <span class="num">{shown}</span>
 </span>
 
 <style>

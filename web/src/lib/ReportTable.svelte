@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { formatFor } from './dateformat';
   import { css, look, rowVars } from './colors';
-  import { formatTable, rowClass } from './format';
+  import { formatTable, rowClass, trimNumber } from './format';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import { ArrowDown, ArrowUp, Check, Download, Pencil, Play, Repeat, Rows3, Square, Trash2 } from './icons';
@@ -55,6 +55,8 @@
   let exporting = $state(false);
 
   const udas = $derived(store.config?.config.udas ?? {});
+  /** A numeric UDA's column, whose numbers are drawn without the zeros they end in. */
+  const numeric = (name: string) => udas[name.split('.')[0]]?.type === 'numeric';
   /** A cell of a UDA shown as a progress bar: its number and range, or null (some other column, or no number in it). */
   function progressOf(name: string, text: string) {
     const range = store.appearance.progress[name];
@@ -416,7 +418,7 @@
                 {:else if col.name === 'description'}
                   {c.text}
                 {:else}
-                  <span class="cap">{c.text}</span>
+                  <span class="cap">{numeric(col.name) ? trimNumber(c.text) : c.text}</span>
                 {/if}
                 {#if col.name === 'description' && row.recur}
                   <span
