@@ -350,6 +350,8 @@ pub struct App {
     /// Whether a board is open, or the list of them is shown.
     pub board_open: bool,
     pub board_data: Vec<(String, boards::Data)>,
+    /// Where each section of the open board starts, in lines from its top, as last drawn (they depend on the width).
+    pub board_tops: std::cell::RefCell<Vec<u16>>,
 
     pub log: Vec<Line<'static>>,
     /// How far the console is scrolled back from its end.
@@ -441,10 +443,44 @@ fn step_named(action: &str) -> Option<Step> {
         "move.up" => Step::By(-1),
         "move.pageDown" => Step::By(10),
         "move.pageUp" => Step::By(-10),
+        "move.halfPageDown" => Step::By(5),
+        "move.halfPageUp" => Step::By(-5),
         "move.first" => Step::First,
         "move.last" => Step::Last,
         _ => return None,
     })
+}
+
+/// The section a `move.` action goes to: the next (1) or the one before (-1).
+fn section_named(action: &str) -> Option<isize> {
+    match action {
+        "move.sectionNext" => Some(1),
+        "move.sectionPrev" => Some(-1),
+        _ => None,
+    }
+}
+
+/// The scroll at the start of the section after (or before) the one at `at`, of sections starting at `tops` (in order);
+/// where there is none that way, it stays.
+fn section_scroll(tops: &[u16], at: u16, by: isize) -> u16 {
+    if by > 0 {
+        tops.iter().copied().find(|t| *t > at).unwrap_or(at)
+    } else {
+        tops.iter().rev().copied().find(|t| *t < at).unwrap_or(at)
+    }
+}
+
+/// Where the sections of a text start: its first line, and each line that is not indented and follows an empty one.
+fn text_sections(text: &str) -> Vec<u16> {
+    let lines: Vec<&str> = text.lines().collect();
+    (0..lines.len())
+        .filter(|&i| {
+            let line = lines.get(i).copied().unwrap_or_default();
+            let after_blank = i == 0 || lines.get(i - 1).is_some_and(|l| l.trim().is_empty());
+            after_blank && !line.trim().is_empty() && !line.starts_with(char::is_whitespace)
+        })
+        .filter_map(|i| u16::try_from(i).ok())
+        .collect()
 }
 
 /// Row `at` of `len` after `step`.
@@ -553,6 +589,7 @@ impl App {
             board: 0,
             board_open: false,
             board_data: Vec::new(),
+            board_tops: std::cell::RefCell::new(Vec::new()),
             log: Vec::new(),
             log_back: 0,
             settings_section: SettingsSection::General,
@@ -1041,6 +1078,11 @@ impl App {
             Mode::Prompt(p) => self.in_prompt(p, key),
             Mode::Form(f) => self.in_form(f, key),
             Mode::Info { text, scroll } => {
+                if let Some(by) = self.section_of(key) {
+                    let scroll = section_scroll(&text_sections(&text), scroll, by);
+                    self.mode = Mode::Info { text, scroll };
+                    return Action::None;
+                }
                 self.mode = match self.step_of(key) {
                     Some(step @ Step::By(_)) => Mode::Info {
                         text,
@@ -1149,6 +1191,21 @@ impl App {
     fn step_of(&self, key: KeyEvent) -> Option<Step> {
         let chord = keys::chord(key)?;
         step_named(self.keymap.action("summary", &chord)?)
+    }
+
+    /// The section a key goes to, as a `move.` action: the next (1) or the one before (-1).
+    fn section_of(&self, key: KeyEvent) -> Option<isize> {
+        let chord = keys::chord(key)?;
+        section_named(self.keymap.action("summary", &chord)?)
+    }
+
+    /// To the next section (`by` 1) or the one before (-1) of what the page has: the settings' sections, a board's.
+    pub(super) fn section_step(&mut self, by: isize) {
+        match self.context() {
+            c if c.starts_with("settings.") => self.settings_section = self.settings_section.step(by),
+            "boards" => self.scroll = section_scroll(&self.board_tops.borrow(), self.scroll, by),
+            _ => {}
+        }
     }
 }
 

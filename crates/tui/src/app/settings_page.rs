@@ -9,8 +9,6 @@ impl App {
     pub(super) fn settings_action(&mut self, action: &str) {
         let n = self.settings.task_commands.len();
         match action {
-            "settings.next" => self.settings_section = self.settings_section.step(1),
-            "settings.prev" => self.settings_section = self.settings_section.step(-1),
             "settings.general.home" => {
                 let mut options = vec![("next (the default)".to_owned(), None)];
                 options.extend(

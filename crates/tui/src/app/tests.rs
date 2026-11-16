@@ -385,6 +385,57 @@ fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     assert_eq!(app.settings_section, SettingsSection::Keys, "[ goes round");
 }
 
+#[test]
+fn brackets_go_to_the_next_section_and_the_one_before_wherever_there_are_sections() {
+    // A text's sections: its first line, and a line not indented after an empty one.
+    let text = "Tasks\n  a  add\n\nBoards\n  b  back\n\n  indented after a gap\nMoves";
+    assert_eq!(text_sections(text), [0, 3]);
+    assert_eq!(section_scroll(&[0, 3, 9], 0, 1), 3);
+    assert_eq!(section_scroll(&[0, 3, 9], 4, 1), 9);
+    assert_eq!(section_scroll(&[0, 3, 9], 9, 1), 9, "none after the last: it stays");
+    assert_eq!(section_scroll(&[0, 3, 9], 4, -1), 3);
+    assert_eq!(section_scroll(&[0, 3, 9], 0, -1), 0);
+
+    // The help: ] goes to its second section and keeps it open; [ comes back.
+    let mut app = app();
+    app.key(key(KeyCode::Char('?')));
+    let Mode::Info { text, .. } = &app.mode else {
+        panic!("the help is open");
+    };
+    let second = text_sections(text)[1];
+    app.key(key(KeyCode::Char(']')));
+    assert!(matches!(app.mode, Mode::Info { scroll, .. } if scroll == second));
+    app.key(key(KeyCode::Char('[')));
+    assert!(matches!(app.mode, Mode::Info { scroll: 0, .. }));
+
+    // A board: from the top to the next section's first line, as last drawn.
+    app.key(key(KeyCode::Esc));
+    app.page = Page::Boards;
+    app.board_open = true;
+    app.board_tops.replace(vec![0, 12, 24]);
+    app.key(key(KeyCode::Char(']')));
+    assert_eq!(app.scroll, 12);
+    app.key(key(KeyCode::Char(']')));
+    assert_eq!(app.scroll, 24);
+    app.key(key(KeyCode::Char('[')));
+    assert_eq!(app.scroll, 12);
+}
+
+#[test]
+fn ctrl_d_and_ctrl_u_move_half_a_page_and_ctrl_f_and_ctrl_b_a_page_as_in_vim() {
+    let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    let mut app = app();
+    app.page = Page::Console;
+    app.key(key(KeyCode::Char('?')));
+    app.key(ctrl('d'));
+    assert!(matches!(app.mode, Mode::Info { scroll: 5, .. }));
+    app.key(ctrl('f'));
+    assert!(matches!(app.mode, Mode::Info { scroll: 15, .. }));
+    app.key(ctrl('u'));
+    app.key(ctrl('b'));
+    assert!(matches!(app.mode, Mode::Info { scroll: 0, .. }));
+}
+
 /// Settings, on the Keybindings section.
 fn on_keys(settings: &str) -> App {
     let mut app = app();

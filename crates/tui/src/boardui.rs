@@ -135,6 +135,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let cells = places(board, cols);
     let rows = cells.iter().map(|c| c.y + c.h).max().unwrap_or(0);
     let height = u16::try_from(rows).unwrap_or(u16::MAX).saturating_mul(ROW);
+    // Where each section starts, for the keys that go to the next and the one before.
+    let mut tops: Vec<u16> = cells
+        .iter()
+        .map(|c| u16::try_from(c.y).unwrap_or(u16::MAX).saturating_mul(ROW))
+        .collect();
+    tops.sort_unstable();
+    tops.dedup();
+    app.board_tops.replace(tops);
     let mut buf = Buffer::empty(Rect::new(0, 0, body.width, height));
     let col_x = |c: u32| u16::try_from(u32::from(body.width) * c / cols).unwrap_or(0);
     for cell in &cells {

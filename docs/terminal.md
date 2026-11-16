@@ -49,7 +49,7 @@ command line, which shows the page's keys until you type into it, with `? all ke
 | `4` Summary | `task summary`, as it prints it |
 | `5` Calendar | `task calendar`, from this month; `h` `l` go a month back or on |
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
-| `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` (or `[` `]`) go to the board before or after, and `Esc` (or `b`) comes back to the list |
+| `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` go to the board before or after, `[` `]` to its next section or the one before, and `Esc` (or `b`) comes back to the list |
 | `8` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
 | `9` Settings | A section each for when to sync, the theme, your task commands, your boards and your keys ([Settings](#the-settings-page)) |
 
@@ -117,6 +117,11 @@ On every page:
 | Key | Does |
 | --- | --- |
 | `1` to `9` | Open a page |
+| `j` `k` (or the arrows) | Down and up a row, a field, or a line |
+| `[` `]` | The section before and the next: of the settings, of a board, of `?` and a task's info |
+| `Ctrl+D` `Ctrl+U` | Half a page down and up |
+| `Ctrl+F` `Ctrl+B` (or PgDn PgUp) | A page down and up |
+| `g` `G` (or Home End) | The first and the last |
 | `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_` |
 | `/` or `:` | The command line |
 | `v` | Review the tasks that need it |
@@ -129,12 +134,15 @@ On every page:
 | `?` | Every key |
 | `q` | Quit |
 
+The moves are vim's, and the same on every page and in every box. In a box you type into (the form, a prompt, a
+search), `j` `k` are letters, so the arrows and `Tab` move there.
+
 On the Tasks page:
 
 | Key | Does |
 | --- | --- |
-| `j` `k`, arrows, `g` `G`, PgUp PgDn | Move through the report |
-| `Enter` | `task <uuid> info`, scrolled with `j` `k`; any other key closes it |
+| `j` `k` and the moves above | Move through the report |
+| `Enter` | `task <uuid> info`, scrolled with `j` `k`, `[` `]` going from section to section; any other key closes it |
 | `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form) |
 | `m` | Modify the selected task, in [the full form](#the-form) |
 | `A` | Annotate the selected task, in a box that shows it as it is |
