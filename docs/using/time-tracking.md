@@ -6,11 +6,30 @@ timer in the header and in the tab title.
 
 **Reminders.** The **bell** in the header turns them on. You get:
 
-- a heads-up before a due date that has a time,
-- a morning reminder for dates without one,
+- a heads-up before a due or scheduled date that has a time (15 minutes by default),
+- a morning reminder for due dates without one,
 - a note when a task comes off `wait`,
 - one digest a day of what is overdue.
 
 In the browser the tab has to be open, because a page can't wake up in the background. System notifications also need
 HTTPS (or `localhost`) and your permission. In the Android app reminders work with the app closed; the digest comes at
 the hour you chose for dates without a time (Menu → Reminders).
+
+**A task's own reminders.** Give a task `remind_in` to choose when it reminds you, instead of the heads-up setting:
+
+```text
+task add Call the bank due:tomorrow 15:00 remind_in:1h,10
+task 12 modify remind_in:none
+```
+
+- It is a list, separated by commas, of times before the task's `due` and `scheduled` dates. A bare number is minutes;
+  anything else is a duration as Taskwarrior writes it: `10min`, `1h`, `2d`, `1w`, `PT10M`. Careful: `10m` is ten
+  **months**, as `task calc 10m` says. Write `10` or `10min` for ten minutes.
+- Each time is said once: with `1h,10` you hear an hour before and again ten minutes before.
+- For a date with no time, the times count back from the hour you chose for such dates (`30` with 9:00 is 8:30, `1d`
+  is 9:00 the day before).
+- `none` or `0` turns off the reminders before that task's dates; "due now", the wait and the digest still come. No
+  value, or `default`, uses the setting. An item that doesn't read as a time is skipped.
+- It is a UDA, so Taskwarrior needs it defined to keep it on a task: the Reminders dialog (and the terminal app's
+  Reminders box) has **Add the remind_in attribute**, which writes `uda.remind_in.type=string` and its label with
+  `config`, as review's setup does. The same line works with the real `task` once your taskrc has it.

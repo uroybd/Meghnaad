@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { runCli } from './api';
   import { notifier } from './notifier.svelte';
+  import { remindUdaLines, remindUdaStatus } from './remindUda';
   import { store } from './store.svelte';
+  import { configArgs } from './tasksh';
 
   let dialog: HTMLDialogElement;
   $effect(() => {
@@ -10,6 +13,27 @@
   const close = () => (store.notifyOpen = false);
   const hours = Array.from({ length: 24 }, (_, h) => h);
   const label = (h: number) => `${String(h).padStart(2, '0')}:00`;
+
+  const uda = $derived(remindUdaStatus(store.config));
+  let adding = $state(false);
+  let udaError = $state<string | null>(null);
+
+  // One `config` line at a time, as tasksh's setup does.
+  async function addUda() {
+    adding = true;
+    udaError = null;
+    try {
+      for (const line of remindUdaLines(store.config)) {
+        const r = (await runCli({ args: configArgs(line) })).result;
+        if (r.kind === 'error') throw new Error(r.message);
+      }
+    } catch (e) {
+      udaError = e instanceof Error ? e.message : String(e);
+    } finally {
+      await store.settingsChanged();
+      adding = false;
+    }
+  }
 
   const status = $derived(
     notifier.permission === 'unsupported'
@@ -25,8 +49,8 @@
 <dialog bind:this={dialog} onclose={close} aria-label="Reminders">
   <h3>Reminders</h3>
   <p class="dim">
-    Get a heads-up about due dates and tasks coming off <code>wait</code>. They only work while this tab is open: the
-    app can't wake up in the background.
+    Get a heads-up about due and scheduled dates and tasks coming off <code>wait</code>. They only work while this tab
+    is open: the app can't wake up in the background.
   </p>
 
   <label class="check">
@@ -40,7 +64,7 @@
   <p class="dim small" role="status">{status}</p>
 
   <div class="grid" class:off={!notifier.settings.enabled}>
-    <label for="nl-lead">Heads-up before a timed due date</label>
+    <label for="nl-lead">Heads-up before a timed due or scheduled date</label>
     <select id="nl-lead" bind:value={notifier.settings.leadMinutes} onchange={() => notifier.save()}>
       <option value={0}>none</option><option value={5}>5 minutes</option><option value={15}>15 minutes</option>
       <option value={30}>30 minutes</option><option value={60}>1 hour</option><option value={120}>2 hours</option>
@@ -57,6 +81,25 @@
       Tell me when a waiting task comes back
     </label>
   </div>
+
+  <section class="uda" aria-label="Times for one task">
+    <p class="dim small">
+      A task can have its own times with <code>remind_in:10,1h</code>: minutes, or durations as Taskwarrior writes them
+      (<code>10min</code>, <code>1h</code>, <code>2d</code>; <code>10m</code> is ten months). For a date with no time
+      they count back from the hour above. <code>none</code> turns them off for that task.
+    </p>
+    {#if uda === 'ok'}
+      <p class="dim small" data-testid="remind-uda">The <code>remind_in</code> attribute is in your taskrc.</p>
+    {:else}
+      <p class="dim small" data-testid="remind-uda">
+        {uda === 'missing'
+          ? 'Your taskrc has no remind_in attribute (UDA) yet, so the value is not kept on a task.'
+          : 'Your taskrc defines remind_in with another type; adding it makes it a string.'}
+      </p>
+      <button type="button" disabled={adding} onclick={addUda}>Add the remind_in attribute</button>
+      {#if udaError}<p class="err small">{udaError}</p>{/if}
+    {/if}
+  </section>
 
   {#if notifier.lastError}<p class="err small">Couldn't check for reminders: {notifier.lastError}</p>{/if}
 
@@ -109,6 +152,10 @@
   }
   footer {
     margin-top: 10px;
+  }
+  .uda {
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
   }
   @media (max-width: 760px) {
     .grid {

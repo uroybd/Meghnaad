@@ -152,6 +152,8 @@ pub struct TuiSettings {
     pub shading: Option<String>,
     /// The Export dialog's last choice: `{ "format": "tsv", "fields": "custom", "picked": ["due"] }`.
     pub export: Value,
+    /// The reminder options (`remind::Settings`): `{ "on": true, "lead_minutes": 15, "all_day_hour": 9, … }`.
+    pub reminders: Value,
 }
 
 /// The page the app opens on: a report or a board (`homepage` in `settings.json`, shared with the web app and the phone).

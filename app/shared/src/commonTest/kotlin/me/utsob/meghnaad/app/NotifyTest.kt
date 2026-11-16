@@ -16,8 +16,16 @@ class NotifyTest {
     private val midnight = now - (now % day) // 00:00Z today
     private val on = NotifySettings(enabled = true)
 
-    private fun row(uuid: String = "u1", status: String = "pending", due: Long? = null, wait: Long? = null) =
-        Reminder(uuid, status, "Pay rent", due, wait)
+    private fun row(
+        uuid: String = "u1",
+        status: String = "pending",
+        due: Long? = null,
+        wait: Long? = null,
+        scheduled: Long? = null,
+        remindIn: String? = null,
+    ) = Reminder(uuid, status, "Pay rent", due, wait, scheduled, remindIn = remindIn)
+
+    private fun titles(rows: List<Reminder>, at: Long = now) = dueNotices(rows, at, on, emptySet(), 0).map { it.title }
 
     private fun kinds(rows: List<Reminder>, at: Long = now, seen: Set<String> = emptySet(), s: NotifySettings = on, tz: Int = 0) =
         dueNotices(rows, at, s, seen, tz).map { it.kind }
@@ -149,5 +157,77 @@ class NotifyTest {
     fun nothingScheduledWhenNothingWillEverBeSaid() {
         assertNull(nextTrigger(emptyList(), now, on, emptySet(), 0))
         assertNull(nextTrigger(listOf(row(status = "completed", due = now + 60)), now, on, emptySet(), 0))
+    }
+
+    // remind_in, as web/src/lib/notify.test.ts has it.
+
+    @Test
+    fun remindInIsReadByTheEngine() {
+        assertEquals(listOf(3600L, 600L), remindOffsets("10,1h"))
+        assertEquals(listOf(600L), remindOffsets("10min"))
+        assertNull(remindOffsets("default"))
+        assertNull(remindOffsets(null))
+        assertEquals(emptyList(), remindOffsets("none"))
+    }
+
+    @Test
+    fun theClosestMomentThatHasCome() {
+        assertEquals(3600L, reached(listOf(3600L, 600L), 1000 + 3600, 1000))
+        assertEquals(600L, reached(listOf(3600L, 600L), 1000 + 500, 1000))
+        assertNull(reached(listOf(3600L, 600L), 1000 + 7200, 1000))
+        assertNull(reached(listOf(600L), 1000, 1000))
+    }
+
+    @Test
+    fun eachTimeInTheListIsSaidOnce() {
+        val due = now + 50 * 60
+        val r = row(due = due, remindIn = "1h,10")
+        val first = dueNotices(listOf(r), now, on, emptySet(), 0).single()
+        assertEquals("Due in 50 minutes", first.title)
+        assertEquals(emptyList(), kinds(listOf(r), now, setOf(first.key)))
+        val second = dueNotices(listOf(r), due - 5 * 60, on, setOf(first.key), 0).single()
+        assertEquals("Due in 5 minutes", second.title)
+        assertNotEquals(first.key, second.key)
+        assertEquals(listOf(NoticeKind.Soon), kinds(listOf(row(due = now + 14 * 60, remindIn = "1h"))))
+        assertEquals(emptyList(), kinds(listOf(row(due = now + 14 * 60, remindIn = "5"))))
+    }
+
+    @Test
+    fun noneOrZeroTurnThemOffDefaultAndNonsenseUseTheSetting() {
+        val due = now + 10 * 60
+        assertEquals(emptyList(), kinds(listOf(row(due = due, remindIn = "none"))))
+        assertEquals(emptyList(), kinds(listOf(row(due = due, remindIn = "0"))))
+        assertEquals(listOf(NoticeKind.Soon), kinds(listOf(row(due = due, remindIn = "default"))))
+        assertEquals(listOf(NoticeKind.Soon), kinds(listOf(row(due = due, remindIn = "soon"))))
+        assertEquals(listOf(NoticeKind.Due), kinds(listOf(row(due = now - 60, remindIn = "none"))))
+    }
+
+    @Test
+    fun scheduledDatesGetThemToo() {
+        assertEquals(listOf("Scheduled in 10 minutes"), titles(listOf(row(scheduled = now + 10 * 60))))
+        assertEquals(emptyList(), kinds(listOf(row(scheduled = now + 20 * 60))))
+        assertEquals(listOf(NoticeKind.Scheduled), kinds(listOf(row(scheduled = now + 20 * 60, remindIn = "30"))))
+        assertEquals(emptyList(), kinds(listOf(row(scheduled = now - 60))))
+        assertEquals(emptyList(), kinds(listOf(row(scheduled = now + 10 * 60, wait = now + 3600))))
+    }
+
+    @Test
+    fun aDateWithNoTimeCountsBackFromTheHourOnlyWithTheTasksOwnTimes() {
+        val tomorrow = midnight + day
+        assertEquals(emptyList(), kinds(listOf(row(due = tomorrow)), tomorrow + 9 * 3600 - 10 * 60))
+        val r = row(due = tomorrow, remindIn = "30,1d")
+        assertEquals(listOf("Due today"), titles(listOf(r), tomorrow + 9 * 3600 - 20 * 60))
+        assertEquals(listOf("Due tomorrow"), titles(listOf(r), tomorrow - 14 * 3600))
+        assertEquals(emptyList(), kinds(listOf(r), tomorrow - 16 * 3600))
+    }
+
+    @Test
+    fun theAlarmIsSetForTheTasksOwnTimesAndScheduledDates() {
+        val due = now + 3 * 3600
+        assertEquals(due - 2 * 3600, nextTrigger(listOf(row(due = due, remindIn = "2h,10")), now, on, emptySet(), 0))
+        val seen = setOf("u1:soon:$due:7200")
+        assertEquals(due - 600, nextTrigger(listOf(row(due = due, remindIn = "2h,10")), due - 2 * 3600, on, seen, 0))
+        val sched = now + 3600
+        assertEquals(sched - 15 * 60, nextTrigger(listOf(row(scheduled = sched)), now, on, emptySet(), 0))
     }
 }

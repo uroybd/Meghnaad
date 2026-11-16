@@ -5,7 +5,8 @@
 
 use crate::ansi;
 use crate::app::{
-    now, App, ExportBox, ExportRow, Focus, KeyAdd, KeyLine, Mode, Page, Prompt, PromptKind, SettingsSection, SortEdit,
+    now, App, ExportBox, ExportRow, Focus, KeyAdd, KeyLine, Mode, Page, Prompt, PromptKind, RemindBox, RemindRow,
+    SettingsSection, SortEdit,
 };
 use crate::form::{self, Form, Kind};
 use crate::md;
@@ -137,6 +138,7 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::KeyAdd(add) => key_add_box(f, app, add, main),
         Mode::Question(asking) => question_box(f, &asking.question, main),
         Mode::Export(b) => export_box(f, b, main),
+        Mode::Reminders(b) => reminders_box(f, app, b, main),
         Mode::ExportPick { options, sel, .. } => picker(f, " export which table ", options, *sel, main),
         _ => {}
     }
@@ -179,6 +181,14 @@ fn screen(f: &mut Frame, app: &App) {
             f.render_widget(hints(keys), dock);
         }
         Mode::ExportPick { .. } => f.render_widget(hints("↑/↓ choose · ↵ export it · Esc cancel"), dock),
+        Mode::Reminders(b) => {
+            let keys = if b.asking {
+                "↵ add it to your taskrc · any other key back"
+            } else {
+                "↑/↓ line · ←/→ change · Space on or off · Esc close"
+            };
+            f.render_widget(hints(keys), dock);
+        }
         Mode::KeyAdd(add) => {
             let keys = match (&add.picked, &add.key) {
                 (None, _) => "a-z narrow · ↑/↓ choose · ↵ pick · Esc cancel",
@@ -247,7 +257,7 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
         None => Span::from(" ◎ none ").quiet(),
     });
     right.push(Span::from(" v review ").quiet());
-    right.push(if app.reminders {
+    right.push(if app.remind.on {
         Span::from(format!(" ♪ {} ", app.notices))
     } else {
         Span::from(" ♪ off ").quiet()
@@ -568,6 +578,58 @@ fn export_box(f: &mut Frame, b: &ExportBox, main: Rect) {
             .block(boxed(" export ".to_owned())),
         area,
     );
+}
+
+/// The Reminders box, as the web app's dialog: the options, and the `remind_in` UDA.
+fn reminders_box(f: &mut Frame, app: &App, b: &RemindBox, main: Rect) {
+    let s = app.remind;
+    let tick = |on: bool| if on { "[x] " } else { "[ ] " };
+    let lead = match s.lead_minutes {
+        0 => "none".to_owned(),
+        m if m % 60 == 0 => format!("{} hour{}", m / 60, if m == 60 { "" } else { "s" }),
+        m => format!("{m} minutes"),
+    };
+    let mut lines: Vec<Line> = vec![
+        Line::from("A heads-up about due and scheduled dates and tasks coming off wait, while the app is open."),
+        Line::default(),
+    ];
+    for (i, row) in crate::app::reminders::rows(&app.cfg).iter().enumerate() {
+        let text = match row {
+            RemindRow::On => format!("{}Remind me about due dates", tick(s.on)),
+            RemindRow::Lead => format!("Heads-up before a timed due or scheduled date  ‹ {lead} ›"),
+            RemindRow::Hour => format!("Due on a date with no time  ‹ remind at {:02}:00 ›", s.all_day_hour),
+            RemindRow::WaitOver => format!("{}Tell me when a waiting task comes back", tick(s.wait_over)),
+            RemindRow::Desktop => format!("{}Desktop notifications too", tick(s.desktop)),
+            RemindRow::Uda => "Add the remind_in attribute (UDA) to your taskrc".to_owned(),
+        };
+        let mark = if i == b.sel { MARK } else { "  " };
+        let style = if i == b.sel { theme::selected() } else { Style::new() };
+        lines.push(Line::styled(format!("{mark}{text}"), style));
+    }
+    lines.push(Line::default());
+    for l in [
+        "A task can have its own times: remind_in:10,1h. Minutes, or durations as Taskwarrior",
+        "writes them (10min, 1h, 2d; 10m is ten months). For a date with no time they count",
+        "back from the hour above. none turns them off for that task.",
+    ] {
+        lines.push(Line::styled(l, theme::dim()));
+    }
+    if crate::app::reminders::has_uda(&app.cfg) {
+        lines.push(Line::styled("The remind_in UDA is in your taskrc.", theme::dim()));
+    }
+    if b.asking {
+        lines.push(Line::styled(
+            "↵ writes uda.remind_in.type=string (and its label) with task config.",
+            theme::accent(),
+        ));
+    }
+    let w = u16::try_from(lines.iter().map(Line::width).max().unwrap_or(0) + 4)
+        .unwrap_or(60)
+        .min(main.width);
+    let h = u16::try_from(lines.len() + 2).unwrap_or(10).min(main.height);
+    let area = Rect::new(main.x + main.width.saturating_sub(w), main.y, w, h);
+    f.render_widget(Clear, area);
+    f.render_widget(Paragraph::new(lines).block(boxed(" reminders ".to_owned())), area);
 }
 
 fn items(f: &mut Frame, app: &App, area: Rect) {

@@ -46,7 +46,8 @@ the Hooks editor Ctrl+S saves and Tab indents. In the task form Enter saves, and
 
 #### Reminders
 
-Reminders have the same options as the web app (Menu → Reminders), and work with the app closed. The phone wakes the
+Reminders have the same options as the web app (Menu → Reminders), including a task's own `remind_in` times and the
+button that adds that UDA, and work with the app closed. The phone wakes the
 app when something is due or comes off `wait`, and the notification opens the task. Allow notifications when asked. The
 once-a-day digest of what is overdue comes at the hour you chose for dates with no time.
 

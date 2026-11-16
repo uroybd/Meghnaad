@@ -68,10 +68,7 @@ impl App {
                     scroll: 0,
                 };
             }
-            "app.reminders" => {
-                self.reminders = !self.reminders;
-                self.status = format!("Reminders {}.", if self.reminders { "on" } else { "off" });
-            }
+            "app.reminders" => self.open_reminders(),
             "move.down" => self.step(Step::By(1)),
             "move.up" => self.step(Step::By(-1)),
             "move.pageDown" => self.step(Step::By(10)),

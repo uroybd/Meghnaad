@@ -375,7 +375,8 @@ pub(super) fn selection(cfg: &Config, ctx: &EvalCtx<'_>, all: &[Facts], kind: Ki
             value: serde_json::to_value(sel.iter().map(|f| row(f)).collect::<Vec<_>>()).unwrap_or_default(),
         }),
         // What the reminders and the timer read, and nothing else: no urgency, colours, annotations or virtual
-        // tags. Only a running task has tracked time worth working out.
+        // tags. `remind_in` is the reminders' own UDA (a list of times before due and scheduled), sent whether or not
+        // it is defined. Only a running task has tracked time worth working out.
         Remind => {
             let journal = cfg.journal();
             let items: Vec<serde_json::Value> = sel
@@ -391,8 +392,10 @@ pub(super) fn selection(cfg: &Config, ctx: &EvalCtx<'_>, all: &[Facts], kind: Ki
                         "description": f.description,
                         "due": f.due,
                         "wait": f.wait,
+                        "scheduled": f.scheduled,
                         "start": f.start,
                         "active_seconds": tracked,
+                        "remind_in": f.extra.get("remind_in"),
                     })
                 })
                 .collect();

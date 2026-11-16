@@ -64,7 +64,7 @@ class Notifier {
 
   async poll() {
     try {
-      // Tasks with a due or wait date, plus anything running. `_remind` sends only what is read here: a full row for
+      // Tasks with a due, scheduled or wait date, plus anything running. `_remind` sends only what is read here: a full row for
       // every task (`_rows`) was the dearest request the page made.
       const res = await runCli({
         args: [
@@ -72,6 +72,8 @@ class Notifier {
           'due.any:',
           'or',
           'wait.any:',
+          'or',
+          'scheduled.any:',
           'or',
           '+ACTIVE',
           ')',

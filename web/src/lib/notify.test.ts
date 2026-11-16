@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, dueNotices, isAllDay, prune, type NotifySettings } from './notify';
+import { DEFAULT_SETTINGS, dueNotices, isAllDay, prune, reached, remindOffsets, type NotifySettings } from './notify';
 import type { Row } from './types';
 
 const DAY = 86400;
@@ -42,8 +42,10 @@ function row(over: Partial<Row> = {}): Row {
     ...over,
   };
 }
-const kinds = (rows: Row[], now = NOW, seen = new Set<string>(), s = on, tz = 0) =>
+type R = Row & { remind_in?: string | null };
+const kinds = (rows: R[], now = NOW, seen = new Set<string>(), s = on, tz = 0) =>
   dueNotices(rows, now, s, seen, tz).map((n) => n.kind);
+const titles = (rows: R[], now = NOW, tz = 0) => dueNotices(rows, now, on, new Set(), tz).map((n) => n.title);
 
 describe('timed due dates', () => {
   it('heads-up inside the lead window, once', () => {
@@ -129,5 +131,65 @@ describe('only pending tasks', () => {
 describe('prune', () => {
   it('forgets old keys', () => {
     expect(prune({ old: NOW - 4 * DAY, fresh: NOW - 3600 }, NOW)).toEqual({ fresh: NOW - 3600 });
+  });
+});
+
+describe('remind_in', () => {
+  it('reads minutes and Taskwarrior durations through the engine', () => {
+    expect(remindOffsets('10,1h')).toEqual([3600, 600]);
+    expect(remindOffsets('10min')).toEqual([600]);
+    expect(remindOffsets('default')).toBeNull();
+    expect(remindOffsets(undefined)).toBeNull();
+    expect(remindOffsets('none')).toEqual([]);
+  });
+
+  it('the closest moment that has come, none once the date is here', () => {
+    expect(reached([3600, 600], 1000 + 3600, 1000)).toBe(3600);
+    expect(reached([3600, 600], 1000 + 500, 1000)).toBe(600);
+    expect(reached([3600, 600], 1000 + 7200, 1000)).toBeNull();
+    expect(reached([600], 1000, 1000)).toBeNull();
+  });
+
+  it('each time in the list is said once, the latest that has come', () => {
+    const due = NOW + 50 * 60;
+    const r = row({ due, remind_in: '1h,10' } as Partial<R>);
+    const [first] = dueNotices([r], NOW, on, new Set(), 0);
+    expect(first.title).toBe('Due in 50 minutes');
+    expect(kinds([r], NOW, new Set([first.key]))).toEqual([]);
+    const [second] = dueNotices([r], due - 5 * 60, on, new Set([first.key]), 0);
+    expect(second.title).toBe('Due in 5 minutes');
+    expect(second.key).not.toBe(first.key);
+    // The setting's 15 minutes is not used when the task has its own times.
+    expect(kinds([row({ due: NOW + 14 * 60, remind_in: '1h' } as Partial<R>)])).toEqual(['soon']);
+    expect(kinds([row({ due: NOW + 14 * 60, remind_in: '5' } as Partial<R>)])).toEqual([]);
+  });
+
+  it('none or 0 turns them off, default and nonsense use the setting', () => {
+    const due = NOW + 10 * 60;
+    expect(kinds([row({ due, remind_in: 'none' } as Partial<R>)])).toEqual([]);
+    expect(kinds([row({ due, remind_in: '0' } as Partial<R>)])).toEqual([]);
+    expect(kinds([row({ due, remind_in: 'default' } as Partial<R>)])).toEqual(['soon']);
+    expect(kinds([row({ due, remind_in: 'soon' } as Partial<R>)])).toEqual(['soon']);
+    // "Due now" still comes.
+    expect(kinds([row({ due: NOW - 60, remind_in: 'none' } as Partial<R>)])).toEqual(['due']);
+  });
+
+  it("scheduled dates get them too, with the setting or the task's own", () => {
+    expect(titles([row({ scheduled: NOW + 10 * 60 })])).toEqual(['Scheduled in 10 minutes']);
+    expect(kinds([row({ scheduled: NOW + 20 * 60 })])).toEqual([]);
+    expect(kinds([row({ scheduled: NOW + 20 * 60, remind_in: '30' } as Partial<R>)])).toEqual(['scheduled']);
+    // No notice at the scheduled time itself.
+    expect(kinds([row({ scheduled: NOW - 60 })])).toEqual([]);
+    // Not while waiting.
+    expect(kinds([row({ scheduled: NOW + 10 * 60, wait: NOW + 3600 })])).toEqual([]);
+  });
+
+  it("a date with no time counts back from the hour, and only with the task's own times", () => {
+    const tomorrow = MIDNIGHT + DAY; // 9:00 tomorrow is the hour
+    expect(kinds([row({ due: tomorrow })], tomorrow + 9 * 3600 - 10 * 60)).toEqual([]);
+    const r = row({ due: tomorrow, remind_in: '30,1d' } as Partial<R>);
+    expect(titles([r], tomorrow + 9 * 3600 - 20 * 60)).toEqual(['Due today']);
+    expect(titles([r], tomorrow - 14 * 3600)).toEqual(['Due tomorrow']); // 10:00 today, a day before 9:00 tomorrow
+    expect(kinds([r], tomorrow - 16 * 3600)).toEqual([]); // 8:00 today: too early
   });
 });

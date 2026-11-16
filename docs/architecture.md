@@ -145,7 +145,8 @@ Every feature belongs to one of two layers.
    ported with its tests, except for a few pure functions every one of them would otherwise write again (below).
 
 `tc_core::helpers` is how layer 1 is handed to the front ends without a command: a date in the user's `dateformat`, a
-command line split and quoted as the engine reads it, a duration in one unit, what a header click does to a report's
+command line split and quoted as the engine reads it, a duration in one unit, the times a task's `remind_in` asks
+for (`remind_offsets`, durations as Taskwarrior reads them), what a header click does to a report's
 sort (`sortspec`), what Tab completes and how a line is coloured, how an urgency coefficient is named, what each cell of
 a report shows, what a quick-add line would make (`preview`), the Markdown of a note, what a saved board means and the
 numbers its sections show (`board`), and how keys are written and which action one runs (`keymap`). `helpers::call` runs
@@ -382,7 +383,7 @@ an exception across the boundary. It is the browser's engine with another way to
   activity, the reminder alarm's receiver and the widgets. Only the web app's own view logic is ported to Kotlin;
   Taskwarrior's rules are reached through the same library (`Rust.kt` for the helpers). A desktop preview target
   (`desktopApp`) shows the same screens with hot reload and is not shipped.
-- **Reminders** are the web's rules (`Notify.kt` mirrors `notify.ts`) plus an alarm: after every change the next moment
+- **Reminders** are the web's rules (`Notify.kt` mirrors `notify.ts`, a task's `remind_in` included) plus an alarm: after every change the next moment
   worth a reminder is worked out and `AlarmManager` wakes the app then, so they work with the app closed. See
   `app/README.md`.
 
@@ -717,7 +718,7 @@ depending on it, since a dependency changes whether tasks are blocked or blockin
 list; then the list is rebuilt, as after a long pull or an import.
 
 The page's own requests are small too: `_names` is `_tags` and `_projects` in one request, and the reminder poll asks
-`_remind` (seven fields) instead of `_rows` (a full row with every virtual tag for each task). Measured natively at 3,000
+`_remind` (nine fields) instead of `_rows` (a full row with every virtual tag for each task). Measured natively at 3,000
 tasks (WebAssembly is somewhat slower, but the proportions hold):
 
 | Request | Without | With |

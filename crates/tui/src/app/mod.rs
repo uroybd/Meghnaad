@@ -34,10 +34,12 @@ mod job;
 mod keyhelp;
 mod menus;
 mod prompt;
+pub mod reminders;
 mod settings_page;
 mod sort;
 
 pub use export::{format_name as export_format_name, ExportBox, Row as ExportRow};
+pub use reminders::{RemindBox, RemindRow};
 
 /// The pages, in the order of the top bar; each is opened by its number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,6 +213,8 @@ pub enum Mode {
         words: Vec<Vec<String>>,
         sel: usize,
     },
+    /// The reminder options, and the `remind_in` UDA.
+    Reminders(RemindBox),
 }
 
 /// A key being added: the section of the keys, the search for the action and the action chosen, then the key pressed.
@@ -379,7 +383,8 @@ pub struct App {
     /// `task sync` in the background, and when it runs by itself.
     pub syncer: Syncer,
     pub sync_mode: SyncMode,
-    pub reminders: bool,
+    /// The reminder options, from `settings.json`.
+    pub remind: remind::Settings,
     seen: BTreeSet<String>,
     pub notices: usize,
     last_read: i64,
@@ -407,6 +412,9 @@ The command line
   Tab/Shift+Tab complete · Ctrl+A/E start/end · Ctrl+W delete a word · Ctrl+U clear · Esc cancel
   A line whose command asks first (delete, edit, undo, …) runs on the terminal; sync runs in the background;
   put ! in front of any line to run it there.
+
+The Reminders box (N)
+  ↑/↓ a line · ←/→ change · Space or ↵ turn on or off · ↵ twice on the last line adds the remind_in UDA · Esc close
 
 The Export dialog (e)
   ↑/↓ a line · Space picks · type the path on its line · ↵ save (twice to replace a file) · Esc cancel
@@ -565,7 +573,7 @@ impl App {
             review: None,
             syncer: Syncer::default(),
             sync_mode: SyncMode::default(),
-            reminders: true,
+            remind: remind::Settings::default(),
             seen: BTreeSet::new(),
             notices: 0,
             last_read: 0,
@@ -709,6 +717,7 @@ impl App {
         self.settings_stamp = Self::settings_stamp();
         let (settings, problem) = AppSettings::load();
         self.settings = settings;
+        self.remind = remind::Settings::from_value(&self.settings.tui.reminders);
         let (mode, odd) = self.settings.sync_mode();
         self.sync_mode = mode;
         (self.progress, self.progress_errors) = self.settings.progress();
@@ -864,12 +873,16 @@ impl App {
             }
             self.last_read = now;
         }
-        if !self.reminders {
+        if !self.remind.on {
             return;
         }
         let tz = i64::from(model::local_offset(now));
-        let due = remind::due_notices(&self.pending, now, remind::Settings::default(), &self.seen, tz);
-        for Notice { key, title, body } in due {
+        let due = remind::due_notices(&self.pending, now, self.remind, &self.seen, tz);
+        for n in due {
+            if self.remind.desktop {
+                remind::desktop(&n);
+            }
+            let Notice { key, title, body } = n;
             self.seen.insert(key);
             self.notices += 1;
             self.status = format!("{title}: {body}");
@@ -1056,6 +1069,7 @@ impl App {
             Mode::Sort(edit) => self.in_sort(edit, key),
             Mode::KeyAdd(add) => self.in_key_add(add, key),
             Mode::Export(b) => self.in_export(b, key),
+            Mode::Reminders(b) => self.in_reminders(b, key),
             Mode::ExportPick { options, words, sel } => {
                 if let Some(step) = self.step_of(key) {
                     self.mode = Mode::ExportPick {

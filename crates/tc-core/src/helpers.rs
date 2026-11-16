@@ -111,6 +111,36 @@ fn iso_parts(p: &str) -> Option<Vec<String>> {
     rest.is_empty().then_some(parts)
 }
 
+/// The times before `due` and `scheduled` that a task's `remind_in` asks to be reminded, in seconds, latest first: a
+/// comma-separated list of bare numbers (minutes) and Taskwarrior durations (`10min`, `1h`, `2d`, `PT10M`; `10m` is ten
+/// months, as `task calc` says). `None` means the Reminders setting applies: no value, `default`, or nothing that reads
+/// as a time. An empty list means no reminders before those dates: `none`, or only zeros.
+pub fn remind_offsets(value: &str) -> Option<Vec<i64>> {
+    let v = value.trim();
+    if v.is_empty() || v.eq_ignore_ascii_case("default") {
+        return None;
+    }
+    if v.eq_ignore_ascii_case("none") {
+        return Some(Vec::new());
+    }
+    let mut any = false;
+    let mut out: Vec<i64> = Vec::new();
+    for item in v.split(',').map(str::trim).filter(|i| !i.is_empty()) {
+        let secs = if item.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            item.parse::<f64>().ok().map(|m| (m * 60.0).round() as i64)
+        } else {
+            crate::dates::parse_duration(item)
+        };
+        let Some(secs) = secs else { continue };
+        any = true;
+        if secs > 0 && !out.contains(&secs) {
+            out.push(secs);
+        }
+    }
+    out.sort_unstable_by(|a, b| b.cmp(a));
+    any.then_some(out)
+}
+
 /// One argument of a word in a command line that needs no quoting: letters, digits and `_@%+=:,./()-`.
 fn is_plain(c: char) -> bool {
     c.is_ascii_alphanumeric() || "_@%+=:,./()-".contains(c)
@@ -163,6 +193,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         "split_words" => json!(split_words(&a.req::<String>(0)?)),
         "shell_quote" => json!(shell_quote(&a.req::<String>(0)?)),
         "describe_recur" => json!(describe_recur(&a.req::<String>(0)?)),
+        "remind_offsets" => json!(remind_offsets(&a.req::<String>(0)?)),
         "set_vocab" => {
             *VOCAB.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
                 Some(a.req::<crate::complete::Vocab>(0)?);
@@ -629,6 +660,36 @@ mod tests {
         assert_eq!(shell_quote(""), "''");
         assert_eq!(shell_quote("+tag"), "+tag");
         assert_eq!(call("split_words", r#"["a 'b c' d"]"#), r#"["a","b c","d"]"#);
+    }
+
+    #[test]
+    fn remind_offsets_read_minutes_and_durations() {
+        assert_eq!(remind_offsets("10"), Some(vec![600]));
+        assert_eq!(
+            remind_offsets("10, 1h,10min"),
+            Some(vec![3600, 600]),
+            "latest first, once each"
+        );
+        assert_eq!(remind_offsets("PT10M,1d"), Some(vec![86_400, 600]));
+        assert_eq!(
+            remind_offsets("10m"),
+            Some(vec![10 * 30 * 86_400]),
+            "m is months, as task calc says"
+        );
+        assert_eq!(remind_offsets("1.5"), Some(vec![90]));
+        assert_eq!(
+            remind_offsets("soon,15"),
+            Some(vec![900]),
+            "an item that doesn't read is skipped"
+        );
+        for setting in ["", "  ", "default", "Default", "soon", ",,"] {
+            assert_eq!(remind_offsets(setting), None, "{setting:?} uses the setting");
+        }
+        for off in ["none", "NONE", "0", "0,0min"] {
+            assert_eq!(remind_offsets(off), Some(vec![]), "{off:?} turns them off");
+        }
+        assert_eq!(call("remind_offsets", r#"["5,default"]"#), "[300]");
+        assert_eq!(call("remind_offsets", r#"["default"]"#), "null");
     }
 
     #[test]

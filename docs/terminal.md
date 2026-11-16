@@ -122,7 +122,7 @@ On every page:
 | `v` | Review the tasks that need it |
 | `C` | Choose the context (`task context <name>`, or `none`) |
 | `T` | Stop the started task the timer shows |
-| `N` | Reminders on or off |
+| `N` | The Reminders box: the options, and turning them on or off |
 | `S` | [Sync](#sync) now, in the background |
 | `u` | `task undo`; its question opens in a box |
 | `R` | Read everything again |
@@ -219,10 +219,17 @@ when you answer `y`.
 ## The timer and reminders
 
 The top bar shows the started task (the earliest, with `+N` when there are more) and how long it has run, counting each
-second; `T` stops it. Reminders are the web app's: a heads-up 15 minutes before a due time, an all-day task at 9 on its
-day, a task coming back when its wait ends, and one notice a day for whatever is overdue. They show in the status line
-and the Console page, and the count is in the top bar. They work while the app is open, each is said once per run, and
-the pending tasks are read again every minute for them. `N` turns them off.
+second; `T` stops it. Reminders are the web app's: a heads-up 15 minutes before a due or scheduled time, an all-day
+task at 9 on its day, a task coming back when its wait ends, and one notice a day for whatever is overdue; a task's own
+`remind_in` times ([Time tracking and reminders](using/time-tracking.md)) replace the heads-up. They show in the status
+line and the Console page, and the count is in the top bar; with **Desktop notifications** on (the default) each is
+also a notification from the system: `osascript` on macOS, `notify-send` on Linux when it is installed. They work while
+the app is open, each is said once per run, and the pending tasks are read again every minute for them.
+
+`N` opens the Reminders box, the web app's dialog: reminders on or off, the heads-up (`←` `→`), the hour for dates with
+no time, the wait notice and desktop notifications. They are kept in `settings.json`, as `tui.reminders`
+(`on`, `lead_minutes`, `all_day_hour`, `wait_over`, `desktop`). Its last line, while your taskrc has no `remind_in`
+UDA, adds it: `Enter` asks, and `Enter` again runs `task config` for its type and label.
 
 ## Sync
 

@@ -140,7 +140,7 @@
     "app.review": "review the tasks that need it (tasksh's review)",
     "app.context": "choose the context",
     "app.stopTimer": "stop the started task (the timer in the top bar)",
-    "app.reminders": "reminders on or off",
+    "app.reminders": "the reminder options, and turning them on or off",
     "app.sync": "task sync, in the background",
     "app.undo": "task undo, on the terminal",
     "app.reload": "read everything again",

@@ -6322,7 +6322,7 @@ mod names_and_reminders {
         assert!(reminders.len() >= 2, "{reminders:?}");
         assert_eq!(rows.len(), reminders.len());
         for (row, rem) in rows.iter().zip(reminders) {
-            for field in ["uuid", "status", "description", "due", "wait", "start"] {
+            for field in ["uuid", "status", "description", "due", "wait", "scheduled", "start"] {
                 // A date that is not there is `null` in one and left out of the other.
                 assert_eq!(
                     row.get(field).unwrap_or(&serde_json::Value::Null),
@@ -6341,8 +6341,20 @@ mod names_and_reminders {
             }
             // And nothing else: it is the slim one.
             let keys: Vec<&String> = rem.as_object().unwrap().keys().collect();
-            assert_eq!(keys.len(), 7, "{keys:?}");
+            assert_eq!(keys.len(), 9, "{keys:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn reminders_carry_remind_in() {
+        let cfg = parse("uda.remind_in.type=string\n").config;
+        let mut r = world(&cfg).await;
+        run(&mut r, &cfg, "add Call due:tomorrow scheduled:today remind_in:10,1h").await;
+        let all = json(run(&mut r, &cfg, "description:Call _remind").await.0);
+        assert_eq!(all[0]["remind_in"], "10,1h");
+        assert!(all[0]["scheduled"].is_number());
+        let other = json(run(&mut r, &cfg, "+WAITING _remind").await.0);
+        assert!(other[0]["remind_in"].is_null(), "no value is null: {other}");
     }
 
     #[tokio::test]
