@@ -13,6 +13,7 @@ pub mod commands;
 pub mod completer;
 pub mod export;
 pub mod form;
+pub mod info;
 pub mod keys;
 pub mod lists;
 pub mod md;

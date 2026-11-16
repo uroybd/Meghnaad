@@ -38,6 +38,12 @@
       "sidebar.open": "enter",
       "sidebar.hidden": ".",
       "tasks.info": "enter",
+      "info.details": "d",
+      "info.recurrence": "r",
+      "info.timeLog": "t",
+      "info.annotations": "a",
+      "info.unknown": "u",
+      "info.raw": "i",
       "tasks.add": "a",
       "tasks.modify": "m",
       "tasks.annotate": "A",
@@ -101,7 +107,8 @@
       "settings.theme": ["settings.theme", "settings", "app", "page", "move"],
       "settings.commands": ["settings.commands", "settings", "app", "page", "move"],
       "settings.boards": ["settings.boards", "settings", "app", "page", "move"],
-      "settings.keys": ["settings.keys", "settings", "app", "page", "move"]
+      "settings.keys": ["settings.keys", "settings", "app", "page", "move"],
+      "info": ["info", "move"]
     }
   },
   "web": {
@@ -171,7 +178,13 @@
     "move.last": "the last row",
     "sidebar.open": "open the report",
     "sidebar.hidden": "show the hidden reports (names starting with _)",
-    "tasks.info": "task info",
+    "tasks.info": "the task's info, in tabs",
+    "info.details": "the Details tab: the task's attributes, dates, dependencies and UDAs",
+    "info.recurrence": "the Recurrence tab: the template and its instances",
+    "info.timeLog": "the Time log tab: the sessions journal.time recorded",
+    "info.annotations": "the Annotations tab",
+    "info.unknown": "the Unknown properties tab: what no UDA defines",
+    "info.raw": "task info, as task prints it",
     "tasks.add": "add, with a preview of the task it makes; ↓ or Ctrl+F opens the full form",
     "tasks.modify": "modify the task, in the full form",
     "tasks.annotate": "annotate the task",

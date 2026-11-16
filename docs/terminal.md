@@ -142,7 +142,7 @@ On the Tasks page:
 | Key | Does |
 | --- | --- |
 | `j` `k` and the moves above | Move through the report |
-| `Enter` | `task <uuid> info`, scrolled with `j` `k`, `[` `]` going from section to section; any other key closes it |
+| `Enter` | The task's info, in tabs ([Task info](#task-info)); any other key closes it |
 | `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form) |
 | `m` | Modify the selected task, in [the full form](#the-form) |
 | `A` | Annotate the selected task, in a box that shows it as it is |
@@ -194,6 +194,22 @@ In the command line, the boxes and the form, `Tab` completes the word: the share
 back. `Ctrl+A` and `Ctrl+E` go to the start and the end, `Ctrl+W` deletes a word, `Ctrl+U` the line, `Enter` runs it and
 `Esc` leaves it. Completion offers commands and reports, attributes, projects, tags, UDA values, task ids and date words,
 from what `task` lists (`_show`, `_projects`, `_tags` and the pending tasks).
+
+## Task info
+
+`Enter` on a task opens its info, as the web app's and the phone's panel has it, in tabs along the top. A tab with
+nothing in it is left out.
+
+| Tab | Key | Shows |
+| --- | --- | --- |
+| Details | `d` | The description (with your [transformations](using/settings.md#transformations), its links clickable), ID, UUID, status, project, priority, tags, the dates, how long it has been active, urgency, what it depends on and what waits on it, and the UDAs by their labels |
+| Recurrence | `r` | Its recurrence, its template (for an instance) or its instances, newest first (for a template) |
+| Time log | `t` | With `journal.time` on: each session from its Started and Stopped notes, the running one last, and the total |
+| Annotations | `a` | Each note with its date, drawn as Markdown; the journal's own notes are in the Time log instead |
+| Unknown properties | `u` | What the task holds that no UDA in your taskrc defines |
+
+`[` `]` go to the tab before and the next, and the moves scroll the tab, each keeping its place. `i` shows `task info`
+as `task` prints it, for what the tabs leave out (its history of changes, among others). Any other key closes it.
 
 ## The command line
 

@@ -37,6 +37,7 @@ mod prompt;
 pub mod reminders;
 mod settings_page;
 mod sort;
+mod taskinfo;
 
 pub use export::{format_name as export_format_name, ExportBox, Row as ExportRow};
 pub use reminders::{RemindBox, RemindRow};
@@ -178,7 +179,9 @@ pub enum Mode {
     Prompt(Prompt),
     /// The full form for a new task or one being changed.
     Form(Form),
-    /// `task <uuid> info`, as it printed it.
+    /// A task's info, in tabs (spec 0006).
+    TaskInfo(crate::info::Info),
+    /// `task <uuid> info` as it printed it, or the list of every key.
     Info {
         text: String,
         scroll: u16,
@@ -1077,6 +1080,7 @@ impl App {
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Prompt(p) => self.in_prompt(p, key),
             Mode::Form(f) => self.in_form(f, key),
+            Mode::TaskInfo(i) => self.in_task_info(i, key),
             Mode::Info { text, scroll } => {
                 if let Some(by) = self.section_of(key) {
                     let scroll = section_scroll(&text_sections(&text), scroll, by);

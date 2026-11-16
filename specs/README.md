@@ -38,4 +38,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0003 | [Custom reminder](0003-custom-reminder.md) | in progress | 2 (UI) | all | Seen by a person: the Android alarm with the app closed, its Reminders dialog; a Linux notification |
 | 0004 | [Export filter and sort](0004-export-filter-sort.md) | dropped | 2 (UI) | all | |
 | 0005 | [Stack a chart by a field](0005-chart-stack-by.md) | in progress | 2 (UI) | all | Seen by a person: stacked charts on the web and Android (the terminal was checked) |
-| 0006 | [The terminal app's own task info](0006-tui-task-info.md) | draft | 2 (UI), one helper | terminal | Open questions: history, the shared sessions helper, the keys |
+| 0006 | [The terminal app's own task info](0006-tui-task-info.md) | in progress | 2 (UI), one helper | terminal (web, Android: the time log helper) | Seen by a person: a link in the info view opening |

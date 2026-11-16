@@ -115,6 +115,7 @@ fn screen(f: &mut Frame, app: &App) {
         review(f, r, main);
     }
     match &app.mode {
+        Mode::TaskInfo(info) => task_info(f, app, info, main),
         Mode::Info { text, scroll } => {
             f.render_widget(Clear, main);
             f.render_widget(
@@ -1191,6 +1192,83 @@ fn picker(f: &mut Frame, title: &str, options: &[String], sel: usize, main: Rect
             .highlight_spacing(HighlightSpacing::Always),
         area,
         &mut ListState::default().with_selected(Some(sel)),
+    );
+}
+
+/// A task's info (spec 0006): its tabs along the top, the shown one in the accent, and the shown tab's lines under them,
+/// each label beside what it holds, wrapped to the pane and scrolled.
+fn task_info(f: &mut Frame, app: &App, info: &crate::info::Info, area: Rect) {
+    use crate::info::Shown;
+    f.render_widget(Clear, area);
+    let key = |action: &str| {
+        app.keymap
+            .keys_of(action)
+            .first()
+            .map(|k| tc_core::keymap::display(k))
+            .unwrap_or_default()
+    };
+    let hint = format!(
+        "{}/{} tab · {} task info · any other key closes",
+        key("move.sectionPrev"),
+        key("move.sectionNext"),
+        key("info.raw")
+    );
+    let block = text_pane("info", true)
+        .title_top(note(&info.title.chars().take(60).collect::<String>()))
+        .title_bottom(note(&hint));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let [tabs_area, _, body] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    let mut tabs: Vec<Span> = Vec::new();
+    for (i, (tab, _)) in info.tabs.iter().enumerate() {
+        let k = key(tab.action());
+        let text = format!(
+            " {} {} ",
+            tab.title(),
+            if k.is_empty() { String::new() } else { format!("({k})") }
+        );
+        tabs.push(if i == info.sel {
+            Span::styled(text, theme::accent().add_modifier(Modifier::BOLD | Modifier::REVERSED))
+        } else {
+            Span::from(text).quiet()
+        });
+        tabs.push(Span::from(" "));
+    }
+    f.render_widget(Paragraph::new(Line::from(tabs)), tabs_area);
+    let Some((_, entries)) = info.tabs.get(info.sel) else {
+        return;
+    };
+    let label_width = entries
+        .iter()
+        .map(|e| e.label.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(20);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for e in entries {
+        let value: Vec<Line<'static>> = match &e.shown {
+            Shown::Text(t) => t.lines().map(|l| Line::from(l.to_owned())).collect(),
+            Shown::Dim(t) => vec![Line::from(t.clone()).quiet()],
+            Shown::Tree(tree) => md::lines(tree, Style::default()),
+        };
+        for (i, l) in value.into_iter().enumerate() {
+            let label = if i == 0 { e.label.as_str() } else { "" };
+            let mut spans = vec![Span::from(format!("{label:<label_width$}  ")).quiet()];
+            spans.extend(l.spans);
+            lines.push(Line::from(spans));
+        }
+    }
+    // How far it can scroll: the lines as they wrap to the width, less what fits.
+    let width = usize::from(body.width.max(1));
+    let rows: usize = lines.iter().map(|l| l.width().max(1).div_ceil(width)).sum();
+    let room = u16::try_from(rows.saturating_sub(usize::from(body.height))).unwrap_or(u16::MAX);
+    info.room.set(room);
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((info.scroll().min(room), 0)),
+        body,
     );
 }
 

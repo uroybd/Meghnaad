@@ -148,7 +148,7 @@ Every feature belongs to one of two layers.
 command line split and quoted as the engine reads it, a duration in one unit, the times a task's `remind_in` asks
 for (`remind_offsets`, durations as Taskwarrior reads them), what a header click does to a report's
 sort (`sortspec`), what Tab completes and how a line is coloured, how an urgency coefficient is named, what each cell of
-a report shows, what a quick-add line would make (`preview`), the Markdown of a note, what a saved board means and the
+a report shows, what a quick-add line would make (`preview`), the sessions a task's journal notes make (`time_log`), the Markdown of a note, what a saved board means and the
 numbers its sections show (`board`), and how keys are written and which action one runs (`keymap`). `helpers::call` runs
 them by name with JSON arguments. The browser calls them on the page's own thread, the phone over JNI, the terminal app
 directly.
@@ -429,7 +429,8 @@ engine. Every read and change is a `task` command line: `_show` for the settings
 engine would), `<filter> export <report>` for a report, `_projects`, `_tags` and the pending tasks for completion, and
 every change captured (a quick action, a console line, `summary`, `calendar`, `burndown`) or run on the terminal itself
 when `task` would ask. It calls `tc-core` only where `task` has no command: completion, the add preview, report cells,
-keys and boards. Turning `export` into rows, chains, task commands, the Projects and Tags lists, the task form, review,
+the time log, keys and boards. Its task info (`info.rs`, `app/taskinfo.rs`) is its own, in tabs, built from `export`
+of the task and the tasks around it. Turning `export` into rows, chains, task commands, the Projects and Tags lists, the task form, review,
 reminders and the boards' glue are its own, ported from the web app and Android with their tests. Syncing is `task sync`
 run in the background, when the `sync` key of its `settings.json` says. It keeps that file in its config folder and never
 reaches the bucket. Its Export dialog (`app/export.rs`) and `meghnaad export` (`export.rs`, `task export` for scripts)
