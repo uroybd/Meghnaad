@@ -80,7 +80,9 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
         stringUdas.zip(markdownTrees(stringUdas.map { task.extra.getValue(it) }, stringUdas, rules)).toMap()
     }
     val noteTrees = remember(task.uuid, task.modified, rules) { markdownTrees(notes.map { it.text }, notes.map { "annotations" }, rules) }
-    val totalTracked = task.activeSeconds ?: task.sessions.sumOf { it.seconds }
+    // The sessions, from the journal's notes by the engine's own helper (as the web and the terminal app read them).
+    val log = timeLog(task.annotations, task.start, store.config?.journal, store.clockNow())
+    val totalTracked = task.activeSeconds ?: log.total
 
     Column(Modifier.fillMaxWidth()) {
         Field("ID") {
@@ -201,7 +203,7 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
             }
         }
 
-        if (task.sessions.isNotEmpty()) {
+        if (log.sessions.isNotEmpty()) {
             Heading("Time sessions", "timer")
             // A phone's width: the start and the stop one above the other in one column, the duration at the end.
             Column(Modifier.fillMaxWidth()) {
@@ -210,7 +212,7 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
                     Dim("Started → stopped", Modifier.weight(1f), 12)
                     Dim("Duration", size = 12)
                 }
-                task.sessions.forEachIndexed { i, s ->
+                log.sessions.forEachIndexed { i, s ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                         Dim("${i + 1}", Modifier.width(26.dp), 12)
                         Column(Modifier.weight(1f)) {

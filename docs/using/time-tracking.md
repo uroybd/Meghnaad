@@ -1,7 +1,8 @@
 # Time tracking and reminders
 
 **Time tracking.** Add `journal.time=on` to your taskrc. `start` and `stop` then record "Started task" and "Stopped
-task" (the texts are configurable), and a task's detail shows its sessions and a running total. A running task shows a
+task" (the texts are configurable), and a task's detail shows its sessions and a running total (the terminal app: the **Time log** tab of a task's
+info). Every app pairs those notes into sessions the same way. A running task shows a
 timer in the header and in the tab title.
 
 **Reminders.** The **bell** in the header turns them on. You get:

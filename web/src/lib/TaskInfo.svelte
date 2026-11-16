@@ -5,7 +5,7 @@
   import { describeChange } from './history';
   import { projectSegments, shortUuid, trimNumber, udaLabel, urgencyLevel } from './format';
   import { CornerUpLeft, Lock, Pencil, Repeat, Timer } from './icons';
-  import { visibleNotes } from './journal';
+  import { timeLog, visibleNotes } from './journal';
   import Description from './Description.svelte';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import { trees } from './markdown';
@@ -104,7 +104,9 @@
       store.appearance.transformations,
     ),
   );
-  const totalTracked = $derived(task.active_seconds ?? task.sessions.reduce((n, s) => n + s.seconds, 0));
+  // The sessions, from the journal's notes by the engine's own helper (as the phone and the terminal app read them).
+  const log = $derived(timeLog(task, store.config?.journal));
+  const totalTracked = $derived(task.active_seconds ?? log.total);
   // A recurring template lists its instances (newest first); an instance links back to it.
   let instances = $state<Row[]>([]);
   $effect(() => {
@@ -276,7 +278,7 @@
     {/if}
   {/if}
 
-  {#if task.sessions.length}
+  {#if log.sessions.length}
     <h4 class="sess"><Timer size={13} /> Time sessions</h4>
     <div class="scroll">
       <table class="sessions" data-testid="sessions">
@@ -284,7 +286,7 @@
           <tr><th>#</th><th>Started</th><th>Stopped</th><th class="num">Duration</th></tr>
         </thead>
         <tbody>
-          {#each task.sessions as s, i (i)}
+          {#each log.sessions as s, i (i)}
             <tr class:running={s.end == null}>
               <td class="dim">{i + 1}</td>
               <td class="mono">{stamp(s.start)}</td>

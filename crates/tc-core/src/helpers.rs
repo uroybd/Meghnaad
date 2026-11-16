@@ -21,6 +21,62 @@ pub fn format_date(pattern: &str, ts: i64, tz: i32, week_starts_monday: bool) ->
     DateFormat::new(pattern).format(ts, &clock)
 }
 
+/// What a task's time log is read from, as a row or an `export` has it (dates in seconds since 1970): its notes and when
+/// it was started.
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+pub struct TimeTask {
+    annotations: Vec<TimeNote>,
+    start: Option<i64>,
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct TimeNote {
+    entry: i64,
+    text: String,
+}
+
+/// The notes `journal.time` writes when a task is started and stopped.
+#[derive(serde::Deserialize)]
+pub struct Markers {
+    start: String,
+    stop: String,
+}
+
+/// A task's tracked work: each session, the running one last with no end, and what they add up to (seconds).
+#[derive(serde::Serialize, Debug, PartialEq, Eq)]
+pub struct TimeLog {
+    pub sessions: Vec<crate::model::Session>,
+    pub total: i64,
+}
+
+/// The time log of a task, from the start and stop notes `journal.time` wrote (the engine's own pairing of them), as of
+/// `now`. Without the journal (`journal.time` off) there is none.
+pub fn time_log(task: &TimeTask, journal: Option<&Markers>, now: i64) -> TimeLog {
+    let Some(j) = journal else {
+        return TimeLog {
+            sessions: Vec::new(),
+            total: 0,
+        };
+    };
+    let facts = crate::model::Facts {
+        annotations: task
+            .annotations
+            .iter()
+            .map(|n| crate::model::Note {
+                entry: n.entry,
+                text: n.text.clone(),
+            })
+            .collect(),
+        start: task.start,
+        ..crate::model::Facts::default()
+    };
+    let sessions = facts.sessions(&j.start, &j.stop, now);
+    let total = sessions.iter().map(|s| s.seconds).sum();
+    TimeLog { sessions, total }
+}
+
 /// A duration the way Taskwarrior writes it, one unit: `3d`, `2w`, `4mo`, `1.5y`; empty for under a second.
 pub fn vague(secs: i64) -> String {
     format_vague(secs)
@@ -191,6 +247,12 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
     use serde_json::json;
     Ok(match name {
         "split_words" => json!(split_words(&a.req::<String>(0)?)),
+        // A task's sessions from its journal notes: the task, the markers (null: `journal.time` off) and now.
+        "time_log" => json!(time_log(
+            &a.req::<TimeTask>(0)?,
+            a.opt::<Markers>(1)?.as_ref(),
+            a.req::<i64>(2)?
+        )),
         "shell_quote" => json!(shell_quote(&a.req::<String>(0)?)),
         "describe_recur" => json!(describe_recur(&a.req::<String>(0)?)),
         "remind_offsets" => json!(remind_offsets(&a.req::<String>(0)?)),
@@ -540,6 +602,27 @@ pub fn call(name: &str, args: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_time_log_pairs_the_journal_notes_and_adds_them_up() {
+        let task = r#"{ "start": 900, "annotations": [
+            { "entry": 100, "text": "Started task" }, { "entry": 160, "text": "mine" },
+            { "entry": 400, "text": "Stopped task" }, { "entry": 500, "text": "Stopped task" },
+            { "entry": 800, "text": "Started task" } ] }"#;
+        let markers = r#"{ "start": "Started task", "stop": "Stopped task" }"#;
+        let log: serde_json::Value =
+            serde_json::from_str(&call("time_log", &format!("[{task}, {markers}, 1000]"))).unwrap();
+        // 100 to 400; the second stop closes nothing; the running one from its start note at 800.
+        assert_eq!(
+            log,
+            serde_json::json!({ "sessions": [
+                { "start": 100, "end": 400, "seconds": 300 },
+                { "start": 800, "end": null, "seconds": 200 } ], "total": 500 })
+        );
+        // journal.time off: no log.
+        let off: serde_json::Value = serde_json::from_str(&call("time_log", &format!("[{task}, null, 1000]"))).unwrap();
+        assert_eq!(off, serde_json::json!({ "sessions": [], "total": 0 }));
+    }
 
     // 2026-10-07 12:30:00 UTC, a Wednesday (reference values from strftime).
     const WED: i64 = 1_791_376_200;

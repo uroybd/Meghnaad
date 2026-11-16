@@ -165,3 +165,26 @@ describe('the tasks around this one', () => {
     store.view = 'tasks';
   });
 });
+
+describe('the time log', () => {
+  it('is the sessions the journal notes make, as the engine pairs them', async () => {
+    store.config = {
+      colors: {},
+      journal: { start: 'Started task', stop: 'Stopped task' },
+      config: { udas: {}, settings: {}, reports: {} },
+    } as unknown as ConfigResponse;
+    const notes = [
+      { entry: 100, text: 'Started task' },
+      { entry: 160, text: 'mine' },
+      { entry: 3700, text: 'Stopped task' },
+    ];
+    app = mount(TaskInfo, {
+      target: document.body,
+      props: { task: { ...task('77777777-7777-7777-7777-777777777777'), annotations: notes } },
+    });
+    await settle();
+    const rows = document.querySelectorAll('[data-testid="sessions"] tbody tr');
+    expect(rows.length).toBe(1);
+    expect(document.querySelector('[data-testid="sessions-total"]')?.textContent).toBe('1h 0m');
+  });
+});

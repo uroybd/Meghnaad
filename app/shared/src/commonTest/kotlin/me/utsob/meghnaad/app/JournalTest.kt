@@ -32,4 +32,14 @@ class JournalTest {
     fun aMarkerMatchesExactlyNotByPrefix() {
         assertEquals(1, visibleNotes(listOf(n(1, "Started task early")), j).size)
     }
+
+    @Test
+    fun theTimeLogIsTheSessionsTheEnginePairsFromTheJournalNotes() {
+        val notes = listOf(Note(100, "Started task"), Note(160, "mine"), Note(400, "Stopped task"), Note(800, "Started task"))
+        val log = timeLog(notes, start = 900, journal = j, now = 1000)
+        assertEquals(listOf(Session(100, 400, 300), Session(800, null, 200)), log.sessions)
+        assertEquals(500L, log.total)
+        // journal.time off: none.
+        assertEquals(TimeLog(), timeLog(notes, start = 900, journal = null, now = 1000))
+    }
 }

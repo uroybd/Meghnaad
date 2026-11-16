@@ -76,8 +76,8 @@ fun DetailScreen(store: Store, ref: DetailRef) {
     val live = task?.let { t ->
         if (t.activeSeconds != null && t.start != null) {
             val grown = maxOf(0, tick - fetchedAt)
-            // Only the running session (no end) grows between fetches.
-            t.copy(activeSeconds = t.activeSeconds + grown, sessions = t.sessions.map { s -> if (s.end == null) s.copy(seconds = s.seconds + grown) else s })
+            // The time log is read as of now each time it is drawn; the active time grows here between fetches.
+            t.copy(activeSeconds = t.activeSeconds + grown)
         } else {
             t
         }
