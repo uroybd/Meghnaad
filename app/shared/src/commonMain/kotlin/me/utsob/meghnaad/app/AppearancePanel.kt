@@ -49,6 +49,9 @@ class AppearanceState(private val store: Store) {
     /** The transformations, in the order they run. */
     val rules = mutableStateListOf<RuleDraft>().also { it.addAll(toRules(saved)) }
 
+    /** A task with no ID shows its short uuid rather than `-`. */
+    var idFallback by mutableStateOf(saved.idFallback)
+
     var busy by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var done by mutableStateOf(false)
@@ -85,6 +88,7 @@ class AppearanceState(private val store: Store) {
         get() = Appearance(
             draft.keys.mapNotNull { n -> range(n)?.let { n to it } }.toMap(),
             rules.map { Transformation(it.match, it.replace, it.fields) },
+            idFallback,
         )
 
     /** What the engine says is wrong with the rules (a pattern that does not compile, no fields, a field that is not text). */
@@ -103,6 +107,7 @@ class AppearanceState(private val store: Store) {
             draft.putAll(toDraft(now))
             rules.clear()
             rules.addAll(toRules(now))
+            idFallback = now.idFallback
         }
     }
 
@@ -154,7 +159,17 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
     val scope = rememberCoroutineScope()
     val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Progress bars", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text("IDs", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { state.idFallback = !state.idFallback; state.done = false },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(state.idFallback, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
+            Text("Fall back to UUID.short when ID is missing (e.g. completed or deleted)", fontSize = 15.sp)
+        }
+        Dim("Off, a task with no ID shows - in the ID column, as task all does. Either way, copying the cell gives the whole uuid.")
+
+        Text("Progress bars", Modifier.padding(top = 16.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Dim(
             "A numeric UDA shown as a bar in reports: empty at its minimum, full at its maximum. A value outside the range fills or " +
                 "empties the bar; a task with no value shows nothing. It is kept in this app's own settings.json, not in your taskrc.",

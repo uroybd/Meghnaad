@@ -57,13 +57,18 @@ describe('formatCells', () => {
     const out = cells([col('id'), col('description')], [row(), row({ id: null, description: 'Other' })]);
     expect(out.map((r) => r.map((c) => c.text))).toEqual([
       ['3', 'Buy milk'],
-      ['aaaaaaaa', 'Other'],
+      ['-', 'Other'],
     ]);
     expect(cells([col('id')], [])).toEqual([]);
   });
 
   it('keeps what a cell carries besides its text', () => {
-    expect(cell(col('id'), row({ id: null }))).toEqual({ text: 'aaaaaaaa', cls: 'dim', uuid: row().uuid });
+    expect(cell(col('id'), row({ id: null }))).toEqual({ text: '-', uuid: row().uuid });
+    expect(cell(col('id'), row({ id: null }), { ...ctx, idFallback: true })).toEqual({
+      text: 'aaaaaaaa',
+      cls: 'dim',
+      uuid: row().uuid,
+    });
     expect(cell(col('project'), row({ project: 'Home.Kitchen' })).segments).toEqual(projectSegments('Home.Kitchen'));
     expect(cell(col('tags'), row({ tags: ['a', 'b'] })).chips).toEqual(['a', 'b']);
     expect(cell(col('description'), row({ annotations: [{ entry: NOW, text: 'n' }] })).notes).toEqual([

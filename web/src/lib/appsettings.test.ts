@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   emptyAppearance,
@@ -12,6 +13,8 @@ import {
   serializeBoards,
   serializeHomepage,
   serializeSettings,
+  lintSettings,
+  mergeSettings,
 } from './appsettings';
 
 describe('parseSettings', () => {
@@ -73,8 +76,9 @@ describe('serializeSettings', () => {
     expect(text.endsWith('}\n')).toBe(true);
   });
 
-  it('leaves the key out when there are none, and reads back what it wrote', () => {
-    expect(JSON.parse(serializeSettings({ taskCommands: [{}] }, []))).toEqual({});
+  it('leaves the key out when there are none, keeps what it could not read, and reads back what it wrote', () => {
+    expect(JSON.parse(serializeSettings({ taskCommands: [{ name: 'a', command: 'b' }] }, []))).toEqual({});
+    expect(JSON.parse(serializeSettings({ taskCommands: [{}] }, []))).toEqual({ taskCommands: [{}] });
     const cmds = [{ name: 'a', command: 'b c' }];
     expect(parseSettings(serializeSettings({}, cmds)).commands).toEqual(cmds);
   });
@@ -201,12 +205,18 @@ describe('appearance', () => {
     expect(errors.join('\n')).toContain('flat: min must be less than max');
     expect(parseAppearance('x').errors).toHaveLength(1);
     expect(parseAppearance({ progress: [] }).errors).toHaveLength(1);
-    expect(parseAppearance(undefined)).toEqual({ appearance: { progress: {}, transformations: [] }, errors: [] });
+    expect(parseAppearance(undefined)).toEqual({ appearance: emptyAppearance(), errors: [] });
+    expect(parseAppearance({ idFallback: true }).appearance.idFallback).toBe(true);
+    expect(parseAppearance({ idFallback: 'yes' }).errors).toEqual(['appearance.idFallback must be true or false']);
   });
 
   it('is kept when the rest of the settings are saved, and saved without touching them', () => {
     const raw = { homepage: { report: 'list' }, taskCommands: [{ name: 'a', command: 'done' }], keep: 1 };
-    const text = serializeAppearance(raw, { progress: { progress: { min: 0, max: 100 } }, transformations: [] });
+    const text = serializeAppearance(raw, {
+      progress: { progress: { min: 0, max: 100 } },
+      transformations: [],
+      idFallback: false,
+    });
     expect(JSON.parse(text)).toEqual({ ...raw, appearance: { progress: { progress: { min: 0, max: 100 } } } });
     // None left leaves the key out.
     expect(JSON.parse(serializeAppearance({ ...raw, appearance: { progress: {} } }, emptyAppearance()))).toEqual(raw);
@@ -226,7 +236,7 @@ describe('appearance', () => {
       'appearance.transformations[4]: must be { "match": "…", "replace": "…", "fields": [ … ] }',
     ]);
     expect(parseAppearance({ transformations: {} }).errors).toHaveLength(1);
-    const text = serializeAppearance({}, { progress: {}, transformations: [jira] });
+    const text = serializeAppearance({}, { progress: {}, transformations: [jira], idFallback: false });
     expect(JSON.parse(text)).toEqual({ appearance: { transformations: [jira] } });
     expect(parseSettings(text).appearance.transformations).toEqual([jira]);
     expect(sameAppearance(appearance, { ...appearance, transformations: [jira] })).toBe(false);
@@ -239,5 +249,120 @@ describe('appearance', () => {
     expect(progressFraction(-5, r)).toBe(0);
     expect(progressFraction(80, r)).toBe(1);
     expect(progressFraction(Number.NaN, r)).toBe(0);
+  });
+});
+
+// Spec 0009: the cases every front end's merge is tested against, and a file with what no front end knows at every depth.
+const kept = JSON.parse(readFileSync('../fixtures/settings-kept.json', 'utf8')) as {
+  merge: { name: string; old: unknown; base: unknown; next: unknown; expect: unknown }[];
+  file: Record<string, unknown>;
+  kept: (string | number)[][];
+};
+const at = (v: unknown, path: (string | number)[]) =>
+  path.reduce<unknown>((o, k) => (o as Record<string | number, unknown> | undefined)?.[k], v);
+
+describe('saving keeps what this app does not use', () => {
+  for (const c of kept.merge)
+    it(`merges: ${c.name}`, () => {
+      expect(mergeSettings(c.old, c.base, c.next)).toEqual(c.expect);
+    });
+
+  it('keeps every unknown key and unusable entry through each kind of save', () => {
+    const read = parseSettings(JSON.stringify(kept.file));
+    expect(read.errors).toHaveLength(1); // the task command named “two words”
+    expect(read.boardErrors).toHaveLength(1); // the board with a bad id
+    const saves = {
+      commands: serializeSettings(read.raw, [...read.commands, { name: 'late', command: '+OVERDUE list' }]),
+      'commands, one edited': serializeSettings(read.raw, [{ name: 'fail', command: 'done outcome:failed' }]),
+      boards: serializeBoards(read.raw, read.boards),
+      'boards, one renamed': serializeBoards(read.raw, [{ ...read.boards[0], name: 'This week' }]),
+      homepage: serializeHomepage(read.raw, { board: 'week' }),
+      appearance: serializeAppearance(read.raw, {
+        ...read.appearance,
+        progress: { ...read.appearance.progress, pct: { min: 0, max: 1 } },
+      }),
+      'appearance, cleared': serializeAppearance(read.raw, emptyAppearance()),
+    };
+    for (const [what, text] of Object.entries(saves)) {
+      const out = JSON.parse(text) as unknown;
+      for (const path of kept.kept) {
+        // Clearing the appearance takes the transformation it understood, with what was in it.
+        if (what === 'appearance, cleared' && path[1] === 'transformations') continue;
+        expect(at(out, path), `${what}: ${path.join('.')}`).toEqual(at(kept.file, path));
+      }
+    }
+    expect(at(JSON.parse(saves['commands, one edited']), ['taskCommands', 0])).toEqual({
+      name: 'fail',
+      command: 'done outcome:failed',
+      'x-kept': 2,
+    });
+    expect(JSON.parse(saves['appearance, cleared']).appearance).toEqual({ 'x-kept': true });
+  });
+
+  it('saves the ID fallback with the rest of the appearance, and takes it out when it is turned off', () => {
+    const raw = { appearance: { progress: { done: { min: 0, max: 10 } }, mine: 1 }, other: 2 };
+    const on = JSON.parse(
+      serializeAppearance(raw, { ...parseSettings(JSON.stringify(raw)).appearance, idFallback: true }),
+    );
+    expect(on).toEqual({
+      appearance: { progress: { done: { min: 0, max: 10 } }, mine: 1, idFallback: true },
+      other: 2,
+    });
+    const read = parseSettings(JSON.stringify(on));
+    expect(read.appearance.idFallback).toBe(true);
+    expect(JSON.parse(serializeAppearance(on, { ...read.appearance, idFallback: false }))).toEqual(raw);
+  });
+
+  it('writes a board read from its date ranges with its controls alone', () => {
+    const legacy = {
+      id: 'week',
+      name: 'Week',
+      ranges: [{ name: 'when', default: 'this week' }],
+      sections: [{ id: 'open', type: 'number', x: 0, y: 0, w: 3, h: 2 }],
+    };
+    const read = parseSettings(JSON.stringify({ boards: [legacy] }));
+    const out = JSON.parse(serializeBoards(read.raw, read.boards));
+    expect(out.boards[0].ranges).toBeUndefined();
+    expect(parseSettings(JSON.stringify(out)).boardErrors).toEqual([]);
+  });
+});
+
+describe('lintSettings', () => {
+  it('stops at what is not settings', () => {
+    expect(lintSettings('{ nope').errors[0]).toMatch(/Not valid JSON/);
+    expect(lintSettings('[1]').errors[0]).toMatch(/must be a JSON object/);
+    expect(lintSettings(JSON.stringify({ x: 'a'.repeat(70 * 1024) })).errors[0]).toMatch(/at most 64 KB/);
+    expect(lintSettings('')).toEqual({ errors: [], warnings: [] });
+  });
+
+  it('calls a known key in the wrong shape an error', () => {
+    const { errors } = lintSettings(
+      JSON.stringify({
+        homepage: 'next',
+        appearance: { progress: [], transformations: {} },
+        taskCommands: {},
+        boards: [3, { id: 'week', name: 'Week' }],
+        tui: [],
+      }),
+    );
+    expect(errors).toEqual([
+      'homepage must be an object',
+      'tui must be an object',
+      'taskCommands must be a list',
+      expect.stringMatching(/^appearance.progress must be an object/),
+      expect.stringMatching(/^appearance.transformations must be a list/),
+      'boards[0] must be an object',
+      'boards[1] (week): needs a sections list',
+    ]);
+  });
+
+  it('calls what this app can’t use a warning, with where it is', () => {
+    const { errors, warnings } = lintSettings(JSON.stringify(kept.file), () => ['keys: no action is called app.nope']);
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([
+      'taskCommands[1] (two words): a name is one word (no spaces)',
+      "board 'Not An Id': needs an id of lower case letters, digits, - and _",
+      'keys: no action is called app.nope',
+    ]);
   });
 });

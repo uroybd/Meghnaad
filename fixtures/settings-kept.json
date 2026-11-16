@@ -1,0 +1,191 @@
+{
+  "about": "Spec 0009: how every front end saves settings.json. `merge` is the three-way merge each one ports (the file as it is, what the front end understood of it, the save with the edit), and `file` is a settings.json with what no front end knows at every depth; after any save, each path in `kept` must hold what it held in `file`. Read by web/src/lib/appsettings.test.ts, the Kotlin AppSettingsTest and crates/tui/src/settings.rs.",
+  "merge": [
+    {
+      "name": "a key this app doesn't know is kept",
+      "old": { "a": 1, "x": 2 },
+      "base": { "a": 1 },
+      "next": { "a": 3 },
+      "expect": { "a": 3, "x": 2 }
+    },
+    {
+      "name": "a key it understood and took out goes",
+      "old": { "a": 1, "x": 2 },
+      "base": { "a": 1 },
+      "next": {},
+      "expect": { "x": 2 }
+    },
+    {
+      "name": "a new key is added",
+      "old": {},
+      "base": {},
+      "next": { "a": { "b": 1 } },
+      "expect": { "a": { "b": 1 } }
+    },
+    {
+      "name": "taking out a section takes only what was understood of it",
+      "old": { "appearance": { "progress": { "done": { "min": 0, "max": 5 } }, "x": 1 } },
+      "base": { "appearance": { "progress": { "done": { "min": 0, "max": 5 } } } },
+      "next": {},
+      "expect": { "appearance": { "x": 1 } }
+    },
+    {
+      "name": "entries are matched by id, so each keeps its own unknown keys",
+      "old": {
+        "boards": [
+          { "id": "a", "name": "A", "x": 1 },
+          { "id": "b", "name": "B" }
+        ]
+      },
+      "base": {
+        "boards": [
+          { "id": "a", "name": "A" },
+          { "id": "b", "name": "B" }
+        ]
+      },
+      "next": {
+        "boards": [
+          { "id": "b", "name": "B2" },
+          { "id": "a", "name": "A" }
+        ]
+      },
+      "expect": {
+        "boards": [
+          { "id": "b", "name": "B2" },
+          { "id": "a", "name": "A", "x": 1 }
+        ]
+      }
+    },
+    {
+      "name": "an entry it couldn't read stays where it was",
+      "old": { "taskCommands": [{ "name": "two words" }, { "name": "ok", "command": "done", "x": 1 }] },
+      "base": { "taskCommands": [{ "name": "ok", "command": "done" }] },
+      "next": {
+        "taskCommands": [
+          { "name": "ok", "command": "stop" },
+          { "name": "new", "command": "start" }
+        ]
+      },
+      "expect": {
+        "taskCommands": [
+          { "name": "two words" },
+          { "name": "ok", "command": "stop", "x": 1 },
+          { "name": "new", "command": "start" }
+        ]
+      }
+    },
+    {
+      "name": "an entry it understood and took out goes",
+      "old": {
+        "taskCommands": [
+          { "name": "a", "command": "done", "x": 1 },
+          { "name": "b", "command": "stop" }
+        ]
+      },
+      "base": {
+        "taskCommands": [
+          { "name": "a", "command": "done" },
+          { "name": "b", "command": "stop" }
+        ]
+      },
+      "next": { "taskCommands": [{ "name": "b", "command": "stop" }] },
+      "expect": { "taskCommands": [{ "name": "b", "command": "stop" }] }
+    },
+    {
+      "name": "entries with neither id nor name are matched by place, past those it couldn't read",
+      "old": {
+        "rules": [
+          { "match": "a", "replace": "b", "fields": ["description"], "x": 1 },
+          "junk",
+          { "match": "c", "fields": ["description"], "y": 2 }
+        ]
+      },
+      "base": {
+        "rules": [
+          { "match": "a", "replace": "b", "fields": ["description"] },
+          { "match": "c", "replace": "", "fields": ["description"] }
+        ]
+      },
+      "next": {
+        "rules": [
+          { "match": "a2", "replace": "b", "fields": ["description"] },
+          { "match": "c", "replace": "", "fields": ["annotations"] }
+        ]
+      },
+      "expect": {
+        "rules": [
+          { "match": "a2", "replace": "b", "fields": ["description"], "x": 1 },
+          "junk",
+          { "match": "c", "replace": "", "fields": ["annotations"], "y": 2 }
+        ]
+      }
+    },
+    {
+      "name": "a list of plain values is the edit's",
+      "old": { "fields": ["a", "b"] },
+      "base": { "fields": ["a", "b"] },
+      "next": { "fields": ["b", "c"] },
+      "expect": { "fields": ["b", "c"] }
+    },
+    {
+      "name": "taking out a list keeps what couldn't be read",
+      "old": { "taskCommands": [{ "name": "a", "command": "done" }, "junk"] },
+      "base": { "taskCommands": [{ "name": "a", "command": "done" }] },
+      "next": {},
+      "expect": { "taskCommands": ["junk"] }
+    },
+    {
+      "name": "a value of another type is the edit's",
+      "old": { "a": { "x": 1 } },
+      "base": { "a": { "x": 1 } },
+      "next": { "a": 5 },
+      "expect": { "a": 5 }
+    },
+    {
+      "name": "null is a value like any other",
+      "old": { "keys": { "app.undo": null } },
+      "base": { "keys": { "app.undo": null } },
+      "next": { "keys": { "app.undo": null, "app.prompt": "/" } },
+      "expect": { "keys": { "app.undo": null, "app.prompt": "/" } }
+    }
+  ],
+  "file": {
+    "future": { "anything": [1, 2] },
+    "homepage": { "report": "next" },
+    "appearance": {
+      "progress": { "done": { "min": 0, "max": 10 } },
+      "transformations": [{ "match": "a", "replace": "b", "fields": ["description"], "note": "kept" }],
+      "x-kept": true
+    },
+    "boardsVersion": 1,
+    "boards": [
+      {
+        "id": "week",
+        "name": "Week",
+        "x-kept": 1,
+        "sections": [{ "id": "open", "type": "number", "x": 0, "y": 0, "w": 3, "h": 2, "x-kept": "s" }]
+      },
+      { "id": "Not An Id", "name": "Unusable", "sections": [] }
+    ],
+    "taskCommands": [
+      { "name": "fail", "command": "done outcome:fail", "x-kept": 2 },
+      { "name": "two words", "command": "done" }
+    ],
+    "keys": { "app.undo": null },
+    "web": { "x-kept": 1 },
+    "tui": { "sync": "never", "x-kept": [3] }
+  },
+  "kept": [
+    ["future"],
+    ["appearance", "x-kept"],
+    ["appearance", "transformations", 0, "note"],
+    ["boards", 0, "x-kept"],
+    ["boards", 0, "sections", 0, "x-kept"],
+    ["boards", 1],
+    ["taskCommands", 0, "x-kept"],
+    ["taskCommands", 1],
+    ["keys"],
+    ["web"],
+    ["tui", "x-kept"]
+  ]
+}

@@ -49,6 +49,28 @@ impl App {
     /// focused section's own are in its border).
     pub fn page_keys(&self) -> String {
         let context = self.context();
+        // With tasks marked: the keys that act on them, and how to clear them.
+        if context == "tasks" && !self.marks.is_empty() {
+            let acting = self.hints_of(&[
+                "tasks.done",
+                "tasks.start",
+                "tasks.stop",
+                "tasks.delete",
+                "tasks.annotate",
+                "tasks.modify",
+                "tasks.command",
+                "app.prompt",
+                "tasks.mark",
+                "tasks.markRange",
+                "tasks.markAll",
+            ]);
+            let clear = self.first_key("app.back").map(|k| format!("{k} unmark"));
+            return [Some(acting), clear]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join(" · ");
+        }
         let own: &[&str] = match context {
             c if c.starts_with("settings.") => &["settings"],
             "summary" => &[],

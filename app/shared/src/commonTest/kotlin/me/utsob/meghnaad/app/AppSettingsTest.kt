@@ -71,8 +71,9 @@ class AppSettingsTest {
     }
 
     @Test
-    fun leavesTheKeyOutWhenThereAreNoneAndReadsBackWhatItWrote() {
-        assertEquals(JsonObject(emptyMap()), Json.parseToJsonElement(serializeSettings(parseSettings("""{"taskCommands":[{}]}""").raw, emptyList())))
+    fun leavesTheKeyOutWhenThereAreNoneKeepsWhatItCouldNotReadAndReadsBackWhatItWrote() {
+        assertEquals(JsonObject(emptyMap()), Json.parseToJsonElement(serializeSettings(parseSettings("""{"taskCommands":[{"name":"a","command":"b"}]}""").raw, emptyList())))
+        assertEquals(Json.parseToJsonElement("""{"taskCommands":[{}]}"""), Json.parseToJsonElement(serializeSettings(parseSettings("""{"taskCommands":[{}]}""").raw, emptyList())))
         val cmds = listOf(TaskCommand("a", "b c"))
         assertEquals(cmds, parseSettings(serializeSettings(JsonObject(emptyMap()), cmds)).commands)
     }
@@ -198,5 +199,17 @@ class AppSettingsTest {
         assertEquals(0f, r.fraction(-5.0))
         assertEquals(1f, r.fraction(80.0))
         assertEquals(0f, r.fraction(Double.NaN))
+    }
+
+    @Test
+    fun theIdFallbackIsReadAndSavedWithTheRestOfTheAppearance() {
+        assertEquals(false, parseSettings("{}").appearance.idFallback)
+        assertEquals(true, parseSettings("""{"appearance":{"idFallback":true}}""").appearance.idFallback)
+        assertEquals(listOf("appearance.idFallback must be true or false"), parseSettings("""{"appearance":{"idFallback":"yes"}}""").appearanceErrors)
+        val raw = parseSettings("""{"appearance":{"progress":{"done":{"min":0,"max":10}},"mine":1},"other":2}""").raw
+        val on = Json.parseToJsonElement(serializeAppearance(raw, parseSettings(raw.toString()).appearance.copy(idFallback = true))).jsonObject
+        assertEquals(Json.parseToJsonElement("""{"appearance":{"progress":{"done":{"min":0,"max":10}},"mine":1,"idFallback":true},"other":2}"""), on)
+        val off = Json.parseToJsonElement(serializeAppearance(on, parseSettings(on.toString()).appearance.copy(idFallback = false)))
+        assertEquals(raw, off)
     }
 }

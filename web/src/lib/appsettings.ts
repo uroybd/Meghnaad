@@ -62,9 +62,11 @@ export interface Appearance {
   progress: Record<string, Progress>;
   /** The field transformations, in the order they run. */
   transformations: Transformation[];
+  /** `idFallback`: a task with no ID (done, deleted) shows its short uuid, dimmed, rather than `task`'s `-`. */
+  idFallback: boolean;
 }
 
-export const emptyAppearance = (): Appearance => ({ progress: {}, transformations: [] });
+export const emptyAppearance = (): Appearance => ({ progress: {}, transformations: [], idFallback: false });
 
 export const DEFAULT_PROGRESS: Progress = { min: 0, max: 100 };
 
@@ -85,11 +87,18 @@ export function sameAppearance(a: Appearance, b: Appearance): boolean {
   const names = Object.keys(a.progress).sort();
   const other = Object.keys(b.progress).sort();
   return (
+    a.idFallback === b.idFallback &&
     JSON.stringify(a.transformations) === JSON.stringify(b.transformations) &&
     names.join('\n') === other.join('\n') &&
     names.every((n) => a.progress[n].min === b.progress[n].min && a.progress[n].max === b.progress[n].max)
   );
 }
+
+const NOT_SETTINGS = 'The settings must be a JSON object: { "taskCommands": [ … ] }';
+const APPEARANCE_NOT_OBJECT = 'appearance must be an object: { "progress": { … } }';
+const PROGRESS_NOT_OBJECT = 'appearance.progress must be an object: { "<uda>": { "min": 0, "max": 100 } }';
+const TRANSFORMATIONS_NOT_LIST =
+  'appearance.transformations must be a list: [ { "match": …, "replace": …, "fields": [ … ] } ]';
 
 /** The valid part of a saved `appearance`, and what is wrong with the rest, one line each. */
 export function parseAppearance(v: unknown): { appearance: Appearance; errors: string[] } {
@@ -97,15 +106,18 @@ export function parseAppearance(v: unknown): { appearance: Appearance; errors: s
   const errors: string[] = [];
   if (v === undefined) return { appearance, errors };
   if (!v || typeof v !== 'object' || Array.isArray(v)) {
-    return { appearance, errors: ['appearance must be an object: { "progress": { … } }'] };
+    return { appearance, errors: [APPEARANCE_NOT_OBJECT] };
   }
   const rules = parseTransformations((v as Record<string, unknown>).transformations);
   appearance.transformations = rules.transformations;
   errors.push(...rules.errors);
+  const fallback = (v as Record<string, unknown>).idFallback;
+  if (typeof fallback === 'boolean') appearance.idFallback = fallback;
+  else if (fallback !== undefined) errors.push('appearance.idFallback must be true or false');
   const list = (v as Record<string, unknown>).progress;
   if (list === undefined) return { appearance, errors };
   if (!list || typeof list !== 'object' || Array.isArray(list)) {
-    return { appearance, errors: ['appearance.progress must be an object: { "<uda>": { "min": 0, "max": 100 } }'] };
+    return { appearance, errors: [PROGRESS_NOT_OBJECT] };
   }
   for (const [name, r] of Object.entries(list)) {
     const at = `appearance.progress.${name}`;
@@ -136,7 +148,7 @@ export function parseTransformations(v: unknown): { transformations: Transformat
   if (!Array.isArray(v)) {
     return {
       transformations,
-      errors: ['appearance.transformations must be a list: [ { "match": …, "replace": …, "fields": [ … ] } ]'],
+      errors: [TRANSFORMATIONS_NOT_LIST],
     };
   }
   v.forEach((r, i) => {
@@ -224,7 +236,7 @@ export function parseSettings(text: string): ParsedSettings {
     return out;
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    out.errors.push('The settings must be a JSON object: { "taskCommands": [ … ] }');
+    out.errors.push(NOT_SETTINGS);
     return out;
   }
   out.raw = value as Record<string, unknown>;
@@ -261,49 +273,265 @@ export function parseSettings(text: string): ParsedSettings {
   return out;
 }
 
-/** The text to save: the other top-level keys as they were, and `taskCommands` as given. */
-export function serializeSettings(raw: Record<string, unknown>, commands: TaskCommand[]): string {
-  const { taskCommands: _old, ...rest } = raw;
-  const next: Record<string, unknown> = { ...rest };
-  if (commands.length)
-    next.taskCommands = commands.map(({ name, command, icon }) => (icon ? { name, command, icon } : { name, command }));
-  return JSON.stringify(next, null, 2) + '\n';
+// Saving changes only what was edited. A save is a three-way merge (`mergeSettings`): the file as it is, what this app
+// understood of it (the same save made with what was read, unchanged), and the save with the edit. A key this app
+// doesn't know, at any depth, and an entry it couldn't read are in the file but not in what it understood, so they stay;
+// what it understood and the edit took out goes. The phone and the terminal app merge the same way, tested against the
+// same cases (`fixtures/settings-kept.json`).
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** One text for a value, whatever order its keys are in. */
+function canon(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canon).join(',')}]`;
+  if (isObject(v))
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canon(v[k])}`)
+      .join(',')}}`;
+  return JSON.stringify(v) ?? 'null';
+}
+
+/** What an entry of a list is known by: its `id`, else its `name` (boards and sections; task commands), else nothing. */
+function entryKey(v: unknown): string | null {
+  if (!isObject(v)) return null;
+  if (typeof v.id === 'string') return `id:${v.id}`;
+  if (typeof v.name === 'string') return `name:${v.name}`;
+  return null;
+}
+
+/** Whether `old` is the entry `base` was read from: what both have is the same (reading may add a default). */
+function readFrom(old: unknown, base: unknown): boolean {
+  if (!isObject(old) || !isObject(base)) return canon(old) === canon(base);
+  return Object.keys(base).every((k) => !(k in old) || canon(old[k]) === canon(base[k]));
+}
+
+function mergeList(old: unknown[], base: unknown[], next: unknown[]): unknown[] {
+  // Which entry of the file each entry understood was read from: the same id or name, else the next one like it.
+  const used = new Set<number>();
+  let after = 0;
+  const source = base.map((b) => {
+    const key = entryKey(b);
+    const at =
+      key !== null
+        ? old.findIndex((o, i) => !used.has(i) && entryKey(o) === key)
+        : old.findIndex((o, i) => i >= after && !used.has(i) && entryKey(o) === null && readFrom(o, b));
+    if (at >= 0) {
+      used.add(at);
+      if (key === null) after = at + 1;
+    }
+    return at;
+  });
+  // Which entry understood each entry saved is: the same id or name, else the same place among those with neither.
+  const keyless = base.flatMap((b, j) => (entryKey(b) === null ? [j] : []));
+  let nth = 0;
+  const out = next.map((n) => {
+    const key = entryKey(n);
+    const j = key !== null ? base.findIndex((b) => entryKey(b) === key) : (keyless[nth++] ?? -1);
+    const from = j >= 0 ? source[j] : -1;
+    return from >= 0 ? mergeSettings(old[from], base[j], n) : n;
+  });
+  // What this app couldn't read stays where it was.
+  old.forEach((o, i) => {
+    if (!used.has(i)) out.splice(Math.min(i, out.length), 0, o);
+  });
+  return out;
 }
 
 /**
- * The text to save: the other top-level keys as they were, and `boards` as given (none leaves the key out). A `homepage` of
- * `undefined` is left as it was; `null` takes it out, and a value sets it (a board whose slug changed must take the home page
- * with it).
+ * `next` (the file as this app would write it with the edit) laid over `old` (the file as it is), where `base` is the file
+ * as this app would write it without the edit. What is in `old` and not in `base` is kept: a key this app doesn't know, an
+ * entry it couldn't read. What is in `base` and not in `next` was taken out. Lists of objects are matched entry by entry
+ * (by `id`, else `name`, else place), so an entry keeps the keys this app doesn't know.
  */
-export function serializeBoards(raw: Record<string, unknown>, boards: Board[], homepage?: Homepage | null): string {
+export function mergeSettings(old: unknown, base: unknown, next: unknown): unknown {
+  if (isObject(old) && isObject(next)) {
+    const understood = isObject(base) ? base : {};
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(old)) {
+      if (k in next) out[k] = mergeSettings(v, understood[k], next[k]);
+      else if (!(k in understood)) out[k] = v;
+      else {
+        // Taken out: only what was understood of it goes.
+        const rest = isObject(v) || Array.isArray(v) ? mergeSettings(v, understood[k], isObject(v) ? {} : []) : null;
+        if (isObject(rest) ? Object.keys(rest).length : Array.isArray(rest) && rest.length) out[k] = rest;
+      }
+    }
+    for (const [k, v] of Object.entries(next)) if (!(k in old)) out[k] = v;
+    return out;
+  }
+  if (Array.isArray(old) && Array.isArray(next)) return mergeList(old, Array.isArray(base) ? base : [], next);
+  return next;
+}
+
+const written = (v: unknown) => JSON.stringify(v, null, 2) + '\n';
+
+/** `raw` read again, as this app reads it, for what it understood of the file. */
+const reread = (raw: Record<string, unknown>) => parseSettings(JSON.stringify(raw));
+
+// Each save is built twice, with what was read (`read`: true, which also writes the empty lists and sections that were in
+// the file, since they were understood too) and with the edit.
+
+function withCommands(raw: Record<string, unknown>, commands: TaskCommand[], read = false): Record<string, unknown> {
+  const { taskCommands: _old, ...rest } = raw;
+  const next: Record<string, unknown> = { ...rest };
+  if (commands.length || (read && Array.isArray(raw.taskCommands)))
+    next.taskCommands = commands.map(({ name, command, icon }) => (icon ? { name, command, icon } : { name, command }));
+  return next;
+}
+
+/** The text to save: `taskCommands` as given, and everything else in the file as it was. */
+export function serializeSettings(raw: Record<string, unknown>, commands: TaskCommand[]): string {
+  return written(mergeSettings(raw, withCommands(raw, reread(raw).commands, true), withCommands(raw, commands)));
+}
+
+function withBoards(
+  raw: Record<string, unknown>,
+  boards: Board[],
+  homepage?: Homepage | null,
+  read = false,
+): Record<string, unknown> {
   const { boards: _old, boardsVersion: _v, ...rest } = raw;
   const next: Record<string, unknown> = { ...rest };
   if (homepage !== undefined) {
     delete next.homepage;
     if (homepage) next.homepage = homepage;
   }
-  if (boards.length) {
+  if (boards.length || (read && Array.isArray(raw.boards))) {
     next.boardsVersion = 1;
     next.boards = boards;
   }
-  return JSON.stringify(next, null, 2) + '\n';
+  return next;
 }
 
-/** The text to save: the other top-level keys as they were, and `homepage` as given (none leaves the key out). */
-export function serializeHomepage(raw: Record<string, unknown>, homepage: Homepage | null): string {
+/**
+ * The text to save: `boards` as given (none leaves the key out), and everything else in the file as it was. A `homepage`
+ * of `undefined` is left as it was; `null` takes it out, and a value sets it (a board whose slug changed must take the
+ * home page with it).
+ */
+export function serializeBoards(raw: Record<string, unknown>, boards: Board[], homepage?: Homepage | null): string {
+  const out = mergeSettings(
+    raw,
+    withBoards(raw, reread(raw).boards, undefined, true),
+    withBoards(raw, boards, homepage),
+  );
+  return written(withoutLegacyRanges(homepage === undefined ? out : withHome(out, homepage), boards));
+}
+
+/**
+ * The boards in `file` that were saved here without their `ranges`: reading moves a board's date ranges into its
+ * `controls`, which it writes, so the old key, kept by the merge, would name them twice.
+ */
+export function withoutLegacyRanges(file: unknown, boards: { id: string }[]): unknown {
+  if (!isObject(file) || !Array.isArray(file.boards)) return file;
+  const ids = new Set(boards.map((b) => b.id));
+  return {
+    ...file,
+    boards: file.boards.map((b) => {
+      if (!isObject(b) || typeof b.id !== 'string' || !ids.has(b.id) || !('ranges' in b)) return b;
+      const { ranges: _old, ...rest } = b;
+      return rest;
+    }),
+  };
+}
+
+function withHomepage(raw: Record<string, unknown>, homepage: Homepage | null): Record<string, unknown> {
   const { homepage: _old, ...rest } = raw;
   const next: Record<string, unknown> = { ...rest };
   if (homepage) next.homepage = homepage;
-  return JSON.stringify(next, null, 2) + '\n';
+  return next;
 }
 
-/** The text to save: the other top-level keys as they were, and `appearance` as given (nothing chosen leaves the key out). */
-export function serializeAppearance(raw: Record<string, unknown>, appearance: Appearance): string {
-  const { appearance: _old, ...rest } = raw;
+/** `file` with `homepage` exactly as chosen: it is one of two shapes, so nothing of an unreadable one is kept in it. */
+function withHome(file: unknown, homepage: Homepage | null): unknown {
+  if (!isObject(file)) return file;
+  const out = { ...file };
+  if (homepage) out.homepage = homepage;
+  else delete out.homepage;
+  return out;
+}
+
+/** The text to save: `homepage` as given (none leaves the key out), and everything else in the file as it was. */
+export function serializeHomepage(raw: Record<string, unknown>, homepage: Homepage | null): string {
+  return written(
+    withHome(mergeSettings(raw, withHomepage(raw, reread(raw).homepage), withHomepage(raw, homepage)), homepage),
+  );
+}
+
+function withAppearance(raw: Record<string, unknown>, appearance: Appearance, read = false): Record<string, unknown> {
+  const { appearance: was, ...rest } = raw;
   const next: Record<string, unknown> = { ...rest };
   const out: Partial<Appearance> = {};
-  if (Object.keys(appearance.progress).length) out.progress = appearance.progress;
-  if (appearance.transformations.length) out.transformations = appearance.transformations;
-  if (Object.keys(out).length) next.appearance = out;
-  return JSON.stringify(next, null, 2) + '\n';
+  const there = read && isObject(was);
+  if (Object.keys(appearance.progress).length || (there && isObject(was.progress))) out.progress = appearance.progress;
+  if (appearance.transformations.length || (there && Array.isArray(was.transformations)))
+    out.transformations = appearance.transformations;
+  if (appearance.idFallback || (there && typeof was.idFallback === 'boolean')) out.idFallback = appearance.idFallback;
+  if (Object.keys(out).length || there) next.appearance = out;
+  return next;
+}
+
+/** The text to save: `appearance` as given (nothing chosen leaves the key out), and everything else in the file as it was. */
+export function serializeAppearance(raw: Record<string, unknown>, appearance: Appearance): string {
+  return written(
+    mergeSettings(raw, withAppearance(raw, reread(raw).appearance, true), withAppearance(raw, appearance)),
+  );
+}
+
+/** What is wrong with a `settings.json`, as a linter says it: an error stops it being saved, a warning doesn't. */
+export interface Lint {
+  errors: string[];
+  warnings: string[];
+}
+
+/** The top-level keys that are objects, and those that are lists. */
+const OBJECT_KEYS = ['homepage', 'appearance', 'keys', 'web', 'mobile', 'tui'];
+const LIST_KEYS = ['taskCommands', 'boards'];
+
+/**
+ * Lint `text` as `settings.json`. Errors: not JSON, not an object, over 64 KB, or a known key in the wrong shape (a
+ * section that is not an object, a list that is not a list, a board that is not an object or has no `sections` list).
+ * Warnings: everything this app can't use, which is kept in the file (a task command with a bad name, a malformed board,
+ * a progress bar with no range, and what `more` says, such as the keys' problems).
+ */
+export function lintSettings(text: string, more: (raw: Record<string, unknown>) => string[] = () => []): Lint {
+  const errors: string[] = [];
+  const size = new Blob([text]).size;
+  if (size > MAX_SETTINGS_BYTES)
+    errors.push(
+      `The file is ${Math.ceil(size / 1024)} KB; settings.json holds at most ${MAX_SETTINGS_BYTES / 1024} KB.`,
+    );
+  if (text.trim()) {
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch (e) {
+      return { errors: [...errors, `Not valid JSON: ${e instanceof Error ? e.message : String(e)}`], warnings: [] };
+    }
+    if (!isObject(value)) return { errors: [...errors, NOT_SETTINGS], warnings: [] };
+  }
+  const read = parseSettings(text);
+  const raw = read.raw;
+  for (const k of OBJECT_KEYS)
+    if (k in raw && !isObject(raw[k]))
+      errors.push(k === 'appearance' ? APPEARANCE_NOT_OBJECT : `${k} must be an object`);
+  for (const k of LIST_KEYS) if (k in raw && !Array.isArray(raw[k])) errors.push(`${k} must be a list`);
+  if (isObject(raw.appearance)) {
+    const a = raw.appearance;
+    if ('progress' in a && !isObject(a.progress)) errors.push(PROGRESS_NOT_OBJECT);
+    if ('transformations' in a && !Array.isArray(a.transformations)) errors.push(TRANSFORMATIONS_NOT_LIST);
+  }
+  if (Array.isArray(raw.boards))
+    raw.boards.forEach((b, i) => {
+      if (!isObject(b)) errors.push(`boards[${i}] must be an object`);
+      else if (!Array.isArray(b.sections))
+        errors.push(`boards[${i}]${typeof b.id === 'string' ? ` (${b.id})` : ''}: needs a sections list`);
+    });
+  // What can't be used, less what is already an error.
+  const said = new Set(errors);
+  const shapes = /^(boards must be a list|board \d+: not an object|taskCommands must be a list)$/;
+  const warnings = [...read.errors, ...read.appearanceErrors, ...read.boardErrors, ...more(raw)].filter(
+    (w) => !said.has(w) && !shapes.test(w),
+  );
+  return { errors, warnings };
 }

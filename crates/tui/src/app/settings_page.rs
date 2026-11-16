@@ -9,6 +9,7 @@ impl App {
     pub(super) fn settings_action(&mut self, action: &str) {
         let n = self.settings.task_commands.len();
         match action {
+            "settings.general.home" if self.general_sel == 1 => self.toggle_id_fallback(),
             "settings.general.home" => {
                 let mut options = vec![("next (the default)".to_owned(), None)];
                 options.extend(
@@ -97,6 +98,9 @@ impl App {
             matches!(step, Step::By(k) if k < 0),
         );
         match self.settings_section {
+            S::General if (down && self.general_sel == 0) || (up && self.general_sel == 1) => {
+                self.general_sel = usize::from(down);
+            }
             S::Commands if (down && self.settings_sel + 1 < n) || (up && self.settings_sel > 0) => {
                 self.settings_sel = moved(self.settings_sel, n, step);
             }
@@ -144,6 +148,27 @@ impl App {
                 } else {
                     format!("Theme: {next}.")
                 };
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// Show a task with no ID by its short uuid, or as `task`'s `-`, and save which in `settings.json`
+    /// (`appearance.idFallback`, shared with the web app and the phone).
+    pub(super) fn toggle_id_fallback(&mut self) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        let on = !self.id_fallback;
+        match settings::save_id_fallback(on) {
+            Ok(()) => {
+                self.status = if on {
+                    "A task with no ID shows its short uuid.".into()
+                } else {
+                    "A task with no ID shows -.".into()
+                };
+                self.reload();
             }
             Err(e) => self.status = e.to_string(),
         }

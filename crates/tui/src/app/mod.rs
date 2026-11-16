@@ -35,6 +35,7 @@ mod keyhelp;
 mod menus;
 mod prompt;
 pub mod reminders;
+pub mod selection;
 mod settings_page;
 mod sort;
 mod taskinfo;
@@ -115,6 +116,8 @@ pub enum PromptKind {
     Add,
     /// What comes after `task <uuid> annotate`.
     Annotate(String),
+    /// One note for each of the marked tasks: `task <uuids> annotate <note>`, a batch at a time.
+    AnnotateMany(Vec<String>),
     /// The words put in front of the report.
     Filter,
     /// Another report, by name.
@@ -135,7 +138,7 @@ impl PromptKind {
             PromptKind::Console => "task",
             PromptKind::Add => "add",
             PromptKind::ReviewModify => "modify",
-            PromptKind::Annotate(_) => "annotate",
+            PromptKind::Annotate(_) | PromptKind::AnnotateMany(_) => "annotate",
             PromptKind::Filter => "filter",
             PromptKind::Report => "report",
             PromptKind::CommandName(_) => "name",
@@ -158,6 +161,7 @@ impl PromptKind {
         match self {
             PromptKind::Add => Some("add ".into()),
             PromptKind::Annotate(u) => Some(format!("{u} annotate ")),
+            PromptKind::AnnotateMany(_) => Some("1 annotate ".into()),
             PromptKind::ReviewModify => Some("1 modify ".into()),
             PromptKind::Console | PromptKind::Filter | PromptKind::Report => Some(String::new()),
             PromptKind::CommandLine(..) => Some("1 ".into()),
@@ -335,6 +339,8 @@ pub struct App {
     pub filter: String,
     pub report: Report,
     pub selected: usize,
+    /// The tasks marked on the Tasks page, which the quick keys act on (spec 0007).
+    pub marks: selection::Selection,
     /// The pending tasks (`+PENDING export`): the lists, completion, reminders and the timer.
     pub pending: Vec<Value>,
     pub list_sel: usize,
@@ -369,6 +375,8 @@ pub struct App {
     /// The field transformations (`appearance.transformations`) the report's cells are drawn with, and what is wrong
     /// with them.
     pub transformations: Vec<tc_core::transform::Rule>,
+    /// `appearance.idFallback`: a task with no ID shows its short uuid, dimmed, rather than `-`.
+    pub id_fallback: bool,
     pub transform_errors: Vec<String>,
     /// Whether the terminal is light or dark (what the theme's `auto` draws), the system's appearance when last looked
     /// at, when that was, and when `settings.json` was last changed, to follow either when it changes.
@@ -378,6 +386,8 @@ pub struct App {
     settings_stamp: Option<std::time::SystemTime>,
     /// The task command, and the board, chosen in their sections.
     pub settings_sel: usize,
+    /// The row of General: the home page (0) or the ID fallback (1).
+    pub general_sel: usize,
     pub settings_board: usize,
     /// The line chosen in the Keybindings section, whether it shows the default keys too, and what it is narrowed to.
     pub keys_sel: usize,
@@ -581,6 +591,7 @@ impl App {
             filter: String::new(),
             report: Report::default(),
             selected: 0,
+            marks: selection::Selection::default(),
             pending: Vec::new(),
             list_sel: 0,
             output: Vec::new(),
@@ -600,12 +611,14 @@ impl App {
             progress: std::collections::BTreeMap::new(),
             progress_errors: Vec::new(),
             transformations: Vec::new(),
+            id_fallback: false,
             transform_errors: Vec::new(),
             appearance: crate::appearance::Mode::default(),
             system_mode: None,
             last_look: 0,
             settings_stamp: None,
             settings_sel: 0,
+            general_sel: 0,
             settings_board: 0,
             keys_sel: 0,
             keys_defaults: false,
@@ -626,6 +639,11 @@ impl App {
 
     /// Read everything again: the settings, the pending tasks, the report, the page and what completion offers.
     pub fn reload(&mut self) {
+        let rules = self.transformations.clone();
+        let look = model::Look {
+            rules: &rules,
+            id_fallback: self.id_fallback,
+        };
         let loaded = model::load_config(&self.task).and_then(|cfg| {
             if self.report_name.is_empty() {
                 let def = cfg.settings.get("default.command").cloned().unwrap_or_default();
@@ -643,7 +661,7 @@ impl App {
                 &self.report_name,
                 &split_words(&self.filter),
                 now(),
-                &self.transformations,
+                look,
             )?;
             let vocab = model::vocab(&self.task, &cfg, &pending)?;
             Ok((cfg, pending, report, vocab))
@@ -653,6 +671,7 @@ impl App {
                 self.cfg = cfg;
                 self.pending = pending;
                 self.report = report;
+                self.marks.keep(&self.report.uuids);
                 self.vocab = vocab;
             }
             Err(e) => self.status = e,
@@ -666,7 +685,15 @@ impl App {
         self.load_page();
     }
 
-    /// Build the report again from `task`, as it is (after the transformations change).
+    /// How the report's cells are drawn, as `settings.json`'s `appearance` says.
+    fn look(&self) -> model::Look<'_> {
+        model::Look {
+            rules: &self.transformations,
+            id_fallback: self.id_fallback,
+        }
+    }
+
+    /// Build the report again from `task`, as it is (after the transformations or the ID fallback change).
     fn refresh_report(&mut self) {
         if self.report_name.is_empty() {
             return;
@@ -677,9 +704,12 @@ impl App {
             &self.report_name,
             &split_words(&self.filter),
             now(),
-            &self.transformations,
+            self.look(),
         ) {
-            Ok(report) => self.report = report,
+            Ok(report) => {
+                self.report = report;
+                self.marks.keep(&self.report.uuids);
+            }
             Err(e) => self.status = e,
         }
     }
@@ -761,6 +791,7 @@ impl App {
         let (mode, odd) = self.settings.sync_mode();
         self.sync_mode = mode;
         (self.progress, self.progress_errors) = self.settings.progress();
+        self.progress_errors.extend(self.settings.id_fallback_error());
         let (rules, mut errors) = self.settings.transformations();
         let string_udas: Vec<String> = self
             .cfg
@@ -772,8 +803,10 @@ impl App {
         errors.extend(tc_core::transform::check(&rules, &string_udas));
         self.transform_errors = errors;
         // The report's cells were drawn with the rules there were: draw them again with these.
-        if rules != self.transformations {
+        let fallback = self.settings.id_fallback();
+        if rules != self.transformations || fallback != self.id_fallback {
             self.transformations = rules;
+            self.id_fallback = fallback;
             self.refresh_report();
         }
         if let Some(p) = problem.as_ref().or(odd.as_ref()) {
@@ -1044,6 +1077,9 @@ impl App {
     }
 
     fn open(&mut self, page: Page) {
+        if page != Page::Tasks {
+            self.marks.clear();
+        }
         if self.page != page {
             self.page = page;
             self.scroll = 0;
@@ -1208,6 +1244,11 @@ impl App {
         match self.context() {
             c if c.starts_with("settings.") => self.settings_section = self.settings_section.step(by),
             "boards" => self.scroll = section_scroll(&self.board_tops.borrow(), self.scroll, by),
+            "tasks" => {
+                if let Some(i) = crate::groups::step(&self.report.heads, self.selected, by) {
+                    self.selected = i;
+                }
+            }
             _ => {}
         }
     }
@@ -1225,6 +1266,7 @@ fn edit_field(field: &mut crate::form::Field, key: KeyEvent, ctrl: bool) {
         }
         return;
     }
+    let before = field.input.line.clone();
     let i = &mut field.input;
     match key.code {
         KeyCode::Char('a') if ctrl => i.home(),
@@ -1239,6 +1281,9 @@ fn edit_field(field: &mut crate::form::Field, key: KeyEvent, ctrl: bool) {
         KeyCode::Home => i.home(),
         KeyCode::End => i.end(),
         _ => {}
+    }
+    if field.input.line != before {
+        field.touched = true;
     }
 }
 

@@ -51,6 +51,8 @@ export interface Ctx {
   journal?: Markers | null;
   /** The user's field transformations (`appearance.transformations`), run before a text is drawn as Markdown. */
   transformations?: Transformation[];
+  /** `appearance.idFallback`: a task with no ID shows its short uuid, dimmed, rather than `-`. */
+  idFallback?: boolean;
 }
 
 export function shortUuid(u: string): string {
@@ -131,6 +133,7 @@ export function formatTable(columns: Column[], rows: Row[], ctx: Ctx): Table {
     indicators: ctx.indicators,
     journal: ctx.journal,
     transformations: ctx.transformations,
+    id_fallback: ctx.idFallback ?? false,
   };
   const cols = columns.map(({ name, format, kind }) => ({ name, format, kind }));
   type Wire = Omit<Cell, 'segments'> & { segments?: string[] };

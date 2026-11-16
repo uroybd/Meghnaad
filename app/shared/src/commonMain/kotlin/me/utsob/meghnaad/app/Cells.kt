@@ -18,5 +18,6 @@ fun Store.cellCtx(name: String): Ctx {
         ),
         journal = config?.journal,
         transformations = appearance.transformations,
+        idFallback = appearance.idFallback,
     )
 }

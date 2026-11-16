@@ -53,6 +53,8 @@ pub struct Theme {
     pub dim: Style,
     pub ok: Style,
     pub bad: Style,
+    /// A task marked on the Tasks page, to act on with others.
+    pub marked: Style,
     /// Taskwarrior's own, from the taskrc.
     pub label: Style,
     pub label_sort: Style,
@@ -68,10 +70,10 @@ pub struct Theme {
 }
 
 /// The roles a theme sets, in the order they are listed.
-pub const ROLES: [&str; 7] = ["accent", "focus", "border", "selected", "dim", "ok", "bad"];
+pub const ROLES: [&str; 8] = ["accent", "focus", "border", "selected", "dim", "ok", "bad", "marked"];
 
 /// The presets: the web app's and the phone's colours (`web/src/app.css`, `Theme.kt`) for a light page and a dark one.
-pub const LIGHT: [(&str, &str); 7] = [
+pub const LIGHT: [(&str, &str); 8] = [
     ("accent", "#1f6feb"),
     ("focus", "bold #1f6feb"),
     ("border", "#75756f"),
@@ -79,8 +81,9 @@ pub const LIGHT: [(&str, &str); 7] = [
     ("dim", "#75756f"),
     ("ok", "#1a7f37"),
     ("bad", "#cf222e"),
+    ("marked", "on #ddf4ff"),
 ];
-pub const DARK: [(&str, &str); 7] = [
+pub const DARK: [(&str, &str); 8] = [
     ("accent", "#58a6ff"),
     ("focus", "bold #58a6ff"),
     ("border", "#9a9a90"),
@@ -88,6 +91,7 @@ pub const DARK: [(&str, &str); 7] = [
     ("dim", "#9a9a90"),
     ("ok", "#56d364"),
     ("bad", "#ff7b72"),
+    ("marked", "on #0c2d6b"),
 ];
 
 /// Taskwarrior's own colours the app draws with, by the role they have here.
@@ -280,6 +284,7 @@ impl Theme {
             })
         };
         let accent = role("accent");
+        let marked = role("marked");
         let (focus, border, dim, ok, bad) = (role("focus"), role("border"), role("dim"), role("ok"), role("bad"));
         let selected = match roles.get("selected").map(String::as_str) {
             Some("reverse") => Selected::Reverse,
@@ -318,6 +323,7 @@ impl Theme {
             dim,
             ok,
             bad,
+            marked,
             label: rc("label"),
             label_sort: rc("label_sort"),
             alternate: rc("alternate"),
@@ -380,6 +386,11 @@ pub fn selected() -> Style {
 }
 
 /// The accent as text: the page open, a title, the label of the line being typed.
+/// A marked row (the `marked` role); nothing under `NO_COLOR` or `mono`, where the `●` says it.
+pub fn marked() -> Style {
+    current().marked
+}
+
 pub fn accent() -> Style {
     current().accent.add_modifier(Modifier::BOLD)
 }

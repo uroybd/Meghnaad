@@ -596,6 +596,12 @@ class Store(
         loadAppSettings()
     }
 
+    /** Save `settings.json` as written (the General tab's box, which a paste replaces). Throws what the engine refused. */
+    suspend fun saveSettingsFile(text: String) {
+        request("PUT", "/api/settings", text)
+        loadAppSettings()
+    }
+
     /** Save where the app opens (null: `next`), the rest of `settings.json` as it was. Throws what the engine refused. */
     suspend fun saveHomepage(homepage: Homepage?) {
         request("PUT", "/api/settings", serializeHomepage(appSettings?.raw ?: JsonObject(emptyMap()), homepage))

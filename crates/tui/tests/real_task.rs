@@ -56,7 +56,7 @@ fn reads_reports_completion_and_adds_through_the_real_task() {
     assert!(task.capture(&add).unwrap().ok);
     assert!(task.capture(&["add", "Second", "project:Work"]).unwrap().ok);
 
-    let report = model::report(&task, &cfg, "mine", &[], now, &[]).unwrap();
+    let report = model::report(&task, &cfg, "mine", &[], now, model::Look::default()).unwrap();
     assert_eq!(report.labels, ["ID", "Proj", "Due", "Est", "Description"]);
     assert_eq!(report.uuids.len(), 2);
     let first: Vec<&str> = report.cells[0].iter().map(|c| c.text.as_str()).collect();
@@ -77,14 +77,22 @@ fn reads_reports_completion_and_adds_through_the_real_task() {
         "mine",
         &["rc.report.mine.sort:description-".to_owned()],
         now,
-        &[],
+        model::Look::default(),
     )
     .unwrap();
     assert_eq!(resorted.cells[0][4].text, "Second");
     assert_eq!(resorted.sorted[4], Some((0, true)));
 
     // A filter goes in front of the report, as on the command line.
-    let filtered = model::report(&task, &cfg, "mine", &["project:Work".to_owned()], now, &[]).unwrap();
+    let filtered = model::report(
+        &task,
+        &cfg,
+        "mine",
+        &["project:Work".to_owned()],
+        now,
+        model::Look::default(),
+    )
+    .unwrap();
     assert_eq!(filtered.uuids.len(), 1);
 
     // `export` leaves out the context; the report puts its read filter in front, as `task mine` would.
@@ -95,13 +103,13 @@ fn reads_reports_completion_and_adds_through_the_real_task() {
     );
     assert!(task.capture(&["context", "work"]).unwrap().ok);
     let mut in_context = model::load_config(&task).unwrap();
-    let report = model::report(&task, &in_context, "mine", &[], now, &[]).unwrap();
+    let report = model::report(&task, &in_context, "mine", &[], now, model::Look::default()).unwrap();
     assert_eq!(report.uuids.len(), 1);
     assert_eq!(report.cells[0].last().unwrap().text, "Second");
     // A report that does not apply the context (`report.mine.context=0`) shows every task.
     in_context.reports.get_mut("mine").unwrap().context = false;
     assert_eq!(
-        model::report(&task, &in_context, "mine", &[], now, &[])
+        model::report(&task, &in_context, "mine", &[], now, model::Look::default())
             .unwrap()
             .uuids
             .len(),

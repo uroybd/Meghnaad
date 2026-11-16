@@ -39,3 +39,7 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0004 | [Export filter and sort](0004-export-filter-sort.md) | dropped | 2 (UI) | all | |
 | 0005 | [Stack a chart by a field](0005-chart-stack-by.md) | in progress | 2 (UI) | all | Seen by a person: stacked charts on the web and Android (the terminal was checked) |
 | 0006 | [The terminal app's own task info](0006-tui-task-info.md) | in progress | 2 (UI), one helper | terminal (web, Android: the time log helper) | Seen by a person: a link in the info view opening |
+| 0007 | [Select several tasks in the terminal app](0007-tui-bulk-selection.md) | done | 2 (UI) | terminal | Built 2026-11-17 |
+| 0008 | [Group separators in the terminal app](0008-tui-group-separators.md) | done | 2 (UI) | terminal | Built 2026-11-17 |
+| 0009 | [settings.json, editable, pastable and kept whole](0009-settings-json-kept-whole.md) | done | 2 (UI) | all | Built 2026-11-17 |
+| 0010 | [Short uuid for a missing ID, as an option](0010-id-fallback-opt-in.md) | done | 2 (UI), one helper | all | Built 2026-11-17 |

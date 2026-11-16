@@ -84,6 +84,24 @@ impl App {
         self.run_job(JobKind::Quick, vec![(line, args.to_vec())]);
     }
 
+    /// Run `words` on many tasks (the marked ones): a line per batch of their uuids ([`super::selection::BATCH`]), each
+    /// while the last worked, so a question refused or `quit` stops the rest. The marks are cleared.
+    pub(super) fn bulk(&mut self, uuids: &[String], words: &[String]) {
+        self.marks.clear();
+        let steps = super::selection::batches(uuids, words)
+            .into_iter()
+            .enumerate()
+            .map(|(i, args)| {
+                let line = Statement {
+                    line: args.join(" "),
+                    join: (i > 0).then_some(Joiner::And),
+                };
+                (line, args)
+            })
+            .collect();
+        self.run_job(JobKind::Quick, steps);
+    }
+
     /// Save the form: its lines, each while the last worked.
     pub(super) fn run_form(&mut self, f: Form, statements: Vec<Vec<String>>) {
         let steps = statements

@@ -143,14 +143,18 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::ExportPick { options, sel, .. } => picker(f, " export which table ", options, *sel, main),
         _ => {}
     }
-    if !app.status.is_empty() {
-        f.render_widget(
-            Line::from(vec![
-                Span::styled(" » ", theme::accent()),
-                Span::from(app.status.as_str()),
-            ]),
-            status,
-        );
+    // How many tasks are marked, in front of what was last said.
+    let marked = (app.page == Page::Tasks && !app.marks.is_empty()).then(|| format!("{} marked", app.marks.count()));
+    if !app.status.is_empty() || marked.is_some() {
+        let mut spans = vec![Span::styled(" » ", theme::accent())];
+        if let Some(m) = marked {
+            spans.push(Span::styled(m, theme::accent()));
+            if !app.status.is_empty() {
+                spans.push(Span::from(" · ").quiet());
+            }
+        }
+        spans.push(Span::from(app.status.as_str()));
+        f.render_widget(Line::from(spans), status);
     }
     match &app.mode {
         Mode::Prompt(p) if p.kind.popup() => {
@@ -689,11 +693,16 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     let t = theme::current();
     let swatches = theme_lines(&t);
     let theme_rows = u16::try_from(swatches.len() + app.theme_errors.len()).unwrap_or(4) + 2;
-    let problems = u16::from(app.settings_problem.is_some())
-        + u16::try_from(app.keymap.problems.len() + app.progress_errors.len() + app.transform_errors.len())
-            .unwrap_or(0);
+    let problems = u16::try_from(
+        app.settings_problem.as_deref().map_or(0, |p| p.lines().count())
+            + app.settings.command_errors.len()
+            + app.keymap.problems.len()
+            + app.progress_errors.len()
+            + app.transform_errors.len(),
+    )
+    .unwrap_or(0);
     let [general, sync, theme_area, cmds, boards, keys_area] = Layout::vertical([
-        Constraint::Length(5 + problems),
+        Constraint::Length(6 + problems),
         Constraint::Length(3),
         Constraint::Length(theme_rows),
         Constraint::Length(rows(commands, 10) + 1),
@@ -719,10 +728,25 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             Span::from("Home page      ").quiet(),
             Span::styled(
                 app.homepage_label(),
-                if here(S::General) {
+                if here(S::General) && app.general_sel == 0 {
                     theme::selected()
                 } else {
                     Style::new().bold()
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::from("No ID          ").quiet(),
+            Span::styled(
+                if app.id_fallback {
+                    "the short uuid (appearance.idFallback)"
+                } else {
+                    "- as task shows it"
+                },
+                if here(S::General) && app.general_sel == 1 {
+                    theme::selected()
+                } else {
+                    Style::new()
                 },
             ),
         ]),
@@ -736,13 +760,15 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             }),
         ]),
     ];
+    // Errors, which stop the file being used or saved over, then what can't be used, which is kept in it.
     if let Some(p) = &app.settings_problem {
-        lines.push(Line::from(p.clone()).bad());
+        lines.extend(p.lines().map(|l| Line::from(l.to_owned()).bad()));
     }
     lines.extend(
-        app.keymap
-            .problems
+        app.settings
+            .command_errors
             .iter()
+            .chain(&app.keymap.problems)
             .chain(&app.progress_errors)
             .chain(&app.transform_errors)
             .map(|p| Line::from(p.clone()).bad()),
@@ -1017,6 +1043,7 @@ fn theme_lines(t: &theme::Theme) -> Vec<Line<'static>> {
         ("dim", t.dim),
         ("ok", t.ok),
         ("bad", t.bad),
+        ("marked", t.marked),
     ] {
         app_roles.extend(chip(name, style));
     }
@@ -1102,7 +1129,13 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
         width,
         height,
     );
-    let block = boxed(format!(" task commands · task{id} ")).title_bottom(Span::from(format!(" {desc} ")).quiet());
+    let many = uuid.split_whitespace().count();
+    let title = if many > 1 {
+        format!(" task commands · {many} marked tasks ")
+    } else {
+        format!(" task commands · task{id} ")
+    };
+    let block = boxed(title).title_bottom(Span::from(format!(" {desc} ")).quiet());
     let inner = block.inner(area);
     f.render_widget(Clear, area);
     f.render_widget(block, area);
@@ -1348,11 +1381,12 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
             None => l.clone(),
         })
         .collect();
-    let widths: Vec<Constraint> = r
-        .labels
-        .iter()
-        .enumerate()
-        .map(|(j, label)| {
+    // With tasks marked, a one-cell gutter in front shows which (`●`).
+    let gutter = !app.marks.is_empty();
+    let widths: Vec<Constraint> = gutter
+        .then_some(Constraint::Length(1))
+        .into_iter()
+        .chain(r.labels.iter().enumerate().map(|(j, label)| {
             if label == "Description" {
                 return Constraint::Fill(1);
             }
@@ -1366,9 +1400,13 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
                 .max()
                 .unwrap_or(0);
             Constraint::Length(u16::try_from(widest).unwrap_or(u16::MAX))
-        })
+        }))
         .collect();
     let t = theme::current();
+    // A grouped report (a `/` in its sort): a row that starts a group has a line of its own above it, which the
+    // separator is drawn into once the table is (`separators`). The scroll counts it, so it stays with its row.
+    let starts = |i: usize| r.heads.get(i).is_some_and(Option::is_some);
+    let mut heights: Vec<u16> = Vec::with_capacity(r.cells.len());
     let rows = r.cells.iter().enumerate().map(|(i, row)| {
         let cells: Vec<Vec<Line<'static>>> = row
             .iter()
@@ -1379,26 +1417,39 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
             })
             .collect();
         let height = cells.iter().map(Vec::len).max().unwrap_or(1);
+        heights.push(u16::try_from(height).unwrap_or(1));
         // Taskwarrior lays the colour rules over the alternate shading of every other row.
         let shade = if i % 2 == 1 && t.shading == theme::Shading::Task {
             t.alternate
         } else {
             Style::new()
         };
-        let style = shade.patch(r.styles.get(i).copied().unwrap_or_default());
-        Row::new(cells.into_iter().map(TCell::from))
+        let mut style = shade.patch(r.styles.get(i).copied().unwrap_or_default());
+        let marked = r.uuids.get(i).is_some_and(|u| app.marks.has(u));
+        if marked {
+            style = style.patch(t.marked);
+        }
+        let mark = gutter.then(|| TCell::from(if marked { "●" } else { "" }).style(theme::accent()));
+        Row::new(mark.into_iter().chain(cells.into_iter().map(TCell::from)))
             .height(u16::try_from(height).unwrap_or(1))
+            .top_margin(u16::from(starts(i)))
             .style(style)
     });
+    let rows: Vec<Row> = rows.collect();
     // The labels in bold, in `color.label`, and `color.label.sort` with its way where it sorts, over a rule.
-    let header = Row::new(labels.iter().enumerate().map(|(j, l)| {
-        let colour = if r.sorted.get(j).copied().flatten().is_some() {
-            t.label_sort
-        } else {
-            t.label
-        };
-        TCell::from(l.clone()).style(Style::new().add_modifier(Modifier::BOLD).patch(colour))
-    }))
+    let header = Row::new(
+        gutter
+            .then(|| TCell::from(""))
+            .into_iter()
+            .chain(labels.iter().enumerate().map(|(j, l)| {
+                let colour = if r.sorted.get(j).copied().flatten().is_some() {
+                    t.label_sort
+                } else {
+                    t.label
+                };
+                TCell::from(l.clone()).style(Style::new().add_modifier(Modifier::BOLD).patch(colour))
+            })),
+    )
     .bottom_margin(1);
     let t = Table::new(rows, widths)
         .header(header)
@@ -1407,7 +1458,34 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
         .highlight_symbol(MARK)
         .highlight_spacing(HighlightSpacing::Always);
     let sel = (app.focus == Focus::Main).then_some(app.selected);
-    f.render_stateful_widget(t, area, &mut TableState::default().with_selected(sel));
+    let mut state = TableState::default().with_selected(sel);
+    f.render_stateful_widget(t, area, &mut state);
+    separators(f, &r.heads, &heights, state.offset(), area);
+}
+
+/// The group separators of a grouped report, `── Project: Home ───…` in `color.label`, each on the line left above the
+/// first row of its group. The rows start under the labels and their rule; `offset` is the first row shown.
+fn separators(f: &mut Frame, heads: &[Option<String>], heights: &[u16], offset: usize, area: Rect) {
+    if heads.is_empty() {
+        return;
+    }
+    let style = theme::current().label;
+    let mut y = area.y.saturating_add(2);
+    for (i, &h) in heights.iter().enumerate().skip(offset) {
+        if y >= area.bottom() {
+            break;
+        }
+        if let Some(Some(head)) = heads.get(i) {
+            let text = format!("── {head} ");
+            let rest = usize::from(area.width).saturating_sub(text.chars().count());
+            f.render_widget(
+                Line::from(Span::styled(format!("{text}{}", "─".repeat(rest)), style)),
+                Rect::new(area.x, y, area.width, 1),
+            );
+            y = y.saturating_add(1);
+        }
+        y = y.saturating_add(h);
+    }
 }
 
 /// A date of the add preview, in `dateformat`.
@@ -1595,6 +1673,7 @@ fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
 fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
     const LABEL: u16 = 12;
     let title = match (&form.uuid, form.id) {
+        _ if !form.many.is_empty() => format!(" modify {} tasks: only the fields typed in ", form.many.len()),
         (None, _) => " add a task ".to_owned(),
         (Some(_), Some(id)) => format!(" modify task {id} "),
         (Some(u), None) => format!(" modify task {} ", u.chars().take(8).collect::<String>()),
@@ -1702,6 +1781,10 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         PromptKind::Annotate(_) => (
             format!(" annotate task{id} "),
             task.map(|t| task_card(app, t)).unwrap_or_default(),
+        ),
+        PromptKind::AnnotateMany(uuids) => (
+            format!(" annotate {} tasks ", uuids.len()),
+            vec![Line::from("The same note is added to each.").quiet()],
         ),
         PromptKind::CommandName(_) => (
             " task command: its name ".to_owned(),

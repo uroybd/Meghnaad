@@ -158,7 +158,15 @@ fn pattern(cfg: &Config, key: &str) -> Value {
 
 /// What a cell needs besides the task, with the local zone's offset at each moment the rows hold (it changes with
 /// summer time).
-pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64, rules: &[Rule]) -> Option<Ctx> {
+/// How `settings.json`'s `appearance` says cells are drawn: the field transformations, and whether a task with no ID
+/// shows its short uuid (`idFallback`) rather than `-`.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Look<'a> {
+    pub rules: &'a [Rule],
+    pub id_fallback: bool,
+}
+
+pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64, look: Look<'_>) -> Option<Ctx> {
     let mut at: BTreeSet<i64> = moments.collect();
     at.insert(now);
     let offsets: Vec<(i64, i32)> = at.into_iter().map(|t| (t, local_offset(t))).collect();
@@ -183,7 +191,8 @@ pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64, rules: &[
             "dependency": cfg.indicator("dependency.indicator"),
         },
         "journal": journal,
-        "transformations": rules.iter().map(|r| json!({ "match": r.pattern, "replace": r.replace, "fields": r.fields })).collect::<Vec<_>>(),
+        "transformations": look.rules.iter().map(|r| json!({ "match": r.pattern, "replace": r.replace, "fields": r.fields })).collect::<Vec<_>>(),
+        "id_fallback": look.id_fallback,
     }))
     .ok()
 }
@@ -218,6 +227,9 @@ pub struct Report {
     pub uuids: Vec<String>,
     pub ids: Vec<Option<u64>>,
     pub cells: Vec<Vec<Cell>>,
+    /// For a report whose sort has a `/`: the separator above each row that starts a group (`Project: Home`), `None`
+    /// inside one. Empty when nothing groups the report.
+    pub heads: Vec<Option<String>>,
 }
 
 /// The column specs of a report (`due.relative` is `due` written `relative`).
@@ -251,7 +263,7 @@ pub fn report(
     name: &str,
     filter: &[String],
     now: i64,
-    rules: &[Rule],
+    look: Look<'_>,
 ) -> Result<Report, String> {
     let mut args: Vec<String> = context_filter(cfg, name);
     args.extend(filter.iter().cloned());
@@ -262,7 +274,7 @@ pub fn report(
     let pending: BTreeSet<String> = task.lines(&["+PENDING", "_uuids"])?.into_iter().collect();
     let (cols, mut labels) = columns(cfg, name);
     let rows: Vec<Row> = tasks.iter().filter_map(|t| row(t, cfg, &pending, now)).collect();
-    let ctx = ctx(cfg, tasks.iter().flat_map(moments), now, rules).unwrap_or_default();
+    let ctx = ctx(cfg, tasks.iter().flat_map(moments), now, look).unwrap_or_default();
     let table = cells::format(&cols, &rows, &ctx);
     // Taskwarrior leaves out a column with nothing in it unless `print.empty.columns` is on.
     let keep: Vec<bool> = table.empty.iter().map(|e| !e || cfg.print_empty_columns()).collect();
@@ -276,6 +288,7 @@ pub fn report(
         .map(|c| keys.iter().position(|k| k.column == c.name).map(|i| (i, keys[i].desc)))
         .collect();
     let names: Vec<String> = cols.iter().map(|c| c.name.clone()).collect();
+    let heads = group_heads(cfg, &tasks, &rows, &cols, &labels, &keys, &ctx);
     let colours = row_styles(task, name, filter);
     Ok(Report {
         name: name.to_owned(),
@@ -298,7 +311,49 @@ pub fn report(
             .map(|t| t.get("id").and_then(Value::as_u64).filter(|&i| i > 0))
             .collect(),
         cells: table.cells.into_iter().map(|row| pick(row, &keep)).collect(),
+        heads,
     })
+}
+
+/// The separators of a report grouped by its sort (`project+/`): each grouped column's cell as the report draws it, or
+/// as a plain column when the report doesn't show it, named by the report's label (else a UDA's label, else the
+/// attribute), above the first row of each group ([`crate::groups`]).
+fn group_heads(
+    cfg: &Config,
+    tasks: &[Value],
+    rows: &[Row],
+    cols: &[Col],
+    labels: &[String],
+    keys: &[tc_core::sortspec::Key],
+    ctx: &Ctx,
+) -> Vec<Option<String>> {
+    let grouped: Vec<&str> = keys.iter().filter(|k| k.brk).map(|k| k.column.as_str()).collect();
+    if grouped.is_empty() {
+        return Vec::new();
+    }
+    let (head_cols, head_labels): (Vec<Col>, Vec<String>) = grouped
+        .iter()
+        .filter_map(|&key| match cols.iter().position(|c| c.name == key) {
+            Some(i) => {
+                let c = &cols[i];
+                let col: Col =
+                    serde_json::from_value(json!({ "name": c.name, "format": c.format, "kind": c.kind })).ok()?;
+                Some((col, labels.get(i).cloned().unwrap_or_default()))
+            }
+            None => {
+                let label = crate::groups::label_for(key, cfg.udas.get(key).and_then(|u| u.label.as_deref()));
+                let col: Col = serde_json::from_value(json!({ "name": key })).ok()?;
+                Some((col, label))
+            }
+        })
+        .unzip();
+    let values: Vec<Vec<String>> = cells::format(&head_cols, rows, ctx)
+        .cells
+        .into_iter()
+        .map(|r| r.into_iter().map(|c| c.text).collect())
+        .collect();
+    let keys: Vec<String> = grouped.iter().map(|&k| k.to_owned()).collect();
+    crate::groups::heads(&head_labels, &values, &crate::groups::breaks(tasks, &keys))
 }
 
 /// The active context's read filter, in parentheses, for a report that applies the context; nothing otherwise.
@@ -418,7 +473,7 @@ mod tests {
             &cfg("report.x.columns=id,project,due.relative,depends.indicator,estimate,when\n"),
             "x",
         );
-        let ctx = ctx(&c, [NOW + 86_400].into_iter(), NOW, &[]).unwrap();
+        let ctx = ctx(&c, [NOW + 86_400].into_iter(), NOW, Look::default()).unwrap();
         let table = cells::format(&cols, &[r], &ctx);
         let texts: Vec<&str> = table.cells[0].iter().map(|c| c.text.as_str()).collect();
         assert_eq!(texts[0], "2");
@@ -454,7 +509,16 @@ mod tests {
         let table = cells::format(
             &cols,
             &[r],
-            &ctx(&Config::default(), std::iter::empty(), NOW, &rules).unwrap(),
+            &ctx(
+                &Config::default(),
+                std::iter::empty(),
+                NOW,
+                Look {
+                    rules: &rules,
+                    id_fallback: false,
+                },
+            )
+            .unwrap(),
         );
         assert_eq!(table.cells[0][1].text, "fix BOR-7");
         assert!(table.cells[0][1].blocks.is_some());
@@ -465,13 +529,21 @@ mod tests {
         let t = json!({ "id": 0, "uuid": "u", "status": "pending", "description": "d", "wait": "20261008T000000Z" });
         let r = row(&t, &Config::default(), &BTreeSet::new(), NOW).unwrap();
         let (cols, _) = columns(&cfg("report.x.columns=id,description\n"), "x");
-        let table = cells::format(
-            &cols,
-            &[r],
-            &ctx(&Config::default(), std::iter::empty(), NOW, &[]).unwrap(),
-        );
-        // No id: the engine's id cell shows the short uuid instead.
-        assert_eq!(table.cells[0][0].text, "u");
+        let table = |id_fallback| {
+            let look = Look {
+                rules: &[],
+                id_fallback,
+            };
+            cells::format(
+                &cols,
+                std::slice::from_ref(&r),
+                &ctx(&Config::default(), std::iter::empty(), NOW, look).unwrap(),
+            )
+        };
+        // No id: `task`'s `-`, or with `appearance.idFallback` the short uuid; the uuid to copy either way.
+        assert_eq!(table(false).cells[0][0].text, "-");
+        assert_eq!(table(true).cells[0][0].text, "u");
+        assert_eq!(table(false).cells[0][0].uuid.as_deref(), Some("u"));
     }
 
     #[test]

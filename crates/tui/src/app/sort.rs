@@ -88,6 +88,12 @@ impl App {
                     k.desc = !k.desc;
                 }
             }
+            // Group by the key (a `/`, as the web's Group button): a line above each group, with its name.
+            "sort.group" => {
+                if let Some(k) = edit.keys.get_mut(edit.sel) {
+                    k.brk = !k.brk;
+                }
+            }
             "sort.raise" if edit.sel > 0 && edit.sel < n => {
                 edit.keys.swap(edit.sel, edit.sel - 1);
                 edit.sel -= 1;

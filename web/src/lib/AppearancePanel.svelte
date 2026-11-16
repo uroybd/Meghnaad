@@ -27,6 +27,7 @@
   const toRules = (a: Appearance): RuleDraft[] =>
     a.transformations.map((r) => ({ ...r, fields: [...r.fields], key: nextKey++ }));
   let rules = $state<RuleDraft[]>(untrack(() => toRules(saved)));
+  let idFallback = $state(untrack(() => saved.idFallback));
   let busy = $state(false);
   let error = $state<string | null>(null);
   let done = $state(false);
@@ -59,6 +60,7 @@
   const current = $derived<Appearance>({
     progress: Object.fromEntries(Object.keys(draft).map((n) => [n, range(n)])),
     transformations: rules.map(({ match, replace, fields }) => ({ match, replace, fields })),
+    idFallback,
   });
   // What the engine says is wrong with the rules (a pattern that does not compile, no fields, a field that is not text).
   const ruleProblems = $derived(transformProblems(current.transformations, stringUdas));
@@ -81,6 +83,7 @@
     if (changed && untouched) {
       draft = toDraft(now);
       rules = toRules(now);
+      idFallback = now.idFallback;
     }
   });
 
@@ -122,7 +125,17 @@
 </script>
 
 <section aria-label="Appearance settings">
-  <h2>Progress bars</h2>
+  <h2>IDs</h2>
+  <label class="pick">
+    <input type="checkbox" bind:checked={idFallback} onchange={() => (done = false)} />
+    <span>Fall back to UUID.short when ID is missing (e.g. completed or deleted)</span>
+  </label>
+  <p class="dim">
+    Off, a task with no ID shows <code>-</code> in the ID column, as <code>task all</code> does. Either way the cell's tooltip,
+    and copying it, give the whole uuid.
+  </p>
+
+  <h2 class="next">Progress bars</h2>
   <p class="dim">
     A numeric UDA shown as a bar in reports: empty at its minimum, full at its maximum. A value outside the range fills
     or empties the bar; a task with no value shows nothing. It is kept in this app's own

@@ -84,6 +84,7 @@ use, so the three look alike.
 | `dim` | notes, help, what matters less | `#75756f` | `#9a9a90` |
 | `ok` | the timer | `#1a7f37` | `#56d364` |
 | `bad` | what failed, overdue counts | `#cf222e` | `#ff7b72` |
+| `marked` | a task marked on the Tasks page, to act on with others | `on #ddf4ff` | `on #0c2d6b` |
 
 Which preset is drawn is `tui.theme` in `settings.json`, which the Theme section of the Settings page goes through:
 
@@ -141,7 +142,8 @@ On the Tasks page:
 
 | Key | Does |
 | --- | --- |
-| `j` `k` and the moves above | Move through the report |
+| `j` `k` and the moves above | Move through the report's rows (a group's separator is not a row) |
+| `[` `]` | On a grouped report, the first row of the group before, or of the next |
 | `Enter` | The task's info, in tabs ([Task info](#task-info)); any other key closes it |
 | `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form) |
 | `m` | Modify the selected task, in [the full form](#the-form) |
@@ -152,8 +154,12 @@ On the Tasks page:
 | `c` | Run one of your [task commands](#settings) on the selected task: a box lists them, typing narrows the list, `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
 | `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
-| `o` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
+| `o` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `b` groups by it (a `/` after it, as the web's **Group** does) or stops, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
 | `e` | [Export](#export) the report as a file: JSON, CSV or TSV, with the fields you choose |
+| `Space` | Mark the selected task, or unmark it, and move down ([Bulk actions](#bulk-actions)) |
+| `V` | Mark every row from the last one marked to the selected one |
+| `*` | Mark every row, or unmark them all when they all are |
+| `Esc` | With tasks marked, clear the marks |
 
 Over the table a line says what `task` adds to your filter: the report's own filter, the sort in force (and the
 report's own when you changed it) and the context; `f`, `o` and `C` change them. A sort is put in the filter as
@@ -161,6 +167,19 @@ report's own when you changed it) and the context; `f`, `o` and `C` change them.
 its report, and showing another report drops it. The labels of the columns sorted by have `↑` or `↓`, and their place
 when there is more than one. `export` leaves out the context, so the app puts the context's read filter in front of the
 report itself, in parentheses, as `task <report>` does (and not for a report with `report.<name>.context=0`).
+
+A report whose sort has a `/` (`project+/`, from the taskrc or from `b` in the sort box) is grouped, as the web app
+draws it: where `task` leaves a blank line, a line across the table names the group, with `(none)` for an empty value
+and ` · ` between the columns when more than one is grouped. The value is written as the report shows that column, and
+a column the report doesn't show is named by its UDA label.
+
+```
+── Proj: Home · Result: fail ──────────────────────────
+  2  Home  b
+── Proj: Home · Result: (none) ────────────────────────
+  1  Home  a
+  3  Home  c
+```
 
 The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
 (`Created task 3.`) in the status line. They add no overrides. When `task` asks a question (`Delete task 3 'x'? (yes/no)`, or whether to
@@ -173,6 +192,25 @@ completion offers are read again.
 The add box is Meghnaad's reading of the line, by the same rules as `task add`, ported from Taskwarrior. What is made
 is what `task add` makes. A line it finds a problem in stays open with the reason. Adding and
 changing task commands on the Settings page use the same box.
+
+### Bulk actions
+
+`Space` marks a task (and moves down a row), `V` marks a range from the last one marked, as vim's visual line does, and
+`*` marks the whole report. A marked row has a `●` in front and the `marked` [colour](#colours); the status line says
+how many (`3 marked`) and the bottom line lists the keys that act on them. `Esc` clears the marks.
+
+With tasks marked, the quick keys act on all of them, as the web app's bulk bar does: `d` `s` `x` `D` run
+`task <uuids> done` (`start`, `stop`, `delete`), `A` asks for one note and adds it to each, and `c` runs the task
+command chosen on them. They go as command lines naming the tasks by uuid, 120 at a time, each while the last worked, so
+`undo` takes back a batch at a time; `task`'s questions (`bulk`, `confirmation`, the `(yes/no/all/quit)` for each task)
+open in the box, and `quit` or a refusal stops the batches still to go. `m` opens [the form](#the-form) empty: only the
+lines you type in are changed, on every marked task, as one `modify` (a line typed in and emptied clears that
+attribute; tags are typed `+tag` or `-tag`). `:` starts the command line with them, as the web's **CLI** button does:
+their IDs as a list (`1,3-5`) and the uuid of any without one, so you type the rest. `Enter` and `a` stay on the
+selected task.
+
+Marks live while their tasks are in the list: another filter, report or sort drops the ones no longer shown, leaving the
+Tasks page clears them, and they are cleared after an action.
 
 ### The form
 
@@ -367,7 +405,7 @@ and on into the next one, and `[` `]` jump between sections. `E`, in any section
 
 | Section | Keys |
 | --- | --- |
-| General | Where `settings.json` is and what is wrong with it; the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board) and saves; and the [progress bars](#settings) |
+| General | Where `settings.json` is and what is wrong with it, as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept); the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board) and saves; on the row below, what a task with no ID shows in the ID column, `-` as `task` shows it or its short uuid, which `Space` or `Enter` switches and saves (`appearance.idFallback`, [as on the web](using/settings.md#ids)); and the [progress bars](#settings) |
 | Sync | `y`, `Space` or `Enter` goes through when to sync, and saves it ([Sync](#sync)) |
 | Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
 | Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
@@ -395,7 +433,8 @@ The app's own `settings.json` is kept on this machine only, in the first of:
 The file is optional; without it there are no task commands or boards, syncing is by hand and the theme is the
 default. The terminal app uses what it shares with the web app and the phone: `taskCommands` (words that stand for a
 command line, which you can also add, change and delete on the Settings page), `boards` ([Boards](#boards)),
-`homepage` (the report or board it opens on, chosen in the General section), `appearance.progress` (numeric UDAs drawn
+`homepage` (the report or board it opens on, chosen in the General section), `appearance.idFallback` (a task with no ID
+shown by its short uuid rather than `-`, also chosen there), `appearance.progress` (numeric UDAs drawn
 in a report as a bar with the number beside it, as on the web: [Progress bars](using/settings.md#progress-bars)),
 `appearance.transformations` (find and replace in a description, a note or a string UDA, drawn as Markdown in report
 rows: [Transformations](using/settings.md#transformations); a link is an OSC 8 hyperlink, which most terminals open with
@@ -416,8 +455,11 @@ a click or Cmd/Ctrl+click and the rest show as its words; `task info` is shown a
 
 It is the same JSON as the web app's (**Settings → Commands**, or `web/settings.json` in the bucket), so copying that
 file here gives you the same task commands and boards; the web app and the phone keep `tui` as it is and have no use
-for it. What the terminal app has no use for is kept as it is when it saves.
-A `sync` at the top of the file, where 0.6.53 kept it, is still read, and moved into `tui` the next time the app saves. A file that is not a JSON object is reported in the status line and read as
+for it. What the terminal app has no use for is kept as it is when it saves, at any depth: a key it doesn't know inside
+a task command stays when you change that command, and a task command it can't use (a bad name, no command) is listed
+in General and stays in the file. A `sync` at the top of the file, where 0.6.53 kept it, is still read, and moved into
+`tui` the next time the app saves. A file that is not a JSON object, or has a known key in the wrong shape (the errors
+the web app's [settings.json box](using/settings.md) lists), is reported in General and the status line and read as
 none, and the app will not save over it until it is put right.
 
 The app reads and writes `settings.json` in that folder and touches nothing else there. It writes the file in place, so

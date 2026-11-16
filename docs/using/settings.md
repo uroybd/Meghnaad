@@ -11,9 +11,24 @@ The default is `next`. It is kept in the app's own `settings.json` (`"homepage":
 still opens that task, and a report or board that is gone opens `next`. (The taskrc's `default.command` is different: it
 is the command a line runs when it names none.)
 
-Below it, **settings.json** unfolds to the whole of the app's own settings file as saved (home page, appearance, task
-commands, boards and keys), with a **Copy** button, for pasting into the terminal app's `~/.config/meghnaad` or keeping a
-copy.
+Below it, **settings.json** unfolds to the whole of the app's own settings file (home page, appearance, task commands,
+boards and keys, and the terminal app's and the phone's own), in a box you can edit or paste a whole file over. **Copy**
+copies it, for the terminal app's `~/.config/meghnaad` or keeping a copy; **Reset** goes back to what is saved; **Apply**
+saves it as written. The phone has the same box under General.
+
+The file is linted as you type, and each problem is listed with where it is:
+
+- An **error** stops **Apply**: text that is not JSON or not an object, a file over 64 KB, or a known key in the wrong
+  shape (`homepage`, `appearance`, `keys`, `web`, `mobile` or `tui` that is not an object, `taskCommands` or `boards`
+  that is not a list, `appearance.progress` that is not an object, `appearance.transformations` that is not a list, a
+  board that is not an object or has no `sections` list).
+- A **warning** is something this app can't use, such as a task command with a bad name, a board with a bad id or a
+  progress bar with no range. It is saved with the rest and kept in the file until you take it out.
+
+Every front end saves only what you changed. A key it doesn't know, at any depth (another front end's section, a field
+added to a board or a task command by a later version), and an entry it can't use are left as they are by every save:
+a board, a task command, a key, the appearance, the home page, the terminal app's own settings. Two devices saving at
+the same time is still the last one wins.
 
 ## Keys
 
@@ -76,6 +91,21 @@ phone has the same tab, and the terminal app [a Keybindings section](../terminal
 
 How the app draws things. It is kept in the app's own `settings.json`, not your taskrc, so it is the same on the web
 and on the phone.
+
+### IDs
+
+A task that is done or deleted has no ID. By default its ID cell is `-`, as in `task all`:
+
+```
+ID St UUID     Description
+-- -- -------- -----------
+ - C  43082644 one
+```
+
+Tick **Fall back to UUID.short when ID is missing (e.g. completed or deleted)** to show the first eight characters of
+its uuid there instead, dimmed. Either way, hovering the cell shows the whole uuid with a **Copy** button (on the phone,
+tapping the cell copies it). It is `"appearance": { "idFallback": true }` in `settings.json`, so the terminal app
+follows it too.
 
 ### Progress bars
 
@@ -331,7 +361,7 @@ Delete, then the commands) fold into that menu, and open out again when there's 
 ![The menu under the ellipsis on a task: fail, later and urgent, each with its icon and what it runs](../screenshots/task-commands-menu.png)
 
 Other keys in `settings.json` are kept (**General** shows the whole file), and entries it can't use are listed and
-dropped when you apply. The file is at most 64 KB.
+kept in the file as they are. The file is at most 64 KB.
 
 ## tasksh
 

@@ -37,6 +37,8 @@ pub struct Field {
     pub start: String,
     /// Shown but not changed here (the period of one task of a series).
     pub locked: bool,
+    /// Typed in since the form opened: for many tasks, only these are sent (an emptied one clears it).
+    pub touched: bool,
 }
 
 impl Field {
@@ -48,6 +50,7 @@ impl Field {
             input: Input::new(value),
             start: start.to_owned(),
             locked: false,
+            touched: false,
         }
     }
 
@@ -80,6 +83,8 @@ pub struct Form {
     pub carried: Vec<String>,
     /// The task's annotations, shown under the form.
     pub notes: Vec<String>,
+    /// The marked tasks it changes, by uuid, when it changes many (spec 0007); empty for one task or a new one.
+    pub many: Vec<String>,
 }
 
 const DATES: [&str; 4] = ["due", "wait", "scheduled", "until"];
@@ -157,6 +162,7 @@ impl Form {
             completer: Completer::default(),
             carried,
             notes: Vec::new(),
+            many: Vec::new(),
         }
     }
 
@@ -235,7 +241,60 @@ impl Form {
             completer: Completer::default(),
             carried: Vec::new(),
             notes,
+            many: Vec::new(),
         }
+    }
+
+    /// The marked tasks, every field empty: only the fields typed in are changed, on all of them (the web's bulk
+    /// Modify). Tags are typed `+tag` or `-tag`; what it depends on as `modify` takes it (`3`, `-3`).
+    pub fn many(uuids: Vec<String>, cfg: &Config) -> Form {
+        let blank = |key: &str, label: &str, kind: Kind| Field::new(key, label, kind, "", "");
+        let mut fields = vec![
+            blank("project", "Project", Kind::Value),
+            blank("priority", "Priority", Kind::Value),
+        ];
+        for k in DATES {
+            fields.push(blank(k, &title(k), Kind::Date));
+        }
+        fields.push(blank("recur", "Repeat", Kind::Value));
+        fields.push(blank("tags", "Tags", Kind::Tags));
+        for (name, label, ty) in udas(cfg) {
+            fields.push(blank(&name, &label, uda_kind(ty)));
+        }
+        fields.push(blank("depends", "Depends on", Kind::Depends));
+        fields.push(blank("note", "Annotate", Kind::Note));
+        Form {
+            uuid: Some(String::new()),
+            id: None,
+            fields,
+            sel: 0,
+            completer: Completer::default(),
+            carried: Vec::new(),
+            notes: Vec::new(),
+            many: uuids,
+        }
+    }
+
+    /// For many tasks: the `modify` words for the fields typed in. A value is `name:value` (empty clears it); a tag
+    /// `+tag` (or `-tag` as typed); what it depends on `depends:x`.
+    fn many_changes(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for f in self.fields.iter().filter(|f| f.touched) {
+            let words = f.value().split([' ', ',']).filter(|w| !w.is_empty());
+            match f.kind {
+                Kind::Value | Kind::Date => out.push(format!("{}:{}", f.key, f.value())),
+                Kind::Tags => out.extend(words.map(|w| {
+                    if w.starts_with(['+', '-']) {
+                        w.to_owned()
+                    } else {
+                        format!("+{w}")
+                    }
+                })),
+                Kind::Depends => out.extend(words.map(|w| format!("depends:{w}"))),
+                _ => {}
+            }
+        }
+        out
     }
 
     pub fn field(&self, key: &str) -> Option<&Field> {
@@ -282,6 +341,9 @@ impl Form {
 
     /// Why the form can't be saved as it is, or `None`.
     pub fn problem(&self) -> Option<&'static str> {
+        if !self.many.is_empty() {
+            return None;
+        }
         if self.uuid.is_none() && self.value("description").is_empty() {
             return Some("A task needs a description.");
         }
@@ -298,6 +360,19 @@ impl Form {
         let words = |list: &[&str]| list.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
         let note = self.value("note");
         let mut out = Vec::new();
+        if !self.many.is_empty() {
+            let changes = self.many_changes();
+            if !changes.is_empty() {
+                out.extend(crate::app::selection::batches(
+                    &self.many,
+                    &[words(&["modify"]), changes].concat(),
+                ));
+            }
+            if !note.is_empty() {
+                out.extend(crate::app::selection::batches(&self.many, &words(&["annotate", note])));
+            }
+            return out;
+        }
         match &self.uuid {
             None => {
                 out.push([words(&["add"]), self.changes()].concat());
@@ -323,6 +398,21 @@ impl Form {
 
     /// The command lines, as the box shows them.
     pub fn command(&self) -> String {
+        if !self.many.is_empty() {
+            // The uuids would fill the box: they are named by how many.
+            let mut lines = Vec::new();
+            let changes = self.many_changes();
+            let n = self.many.len();
+            if !changes.is_empty() {
+                let w: Vec<String> = changes.iter().map(|w| quote(w)).collect();
+                lines.push(format!("<{n} tasks> modify {}", w.join(" ")));
+            }
+            let note = self.value("note");
+            if !note.is_empty() {
+                lines.push(format!("<{n} tasks> annotate {}", quote(note)));
+            }
+            return lines.join(" && ");
+        }
         self.statements()
             .iter()
             .map(|s| s.iter().map(|w| crate::form::quote(w)).collect::<Vec<_>>().join(" "))
@@ -447,6 +537,43 @@ mod tests {
         );
         set(&mut f, "note", "moved");
         assert_eq!(f.statements().last().unwrap(), &vec!["u-1", "annotate", "moved"]);
+    }
+
+    #[test]
+    fn many_tasks_get_only_the_fields_typed_in_a_batch_at_a_time() {
+        let uuids: Vec<String> = (0..130).map(|i| format!("u{i}")).collect();
+        let mut f = Form::many(uuids, &cfg());
+        assert!(f.statements().is_empty(), "nothing typed, nothing sent");
+        let mut touch = |key: &str, value: &str| {
+            set(&mut f, key, value);
+            if let Some(x) = f.fields.iter_mut().find(|x| x.key == key) {
+                x.touched = true;
+            }
+        };
+        touch("project", "Home");
+        touch("priority", ""); // typed in and emptied: cleared
+        touch("tags", "a -b +c");
+        touch("note", "seen");
+        let lines = f.statements();
+        assert_eq!(lines.len(), 4, "modify and annotate, each in two batches");
+        assert_eq!(lines[0].len(), 120 + 6);
+        assert_eq!(
+            lines[1],
+            ["u120", "u121", "u122", "u123", "u124", "u125", "u126", "u127", "u128", "u129"]
+                .iter()
+                .chain(&["modify", "project:Home", "priority:", "+a", "-b", "+c"])
+                .map(|w| (*w).to_owned())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(lines[3][10..], ["annotate", "seen"]);
+        assert_eq!(
+            f.command(),
+            "<130 tasks> modify project:Home priority: +a -b +c && <130 tasks> annotate seen"
+        );
+        assert!(
+            f.fields.iter().all(|x| x.key != "description"),
+            "one description for many makes no sense"
+        );
     }
 
     #[test]

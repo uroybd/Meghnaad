@@ -116,6 +116,9 @@ pub struct Ctx {
     /// The user's field transformations (`appearance.transformations`), run on a description, a note or a string UDA
     /// before it is drawn as Markdown.
     transformations: Vec<Rule>,
+    /// `appearance.idFallback`: a task with no ID (done, deleted) shows its short uuid, dimmed, in the `id` column
+    /// rather than `task`'s `-`.
+    id_fallback: bool,
 }
 
 impl Ctx {
@@ -355,12 +358,13 @@ fn cell(col: &Col, row: &Row, ctx: &Ctx, rules: &Rules) -> Cell {
         ("modified", _) => date_cell(row.modified, f, ctx),
         // Ids are only meaningful on this replica; the uuid is what to copy.
         ("id", _) => {
-            let (cell, uuid) = match row.id {
-                Some(id) => (Cell::text(id.to_string()), row.uuid.clone()),
-                None => (Cell::text(short(&row.uuid)).cls("dim"), row.uuid.clone()),
+            let cell = match row.id {
+                Some(id) => Cell::text(id.to_string()),
+                None if ctx.id_fallback => Cell::text(short(&row.uuid)).cls("dim"),
+                None => Cell::text("-"),
             };
             Cell {
-                uuid: Some(uuid),
+                uuid: Some(row.uuid.clone()),
                 ..cell
             }
         }
@@ -615,8 +619,15 @@ mod tests {
         let u = "0123456789abcdef";
         let c = one("id", json!({ "uuid": u, "id": 7 }), json!({}));
         assert_eq!((c.text.as_str(), c.uuid.as_deref(), c.cls), ("7", Some(u), None));
+        // No ID (done, deleted): `task`'s `-`, or with `appearance.idFallback` the short uuid, dimmed; the uuid to copy
+        // either way.
         let c = one("id", json!({ "uuid": u }), json!({}));
-        assert_eq!((c.text.as_str(), c.cls.as_deref()), ("01234567", Some("dim")));
+        assert_eq!((c.text.as_str(), c.uuid.as_deref(), c.cls), ("-", Some(u), None));
+        let c = one("id", json!({ "uuid": u }), json!({ "id_fallback": true }));
+        assert_eq!(
+            (c.text.as_str(), c.uuid.as_deref(), c.cls.as_deref()),
+            ("01234567", Some(u), Some("dim"))
+        );
         assert_eq!(text("uuid", json!({ "uuid": u })), u);
         assert_eq!(text("uuid.short", json!({ "uuid": u })), "01234567");
         assert_eq!(text("status", json!({ "status": "pending" })), "pending");

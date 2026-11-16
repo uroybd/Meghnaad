@@ -127,7 +127,7 @@ fun CommandsPanel(store: Store, st: CommandsState) {
         )
         if (st.unread.isNotEmpty()) {
             Column {
-                Text("${if (st.unread.size == 1) "One entry" else "${st.unread.size} entries"} in settings.json can't be used and will be dropped when you apply:", color = colors.error, fontSize = 13.sp)
+                Text("${if (st.unread.size == 1) "One entry" else "${st.unread.size} entries"} in settings.json can't be used and are kept in it as they are:", color = colors.error, fontSize = 13.sp)
                 st.unread.forEach { Text("• $it", color = colors.error, fontSize = 13.sp) }
             }
         }

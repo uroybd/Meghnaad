@@ -22,6 +22,19 @@ pub struct TaskCommand {
     pub icon: Option<String>,
 }
 
+impl TaskCommand {
+    /// As `settings.json` keeps it: `name`, `command` and an `icon` if it has one.
+    pub fn to_value(&self) -> serde_json::Value {
+        let mut o = serde_json::Map::new();
+        o.insert("name".into(), self.name.clone().into());
+        o.insert("command".into(), self.command.clone().into());
+        if let Some(i) = &self.icon {
+            o.insert("icon".into(), i.clone().into());
+        }
+        serde_json::Value::Object(o)
+    }
+}
+
 fn is_uuid(w: &str) -> bool {
     let parts: Vec<&str> = w.split('-').collect();
     parts.len() == 5

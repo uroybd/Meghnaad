@@ -72,6 +72,8 @@ data class Ctx(
     val journal: Journal? = null,
     /** The user's field transformations (`appearance.transformations`), run before a text is drawn as Markdown. */
     val transformations: List<Transformation> = emptyList(),
+    /** `appearance.idFallback`: a task with no ID shows its short uuid, dimmed, rather than `-`. */
+    val idFallback: Boolean = false,
 )
 
 fun shortUuid(u: String): String = u.take(8)
@@ -130,6 +132,7 @@ private fun Ctx.json(rows: List<Row>): JsonObject = buildJsonObject {
     put("indicators", buildJsonObject { put("active", indicators.active); put("tag", indicators.tag); put("dependency", indicators.dependency) })
     put("journal", journal?.let { buildJsonObject { put("start", it.start); put("stop", it.stop) } } ?: JsonNull)
     put("transformations", transformationsJson(transformations))
+    put("id_fallback", JsonPrimitive(idFallback))
 }
 
 /** The cells of a table, and which of its columns have nothing in them. */

@@ -1,7 +1,8 @@
 //! What a key does on a page: the action it names, and the task actions.
 
 use super::{
-    keys, moved, scrolled, sortspec, this_month, Action, App, Focus, KeyEvent, Mode, Page, PromptKind, SortEdit, Step,
+    keys, moved, scrolled, sortspec, this_month, Action, App, Focus, Form, KeyEvent, Mode, Page, PromptKind, SortEdit,
+    Step,
 };
 
 impl App {
@@ -22,6 +23,11 @@ impl App {
     pub(super) fn act(&mut self, action: &str) -> Action {
         match action {
             "app.quit" => return Action::Quit,
+            // With tasks marked, the line starts with them, as the web's CLI button does.
+            "app.prompt" if self.page == Page::Tasks && !self.marks.is_empty() => {
+                let line = super::selection::prompt_for(&self.marked_picks());
+                self.prompt(PromptKind::Console, &line);
+            }
             "app.prompt" => self.prompt(PromptKind::Console, ""),
             "app.sidebar" => {
                 self.focus = if self.focus == Focus::Main {
@@ -32,6 +38,10 @@ impl App {
             }
             "app.back" if self.page == Page::Boards && self.board_open && self.focus == Focus::Main => {
                 self.close_board();
+            }
+            // Back clears the marks first, when there are any.
+            "app.back" if self.page == Page::Tasks && self.focus == Focus::Main && !self.marks.is_empty() => {
+                self.marks.clear();
             }
             "app.back" => {
                 self.focus = Focus::Main;
@@ -156,10 +166,66 @@ impl App {
         }
     }
 
-    /// An action of the Tasks page, on the selected task.
+    /// The marked tasks, in the order of the list, each with its ID if it has one.
+    pub(super) fn marked_picks(&self) -> Vec<(String, Option<u64>)> {
+        self.report
+            .uuids
+            .iter()
+            .zip(&self.report.ids)
+            .filter(|(u, _)| self.marks.has(u))
+            .map(|(u, id)| (u.clone(), *id))
+            .collect()
+    }
+
+    /// The marked tasks' uuids, in the order of the list.
+    fn marked(&self) -> Vec<String> {
+        self.marked_picks().into_iter().map(|p| p.0).collect()
+    }
+
+    /// An action of the Tasks page, on the marked tasks when there are any (spec 0007), else on the selected one.
     pub(super) fn task_action(&mut self, action: &str) -> Action {
         let target = self.current().map(str::to_owned);
+        let marked = self.marked();
+        if !marked.is_empty() {
+            let word = match action {
+                "tasks.done" => Some("done"),
+                "tasks.start" => Some("start"),
+                "tasks.stop" => Some("stop"),
+                "tasks.delete" => Some("delete"),
+                _ => None,
+            };
+            if let Some(w) = word {
+                self.bulk(&marked, &[w.to_owned()]);
+                return Action::None;
+            }
+            match action {
+                "tasks.annotate" => {
+                    self.prompt(PromptKind::AnnotateMany(marked), "");
+                    return Action::None;
+                }
+                "tasks.modify" => {
+                    self.mode = Mode::Form(Form::many(marked, &self.cfg));
+                    return Action::None;
+                }
+                _ => {}
+            }
+        }
         match action {
+            "tasks.mark" => {
+                if let Some(u) = target {
+                    self.marks.toggle(&u);
+                    self.step(Step::By(1));
+                }
+            }
+            "tasks.markRange" => {
+                let list = self.report.uuids.clone();
+                self.marks.range(&list, self.selected);
+            }
+            "tasks.markAll" => {
+                let list = self.report.uuids.clone();
+                self.marks.toggle_all(&list);
+            }
+
             "tasks.add" => self.prompt(PromptKind::Add, ""),
             "tasks.filter" => {
                 let f = self.filter.clone();
@@ -182,6 +248,12 @@ impl App {
                         "No task commands yet: add them on the Settings page.".into()
                     } else {
                         format!("No task commands yet: add them on the Settings page ({settings}).")
+                    };
+                } else if !marked.is_empty() {
+                    self.mode = Mode::Commands {
+                        uuid: marked.join(" "),
+                        query: String::new(),
+                        sel: 0,
                     };
                 } else if let Some(uuid) = target {
                     self.mode = Mode::Commands {

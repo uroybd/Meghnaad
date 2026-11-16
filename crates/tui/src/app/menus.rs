@@ -21,8 +21,16 @@ impl App {
                 let Some(name) = self.matching_commands(&query).get(sel).map(|c| c.name.clone()) else {
                     return Action::None;
                 };
-                // As if typed at the command line: it expands, chains, and runs here or on the terminal.
-                return self.console(&format!("{uuid} {name}"));
+                // As if typed at the command line: it expands, chains, and runs here or on the terminal. Marked tasks
+                // (their uuids, space-separated) go a batch at a time, each batch while the last worked.
+                let uuids: Vec<String> = uuid.split_whitespace().map(str::to_owned).collect();
+                self.marks.clear();
+                let line = super::selection::batches(&uuids, &[name])
+                    .iter()
+                    .map(|words| words.join(" "))
+                    .collect::<Vec<_>>()
+                    .join(" && ");
+                return self.console(&line);
             }
             KeyCode::Down | KeyCode::Tab => sel = (sel + 1).min(n.saturating_sub(1)),
             KeyCode::Up | KeyCode::BackTab => sel = sel.saturating_sub(1),

@@ -70,7 +70,7 @@
   const text = $derived(serializeSettings(store.appSettings?.raw ?? {}, commands));
   const tooLarge = $derived(new Blob([text]).size > MAX_SETTINGS_BYTES);
   const valid = $derived(problems.size === 0 && !tooLarge);
-  /** Entries in the saved file that were not understood: applying drops them. */
+  /** Entries in the saved file that were not understood: they stay in the file. */
   const unread = $derived(store.appSettings?.errors ?? []);
 
   function add() {
@@ -109,7 +109,7 @@
       <TriangleAlert size={15} />
       <div>
         <strong>{unread.length === 1 ? 'One entry' : `${unread.length} entries`} in settings.json can't be used</strong>
-        and will be dropped when you apply:
+        and are kept in it as they are:
         <ul>
           {#each unread as why (why)}<li>{why}</li>{/each}
         </ul>

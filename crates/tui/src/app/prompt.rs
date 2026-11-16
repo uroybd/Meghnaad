@@ -108,6 +108,7 @@ impl App {
         };
         if let (Some(rest), Some(field)) = (done.line.strip_prefix(&prefix), f.fields.get_mut(f.sel)) {
             field.input = Input::new(&format!("{head}{rest}"));
+            field.touched = true;
         }
     }
 
@@ -123,6 +124,9 @@ impl App {
         if statements.is_empty() {
             self.status = "Nothing changed.".into();
             return Action::None;
+        }
+        if !f.many.is_empty() {
+            self.marks.clear();
         }
         self.run_form(f, statements);
         Action::None
@@ -158,6 +162,11 @@ impl App {
             PromptKind::Annotate(u) => {
                 if !words.is_empty() {
                     self.quick(&[vec![u.clone(), "annotate".to_owned()], words].concat());
+                }
+            }
+            PromptKind::AnnotateMany(uuids) => {
+                if !words.is_empty() {
+                    self.bulk(uuids, &[vec!["annotate".to_owned()], words].concat());
                 }
             }
             PromptKind::KeysSearch => {

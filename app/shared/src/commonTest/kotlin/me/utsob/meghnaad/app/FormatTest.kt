@@ -64,13 +64,15 @@ class FormatTest {
     @Test
     fun answersACellForEveryRowAndColumnInOrder() {
         val out = formatCells(listOf(col("id"), col("description")), listOf(row(), row(id = null, description = "Other")), ctx)
-        assertEquals(listOf(listOf("3", "Buy milk"), listOf("aaaaaaaa", "Other")), out.map { r -> r.map { it.text } })
+        assertEquals(listOf(listOf("3", "Buy milk"), listOf("-", "Other")), out.map { r -> r.map { it.text } })
         assertEquals(emptyList(), formatCells(listOf(col("id")), emptyList(), ctx))
     }
 
     @Test
     fun keepsWhatACellCarriesBesidesItsText() {
-        assertEquals(Cell("aaaaaaaa", cls = "dim", uuid = row().uuid), cell(col("id"), row(id = null), ctx))
+        // No ID: `task`'s `-`, or with appearance.idFallback the short uuid, dimmed; the uuid to copy either way.
+        assertEquals(Cell("-", uuid = row().uuid), cell(col("id"), row(id = null), ctx))
+        assertEquals(Cell("aaaaaaaa", cls = "dim", uuid = row().uuid), cell(col("id"), row(id = null), ctx.copy(idFallback = true)))
         assertEquals(listOf("Home", "Kitchen"), cell(col("project"), row(project = "Home.Kitchen"), ctx).segments)
         assertEquals(listOf("a", "b"), cell(col("tags"), row(tags = listOf("a", "b")), ctx).chips)
         assertEquals(listOf(NoteCell("2026-10-07 12:30", "n", now)), cell(col("description"), row(annotations = listOf(Note(now, "n"))), ctx).notes)

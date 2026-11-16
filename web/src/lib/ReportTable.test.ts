@@ -481,3 +481,42 @@ describe('the Export button', () => {
     expect(exportButton()).toBeNull();
   });
 });
+
+describe('the ID of a task with none', () => {
+  const uuid = '43082644-1111-2222-3333-444455556666';
+  function drawDone(settings: string) {
+    store.appSettings = parseSettings(settings);
+    store.config = { colors: {}, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
+    const done = { ...row('one', null), uuid, id: null, status: 'completed' } as unknown as Row;
+    const result: ReportResult = {
+      kind: 'report',
+      report: 'all',
+      description: null,
+      columns: [
+        { spec: 'id', name: 'id', format: null, label: 'ID', kind: 'id' },
+        { spec: 'description', name: 'description', format: null, label: 'Description', kind: 'description' },
+      ],
+      rows: [done],
+      breaks: [false],
+      matched: 1,
+      sort: null,
+    };
+    app = mount(ReportTable, { target: document.body, props: { result } });
+    flushSync();
+    return cellOf('one', 'id');
+  }
+
+  it('is task’s - by default, with the uuid still offered', () => {
+    const cell = drawDone('{}');
+    expect(cell.textContent).toContain('-');
+    expect(cell.textContent).not.toContain('43082644 ');
+    expect(cell.innerHTML).toContain(uuid);
+  });
+
+  it('is the short uuid, dimmed, with appearance.idFallback', () => {
+    const cell = drawDone('{ "appearance": { "idFallback": true } }');
+    expect(cell.textContent).toContain('43082644');
+    expect(cell.querySelector('.dim') ?? (cell.classList.contains('dim') ? cell : null)).not.toBeNull();
+    expect(cell.innerHTML).toContain(uuid);
+  });
+});

@@ -283,7 +283,7 @@ describe('the general tab', () => {
     const details = panel('general').querySelector('details') as HTMLDetailsElement;
     expect(details.open).toBe(false);
     expect(details.querySelector('summary')?.textContent).toBe('settings.json');
-    const shown = details.querySelector('pre')?.textContent ?? '';
+    const shown = (details.querySelector('textarea') as HTMLTextAreaElement).value;
     expect(JSON.parse(shown)).toEqual({ homepage: { report: 'list' }, future: 1 });
 
     button(details as unknown as HTMLElement, 'Copy').click();

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,12 +18,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 
-/** The page the app opens on, kept in `settings.json` (GeneralPanel.svelte): any report or board, `next` when nothing is chosen. */
+/**
+ * The page the app opens on, kept in `settings.json` (GeneralPanel.svelte): any report or board, `next` when nothing is
+ * chosen. And `settings.json` itself, whole, to read, edit or paste over (spec 0009).
+ */
 class GeneralState(private val store: Store) {
     private val saved get() = store.homepage
 
@@ -45,6 +53,44 @@ class GeneralState(private val store: Store) {
     }
 
     val edited get() = choice != saved
+
+    /** The file as saved. */
+    val file: String get() = serializeSettings(store.appSettings?.raw ?: JsonObject(emptyMap()))
+
+    /** The file in the box. */
+    var text by mutableStateOf(file)
+    private var fileBase = text
+    val textEdited get() = text != file
+    val lint: Lint get() = lintSettings(text) { resolveKeymap(it).problems }
+    var fileBusy by mutableStateOf(false)
+    var fileError by mutableStateOf<String?>(null)
+    var fileDone by mutableStateOf(false)
+
+    /** Saved somewhere else: the box follows, unless it has edits. */
+    fun followFile() {
+        val now = file
+        if (now == fileBase) return
+        val untouched = text == fileBase
+        fileBase = now
+        if (untouched) text = now
+    }
+
+    suspend fun applyFile() {
+        fileBusy = true
+        fileError = null
+        fileDone = false
+        try {
+            // Saved as written: what is pasted is the file.
+            store.saveSettingsFile(text)
+            fileBase = file
+            text = fileBase
+            fileDone = true
+        } catch (e: Exception) {
+            fileError = e.message ?: e.toString()
+        } finally {
+            fileBusy = false
+        }
+    }
 
     /** The saved home page names a report or board that is not there (any more), so the app opens on `next`. */
     val missing: Boolean
@@ -78,7 +124,9 @@ private fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun GeneralPanel(store: Store, state: GeneralState) {
     state.follow()
+    state.followFile()
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Home page", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Dim(
@@ -100,6 +148,29 @@ fun GeneralPanel(store: Store, state: GeneralState) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Button({ scope.launch { state.apply() } }, enabled = !state.busy && state.edited) { Text("Apply") }
             if (state.done) Dim("Saved")
+        }
+
+        Text("settings.json", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
+        Dim(
+            "This app's own settings: the home page, appearance, task commands, boards and keys, and the web app's and the " +
+                "terminal app's own. Edit it here or paste a whole file over it; what this app doesn't use is kept as it is.",
+        )
+        OutlinedTextField(
+            value = state.text,
+            onValueChange = { state.text = it; state.fileDone = false },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 480.dp),
+            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            isError = state.lint.errors.isNotEmpty(),
+        )
+        val lint = state.lint
+        lint.errors.forEach { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+        lint.warnings.forEach { Dim("$it (kept)") }
+        state.fileError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button({ scope.launch { state.applyFile() } }, enabled = !state.fileBusy && state.textEdited && lint.errors.isEmpty()) { Text("Apply") }
+            OutlinedButton({ clipboard.setText(AnnotatedString(state.text)); store.notify("settings.json copied") }) { Text("Copy") }
+            TextButton({ state.text = state.file }, enabled = !state.fileBusy && state.textEdited) { Text("Reset") }
+            if (state.fileDone) Dim("Saved")
         }
     }
 }
