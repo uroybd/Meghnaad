@@ -1,9 +1,9 @@
 # The Android app
 
 A native app in Kotlin and Compose, with the engine as a native library and widgets on the home screen. It keeps your
-tasks on the phone and syncs them straight with your bucket over S3, with a TaskChampion sync server, or with a branch of
-a git repository on GitHub, Gitea or Forgejo. No Worker and no
-Cloudflare Access are involved, and your keys stay on the phone. It does what the web app does, with a layout made for a
+tasks on the phone and syncs them directly with your store: a branch of a git repository on GitHub, Gitea or Forgejo, an
+S3-compatible bucket, or a TaskChampion sync server. No Worker and no Cloudflare Access are involved, and your keys stay
+on the phone. It does what the web app does, with a layout made for a
 phone, plus two things a browser tab can't: reminders that come with the app closed, and widgets.
 
 > **Status:** it builds. Its Rust half is tested (signing, sync against a bucket that enforces conditional writes,
@@ -17,9 +17,10 @@ phone, plus two things a browser tab can't: reminders that come with the app clo
   made for a phone: a menu for the pages and tasks as cards ([On a phone](using/phone.md#on-a-phone)). Review is a
   card with buttons, and `review` in the console opens it too.
 - **Works offline.** The engine and tasks are on the phone; changes sync when there is a network.
-- **Pull down to sync.** At the top of any page but the console, pulling down syncs with the bucket and redraws.
-- **Any S3-compatible store**: Cloudflare R2, AWS S3, MinIO, Backblaze B2. The store must accept conditional writes
-  (`If-Match` and `If-None-Match` on upload), which R2, MinIO and current AWS S3 do.
+- **Pull down to sync.** At the top of any page but the console, pulling down syncs and redraws.
+- **Any S3-compatible bucket**: Cloudflare R2, AWS S3, MinIO, Backblaze B2. The store must accept conditional writes
+  (`If-Match` and `If-None-Match` on upload), which R2, MinIO and current AWS S3 do. Or a git repository, or a
+  TaskChampion sync server ([First run](#first-run)).
 - **Export and import** use the system's file pickers: `export` offers the file to keep, and `import` reads one and says
   what it would do before it writes anything.
 
@@ -74,8 +75,8 @@ counts, sums and averages of numbers and durations, per value of an attribute or
 several series on one chart (stacked or side by side), and series that count pending, started and done at the end of
 each period as `task burndown` does.
 
-Boards are in `settings.json`, which syncs with the bucket, so a board saved on one device appears on the others after
-the next sync. **Settings → General** picks the page the app opens on: any report or board. **ⓘ** on every card shows its
+Boards are in `settings.json`, which can sync with the bucket or the git branch (**Settings → Sync**), so a board saved
+on one device appears on the others after the next sync. **Settings → General** picks the page the app opens on: any report or board. **ⓘ** on every card shows its
 filter (with **Open in Tasks**), the tasks that filter got and the values on its axis.
 
 #### Charts
@@ -184,58 +185,17 @@ section; set `ANDROID_UPDATE_REPO=owner/name` when building to try it.
 
 ## First run
 
-The app asks where your tasks sync: **an S3 bucket**, **a sync server** or **a git repository**.
-
-**A bucket.** It asks for the S3 endpoint (`https://<account>.r2.cloudflarestorage.com` for R2), the bucket, the region
-(`auto` for R2, the real one for AWS), an access key and its secret, and the encryption secret (the same as
-`sync.encryption_secret` in your taskrc). It tries them with a first sync and says what is wrong if they fail. Create the
-access key as in [Connect your `task` CLI](deploy.md#connect-your-task-cli): an R2 token with **Object Read & Write**,
-scoped to the bucket.
-
-The keys are kept encrypted with a key in the Android Keystore. No screen can read them: the engine takes them to sync and
-nothing else does.
-
-### An example
-
-| Field | Cloudflare R2 | AWS S3 | MinIO behind HTTPS |
-| --- | --- | --- | --- |
-| S3 endpoint | `https://0123456789abcdef.r2.cloudflarestorage.com` | `https://s3.eu-west-1.amazonaws.com` | `https://minio.example.com` |
-| Bucket | `taskwarrior-sync` | `my-task-sync` | `tasks` |
-| Region | `auto` | `eu-west-1` | `us-east-1` |
-| Access key ID (the client ID) | `4f1c…` (32 characters) | `AKIA…` | your MinIO user |
-| Secret access key (the client secret) | shown once when the token is made | shown once | your MinIO password |
-| Encryption secret | the same as `sync.encryption_secret` in your taskrc | same | same |
-
-These are the values your `task` CLI already has: `sync.aws.region`, `sync.aws.bucket`, `sync.aws.access_key_id`,
-`sync.aws.secret_access_key` and `sync.encryption_secret`, plus the endpoint in `AWS_ENDPOINT_URL`. For R2 the endpoint is
-`https://<account id>.r2.cloudflarestorage.com` (the account id is in the dashboard's right-hand column), and the key pair
-is an R2 API token with **Object Read & Write** on the bucket.
-
-The endpoint must be `https://`; plain `http://` is accepted only for `localhost` and `127.0.0.1` (for trying it out).
-
-### A sync server
-
-Choose **Sync server** to use a TaskChampion sync server (`taskchampion-sync-server`, or anything speaking its protocol)
-instead of a bucket. It takes three things, the values your `task` CLI already has:
-
-| Field | In your taskrc |
-| --- | --- |
-| Server address, such as `https://tasks.example.com` | `sync.server.url` |
-| Client ID, a UUID the same on every device that shares the tasks (**Generate** makes one for a new set) | `sync.server.client_id` |
-| Encryption secret | `sync.encryption_secret` |
-
-The address must be `https://` (`http://` only for `localhost` and `127.0.0.1`). Tasks are sealed on the phone before they
-are sent, so the server holds only what it can't read, and the client ID is kept in the Keystore like the keys.
-
-The web app and the Worker sync with the bucket only, so tasks that sync to a sync server don't reach the web app. A sync
-server doesn't hold the app's settings and hooks either. **A bucket for those files is optional**: tick *Also keep
-settings and hooks in a bucket* and give it a bucket (a different one from the web app's tasks is fine), and the two
-switches under **Settings → Sync** keep them in step, as below. Without one they stay on the phone.
+The app asks where your tasks sync, the same store your `task` CLI uses ([Where your tasks live](stores.md)): **S3
+bucket**, **Sync server** or **Git**. Each asks for the encryption secret too (the same as `sync.encryption_secret` in
+your taskrc), and tries what you entered with a first sync, saying what is wrong if it fails. The keys and tokens are kept
+encrypted with a key in the Android Keystore. No screen can read them: the engine takes them to sync and nothing else
+does.
 
 ### A git repository
 
 Choose **Git** to sync with a branch of a git repository: the same branch `task` 3.5.0 syncs to with `sync.git.*`, and
-the one the web app's git Worker uses, so all three share the tasks. The phone has no `git`; it uses the forge's API.
+the one the web app's static site and git Worker use, so they all share the tasks. The phone has no `git`; it uses the
+forge's API.
 
 | Field | What to put | In your taskrc |
 | --- | --- | --- |
@@ -257,10 +217,53 @@ the one the web app's git Worker uses, so all three share the tasks. The phone h
 The settings and hooks go to the branch, so no bucket is needed for them: the two switches under **Settings → Sync** keep
 them in step with the branch, as they would with a bucket.
 
+### A bucket
+
+Choose **S3 bucket** for any S3-compatible bucket. It asks for the S3 endpoint
+(`https://<account>.r2.cloudflarestorage.com` for R2), the bucket, the region (`auto` for R2, the real one for AWS), and
+an access key and its secret. For R2, the key is an R2 API token with **Object Read & Write**, scoped to the bucket
+([an S3 or R2 bucket](stores.md#an-s3-or-r2-bucket)).
+
+#### An example
+
+| Field | Cloudflare R2 | AWS S3 | MinIO behind HTTPS |
+| --- | --- | --- | --- |
+| S3 endpoint | `https://0123456789abcdef.r2.cloudflarestorage.com` | `https://s3.eu-west-1.amazonaws.com` | `https://minio.example.com` |
+| Bucket | `taskwarrior-sync` | `my-task-sync` | `tasks` |
+| Region | `auto` | `eu-west-1` | `us-east-1` |
+| Access key ID (the client ID) | `4f1c…` (32 characters) | `AKIA…` | your MinIO user |
+| Secret access key (the client secret) | shown once when the token is made | shown once | your MinIO password |
+| Encryption secret | the same as `sync.encryption_secret` in your taskrc | same | same |
+
+These are the values your `task` CLI already has: `sync.aws.region`, `sync.aws.bucket`, `sync.aws.access_key_id`,
+`sync.aws.secret_access_key` and `sync.encryption_secret`, plus the endpoint in `AWS_ENDPOINT_URL`. For R2 the account
+id in the endpoint is in the dashboard's right-hand column.
+
+The endpoint must be `https://`; plain `http://` is accepted only for `localhost` and `127.0.0.1` (for trying it out).
+
+### A sync server
+
+Choose **Sync server** to use a TaskChampion sync server (`taskchampion-sync-server`, or anything speaking its
+protocol). It takes three things, the values your `task` CLI already has:
+
+| Field | In your taskrc |
+| --- | --- |
+| Server address, such as `https://tasks.example.com` | `sync.server.url` |
+| Client ID, a UUID the same on every device that shares the tasks (**Generate** makes one for a new set) | `sync.server.client_id` |
+| Encryption secret | `sync.encryption_secret` |
+
+The address must be `https://` (`http://` only for `localhost` and `127.0.0.1`). Tasks are sealed on the phone before they
+are sent, so the server holds only what it can't read, and the client ID is kept in the Keystore like the keys.
+
+The web app can't reach a sync server, so tasks that sync to one don't reach the web app. A sync server doesn't hold the
+app's settings and hooks either. **A bucket for those files is optional**: tick *Also keep settings and hooks in a
+bucket* and give it a bucket (a different one from the web app's tasks is fine), and the two switches under **Settings →
+Sync** keep them in step, as below. Without one they stay on the phone.
+
 ### Syncing somewhere else
 
-A phone remembers where its tasks were last synced. If you point it at a different place (another server or bucket, or
-from a bucket to a server), the new place doesn't have the version the phone stands on, so the app **asks first**:
+A phone remembers where its tasks were last synced. If you point it at a different place (another repository, bucket or
+server, or another kind of store), the new place doesn't have the version the phone stands on, so the app **asks first**:
 
 - **Keep them and add them there**: the phone's tasks are added to what the new place holds (the same tasks aren't
   duplicated), and everything is then in both.
@@ -277,13 +280,13 @@ with no tasks moves without asking.
 Unless you turn sharing on, the taskrc subset, the app's settings, the hooks script and the hook secrets are in the
 app's private storage. Under **Settings → Sync** (when connected) you can keep **the
 settings** (the taskrc files under `web/rc/`, `web/config.json`, `web/settings.json`) and/or **the hooks**
-(`web/hooks.lua`) in step with the bucket, or with the git branch. They are the files the web app keeps there, so an edit on either side reaches
-the other at the next sync.
+(`web/hooks.lua`) in step with the bucket or the git branch. They are the files the web app keeps there, so an edit on
+either side reaches the other at the next sync.
 
 - What changed since the last sync wins. When both changed, the newer wins and the other is kept as the web app's restore
   point (`config.prev.json`, `hooks.prev.lua`; for the taskrc files, `rc.prev.json`, all together).
 - A taskrc file deleted on one side and untouched on the other is deleted on both.
-- A file that won't load, or a settings or taskrc file holding a credential, is not taken from the bucket.
+- A file that won't load, or a settings or taskrc file holding a credential, is not taken from the bucket or the branch.
 - **The hook secrets are never synced.** The two switches are this phone's own choice, kept on the phone and not synced.
 
 ### Without sharing
@@ -296,17 +299,16 @@ redirect are held to the rules the Worker applies to a taskrc link), and saves t
 
 ### Settings → Sync
 
-This shows where the phone syncs (the endpoint, bucket, region and a hint of the access key's name, the
-sync server and a hint of the client ID, or the repository, branch and API address; never a secret or a token) and
-changes it. Blank fields keep their value, so you can
-correct the address without typing the keys again. The change is tried with a sync first, and one that doesn't work
+This shows where the phone syncs (the repository, branch and API address; the endpoint, bucket, region and a hint of the
+access key's name; or the sync server and a hint of the client ID; never a secret or a token) and changes it. Blank
+fields keep their value, so you can correct the address without typing the keys again. The change is tried with a sync first, and one that doesn't work
 isn't kept.
 
 ### Hooks run on the phone
 
 They run in the same Lua sandbox with the same `http` and `secret()` (each secret going only to the hosts you saved it
-with, so a script that arrives from the bucket or the branch can't send the phone's secrets anywhere else), from the script you edit in
-**Settings → Hooks**. The phone makes their network calls, and the secrets are sealed with the Keystore key.
+with, so a script that arrives from the bucket or the branch can't send the phone's secrets anywhere else), from the
+script you edit in **Settings → Hooks**. The phone makes their network calls, and the secrets are sealed with the Keystore key.
 
 ### No Cloudflare Access, no Worker
 
@@ -321,10 +323,10 @@ screens (Compose)                                      app/shared: Store, one fi
 LocalEngine (Kotlin)  ── AppEngine: one engine for the screens, the widgets, the reminder alarm and the sync worker
   │  JNI                                               NativeEngine.kt (package me.utsob.meghnaad)
   ▼
-crates/android (Rust): tc-core + the S3 store + the settings routes
-  │  S3 over HTTPS, signed (SigV4)
+crates/android (Rust): tc-core + the stores + the settings routes
+  │  the forge's API, S3 signed with SigV4, or the sync server's protocol; all over HTTPS
   ▼
-your bucket
+your repository, bucket or sync server
 ```
 
 - `crates/android/src/engine.rs` is the engine and `jni.rs` the thin layer Kotlin calls. Every call answers in JSON.
@@ -339,8 +341,8 @@ your bucket
   shared files `GitObjects`, both over the same branch. `tests/gitsync.rs` (`--ignored`, with `TC_GIT_API`,
   `TC_GIT_REPO`, `TC_GIT_TOKEN` and `TC_GIT_REMOTE`) runs two phones and the real `task` on one branch of a real forge.
 - `engine.rs` chooses between the sync server, the git branch and the bucket for the tasks, keeps a bucket of its own
-  for the shared files (the branch keeps them itself), and remembers where the tasks were last synced. Another place makes `sync` fail with `backend-changed` until it
-  is asked again with `switch` (`merge` or `replace`), and the new place's replica is made aside and swapped in only once
+  for the shared files (the branch keeps them itself), and remembers where the tasks were last synced. Another place
+  makes `sync` fail with `backend-changed` until it is asked again with `switch` (`merge` or `replace`), and the new place's replica is made aside and swapped in only once
   it has synced.
 - The replica is saved to a file in the app's storage after every change. The screens, widgets and reminder alarm share one
   engine, so what a widget changes shows in the app and the other way round.
