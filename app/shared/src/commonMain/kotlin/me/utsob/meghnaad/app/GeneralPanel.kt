@@ -126,7 +126,6 @@ fun GeneralPanel(store: Store, state: GeneralState) {
     state.follow()
     state.followFile()
     val scope = rememberCoroutineScope()
-    val clipboard = LocalClipboardManager.current
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Home page", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Dim(
@@ -149,8 +148,16 @@ fun GeneralPanel(store: Store, state: GeneralState) {
             Button({ scope.launch { state.apply() } }, enabled = !state.busy && state.edited) { Text("Apply") }
             if (state.done) Dim("Saved")
         }
+    }
+}
 
-        Text("settings.json", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 16.dp))
+/** The whole settings.json, on the General tab under the update checker. */
+@Composable
+fun SettingsFilePanel(store: Store, state: GeneralState) {
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("settings.json", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
         Dim(
             "This app's own settings: the home page, appearance, task commands, boards and keys, and the web app's and the " +
                 "terminal app's own. Edit it here or paste a whole file over it; what this app doesn't use is kept as it is.",
