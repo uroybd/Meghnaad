@@ -1,6 +1,68 @@
-# Deploying to Cloudflare
+# Running the web app
 
-## What you need
+The web app is the same page however you host it; what differs is where your tasks live and who holds the encryption
+secret. There are three setups, and none is the default:
+
+| | Static site | Cloudflare Worker with R2 | Cloudflare Worker with git |
+| --- | --- | --- | --- |
+| **Your tasks** | a git repository (GitHub, Gitea, Forgejo) | an R2 bucket | a git repository (GitHub, Gitea, Forgejo) |
+| **You need** | any static host (GitHub Pages, Cloudflare Pages, Netlify) and a repository token | Cloudflare Workers, R2 and Access | Cloudflare Workers and Access, and a repository token |
+| **Sign-in** | the encryption secret unlocks the page | Cloudflare Access | Cloudflare Access |
+| **The secret and token are held by** | your browser: sealed at rest, in memory while unlocked | the Worker, as Cloudflare secrets | the Worker, as Cloudflare secrets |
+| **You trust** | the site's code, your browser and its extensions; the forge sees your settings, never your tasks | Cloudflare, and whoever can read your account's Worker secrets | the same; the forge sees your settings, never your tasks |
+| **Hooks run** | in the page | on the Worker | on the Worker |
+| **Costs** | a free static host | Cloudflare's free plans | Cloudflare's free plans |
+
+Each setup syncs with the same store your `task` CLI uses; pointing `task` at it is in
+[Where your tasks live](stores.md). The Android app needs none of them: it syncs with the store directly
+([The Android app](#the-android-app)).
+
+## The static app
+
+The web app as a static site, with no server of its own: no Worker, no bucket, no Access. The page reaches your tasks on
+a branch of a git repository through GitHub's (or Gitea's, or Forgejo's) API, the same branch your `task` CLI syncs to
+with `sync.git.*` ([a git repository](stores.md#a-git-repository)), and decrypts them in the browser. Any static host
+serves it: GitHub Pages, Cloudflare Pages, Netlify.
+
+Each release publishes it as `meghnaad-static-<version>.tar.gz` (with a `.sha256`), and a deploy template as
+`meghnaad-static-template.tar.gz`. Unpack the template into a new repository: its `fetch-release.mjs` downloads the
+release named in `meghnaad-version` (`latest` by default), checks it against its checksum and puts it in `site/`, setting
+the `<base>` for the folder the site is served from. Its README has the steps for each host:
+
+- **GitHub Pages:** the template's workflow builds and deploys on every push, by hand, and weekly. Pages for a private
+  repository needs a paid plan, so keep the site in its own (public) repository and the tasks in a private one.
+- **Cloudflare Pages or Netlify:** build command `node fetch-release.mjs`, output directory `site`. They serve a private
+  repository for free, so one private repository can hold the site on `main` and the tasks on another branch.
+
+To build it from source instead: `npm run build:static` writes it to `web/dist-static`.
+
+**Connecting.** The first visit on a device asks for the repository, the branch, the API address (empty for GitHub), a
+token that can read and write the repository's contents, and the encryption secret. The token is kept on the device
+sealed with the secret (in OpenPGP's symmetric format, so `gpg --decrypt` opens it too); the key is derived from the
+secret and the salt in the branch's `meta`. Later visits ask only for the secret, and an unlocked tab unlocks the
+others. The device's copy of the tasks is sealed too. **Lock** and an idle time lock every tab; **Settings → General →
+Forget this device** removes the token and the copy. `config.json` beside the site fills in the form.
+
+**Gitea and Forgejo** must allow the page to call their API: `[cors]` with `ENABLED = true`, `ALLOW_DOMAIN` the site's
+host and `ALLOW_HEADERS = Content-Type,Authorization`. GitHub allows it already.
+
+**How it differs from the Worker.**
+
+- The token and the encryption secret are in the browser (sealed at rest, in memory while unlocked), not on a server.
+  What an unlocked page runs can read them: the site's own code, the browser and its extensions.
+- Hooks run in the page (a WebAssembly Lua runner loaded on first use). Their network requests and an importer's or a
+  calendar's URL are fetched by the browser, so those hosts must allow CORS.
+- The settings, the hooks script and the sealed hook secrets are kept on the branch under `web/`, as the git Worker
+  keeps them, so the repository must be private.
+
+## The Cloudflare Worker
+
+A small Worker on Cloudflare serves the page and sits between it and your store: it checks Cloudflare Access (the
+login), holds the encryption secret, and opens and seals the versions that pass through; it never parses a task. It
+comes in two builds, one for an R2 bucket and one for a git repository
+([below](#a-git-repository-instead-of-r2)); every route here deploys either, except the button, which deploys the R2 one.
+
+### What you need
 
 | | Plan | Why |
 | --- | --- | --- |
@@ -16,11 +78,11 @@ route D on GitHub.
 
 Pick one route to start. Route D is for updating after A, C or 0 has done the first deploy.
 
-## 0. Prebuilt: no Rust, no build
+### 0. Prebuilt: no Rust, no build
 
 Every release is built once by CI and published ready to deploy: to the `release` branch and, for a tagged version, as a
 `.tar.gz` on the [releases page](https://github.com/uroybd/Meghnaad/releases). Nothing about your hooks, secrets or
-settings is in the build (they live in your bucket), so everyone deploys the same files.
+settings is in the build (they live in your store), so everyone deploys the same files.
 
 **With the button** (nothing to install):
 
@@ -42,7 +104,7 @@ npm run setup        # the same guided questions as route A, without the build
 To update, pull the `release` branch (or download the new release) and run `npm run deploy`. Your answers are kept in
 `.deploy.vars`, which `git pull` never touches because it isn't tracked.
 
-## A. Guided: `npm run setup` (recommended)
+### A. Guided: `npm run setup`
 
 ```bash
 npm install
@@ -54,9 +116,9 @@ It checks your build tools (offering to install what's missing), logs you in wit
 | Question | Notes |
 | --- | --- |
 | **Where the tasks are kept** | `r2` (a bucket) or `git` (a branch of a git repository: [below](#a-git-repository-instead-of-r2)). With `git` it asks for the repository, branch, API address and token instead of a bucket |
-| **R2 bucket** | Your **existing** sync bucket is used as is; a name that doesn't exist yet is created. Nothing in the bucket is changed |
+| **R2 bucket** (`r2`) | Your **existing** sync bucket is used as is; a name that doesn't exist yet is created. Nothing in the bucket is changed |
 | **Custom domain** | Optional, e.g. `tasks.example.com`. The domain must already be a zone on your Cloudflare account. Empty means the free `*.workers.dev` address. With a custom domain the `workers.dev` address is switched off |
-| **Encryption secret** | The same value as `sync.encryption_secret` in your taskrc (for a new bucket, invent a strong passphrase and use it for the CLI too). Stored as a Worker secret |
+| **Encryption secret** | The same value as `sync.encryption_secret` in your taskrc (for a new store, invent a strong passphrase and use it for the CLI too). Stored as a Worker secret |
 | **Cloudflare Access** | It tells you exactly what to click (below), asks for the team domain and AUD tag, then deploys again |
 
 Your answers are saved in `.deploy.vars` (git-ignored). Run **`npm run deploy`** to update, or `npm run setup` again to
@@ -66,7 +128,7 @@ Any key can be an environment variable instead (handy in CI).
 **You can stop after the first deploy.** Until Access is connected, the app refuses every request and shows a **setup
 page** with your hostname filled in, explaining what's left. Nothing about your tasks is reachable.
 
-### Connecting Access
+#### Connecting Access
 
 This is the one part that needs the dashboard, because the AUD tag only exists once the application does:
 
@@ -81,9 +143,9 @@ expiry), so your data stays protected even if someone finds a way around Access.
 **whole hostname**: the static app shell (HTML and JavaScript, nothing private) is served without running the Worker, so
 Access is what guards it.
 
-## B. From the dashboard (no terminal)
+### B. From the dashboard (no terminal)
 
-Fork this repo, then in the Cloudflare dashboard go to **Workers & Pages → Create → Import a repository**. Set the build
+For the R2 Worker. Fork this repo, then in the Cloudflare dashboard go to **Workers & Pages → Create → Import a repository**. Set the build
 command to `node scripts/build.mjs` and leave the deploy command as `npx wrangler deploy`. Before the first build, edit
 `wrangler.jsonc` in your fork if you need a different bucket (`bucket_name`) or a custom domain (`routes`).
 
@@ -94,7 +156,9 @@ Then open the deployed address. The setup page walks you through Access and the 
 The **Deploy to Cloudflare** button is route 0, which uses the prebuilt `release` branch and needs no Rust. This route is
 for building on Cloudflare from your own fork, for example to carry your own changes.
 
-## C. By hand
+### C. By hand
+
+For the R2 Worker (the git Worker's steps are [below](#a-git-repository-instead-of-r2)):
 
 ```bash
 npx wrangler login
@@ -115,11 +179,11 @@ git-ignored `wrangler.deploy.jsonc`.
 > one binding, `TASKS`, and `wrangler dev` refuses to start with an extra remote binding unless you've registered a
 > workers.dev subdomain. (`npm run dev` runs locally, so it ignores remote bindings either way.)
 
-## D. From GitHub Actions (manual)
+### D. From GitHub Actions (manual)
 
 The repository has a workflow, [`.github/workflows/deploy.yml`](https://github.com/uroybd/Meghnaad/blob/main/.github/workflows/deploy.yml),
 that builds and deploys the Worker when you start it: **Actions → Deploy → Run workflow**. It never runs on a push. Do
-route 0, A or C **once** first, since the bucket and Access have to exist and the first deploy is where you find out they
+route 0, A or C **once** first, since the store and Access have to exist and the first deploy is where you find out they
 work. After that, updating is one click. In your fork:
 
 1. **Create an API token** at Cloudflare → My Profile → API Tokens, from the *Edit Cloudflare Workers* template (it needs
@@ -159,11 +223,91 @@ The encryption secret and the API token are, and only the steps that need them r
 The workflow's one option is **Dry run**: it only prints the Worker config your settings would produce, the quickest way
 to check your variables, and builds and deploys nothing. It doesn't run the tests, because the
 [CI workflow](https://github.com/uroybd/Meghnaad/blob/main/.github/workflows/ci.yml) already runs them on every push and
-pull request, so deploy a commit whose CI is green. Run it from the branch you want to deploy; for your own hooks that is
-your `my-hooks` branch (see [Hooks](using/hooks.md)). Runs are serialised, so two clicks never deploy at once.
+pull request, so deploy a commit whose CI is green. Run it from the branch you want to deploy (your hooks are not part of
+the build: they live in your store, [Hooks](using/hooks.md)). Runs are serialised, so two clicks never deploy at once.
 
-**Last step, whichever way:** open the URL, sign in, and import your `taskrc` (**Settings → taskrc**) to get your UDAs and
+**Last step, whichever route:** open the URL, sign in, and import your `taskrc` (**Settings → taskrc**) to get your UDAs and
 custom reports.
+
+### A git repository instead of R2
+
+`task` 3.5.0 can sync to a git repository (`man task-sync`, `sync.git.*`), and so can Meghnaad: every release carries a
+second Worker, built to keep everything on a branch of a git repository on **GitHub**, **Gitea** or **Forgejo** instead of
+in R2. The page is the same. The Worker reaches the repository through the forge's API with a token, so it needs no
+bucket and no `git`. `task`, the git Worker and the phone can all share one branch.
+
+| Setting | Where | Default | What |
+| --- | --- | --- | --- |
+| `BACKEND` | `.deploy.vars` | `r2` | `git` deploys the git Worker |
+| `GIT_REPO` | `.deploy.vars` | (needed) | `owner/name`, such as `alice/tasks` |
+| `GIT_BRANCH` | `.deploy.vars` | `taskchampion` | The branch, the same as `sync.git.branch` |
+| `GIT_API` | `.deploy.vars` | `https://api.github.com` | `https://<host>/api/v1` for Gitea or Forgejo, `https://<host>/api/v3` for GitHub Enterprise |
+| `GIT_TOKEN` | Worker secret | (needed) | A token that may read and write the repository's contents |
+
+`npm run setup` asks for all of them (answer `git` to the first question) and sets the token as a secret. By hand:
+
+```bash
+printf 'BACKEND=git\nGIT_REPO=alice/tasks\n' > .deploy.vars
+npm run deploy
+npx wrangler secret put GIT_TOKEN
+npx wrangler secret put TC_ENCRYPTION_SECRET
+```
+
+- **The token.** On GitHub, a fine-grained personal access token for that one repository, with **Contents: Read and
+  write** (nothing else). On Gitea and Forgejo, an access token with the **repository** scope, read and write.
+- **Keep the repository private.** Tasks and hook secrets are encrypted, but the settings, the taskrc files and the hooks
+  script are kept under `web/` on the same branch as plain text.
+- **On GitHub the repository needs at least one commit** (create it with a README) so the branch can be made from it;
+  Gitea and Forgejo make the branch from nothing. The branch is made on the first sync if it isn't there.
+- **The Deploy to Cloudflare button deploys the R2 Worker only.** For git, use route 0 from a terminal, A or C.
+- From GitHub Actions (route D), set the repository variables as `DEPLOY_VARS` and the token as the `GIT_TOKEN` secret.
+- History grows with every sync, as it does with the CLI: removed versions stay in older commits.
+- GitHub allows 5,000 API requests an hour per token. An idle sync is one request and a change three or four, so the
+  page's sync every 30 seconds while it is visible stays far below it.
+
+To point `task` at the same branch, see [a git repository](stores.md#a-git-repository).
+
+## The Android app
+
+It uses no Worker, no Access and no static site: it syncs directly with your store, so hosting the web app isn't a step
+toward it. Install the APK from the [latest release](https://github.com/uroybd/Meghnaad/releases/latest) and give it the
+same repository, bucket or sync server and encryption secret ([the Android app](android.md)). The two can also share
+settings and hooks through the bucket or the git branch (**Settings → Sync** on the phone).
+
+## Connect your `task` CLI
+
+Skip this if your CLI already syncs to the store. Otherwise [Where your tasks live](stores.md) has the settings for each:
+[a git repository](stores.md#a-git-repository), [an S3 or R2 bucket](stores.md#an-s3-or-r2-bucket) (with
+`AWS_ENDPOINT_URL` for R2) or [a sync server](stores.md#a-taskchampion-sync-server).
+
+## Configuration reference
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `TASKS` | R2 binding (`wrangler.jsonc`) | The R2 Worker's bucket, the one your `task` CLI syncs to |
+| `TC_ENCRYPTION_SECRET` | Worker secret | Same value as the CLI's `sync.encryption_secret` |
+| `TEAM_DOMAIN` | var (not in `wrangler.jsonc`) | `https://<team>.cloudflareaccess.com`. Set by `npm run setup` (via `.deploy.vars`) or as a Text variable in the dashboard |
+| `POLICY_AUD` | var (not in `wrangler.jsonc`) | The Access application's AUD tag; set the same two ways |
+| `R2_BUCKET`, `CUSTOM_DOMAIN`, `WORKER_NAME` | `.deploy.vars` | Optional deploy choices |
+| `BACKEND`, `GIT_REPO`, `GIT_BRANCH`, `GIT_API` | `.deploy.vars` | The git Worker's repository ([A git repository instead of R2](#a-git-repository-instead-of-r2)) |
+| `GIT_TOKEN` | Worker secret | The git Worker's token for the repository |
+| `DEV_AUTH_BYPASS` | `.dev.vars` only | Skips the Access check for local development. Honoured only for loopback hosts (`localhost`, `127.x.x.x`, `::1`); anywhere else it is ignored and logged. Never set it on a deployed Worker |
+
+## Troubleshooting a deployment
+
+| Symptom | Likely cause |
+| --- | --- |
+| The app shows an "Almost there" page | Access isn't connected yet: follow the page, or run `npm run setup` |
+| `403` from `/api/*` after deploying | `TEAM_DOMAIN` or `POLICY_AUD` is unset or wrong (the token's `iss` and `aud` must match exactly), or you're not signed in through Access. The Worker log says why (`auth rejected: …`) |
+| **Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a while | The CPU limit (10 ms on Workers Free), passed by the one request that does the most work. The app retries read-only requests once, and the retry meets a warm instance. If it keeps happening, say with a very large task list, Workers Paid lifts the limit. In the dashboard, "Exceeded CPU Time Limits" vs "Exceeded Memory" says which; `npx wrangler tail` shows it live |
+| A stack trace in `wrangler tail` shows only `wasm-function[1234]` | The build leaves out debug function names to save about 70 KB. Build and deploy once with `KEEP_WASM_NAMES=1 npm run deploy` when you need to read one |
+| "task storage error" (502) | Wrong `TC_ENCRYPTION_SECRET`, or the wrong bucket or repository. The cached state resets on the next request |
+| Task command icons show as a terminal, and the icon picker says the list could not be fetched | The browser can't reach `cdn.jsdelivr.net`: it is offline or blocked, or a proxy in front of the app sets a Content-Security-Policy without it (`web/public/_headers` allows it with `connect-src 'self' https://cdn.jsdelivr.net https://holidata.net https://date.nager.at`). Typing an icon's name in the picker still works |
+| Every command fails with "The engine could not start in this browser" | The in-page WebAssembly engine was blocked or failed: a proxy sets a Content-Security-Policy without `'wasm-unsafe-eval'` (`web/public/_headers` has `script-src 'self' 'wasm-unsafe-eval'`), or the browser has no Web Workers or WebAssembly. The reason follows the message; nothing on the Worker can run commands instead |
+| A banner says "Couldn't sync with the server" | The page couldn't reach `/api/tc/*`: you're offline, Cloudflare Access signed you out (reload to sign in again), or the Worker failed. Your changes are kept in the browser and go up with the next sync that works. **Start over from the server** discards the browser's copy, for a replaced store or a changed secret |
+| `wrangler dev` says the assets directory is missing | Run `npm --prefix web run build` once |
+| `wrangler dev` exits with "register a workers.dev subdomain" | `wrangler.jsonc` has an extra `"remote": true` R2 binding (added when you ran `wrangler r2 bucket create`). Delete it, keeping only `TASKS` |
+| `task sync` fails with `PermanentRedirect` | `AWS_ENDPOINT_URL` isn't set in that environment, so it's talking to AWS |
 
 ## Making a release (for maintainers)
 
@@ -214,144 +358,3 @@ so release a commit CI has passed.
 **The documentation site.** These docs are an mdBook (`docs/book.toml`) published to GitHub Pages by the **Docs**
 workflow on a push to `main` that touches `docs/`. Set the custom domain in the repository's Pages settings, and the
 repository variable `DOCS_DOMAIN` so the sitemap uses it.
-
-## A git repository instead of R2
-
-`task` 3.5.0 can sync to a git repository (`man task-sync`, `sync.git.*`), and so can Meghnaad: every release carries a
-second Worker, built to keep everything on a branch of a git repository on **GitHub**, **Gitea** or **Forgejo** instead of
-in R2. The page is the same. The Worker reaches the repository through the forge's API with a token, so it needs no
-bucket and no `git`. `task`, the git Worker and the phone can all share one branch.
-
-| Setting | Where | Default | What |
-| --- | --- | --- | --- |
-| `BACKEND` | `.deploy.vars` | `r2` | `git` deploys the git Worker |
-| `GIT_REPO` | `.deploy.vars` | (needed) | `owner/name`, such as `alice/tasks` |
-| `GIT_BRANCH` | `.deploy.vars` | `taskchampion` | The branch, the same as `sync.git.branch` |
-| `GIT_API` | `.deploy.vars` | `https://api.github.com` | `https://<host>/api/v1` for Gitea or Forgejo, `https://<host>/api/v3` for GitHub Enterprise |
-| `GIT_TOKEN` | Worker secret | (needed) | A token that may read and write the repository's contents |
-
-`npm run setup` asks for all of them (answer `git` to the first question) and sets the token as a secret. By hand:
-
-```bash
-printf 'BACKEND=git\nGIT_REPO=alice/tasks\n' > .deploy.vars
-npm run deploy
-npx wrangler secret put GIT_TOKEN
-npx wrangler secret put TC_ENCRYPTION_SECRET
-```
-
-- **The token.** On GitHub, a fine-grained personal access token for that one repository, with **Contents: Read and
-  write** (nothing else). On Gitea and Forgejo, an access token with the **repository** scope, read and write.
-- **Keep the repository private.** Tasks and hook secrets are encrypted, but the settings, the taskrc files and the hooks
-  script are kept under `web/` on the same branch as plain text.
-- **On GitHub the repository needs at least one commit** (create it with a README) so the branch can be made from it;
-  Gitea and Forgejo make the branch from nothing. The branch is made on the first sync if it isn't there.
-- **The Deploy to Cloudflare button deploys the R2 Worker only.** For git, use route 0 from a terminal, A or C.
-- From GitHub Actions (route D), set the repository variables as `DEPLOY_VARS` and the token as the `GIT_TOKEN` secret.
-- History grows with every sync, as it does with the CLI: removed versions stay in older commits.
-- GitHub allows 5,000 API requests an hour per token. An idle sync is one request and a change three or four, so the
-  page's sync every 30 seconds while it is visible stays far below it.
-
-To point `task` at the same branch, give it a clone's address it can push to:
-
-```bash
-task config sync.git.remote  git@github.com:alice/tasks.git   # or https://, with your git credentials
-task config sync.git.branch  taskchampion                      # if you chose another, that one
-task config sync.encryption_secret '<the same value as TC_ENCRYPTION_SECRET>'
-task sync
-```
-
-## The Android app
-
-It doesn't use the Worker or Access: it syncs straight with the bucket, so deploying the web app isn't a step toward it.
-Install the APK from the [latest release](https://github.com/uroybd/Meghnaad/releases/latest) and give it the same bucket
-and encryption secret, or the same git repository ([the Android app](android.md)). With the web app deployed, the two can also share settings and
-hooks through the bucket (**Settings → Sync** on the phone).
-
-## Connect your `task` CLI
-
-Skip this if your CLI already syncs to the bucket. Otherwise create an **R2 API token** (R2 → *Manage R2 API Tokens* →
-**Object Read & Write**, scoped to your bucket), note your account ID, then:
-
-```bash
-task config sync.encryption_secret '<the same value as TC_ENCRYPTION_SECRET>'
-task config sync.aws.region        auto
-task config sync.aws.bucket        <your bucket name>
-task config sync.aws.access_key_id     <R2 access key id>
-task config sync.aws.secret_access_key <R2 secret access key>
-
-export AWS_ENDPOINT_URL=https://<ACCOUNT_ID>.r2.cloudflarestorage.com   # add to your shell profile
-task sync
-```
-
-Released versions of Taskwarrior have no config key for a custom S3 endpoint, but the AWS SDK it uses reads
-`AWS_ENDPOINT_URL` from the environment, which is what points it at R2. Set it **everywhere `task sync` runs** (your
-shell, cron, hooks, GUI launchers), or `task` quietly talks to real AWS and fails with a `PermanentRedirect` error. Newer,
-unreleased Taskwarrior builds add `sync.aws.endpoint_url`.
-
-## The static app
-
-The web app also comes as a static site with no server of its own: no Worker, no R2, no Access. The page reaches your
-tasks on a branch of a git repository through GitHub's (or Gitea's, or Forgejo's) API, the same branch your `task` CLI
-syncs to with `sync.git.*`, and decrypts them in the browser. Any static host serves it: GitHub Pages, Cloudflare Pages,
-Netlify.
-
-Each release publishes it as `meghnaad-static-<version>.tar.gz` (with a `.sha256`), and a deploy template as
-`meghnaad-static-template.tar.gz`. Unpack the template into a new repository: its `fetch-release.mjs` downloads the
-release named in `meghnaad-version` (`latest` by default), checks it against its checksum and puts it in `site/`, setting
-the `<base>` for the folder the site is served from. Its README has the steps for each host:
-
-- **GitHub Pages:** the template's workflow builds and deploys on every push, by hand, and weekly. Pages for a private
-  repository needs a paid plan, so keep the site in its own (public) repository and the tasks in a private one.
-- **Cloudflare Pages or Netlify:** build command `node fetch-release.mjs`, output directory `site`. They serve a private
-  repository for free, so one private repository can hold the site on `main` and the tasks on another branch.
-
-To build it from source instead: `npm run build:static` writes it to `web/dist-static`.
-
-**Connecting.** The first visit on a device asks for the repository, the branch, the API address (empty for GitHub), a
-token that can read and write the repository's contents, and the encryption secret. The token is kept on the device
-sealed with the secret (in OpenPGP's symmetric format, so `gpg --decrypt` opens it too); the key is derived from the
-secret and the salt in the branch's `meta`. Later visits ask only for the secret, and an unlocked tab unlocks the
-others. The device's copy of the tasks is sealed too. **Lock** and an idle time lock every tab; **Settings → General →
-Forget this device** removes the token and the copy. `config.json` beside the site fills in the form.
-
-**Gitea and Forgejo** must allow the page to call their API: `[cors]` with `ENABLED = true`, `ALLOW_DOMAIN` the site's
-host and `ALLOW_HEADERS = Content-Type,Authorization`. GitHub allows it already.
-
-**What differs from the Worker.**
-
-- The token and the encryption secret are in the browser (sealed at rest, in memory while unlocked), not on a server.
-  What an unlocked page runs can read them: the site's own code, the browser and its extensions.
-- Hooks run in the page (a WebAssembly Lua runner loaded on first use). Their network requests and an importer's or a
-  calendar's URL are fetched by the browser, so those hosts must allow CORS.
-- The settings, the hooks script and the sealed hook secrets are kept on the branch under `web/`, as the git Worker
-  keeps them, so the repository must be private.
-
-## Configuration reference
-
-| Name | Kind | Purpose |
-| --- | --- | --- |
-| `TASKS` | R2 binding (`wrangler.jsonc`) | The bucket your `task` CLI syncs to |
-| `TC_ENCRYPTION_SECRET` | Worker secret | Same value as the CLI's `sync.encryption_secret` |
-| `TEAM_DOMAIN` | var (not in `wrangler.jsonc`) | `https://<team>.cloudflareaccess.com`. Set by `npm run setup` (via `.deploy.vars`) or as a Text variable in the dashboard |
-| `POLICY_AUD` | var (not in `wrangler.jsonc`) | The Access application's AUD tag; set the same two ways |
-| `R2_BUCKET`, `CUSTOM_DOMAIN`, `WORKER_NAME` | `.deploy.vars` | Optional deploy choices |
-| `BACKEND`, `GIT_REPO`, `GIT_BRANCH`, `GIT_API` | `.deploy.vars` | The git Worker's repository ([A git repository instead of R2](#a-git-repository-instead-of-r2)) |
-| `GIT_TOKEN` | Worker secret | The git Worker's token for the repository |
-| `DEV_AUTH_BYPASS` | `.dev.vars` only | Skips the Access check for local development. Honoured only for loopback hosts (`localhost`, `127.x.x.x`, `::1`); anywhere else it is ignored and logged. Never set it on a deployed Worker |
-
-## Troubleshooting a deployment
-
-| Symptom | Likely cause |
-| --- | --- |
-| The app shows an "Almost there" page | Access isn't connected yet: follow the page, or run `npm run setup` |
-| `403` from `/api/*` after deploying | `TEAM_DOMAIN` or `POLICY_AUD` is unset or wrong (the token's `iss` and `aud` must match exactly), or you're not signed in through Access. The Worker log says why (`auth rejected: …`) |
-| **Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a while | The CPU limit (10 ms on Workers Free), passed by the one request that does the most work. The app retries read-only requests once, and the retry meets a warm instance. If it keeps happening, say with a very large task list, Workers Paid lifts the limit. In the dashboard, "Exceeded CPU Time Limits" vs "Exceeded Memory" says which; `npx wrangler tail` shows it live |
-| A stack trace in `wrangler tail` shows only `wasm-function[1234]` | The build leaves out debug function names to save about 70 KB. Build and deploy once with `KEEP_WASM_NAMES=1 npm run deploy` when you need to read one |
-| "task storage error" (502) | Wrong `TC_ENCRYPTION_SECRET` or the wrong bucket. The cached state resets on the next request |
-| Task command icons show as a terminal, and the icon picker says the list could not be fetched | The browser can't reach `cdn.jsdelivr.net`: it is offline or blocked, or a proxy in front of the app sets a Content-Security-Policy without it (`web/public/_headers` allows it with `connect-src 'self' https://cdn.jsdelivr.net https://holidata.net https://date.nager.at`). Typing an icon's name in the picker still works |
-| Every command fails with "The engine could not start in this browser" | The in-page WebAssembly engine was blocked or failed: a proxy sets a Content-Security-Policy without `'wasm-unsafe-eval'` (`web/public/_headers` has `script-src 'self' 'wasm-unsafe-eval'`), or the browser has no Web Workers or WebAssembly. The reason follows the message; nothing on the Worker can run commands instead |
-| A banner says "Couldn't sync with the server" | The page couldn't reach `/api/tc/*`: you're offline, Cloudflare Access signed you out (reload to sign in again), or the Worker failed. Your changes are kept in the browser and go up with the next sync that works. **Start over from the server** discards the browser's copy, for a replaced bucket or a changed secret |
-| `wrangler dev` says the assets directory is missing | Run `npm --prefix web run build` once |
-| `wrangler dev` exits with "register a workers.dev subdomain" | `wrangler.jsonc` has an extra `"remote": true` R2 binding (added when you ran `wrangler r2 bucket create`). Delete it, keeping only `TASKS` |
-| `task sync` fails with `PermanentRedirect` | `AWS_ENDPOINT_URL` isn't set in that environment, so it's talking to AWS |
-| "the server is busy; try again" | Many commands arrived at once and waited too long for the shared replica; retry |
