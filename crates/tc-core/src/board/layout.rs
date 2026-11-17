@@ -175,7 +175,31 @@ pub fn flow(cells: &[Cell], cols: u32) -> Vec<Cell> {
         (row, col) = (at.y, at.x + at.w);
         placed.push(Cell::new(&cells[i].id, at));
     }
+    if cols < COLUMNS {
+        stretch(&mut placed, cells, cols);
+    }
     placed
+}
+
+/// A table or a chart that nothing sits beside on a phone grows into the empty columns to its right, so a half-row chart left
+/// alone at the end of the board is not drawn in half the screen. Only the drawing: the width it keeps in the 12 is unchanged.
+fn stretch(placed: &mut [Cell], cells: &[Cell], cols: u32) {
+    for i in 0..placed.len() {
+        if !cells.iter().any(|c| c.id == placed[i].id && c.wide) {
+            continue;
+        }
+        while placed[i].x + placed[i].w < cols {
+            let next = Rect {
+                x: placed[i].x + placed[i].w,
+                w: 1,
+                ..placed[i].rect()
+            };
+            if placed.iter().any(|p| overlap(&next, &p.rect())) {
+                break;
+            }
+            placed[i].w += 1;
+        }
+    }
 }
 
 /// One step of resizing `id` on a screen of `cols` columns: `dcols` of the screen's columns wider and `dh` rows taller. The width
@@ -475,6 +499,29 @@ mod tests {
         assert_eq!(flowed(&cells, 12)[2].3, 3);
         let moved = reorder(&cells, "done", -1);
         assert_eq!(moved.iter().find(|c| c.id == "pie").map(|c| c.w), Some(3));
+    }
+
+    #[test]
+    fn a_chart_left_alone_on_its_row_takes_the_whole_row_on_a_phone() {
+        // The FULFLLD board: a table, a burndown and a pie, the pie a third of the grid at the end.
+        let cells = vec![
+            wide("todo", 0, 0, 12, 8),
+            wide("burn", 0, 8, 12, 4),
+            wide("type", 0, 12, 4, 4),
+        ];
+        assert_eq!(flowed(&cells, 4)[2], ("type".into(), 0, 12, 4, 4));
+        assert_eq!(flowed(&cells, 6)[2].3, 6);
+        // With a number beside it, it keeps its half, and the number its share.
+        let mut beside = cells.clone();
+        beside.push(cell("done", 4, 12, 3, 2));
+        let four = flowed(&beside, 4);
+        assert_eq!((four[2].3, four[3].1, four[3].3), (2, 2, 1));
+        // A number is never stretched, and the grid itself is left as it is.
+        assert_eq!(flowed(&[cell("n", 0, 0, 3, 2)], 4)[0].3, 1);
+        assert_eq!(flowed(&cells, 12)[2].3, 4);
+        // Two half-row charts share a row as before.
+        let two = flowed(&[wide("a", 0, 0, 4, 4), wide("b", 4, 0, 4, 4)], 4);
+        assert_eq!((two[0].3, two[1].1, two[1].3), (2, 2, 2));
     }
 
     #[test]

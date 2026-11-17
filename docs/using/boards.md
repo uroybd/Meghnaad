@@ -348,7 +348,8 @@ The page is 12 columns wide. In **Edit**:
 **On a phone** the sections keep their reading order (top to bottom, left to right) on a grid of 6 columns, or 4 on a small
 phone. A number is as wide as its share of the row: four numbers of three columns sit side by side on 4 columns, three to
 a row on 6. A table or chart would be cramped in a quarter of a phone, so it stacks as Bootstrap's columns do: a whole
-row if it is half the grid or wider, half a row if narrower. Two of the 12 columns is the narrowest, which is one phone
+row if it is half the grid or wider, half a row if narrower. A half-row one with nothing beside it (the last section, say)
+takes the rest of its row. Two of the 12 columns is the narrowest, which is one phone
 column, so a table or chart has just those two sizes and the corner drag jumps between them. **Edit** there has the same
 corner drag (the width is saved in the 12, so it holds on a wide screen), up and down buttons to move a section earlier or
 later, and the same side panel.
