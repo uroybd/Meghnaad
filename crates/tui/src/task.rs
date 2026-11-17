@@ -19,6 +19,31 @@ pub struct Output {
     pub stderr: String,
 }
 
+/// What `dependency.reminder` printed (`Task 3 is blocked by:`, the tasks, `and is blocking:`, the tasks), each
+/// reminder as its lines, in the order printed.
+pub fn dependency_reminders(stdout: &str) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut open = false;
+    for line in stdout.lines() {
+        let line = line.trim_end();
+        let head = line
+            .strip_prefix("Task ")
+            .and_then(|r| r.strip_suffix(" is blocked by:"))
+            .is_some_and(|id| !id.is_empty() && !id.contains(' '));
+        if head {
+            out.push(vec![line.to_owned()]);
+            open = true;
+        } else if open && (line.starts_with("  ") || line == "and is blocking:") {
+            if let Some(r) = out.last_mut() {
+                r.push(line.to_owned());
+            }
+        } else {
+            open = false;
+        }
+    }
+    out
+}
+
 /// The `task` binary to run.
 #[derive(Debug, Clone)]
 pub struct Task {
@@ -406,6 +431,21 @@ mod tests {
                 "{name} was not passed on"
             );
         }
+    }
+
+    #[test]
+    fn the_dependency_reminders_are_picked_out_of_what_task_printed() {
+        let out = "Completed task 3 'c'.\nUnblocked 4 'd'.\nTask 3 is blocked by:\n  1 a\n  2 b\nand is blocking:\n  4 d\n\
+                   Would you like the dependency chain fixed? (yes/no) no\nCompleted task 5 'e'.\nTask 5 is blocked by:\n  1 a\n\
+                   Completed 2 tasks.\n";
+        assert_eq!(
+            dependency_reminders(out),
+            [
+                vec!["Task 3 is blocked by:", "  1 a", "  2 b", "and is blocking:", "  4 d"],
+                vec!["Task 5 is blocked by:", "  1 a"],
+            ]
+        );
+        assert!(dependency_reminders("Started 1 task.\n").is_empty());
     }
 
     #[test]

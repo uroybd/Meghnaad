@@ -23,6 +23,7 @@ import { VIRTUAL_TAGS, type TaskRef, type Vocab } from './completion';
 import { runSequence, type Joiner, type Statement } from './compound';
 import { toggled } from './markdown';
 import type { FormSeed } from './addPreview';
+import { confirmText, saidKind, saidText } from './said';
 import type { CliResponse, CliResult, ConfigResponse, HookLine, ReportMeta, Row } from './types';
 
 export interface Entry {
@@ -86,13 +87,8 @@ function titleOf(input: CliInput): string {
   return input.args ? previewLine(input.args) : `task ${(input.line ?? '').replace(/^task(\s+|$)/, '')}`.trim();
 }
 
-function hookText(lines: HookLine[]): string {
-  return lines.map((l) => l.text).join(' · ');
-}
-
-function hookKind(lines: HookLine[] | undefined): Toast['kind'] {
-  return lines?.some((l) => l.kind === 'warn') ? 'err' : 'ok';
-}
+const hookText = (lines: HookLine[]): string => saidText(lines);
+const hookKind = (lines: HookLine[] | undefined): Toast['kind'] => saidKind(lines);
 
 class Store {
   config = $state<ConfigResponse | null>(null);
@@ -776,8 +772,9 @@ class Store {
     try {
       const res = await runCli({ args, ...answers });
       const r = res.result;
-      // What a hook said goes with the outcome, in the same toast.
-      const said = res.feedback?.length ? ` ${hookText(res.feedback)}` : '';
+      // What the command printed besides (a dependency reminder) and what a hook said go with the outcome, in the same
+      // toast, a line each; a warning among them makes it one.
+      const said = res.feedback?.length ? `\n${hookText(res.feedback)}` : '';
       if (r.kind === 'error') this.notify(r.message + said, 'err');
       else if (r.kind === 'changed') this.notify(r.message + said, hookKind(res.feedback));
       else if (r.kind === 'text') this.notify(r.lines.join(' ') + said);
@@ -790,7 +787,8 @@ class Store {
             if (!answers.confirmed && window.confirm(r.message)) return retry({ confirmed: true });
           } else {
             const keys = r.items.map((i) => i.key);
-            const question = r.items.length === 1 ? r.items[0].question : r.message;
+            // With what `task` prints before it (the dependency reminder).
+            const question = confirmText(r);
             if (window.confirm(question)) return retry(r.ask === 'permission' ? { approved: keys } : { extras: keys });
             // A follow-up can be declined while the change itself still goes ahead.
             if (r.ask === 'extras' && window.confirm('Go ahead with the change without that?'))

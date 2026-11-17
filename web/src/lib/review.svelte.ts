@@ -8,6 +8,7 @@
 import { runCli, type Answers } from './api';
 import { splitWords } from './cmdline';
 import { store } from './store.svelte';
+import { questionText, saidKind, saidText } from './said';
 import {
   configArgs,
   menuKey,
@@ -285,7 +286,8 @@ class ReviewSession {
 
   #askNext() {
     const a = this.#asking!;
-    this.question = a.r.ask === 'extras' ? a.r.items[a.index].question : a.r.message;
+    // An extra comes with what `task` prints before it (the dependency reminder).
+    this.question = a.r.ask === 'extras' ? questionText(a.r.items[a.index]) : a.r.message;
     this.#say(this.surface === 'console' ? `${this.question} (y/n)` : this.question);
   }
 
@@ -364,6 +366,11 @@ class ReviewSession {
       if (res.wrote) {
         store.written();
         if (store.live) void store.refresh(store.live);
+      }
+      // What it printed besides (a dependency reminder, a hook): in the console where the review is, else a toast.
+      if (res.feedback?.length) {
+        if (this.surface === 'console') store.addEntry('', { kind: 'text', lines: res.feedback.map((l) => l.text) });
+        else store.notify(saidText(res.feedback), saidKind(res.feedback));
       }
       await then();
     } catch (e) {

@@ -233,7 +233,12 @@ The same questions as on the desktop, from the same settings, answered on the pa
 - **A command with no filter asks** before it changes every task, finished and deleted ones included
   (`allow.empty.filter`).
 - **Finishing or deleting a task in the middle of a dependency chain** offers to repair the chain
-  (`dependency.confirmation`): what waited on it then waits on what it waited on.
+  (`dependency.confirmation`): what waited on it then waits on what it waited on. The question comes after what
+  `task` prints before it (`dependency.reminder`): the tasks it was blocked by and the ones it was blocking.
+
+Starting, finishing or deleting a task that still waits on open tasks prints `Task 3 is blocked by:` and those tasks
+(`dependency.reminder`, on by default), under the result here. A button on another page shows it in a warning message
+instead, or with the question when it asks one.
 - **Editing, appending to, prepending to, annotating or deleting a task of a recurring series** asks whether to do the
   same to the rest of the series (`recurrence.confirmation`).
 

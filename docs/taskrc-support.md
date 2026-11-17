@@ -172,7 +172,7 @@ The `calendar` command takes Taskwarrior's arguments (`calendar`, `calendar y`, 
 | Option | Status | Remark |
 | --- | --- | --- |
 | `dependency.confirmation` | Done | On by default. Finishing or deleting a task that waits on something and has others waiting on it breaks the chain; the app asks "Would you like the dependency chain fixed?" and, on yes, makes those tasks wait on what it waited on (checked against `task` 3.5.0, task by task in the order they are finished). Off repairs without asking. For several tasks the questions arrive together as a table, after the permission one. A repair that only becomes necessary because of an earlier "no" isn't offered |
-| `dependency.reminder` | N/A | The reminder printed to a terminal after `done`, `delete` and `start`. Dependencies themselves (`depends:`, `+BLOCKED`, `+BLOCKING`) work |
+| `dependency.reminder` | Done | On by default. Starting, finishing or deleting a task that still waits on open tasks says so, as `task` prints it: `Task 3 is blocked by:` and each one's ID and description, then, when finishing or deleting it breaks a chain, `and is blocking:` and the tasks waiting on it (checked against `task` 3.5.0). The Console prints it under the result. A button shows it in a warning message, or, when the chain-repair question is asked, with that question. Off says nothing; the question is still asked |
 
 ## Colour
 

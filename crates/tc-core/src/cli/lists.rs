@@ -107,7 +107,6 @@ pub(super) fn names_list(cfg: &Config, kind: Kind) -> Done {
                     "default.timesheet.filter",
                     "defaultheight",
                     "defaultwidth",
-                    "dependency.reminder",
                     "detection",
                     "exit.on.missing.db",
                     "fontunderline",

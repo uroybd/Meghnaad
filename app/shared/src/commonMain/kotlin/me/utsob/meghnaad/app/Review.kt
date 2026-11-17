@@ -241,7 +241,8 @@ class ReviewSession(private val store: Store) {
 
     private fun askNext() {
         val a = asking!!
-        question = if (a.r.ask == "extras") a.r.items[a.index].question else a.r.message
+        // An extra comes with what `task` prints before it (the dependency reminder).
+        question = if (a.r.ask == "extras") questionText(a.r.items[a.index]) else a.r.message
         say(question!!)
     }
 
@@ -312,6 +313,8 @@ class ReviewSession(private val store: Store) {
                 store.written()
                 store.live?.let { store.refresh(it) }
             }
+            // What it printed besides (a dependency reminder, a hook), as a message.
+            if (res.feedback.isNotEmpty()) store.notify(saidText(res.feedback), bad = saidBad(res.feedback))
             then()
         } catch (e: Exception) {
             say(e.message ?: e.toString(), bad = true)

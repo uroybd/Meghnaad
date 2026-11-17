@@ -131,7 +131,7 @@ private fun titleOf(input: CliInput) =
 /** The heading a statement of a line draws: the whole line for the first, none (null) for the ones under it. */
 class ChainHeading(val heading: String?)
 
-private fun hookText(lines: List<HookLine>) = lines.joinToString(" · ") { it.text }
+private fun hookText(lines: List<HookLine>) = saidText(lines)
 
 /**
  * What the screens show and what they can ask: the counterpart of `web/src/lib/store.svelte.ts`. All Taskwarrior behaviour is
@@ -1182,9 +1182,10 @@ class Store(
         return try {
             val res = tw.run(args = args, answers = answers)
             val r = res.result
-            // What a hook said goes with the outcome, in the same message.
-            val said = if (res.feedback.isNotEmpty()) " ${hookText(res.feedback)}" else ""
-            val bad = res.feedback.any { it.kind == "warn" }
+            // What the command printed besides (a dependency reminder) and what a hook said go with the outcome, in the same
+            // message, a line each; a warning among them makes it one.
+            val said = if (res.feedback.isNotEmpty()) "\n${hookText(res.feedback)}" else ""
+            val bad = saidBad(res.feedback)
             when (r) {
                 is CliResult.Error -> notify(r.value.message + said, bad = true)
                 is CliResult.Changed -> notify(r.value.message + said, bad = bad)
@@ -1197,7 +1198,8 @@ class Store(
                         if (!answers.confirmed && confirmAsk(q.message)) return act(from, args, answers.copy(confirmed = true), true)
                     } else {
                         val keys = q.items.map { it.key }
-                        val question = if (q.items.size == 1) q.items[0].question else q.message
+                        // With what `task` prints before it (the dependency reminder).
+                        val question = confirmText(q)
                         if (confirmAsk(question)) {
                             return act(from, args, if (q.ask == "permission") answers.copy(approved = keys) else answers.copy(extras = keys), true)
                         }

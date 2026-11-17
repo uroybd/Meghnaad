@@ -184,8 +184,11 @@ a column the report doesn't show is named by its UDA label.
 The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
 (`Created task 3.`) in the status line. They add no overrides. When `task` asks a question (`Delete task 3 'x'? (yes/no)`, or whether to
 change every recurrence of a recurring task), the question opens in a box: `y` or `n` answers it, and `a` or `q` where
-it offers `all` and `quit`; `Esc` is `quit` where it is offered, else `no`. After every command the pages and what
-completion offers are read again.
+it offers `all` and `quit`; `Esc` is `quit` where it is offered, else `no`. The box shows what `task` printed before
+the question, so the chain-repair question comes with `dependency.reminder`'s `Task 3 is blocked by:` and the rest.
+Where a key's command prints that reminder with no question (`s` on a task still waiting on others, or `d` on the end
+of a chain), it opens in a **task warns** box, bordered in `color.warning`, which any key closes. After every command
+the pages and what completion offers are read again.
 
 ![a opens the add box over the report; it shows the task the line will make](screenshots/terminal-add.png)
 

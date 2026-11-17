@@ -139,6 +139,8 @@ private fun ConfirmView(store: Store, e: Entry, q: ConfirmResult) {
     // You typed the command, so yes is the usual answer: everything starts ticked, untick the exceptions.
     val ticked = remember(q) { q.items.map { true }.toMutableStateList() }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // What `task` prints before a single question: the dependency reminder.
+        if (q.items.size == 1 && q.items[0].note.isNotEmpty()) Text(q.items[0].note.joinToString("\n"), fontSize = 14.sp)
         Text(q.message, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         when {
             q.ask == "plain" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -165,7 +167,7 @@ private fun ConfirmView(store: Store, e: Entry, q: ConfirmResult) {
                         Column {
                             Text("${item.id ?: item.uuid.take(8)}  ${item.description}", fontSize = 14.sp)
                             // The question is only worth reading for the follow-ups: for the rest it is the same on every line.
-                            if (q.ask == "extras") Dim(item.question)
+                            if (q.ask == "extras") Dim(questionText(item))
                         }
                     }
                 }

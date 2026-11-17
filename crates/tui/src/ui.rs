@@ -138,6 +138,7 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::Sort(edit) => sort_box(f, app, edit, main),
         Mode::KeyAdd(add) => key_add_box(f, app, add, main),
         Mode::Question(asking) => question_box(f, &asking.question, main),
+        Mode::Notice(lines) => notice_box(f, lines, main),
         Mode::Export(b) => export_box(f, b, main),
         Mode::Reminders(b) => reminders_box(f, app, b, main),
         Mode::ExportPick { options, sel, .. } => picker(f, " export which table ", options, *sel, main),
@@ -172,6 +173,7 @@ fn screen(f: &mut Frame, app: &App) {
         ),
         Mode::Prompt(p) => prompt(f, p, main, dock),
         Mode::Question(asking) => f.render_widget(hints(&question_keys(&asking.question.choices)), dock),
+        Mode::Notice(_) => f.render_widget(hints("any key closes"), dock),
         Mode::Commands { .. } => {
             f.render_widget(hints("a-z narrow · ↑/↓ choose · ↵ run on the task · Esc cancel"), dock);
         }
@@ -1192,6 +1194,27 @@ fn question_box(f: &mut Frame, q: &crate::task::Question, main: Rect) {
             .wrap(Wrap { trim: false })
             .scroll((hidden, 0))
             .block(boxed(" task asks ".into())),
+        area,
+    );
+}
+
+/// A warning `task` printed besides its first line (`dependency.reminder`), as the web app's toast says it: a box with a
+/// border in `color.warning` (the `bad` role when the taskrc has none), over the page until a key is pressed.
+fn notice_box(f: &mut Frame, lines: &[String], main: Rect) {
+    let w = main.width.min(72);
+    let h = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX).min(main.height);
+    let area = Rect::new(
+        main.x + (main.width - w) / 2,
+        main.y + main.height.saturating_sub(h) / 3,
+        w,
+        h,
+    );
+    let t = theme::current();
+    let colour = if t.warning.fg.is_some() { t.warning } else { t.bad };
+    let block = boxed(" task warns ".into()).border_style(colour);
+    f.render_widget(Clear, area);
+    f.render_widget(
+        Paragraph::new(lines.iter().map(|l| Line::from(l.clone())).collect::<Vec<_>>()).block(block),
         area,
     );
 }

@@ -35,6 +35,10 @@ pub struct Job {
     before: usize,
     /// For the form: what its first line said, the status once all is done.
     said: String,
+    /// The questions `task` asked, with what it printed before each.
+    asked: String,
+    /// `dependency.reminder`'s reminders a key's lines printed that no question showed, for the box when they end.
+    reminders: Vec<String>,
     run: Option<Run>,
 }
 
@@ -131,6 +135,8 @@ impl App {
             changed: false,
             before: self.log.len(),
             said: String::new(),
+            asked: String::new(),
+            reminders: Vec::new(),
             run: None,
         };
         self.drive(job);
@@ -155,6 +161,8 @@ impl App {
             if let Some(run) = job.run.as_mut() {
                 match run.wait() {
                     Said::Asks(question) => {
+                        job.asked.push_str(&question.text);
+                        job.asked.push('\n');
                         self.mode = Mode::Question(Box::new(Asking { question, job }));
                         return;
                     }
@@ -195,6 +203,16 @@ impl App {
             Err(e) => (false, e.clone()),
         };
         job.ok = ok;
+        // A key's lines print to no console: a reminder the question box didn't show goes in a box of its own.
+        if let (JobKind::Quick, Ok(o)) = (&job.kind, out) {
+            for r in crate::task::dependency_reminders(&o.stdout) {
+                if r.first()
+                    .is_some_and(|head| !job.asked.lines().any(|l| l.trim_end() == head))
+                {
+                    job.reminders.extend(r);
+                }
+            }
+        }
         let said_or_no = if ok || !said.is_empty() {
             said.clone()
         } else {
@@ -238,6 +256,9 @@ impl App {
             JobKind::Form(_) => self.status = job.said,
         }
         self.reload();
+        if !job.reminders.is_empty() {
+            self.mode = Mode::Notice(job.reminders);
+        }
         if job.changed {
             self.after_change();
         }

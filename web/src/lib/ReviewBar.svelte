@@ -96,6 +96,8 @@
   }
   .q {
     font-size: 13.5px;
+    /* A question can come with the lines task prints before it. */
+    white-space: pre-line;
   }
   .btn {
     display: inline-flex;

@@ -293,6 +293,12 @@ impl Config {
         self.settings.get("dependency.confirmation").is_none_or(|v| truthy(v))
     }
 
+    /// `dependency.reminder`: say which open tasks a task still waits on when it is started, finished or deleted (and,
+    /// finishing or deleting one in the middle of a chain, which wait on it), as `task` prints it.
+    pub fn dependency_reminder(&self) -> bool {
+        self.settings.get("dependency.reminder").is_none_or(|v| truthy(v))
+    }
+
     /// `journal.info`: whether `info` lists the task's change history (Taskwarrior's default is on).
     pub fn journal_info(&self) -> bool {
         self.settings.get("journal.info").is_none_or(|v| truthy(v))
@@ -464,6 +470,7 @@ const SCALAR_SETTINGS: &[&str] = &[
     "bulk",
     "allow.empty.filter",
     "dependency.confirmation",
+    "dependency.reminder",
     "journal.time",
     "journal.time.start.annotation",
     "journal.time.stop.annotation",

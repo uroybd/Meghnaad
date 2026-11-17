@@ -595,6 +595,8 @@
     box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
     max-width: 28em;
     z-index: 20;
+    /* A command's reminder comes a line each. */
+    white-space: pre-line;
   }
   .toast.bad {
     border-color: var(--err);

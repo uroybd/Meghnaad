@@ -769,6 +769,10 @@ pub struct ConfirmItem {
     pub id: Option<u32>,
     pub description: String,
     pub question: String,
+    /// What `task` prints before the question (`dependency.reminder`: `Task 3 is blocked by:`, the tasks, `and is
+    /// blocking:`, the tasks), a line each.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub note: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -898,7 +902,8 @@ pub struct Done {
     pub command: Option<CommandInfo>,
     /// New settings for the caller to save (`config` changed them).
     pub config: Option<Config>,
-    /// What the hooks printed (see `hooks.rs`), to show under the result.
+    /// What the command printed besides its result (`dependency.reminder`'s reminders, as warnings), then what the
+    /// hooks printed (see `hooks.rs`), to show under the result.
     pub feedback: Vec<crate::hooks::Line>,
 }
 
@@ -983,7 +988,45 @@ fn confirm_item(key: String, f: &Facts, ctx: &EvalCtx, question: String) -> Conf
         id: ctx.ids.get(&f.uuid).copied(),
         description: f.description.clone(),
         question,
+        note: Vec::new(),
     }
+}
+
+/// `dependency.reminder`'s lines for `t` (`dependencyChainOnStart` and `dependencyChainOnComplete`): the open tasks it
+/// waits on and, when finishing or deleting it breaks a chain, the open tasks waiting on it, each by ID and description
+/// in the order of their IDs. `t` is named by its ID, else its whole uuid, as `Task::identifier` does.
+fn dependency_reminder(ctx: &EvalCtx, all: &[Facts], t: &Facts, blocking: &[Uuid], blocked: &[Uuid]) -> Vec<String> {
+    if blocking.is_empty() {
+        return Vec::new();
+    }
+    let me = ctx.ids.get(&t.uuid).map_or_else(|| t.uuid.to_string(), u32::to_string);
+    // In the order of their IDs, as `task` goes through its pending tasks.
+    let listed = |uuids: &[Uuid]| -> Vec<String> {
+        let mut rows: Vec<(u32, &str)> = all
+            .iter()
+            .filter(|f| uuids.contains(&f.uuid))
+            .map(|f| (ctx.ids.get(&f.uuid).copied().unwrap_or(0), f.description.as_str()))
+            .collect();
+        rows.sort_by_key(|r| r.0);
+        rows.into_iter().map(|(id, d)| format!("  {id} {d}")).collect()
+    };
+    let mut lines = vec![format!("Task {me} is blocked by:")];
+    lines.extend(listed(blocking));
+    if !blocked.is_empty() {
+        lines.push("and is blocking:".into());
+        lines.extend(listed(blocked));
+    }
+    lines
+}
+
+/// What starting `t` reminds of: the open tasks it waits on.
+fn start_reminder(ctx: &EvalCtx, all: &[Facts], t: &Facts) -> Vec<String> {
+    let open = |u: &Uuid| {
+        all.iter()
+            .any(|f| f.uuid == *u && !matches!(f.status.as_str(), "completed" | "deleted"))
+    };
+    let blocking: Vec<Uuid> = t.depends.iter().filter(|u| open(u)).copied().collect();
+    dependency_reminder(ctx, all, t, &blocking, &[])
 }
 
 fn verb_of(kind: Kind) -> &'static str {
@@ -1077,9 +1120,15 @@ struct Repair {
 
 /// The chain repairs Taskwarrior would offer for finishing or deleting `changing`, in the order it
 /// would meet them (`dependencyChainOnComplete`): a task that was waiting on something open and
-/// that others are waiting on leaves them waiting on its own blockers instead. `ask` decides, for
-/// each such task, whether the repair goes ahead (it may also be recording the question).
-fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut dyn FnMut(&Facts) -> bool) -> Vec<Repair> {
+/// that others are waiting on leaves them waiting on its own blockers instead. `ask` is told of each
+/// task still waiting on open ones, with those (`blocking`) and the open ones waiting on it (`blocked`,
+/// maybe none), as the chain stands by then; where both are there it decides whether the repair goes
+/// ahead (it may also be recording the question, and the reminder).
+/// What [`chain_repairs`] tells of each task waiting on open ones: the task, those (`blocking`) and the open ones waiting
+/// on it (`blocked`); whether to repair the chain.
+type ChainAsk<'a> = dyn FnMut(&Facts, &[Uuid], &[Uuid]) -> bool + 'a;
+
+fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut ChainAsk<'_>) -> Vec<Repair> {
     let open = |f: &Facts| !matches!(f.status.as_str(), "completed" | "deleted");
     // Each task as the command goes along: still open, and what it depends on.
     let mut state: BTreeMap<Uuid, (bool, Vec<Uuid>)> =
@@ -1100,7 +1149,8 @@ fn chain_repairs(changing: &[&Facts], all: &[Facts], ask: &mut dyn FnMut(&Facts)
             .filter(|(_, (open, deps))| *open && deps.contains(&t.uuid))
             .map(|(u, _)| *u)
             .collect();
-        if blocked.is_empty() || !ask(t) {
+        let go = ask(t, &blocking, &blocked);
+        if blocked.is_empty() || !go {
             continue;
         }
         for b in blocked {
@@ -1458,7 +1508,9 @@ pub async fn execute<S: Storage>(
     let mut done = execute_inner(w, cfg, clock, args, tasks).await;
     done.command = command;
     done.wrote |= maintained;
-    done.feedback = hk.finish(matches!(done.result, CliResult::Error { .. })).await;
+    // What the command printed comes first, then what the hooks did as it ended.
+    let hooks = hk.finish(matches!(done.result, CliResult::Error { .. })).await;
+    done.feedback.extend(hooks);
     done
 }
 

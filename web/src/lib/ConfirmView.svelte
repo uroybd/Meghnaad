@@ -30,6 +30,10 @@
 </script>
 
 {#if result.ask === 'plain' || result.items.length === 1}
+  {#if result.items[0]?.note?.length}
+    <!-- What `task` prints before the question: the dependency reminder. -->
+    <pre class="note">{result.items[0].note.join('\n')}</pre>
+  {/if}
   <div class="confirm" role="alert">
     <span>{result.message}</span>
     {#if result.ask === 'plain'}
@@ -74,7 +78,9 @@
               >
               <td class="id">{i.id ?? i.uuid.slice(0, 8)}</td>
               <td>{i.description}</td>
-              {#if showQuestion}<td class="dim">{i.question}</td>{/if}
+              {#if showQuestion}<td class="dim"
+                  >{#if i.note?.length}<pre class="note">{i.note.join('\n')}</pre>{/if}{i.question}</td
+                >{/if}
             </tr>
           {/each}
         </tbody>
@@ -91,6 +97,11 @@
 {/if}
 
 <style>
+  .note {
+    margin: 4px 0;
+    font: inherit;
+    white-space: pre-wrap;
+  }
   .confirm {
     display: flex;
     flex-wrap: wrap;

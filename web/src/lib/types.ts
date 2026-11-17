@@ -290,6 +290,8 @@ export interface ConfirmItem {
   id: number | null;
   description: string;
   question: string;
+  /** What `task` prints before the question (`dependency.reminder`), a line each. */
+  note?: string[];
 }
 /**
  * Taskwarrior wants an answer: `plain` is one yes/no; `permission` has a question per task the

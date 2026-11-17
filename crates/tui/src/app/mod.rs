@@ -185,6 +185,8 @@ pub enum Mode {
     Form(Form),
     /// A task's info, in tabs (spec 0006).
     TaskInfo(crate::info::Info),
+    /// What `task` warned of besides its first line (`dependency.reminder`), in a box any key closes.
+    Notice(Vec<String>),
     /// `task <uuid> info` as it printed it, or the list of every key.
     Info {
         text: String,
@@ -1117,6 +1119,8 @@ impl App {
             Mode::Prompt(p) => self.in_prompt(p, key),
             Mode::Form(f) => self.in_form(f, key),
             Mode::TaskInfo(i) => self.in_task_info(i, key),
+            // Any key closes it.
+            Mode::Notice(_) => Action::None,
             Mode::Info { text, scroll } => {
                 if let Some(by) = self.section_of(key) {
                     let scroll = section_scroll(&text_sections(&text), scroll, by);

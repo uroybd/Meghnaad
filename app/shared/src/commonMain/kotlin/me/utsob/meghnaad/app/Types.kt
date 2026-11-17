@@ -119,6 +119,8 @@ data class ConfirmItem(
     val id: Int? = null,
     val description: String,
     val question: String,
+    /** What `task` prints before the question (`dependency.reminder`), a line each. */
+    val note: List<String> = emptyList(),
 )
 
 /** `plain` is one yes/no; `permission` has a question per task; `extras` are follow-ups that come once those are answered. */

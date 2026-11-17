@@ -2,11 +2,12 @@
 //! ...), and `undo`.
 
 use super::{
-    add_note, apply_changes, asks, chain_repairs, changed, confirm_item, conjoin, context_read, declined_line, error,
-    ident, invert, model, modify, modify_plan, ok, passed_over, permission_question, plural, recur, selected, verb_of,
-    warm_facts, Annotate, Annotation, Append, Ask, BTreeMap, BTreeSet, Change, CliResult, Config, ConfirmItem, Delete,
-    Denotate, Done, Duplicate, EvalCtx, Facts, Kind, Mode, Modify, Operations, Options, Parsed, Prepend, Purge, Repair,
-    Replica, Start, Status, Stop, Storage, Task, TimeZone, UndoStack, Utc, Uuid, Writer,
+    add_note, apply_changes, asks, chain_repairs, changed, confirm_item, conjoin, context_read, declined_line,
+    dependency_reminder, error, ident, invert, model, modify, modify_plan, ok, passed_over, permission_question,
+    plural, recur, selected, start_reminder, verb_of, warm_facts, Annotate, Annotation, Append, Ask, BTreeMap,
+    BTreeSet, Change, CliResult, Config, ConfirmItem, Delete, Denotate, Done, Duplicate, EvalCtx, Facts, Kind, Mode,
+    Modify, Operations, Options, Parsed, Prepend, Purge, Repair, Replica, Start, Status, Stop, Storage, Task, TimeZone,
+    UndoStack, Utc, Uuid, Writer,
 };
 
 /// `undo`: the last write command's changes, reversed.
@@ -100,7 +101,7 @@ async fn write_steps<S: Storage>(
     let declined = permission(kind, &sel, &would_change, &opts, cfg, ctx, all)?;
     let chosen = without(&sel, &declined);
     let changing = without(&would_change, &declined);
-    let agreed = agree(kind, &changing, &opts, cfg, ctx, all)?;
+    let mut agreed = agree(kind, &changing, &opts, cfg, ctx, all)?;
     let targets = targets(kind, &chosen, &changing, &agreed, all);
 
     let mut batch = Batch::new();
@@ -178,7 +179,8 @@ async fn write_steps<S: Storage>(
         wrote: true,
         command: None,
         config: None,
-        feedback: Vec::new(),
+        // `task` prints them as it changes each task, after its own line.
+        feedback: std::mem::take(&mut agreed.reminders),
     })
 }
 
@@ -379,6 +381,8 @@ struct Agreed<'a> {
     repairs: Vec<Repair>,
     /// The instances a purged template takes with it.
     kids: Vec<&'a Facts>,
+    /// `dependency.reminder`'s lines not already shown with a question, to go under the result as warnings.
+    reminders: Vec<crate::hooks::Line>,
 }
 
 /// What only comes up once permission is settled, asked in one more table: carrying a change to the rest of a recurring
@@ -434,28 +438,47 @@ fn agree<'a>(
         }
     }
     let mut repairs: Vec<Repair> = Vec::new();
+    let remind = cfg.dependency_reminder();
+    let mut notes: Vec<String> = Vec::new();
     if matches!(kind, Done | Delete) {
-        let mut ask = |f: &Facts| -> bool {
-            if !cfg.dependency_confirmation() {
+        let mut ask = |f: &Facts, blocking: &[Uuid], blocked: &[Uuid]| -> bool {
+            let note = if remind {
+                dependency_reminder(ctx, all, f, blocking, blocked)
+            } else {
+                Vec::new()
+            };
+            // No question: the reminder goes under the result.
+            if blocked.is_empty() || !cfg.dependency_confirmation() {
+                notes.extend(note);
                 return true;
             }
             let key = format!("dep:{}", f.uuid);
             if asking {
                 // Asked on the assumption that the earlier ones are repaired; a later one that
-                // then turns out not to arise is simply never used.
-                items.push(confirm_item(
-                    key,
-                    f,
-                    ctx,
-                    "Would you like the dependency chain fixed?".into(),
-                ));
+                // then turns out not to arise is simply never used. The reminder is printed before it.
+                let mut item = confirm_item(key, f, ctx, "Would you like the dependency chain fixed?".into());
+                item.note = note;
+                items.push(item);
                 true
             } else {
+                // Its reminder was shown with the question.
                 said_yes(&key)
             }
         };
         repairs = chain_repairs(changing, all, &mut ask);
     }
+    if kind == Start && remind {
+        for f in changing {
+            notes.extend(start_reminder(ctx, all, f));
+        }
+    }
+    let reminders = notes
+        .into_iter()
+        .map(|text| crate::hooks::Line {
+            kind: crate::hooks::Kind::Warn,
+            text,
+        })
+        .collect();
     // `purge`: a recurring template can only go when all its instances are deleted already, and it takes them
     // with it (asking first, as `recurrence.confirmation` says; "no" refuses).
     let mut kids: Vec<&Facts> = Vec::new();
@@ -509,6 +532,7 @@ fn agree<'a>(
         propagate,
         repairs,
         kids,
+        reminders,
     })
 }
 
