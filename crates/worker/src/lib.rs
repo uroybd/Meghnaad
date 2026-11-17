@@ -1,10 +1,13 @@
 mod auth;
+mod backend;
+#[cfg(feature = "git")]
+mod gitrepo;
 mod hooknet;
 mod session;
+#[cfg(not(feature = "git"))]
 mod store;
 
 use serde::Deserialize;
-use store::R2Store;
 use tc_core::appsettings;
 use tc_core::taskrc::MAX_TASKRC_BYTES;
 use tc_core::webapi::WebSettings;
@@ -264,7 +267,7 @@ async fn config_route(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let method = req.method().to_string();
     let path = req.path();
     let body = req.bytes().await?;
-    let web = WebSettings::new(R2Store(ctx.env.bucket("TASKS")?));
+    let web = WebSettings::new(backend::open(&ctx.env)?);
     let reply = web
         .handle(&method, &path, &body)
         .await
@@ -283,9 +286,7 @@ async fn config_route(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
 /// The link is never logged or echoed: it may carry an access token.
 async fn import_taskrc_url(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let text = fetch_text(&req.text().await?, MAX_TASKRC_BYTES).await?;
-    let reply = WebSettings::new(R2Store(ctx.env.bucket("TASKS")?))
-        .put_root(&text)
-        .await;
+    let reply = WebSettings::new(backend::open(&ctx.env)?).put_root(&text).await;
     session::forget_config();
     let mut res = Response::from_bytes(reply.body)?.with_status(reply.status);
     res.headers_mut().set("content-type", reply.content_type)?;
@@ -447,25 +448,27 @@ fn secret_name(ctx: &RouteContext<()>) -> Result<String, ApiError> {
     })
 }
 
-/// `GET /api/secrets`: the names of the secrets set from the app. Never the values.
+/// `GET /api/secrets`: the secrets set from the app, each with the hosts it may go to. Never the values. (`names` is
+/// the answer before hosts, kept for a page that is a release behind.)
 async fn list_secrets(ctx: RouteContext<()>) -> RouteResult {
-    json(&serde_json::json!({ "names": session::secret_names(&ctx.env).await? }))
+    let listed = session::secrets_listed(&ctx.env).await?;
+    let names: Vec<&str> = listed.iter().map(|l| l.name.as_str()).collect();
+    json(&serde_json::json!({ "secrets": listed, "names": names }))
 }
 
-/// `PUT /api/secrets/<name>`: keep a secret (the body, as text), sealed in the bucket. It can be replaced, never read
-/// back; a script reads it with `secret("<name>")`.
+/// `PUT /api/secrets/<name>`: keep a secret, `{"value", "hosts"}` (or, as before hosts, the value as plain text, which
+/// keeps it with none), sealed in the bucket. It can be replaced, never read back, and its hosts are only ever set with
+/// its value; a script uses it with `secret("<name>")`, and only in a request to one of those hosts.
 async fn put_secret(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let name = secret_name(&ctx)?;
-    let value = req.text().await?;
-    if value.is_empty() || value.len() > 16 * 1024 {
-        return Err(ApiError::BadRequest("a secret is between 1 character and 16 KB".into()));
+    let body = req.bytes().await?;
+    if body.len() > 32 * 1024 {
+        return Err(ApiError::TooLarge);
     }
-    if !session::set_secret(&ctx.env, &name, &value).await? {
-        return Err(ApiError::BadRequest(format!(
-            "there can be at most {} secrets",
-            session::MAX_SECRETS
-        )));
-    }
+    let secret = tc_core::hook_secrets::from_request(&body).map_err(ApiError::BadRequest)?;
+    session::set_secret(&ctx.env, &name, secret)
+        .await?
+        .map_err(ApiError::BadRequest)?;
     json(&serde_json::json!({ "ok": true }))
 }
 

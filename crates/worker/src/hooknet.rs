@@ -109,7 +109,7 @@ impl Net for WorkerNet {
         })
     }
 
-    async fn secret(&self, name: &str) -> Result<Option<String>, String> {
+    async fn secret(&self, name: &str) -> Result<Option<tc_core::hook_secrets::Secret>, String> {
         crate::session::hook_secret(&self.env, name)
             .await
             .map_err(|e| e.to_string())

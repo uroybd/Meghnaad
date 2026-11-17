@@ -104,12 +104,29 @@ be made or answered, the one failure a script is expected to handle. A host not 
 sixth request in one call is an error that ends the hook. `http.urlencode(text)` makes text safe for an address. A slow
 service slows the command, so give it a short timeout.
 
-`secret("name")` is a value kept apart from the script. Set secrets in **Settings → Hooks → Secrets**: each is sealed in
-your bucket with the same key as your tasks, can be replaced but never shown again, and is replaced by `***` in anything
-a hook prints, fails with or returns. Or set a Worker secret called `HOOK_SECRET_<NAME>` (`wrangler secret put
-HOOK_SECRET_JIRA`, the dashboard, or your deploy workflow): it is read the same way, wins over one kept in the app, and
-never touches the bucket. Each call is logged as `hook http METHOD host -> status`, never the path, which may hold a
-token. A missing secret fails the hook with a message that says so.
+`secret("name")` is a value kept apart from the script, and it goes **only to the hosts you saved it with**, whatever
+hosts the script declares. Set secrets in **Settings → Hooks → Secrets**, each with its value and its hosts
+(`acme.atlassian.net`, or `*.atlassian.net` for any name under it). Each is sealed in your bucket with the same key as your
+tasks and can be replaced but never shown again. Its hosts can only be changed by typing the value again, so nothing that
+can't read a value can send it somewhere new.
+
+A script never holds the value. `secret("jira")` gives a stand-in, `⟦secret:jira⟧`, which you use as you would the value
+(`"Basic " .. secret("jira")`). The value is put in for it only in a request to one of the secret's hosts, in the
+address, a header or the body. Anything else is refused before it leaves: a request to another host (`jira may only be sent
+to acme.atlassian.net, not evil.example`), or a secret in the host part of an address. What a script prints, fails with or
+returns shows the stand-in. A response that repeats the value back gives the script the stand-in too. So a script that
+someone else changed (in the app, or straight in the bucket or the git branch) can't take your secrets anywhere.
+
+A secret with no hosts goes nowhere. Secrets kept before hosts existed (Meghnaad 0.6 and earlier) have none: the list
+marks them **needs hosts**, and a hook using one says so. Keep each again with its value and hosts.
+
+What a script can't do with a secret, since it holds only the stand-in: compute with it (Base64 it, sign with it, cut it
+up). Keep a value already in the form the service wants: for Jira's Basic auth, the Base64 of `email:token`.
+
+Or set a Worker secret called `HOOK_SECRET_<NAME>` (`wrangler secret put HOOK_SECRET_JIRA`, the dashboard, or your deploy
+workflow), with its hosts in `HOOK_SECRET_<NAME>_HOSTS` (comma-separated, a Worker variable or secret). It wins over one
+kept in the app and never touches the bucket. Each call is logged as `hook http METHOD host -> status`, never the path,
+which may hold a token. A missing secret fails the hook with a message that says so.
 
 ## The editor and the sandbox
 
@@ -347,9 +364,10 @@ most five requests a call and ten seconds each; following redirects is the scrip
 ### Secrets
 
 Secrets are environment variables: `secret("JIRA_TOKEN")` is the variable `JIRA_TOKEN`, by that exact name (nothing
-is prefixed or guessed, because the environment is shared with every program). A missing one is an error that stops
-the hook, and its value is replaced by `***` in anything the script prints, fails with or returns. Set them where
-`task` starts from (your shell profile, or `launchctl setenv` for a GUI). The Worker's and the app's secrets are separate.
+is prefixed or guessed, because the environment is shared with every program). Its hosts are the variable
+`JIRA_TOKEN_HOSTS` (comma-separated). Without it the secret goes nowhere. A missing secret is an error that stops the
+hook, and the script holds a stand-in, as on the server. Set them where `task` starts from (your shell profile, or
+`launchctl setenv` for a GUI). The Worker's and the app's secrets are separate.
 
 ### Differences
 

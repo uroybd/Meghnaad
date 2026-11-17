@@ -6,21 +6,21 @@
 
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 use taskchampion::Server;
 use tc_core::crypto::{Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::dates::Clock;
+use tc_core::hook_secrets::{Secret, Secrets};
 use tc_core::lua_hooks::{LuaRunner, Net, Problem};
 use tc_core::taskrc::Config;
 use tc_core::webapi::WebSettings;
-use tc_core::{load_salt, CloudServer, ObjectStore};
+use tc_core::ObjectStore;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use worker::Env;
 
+use crate::backend;
 use crate::hooknet::WorkerNet;
-use crate::store::R2Store;
 
 pub use tc_core::webapi::{decode, APP_SETTINGS_KEY, CONFIG_KEY, HOOKS_KEY, HOOKS_PREV_KEY};
 /// How long one Worker instance trusts its copy of the script.
@@ -71,7 +71,7 @@ pub async fn config(env: &Env) -> worker::Result<Rc<Config>> {
     }) {
         return Ok(c);
     }
-    let store = R2Store(env.bucket("TASKS")?);
+    let store = backend::open(env)?;
     // A storage failure is an error (the request fails and can be retried); it must never be
     // mistaken for "no settings saved".
     let cfg = match store.get(CONFIG_KEY).await.map_err(rust_err)? {
@@ -100,7 +100,7 @@ pub async fn config(env: &Env) -> worker::Result<Rc<Config>> {
 
 /// The hooks script as saved (empty before anything was saved).
 pub async fn hooks_source(env: &Env) -> worker::Result<String> {
-    let store = R2Store(env.bucket("TASKS")?);
+    let store = backend::open(env)?;
     Ok(store
         .get(HOOKS_KEY)
         .await
@@ -112,7 +112,7 @@ pub async fn hooks_source(env: &Env) -> worker::Result<String> {
 /// Save the script, keeping what was there as the previous version. It has to have been checked: a script that does
 /// not load is never kept.
 pub async fn save_hooks(env: &Env, text: &str) -> worker::Result<()> {
-    let store = R2Store(env.bucket("TASKS")?);
+    let store = backend::open(env)?;
     if let Some(old) = store.get(HOOKS_KEY).await.map_err(rust_err)? {
         store.put(HOOKS_PREV_KEY, &old).await.map_err(rust_err)?;
     }
@@ -192,16 +192,15 @@ pub const SECRETS_KEY: &str = "web/hook-secrets.enc";
 /// What the sealed secrets are bound to (as a version id is for a task version), so one can't stand in for the other.
 const SECRETS_SEAL: uuid::Uuid = uuid::Uuid::from_u128(0x4d65_6768_6e61_6164_686f_6f6b_7365_6372);
 const SECRETS_TTL_MS: f64 = 5_000.0;
-pub const MAX_SECRETS: usize = 64;
 
 /// The secrets as last read, and when.
-type Secrets = Option<(f64, Rc<BTreeMap<String, String>>)>;
+type Cached = Option<(f64, Rc<Secrets>)>;
 
 thread_local! {
-    static SECRETS: RefCell<Secrets> = const { RefCell::new(None) };
+    static SECRETS: RefCell<Cached> = const { RefCell::new(None) };
 }
 
-async fn load_secrets(env: &Env) -> worker::Result<Rc<BTreeMap<String, String>>> {
+async fn load_secrets(env: &Env) -> worker::Result<Rc<Secrets>> {
     let now = js_sys::Date::now();
     if let Some(m) = SECRETS.with(|s| {
         s.borrow()
@@ -211,12 +210,12 @@ async fn load_secrets(env: &Env) -> worker::Result<Rc<BTreeMap<String, String>>>
     }) {
         return Ok(m);
     }
-    let store = R2Store(env.bucket("TASKS")?);
-    let map: BTreeMap<String, String> = match store.get(SECRETS_KEY).await.map_err(rust_err)? {
-        None => BTreeMap::new(),
+    let store = backend::open(env)?;
+    let map = match store.get(SECRETS_KEY).await.map_err(rust_err)? {
+        None => Secrets::default(),
         Some(sealed) => {
             let plain = cryptor(env).await?.unseal(SECRETS_SEAL, &sealed).map_err(rust_err)?;
-            serde_json::from_slice(&plain).map_err(rust_err)?
+            Secrets::parse(&plain).map_err(rust_err)?
         }
     };
     let map = Rc::new(map);
@@ -224,41 +223,44 @@ async fn load_secrets(env: &Env) -> worker::Result<Rc<BTreeMap<String, String>>>
     Ok(map)
 }
 
-async fn save_secrets(env: &Env, map: &BTreeMap<String, String>) -> worker::Result<()> {
-    let store = R2Store(env.bucket("TASKS")?);
-    let plain = serde_json::to_vec(map).map_err(rust_err)?;
-    let sealed = cryptor(env).await?.seal(SECRETS_SEAL, &plain).map_err(rust_err)?;
+async fn save_secrets(env: &Env, map: &Secrets) -> worker::Result<()> {
+    let store = backend::open(env)?;
+    let sealed = cryptor(env)
+        .await?
+        .seal(SECRETS_SEAL, &map.to_bytes())
+        .map_err(rust_err)?;
     store.put(SECRETS_KEY, &sealed).await.map_err(rust_err)?;
     SECRETS.with(|s| *s.borrow_mut() = None);
     Ok(())
 }
 
-/// The names of the secrets that are set (not their values).
-pub async fn secret_names(env: &Env) -> worker::Result<Vec<String>> {
-    Ok(load_secrets(env).await?.keys().cloned().collect())
+/// The secrets that are set, with their hosts (never their values).
+pub async fn secrets_listed(env: &Env) -> worker::Result<Vec<tc_core::hook_secrets::Listed>> {
+    Ok(load_secrets(env).await?.listed())
 }
 
-pub async fn set_secret(env: &Env, name: &str, value: &str) -> worker::Result<bool> {
+/// Keep a secret with its hosts; `Err` says what is wrong with it (a name, a value, a host, too many).
+pub async fn set_secret(env: &Env, name: &str, secret: Secret) -> worker::Result<Result<(), String>> {
     let mut map = (*load_secrets(env).await?).clone();
-    if !map.contains_key(name) && map.len() >= MAX_SECRETS {
-        return Ok(false);
+    if let Err(why) = map.set(name, secret) {
+        return Ok(Err(why));
     }
-    map.insert(name.to_owned(), value.to_owned());
     save_secrets(env, &map).await?;
-    Ok(true)
+    Ok(Ok(()))
 }
 
 pub async fn delete_secret(env: &Env, name: &str) -> worker::Result<()> {
     let mut map = (*load_secrets(env).await?).clone();
-    if map.remove(name).is_some() {
+    if map.remove(name) {
         save_secrets(env, &map).await?;
     }
     Ok(())
 }
 
-/// The value of `secret("name")` for a script: a Worker secret called `HOOK_SECRET_<NAME>` if there is one (set with
-/// `wrangler secret put`, in the dashboard, or by the deploy workflow), else one stored from the app.
-pub async fn hook_secret(env: &Env, name: &str) -> worker::Result<Option<String>> {
+/// What `secret("name")` stands for in a script: a Worker secret called `HOOK_SECRET_<NAME>` if there is one (set with
+/// `wrangler secret put`, in the dashboard, or by the deploy workflow), whose hosts are the Worker setting
+/// `HOOK_SECRET_<NAME>_HOSTS`, else one stored from the app. Nothing a page can write sets a deploy secret's hosts.
+pub async fn hook_secret(env: &Env, name: &str) -> worker::Result<Option<Secret>> {
     let key = format!(
         "HOOK_SECRET_{}",
         name.chars()
@@ -270,25 +272,36 @@ pub async fn hook_secret(env: &Env, name: &str) -> worker::Result<Option<String>
             .collect::<String>()
     );
     if let Ok(v) = env.secret(&key) {
-        return Ok(Some(v.to_string()));
+        let hosts_key = format!("{key}_HOSTS");
+        let line = env
+            .var(&hosts_key)
+            .map(|v| v.to_string())
+            .or_else(|_| env.secret(&hosts_key).map(|v| v.to_string()))
+            .unwrap_or_default();
+        let hosts =
+            tc_core::hook_secrets::hosts_from_line(&line).map_err(|why| rust_err(format!("{hosts_key}: {why}")))?;
+        return Ok(Some(Secret {
+            value: v.to_string(),
+            hosts,
+        }));
     }
     Ok(load_secrets(env).await?.get(name).cloned())
 }
 
 /// The saved `settings.json`, or `None` before anything was saved.
 pub async fn app_settings(env: &Env) -> worker::Result<Option<Vec<u8>>> {
-    let store = R2Store(env.bucket("TASKS")?);
+    let store = backend::open(env)?;
     store.get(APP_SETTINGS_KEY).await.map_err(rust_err)
 }
 
 pub async fn save_app_settings(env: &Env, text: &[u8]) -> worker::Result<()> {
-    let store = R2Store(env.bucket("TASKS")?);
+    let store = backend::open(env)?;
     store.put(APP_SETTINGS_KEY, text).await.map_err(rust_err)
 }
 
 /// Whether there are earlier (readable) settings or files to restore.
 pub async fn has_previous(env: &Env) -> worker::Result<bool> {
-    WebSettings::new(R2Store(env.bucket("TASKS")?))
+    WebSettings::new(backend::open(env)?)
         .has_previous()
         .await
         .map_err(rust_err)
@@ -332,11 +345,8 @@ async fn cryptor(env: &Env) -> worker::Result<Cryptor> {
     if let Some(c) = CACHE.with(|c| c.borrow().clone()) {
         return Ok(c);
     }
-    let bucket = env.bucket("TASKS")?;
     let secret = env.secret("TC_ENCRYPTION_SECRET")?.to_string();
-    let salt = load_salt(&R2Store(bucket))
-        .await
-        .map_err(|e| worker::Error::RustError(e.to_string()))?;
+    let salt = backend::salt(env).await?;
     // Deriving the key is the most expensive thing a cold instance does. The runtime's own
     // PBKDF2 does it in about 40 ms of CPU; ours, in WebAssembly, in about 250.
     let cryptor = match derive_key_natively(&salt, secret.as_bytes()).await {
@@ -353,11 +363,8 @@ async fn cryptor(env: &Env) -> worker::Result<Cryptor> {
 /// The bucket as a TaskChampion server and nothing else: no replica, no tasks parsed. What a browser that keeps its
 /// own replica needs, since it asks for versions and sends versions and the Worker only opens and seals them.
 pub async fn server(env: &Env) -> worker::Result<Box<dyn Server>> {
-    let bucket = env.bucket("TASKS")?;
     let cryptor = cryptor(env).await?;
-    Ok(Box::new(
-        CloudServer::with_cryptor(R2Store(bucket), cryptor).with_cleanup(now_secs),
-    ))
+    backend::server(env, cryptor, now_secs)
 }
 
 /// Drop the key, e.g. after the bucket's salt or secret turned out to be different.

@@ -6,7 +6,7 @@ const api = vi.hoisted(() => ({
   getHooks: vi.fn(),
   checkHooks: vi.fn(),
   putHooks: vi.fn(),
-  getSecretNames: vi.fn(),
+  getSecrets: vi.fn(),
   putSecret: vi.fn(),
   deleteSecret: vi.fn(),
 }));
@@ -65,7 +65,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   editors.length = 0;
   for (const f of Object.values(api)) f.mockReset();
-  api.getSecretNames.mockResolvedValue([]);
+  api.getSecrets.mockResolvedValue([]);
   vi.spyOn(store, 'notify').mockImplementation(() => {});
 });
 
@@ -84,8 +84,10 @@ describe('secrets', () => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
-  it('lists only the names, keeps a new one without ever showing its value, and can remove one', async () => {
-    api.getSecretNames.mockResolvedValue(['jira']);
+  const named = (...names: string[]) => names.map((name) => ({ name, hosts: ['acme.atlassian.net'] }));
+
+  it('lists only the names and hosts, keeps a new one without ever showing its value, and can remove one', async () => {
+    api.getSecrets.mockResolvedValue(named('jira'));
     api.putSecret.mockResolvedValue(undefined);
     api.deleteSecret.mockResolvedValue(undefined);
     await open('');
@@ -100,28 +102,43 @@ describe('secrets', () => {
     expect(button('Keep')?.disabled).toBe(true);
     fill(field('Secret name'), 'slack');
     await tick();
-    api.getSecretNames.mockResolvedValue(['jira', 'slack']);
+    // A secret needs the hosts it may go to.
+    expect(button('Keep')?.disabled).toBe(true);
+    fill(field('Hosts it may be sent to'), 'hooks.slack.com, *.slack.com');
+    await tick();
+    api.getSecrets.mockResolvedValue(named('jira', 'slack'));
     button('Keep')!.click();
-    await vi.waitFor(() => expect(api.putSecret).toHaveBeenCalledWith('slack', 'tok-123'));
+    await vi.waitFor(() =>
+      expect(api.putSecret).toHaveBeenCalledWith('slack', 'tok-123', ['hooks.slack.com', '*.slack.com']),
+    );
     await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).toContain('slack'));
     // The value is cleared from the form once it is kept.
     expect(field('Secret value').value).toBe('');
+    expect(field('Hosts it may be sent to').value).toBe('');
     expect(document.body.textContent).not.toContain('tok-123');
 
-    api.getSecretNames.mockResolvedValue(['slack']);
+    api.getSecrets.mockResolvedValue(named('slack'));
     (document.querySelector('button[aria-label="Remove jira"]') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(api.deleteSecret).toHaveBeenCalledWith('jira'));
     await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).not.toContain('jira'));
   });
 
+  it('marks a secret kept before hosts as needing them', async () => {
+    api.getSecrets.mockResolvedValue([{ name: 'old', hosts: [] }, ...named('jira')]);
+    await open('');
+    await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).toContain('needs hosts'));
+    expect(document.querySelector('.names')?.textContent).toContain('acme.atlassian.net');
+  });
+
   it('offers to replace a secret that is already set, and says why a save failed', async () => {
-    api.getSecretNames.mockResolvedValue(['jira']);
+    api.getSecrets.mockResolvedValue(named('jira'));
     const { ApiError } = await import('./api');
     api.putSecret.mockRejectedValue(new ApiError('there can be at most 64 secrets', 400));
     await open('');
     await vi.waitFor(() => expect(document.querySelector('.names')?.textContent).toContain('jira'));
     fill(field('Secret name'), 'jira');
     fill(field('Secret value'), 'new');
+    fill(field('Hosts it may be sent to'), 'acme.atlassian.net');
     await tick();
     expect(button('Replace')?.disabled).toBe(false);
     button('Replace')!.click();

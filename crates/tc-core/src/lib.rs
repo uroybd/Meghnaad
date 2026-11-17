@@ -23,6 +23,7 @@ pub mod highlight;
 pub mod history;
 pub mod holidata;
 pub mod holidays;
+pub mod hook_secrets;
 pub mod hooks;
 pub mod ics;
 pub mod import;

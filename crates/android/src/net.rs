@@ -64,7 +64,7 @@ impl Net for PhoneNet {
         })
     }
 
-    async fn secret(&self, name: &str) -> Result<Option<String>, String> {
+    async fn secret(&self, name: &str) -> Result<Option<tc_core::hook_secrets::Secret>, String> {
         self.secrets.get(name)
     }
 }

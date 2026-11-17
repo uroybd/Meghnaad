@@ -40,7 +40,12 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import androidx.compose.ui.text.input.KeyboardType
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -66,10 +71,12 @@ class HooksState(private val store: Store) {
     var error by mutableStateOf<String?>(null)
     var done by mutableStateOf(false)
 
-    // Secrets: kept from the app, sealed in the bucket. Only their names are ever shown.
-    val secrets = mutableStateListOf<String>()
+    // Secrets: kept from the app, sealed. Only their names and hosts are ever shown.
+    val secrets = mutableStateListOf<SecretInfo>()
     var secretName by mutableStateOf("")
     var secretValue by mutableStateOf("")
+    var secretHosts by mutableStateOf("")
+    val hostList get() = hostsFromText(secretHosts)
     var secretBusy by mutableStateOf(false)
     var secretError by mutableStateOf<String?>(null)
     val secretNameOk get() = SECRET_NAME.matches(secretName)
@@ -95,9 +102,8 @@ class HooksState(private val store: Store) {
 
     private suspend fun loadSecrets() {
         try {
-            val names = engineJson.parseToJsonElement(store.request("GET", "/api/secrets")).jsonObject["names"]?.jsonArray ?: return
             secrets.clear()
-            secrets.addAll(names.map { it.jsonPrimitive.content })
+            secrets.addAll(secretsFromJson(store.request("GET", "/api/secrets")))
         } catch (_: Exception) {
             // The editor works without them; setting one says why it could not.
         }
@@ -135,14 +141,15 @@ class HooksState(private val store: Store) {
     }
 
     suspend fun keepSecret() {
-        if (!secretNameOk || secretValue.isEmpty() || secretBusy) return
+        if (!secretNameOk || secretValue.isEmpty() || hostList.isEmpty() || secretBusy) return
         secretBusy = true
         secretError = null
         try {
-            store.request("PUT", "/api/secrets/$secretName", secretValue)
-            store.notify("Secret $secretName saved. Read it in a hook with secret(\"$secretName\").")
+            store.request("PUT", "/api/secrets/$secretName", secretBody(secretValue, hostList))
+            store.notify("Secret $secretName saved. Use it in a hook with secret(\"$secretName\"), in a request to ${hostList.joinToString(", ")}.")
             secretName = ""
             secretValue = ""
+            secretHosts = ""
             loadSecrets()
         } catch (e: Exception) {
             secretError = e.message ?: "The secret could not be saved."
@@ -233,13 +240,16 @@ fun HooksPanel(store: Store, st: HooksState) {
 
             Text("Secrets", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
             Dim(
-                "A secret is a value a script reads with secret(\"name\") instead of having it in the script: a token for http.post(…), say. It is kept in your " +
-                    "bucket sealed with the same key as your tasks, can be replaced but never shown again, and is hidden from anything a hook prints or returns.",
+                "A secret is a value a script uses with secret(\"name\") instead of having it in the script: a token for http.post(…), say. It is kept on " +
+                    "this phone, sealed, can be replaced but never shown again, and goes only to the hosts you give it: the script holds a stand-in, and the " +
+                    "value is put in only for a request to one of them, whatever the script says. Changing the hosts means typing the value again.",
             )
-            for (name in st.secrets.toList()) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(name, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
-                    TextButton(onClick = { store.go { st.removeSecret(name) } }) { Text("Remove") }
+            for (secret in st.secrets.toList()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(secret.name, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+                    if (secret.hosts.isEmpty()) Text("needs hosts", color = colors.error, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    else Text("→ " + secret.hosts.joinToString(", "), color = colors.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { store.go { st.removeSecret(secret.name) } }) { Text("Remove") }
                 }
             }
             OutlinedTextField(
@@ -248,8 +258,16 @@ fun HooksPanel(store: Store, st: HooksState) {
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
             )
             SecretField(st.secretValue, { st.secretValue = it }, "value", Modifier.fillMaxWidth())
-            OutlinedButton(onClick = { store.go { st.keepSecret() } }, enabled = st.secretNameOk && st.secretValue.isNotEmpty() && !st.secretBusy) {
-                Text(if (st.secretName in st.secrets) "Replace" else "Keep")
+            OutlinedTextField(
+                st.secretHosts, { st.secretHosts = it }, Modifier.fillMaxWidth(), singleLine = true,
+                placeholder = { Text("hosts it may go to (acme.atlassian.net)", fontSize = 13.sp) },
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None, keyboardType = KeyboardType.Uri),
+            )
+            OutlinedButton(
+                onClick = { store.go { st.keepSecret() } },
+                enabled = st.secretNameOk && st.secretValue.isNotEmpty() && st.hostList.isNotEmpty() && !st.secretBusy,
+            ) {
+                Text(if (st.secrets.any { it.name == st.secretName }) "Replace" else "Keep")
             }
             st.secretError?.let { Text(it, color = colors.error, fontSize = 13.sp) }
             var help by remember { mutableStateOf(false) }
@@ -296,3 +314,28 @@ private val HOOK_HELP = listOf(
     """**The network**, to hosts the script declares at the top (`allow_hosts{"acme.example.com"}`), over https: `local res, err = http.post(url, { headers = { Authorization = "Bearer " .. secret("jira") }, json = { … } })` (also `get`, `put`, `patch`, `delete`). `res` is `{status, ok, headers, body, json}`, or `nil` and a reason if the network failed, so a script can carry on. A few requests a call, 10 seconds at most each.""",
     """**Helpers**: `task:in_project("Work")` (also true for `Work.Mail`), `:is_pending()`, `:is_waiting()`, `:is_overdue()`. `say(…)` and `warn(…)` print under the result; `refuse("why")` (or any error) stops the command. There are no files, and a script that runs too long is stopped.""",
 )
+
+/** A secret kept for hooks, as a screen may see it: its name and the hosts it may be sent to, never its value. */
+data class SecretInfo(val name: String, val hosts: List<String>)
+
+/** `GET /api/secrets`: the secrets with their hosts, or (an engine a release behind) the names alone. */
+fun secretsFromJson(text: String): List<SecretInfo> {
+    val o = engineJson.parseToJsonElement(text).jsonObject
+    o["secrets"]?.jsonArray?.let { list ->
+        return list.map { e ->
+            val s = e.jsonObject
+            SecretInfo(s["name"]?.jsonPrimitive?.content ?: "", s["hosts"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList())
+        }
+    }
+    return o["names"]?.jsonArray?.map { SecretInfo(it.jsonPrimitive.content, emptyList()) } ?: emptyList()
+}
+
+/** What `PUT /api/secrets/<name>` takes: the value with its hosts, which are only ever set together. */
+fun secretBody(value: String, hosts: List<String>): String = buildJsonObject {
+    put("value", value)
+    put("hosts", JsonArray(hosts.map(::JsonPrimitive)))
+}.toString()
+
+/** Hosts as typed in one field: separated by commas or spaces, blanks dropped (hostsFromText in api.ts). */
+fun hostsFromText(text: String): List<String> = text.split(Regex("[\\s,]+")).map { it.trim() }.filter { it.isNotEmpty() }
+

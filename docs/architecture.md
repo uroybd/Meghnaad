@@ -466,7 +466,7 @@ hooks the script defines, and it picks the hook to run from the name it was call
 ```mermaid
 flowchart TB
   script["your Lua script<br/>web/hooks.lua in the bucket"]
-  runner["LuaRunner<br/>tc_core::lua_hooks: sandbox, allowlist, limits, redaction"]
+  runner["LuaRunner<br/>tc_core::lua_hooks: sandbox, allowlist, limits, secrets to their hosts"]
   wk["on the Worker, for the browser<br/>net: hooknet.rs<br/>secrets: Worker secrets, a sealed file"]
   ph["on the phone<br/>net: net.rs<br/>secrets: a file sealed by the Keystore"]
   dt["meghnaad-hook, for task<br/>net: net.rs<br/>secrets: environment variables"]
@@ -507,9 +507,10 @@ script in-process, which is how the phone runs it. A script's cold start is 3-10
 - The Lua VM is built once per Worker instance and reused, and rebuilt when the script changes (or given its own when
   busy waiting on the network for another request).
 - `hooknet.rs` gives a script the network: `fetch` with a timeout, no automatic redirect, a 1 MB cap on the answer, a log
-  line per call. A secret is looked up as a Worker secret `HOOK_SECRET_<NAME>` first, then in `web/hook-secrets.enc`, a
-  map sealed with the key derived from `TC_ENCRYPTION_SECRET`. `GET`/`PUT`/`DELETE /api/secrets[/<name>]` manage that
-  one, and names only ever come back.
+  line per call. A secret is looked up as a Worker secret `HOOK_SECRET_<NAME>` first (its hosts in
+  `HOOK_SECRET_<NAME>_HOSTS`), then in `web/hook-secrets.enc`, a map of value and hosts (`tc_core::hook_secrets`) sealed
+  with the key derived from `TC_ENCRYPTION_SECRET`. `GET`/`PUT`/`DELETE /api/secrets[/<name>]` manage that one; names
+  and hosts come back, never a value, and a secret's hosts are only ever set with its value.
 
 ### What a script may do
 
@@ -520,7 +521,11 @@ gives a script an error. The runner enforces the rules whichever host it is:
 - the script declares the hosts it may call with `allow_hosts` while it loads, and can't widen them later;
 - only `https://` (or `http://` to this machine), at most five requests and 256 KB of body per call, and a timeout of at
   most 10 seconds;
-- the value of every secret it read is replaced by `***` in what it printed, failed with or returned;
+- a secret goes only to the hosts it was saved with (`tc_core::hook_secrets`), whatever the script declares. The script
+  holds a stand-in, `⟦secret:NAME⟧`, never the value; the runner puts the value in only in the copy of a request to one
+  of those hosts (address, headers, body; never the host part). A request that names a secret for any other host is
+  refused before it leaves, and a value a response repeats is turned back into the stand-in. So whoever can change the
+  script (a signed-in page, the bucket's keys, a git token) can't redirect a secret: that takes the value, typed again;
 - a failed request comes back to the script as `nil` and a reason, because an error from an async function ends the call
   and can't be caught with `pcall`.
 
@@ -649,11 +654,6 @@ CLI's cooperation.
   `latest`. A failure is ignored, since the push it follows has already happened. A replica last synced before the
   oldest surviving version can no longer catch up from versions alone, which is the same for the CLI's own server.
 
-### Between the browser and the Worker
-
-The page's replica syncs through `RemoteServer`, a TaskChampion `Server` that speaks `tc_core::wire` to the Worker
-instead of touching the bucket. The Worker runs `CloudServer` and answers from it, so everything above happens there,
-and the page never holds the key.
 ### To a git branch
 
 `task` 3.5.0 can sync to a git repository (`sync.git.*`, TaskChampion's `gitsync`), and `tc_core::gitsync` is the same
@@ -678,6 +678,11 @@ pushes; the Worker and the phone have no `git`, so they use the forge's API (`tc
 - **Commits** are made as `taskchampion <taskchampion@local>` with the CLI's messages. History grows forever, as with
   the CLI.
 
+### Between the browser and the Worker
+
+The page's replica syncs through `RemoteServer`, a TaskChampion `Server` that speaks `tc_core::wire` to the Worker
+instead of touching the bucket. The Worker runs `CloudServer` and answers from it, so everything above happens there,
+and the page never holds the key.
 
 - **Pull in batches.** TaskChampion asks for the version after the one it has, one at a time.
   `GET /api/tc/pull?since=` answers with up to 24 versions in one body (each 16 bytes of id, 16 of parent, a length and
@@ -927,7 +932,7 @@ burndown charts bar by bar, `summary`/`projects`/`tags` output, `calc` results, 
 | `tests/sync_cost.rs`, `replica_sync.rs` | R2 call counts per sync; two replicas converging |
 | `tests/memory.rs` | Peak memory of a cold start and of requests |
 | `tests/warm.rs` | The cached task list equals a fresh read after every step of a long random run |
-| `tests/lua_net.rs` | `http` and `secret()` against a fake host: the allowlist (exact, wildcard, no user-info tricks), https only, request limits, a failed request as `nil` and a reason, a secret's value kept out of everything, and a second call while one waits on the network |
+| `tests/lua_net.rs` | `http` and `secret()` against a fake host: the allowlist (exact, wildcard, no user-info tricks), https only, request limits, a failed request as `nil` and a reason, a secret going only to its own hosts (every way out: another host, the address, a header, the body, encoding, an echo, a redirect of the host), and a second call while one waits on the network |
 | `tests/lua_hooks.rs` | Lua hooks through the real `execute`: each hook point, the tag set, dates and durations, UDAs, refusing, what a script may not change, `hooks=off`, syntax errors with their line, and the sandbox (no files or loading, an endless loop is stopped) |
 | `crates/hook-shim/tests/protocol.rs` | `meghnaad-hook` as `task` runs it, from a task on standard input to what it prints and exits with: each hook, the changes written back in `task`'s form, refusing, a script that doesn't load, secrets by exact name, `http` against a local server, the zone, `install` and `uninstall` |
 | `tests/saved.rs` | A replica saved to bytes and loaded again is the same replica, carries on the same way and syncs; unreadable copies are refused |

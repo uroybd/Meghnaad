@@ -210,4 +210,5 @@ what is left. Dated entries, newest last.
 - Sizes (gzip -9, debug names dropped): R2 Worker 697,163 → 698,457; git Worker 715,531 (about 17 KB over R2, not "at
   or below" as the design guessed: the GraphQL and forge requests); engine 861,823 → 861,767 (unchanged).
 - Left: GitHub interop (a test repository and a token from the person), and the Kotlin screens on an emulator.
+- Sizes after 0012 (which adds to both Workers): R2 707,281, git 724,365.
 

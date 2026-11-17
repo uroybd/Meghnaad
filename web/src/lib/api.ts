@@ -404,18 +404,36 @@ export async function putHooks(text: string): Promise<string[]> {
   return res.defined;
 }
 
-/** The names of the secrets kept from the app for hooks (never their values). */
-export async function getSecretNames(): Promise<string[]> {
-  return (await request<{ names: string[] }>('/api/secrets')).names;
+/** A secret kept for hooks, as the app may see it: its name and the hosts it may be sent to, never its value. */
+export interface SecretInfo {
+  name: string;
+  hosts: string[];
 }
 
-/** Keep a secret for hooks, sealed in the bucket. It can be replaced, never read back; a script asks for it by name. */
-export async function putSecret(name: string, value: string): Promise<void> {
+/** The secrets kept from the app for hooks, with their hosts (never their values). */
+export async function getSecrets(): Promise<SecretInfo[]> {
+  const r = await request<{ secrets?: SecretInfo[]; names: string[] }>('/api/secrets');
+  return r.secrets ?? r.names.map((name) => ({ name, hosts: [] }));
+}
+
+/**
+ * Keep a secret for hooks, sealed in the bucket, with the hosts it may be sent to. It can be replaced, never read back,
+ * and its hosts are only ever set with its value; a script asks for it by name and can send it only to those hosts.
+ */
+export async function putSecret(name: string, value: string, hosts: string[]): Promise<void> {
   await request<{ ok: true }>(`/api/secrets/${encodeURIComponent(name)}`, {
     method: 'PUT',
-    headers: { 'content-type': 'text/plain; charset=utf-8' },
-    body: value,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ value, hosts }),
   });
+}
+
+/** Hosts as typed in one field: separated by commas or spaces, blanks dropped. */
+export function hostsFromText(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((h) => h.trim())
+    .filter(Boolean);
 }
 
 export async function deleteSecret(name: string): Promise<void> {

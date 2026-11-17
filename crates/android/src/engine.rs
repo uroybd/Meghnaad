@@ -444,7 +444,7 @@ impl Engine {
                 return failed("a secret's name is letters, digits and underscores, starting with a letter".into());
             }
             return match method {
-                "PUT" => match self.secrets.set(name, &String::from_utf8_lossy(body)) {
+                "PUT" => match tc_core::hook_secrets::from_request(body).and_then(|s| self.secrets.set(name, s)) {
                     Ok(()) => json(serde_json::json!({ "ok": true })),
                     Err(e) => failed(e),
                 },
@@ -456,8 +456,11 @@ impl Engine {
             };
         }
         if path == "/api/secrets" && method == "GET" {
-            return match self.secrets.names() {
-                Ok(names) => json(serde_json::json!({ "names": names })),
+            return match self.secrets.listed() {
+                Ok(listed) => {
+                    let names: Vec<&str> = listed.iter().map(|l| l.name.as_str()).collect();
+                    json(serde_json::json!({ "secrets": listed, "names": names }))
+                }
                 Err(e) => Reply::error(500, e),
             };
         }

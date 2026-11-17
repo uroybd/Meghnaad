@@ -373,8 +373,9 @@ end
 ```
 
 The Lua runs in a sandbox (`string`, `table` and `math` only; no files) and is stopped if it runs too long. Because it runs
-on the Worker, a script can call other services (`http.post(...)`, to hosts it declares, over https) and read named secrets
-(`secret("jira")`) that are kept apart from the script and never reach the page. The Lua adds about 305 KB (compressed) to
+on the Worker, a script can call other services (`http.post(...)`, to hosts it declares, over https) and use named secrets
+(`secret("jira")`) that are kept apart from the script, never reach the page, and go only to the hosts you saved them
+with. The Lua adds about 305 KB (compressed) to
 the Worker; the engine in the browser is unaffected.
 
 The same script runs with the real `task` on your computer through `meghnaad-hook`, which `task` calls as an ordinary hook

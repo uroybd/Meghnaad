@@ -304,7 +304,8 @@ isn't kept.
 
 ### Hooks run on the phone
 
-They run in the same Lua sandbox with the same `http` and `secret()`, from the script you edit in
+They run in the same Lua sandbox with the same `http` and `secret()` (each secret going only to the hosts you saved it
+with, so a script that arrives from the bucket or the branch can't send the phone's secrets anywhere else), from the script you edit in
 **Settings → Hooks**. The phone makes their network calls, and the secrets are sealed with the Keystore key.
 
 ### No Cloudflare Access, no Worker

@@ -163,8 +163,8 @@ fn a_secret_is_the_environment_variable_of_that_exact_name() {
     assert!(o.status.success(), "{}", out(&o));
     assert_eq!(
         json_line(&o)["description"],
-        "token ***",
-        "its value is kept out of what comes back"
+        "token ⟦secret:JIRA_TOKEN⟧",
+        "a script holds a stand-in, never the value"
     );
     // No prefix is tried: another variable that merely ends the same way is not it.
     let o = run(
@@ -222,7 +222,16 @@ fn a_script_can_call_a_web_service_it_declared() {
            end"#
     );
     let (data, exe) = setup("http", &script, "on-add.meghnaad");
+    // Without API_TOKEN_HOSTS the secret goes nowhere, whatever the script declares.
     let o = run(&data, &exe, &format!("{TASK}\n"), &[("API_TOKEN", "tok123")]);
+    assert!(!o.status.success());
+    assert!(out(&o).contains("API_TOKEN can't be sent anywhere yet"), "{}", out(&o));
+    let o = run(
+        &data,
+        &exe,
+        &format!("{TASK}\n"),
+        &[("API_TOKEN", "tok123"), ("API_TOKEN_HOSTS", "localhost")],
+    );
     assert!(o.status.success(), "{}", out(&o));
     assert_eq!(json_line(&o)["jira"], "PAY-7");
     let request = seen.join().unwrap().to_ascii_lowercase();

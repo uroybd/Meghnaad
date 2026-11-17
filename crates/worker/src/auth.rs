@@ -195,10 +195,12 @@ pub fn missing_settings(req: &Request, env: &Env) -> Vec<&'static str> {
     if dev_bypass(req, env) {
         return Vec::new();
     }
-    ["TEAM_DOMAIN", "POLICY_AUD"]
+    let mut missing: Vec<&'static str> = ["TEAM_DOMAIN", "POLICY_AUD"]
         .into_iter()
         .filter(|n| setting(env, n).is_none())
-        .collect()
+        .collect();
+    missing.extend(crate::backend::missing(env));
+    missing
 }
 
 pub async fn verify(req: &Request, env: &Env) -> Result<Identity, AuthError> {

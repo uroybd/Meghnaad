@@ -11,10 +11,13 @@
 //!
 //! The network and secrets are not the runner's to give: the host hands it a [`Net`], or none. With one, a script can
 //! `http.get(...)`, `http.post(...)` and `secret("name")`, but only to hosts it declares at the top of the script
-//! (`allow_hosts{"acme.atlassian.net"}`), over https, a few requests a call, and a secret's value is kept out of
-//! whatever the script prints or returns. The Worker is the host that has one; a host with none gets an error.
+//! (`allow_hosts{"acme.atlassian.net"}`), over https, a few requests a call. A script never holds a secret's value:
+//! `secret("NAME")` is a stand-in, `⟦secret:NAME⟧`, which the runner replaces with the value only in a request to one of
+//! the hosts the secret was saved with ([`crate::hook_secrets`]), whatever hosts the script declares. A value a response
+//! echoes back is turned into the stand-in again, and none reaches what the script prints or returns.
 
 use crate::dates::{format_vague, parse_date_expr, parse_duration, Clock, DateFormat};
+use crate::hook_secrets::{self, Secret};
 use crate::hooks::{Kind, Line};
 use async_trait::async_trait;
 use omnilua::{Lua, Sandbox, SandboxConfig, Table, Value};
@@ -62,8 +65,8 @@ pub struct HttpResponse {
 #[async_trait(?Send)]
 pub trait Net {
     async fn request(&self, request: HttpRequest) -> Result<HttpResponse, String>;
-    /// The value of a secret, or `None` if there is none by that name.
-    async fn secret(&self, name: &str) -> Result<Option<String>, String>;
+    /// A secret and the hosts it may be sent to, or `None` if there is none by that name.
+    async fn secret(&self, name: &str) -> Result<Option<Secret>, String>;
 }
 
 /// What a script may use beyond computing, and what it has used in this call.
@@ -74,8 +77,10 @@ struct Access {
     loading: Cell<bool>,
     /// The requests made in this call so far.
     calls: Cell<u32>,
-    /// The values of the secrets this call read, so they stay out of what it prints and returns.
+    /// The values of the secrets this call sent, so they stay out of what it prints and returns.
     secrets: RefCell<Vec<String>>,
+    /// The secrets this call has looked up, by name.
+    known: RefCell<Vec<(String, Secret)>>,
 }
 
 /// What a call to a hook came to when it did not finish: why, and whatever the script printed first.
@@ -172,6 +177,7 @@ impl LuaRunner {
             loading: Cell::new(true),
             calls: Cell::new(0),
             secrets: RefCell::default(),
+            known: RefCell::default(),
         });
         install_host(&lua, &clock, &lines, &access).map_err(lua_err)?;
         lua.load(PRELUDE).set_name("prelude").exec().map_err(lua_err)?;
@@ -230,6 +236,7 @@ impl LuaRunner {
         self.lines.borrow_mut().clear();
         self.access.calls.set(0);
         self.access.secrets.borrow_mut().clear();
+        self.access.known.borrow_mut().clear();
         self.sandbox.reset();
         let result = self.invoke(entry, args).await;
         self.busy.set(false);
@@ -436,20 +443,110 @@ fn install_host(
         lua.create_async_function(move |_, name: String| {
             let a = Rc::clone(&a);
             async move {
-                let net = a.net.clone().ok_or_else(|| fail("secrets are not available here"))?;
-                match net.secret(&name).await.map_err(fail)? {
-                    Some(value) => {
-                        if !value.is_empty() {
-                            a.secrets.borrow_mut().push(value.clone());
-                        }
-                        Ok(value)
-                    }
-                    None => Err(fail(format!("there is no secret called {name}"))),
-                }
+                look_up(&a, &name).await?;
+                Ok(stand_in(&name))
             }
         })?,
     )?;
     lua.globals().set("__host", host)
+}
+
+/// What a script holds in place of a secret's value.
+fn stand_in(name: &str) -> String {
+    format!("{STAND_IN_OPEN}{name}{STAND_IN_CLOSE}")
+}
+
+const STAND_IN_OPEN: &str = "⟦secret:";
+const STAND_IN_CLOSE: &str = "⟧";
+
+/// The secret called `name`, from this call's or the host's, so a stand-in can be filled in.
+async fn look_up(access: &Access, name: &str) -> omnilua::Result<Secret> {
+    if let Some((_, s)) = access.known.borrow().iter().find(|(n, _)| n == name) {
+        return Ok(s.clone());
+    }
+    let net = access
+        .net
+        .clone()
+        .ok_or_else(|| fail("secrets are not available here"))?;
+    let found = net.secret(name).await.map_err(fail)?;
+    let secret = found.ok_or_else(|| fail(format!("there is no secret called {name}")))?;
+    access.known.borrow_mut().push((name.to_owned(), secret.clone()));
+    Ok(secret)
+}
+
+/// The names of the stand-ins in `text`, in order.
+fn stand_ins(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(STAND_IN_OPEN) {
+        rest = &rest[at + STAND_IN_OPEN.len()..];
+        let Some(end) = rest.find(STAND_IN_CLOSE) else { break };
+        let name = &rest[..end];
+        if hook_secrets::valid_name(name) && !names.iter().any(|n| n == name) {
+            names.push(name.to_owned());
+        }
+        rest = &rest[end + STAND_IN_CLOSE.len()..];
+    }
+    names
+}
+
+/// Fill in the secrets a request names, once each is known to be allowed to go to `host`. Returns the values used.
+async fn fill_in(access: &Access, host: &str, request: &mut HttpRequest) -> omnilua::Result<Vec<(String, String)>> {
+    let mut names = stand_ins(&request.url);
+    for (_, v) in &request.headers {
+        names.extend(stand_ins(v));
+    }
+    if let Some(b) = &request.body {
+        names.extend(stand_ins(b));
+    }
+    names.sort();
+    names.dedup();
+    let mut used = Vec::new();
+    for name in names {
+        let secret = look_up(access, &name).await?;
+        if secret.hosts.is_empty() {
+            return Err(fail(format!(
+                "{name} can't be sent anywhere yet: give it the hosts it may go to in Settings → Hooks → Secrets"
+            )));
+        }
+        if !hook_secrets::matches(&secret.hosts, host) {
+            return Err(fail(format!(
+                "{name} may only be sent to {}, not {host}",
+                secret.hosts.join(", ")
+            )));
+        }
+        used.push((stand_in(&name), secret.value));
+    }
+    if used.is_empty() {
+        return Ok(used);
+    }
+    let fill = |text: &str| used.iter().fold(text.to_owned(), |t, (from, to)| t.replace(from, to));
+    let url = fill(&request.url);
+    // The address after filling in names the same host: a value is never part of where a request goes.
+    if split_url(&url).map(|(_, h)| h).as_deref() != Some(host) {
+        return Err(fail("a secret can't be part of a request's host"));
+    }
+    request.url = url;
+    for (_, v) in &mut request.headers {
+        *v = fill(v);
+    }
+    if let Some(b) = &mut request.body {
+        *b = fill(b);
+    }
+    access
+        .secrets
+        .borrow_mut()
+        .extend(used.iter().map(|(_, v)| v.clone()).filter(|v| !v.is_empty()));
+    Ok(used)
+}
+
+/// `text` with every value in `used` turned back into its stand-in.
+fn hide(text: &str, used: &[(String, String)]) -> String {
+    used.iter()
+        .filter(|(_, v)| !v.is_empty())
+        .fold(text.to_owned(), |t, (stand_in, value)| {
+            t.replace(value.as_str(), stand_in)
+        })
 }
 
 fn fail(message: impl std::fmt::Display) -> omnilua::Error {
@@ -555,19 +652,26 @@ async fn http_call(
         return Err(fail("the request body is too large"));
     }
 
-    let sent = net
-        .request(HttpRequest {
-            method,
-            url,
-            headers,
-            body,
-            timeout_secs: timeout,
-        })
-        .await;
-    let response = match sent {
-        Ok(r) => r,
-        Err(reason) => return Ok((Value::Nil, Some(reason))),
+    let mut request = HttpRequest {
+        method,
+        url,
+        headers,
+        body,
+        timeout_secs: timeout,
     };
+    let used = fill_in(access, &host, &mut request).await?;
+    let sent = net.request(request).await;
+    let mut response = match sent {
+        Ok(r) => r,
+        Err(reason) => return Ok((Value::Nil, Some(hide(&reason, &used)))),
+    };
+    // A service that echoes a credential back gives the script the stand-in, not the value.
+    if !used.is_empty() {
+        response.body = hide(&response.body, &used);
+        for (_, v) in &mut response.headers {
+            *v = hide(v, &used);
+        }
+    }
 
     let t = lua.create_table()?;
     t.set("status", i64::from(response.status))?;

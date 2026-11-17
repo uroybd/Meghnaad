@@ -5,10 +5,12 @@
     checkHooks,
     deleteSecret,
     getHooks,
-    getSecretNames,
+    getSecrets,
+    hostsFromText,
     putHooks,
     putSecret,
     type HookCheck,
+    type SecretInfo,
   } from './api';
   import type { HookEditor } from './hookEditor';
   import { HOOKS_EXAMPLE } from './hooksExample';
@@ -31,31 +33,37 @@
   let error = $state<string | null>(null);
   let done = $state(false);
 
-  // Secrets: kept from the app, sealed in the bucket. Only their names are ever shown.
-  let secrets = $state<string[]>([]);
+  // Secrets: kept from the app, sealed in the bucket. Only their names and hosts are ever shown.
+  let secrets = $state<SecretInfo[]>([]);
   let secretName = $state('');
   let secretValue = $state('');
+  let secretHosts = $state('');
+  const hostList = $derived(hostsFromText(secretHosts));
   let secretBusy = $state(false);
   let secretError = $state<string | null>(null);
   const secretNameOk = $derived(/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(secretName));
 
   async function loadSecrets() {
     try {
-      secrets = await getSecretNames();
+      secrets = await getSecrets();
     } catch {
       // The editor works without them; setting one says why it could not.
     }
   }
 
   async function keepSecret() {
-    if (!secretNameOk || !secretValue || secretBusy) return;
+    if (!secretNameOk || !secretValue || !hostList.length || secretBusy) return;
     secretBusy = true;
     secretError = null;
     try {
-      await putSecret(secretName, secretValue);
-      store.notify(`Secret ${secretName} saved. Read it in a hook with secret("${secretName}").`, 'ok');
+      await putSecret(secretName, secretValue, hostList);
+      store.notify(
+        `Secret ${secretName} saved. Use it in a hook with secret("${secretName}"), in a request to ${hostList.join(', ')}.`,
+        'ok',
+      );
       secretName = '';
       secretValue = '';
+      secretHosts = '';
       await loadSecrets();
     } catch (e) {
       secretError = e instanceof ApiError ? e.message : 'The secret could not be saved.';
@@ -205,20 +213,32 @@
     <div class="secrets">
       <h3>Secrets</h3>
       <p class="dim">
-        A secret is a value a script reads with <code>secret("name")</code> instead of having it in the script: a token
+        A secret is a value a script uses with <code>secret("name")</code> instead of having it in the script: a token
         for
         <code>http.post(…)</code>, say. It is kept sealed in your bucket with the same key as your tasks, can be
-        replaced but never shown again, and is hidden from anything a hook prints or returns. (A Worker secret called
-        <code>HOOK_SECRET_NAME</code>, set with <code>wrangler secret put</code> or in the dashboard, is read the same way
-        and wins over one kept here.)
+        replaced but never shown again, and goes <strong>only to the hosts you give it</strong>: the script holds a
+        stand-in, and the value is put in only for a request to one of them, whatever the script says. Changing the
+        hosts means typing the value again. (A Worker secret called <code>HOOK_SECRET_NAME</code>, with its hosts in
+        <code>HOOK_SECRET_NAME_HOSTS</code>, set with <code>wrangler</code> or in the dashboard, is used the same way and
+        wins over one kept here.)
       </p>
       {#if secrets.length}
         <ul class="names" aria-label="Secrets that are set">
-          {#each secrets as name (name)}
+          {#each secrets as secret (secret.name)}
             <li>
-              <code>{name}</code>
-              <button type="button" class="ghost" aria-label="Remove {name}" onclick={() => removeSecret(name)}
-                >Remove</button
+              <code>{secret.name}</code>
+              {#if secret.hosts.length}
+                <span class="dim">→ {secret.hosts.join(', ')}</span>
+              {:else}
+                <span class="needs" title="It goes nowhere until it has hosts: keep it again with its value and hosts"
+                  >needs hosts</span
+                >
+              {/if}
+              <button
+                type="button"
+                class="ghost"
+                aria-label="Remove {secret.name}"
+                onclick={() => removeSecret(secret.name)}>Remove</button
               >
             </li>
           {/each}
@@ -240,8 +260,16 @@
           spellcheck="false"
         />
         <SecretInput bind:value={secretValue} placeholder="value" label="Secret value" />
-        <button type="submit" disabled={!secretNameOk || !secretValue || secretBusy}
-          >{secrets.includes(secretName) ? 'Replace' : 'Keep'}</button
+        <input
+          bind:value={secretHosts}
+          placeholder="hosts (acme.atlassian.net)"
+          aria-label="Hosts it may be sent to"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <button type="submit" disabled={!secretNameOk || !secretValue || !hostList.length || secretBusy}
+          >{secrets.some((s) => s.name === secretName) ? 'Replace' : 'Keep'}</button
         >
       </form>
       {#if secretError}<p class="err" role="alert">{secretError}</p>{/if}
@@ -361,6 +389,10 @@
     padding: 2px 4px 2px 8px;
     border: 1px solid var(--line);
     border-radius: 999px;
+  }
+  .secrets .needs {
+    font-size: 12px;
+    color: var(--err);
   }
   .add-secret {
     display: flex;
