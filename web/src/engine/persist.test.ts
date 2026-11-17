@@ -1,7 +1,7 @@
 // @vitest-environment node
 // (jsdom does not always carry the streams API the browser has; Node does.)
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { forgetReplica, loadReplica, pack, saveReplica, unpack } from './persist';
+import { forgetReplica, loadReplica, pack, saveReplica, sealWith, unpack } from './persist';
 
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 
@@ -60,5 +60,63 @@ describe('when the browser will not keep it (a full disk, a blocked database)', 
   it('says a copy could not be thrown away, so the page does not reload into it', async () => {
     vi.stubGlobal('indexedDB', broken);
     await expect(forgetReplica()).rejects.toThrow('QuotaExceededError');
+  });
+});
+
+/** An IndexedDB in memory: one database, one store, the few calls persist.ts makes. */
+function memoryDb() {
+  const data = new Map<unknown, unknown>();
+  const request = <T>(value: () => T) => {
+    const req: { result?: T; onsuccess?: () => void } = {};
+    queueMicrotask(() => {
+      req.result = value();
+      req.onsuccess?.();
+    });
+    return req;
+  };
+  const db = {
+    transaction() {
+      const t: { oncomplete?: () => void; objectStore: () => unknown } = {
+        objectStore: () => ({
+          get: (k: unknown) => request(() => data.get(k)),
+          put: (v: unknown, k: unknown) => request(() => data.set(k, v)),
+          delete: (k: unknown) => request(() => data.delete(k)),
+        }),
+      };
+      setTimeout(() => t.oncomplete?.(), 0);
+      return t;
+    },
+    close() {},
+  };
+  return {
+    data,
+    indexedDB: {
+      open() {
+        const req: { result: typeof db; onsuccess?: () => void } = { result: db };
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+    },
+  };
+}
+
+describe('the static flavour seals the copy', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const replica = new TextEncoder().encode('{"format":1,"tasks":"Buy milk for the party"}');
+
+  it('keeps nothing of the tasks readable, and opens it again with the same key', async () => {
+    const mem = memoryDb();
+    vi.stubGlobal('indexedDB', mem.indexedDB);
+    const key = crypto.getRandomValues(new Uint8Array(32));
+    await sealWith(key);
+    await saveReplica(replica);
+    const kept = mem.data.get('replica') as Uint8Array;
+    expect(text(kept)).not.toContain('Buy milk');
+    expect(text(kept.subarray(0, 4))).toBe('MGS1');
+    expect(await loadReplica()).toEqual(replica);
+
+    // Another key (another secret) reads it as no copy at all: the tasks come from the branch again.
+    await sealWith(crypto.getRandomValues(new Uint8Array(32)));
+    expect(await loadReplica()).toBeUndefined();
   });
 });

@@ -22,6 +22,8 @@ crates/tc-core      pure Rust lib, no I/O. Engine (cli/{mod,write,lists,tables,v
 HOSTS of tc-core (add no behaviour)
 crates/browser      tc-core → WASM, run in a Web Worker. Syncs via RemoteServer → Worker /api/tc/* (server.rs);
                     hooks via POST /api/run (hooks.rs). No "lua" feature. Built to web/src/engine/pkg.
+                    Feature "git" (git.rs): the static web app's engine, the branch reached from the page over fetch.
+crates/browser-hooks tc-core "lua" → WASM: the static app's hook runner, loaded by the page on first use (pkg/hooks).
 crates/worker       Cloudflare Worker, Rust → WASM, <1 MB gz (never grow it). auth.rs (Access JWT), session.rs
                     (derived key), store.rs (R2 ObjectStore), hooknet.rs (Lua fetch/secrets). Runs no commands.
                     Routes: /api/tc/*, /api/config*, /api/settings, /api/run, /api/hooks*, /api/secrets*, /api/health;

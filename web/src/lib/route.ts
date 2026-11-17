@@ -12,6 +12,8 @@
 // address and back.
 
 /** The tabs of Settings. */
+import { toAddress } from './base';
+
 export const SETTINGS_TABS = [
   'general',
   'appearance',
@@ -102,7 +104,7 @@ export function prefixFromPath(path: string): string | null {
 
 /** Everything to put in a message: the address with the site in front. */
 export function taskLink(uuid: string, origin: string): string {
-  return `${origin}${taskPath(uuid)}`;
+  return `${origin}${toAddress(taskPath(uuid))}`;
 }
 
 /**

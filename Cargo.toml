@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tc-core", "crates/worker", "crates/browser", "crates/android", "crates/hook-shim", "crates/tui"]
+members = ["crates/tc-core", "crates/worker", "crates/browser", "crates/browser-hooks", "crates/android", "crates/hook-shim", "crates/tui"]
 
 [workspace.package]
 # The root package.json's version, kept in step by `npm version` (scripts/version.mjs `sync`); a test checks they agree.

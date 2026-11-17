@@ -5,9 +5,14 @@
 //! syncs with the bucket through the Worker's `/api/tc/*` routes, where the secret stays. What the page keeps between
 //! visits is [`Engine::save`]'s bytes.
 //!
+//! Built for the static flavour, it syncs with a branch of a git repository instead, through the forge's API, once the
+//! page has unlocked it ([`Engine::connect_git`]); the settings routes are then answered here too ([`Engine::api`]).
+//!
 //! `run` and `import` answer in JSON: the result of the command (or `{ error }` if the request was not one), as the page
 //! reads it.
 
+#[cfg(feature = "git")]
+mod git;
 mod hooks;
 mod server;
 
@@ -58,6 +63,9 @@ pub struct Engine {
     hooks: Vec<String>,
     /// Where the Worker is (empty in the page, which uses its own address).
     base: String,
+    /// The git branch, once unlocked (the static flavour); `None` syncs through the Worker.
+    #[cfg(feature = "git")]
+    branch: Option<git::Branch>,
 }
 
 fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm) {
@@ -86,6 +94,8 @@ impl Engine {
             cfg: Config::default(),
             hooks: Vec::new(),
             base: String::new(),
+            #[cfg(feature = "git")]
+            branch: None,
         }
     }
 
@@ -124,9 +134,15 @@ impl Engine {
         self.warm.generation() as f64
     }
 
-    /// Pull what others have done and push what is waiting, with the bucket behind `base` (the Worker's address, empty
-    /// for the page's own).
+    /// Pull what others have done and push what is waiting, with the git branch once connected, else the bucket behind
+    /// `base` (the Worker's address, empty for the page's own).
     pub async fn sync(&mut self, base: String) -> Result<(), JsValue> {
+        #[cfg(feature = "git")]
+        let mut server: Box<dyn Server> = match &self.branch {
+            Some(b) => b.server(),
+            None => Box::new(RemoteServer::new(server::Http::new(base))),
+        };
+        #[cfg(not(feature = "git"))]
         let mut server: Box<dyn Server> = Box::new(RemoteServer::new(server::Http::new(base)));
         // The page is not short of time, and a snapshot every so often is what keeps the next cold start short.
         self.replica
@@ -181,4 +197,56 @@ fn remote_hooks(
         clock,
         dateformat,
     )))
+}
+
+/// The static flavour's part: the git branch and the settings routes, in the page.
+#[cfg(feature = "git")]
+#[wasm_bindgen]
+impl Engine {
+    /// The salt of the key for the tasks on this branch (`meta`'s), written with a new one if this is the first client.
+    /// The page derives the key from it and the encryption secret (PBKDF2, as TaskChampion does) and gives it to
+    /// [`connect_git`](Self::connect_git). An empty `api` is GitHub's, an empty `branch` is `taskchampion`.
+    pub async fn git_salt(api: String, repo: String, branch: String, token: String) -> Result<Vec<u8>, JsValue> {
+        git::salt(git::remote(&api, &repo, &branch, &token).map_err(js_error)?)
+            .await
+            .map_err(js_error)
+    }
+
+    /// Sync with this branch from now on, with this key (32 bytes). Nothing goes over the network until a sync.
+    pub fn connect_git(&mut self, api: &str, repo: &str, branch: &str, token: &str, key: &[u8]) -> Result<(), JsValue> {
+        let remote = git::remote(api, repo, branch, token).map_err(js_error)?;
+        self.branch = Some(git::Branch::new(remote, key).map_err(js_error)?);
+        Ok(())
+    }
+
+    /// A request for one of the settings routes the page makes of a Worker (`/api/config`, `/api/settings`,
+    /// `/api/secrets`, …), answered from the git branch: `{ status, type, body }`. A route that is not one is a 404.
+    pub async fn api(&self, method: &str, path: &str, body: &[u8]) -> String {
+        let reply = match &self.branch {
+            None => tc_core::webapi::Reply::error(409, "not connected to a git branch"),
+            // Checked first by the hooks module (`tc-browser-hooks`), which the engine's Web Worker loads for it.
+            Some(b) if method == "PUT" && path == "/api/hooks" => b.save_hooks(body).await,
+            Some(b) => match b.secrets_route(method, path, body).await {
+                Some(r) => r,
+                None => b.settings().handle(method, path, body).await.unwrap_or_else(|| {
+                    tc_core::webapi::Reply::error(404, format!("there is no {method} {path} in the static app"))
+                }),
+            },
+        };
+        serde_json::json!({
+            "status": reply.status,
+            "type": reply.content_type,
+            "body": String::from_utf8_lossy(&reply.body),
+        })
+        .to_string()
+    }
+
+    /// The hook secrets on the branch, opened (`{"NAME": {"value", "hosts"}}`), for the hooks module to run the script
+    /// with: in the static flavour the page holds the key, so it is the one place they can be opened.
+    pub async fn hook_secrets(&self) -> Result<Vec<u8>, JsValue> {
+        match &self.branch {
+            None => Ok(Vec::new()),
+            Some(b) => Ok(b.secrets().await.map_err(js_error)?.to_bytes()),
+        }
+    }
 }

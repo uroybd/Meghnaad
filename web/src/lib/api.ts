@@ -1,4 +1,5 @@
 import { engine, engineAvailable } from '../engine/client.svelte';
+import { STATIC } from '../engine/flavour';
 import type { CliResponse, ConfigResponse, ImportReport, RcFiles, TaskrcResponse } from './types';
 
 export class ApiError extends Error {
@@ -27,10 +28,21 @@ function safeToRepeat(init?: RequestInit): boolean {
  */
 const RESOURCE_LIMIT = /\b1102\b|exceeded resource limits/i;
 
+/**
+ * A request to one of the settings routes. In the static flavour there is no server: the engine answers them from the
+ * git branch, as the Worker would have.
+ */
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  if (!STATIC) return fetch(path, init);
+  const body = typeof init?.body === 'string' ? init.body : '';
+  const a = await engine.api((init?.method ?? 'GET').toUpperCase(), path, body);
+  return new Response(a.body, { status: a.status, headers: { 'content-type': a.type } });
+}
+
 async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(path, init);
+    res = await apiFetch(path, init);
   } catch {
     throw new ApiError('Could not reach the server.', 0);
   }
@@ -103,6 +115,8 @@ function fetchHooks(): Promise<string[] | undefined> {
 }
 
 async function fetchSetup(): Promise<SetupStatus | null> {
+  // Nothing to set up on a server: the static app is set up by connecting this device.
+  if (STATIC) return null;
   try {
     const res = await fetch('/api/setup');
     if (!res.ok) return null;
@@ -260,7 +274,7 @@ export function getConfig(reuse = false): Promise<ConfigResponse> {
 export async function getTaskrcText(): Promise<string> {
   let res: Response;
   try {
-    res = await fetch('/api/config/taskrc');
+    res = await apiFetch('/api/config/taskrc');
   } catch {
     throw new ApiError('Could not reach the server.', 0);
   }
@@ -292,7 +306,7 @@ export function getRcFiles(): Promise<RcFiles> {
 export async function getRcFile(path: string): Promise<string> {
   let res: Response;
   try {
-    res = await fetch(filePath(path));
+    res = await apiFetch(filePath(path));
   } catch {
     throw new ApiError('Could not reach the server.', 0);
   }
@@ -327,7 +341,9 @@ export function importRcFiles(
 }
 
 /** Fetch a taskrc from a link (the Worker does the fetch) and save it as a pasted one is. */
-export function importTaskrcUrl(url: string): Promise<TaskrcResponse> {
+export async function importTaskrcUrl(url: string): Promise<TaskrcResponse> {
+  // No Worker to fetch it: the page does, so the link's host has to allow it (CORS).
+  if (STATIC) return putTaskrc(await fetchFromPage(url, 'taskrc'));
   return request<TaskrcResponse>('/api/config/taskrc/url', {
     method: 'POST',
     headers: { 'content-type': 'text/plain' },
@@ -335,8 +351,25 @@ export function importTaskrcUrl(url: string): Promise<TaskrcResponse> {
   });
 }
 
+/** A file from a link, fetched by the page itself (the static flavour has no Worker to do it). */
+async function fetchFromPage(url: string, what: string): Promise<string> {
+  if (!/^https:\/\//i.test(url.trim())) throw new ApiError(`A ${what} link has to start with https://.`, 400);
+  let res: Response;
+  try {
+    res = await fetch(url.trim(), { credentials: 'omit', redirect: 'follow' });
+  } catch {
+    throw new ApiError(
+      `The ${what} could not be fetched: its host doesn't allow this page to read it (CORS), or it can't be reached. Download it and paste it instead.`,
+      0,
+    );
+  }
+  if (!res.ok) throw new ApiError(`The ${what} could not be fetched (${res.status}).`, res.status);
+  return res.text();
+}
+
 /** A calendar (`.ics`) from a link, for Add holidays. The Worker fetches it, so the calendar host's CORS rules don't matter. */
 export async function fetchCalendar(url: string): Promise<string> {
+  if (STATIC) return fetchFromPage(url, 'calendar');
   let res: Response;
   try {
     res = await fetch('/api/config/holidays/calendar', {

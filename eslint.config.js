@@ -16,6 +16,7 @@ export default ts.config(
       'app/**',
       'docs/**',
       'web/dist/**',
+      'web/dist-static/**',
       'web/src/engine/pkg/**',
       'web/.svelte-kit/**',
       '.wrangler/**',
@@ -32,7 +33,7 @@ export default ts.config(
   },
   {
     // The deploy and build scripts run in Node.
-    files: ['scripts/**/*.mjs', '*.config.js'],
+    files: ['scripts/**/*.mjs', 'templates/**/*.mjs', '*.config.js'],
     languageOptions: { globals: globals.node },
   },
   {

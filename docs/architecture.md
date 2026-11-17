@@ -237,6 +237,26 @@ before the engine takes them up.
 
 The rest of the page is described in [The web app](#the-web-app).
 
+### The static flavour
+
+The same app, built with `VITE_FLAVOUR=static` (`npm run build:static`), runs with no server: nothing under `/api` exists,
+so the engine answers it. `scripts/build-engine.mjs --static` builds `crates/browser` with its `git` feature (into
+`pkg/static`) and `crates/browser-hooks` (into `pkg/hooks`), each in its own cargo run so the engine doesn't pick up the
+Lua runner through feature unification.
+
+- `crates/browser/src/git.rs` reaches the branch over the page's `fetch` with `tc_core::forge`, as the git Worker does:
+  `GitServer` for the tasks, `WebSettings` over `GitObjects` for the settings, and the sealed hook secrets. `Engine.api`
+  answers the settings routes, and `api.ts` sends them there instead of to a server.
+- `vault.ts` and `session.ts` unlock it: PBKDF2 (SHA-256, 600,000 rounds) over the secret and the salt in `meta` gives the
+  key the engine gets with `connect_git`. The access (repository, branch, API, token) is kept in IndexedDB sealed with
+  the secret in OpenPGP's symmetric format (`pgp.ts`, over WebCrypto), and `persist.ts` seals the saved replica with
+  AES-GCM under a key derived from the same key. Tabs share an unlock over a `BroadcastChannel`.
+- Hooks: the engine's `/api/run` is answered inside the Web Worker by `pageHooks.ts`, which loads the hooks module
+  (`tc_core::lua_hooks`, the same runner as the Worker's) the first time a hook runs; its network goes through the
+  page's `fetch`.
+- `base.ts` lets it be served from a folder (`<base href>`, set by the deploy template), with `404.html` a copy of the
+  page for deep links, and a Content-Security-Policy in a meta tag and `_headers`.
+
 ## On Cloudflare
 
 ```mermaid

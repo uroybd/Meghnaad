@@ -15,7 +15,7 @@ function open(): Promise<IDBDatabase> {
   });
 }
 
-async function tx<T>(mode: IDBTransactionMode, use: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+export async function tx<T>(mode: IDBTransactionMode, use: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await open();
   try {
     return await new Promise<T>((resolve, reject) => {
@@ -61,12 +61,60 @@ export async function unpack(kept: Uint8Array): Promise<Uint8Array> {
   return isGzip(kept) ? through(kept, new DecompressionStream('gzip')) : kept;
 }
 
+// The static flavour keeps the copy sealed (AES-GCM, with a key made from the key of the tasks), since nothing else
+// stands between this browser's storage and the tasks: a sealed record starts with SEALED, then the IV.
+const SEALED = new TextEncoder().encode('MGS1');
+const IV = 12;
+let sealKey: CryptoKey | undefined;
+
+/** Seal the copy from now on with a key made from `key` (the key of the tasks, 32 bytes); it can't be read back out. */
+export async function sealWith(key: Uint8Array): Promise<void> {
+  const base = await crypto.subtle.importKey('raw', key as Uint8Array<ArrayBuffer>, 'HKDF', false, ['deriveKey']);
+  sealKey = await crypto.subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode('meghnaad replica') },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+function isSealed(bytes: Uint8Array): boolean {
+  return bytes.length > SEALED.length + IV && SEALED.every((b, i) => bytes[i] === b);
+}
+
+async function sealed(bytes: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
+  const iv = crypto.getRandomValues(new Uint8Array(IV));
+  const out = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes as Uint8Array<ArrayBuffer>),
+  );
+  const all = new Uint8Array(SEALED.length + IV + out.length);
+  all.set(SEALED);
+  all.set(iv, SEALED.length);
+  all.set(out, SEALED.length + IV);
+  return all;
+}
+
+async function opened(bytes: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
+  const iv = bytes.subarray(SEALED.length, SEALED.length + IV);
+  const body = bytes.subarray(SEALED.length + IV);
+  return new Uint8Array(
+    await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: iv as Uint8Array<ArrayBuffer> },
+      key,
+      body as Uint8Array<ArrayBuffer>,
+    ),
+  );
+}
+
 export async function loadReplica(): Promise<Uint8Array | undefined> {
   // Unreadable is the same as no copy at all: the bucket has everything that was pushed.
   const found = await tx<unknown>('readonly', (s) => s.get(KEY)).catch(() => undefined);
   if (!(found instanceof Uint8Array)) return undefined;
   try {
-    return await unpack(found);
+    // Sealing on, a copy that isn't sealed is not this device's to trust; sealing off, a sealed one can't be opened.
+    if (sealKey ? !isSealed(found) : isSealed(found)) return undefined;
+    return await unpack(sealKey ? await opened(found, sealKey) : found);
   } catch {
     // Damaged: the same as no copy at all, and the next visit starts from the bucket.
     return undefined;
@@ -74,7 +122,8 @@ export async function loadReplica(): Promise<Uint8Array | undefined> {
 }
 
 export async function saveReplica(bytes: Uint8Array): Promise<void> {
-  const kept = await pack(bytes);
+  const packed = await pack(bytes);
+  const kept = sealKey ? await sealed(packed, sealKey) : packed;
   await tx('readwrite', (s) => s.put(kept, KEY));
 }
 

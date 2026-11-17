@@ -7,7 +7,7 @@
 // built, so main.ts loads them before it imports the app.
 
 import init, { format_date, helper, initSync } from 'tc-engine';
-import wasmUrl from './pkg/tc_browser_bg.wasm?url';
+import wasmUrl from 'tc-engine-wasm?url';
 
 let loading: Promise<void> | undefined;
 let loaded = false;

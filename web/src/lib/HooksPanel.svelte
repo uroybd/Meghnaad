@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { STATIC } from '../engine/flavour';
   import {
     ApiError,
     checkHooks,
@@ -171,8 +172,14 @@
   <p class="dim">
     A hook is a Lua function that runs at the same four moments Taskwarrior runs its scripts: <code>on_launch</code>
     before a command, <code>on_add</code> for each new task, <code>on_modify</code> for each task a command changes, and
-    <code>on_exit</code> after it. They run on the server, so a script can hold secrets that never reach this page. Your
-    desktop's hooks (<code>~/.task/hooks</code>) are separate. <code>rc.hooks:off</code> turns them off for a command.
+    <code>on_exit</code> after it.
+    {#if STATIC}
+      They run in this page (the Lua is loaded the first time one runs), so a script's <code>http</code> requests go out from
+      your browser: a service has to allow that (CORS), or the request fails.
+    {:else}
+      They run on the server, so a script can hold secrets that never reach this page.
+    {/if}
+    Your desktop's hooks (<code>~/.task/hooks</code>) are separate. <code>rc.hooks:off</code> turns them off for a command.
   </p>
 
   {#if loadFailed}
@@ -215,10 +222,11 @@
       <p class="dim">
         A secret is a value a script uses with <code>secret("name")</code> instead of having it in the script: a token
         for
-        <code>http.post(…)</code>, say. It is kept sealed in your bucket with the same key as your tasks, can be
-        replaced but never shown again, and goes <strong>only to the hosts you give it</strong>: the script holds a
-        stand-in, and the value is put in only for a request to one of them, whatever the script says. Changing the
-        hosts means typing the value again. (A Worker secret called <code>HOOK_SECRET_NAME</code>, with its hosts in
+        <code>http.post(…)</code>, say. It is kept sealed in your {STATIC ? 'repository' : 'bucket'} with the same key as
+        your tasks, can be replaced but never shown again, and goes <strong>only to the hosts you give it</strong>: the
+        script holds a stand-in, and the value is put in only for a request to one of them, whatever the script says.
+        Changing the hosts means typing the value again. (A Worker secret called <code>HOOK_SECRET_NAME</code>, with its
+        hosts in
         <code>HOOK_SECRET_NAME_HOSTS</code>, set with <code>wrangler</code> or in the dashboard, is used the same way and
         wins over one kept here.)
       </p>

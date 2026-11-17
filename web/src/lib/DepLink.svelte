@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { toAddress } from './base';
   import { tick } from 'svelte';
   import { shortUuid } from './format';
   import { fetchTask } from './lookup';
@@ -99,7 +100,9 @@
       {/if}
       <span class="foot">
         <button type="button" class="open" onclick={open}>Open task</button>
-        <a class="dim mono" href={taskPath(uuid)} onclick={(e) => (e.preventDefault(), open())}>{taskPath(uuid)}</a>
+        <a class="dim mono" href={toAddress(taskPath(uuid))} onclick={(e) => (e.preventDefault(), open())}
+          >{taskPath(uuid)}</a
+        >
       </span>
     </span>
   {/if}

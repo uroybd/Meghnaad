@@ -51,6 +51,12 @@ jobs:
       - name: Clippy (engine for the browser, WebAssembly)
         run: cargo clippy -p tc-browser --target wasm32-unknown-unknown -- -D warnings
 
+      # The static web app's engine (the git branch, in the page) and its hooks module (spec 0013).
+      - name: Clippy (static app's engine and hooks module, WebAssembly)
+        run: |
+          cargo clippy -p tc-browser --target wasm32-unknown-unknown --features git -- -D warnings
+          cargo clippy -p tc-browser-hooks --target wasm32-unknown-unknown -- -D warnings
+
       # The engine in the Android app (native, with the S3 client and the JNI layer); linted for this machine, which
       # checks the same code.
       - name: Clippy (engine for Android)

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { BASE, fromAddress, toAddress } from './lib/base';
+  import { STATIC } from './engine/flavour';
+  import { lock } from './engine/session';
   import { onMount, tick } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
   import { engine } from './engine/client.svelte';
@@ -10,6 +13,7 @@
     ChartColumn,
     Folder,
     LayoutDashboard,
+    Lock,
     Tag,
     ListChecks,
     Menu,
@@ -64,9 +68,10 @@
   let addressReady = $state(false);
 
   async function followAddress() {
-    const canonical = await store.openFromAddress(location.pathname);
+    const here = fromAddress(location.pathname);
+    const canonical = await store.openFromAddress(here);
     // A longer prefix, or something that isn't there, is rewritten to the short address (or the front page).
-    if (canonical && canonical !== location.pathname) history.replaceState(null, '', canonical);
+    if (canonical && canonical !== here) history.replaceState(null, '', toAddress(canonical));
     routed = true;
   }
 
@@ -76,14 +81,14 @@
   $effect(() => {
     if (!routed || !(addressReady || store.detail)) return;
     const want = placePath(store.place);
-    const here = location.pathname;
+    const here = fromAddress(location.pathname);
     if (here === want) return;
     const a = parsePath(here);
     const finding = here === '/' || !a;
     const closing = a?.page === 'task' && store.place.page !== 'task';
     const tab = a?.page === 'settings' && store.place.page === 'settings';
-    if (finding || closing || tab) history.replaceState(null, '', want);
-    else history.pushState(null, '', want);
+    if (finding || closing || tab) history.replaceState(null, '', toAddress(want));
+    else history.pushState(null, '', toAddress(want));
   });
 
   /** The logo and the name go to the home page. Opened in a new tab (or with a modifier key) it is just the link to `/`. */
@@ -105,9 +110,10 @@
       // Where the address says wins over the home page (`/` is the home page). The reports and the boards had to be read
       // first to know what the address names, so it is followed again now that they are.
       .then(async () => {
-        if (!prefixFromPath(location.pathname)) {
-          const canonical = await store.openFromAddress(location.pathname);
-          if (canonical && canonical !== location.pathname) history.replaceState(null, '', canonical);
+        const here = fromAddress(location.pathname);
+        if (!prefixFromPath(here)) {
+          const canonical = await store.openFromAddress(here);
+          if (canonical && canonical !== here) history.replaceState(null, '', toAddress(canonical));
         }
         addressReady = true;
       });
@@ -288,8 +294,8 @@
       >
         <Menu size={20} />
       </button>
-      <a class="brand" href="/" aria-label="Meghnaad, home page" title="Home page" onclick={goHome}>
-        <img class="logo" src="/logo-64.png" width="28" height="28" alt="" />
+      <a class="brand" href={BASE} aria-label="Meghnaad, home page" title="Home page" onclick={goHome}>
+        <img class="logo" src="logo-64.png" width="28" height="28" alt="" />
         <strong class="name">Meghnaad</strong>
       </a>
       <nav class="tabs" aria-label="View">
@@ -351,6 +357,14 @@
         onclick={() => store.openSettings()}
         title="taskrc, tasksh and urgency settings"><Settings size={15} /> <span class="lbl">Settings</span></button
       >
+      {#if STATIC}
+        <button
+          class="ghost btn"
+          aria-label="Lock"
+          onclick={lock}
+          title="Lock every tab: the encryption secret is asked again"><Lock size={15} /></button
+        >
+      {/if}
     </header>
 
     {#if store.config?.config_error || engine.status === 'failed'}

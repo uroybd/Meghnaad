@@ -5,6 +5,7 @@ node_modules
 crates/worker/build
 crates/worker/build-git
 web/dist
+web/dist-static
 web/.svelte-kit
 *.log
 .deploy.vars

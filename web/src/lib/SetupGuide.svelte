@@ -29,7 +29,7 @@
 </script>
 
 <main class="guide">
-  <img src="/logo-64.png" width="48" height="48" alt="" />
+  <img src="logo-64.png" width="48" height="48" alt="" />
   <h1>Almost there</h1>
   <p class="lead">
     Meghnaad is deployed, but it doesn't know yet who is allowed in, so it refuses every request. That is on purpose:

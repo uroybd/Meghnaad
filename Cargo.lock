@@ -1712,6 +1712,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tc-browser-hooks"
+version = "0.7.1"
+dependencies = [
+ "async-trait",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "tc-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "tc-core"
 version = "0.7.1"
 dependencies = [

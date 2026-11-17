@@ -3,6 +3,9 @@
 // app imports it from. `node scripts/build-engine.mjs` always builds; `--if-stale` only when the Rust sources are
 // newer than what is there (what `npm run dev` and `npm run build:web` use). `--node` builds the same engine for Node
 // (into target/engine-node), which scripts/engine-cli.mjs uses to run commands against a Worker from a shell.
+// `--static` builds the static flavour's engine (with the `git` feature: sync and settings on a git branch) into
+// pkg/static, and its hooks module (crates/browser-hooks, the Lua runner) into pkg/hooks, which the page loads only
+// when a hook runs.
 //
 // wasm-bindgen's command-line tool has to be the same version as the `wasm-bindgen` crate in Cargo.lock. It is looked
 // for on the PATH and in worker-build's cache (worker-build downloads one for the Worker), and installed with cargo if
@@ -14,14 +17,26 @@ import { pathToFileURL } from 'node:url';
 import { capture, ROOT, run } from './deploy-lib.mjs';
 import { dropCustomSections } from './wasm-strip.mjs';
 
-const BUILT = join(ROOT, 'target', 'wasm32-unknown-unknown', 'release', 'tc_browser.wasm');
+const RELEASE = join(ROOT, 'target', 'wasm32-unknown-unknown', 'release');
+const BUILT = join(RELEASE, 'tc_browser.wasm');
+const HOOKS_BUILT = join(RELEASE, 'tc_browser_hooks.wasm');
 /** Where each kind of build goes, and how wasm-bindgen is asked to make it. */
+const PKG = join(ROOT, 'web', 'src', 'engine', 'pkg');
 const KINDS = {
-  web: { dir: join(ROOT, 'web', 'src', 'engine', 'pkg'), target: 'web' },
-  node: { dir: join(ROOT, 'target', 'engine-node'), target: 'nodejs' },
+  web: { dir: PKG, target: 'web', features: [], crates: ['tc-core', 'browser'] },
+  static: {
+    dir: join(PKG, 'static'),
+    target: 'web',
+    features: ['git'],
+    crates: ['tc-core', 'browser', 'browser-hooks'],
+  },
+  node: { dir: join(ROOT, 'target', 'engine-node'), target: 'nodejs', features: [], crates: ['tc-core', 'browser'] },
 };
 export const OUT = KINDS.web.dir;
+export const STATIC_OUT = KINDS.static.dir;
 export const NODE_OUT = KINDS.node.dir;
+export const HOOKS_OUT = join(PKG, 'hooks');
+const HOOKS_WASM = join(HOOKS_OUT, 'tc_browser_hooks_bg.wasm');
 const wasmOf = (kind) => join(KINDS[kind].dir, 'tc_browser_bg.wasm');
 
 /** The version of the `wasm-bindgen` crate in Cargo.lock. */
@@ -72,37 +87,52 @@ function newest(dir) {
 export function stale(kind = 'web') {
   if (!existsSync(wasmOf(kind))) return true;
   const built = statSync(wasmOf(kind)).mtimeMs;
-  const sources = [join(ROOT, 'crates', 'tc-core'), join(ROOT, 'crates', 'browser')].map(newest);
+  if (kind === 'static' && !existsSync(HOOKS_WASM)) return true;
+  const sources = KINDS[kind].crates.map((c) => newest(join(ROOT, 'crates', c)));
   return Math.max(...sources, statSync(join(ROOT, 'Cargo.lock')).mtimeMs) > built;
 }
 
 export function buildEngine(kind = 'web') {
-  const { dir, target } = KINDS[kind];
+  const { dir, target, features } = KINDS[kind];
   const wasm = wasmOf(kind);
   const version = bindgenVersion();
-  console.log('[engine] compiling crates/browser to WebAssembly');
-  let r = run('cargo', ['build', '--release', '--target', 'wasm32-unknown-unknown', '-p', 'tc-browser']);
+  console.log(`[engine] compiling crates/browser to WebAssembly${features.length ? ` (${features.join(', ')})` : ''}`);
+  const cargo = ['build', '--release', '--target', 'wasm32-unknown-unknown', '-p', 'tc-browser'];
+  let r = run('cargo', features.length ? [...cargo, '--features', features.join(',')] : cargo);
   if (r.status !== 0) throw new Error('cargo build failed');
+  if (kind === 'static') {
+    r = run('cargo', ['build', '--release', '--target', 'wasm32-unknown-unknown', '-p', 'tc-browser-hooks']);
+    if (r.status !== 0) throw new Error('cargo build failed for the hooks module');
+  }
   const bindgen = findBindgen(version);
   mkdirSync(dir, { recursive: true });
   r = run(bindgen, ['--target', target, '--no-typescript', '--out-dir', dir, BUILT]);
   if (r.status !== 0) throw new Error('wasm-bindgen failed');
+  const wasms = [wasm];
+  if (kind === 'static') {
+    mkdirSync(HOOKS_OUT, { recursive: true });
+    r = run(bindgen, ['--target', 'web', '--no-typescript', '--out-dir', HOOKS_OUT, HOOKS_BUILT]);
+    if (r.status !== 0) throw new Error('wasm-bindgen failed for the hooks module');
+    wasms.push(HOOKS_WASM);
+  }
   // The repository's package.json says "module"; what wasm-bindgen writes for Node is CommonJS.
   if (kind === 'node') writeFileSync(join(dir, 'package.json'), '{ "type": "commonjs" }\n');
   // As for the Worker: the names only help read a stack trace.
   if (!process.env.KEEP_WASM_NAMES) {
-    const before = readFileSync(wasm);
-    const after = dropCustomSections(before, ['name', 'producers', 'target_features']);
-    writeFileSync(wasm, after);
-    console.log(
-      `[engine] dropped the debug names: ${(before.length / 1024).toFixed(0)} KB -> ${(after.length / 1024).toFixed(0)} KB`,
-    );
+    for (const file of wasms) {
+      const before = readFileSync(file);
+      const after = dropCustomSections(before, ['name', 'producers', 'target_features']);
+      writeFileSync(file, after);
+      console.log(
+        `[engine] dropped the debug names: ${(before.length / 1024).toFixed(0)} KB -> ${(after.length / 1024).toFixed(0)} KB`,
+      );
+    }
   }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const kind = process.argv.includes('--node') ? 'node' : 'web';
+    const kind = process.argv.includes('--node') ? 'node' : process.argv.includes('--static') ? 'static' : 'web';
     if (process.argv.includes('--if-stale') && !stale(kind)) console.log('[engine] up to date');
     else buildEngine(kind);
   } catch (e) {

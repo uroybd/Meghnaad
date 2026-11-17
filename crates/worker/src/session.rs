@@ -185,12 +185,11 @@ pub async fn hook_runner(env: &Env) -> worker::Result<Option<Result<Rc<LuaRunner
     })
 }
 
-/// The secrets a hooks script may read, kept apart from the script: sealed with the same key as your tasks, in their own
-/// object, so that the bucket never holds one in the clear. Names can be listed and values replaced, never read back
-/// out by the app; only a running script gets a value.
-pub const SECRETS_KEY: &str = "web/hook-secrets.enc";
-/// What the sealed secrets are bound to (as a version id is for a task version), so one can't stand in for the other.
-const SECRETS_SEAL: uuid::Uuid = uuid::Uuid::from_u128(0x4d65_6768_6e61_6164_686f_6f6b_7365_6372);
+// The secrets a hooks script may read, kept apart from the script: sealed with the same key as your tasks, in their own
+// object, so that the bucket never holds one in the clear. Names can be listed and values replaced, never read back
+// out by the app; only a running script gets a value.
+use tc_core::hook_secrets::SECRETS_KEY;
+use tc_core::hook_secrets::SECRETS_SEAL;
 const SECRETS_TTL_MS: f64 = 5_000.0;
 
 /// The secrets as last read, and when.

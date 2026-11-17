@@ -1,6 +1,6 @@
 # 0013: The web app as static files, on a git branch, unlocked with a password
 
-- **Status:** draft
+- **Status:** in progress
 - **Created:** 2026-11-17
 - **Layer:** both (hosts for `tc-core` in the browser: sync, settings routes and hooks in the page; the unlock screen)
 - **Front ends:** web (a third flavour; Android and the terminal app are unchanged)
@@ -28,8 +28,9 @@ typed for each session. That is the phone's model (everything on the device), in
   - a fine-grained token for that repository with Contents read and write;
   - the encryption secret (`sync.encryption_secret`).
 
-  It tries them with a first sync. The token is then kept in IndexedDB, sealed with a key derived from the encryption
-  secret.
+  It tries them with a first sync. The token is then kept in IndexedDB, encrypted with the encryption secret as the
+  password, in OpenPGP's password-encrypted format (what `gpg --symmetric` writes), so a copy can be opened with
+  `gpg --decrypt` outside the app. There is no OAuth: no server takes part in signing in.
 - **Every later visit:** an **Unlock** screen asks for the encryption secret only. A wrong one says so and nothing
   changes. **Forget this device** removes the sealed token and the saved replica.
 - **Locked again** when the tab closes, after an idle time (default 30 minutes, set in Settings), or with **Lock** in
@@ -56,8 +57,8 @@ typed for each session. That is the phone's model (everything on the device), in
 ## Not doing
 
 - **A bucket from the page** (S3 with keys in the browser, given CORS on the bucket): possible later, not now.
-- **GitHub OAuth sign-in in v1.** GitHub's token exchange doesn't allow CORS, so it needs a server. See the open
-  questions.
+- **OAuth sign-in, now or later.** GitHub's token exchange has no CORS, so it would need a server, which this flavour
+  doesn't have. A pasted token, sealed with the password, is the way in.
 - **GitHub repository (Actions) secrets:** they can't be read back by any API.
 - **Protection from code running in an unlocked page** (extensions, an injected script, a tampered build of the static
   files). Like any web app, it trusts the code it serves and the browser it runs in. The docs say so, and the measures
@@ -76,6 +77,10 @@ typed for each session. That is the phone's model (everything on the device), in
   The page's settings routes are answered in the page, as the phone answers them: `tc_core::webapi::WebSettings` over
   `GitObjects`, through the engine's `api` call. `web/src/lib/api.ts` already has the engine path.
 - **Key and token.**
+  - The sealed token (and the repository, branch and API address beside it) is an OpenPGP message: a
+    symmetric-key-encrypted session key (iterated and salted S2K, SHA-256) and an integrity-protected data packet
+    (AES-256). Whether it is written by a small Rust implementation in the engine or by OpenPGP.js loaded with the
+    unlock screen is decided by size, measured both ways.
   - The key is `Cryptor::new(salt, secret)`, with the salt from `meta` on the branch. The token is sealed with it under
     an AAD of its own and kept in IndexedDB beside the saved replica, and the replica is sealed with the same key.
   - In memory, the key is a non-extractable WebCrypto key where WebCrypto can do the job. TaskChampion's ChaCha20 runs
@@ -107,14 +112,14 @@ typed for each session. That is the phone's model (everything on the device), in
 - [ ] A static build served from a plain static server (no Worker) connects to a GitHub repository and to a Forgejo
       in Docker. It syncs both ways with the real `task` 3.5.0 (`sync.git.*`) and with the git Worker on the same
       branch, including a snapshot written by one and read by another.
-- [ ] Unlock: a later visit asks only for the encryption secret; a wrong one changes nothing; **Lock**, the idle lock
+- [x] Unlock: a later visit asks only for the encryption secret; a wrong one changes nothing; **Lock**, the idle lock
       and closing the tab drop the key and token from memory; **Forget this device** clears IndexedDB.
-- [ ] Nothing secret is stored in the clear: a test reads IndexedDB after connecting and finds no token, secret or task
+- [x] Nothing secret is stored in the clear: a test reads IndexedDB after connecting and finds no token, secret or task
       text.
 - [ ] Settings, taskrc files, `settings.json` and hooks are read and saved on the branch in the page. The git Worker and
       the phone see the same files.
-- [ ] Hooks run in the page with secrets bound to hosts (0012). The Lua wasm is not downloaded until a hook runs.
-- [ ] Works under a base path (GitHub Pages): every page address round-trips and a deep link loads.
+- [x] Hooks run in the page with secrets bound to hosts (0012). The Lua wasm is not downloaded until a hook runs.
+- [x] Works under a base path (GitHub Pages): every page address round-trips and a deep link loads.
 - [ ] The template: a repository made from it, with Pages turned on, serves the app after one workflow run, and a
       version change updates it. Its download script works for Cloudflare Pages too.
 - [ ] Tests: browser engine tests for the git path, web tests for the connect and unlock screens and the lock,
@@ -122,24 +127,51 @@ typed for each session. That is the phone's model (everything on the device), in
 - [ ] Docs: README (the three flavours and how they differ in trust), `docs/deploy.md` (static hosting, the template,
       GitHub Pages),
       `docs/architecture.md` (In the browser, both diagrams), `docs/using/` (unlocking, locking, forgetting a device).
-- [ ] Size: engine wasm measured before and after; the hooks wasm measured.
+- [x] Size: engine wasm measured before and after; the hooks wasm measured.
 
 ## Open questions
 
-- **Sign-in with GitHub (OAuth)** instead of a pasted token. GitHub's token exchange has no CORS, so it needs a tiny
-  server, about 20 lines on a Worker or Pages Function, that holds no data. Ship one as an optional extra, or stay
-  with tokens?
-- **Unlock with a passkey** (the WebAuthn PRF extension) as well as the encryption secret?
-- **Tabs:** does each tab ask to unlock, or do unlocked tabs share the key over `BroadcastChannel`?
-- **CSP for hooks:** list the hosts the secrets are bound to (0012) at build time, or allow `https:`?
-- **Where the template and the tasks live:** GitHub Pages from a private repository needs a paid plan, and the tasks
-  must be in a private one. So the default is two repositories: a public site from the template and a private tasks
-  repository. Should the template also offer one private repository for both, deployed by Cloudflare Pages or
-  Netlify (free for private repositories), with the site on `main` and the tasks on `taskchampion`?
-- **Rate:** the page pulls every 30 seconds while visible, one request each when idle (120 an hour a tab, against
-  GitHub's 5,000). Keep it, or slow it down for `static`?
+Settled 2026-11-17 by the person:
+
+- **Sign-in:** no OAuth. A pasted token, sealed PGP-style with the encryption secret as the password.
+- **Templates:** both. A public GitHub Pages site repository (tasks in a separate private repository), and a
+  one-private-repository setup for Cloudflare Pages or Netlify (site on `main`, tasks on `taskchampion`).
+- **Tabs:** shared unlock. Unlocking a tab hands the key to the other open tabs over a same-origin `BroadcastChannel`;
+  locking one locks all; a tab opened later asks unless another is unlocked.
+
+Taken as proposed (say if not): no passkey unlock in the first version; the page keeps pulling every 30 seconds while
+visible; the CSP allows `https:` for hooks' requests.
 
 ## Implementation notes
 
 Filled in while building: what was done, where, anything that differed from the design and why, sizes measured, and
 what is left. Dated entries, newest last.
+
+**2026-11-17 to 2026-11-18.** Built and released in 0.8.0 (git only; a TaskChampion sync server is proposed as 0014).
+
+- Engine: `crates/browser` feature `git` (`git.rs`: `FetchHttp`, `Branch` with the server, settings, hook secrets);
+  `Engine.git_salt`, `connect_git`, `api`, `hook_secrets`. Hooks: new crate `crates/browser-hooks` (`check`, `Hooks`,
+  `PageNet`), mirroring the Worker's `run_hook`. `SECRETS_KEY` and `SECRETS_SEAL` moved to `tc_core::hook_secrets`.
+- Page: `vault.ts`, `session.ts`, `pgp.ts`, `pageHooks.ts`, `flavour.ts`, `base.ts`; `persist.ts` seals the copy
+  (AES-GCM, HKDF from the key, `MGS1` prefix); `StaticGate.svelte`, `DevicePanel.svelte`, a Lock button; `api.ts`
+  routes `/api/*` to the engine; relative asset paths throughout; `vite.config.ts` flavours, CSP meta and `_headers`,
+  `404.html`.
+- Build and release: `build-engine.mjs --static`, `scripts/build-static.mjs` (`npm run build:static`); the Release
+  workflow attaches `meghnaad-static-<version>.tar.gz`, its `.sha256` and `meghnaad-static-template.tar.gz`;
+  `templates/static/` (download script, Pages workflow, README). CI lints both new wasm builds.
+- Departures: the static site is its own release asset, not a `static/` folder in the release package (the package is
+  for the Worker); OpenPGP is in TypeScript over WebCrypto (0 wasm bytes) and interoperates with gpg 2.5 both ways;
+  the defined hooks are found by a name scan of the script; the GitHub template repository has to be made by the owner
+  from `templates/static`, so it ships as a tarball for now; the importer's URL and calendars are fetched from the page
+  (they need CORS); the idle-lock time is kept in this browser.
+- Sizes (gzip -9, names dropped): Worker-flavour engine 861,734 (unchanged); static engine 961,968; hooks module
+  399,085, loaded only when a hook runs.
+- Verified: headless Chromium against a Pages-like server under a sub-folder and Forgejo in Docker: connect, add,
+  push; IndexedDB holds no token, secret, repository or task text; a second tab unlocks; reload asks for the secret, a
+  wrong one is refused; a deep link through `404.html`; lock from another tab; a hook ran in the page and the hooks
+  module was fetched only then. Real `task` 3.5.0 synced both ways on the same branch and its git cleanup left `web/`
+  alone. Tests: `scripts/static.test.mjs` (6), `StaticGate.test.ts` (8), `pgp.test.ts` (4, with gpg), `persist.test.ts`
+  (sealing), `base.test.ts`.
+- Left: GitHub itself, the git Worker and the phone on the same branch, a snapshot across them; the template on real
+  Pages; browser engine tests for the git path; `docs/using/` and the diagrams.
+

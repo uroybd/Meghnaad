@@ -9,6 +9,11 @@ rust-version.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# The static flavour (no Worker): sync and settings on a git branch through the forge's API, unlocked in the page. Only
+# that build carries it (`node scripts/build-engine.mjs --static`): it is several hundred KB the Worker flavours don't need.
+git = []
+
 [lints]
 workspace = true
 

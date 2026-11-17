@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { STATIC } from '../engine/flavour';
+  import DevicePanel from './DevicePanel.svelte';
   import { putAppSettings } from './api';
   import { lintSettings, sameHomepage, type Homepage } from './appsettings';
   import { Check, Copy, TriangleAlert } from './icons';
@@ -182,6 +184,7 @@
       {#if fileDone}<span class="ok"><Check size={14} /> Saved</span>{/if}
     </div>
   </details>
+  {#if STATIC}<DevicePanel />{/if}
 </section>
 
 <style>

@@ -21,7 +21,7 @@ beforeAll(() => {
         : new Response(
             url === '/api/config'
               ? JSON.stringify(CONFIG)
-              : url.startsWith('/keymaps/default.json?v=')
+              : url.startsWith('keymaps/default.json?v=')
                 ? DEFAULTS
                 : '{}',
             { status: 200 },

@@ -296,6 +296,12 @@ then the app shows a setup page and nothing is reachable. Pointing your `task` C
 **[Deploying](docs/deploy.md)**. To deploy from GitHub instead, run the manual **Deploy** workflow
 ([setup](docs/deploy.md#d-from-github-actions-manual)).
 
+### Or as a static site
+
+No Cloudflare at all: each release also has a static build of the web app that syncs with a git repository straight from
+the browser (GitHub, Gitea or Forgejo), unlocked with your encryption secret. Host it on GitHub Pages, Cloudflare Pages
+or Netlify from the template attached to the release. See **[The static app](docs/deploy.md#the-static-app)**.
+
 ## Android app
 
 The same app on your phone, with the engine on the phone. It works offline, keeps your keys in the Android Keystore, and

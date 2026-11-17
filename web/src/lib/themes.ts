@@ -87,7 +87,7 @@ export async function expandIncludes(text: string, fetchTheme: (id: string) => P
 }
 
 export async function fetchTheme(id: string): Promise<string> {
-  const r = await fetch(`/themes/${id}.theme`);
+  const r = await fetch(`themes/${id}.theme`);
   if (!r.ok) throw new Error(`The ${id} theme could not be loaded.`);
   return r.text();
 }

@@ -288,6 +288,44 @@ Released versions of Taskwarrior have no config key for a custom S3 endpoint, bu
 shell, cron, hooks, GUI launchers), or `task` quietly talks to real AWS and fails with a `PermanentRedirect` error. Newer,
 unreleased Taskwarrior builds add `sync.aws.endpoint_url`.
 
+## The static app
+
+The web app also comes as a static site with no server of its own: no Worker, no R2, no Access. The page reaches your
+tasks on a branch of a git repository through GitHub's (or Gitea's, or Forgejo's) API, the same branch your `task` CLI
+syncs to with `sync.git.*`, and decrypts them in the browser. Any static host serves it: GitHub Pages, Cloudflare Pages,
+Netlify.
+
+Each release publishes it as `meghnaad-static-<version>.tar.gz` (with a `.sha256`), and a deploy template as
+`meghnaad-static-template.tar.gz`. Unpack the template into a new repository: its `fetch-release.mjs` downloads the
+release named in `meghnaad-version` (`latest` by default), checks it against its checksum and puts it in `site/`, setting
+the `<base>` for the folder the site is served from. Its README has the steps for each host:
+
+- **GitHub Pages:** the template's workflow builds and deploys on every push, by hand, and weekly. Pages for a private
+  repository needs a paid plan, so keep the site in its own (public) repository and the tasks in a private one.
+- **Cloudflare Pages or Netlify:** build command `node fetch-release.mjs`, output directory `site`. They serve a private
+  repository for free, so one private repository can hold the site on `main` and the tasks on another branch.
+
+To build it from source instead: `npm run build:static` writes it to `web/dist-static`.
+
+**Connecting.** The first visit on a device asks for the repository, the branch, the API address (empty for GitHub), a
+token that can read and write the repository's contents, and the encryption secret. The token is kept on the device
+sealed with the secret (in OpenPGP's symmetric format, so `gpg --decrypt` opens it too); the key is derived from the
+secret and the salt in the branch's `meta`. Later visits ask only for the secret, and an unlocked tab unlocks the
+others. The device's copy of the tasks is sealed too. **Lock** and an idle time lock every tab; **Settings → General →
+Forget this device** removes the token and the copy. `config.json` beside the site fills in the form.
+
+**Gitea and Forgejo** must allow the page to call their API: `[cors]` with `ENABLED = true`, `ALLOW_DOMAIN` the site's
+host and `ALLOW_HEADERS = Content-Type,Authorization`. GitHub allows it already.
+
+**What differs from the Worker.**
+
+- The token and the encryption secret are in the browser (sealed at rest, in memory while unlocked), not on a server.
+  What an unlocked page runs can read them: the site's own code, the browser and its extensions.
+- Hooks run in the page (a WebAssembly Lua runner loaded on first use). Their network requests and an importer's or a
+  calendar's URL are fetched by the browser, so those hosts must allow CORS.
+- The settings, the hooks script and the sealed hook secrets are kept on the branch under `web/`, as the git Worker
+  keeps them, so the repository must be private.
+
 ## Configuration reference
 
 | Name | Kind | Purpose |

@@ -2,10 +2,16 @@
 // replica in memory, so a command costs nothing on the server. The page talks to it by messages (protocol.ts), which
 // are answered one at a time in the order they arrive, as the engine cannot be entered twice.
 
+//
+// The static flavour has no Worker behind it: the engine is unlocked at start with the git branch and its key, answers
+// the settings routes itself (`api`), and runs the hooks with the hooks module, loaded the first time one runs.
+
 import init, { Engine } from 'tc-engine';
-import wasmUrl from './pkg/tc_browser_bg.wasm?url';
-import { forgetReplica, loadReplica, saveReplica } from './persist';
-import type { Call, EngineReply, Synced } from './protocol';
+import wasmUrl from 'tc-engine-wasm?url';
+import { STATIC } from './flavour';
+import { forgetReplica, loadReplica, saveReplica, sealWith } from './persist';
+import type { ApiAnswer, Call, EngineReply, Synced } from './protocol';
+import * as hooks from './pageHooks';
 
 let engine: Engine | undefined;
 let persist = false;
@@ -41,6 +47,12 @@ async function handle(m: Call): Promise<unknown> {
     await init({ module_or_path: wasmUrl });
     engine = new Engine();
     persist = m.persist;
+    if (m.vault) {
+      const v = m.vault;
+      await sealWith(v.key);
+      engine.connect_git(v.api, v.repo, v.branch, v.token, v.key);
+      hooks.attach(engine);
+    }
     let restored = false;
     if (persist) {
       const bytes = await loadReplica();
@@ -65,7 +77,15 @@ async function handle(m: Call): Promise<unknown> {
       return null;
     case 'hooks':
       engine.set_hooks(m.defined, '');
+      // The script and its secrets are read now, between commands: a hook runs in the middle of one, when the engine
+      // can't be asked for anything.
+      if (STATIC) await hooks.prepare(JSON.parse(m.defined) as string[]);
       return null;
+    case 'api':
+      return (
+        (await hooks.route(m.method, m.path, m.body)) ??
+        (JSON.parse(await engine.api(m.method, m.path, new TextEncoder().encode(m.body))) as ApiAnswer)
+      );
     case 'run': {
       const before = engine.changes();
       const answer = await engine.run(m.request);

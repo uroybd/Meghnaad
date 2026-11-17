@@ -186,7 +186,7 @@ impl Reply {
     }
 
     #[allow(clippy::needless_pass_by_value, reason = "every caller builds the value in the call")]
-    fn ok(value: Value) -> Reply {
+    pub fn ok(value: Value) -> Reply {
         Reply::json(200, &value)
     }
 

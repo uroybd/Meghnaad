@@ -9,6 +9,11 @@
 use serde::Serialize;
 use serde_json::Value;
 
+/// Where the secrets are kept beside the settings (the bucket, or the git branch), sealed with the key of the tasks.
+pub const SECRETS_KEY: &str = "web/hook-secrets.enc";
+/// What the sealed secrets are bound to (as a version id is for a task version), so one can't stand in for the other.
+pub const SECRETS_SEAL: uuid::Uuid = uuid::Uuid::from_u128(0x4d65_6768_6e61_6164_686f_6f6b_7365_6372);
+
 /// The most secrets kept, and the largest value.
 pub const MAX_SECRETS: usize = 64;
 pub const MAX_VALUE: usize = 16 * 1024;

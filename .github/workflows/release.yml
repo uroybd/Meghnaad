@@ -85,6 +85,19 @@ jobs:
           APP_VERSION: ${{ env.VERSION }}
         run: node scripts/build.mjs --flavour all
 
+      # The static web app (no Worker; spec 0013), a site for any static host. The deploy template (templates/static)
+      # downloads it from the release and checks it against the .sha256 beside it.
+      - name: Build the static web app
+        env:
+          APP_VERSION: ${{ env.VERSION }}
+        run: |
+          node scripts/build-static.mjs
+          tar -czf "$RUNNER_TEMP/meghnaad-static-$VERSION.tar.gz" -C web/dist-static .
+          (cd "$RUNNER_TEMP" && sha256sum "meghnaad-static-$VERSION.tar.gz" > "meghnaad-static-$VERSION.tar.gz.sha256")
+          tar -czf "$RUNNER_TEMP/meghnaad-static-template.tar.gz" -C templates/static .
+          echo "Static engine: $(gzip -9 -c web/dist-static/assets/tc_browser_bg-*.wasm | wc -c) bytes compressed"
+          echo "Hooks module: $(gzip -9 -c web/dist-static/assets/tc_browser_hooks_bg-*.wasm | wc -c) bytes compressed"
+
       - name: Package
         run: |
           node scripts/package-release.mjs --out "$RUNNER_TEMP/release" --version "$VERSION"
@@ -132,6 +145,8 @@ jobs:
 
           **Terminal app**: \`meghnaad-$VERSION-<platform>.tar.gz\` (the program \`meghnaad\`, once \`meghnaad-tui\`) is Meghnaad in the terminal, around the real \`task\` ([the terminal app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/terminal.md)); the builds are added to this release when they finish.
 
+          **Static web app**: \`meghnaad-static-$VERSION.tar.gz\` is the web app with no Worker, for any static host (GitHub Pages, Cloudflare Pages, Netlify): your tasks on a git branch, unlocked in the browser. \`meghnaad-static-template.tar.gz\` is a repository that deploys it ([the static app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deploy.md#the-static-app)).
+
           **Android app**: install \`meghnaad-$VERSION.apk\` ([the Android app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/android.md)); it is added to this release when its build finishes.
 
           NOTES
@@ -142,7 +157,9 @@ jobs:
             { printf '%s\n\n' "$changes"; cat "$RUNNER_TEMP/notes.md"; } > "$RUNNER_TEMP/notes.full.md"
             mv "$RUNNER_TEMP/notes.full.md" "$RUNNER_TEMP/notes.md"
           fi
-          gh release create "$TAG" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" --title "Meghnaad $VERSION" \
+          gh release create "$TAG" "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" \
+            "$RUNNER_TEMP/meghnaad-static-$VERSION.tar.gz" "$RUNNER_TEMP/meghnaad-static-$VERSION.tar.gz.sha256" \
+            "$RUNNER_TEMP/meghnaad-static-template.tar.gz" --title "Meghnaad $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag
 
   # meghnaad-hook (the Lua hooks script for the real `task`) and meghnaad (the terminal app, the crate meghnaad-tui) as

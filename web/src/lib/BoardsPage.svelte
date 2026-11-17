@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { toAddress } from './base';
   import BoardView from './BoardView.svelte';
   import BoardFilter from './BoardFilter.svelte';
   import Drawer from './Drawer.svelte';
@@ -221,7 +222,7 @@
           <li>
             <a
               class="card"
-              href={boardPath(b.id)}
+              href={toAddress(boardPath(b.id))}
               onclick={(e) => {
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
                 e.preventDefault();

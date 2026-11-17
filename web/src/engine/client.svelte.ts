@@ -5,7 +5,8 @@
 // browser has pushed (they tell each other over a BroadcastChannel). A write is already applied and saved here, so a
 // push that fails (offline, a signed-out session) is only tried again later; what is waiting is pushed with it.
 
-import type { Call, EngineReply, EngineRequest, Port, Synced } from './protocol';
+import { STATIC } from './flavour';
+import type { ApiAnswer, Call, EngineReply, EngineRequest, Port, Synced, Vault } from './protocol';
 
 /** How often a visible tab pulls what other devices have done. */
 const PULL_EVERY_MS = 30_000;
@@ -44,6 +45,13 @@ export class EngineClient {
   private channel: BroadcastChannel | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private changedListeners = new Set<() => void>();
+  /** The static flavour's unlocked branch, handed to the engine when it starts. */
+  private vault: Vault | undefined;
+
+  /** The static flavour: start the engine on this branch with this key (before anything else asks it). */
+  unlockWith(vault: Vault): void {
+    this.vault = vault;
+  }
 
   /** Called when a sync brought in changes (from another device or tab), so views can reload. */
   onChanged(fn: () => void): () => void {
@@ -66,6 +74,8 @@ export class EngineClient {
    * replica read, while the page asks the server for the rest. Harmless to call again, or where there is no Worker.
    */
   preload(): void {
+    // The static flavour's engine can't start before it is unlocked.
+    if (STATIC && !this.vault) return;
     if (engineAvailable()) this.spawn().catch(() => undefined);
   }
 
@@ -92,7 +102,7 @@ export class EngineClient {
         for (const p of this.pending.values()) p.reject(err);
         this.pending.clear();
       };
-      return this.send({ op: 'start', persist: true }) as Promise<boolean>;
+      return this.send({ op: 'start', persist: true, vault: this.vault }) as Promise<boolean>;
     })();
     return this.spawned;
   }
@@ -169,6 +179,12 @@ export class EngineClient {
       // Another tab pushed: what it did is in the bucket, and it is not in this tab until it is pulled.
       this.channel.onmessage = () => void this.sync();
     }
+  }
+
+  /** The static flavour: a settings route, answered by the engine from the git branch. */
+  async api(method: string, path: string, body: string): Promise<ApiAnswer> {
+    await this.spawn();
+    return (await this.send({ op: 'api', method, path, body })) as ApiAnswer;
   }
 
   setHooks(defined: string[]): Promise<unknown> {

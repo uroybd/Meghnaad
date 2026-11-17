@@ -25,5 +25,29 @@ declare module 'tc-engine' {
     run(request: string): Promise<string>;
     /** An import (or, without `apply`, what it would do): JSON text. */
     import(text: string, apply: boolean, tz: number, now: number): Promise<string>;
+
+    // The static flavour's build only (`--static`, the `git` feature).
+    /** The salt of the key on this branch (`meta`'s), written with a new one if this is the first client. */
+    static git_salt(api: string, repo: string, branch: string, token: string): Promise<Uint8Array>;
+    /** Sync with this branch from now on, with this key (32 bytes). */
+    connect_git(api: string, repo: string, branch: string, token: string, key: Uint8Array): void;
+    /** One of the settings routes, answered from the branch: `{ status, type, body }` as JSON text. */
+    api(method: string, path: string, body: Uint8Array): Promise<string>;
+    /** The hook secrets, opened, for the hooks module (`{"NAME": {"value", "hosts"}}`); empty when there are none. */
+    hook_secrets(): Promise<Uint8Array>;
+  }
+}
+
+// The static flavour's hooks module (crates/browser-hooks): the Lua runner, loaded when a hook runs.
+declare module 'tc-hooks' {
+  export default function init(input?: { module_or_path: string | URL | Request }): Promise<unknown>;
+  /** `POST /api/hooks/check`'s answer: `{ ok, defined }` or `{ ok: false, line, message }`, as JSON text. */
+  export function check(source: string): string;
+  export class Hooks {
+    /** The script, and the secrets as `hook_secrets` gives them. */
+    constructor(source: string, secrets: Uint8Array);
+    /** One hook call, `POST /api/run`'s body: its answer as JSON text. */
+    run(body: string): Promise<string>;
+    free(): void;
   }
 }
