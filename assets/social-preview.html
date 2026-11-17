@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(ellipse 620px 520px at 300px 330px, rgba(94, 200, 196, 0.16), transparent 70%),
+      radial-gradient(ellipse 700px 400px at 1100px 80px, rgba(80, 150, 255, 0.10), transparent 70%),
+      #0e0e0a;
+    color: #e8ede9;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    display: flex; align-items: center;
+    padding: 0 96px 0 72px;
+    gap: 56px;
+  }
+  img { width: 400px; height: 400px; flex: none; filter: drop-shadow(0 0 40px rgba(110, 220, 210, 0.18)); }
+  .text { display: flex; flex-direction: column; gap: 22px; }
+  h1 { font-size: 108px; font-weight: 750; letter-spacing: -3px; line-height: 1; color: #f2f6f3; }
+  .tag { font-size: 38px; line-height: 1.25; color: #b9cfca; font-weight: 500; max-width: 640px; }
+  .tag b { color: #7fd8cf; font-weight: 650; }
+  .pills { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+  .pill {
+    font-size: 21px; padding: 8px 18px; border-radius: 999px;
+    border: 1.5px solid rgba(127, 216, 207, 0.35); color: #cfe3df; background: rgba(127, 216, 207, 0.07);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+  <img src="logo.png" alt="" />
+  <div class="text">
+    <h1>Meghnaad</h1>
+    <p class="tag"><b>Taskwarrior 3</b> in your browser, on your phone and in your terminal.</p>
+    <div class="pills">
+      <span class="pill">web</span><span class="pill">android</span><span class="pill">terminal</span>
+      <span class="pill">git · S3 · sync server</span>
+    </div>
+  </div>
+</body>
+</html>

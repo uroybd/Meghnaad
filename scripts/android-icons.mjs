@@ -25,8 +25,35 @@ for (const [density, scale] of Object.entries(DENSITIES)) {
   mkdirSync(dir, { recursive: true });
   const icon = Math.round(48 * scale);
   const layer = Math.round(108 * scale);
-  // The icon on a home screen that does not mask it (Android 7 and older).
-  magick(LOGO, '-resize', `${icon}x${icon}`, join(dir, 'ic_launcher.png'));
+  // The icon on a home screen that does not mask it (Android 7 and older): the logo on its background, in a rounded
+  // square, since the logo itself is transparent.
+  const radius = Math.round(icon * 0.18);
+  magick(
+    '-size',
+    `${icon}x${icon}`,
+    `xc:${BACKGROUND}`,
+    '(',
+    LOGO,
+    '-resize',
+    `${Math.round(icon * 0.86)}x${Math.round(icon * 0.86)}`,
+    ')',
+    '-gravity',
+    'center',
+    '-composite',
+    '(',
+    '-size',
+    `${icon}x${icon}`,
+    'xc:none',
+    '-fill',
+    'white',
+    '-draw',
+    `roundrectangle 0,0 ${icon - 1},${icon - 1} ${radius},${radius}`,
+    ')',
+    '-compose',
+    'DstIn',
+    '-composite',
+    join(dir, 'ic_launcher.png'),
+  );
   // The same in a circle.
   magick(
     LOGO,
