@@ -536,9 +536,7 @@ the browser and goes up when it works again.
   it. `undo` doesn't run them ([Hooks](docs/using/hooks.md#hooks)).
 - **Not every `taskrc` option applies:** terminal and local-file options don't make sense here, `include` follows
   only the app's own folder of files, and `purge.on-sync` isn't supported ([taskrc support](docs/taskrc-support.md)).
-- **The Android app** is for 64-bit ARM phones (not 32-bit ones), importing a taskrc from a link is not there yet, and
-  it has been tried on an Android 16 emulator more than on real phones: please
-  [file an issue](https://github.com/uroybd/Meghnaad/issues) about what you find.
+- **The Android app** is for 64-bit ARM phones (not 32-bit ones), and importing a taskrc from a link is not there yet.
 
 ## About the name
 

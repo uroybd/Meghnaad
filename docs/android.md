@@ -6,11 +6,6 @@ S3-compatible bucket, or a TaskChampion sync server. No Worker and no Cloudflare
 on the phone. It does what the web app does, with a layout made for a
 phone, plus two things a browser tab can't: reminders that come with the app closed, and widgets.
 
-> **Status:** it builds. Its Rust half is tested (signing, sync against a bucket that enforces conditional writes,
-> settings, hooks) and its Kotlin half has unit tests (the screens' logic, and commands, review and import through the
-> real engine). It has been tried on an Android 16 emulator: connecting, the pages, editing, review, reminders, widgets,
-> import and export. It hasn't been run on a physical phone yet, so expect rough edges.
-
 ## What you get
 
 - **Everything in the web app**: the console, the pages, review, urgency, recurrence, hooks and settings, in a layout
