@@ -448,6 +448,17 @@ class Store(
         return replaceConnection(old, next)
     }
 
+    /** Change a git connection: blank keeps what was there (the token is never shown, so it is not typed again). */
+    suspend fun changeGit(api: String, repo: String, branch: String, token: String, secret: String): String? {
+        val old = vault.connection() ?: return "Not connected."
+        val was = old.git ?: return "Not connected to a git repository."
+        val next = Connection.typedGit(
+            api.ifBlank { was.api }, repo.ifBlank { was.repo }, branch.ifBlank { was.branch },
+            token.ifBlank { was.token }, secret.ifBlank { old.encryptionSecret },
+        )
+        return replaceConnection(old, next)
+    }
+
     /** Try [next] with a sync, and keep it; when that fails, [old] is put back. Returns what went wrong, or null. */
     private suspend fun replaceConnection(old: Connection, next: Connection): String? {
         next.problem()?.let { return it }

@@ -4,6 +4,7 @@
 
 use crate::files::FileStore;
 use crate::filesync::{self, State};
+use crate::gitrepo::{self, UreqHttp};
 use crate::net::PhoneNet;
 use crate::s3::{Bucket, S3Store};
 use crate::secrets::{valid_name, Secrets};
@@ -18,6 +19,8 @@ use taskchampion::server::Server;
 use taskchampion::Replica;
 use tc_core::cli::UndoStack;
 use tc_core::crypto::{Cryptor, KEY_LEN};
+use tc_core::forge::ForgeRepo;
+use tc_core::gitsync::{self, GitObjects, GitServer};
 use tc_core::hooks::HookHost;
 use tc_core::lua_hooks::{LuaHooks, Net};
 use tc_core::request;
@@ -48,6 +51,28 @@ enum TasksAt {
     Bucket(Bucket),
     /// A TaskChampion sync server.
     Server { url: String, client_id: String },
+    /// A branch of a git repository, laid out the way the `task` CLI's git sync (`sync.git.*`) lays it out, reached
+    /// through the forge's API (GitHub, Gitea, Forgejo).
+    Git {
+        #[serde(default)]
+        api: String,
+        repo: String,
+        #[serde(default)]
+        branch: String,
+        token: String,
+    },
+}
+
+impl TasksAt {
+    fn git(api: &str, repo: &str, branch: &str, token: &str) -> Result<ForgeRepo<UreqHttp>, String> {
+        gitrepo::open(api, repo, branch, token).map_err(|e| e.to_string())
+    }
+}
+
+/// Where the shared settings files are kept.
+enum FilesAt {
+    Bucket(S3Store),
+    Git(GitObjects<ForgeRepo<UreqHttp>>),
 }
 
 /// Where the tasks sync to and the secret that opens them, as the app hands them over for each sync.
@@ -114,6 +139,15 @@ impl SyncSettings {
                     &sha256_hex(id.to_string().as_bytes())[..16]
                 )
             }
+            TasksAt::Git {
+                api,
+                repo,
+                branch,
+                token,
+            } => {
+                let r = TasksAt::git(api, repo, branch, token)?.remote;
+                format!("git|{}|{}|{}", r.api, r.repo, r.branch)
+            }
         })
     }
 }
@@ -124,6 +158,10 @@ fn describe_origin(origin: &str) -> String {
     match (parts.next(), parts.next(), parts.next()) {
         (Some("bucket"), Some(endpoint), Some(bucket)) => format!("the bucket {bucket} at {endpoint}"),
         (Some("server"), Some(url), _) => format!("the sync server at {url}"),
+        (Some("git"), Some(_), Some(repo)) => match parts.next() {
+            Some(branch) => format!("the branch {branch} of {repo}"),
+            None => format!("the repository {repo}"),
+        },
         _ => "somewhere else".to_owned(),
     }
 }
@@ -204,7 +242,8 @@ impl Engine {
     }
 
     /// Pull what others have done and push what is waiting. `settings` is JSON: `tasks` (where they sync to: `{ kind:
-    /// "bucket", endpoint, bucket, region (optional), access_key, secret_key }` or `{ kind: "server", url, client_id }`),
+    /// "bucket", endpoint, bucket, region (optional), access_key, secret_key }`, `{ kind: "server", url, client_id }` or
+    /// `{ kind: "git", api (default GitHub's), repo (owner/name), branch (default taskchampion), token }`),
     /// `encryption_secret`, and optionally `files` (which of the settings, the app's settings and the hooks to keep in step
     /// with a bucket's), `files_bucket` (that bucket, when the tasks do not sync to one) and `switch` (`replace` or
     /// `merge`, see below). Before `tasks` there were the bucket's fields beside the others, which still work. Answers which
@@ -234,7 +273,19 @@ impl Engine {
             .collect();
         let for_files = match (&s.files_bucket, &s.tasks) {
             _ if files.is_empty() => None,
-            (Some(b), _) | (None, TasksAt::Bucket(b)) => Some(S3Store::new(b.clone()).map_err(|e| e.to_string())?),
+            (Some(b), _) | (None, TasksAt::Bucket(b)) => {
+                Some(FilesAt::Bucket(S3Store::new(b.clone()).map_err(|e| e.to_string())?))
+            }
+            // On the branch the tasks are on, beside them, where the git flavour of the web app keeps them too.
+            (
+                None,
+                TasksAt::Git {
+                    api,
+                    repo,
+                    branch,
+                    token,
+                },
+            ) => Some(FilesAt::Git(GitObjects(TasksAt::git(api, repo, branch, token)?))),
             (None, TasksAt::Server { .. }) => {
                 return Err("sharing settings needs a bucket to keep them in: add one, or turn sharing off".into())
             }
@@ -271,8 +322,11 @@ impl Engine {
                 .map_err(|e| e.to_string())?
                 .as_deref(),
         );
-        let report = pollster::block_on(filesync::sync_files(&self.folder, &for_files, &files, &mut state))
-            .map_err(|e| e.to_string())?;
+        let report = match &for_files {
+            FilesAt::Bucket(b) => pollster::block_on(filesync::sync_files(&self.folder, b, &files, &mut state)),
+            FilesAt::Git(g) => pollster::block_on(filesync::sync_files(&self.folder, g, &files, &mut state)),
+        }
+        .map_err(|e| e.to_string())?;
         pollster::block_on(tc_core::ObjectStore::put(&self.folder, state_key, &state.to_bytes()))
             .map_err(|e| e.to_string())?;
         if report.pulled.iter().any(|k| k == tc_core::webapi::HOOKS_KEY) {
@@ -307,6 +361,23 @@ impl Engine {
                 let cryptor = kept.unwrap_or_else(|| syncserver::cryptor(id, &s.encryption_secret));
                 let server = SyncServer::new(url, id, cryptor.clone()).map_err(|e| e.to_string())?;
                 Ok((Box::new(server), cryptor))
+            }
+            TasksAt::Git {
+                api,
+                repo,
+                branch,
+                token,
+            } => {
+                let repo = TasksAt::git(api, repo, branch, token)?;
+                let cryptor = match kept {
+                    Some(c) => c,
+                    None => pollster::block_on(gitsync::load_cryptor(&repo, s.encryption_secret.as_bytes()))
+                        .map_err(|e| e.to_string())?,
+                };
+                Ok((
+                    Box::new(GitServer::with_cryptor(repo, cryptor.clone()).with_cleanup(now_secs)),
+                    cryptor,
+                ))
             }
         }
     }

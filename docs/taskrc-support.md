@@ -277,7 +277,7 @@ A UDA that exists on a task but isn't defined in the taskrc is shown but read-on
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `sync.*`, `taskd.*`, and any name containing `secret`, `password`, `token`, `credential` and similar | Blocked | Never stored, logged or shown; only the *names* of what was dropped are reported. The Worker syncs through its own R2 binding and secret, and the Android app takes its bucket or sync server (`sync.server.url`, `sync.server.client_id`) on the phone, into its Keystore |
+| `sync.*`, `taskd.*`, and any name containing `secret`, `password`, `token`, `credential` and similar | Blocked | Never stored, logged or shown; only the *names* of what was dropped are reported. The Worker syncs through its own R2 binding and secret, and the Android app takes its bucket, sync server (`sync.server.url`, `sync.server.client_id`) or git repository (the forge's API in place of `sync.git.remote`; the branch is `sync.git.branch`) on the phone, into its Keystore. The git Worker takes the repository and branch as deploy settings and the token as a secret |
 
 The bucket side of sync isn't configured from a taskrc, but it behaves like the CLI's. The Worker syncs before and after
 every command, writes a snapshot on about one push in ten (as `task sync` does), and picks the newest snapshot when it

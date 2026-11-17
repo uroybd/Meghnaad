@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Builds everything a deploy needs: the web app (web/dist) and the Worker (crates/worker/build).
+// Builds everything a deploy needs: the web app (web/dist) and the Worker (crates/worker/build, or build-git for the
+// git flavour: `--flavour git`; `--flavour all` builds both).
 // It is wrangler's `build.command`, so `wrangler dev`, `wrangler deploy`, `npm run deploy` and
 // Cloudflare's own build service all go through it. Missing Rust pieces are installed, which keeps
 // a fresh build environment working without any extra setup.
@@ -34,19 +35,31 @@ if (!process.env.MEGHNAAD_DEV) {
   must(run('npm', ['--prefix', 'web', 'run', 'build']), 'the web build');
 }
 
-step('Worker (Rust -> WASM)');
+// Which Worker: `r2` (the default; tasks in the bucket TASKS), `git` (tasks on a branch of a git repository, built with
+// the `git` feature into crates/worker/build-git), or `all` (both, for a release).
+const flavourArg = process.argv.indexOf('--flavour');
+const flavour = flavourArg > 0 ? process.argv[flavourArg + 1] : 'r2';
+if (!['r2', 'git', 'all'].includes(flavour)) {
+  console.error(`[build] --flavour is r2, git or all, not ${flavour}`);
+  process.exit(1);
+}
 if (!has('worker-build')) {
   console.error('[build] worker-build is not on PATH (try: cargo install worker-build --version "~0.8" --locked)');
   process.exit(1);
 }
-must(run('worker-build', ['--release'], { cwd: join(ROOT, 'crates', 'worker') }), 'worker-build');
+const flavours = flavour === 'all' ? ['r2', 'git'] : [flavour];
+for (const f of flavours) {
+  step(`Worker, ${f} (Rust -> WASM)`);
+  const args = f === 'git' ? ['--release', '--out-dir', 'build-git', '.', '--features', 'git'] : ['--release'];
+  must(run('worker-build', args, { cwd: join(ROOT, 'crates', 'worker') }), 'worker-build');
 
-// The function names (a fifth of the module) only help read a stack trace; leave them out of what is
-// uploaded. KEEP_WASM_NAMES=1 keeps them for debugging.
-if (!process.env.KEEP_WASM_NAMES) {
-  const wasm = join(ROOT, 'crates', 'worker', 'build', 'index_bg.wasm');
-  const before = readFileSync(wasm);
-  const after = dropCustomSections(before, ['name', 'producers', 'target_features']);
-  writeFileSync(wasm, after);
-  step(`dropped the debug names: ${(before.length / 1024).toFixed(0)} KB -> ${(after.length / 1024).toFixed(0)} KB`);
+  // The function names (a fifth of the module) only help read a stack trace; leave them out of what is
+  // uploaded. KEEP_WASM_NAMES=1 keeps them for debugging.
+  if (!process.env.KEEP_WASM_NAMES) {
+    const wasm = join(ROOT, 'crates', 'worker', f === 'git' ? 'build-git' : 'build', 'index_bg.wasm');
+    const before = readFileSync(wasm);
+    const after = dropCustomSections(before, ['name', 'producers', 'target_features']);
+    writeFileSync(wasm, after);
+    step(`dropped the debug names: ${(before.length / 1024).toFixed(0)} KB -> ${(after.length / 1024).toFixed(0)} KB`);
+  }
 }

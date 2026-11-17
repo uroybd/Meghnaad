@@ -272,6 +272,39 @@ mod tests {
     const KEYS: &[&str] = &[webapi::CONFIG_KEY];
 
     #[test]
+    fn with_a_git_branch_two_changes_go_to_the_newer_commit() {
+        use tc_core::gitsync::{GitObjects, MemRepo};
+        pollster::block_on(async {
+            for (phone_at, branch_at, pulled) in [(1_000, 2_000, true), (2_000, 1_000, false)] {
+                let (phone, repo) = (MemStore::default(), MemRepo::new());
+                let branch = GitObjects(repo.clone());
+                let mut state = State::default();
+                branch.put(webapi::CONFIG_KEY, &config(&["a"])).await.unwrap();
+                sync_files(&phone, &branch, KEYS, &mut state).await.unwrap();
+                phone.set_now(phone_at);
+                put(&phone, webapi::CONFIG_KEY, &config(&["a", "mine"])).await;
+                repo.set_now(branch_at);
+                branch.put(webapi::CONFIG_KEY, &config(&["a", "theirs"])).await.unwrap();
+                let r = sync_files(&phone, &branch, KEYS, &mut state).await.unwrap();
+                let (winner, loser) = if pulled { ("theirs", "mine") } else { ("mine", "theirs") };
+                assert_eq!(r.pulled.is_empty(), !pulled, "{r:?}");
+                assert_eq!(get(&phone, webapi::CONFIG_KEY).await, Some(config(&["a", winner])));
+                assert_eq!(
+                    branch.get(webapi::CONFIG_KEY).await.unwrap(),
+                    Some(config(&["a", winner]))
+                );
+                // The copy that lost is kept to restore, on the side it was replaced on.
+                let prev = if pulled {
+                    get(&phone, webapi::PREV_KEY).await
+                } else {
+                    branch.get(webapi::PREV_KEY).await.unwrap()
+                };
+                assert_eq!(prev, Some(config(&["a", loser])));
+            }
+        });
+    }
+
+    #[test]
     fn a_missing_file_is_taken_from_the_side_that_has_it() {
         pollster::block_on(async {
             let (phone, bucket) = (MemStore::default(), MemStore::default());

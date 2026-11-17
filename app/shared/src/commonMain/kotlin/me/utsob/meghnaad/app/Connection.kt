@@ -12,11 +12,20 @@ import kotlinx.serialization.json.put
 data class SyncServerAddress(val url: String, val clientId: String)
 
 /**
+ * A branch of a git repository on GitHub, Gitea or Forgejo, reached through the forge's API: the one the task CLI syncs to
+ * with `sync.git.*`. [api] is `https://api.github.com` for GitHub, `https://<host>/api/v1` for Gitea and Forgejo; [token]
+ * may read and write the repository.
+ */
+@Serializable
+data class GitAddress(val api: String, val repo: String, val branch: String, val token: String)
+
+/**
  * Where the tasks sync to and how to open them. The secrets in it are only ever given to the engine, never drawn.
  *
  * With a [server] the tasks sync to that TaskChampion sync server. The bucket fields are then optional, and only for
- * keeping the settings and the hooks in step with the web app's (a bucket needs all of them or none). Without a server the
- * tasks sync to the bucket, and the same bucket keeps those files.
+ * keeping the settings and the hooks in step with the web app's (a bucket needs all of them or none). With [git] they sync
+ * to a branch of a git repository, which keeps those files too, beside the tasks. Without either the tasks sync to the
+ * bucket, and the same bucket keeps those files.
  */
 @Serializable
 data class Connection(
@@ -27,6 +36,7 @@ data class Connection(
     val secretKey: String = "",
     val encryptionSecret: String,
     val server: SyncServerAddress? = null,
+    val git: GitAddress? = null,
 ) {
     /** Whether the bucket is filled in. */
     val hasBucket: Boolean get() = listOf(endpoint, bucket, accessKey, secretKey).all { it.isNotBlank() }
@@ -45,8 +55,12 @@ data class Connection(
      * (`replace` or `merge`).
      */
     fun toSyncJson(files: List<String> = emptyList(), switch: String? = null): String = buildJsonObject {
-        put("files", JsonArray(if (hasBucket) files.map(::JsonPrimitive) else emptyList()))
-        if (server != null) {
+        put("files", JsonArray(if (hasBucket || git != null) files.map(::JsonPrimitive) else emptyList()))
+        if (git != null) {
+            put("tasks", buildJsonObject {
+                put("kind", "git"); put("api", git.api); put("repo", git.repo); put("branch", git.branch); put("token", git.token)
+            })
+        } else if (server != null) {
             put("tasks", buildJsonObject { put("kind", "server"); put("url", server.url); put("client_id", server.clientId) })
             if (hasBucket) put("files_bucket", bucketJson())
         } else {
@@ -59,6 +73,16 @@ data class Connection(
     /** What is missing, or null. */
     fun problem(): String? {
         val partial = listOf(endpoint, bucket, accessKey, secretKey).any { it.isNotBlank() } && !hasBucket
+        if (git != null) {
+            return when {
+                listOf(git.repo, git.token, encryptionSecret).any { it.isBlank() } ->
+                    "The repository, a token and the encryption secret are all needed."
+                !REPO_SHAPE.matches(git.repo) -> "The repository is written owner/name, such as alice/tasks."
+                !git.api.startsWith("https://") -> "The API address starts with https://."
+                !BRANCH_SHAPE.matches(git.branch) || ".." in git.branch -> "That is not a branch name; taskchampion is the usual one."
+                else -> null
+            }
+        }
         return when {
             server == null && listOf(endpoint, bucket, accessKey, secretKey, encryptionSecret).any { it.isBlank() } ->
                 "Every field but the region is needed."
@@ -73,6 +97,15 @@ data class Connection(
     }
 
     companion object {
+        private val REPO_SHAPE = Regex("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+        private val BRANCH_SHAPE = Regex("^[A-Za-z0-9_][A-Za-z0-9._/-]*[A-Za-z0-9_-]$|^[A-Za-z0-9_]$")
+
+        /** GitHub's API, the default forge. */
+        const val GITHUB_API = "https://api.github.com"
+
+        /** The branch the task CLI's manual suggests for `sync.git.branch`. */
+        const val GIT_BRANCH = "taskchampion"
+
         private val UUID_SHAPE = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
         /** As typed in a form: trimmed, no slash at the end of the endpoint, `auto` for no region. */
@@ -85,6 +118,17 @@ data class Connection(
                 secretKey.trim(),
                 secret.trim(),
             )
+
+        /** A git repository as typed in a form: GitHub's API and the `taskchampion` branch when left blank. */
+        fun typedGit(api: String, repo: String, branch: String, token: String, secret: String) = Connection(
+            encryptionSecret = secret.trim(),
+            git = GitAddress(
+                api.trim().trimEnd('/').ifBlank { GITHUB_API },
+                repo.trim().trim('/'),
+                branch.trim().ifBlank { GIT_BRANCH },
+                token.trim(),
+            ),
+        )
 
         /** A sync server as typed in a form, with the optional bucket for the shared files (all of it blank for none). */
         fun typedServer(
@@ -107,7 +151,13 @@ data class ConnectionInfo(
     val serverUrl: String? = null,
     val clientIdHint: String? = null,
     val hasBucket: Boolean = true,
-)
+    val gitRepo: String? = null,
+    val gitBranch: String? = null,
+    val gitApi: String? = null,
+) {
+    /** Whether the settings and hooks can be kept in step somewhere: a bucket, or the branch the tasks are on. */
+    val sharesFiles: Boolean get() = hasBucket || gitRepo != null
+}
 
 private fun hint(key: String) = if (key.length > 8) "${key.take(4)}…${key.takeLast(4)}" else "•".repeat(key.length)
 
@@ -116,13 +166,16 @@ fun Connection.info(): ConnectionInfo = ConnectionInfo(
     serverUrl = server?.url,
     clientIdHint = server?.clientId?.let(::hint),
     hasBucket = hasBucket,
+    gitRepo = git?.repo,
+    gitBranch = git?.branch,
+    gitApi = git?.api,
 )
 
 /** A fresh client ID for a sync server: a random UUID, which the server learns of the first time it is used. */
 @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
 fun newClientId(): String = kotlin.uuid.Uuid.random().toString()
 
-/** Which of the shared files the phone keeps in step with the bucket's (the secrets of hooks never are). */
+/** Which of the shared files the phone keeps in step with the bucket's (or the git branch's) (the secrets of hooks never are). */
 data class SyncOptions(val settings: Boolean = false, val hooks: Boolean = false) {
     /** The files in the bucket these two stand for. */
     fun files(): List<String> = buildList {

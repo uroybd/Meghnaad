@@ -565,6 +565,8 @@ mod tests {
             "taskd.password hunter2",
             "my.api_token hunter2",
             "sync.aws.bucket hunter2",
+            "sync.git.remote https://me:hunter2@github.com/me/tasks.git",
+            "sync.git.branch hunter2",
         ] {
             match config(&base, &w(line), false, false) {
                 Outcome::Error(e) => assert!(!e.contains("hunter2") && !e.contains("AKIA"), "{line}: {e}"),

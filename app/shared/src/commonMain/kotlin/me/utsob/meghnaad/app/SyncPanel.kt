@@ -27,8 +27,14 @@ private fun ConnectionSection(store: Store) {
     val info = store.connectionInfo ?: return
     var editing by remember { mutableStateOf(false) }
     val server = info.serverUrl != null
+    val git = info.gitRepo != null
     Text("Connection", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
     val rows = buildList {
+        if (git) {
+            add("Repository" to info.gitRepo!!)
+            add("Branch" to (info.gitBranch ?: ""))
+            add("API" to (info.gitApi ?: ""))
+        }
         if (server) {
             add("Sync server" to info.serverUrl!!)
             add("Client ID" to (info.clientIdHint ?: ""))
@@ -47,8 +53,14 @@ private fun ConnectionSection(store: Store) {
         }
     }
     if (server && info.hasBucket) Dim("The bucket keeps this app's settings and hooks; the tasks go to the sync server.", size = 12)
-    Dim("The secret key and the encryption secret are kept in the phone's secure storage and are never shown.", size = 12)
-    if (!editing) OutlinedButton(onClick = { editing = true }) { Text("Edit the connection") } else if (server) {
+    Dim(
+        if (git) "The token and the encryption secret are kept in the phone's secure storage and are never shown."
+        else "The secret key and the encryption secret are kept in the phone's secure storage and are never shown.",
+        size = 12,
+    )
+    if (!editing) OutlinedButton(onClick = { editing = true }) { Text("Edit the connection") } else if (git) {
+        GitEditForm(store, info, onDone = { editing = false })
+    } else if (server) {
         ServerEditForm(store, info, onDone = { editing = false })
     } else {
         ConnectionEditForm(store, info, onDone = { editing = false })
@@ -103,6 +115,41 @@ private fun ServerEditForm(store: Store, info: ConnectionInfo, onDone: () -> Uni
                             url, clientId, secret,
                             if (withBucket) endpoint else "", if (withBucket) bucket else "", region, accessKey, secretKey,
                         )
+                        working = false
+                        if (why == null) {
+                            notify("Connection saved. Your tasks are syncing.")
+                            onDone()
+                        } else problem = why
+                    }
+                },
+            ) { Text(if (working) "Trying it…" else "Save the connection") }
+            OutlinedButton(onClick = onDone, enabled = !working) { Text("Cancel") }
+        }
+    }
+}
+
+/** Change the repository, the branch, the API, the token or the secret; a blank token or secret keeps it. Tried with a sync first. */
+@Composable
+private fun GitEditForm(store: Store, info: ConnectionInfo, onDone: () -> Unit) {
+    var repo by remember(info) { mutableStateOf(info.gitRepo ?: "") }
+    var branch by remember(info) { mutableStateOf(info.gitBranch ?: "") }
+    var api by remember(info) { mutableStateOf(info.gitApi ?: "") }
+    var token by remember { mutableStateOf("") }
+    var secret by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        GitFields(repo, { repo = it }, branch, { branch = it }, api, { api = it }, token, { token = it }, tokenLabel = "Token (blank keeps it)")
+        SecretField(secret, { secret = it }, "Encryption secret (blank keeps it)", Modifier.fillMaxWidth())
+        if (problem.isNotEmpty()) Text(problem, color = androidx.compose.material3.MaterialTheme.colorScheme.error, fontSize = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !working && repo.isNotBlank(),
+                onClick = {
+                    working = true
+                    problem = ""
+                    store.go {
+                        val why = changeGit(api, repo, branch, token, secret)
                         working = false
                         if (why == null) {
                             notify("Connection saved. Your tasks are syncing.")
@@ -184,12 +231,17 @@ fun SyncPanel(store: Store) {
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (store.connected) {
             val info = store.connectionInfo
-            val where = if (info?.serverUrl != null) "your sync server" else "your S3 bucket"
+            val onBranch = info?.gitRepo != null
+            val where = when {
+                onBranch -> "the branch ${info?.gitBranch} of ${info?.gitRepo}"
+                info?.serverUrl != null -> "your sync server"
+                else -> "your S3 bucket"
+            }
             Text("Syncing is on: this phone's tasks go to $where, and what other devices add comes here.", fontSize = 14.sp)
             store.sync.lastSync?.let { Dim("Last synced ${formatStamp(it.toLong(), store.offsetAt(it.toLong())).takeLast(8)}.") }
             ConnectionSection(store)
-            if (info?.hasBucket != false) {
-                Text("Keep in step with the bucket", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+            if (info?.sharesFiles != false) {
+                Text(if (onBranch) "Keep in step with the branch" else "Keep in step with the bucket", fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(options.settings, { choose(options.copy(settings = it)) })
                     Text("Settings: the taskrc subset, reports, commands and the rest", fontSize = 14.sp)
@@ -199,7 +251,7 @@ fun SyncPanel(store: Store) {
                     Text("Hooks: the Lua script", fontSize = 14.sp)
                 }
                 Dim(
-                    "These are the files the web app keeps in the bucket, so an edit on either side reaches the other at the next sync; when both changed, " +
+                    "These are the files the web app keeps in the ${if (onBranch) "repository" else "bucket"}, so an edit on either side reaches the other at the next sync; when both changed, " +
                         "the newer one wins and the other is kept to restore. The secrets for hooks are never synced.",
                     size = 12,
                 )
@@ -210,7 +262,11 @@ fun SyncPanel(store: Store) {
                 Button(onClick = ::syncNow, enabled = !busy) { Text(if (busy) "Syncing…" else "Sync now") }
                 OutlinedButton(onClick = {
                     store.go {
-                        if (confirmAsk("Stop syncing? The tasks stay on this phone, and ${if (info?.serverUrl != null) "the server" else "the bucket"} keeps what it has.", "Stop syncing", "Cancel")) {
+                        if (confirmAsk("Stop syncing? The tasks stay on this phone, and ${when {
+                            onBranch -> "the repository"
+                            info?.serverUrl != null -> "the server"
+                            else -> "the bucket"
+                        }} keeps what it has.", "Stop syncing", "Cancel")) {
                             disconnect()
                             notify("Not syncing any more. Your tasks are on this phone only.")
                         }
@@ -219,7 +275,7 @@ fun SyncPanel(store: Store) {
             }
         } else {
             Text(
-                "Syncing is off: your tasks are on this phone only. Connect an S3 bucket or a sync server (the one your task CLI syncs with) to have them everywhere. " +
+                "Syncing is off: your tasks are on this phone only. Connect an S3 bucket, a sync server or a git repository (the one your task CLI syncs with) to have them everywhere. " +
                     "What is on the phone is added to what is there.",
                 fontSize = 14.sp,
             )

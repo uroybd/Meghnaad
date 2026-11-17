@@ -6,6 +6,7 @@
 pub mod engine;
 pub mod files;
 pub mod filesync;
+pub mod gitrepo;
 pub mod helpers;
 pub mod jni;
 pub mod net;

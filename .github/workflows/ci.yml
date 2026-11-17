@@ -44,6 +44,9 @@ jobs:
       - name: Clippy (Worker, WebAssembly)
         run: cargo clippy -p tw-worker --target wasm32-unknown-unknown -- -D warnings
 
+      - name: Clippy (Worker with the git backend, WebAssembly)
+        run: cargo clippy -p tw-worker --target wasm32-unknown-unknown --features git -- -D warnings
+
       # The engine that runs in the browser is built for WebAssembly too.
       - name: Clippy (engine for the browser, WebAssembly)
         run: cargo clippy -p tc-browser --target wasm32-unknown-unknown -- -D warnings

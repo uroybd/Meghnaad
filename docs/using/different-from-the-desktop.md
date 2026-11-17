@@ -52,6 +52,10 @@ you change still reaches the server, but anything not yet pushed is lost if you 
 
 ### Syncing
 
+Where it is pushed is the server your deployment uses: the R2 bucket, or with the git Worker a branch of a git
+repository, the same one `task` syncs to with `sync.git.*` ([deploying it](../deploy.md#a-git-repository-instead-of-r2)).
+Either way it is the CLI's own layout, so `task sync` sees the same tasks.
+
 A change applies at once and is pushed in the background. The page pulls what other devices did when you
 return to the tab and every 30 seconds while you look at it, so a change from your laptop can take that long to show.
 Tabs of the same browser tell each other.

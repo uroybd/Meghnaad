@@ -101,10 +101,63 @@ private fun BucketFields(
     SecretField(secretKey, onSecretKey, "Secret access key", Modifier.fillMaxWidth())
 }
 
-/** The first screen's and Settings' form for a device that is not connected: an S3 bucket, or a TaskChampion sync server. */
+/** The fields of a git connection: the repository, its branch, the forge's API and the token. */
+@Composable
+fun GitFields(
+    repo: String, onRepo: (String) -> Unit,
+    branch: String, onBranch: (String) -> Unit,
+    api: String, onApi: (String) -> Unit,
+    token: String, onToken: (String) -> Unit,
+    tokenLabel: String = "Token",
+) {
+    val plain = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None)
+    OutlinedTextField(
+        value = repo,
+        onValueChange = onRepo,
+        label = { Text("Repository") },
+        placeholder = { Text("owner/name") },
+        supportingText = { Text("Keep it private: the app's settings and hooks are kept in it too.") },
+        singleLine = true,
+        keyboardOptions = plain,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = branch,
+        onValueChange = onBranch,
+        label = { Text("Branch") },
+        supportingText = { Text("sync.git.branch in your taskrc.") },
+        singleLine = true,
+        keyboardOptions = plain,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = api,
+        onValueChange = onApi,
+        label = { Text("API address") },
+        supportingText = { Text("https://api.github.com for GitHub; https://<your host>/api/v1 for Gitea and Forgejo.") },
+        singleLine = true,
+        keyboardOptions = plain.copy(keyboardType = KeyboardType.Uri),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    SecretField(token, onToken, tokenLabel, Modifier.fillMaxWidth())
+    Text(
+        "A token that may read and write the repository's contents: on GitHub a fine-grained token for that repository " +
+            "with Contents read and write; on Gitea and Forgejo one with the repository scope.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** The first screen's and Settings' form for a device that is not connected: an S3 bucket, a sync server, or a git repository. */
 @Composable
 fun ConnectForm(connect: suspend (Connection) -> String?, modifier: Modifier = Modifier) {
-    var server by remember { mutableStateOf(false) }
+    var where by remember { mutableStateOf("bucket") }
+    val server = where == "server"
+    val git = where == "git"
+    var repo by remember { mutableStateOf("") }
+    var branch by remember { mutableStateOf(Connection.GIT_BRANCH) }
+    var api by remember { mutableStateOf(Connection.GITHUB_API) }
+    var token by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var clientId by remember { mutableStateOf("") }
     var withBucket by remember { mutableStateOf(false) }
@@ -117,7 +170,9 @@ fun ConnectForm(connect: suspend (Connection) -> String?, modifier: Modifier = M
     var working by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    val typed = if (server) {
+    val typed = if (git) {
+        Connection.typedGit(api, repo, branch, token, secret)
+    } else if (server) {
         Connection.typedServer(
             url, clientId, secret,
             if (withBucket) endpoint else "", if (withBucket) bucket else "", region,
@@ -131,12 +186,14 @@ fun ConnectForm(connect: suspend (Connection) -> String?, modifier: Modifier = M
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Where do your tasks sync?", fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!server) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("S3 bucket") }
-            else OutlinedButton(onClick = { server = false }, modifier = Modifier.weight(1f)) { Text("S3 bucket") }
-            if (server) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text("Sync server") }
-            else OutlinedButton(onClick = { server = true }, modifier = Modifier.weight(1f)) { Text("Sync server") }
+            for ((key, label) in listOf("bucket" to "S3 bucket", "server" to "Sync server", "git" to "Git")) {
+                if (where == key) Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(label, maxLines = 1) }
+                else OutlinedButton(onClick = { where = key }, modifier = Modifier.weight(1f)) { Text(label, maxLines = 1) }
+            }
         }
-        if (server) {
+        if (git) {
+            GitFields(repo, { repo = it }, branch, { branch = it }, api, { api = it }, token, { token = it })
+        } else if (server) {
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
@@ -214,7 +271,8 @@ fun ConnectScreen(store: Store) {
         Text("Your tasks", style = MaterialTheme.typography.headlineMedium)
         Text(
             "Meghnaad keeps your tasks on this phone. To have them on your other devices too, connect the S3 bucket your " +
-                "task CLI syncs with (Cloudflare R2, AWS S3, MinIO, anything that speaks S3), or a TaskChampion sync server. " +
+                "task CLI syncs with (Cloudflare R2, AWS S3, MinIO, anything that speaks S3), a TaskChampion sync server, or a " +
+                "branch of a git repository on GitHub, Gitea or Forgejo. " +
                 "The keys stay on this phone, in its secure storage.",
             modifier = Modifier.padding(vertical = 12.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,

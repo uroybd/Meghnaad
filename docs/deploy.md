@@ -5,7 +5,7 @@
 | | Plan | Why |
 | --- | --- | --- |
 | **Workers** | Free is fine | Workers Free allows 10 ms of CPU per request. The Worker only checks Access and opens and seals versions (the engine runs in your browser), but the first request after an idle spell derives the encryption key, which can be cut off with error 1102. Cloudflare tolerates an occasional overrun and the app retries. Workers Paid ($5/month) lifts the limit. See [Limits of the platform](architecture.md#limits-of-the-platform) |
-| **R2** | Free is fine | The bucket your `task` CLI syncs to |
+| **R2** | Free is fine | The bucket your `task` CLI syncs to (not needed with [a git repository](#a-git-repository-instead-of-r2)) |
 | **Access** | Free is fine | Sign-in (one-time PIN works with no setup) |
 
 On your machine you need Node.js 20+ for every route. Routes A and C also need [Rust](https://rustup.rs) when you deploy
@@ -53,6 +53,7 @@ It checks your build tools (offering to install what's missing), logs you in wit
 
 | Question | Notes |
 | --- | --- |
+| **Where the tasks are kept** | `r2` (a bucket) or `git` (a branch of a git repository: [below](#a-git-repository-instead-of-r2)). With `git` it asks for the repository, branch, API address and token instead of a bucket |
 | **R2 bucket** | Your **existing** sync bucket is used as is; a name that doesn't exist yet is created. Nothing in the bucket is changed |
 | **Custom domain** | Optional, e.g. `tasks.example.com`. The domain must already be a zone on your Cloudflare account. Empty means the free `*.workers.dev` address. With a custom domain the `workers.dev` address is switched off |
 | **Encryption secret** | The same value as `sync.encryption_secret` in your taskrc (for a new bucket, invent a strong passphrase and use it for the CLI too). Stored as a Worker secret |
@@ -133,6 +134,7 @@ work. After that, updating is one click. In your fork:
 | Secret | `CLOUDFLARE_API_TOKEN` | the token from step 1 |
 | Secret | `CLOUDFLARE_ACCOUNT_ID` | your account id |
 | Secret, *optional* | `TC_ENCRYPTION_SECRET` | the same value as `sync.encryption_secret`. If unset, the Worker keeps the secret it already has from route 0, A or C. Set it only if you want the workflow to be the single source of truth |
+| Secret, *optional* | `GIT_TOKEN` | for the git Worker (`BACKEND=git`): the repository token. If unset, the Worker keeps the one it has |
 | Variable | `DEPLOY_VARS` | your deployment choices: **the contents of your `.deploy.vars`**, one `KEY=value` per line. Optional; without it the defaults apply |
 
 `DEPLOY_VARS` is a multi-line variable. Paste what `.deploy.vars` holds, for example:
@@ -213,11 +215,56 @@ so release a commit CI has passed.
 workflow on a push to `main` that touches `docs/`. Set the custom domain in the repository's Pages settings, and the
 repository variable `DOCS_DOMAIN` so the sitemap uses it.
 
+## A git repository instead of R2
+
+`task` 3.5.0 can sync to a git repository (`man task-sync`, `sync.git.*`), and so can Meghnaad: every release carries a
+second Worker, built to keep everything on a branch of a git repository on **GitHub**, **Gitea** or **Forgejo** instead of
+in R2. The page is the same. The Worker reaches the repository through the forge's API with a token, so it needs no
+bucket and no `git`. `task`, the git Worker and the phone can all share one branch.
+
+| Setting | Where | Default | What |
+| --- | --- | --- | --- |
+| `BACKEND` | `.deploy.vars` | `r2` | `git` deploys the git Worker |
+| `GIT_REPO` | `.deploy.vars` | (needed) | `owner/name`, such as `alice/tasks` |
+| `GIT_BRANCH` | `.deploy.vars` | `taskchampion` | The branch, the same as `sync.git.branch` |
+| `GIT_API` | `.deploy.vars` | `https://api.github.com` | `https://<host>/api/v1` for Gitea or Forgejo, `https://<host>/api/v3` for GitHub Enterprise |
+| `GIT_TOKEN` | Worker secret | (needed) | A token that may read and write the repository's contents |
+
+`npm run setup` asks for all of them (answer `git` to the first question) and sets the token as a secret. By hand:
+
+```bash
+printf 'BACKEND=git\nGIT_REPO=alice/tasks\n' > .deploy.vars
+npm run deploy
+npx wrangler secret put GIT_TOKEN
+npx wrangler secret put TC_ENCRYPTION_SECRET
+```
+
+- **The token.** On GitHub, a fine-grained personal access token for that one repository, with **Contents: Read and
+  write** (nothing else). On Gitea and Forgejo, an access token with the **repository** scope, read and write.
+- **Keep the repository private.** Tasks and hook secrets are encrypted, but the settings, the taskrc files and the hooks
+  script are kept under `web/` on the same branch as plain text.
+- **On GitHub the repository needs at least one commit** (create it with a README) so the branch can be made from it;
+  Gitea and Forgejo make the branch from nothing. The branch is made on the first sync if it isn't there.
+- **The Deploy to Cloudflare button deploys the R2 Worker only.** For git, use route 0 from a terminal, A or C.
+- From GitHub Actions (route D), set the repository variables as `DEPLOY_VARS` and the token as the `GIT_TOKEN` secret.
+- History grows with every sync, as it does with the CLI: removed versions stay in older commits.
+- GitHub allows 5,000 API requests an hour per token. An idle sync is one request and a change three or four, so the
+  page's sync every 30 seconds while it is visible stays far below it.
+
+To point `task` at the same branch, give it a clone's address it can push to:
+
+```bash
+task config sync.git.remote  git@github.com:alice/tasks.git   # or https://, with your git credentials
+task config sync.git.branch  taskchampion                      # if you chose another, that one
+task config sync.encryption_secret '<the same value as TC_ENCRYPTION_SECRET>'
+task sync
+```
+
 ## The Android app
 
 It doesn't use the Worker or Access: it syncs straight with the bucket, so deploying the web app isn't a step toward it.
 Install the APK from the [latest release](https://github.com/uroybd/Meghnaad/releases/latest) and give it the same bucket
-and encryption secret ([the Android app](android.md)). With the web app deployed, the two can also share settings and
+and encryption secret, or the same git repository ([the Android app](android.md)). With the web app deployed, the two can also share settings and
 hooks through the bucket (**Settings → Sync** on the phone).
 
 ## Connect your `task` CLI
@@ -250,6 +297,8 @@ unreleased Taskwarrior builds add `sync.aws.endpoint_url`.
 | `TEAM_DOMAIN` | var (not in `wrangler.jsonc`) | `https://<team>.cloudflareaccess.com`. Set by `npm run setup` (via `.deploy.vars`) or as a Text variable in the dashboard |
 | `POLICY_AUD` | var (not in `wrangler.jsonc`) | The Access application's AUD tag; set the same two ways |
 | `R2_BUCKET`, `CUSTOM_DOMAIN`, `WORKER_NAME` | `.deploy.vars` | Optional deploy choices |
+| `BACKEND`, `GIT_REPO`, `GIT_BRANCH`, `GIT_API` | `.deploy.vars` | The git Worker's repository ([A git repository instead of R2](#a-git-repository-instead-of-r2)) |
+| `GIT_TOKEN` | Worker secret | The git Worker's token for the repository |
 | `DEV_AUTH_BYPASS` | `.dev.vars` only | Skips the Access check for local development. Honoured only for loopback hosts (`localhost`, `127.x.x.x`, `::1`); anywhere else it is ignored and logged. Never set it on a deployed Worker |
 
 ## Troubleshooting a deployment

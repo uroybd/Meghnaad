@@ -15,6 +15,8 @@ pub mod dates;
 pub mod error;
 pub mod export;
 pub mod filter;
+pub mod forge;
+pub mod gitsync;
 pub mod guard;
 pub mod helpers;
 pub mod highlight;

@@ -70,7 +70,7 @@ completion and task commands around your own `task` CLI.
 - **Works on a phone.** The layout adapts (a menu for the pages, tasks as cards with their marks, time tracking, reminders,
   a console with completion), and there is a native **[Android app](#android-app)**.
 - **An Android app and widgets.** The engine runs on the phone, so it works offline, syncs straight with any
-  S3-compatible bucket or a TaskChampion sync server (no Worker, no Cloudflare Access), and has four home-screen widgets: a task list for any report,
+  S3-compatible bucket, a TaskChampion sync server or a git repository (no Worker, no Cloudflare Access), and has four home-screen widgets: a task list for any report,
   a burndown, a calendar and a card of a board ([the Android app](docs/android.md)), and boards you can make and change on the phone, with a link to every page.
 
 > **Status.** Verified against the released `task` 3.5.0 on a local S3-compatible server, in both directions (tasks,
@@ -144,7 +144,7 @@ The same pages are a searchable site at **[meghnaad.utsob.me](https://meghnaad.u
 | --- | --- |
 | **[Using Meghnaad](docs/using.md)** | Pages, console, confirmations, hooks, recurrence, urgency, time tracking |
 | **[Deploying](docs/deploy.md)** | Setup, GitHub Actions deploy, Access, connecting `task`, troubleshooting |
-| **[The Android app](docs/android.md)** | Install, connect (a bucket or a TaskChampion sync server, or neither), the four widgets, sharing settings and hooks, building it |
+| **[The Android app](docs/android.md)** | Install, connect (a bucket, a TaskChampion sync server or a git repository, or neither), the four widgets, sharing settings and hooks, building it |
 | **[The terminal app](docs/terminal.md)** | Install, the pages and keys, the command line, review, where its settings are kept |
 | **[Architecture](docs/architecture.md)** | A diagram per platform, the engine, sync, hooks, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
@@ -196,11 +196,15 @@ flowchart TB
   end
 
   bucket[("Bucket<br/>TaskChampion's layout, encrypted<br/>and the app's settings")]
+  repo[("or a git branch<br/>TaskChampion's git layout, encrypted<br/>and the app's settings")]
 
   tcd <-- "task sync" --> bucket
   tcw <-- "/api/tc/*: versions opened, over HTTPS" --> access
   wk <-- "R2 binding" --> bucket
   tcn <-- "S3, signed on the phone" --> bucket
+  tcd <-. "task sync, sync.git.*" .-> repo
+  wk <-. "the git Worker: the forge's API" .-> repo
+  tcn <-. "the forge's API" .-> repo
   sh <-. "counterpart" .-> cmds
   tsh <-. "counterpart" .-> rev
 
@@ -216,7 +220,7 @@ flowchart TB
   class cli,tcd,tcw,tcn tw
   class db,mem,rep store
   class access,wk edge
-  class bucket bucket
+  class bucket,repo bucket
   class sh,tsh,cmds,rev ext
 ```
 
@@ -228,7 +232,8 @@ flowchart TB
   in a Web Worker in the page. It holds your tasks in memory, so a command costs no round trip and uses none of the
   Worker's CPU. Only your hooks run elsewhere, on the Worker (below). The Svelte app only draws.
 - **The bucket** holds TaskChampion's standard cloud layout, encrypted client-side. The browser's replica and your CLI
-  are interchangeable replicas of it.
+  are interchangeable replicas of it. **Or a git repository**: a second Worker, `BACKEND=git`, keeps everything on the
+  branch `task` syncs to with `sync.git.*`, on GitHub, Gitea or Forgejo ([deploying it](docs/deploy.md#a-git-repository-instead-of-r2)).
 - **The Worker keeps the secret.** It checks Cloudflare Access, and opens and seals the versions that pass between the
   bucket and your browser (`/api/tc/*`), so the encryption secret never leaves it. It parses no tasks. It also runs your
   hooks: the engine sends it a task and gets the task back (`/api/run`).

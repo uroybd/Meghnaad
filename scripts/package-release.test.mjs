@@ -23,6 +23,11 @@ test('the release config has no build step and points at the files as packaged',
   const deployed = buildConfig(c, { R2_BUCKET: 'mine', CUSTOM_DOMAIN: 'tasks.example.com' });
   assert.equal(deployed.r2_buckets[0].bucket_name, 'mine');
   assert.equal(deployed.routes[0].pattern, 'tasks.example.com');
+  // And BACKEND=git picks the packaged git Worker, which has no bucket.
+  const git = buildConfig(c, { BACKEND: 'git', GIT_REPO: 'alice/tasks' });
+  assert.equal(git.main, 'worker-git/index.js');
+  assert.equal(git.r2_buckets, undefined);
+  assert.equal(git.build, undefined);
 });
 
 test('the release package.json deploys with the scripts and carries what the Deploy button shows', () => {
@@ -40,6 +45,7 @@ test('assembling copies the built Worker and app, the scripts and the configurat
   const out = join(mkdtempSync(join(tmpdir(), 'pkg-out-')), 'release');
   try {
     mkdirSync(join(root, 'crates', 'worker', 'build', 'worker'), { recursive: true });
+    mkdirSync(join(root, 'crates', 'worker', 'build-git', 'worker'), { recursive: true });
     mkdirSync(join(root, 'web', 'dist', 'assets'), { recursive: true });
     mkdirSync(join(root, 'scripts'));
     for (const [f, text] of [
@@ -48,6 +54,9 @@ test('assembling copies the built Worker and app, the scripts and the configurat
       ['crates/worker/build/package.json', '{}'],
       ['crates/worker/build/.gitignore', '*'],
       ['crates/worker/build/worker/shim.mjs', 'shim'],
+      ['crates/worker/build-git/index.js', 'js-git'],
+      ['crates/worker/build-git/index_bg.wasm', 'wasm-git'],
+      ['crates/worker/build-git/.gitignore', '*'],
       ['web/dist/index.html', '<html>'],
       ['web/dist/assets/app.js', 'app'],
       ['web/dist/_headers', '/*'],
@@ -66,6 +75,9 @@ test('assembling copies the built Worker and app, the scripts and the configurat
     const has = (f) => existsSync(join(out, f));
     for (const f of ['worker/index.js', 'worker/index_bg.wasm', 'app/index.html', 'app/assets/app.js', 'app/_headers'])
       assert.ok(has(f), f);
+    // The Worker for BACKEND=git, beside the other.
+    assert.equal(readFileSync(join(out, 'worker-git', 'index_bg.wasm'), 'utf8'), 'wasm-git');
+    assert.ok(!has('worker-git/.gitignore'));
     for (const f of ['scripts/setup.mjs', 'scripts/deploy.mjs', 'scripts/deploy-lib.mjs', 'LICENSE', 'README.md'])
       assert.ok(has(f), f);
     assert.ok(!has('scripts/dev.mjs'));
@@ -80,6 +92,7 @@ test('assembling copies the built Worker and app, the scripts and the configurat
       'package.json',
       'scripts',
       'worker',
+      'worker-git',
       'wrangler.jsonc',
     ]);
     // Assembling again starts clean.

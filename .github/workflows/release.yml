@@ -78,16 +78,18 @@ jobs:
       - name: Install worker-build
         run: command -v worker-build >/dev/null || cargo install worker-build --version '~0.8' --locked
 
-      # The web app, the engine that runs in the browser, and the Worker. The web app shows the version in Settings.
+      # The web app, the engine that runs in the browser, and both Workers (R2 and git). The web app shows the version in
+      # Settings.
       - name: Build
         env:
           APP_VERSION: ${{ env.VERSION }}
-        run: node scripts/build.mjs
+        run: node scripts/build.mjs --flavour all
 
       - name: Package
         run: |
           node scripts/package-release.mjs --out "$RUNNER_TEMP/release" --version "$VERSION"
           echo "Worker: $(gzip -9 -c "$RUNNER_TEMP/release/worker/index_bg.wasm" | wc -c) bytes compressed"
+          echo "Worker (git): $(gzip -9 -c "$RUNNER_TEMP/release/worker-git/index_bg.wasm" | wc -c) bytes compressed"
           tar -czf "$RUNNER_TEMP/meghnaad-$VERSION.tar.gz" -C "$RUNNER_TEMP/release" .
 
       # The branch only ever gains commits (nothing is force-pushed), each one the whole built tree.

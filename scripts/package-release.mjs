@@ -2,7 +2,8 @@
 // Assembles a prebuilt release: everything a deploy needs and nothing to build. It is what the Release workflow
 // pushes to the `release` branch (the target of the Deploy to Cloudflare button) and attaches to a GitHub release.
 //   node scripts/package-release.mjs [--out release] [--version v1.2.3]
-// It packages what `node scripts/build.mjs` has already built (crates/worker/build and web/dist).
+// It packages what `node scripts/build.mjs --flavour all` has already built (crates/worker/build and build-git, and
+// web/dist).
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ROOT, stripJsonc } from './deploy-lib.mjs';
@@ -45,7 +46,8 @@ and pointing your \`task\` CLI at the bucket, are in
 
 | | |
 | --- | --- |
-| \`worker/\` | the Worker (WebAssembly) |
+| \`worker/\` | the Worker (WebAssembly), keeping the tasks in an R2 bucket |
+| \`worker-git/\` | the Worker for \`BACKEND=git\`, keeping them on a branch of a git repository |
 | \`app/\` | the web app, including the engine that runs in your browser |
 | \`wrangler.jsonc\` | its configuration (the bucket \`TASKS\`; \`keep_vars\` keeps what you add in the dashboard) |
 | \`scripts/\` | what \`npm run setup\` and \`npm run deploy\` run |
@@ -54,13 +56,16 @@ and pointing your \`task\` CLI at the bucket, are in
 /** Writes the package into \`out\`, which is emptied first. \`root\` is a source tree that has been built. */
 export function assemble(root, out, version) {
   const worker = join(root, 'crates', 'worker', 'build');
+  const workerGit = join(root, 'crates', 'worker', 'build-git');
   const dist = join(root, 'web', 'dist');
-  for (const need of [join(worker, 'index.js'), join(worker, 'index_bg.wasm'), join(dist, 'index.html')])
-    if (!existsSync(need)) throw new Error(`${need} is missing: build first (node scripts/build.mjs)`);
+  const built = [worker, workerGit].flatMap((w) => [join(w, 'index.js'), join(w, 'index_bg.wasm')]);
+  for (const need of [...built, join(dist, 'index.html')])
+    if (!existsSync(need)) throw new Error(`${need} is missing: build first (node scripts/build.mjs --flavour all)`);
 
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   cpSync(worker, join(out, 'worker'), { recursive: true, filter: (p) => !p.endsWith('.gitignore') });
+  cpSync(workerGit, join(out, 'worker-git'), { recursive: true, filter: (p) => !p.endsWith('.gitignore') });
   cpSync(dist, join(out, 'app'), { recursive: true });
   cpSync(join(root, 'LICENSE'), join(out, 'LICENSE'));
 

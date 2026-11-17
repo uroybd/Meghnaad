@@ -13,9 +13,23 @@ export const VARS_FILE = join(ROOT, '.deploy.vars');
 export const BASE_CONFIG = join(ROOT, 'wrangler.jsonc');
 export const DEPLOY_CONFIG = join(ROOT, 'wrangler.deploy.jsonc');
 
-export const KEYS = ['R2_BUCKET', 'CUSTOM_DOMAIN', 'TEAM_DOMAIN', 'POLICY_AUD', 'WORKER_NAME'];
+export const KEYS = [
+  'BACKEND',
+  'R2_BUCKET',
+  'GIT_REPO',
+  'GIT_BRANCH',
+  'GIT_API',
+  'CUSTOM_DOMAIN',
+  'TEAM_DOMAIN',
+  'POLICY_AUD',
+  'WORKER_NAME',
+];
 
 const PATTERNS = {
+  BACKEND: [/^(r2|git)$/, 'r2 (an R2 bucket) or git (a branch of a git repository)'],
+  GIT_REPO: [/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/, 'owner/name, such as alice/tasks'],
+  GIT_BRANCH: [/^(?![/.-])(?!.*(\.\.|\/\/))[A-Za-z0-9._/-]*[A-Za-z0-9_-]$/, 'a branch name, such as taskchampion'],
+  GIT_API: [/^https:\/\/[^\s/]+(\/[^\s]*)?$/, 'https://api.github.com, or a Gitea/Forgejo address ending in /api/v1'],
   R2_BUCKET: [/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/, 'a bucket name: 3-63 lowercase letters, digits or hyphens'],
   CUSTOM_DOMAIN: [
     /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/,
@@ -72,7 +86,9 @@ export function writeSettings(s) {
   writeFileSync(
     VARS_FILE,
     '# Your deployment settings (git-ignored). Read by `npm run deploy`; edited by `npm run setup`.\n' +
+      '# BACKEND       r2 (default) or git: where the tasks are kept\n' +
       '# R2_BUCKET     existing or new bucket your `task` CLI syncs to (default: the one in wrangler.jsonc)\n' +
+      '# GIT_REPO / GIT_BRANCH / GIT_API   the repository (owner/name), branch and forge API, for BACKEND=git\n' +
       '# CUSTOM_DOMAIN optional, e.g. tasks.example.com (the zone must be on your Cloudflare account)\n' +
       '# TEAM_DOMAIN / POLICY_AUD   from Cloudflare Access\n' +
       '# WORKER_NAME   optional, to run several copies\n' +
@@ -82,17 +98,31 @@ export function writeSettings(s) {
 }
 
 /** Settings problems as readable strings. */
-export const problems = (s) => KEYS.flatMap((k) => problem(k, s[k]) ?? []);
+export const problems = (s) => [
+  ...KEYS.flatMap((k) => problem(k, s[k]) ?? []),
+  ...(isGit(s) && !s.GIT_REPO ? ['GIT_REPO is needed when BACKEND=git'] : []),
+];
 
 /** Both Access settings present and valid: the deployed Worker can check sign-ins. */
 export const accessReady = (s) =>
   !!s.TEAM_DOMAIN && !!s.POLICY_AUD && !problem('TEAM_DOMAIN', s.TEAM_DOMAIN) && !problem('POLICY_AUD', s.POLICY_AUD);
 
+/** Whether the tasks are kept on a branch of a git repository rather than in an R2 bucket. */
+export const isGit = (s) => s.BACKEND === 'git';
+
 /** `wrangler.jsonc` (already parsed) + settings -> the config to deploy. Pure. */
 export function buildConfig(base, s) {
   const c = structuredClone(base);
   if (s.WORKER_NAME) c.name = s.WORKER_NAME;
-  if (s.R2_BUCKET) {
+  if (isGit(s)) {
+    // The git build of the Worker, which has no bucket: the tasks and settings are on the branch.
+    delete c.r2_buckets;
+    c.main = c.main.replace(/^worker\//, 'worker-git/').replace('/build/', '/build-git/');
+    if (c.build) c.build = { ...c.build, command: `${c.build.command} --flavour git` };
+    c.vars = { ...(c.vars ?? {}), GIT_REPO: s.GIT_REPO };
+    if (s.GIT_BRANCH) c.vars.GIT_BRANCH = s.GIT_BRANCH;
+    if (s.GIT_API) c.vars.GIT_API = s.GIT_API;
+  } else if (s.R2_BUCKET) {
     const b = (c.r2_buckets ?? []).find((x) => x.binding === 'TASKS');
     if (b) b.bucket_name = s.R2_BUCKET;
     else c.r2_buckets = [...(c.r2_buckets ?? []), { binding: 'TASKS', bucket_name: s.R2_BUCKET }];

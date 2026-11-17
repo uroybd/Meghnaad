@@ -43,3 +43,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0008 | [Group separators in the terminal app](0008-tui-group-separators.md) | done | 2 (UI) | terminal | Built 2026-11-17 |
 | 0009 | [settings.json, editable, pastable and kept whole](0009-settings-json-kept-whole.md) | done | 2 (UI) | all | Built 2026-11-17 |
 | 0010 | [Short uuid for a missing ID, as an option](0010-id-fallback-opt-in.md) | done | 2 (UI), one helper | all | Built 2026-11-17 |
+| 0011 | [Git repository as the sync backend](0011-git-sync-backend.md) | in progress | both | web, Android | Everything: started 2026-11-17 |

@@ -12,6 +12,10 @@ crate-type = ["cdylib", "rlib"]
 [lints]
 workspace = true
 
+[features]
+# Keep the tasks on a branch of a git repository (GitHub, Gitea, Forgejo) instead of in the R2 bucket `TASKS`.
+git = []
+
 [dependencies]
 async-trait = "0.1"
 base64 = "0.22"

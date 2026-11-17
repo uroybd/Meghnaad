@@ -29,12 +29,13 @@ jobs:
     env:
       # Whether the optional secret below exists (a step's own `if` can't look at a secret).
       HAS_ENCRYPTION_SECRET: ${{ secrets.TC_ENCRYPTION_SECRET != '' }}
+      HAS_GIT_TOKEN: ${{ secrets.GIT_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
       # Your deployment choices are one repository (or environment) *variable*, DEPLOY_VARS, holding what
-      # `.deploy.vars` would: one KEY=value per line (R2_BUCKET, CUSTOM_DOMAIN, TEAM_DOMAIN, POLICY_AUD,
-      # WORKER_NAME, all optional; # comments are fine). It is written out as that file, which the deploy script
+      # `.deploy.vars` would: one KEY=value per line (BACKEND, R2_BUCKET or GIT_REPO/GIT_BRANCH/GIT_API, CUSTOM_DOMAIN,
+      # TEAM_DOMAIN, POLICY_AUD, WORKER_NAME, all optional but GIT_REPO with BACKEND=git; # comments are fine). It is written out as that file, which the deploy script
       # already reads and validates. Passed through the environment, never pasted into the script.
       - name: Write the deploy settings
         env:
@@ -83,3 +84,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: printf %s "$TC_ENCRYPTION_SECRET" | npx wrangler secret put TC_ENCRYPTION_SECRET --config wrangler.deploy.jsonc
+
+      # Optional, for BACKEND=git: the token that may read and write the repository, set the same way.
+      - name: Set the git token
+        if: ${{ !inputs.dry_run && env.HAS_GIT_TOKEN == 'true' }}
+        env:
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: printf %s "$GIT_TOKEN" | npx wrangler secret put GIT_TOKEN --config wrangler.deploy.jsonc

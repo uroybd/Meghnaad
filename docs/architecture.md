@@ -83,11 +83,15 @@ flowchart TB
   end
 
   bucket[("Bucket<br/>TaskChampion's layout, encrypted<br/>and the app's settings")]
+  repo[("or a git branch<br/>TaskChampion's git layout, encrypted<br/>and the app's settings")]
 
   tcd <-- "task sync" --> bucket
   tcw <-- "/api/tc/*: versions opened, over HTTPS" --> access
   wk <-- "R2 binding" --> bucket
   tcn <-- "S3, signed on the phone" --> bucket
+  tcd <-. "task sync, sync.git.*" .-> repo
+  wk <-. "the git Worker: the forge's API" .-> repo
+  tcn <-. "the forge's API" .-> repo
   sh <-. "counterpart" .-> cmds
   tsh <-. "counterpart" .-> rev
 
@@ -103,7 +107,7 @@ flowchart TB
   class cli,tcd,tcw,tcn tw
   class db,mem,rep store
   class access,wk edge
-  class bucket bucket
+  class bucket,repo bucket
   class sh,tsh,cmds,rev ext
 ```
 
@@ -116,7 +120,7 @@ the box that does its job on another (not every diagram has every colour):
 | Orange | `tc-core` and the Rust that hosts it | the engine in the browser and on the phone, the helpers every front end calls, the Worker's routes, the JNI layer |
 | Grey | Taskwarrior's own pieces | `task`, TaskChampion |
 | Blue | A replica and where it is kept | SQLite, memory and IndexedDB, a file on the phone |
-| Purple | The bucket | R2 or any S3-compatible store |
+| Purple | The bucket | R2 or any S3-compatible store, or a branch of a git repository |
 | Yellow | Cloudflare | Access and the Worker |
 | Red | Your Lua hooks | the one script, and each place that runs it |
 | Dashed | Not Taskwarrior: what people add around it | shell aliases and tasksh, and their counterparts here |
@@ -129,8 +133,8 @@ them.
 | Platform | Code | Runs the engine | Reaches the bucket |
 | --- | --- | --- | --- |
 | [Browser](#in-the-browser) | `web/`, `crates/browser` | in the page, as WebAssembly | through the Worker |
-| [Cloudflare](#on-cloudflare) | `crates/worker` | no; hooks only | an R2 binding |
-| [Android](#on-android) | `app/`, `crates/android` | in the app, natively | itself, over S3 or a TaskChampion sync server |
+| [Cloudflare](#on-cloudflare) | `crates/worker` | no; hooks only | an R2 binding, or (the git Worker) a forge's API |
+| [Android](#on-android) | `app/`, `crates/android` | in the app, natively | itself, over S3, a TaskChampion sync server or a forge's API |
 | [Desktop](#on-the-desktop) | `crates/tui`, `crates/hook-shim` | no; the real `task` does the work | only through `task sync` |
 
 ### Two layers
@@ -281,6 +285,13 @@ flowchart LR
 `crates/worker`, behind Cloudflare Access. Nothing on it runs a command; only your hooks run there (a task in and a task
 out, never the replica).
 
+It is built twice from the same code. The default build keeps everything in R2; the one built with the `git` feature
+(`node scripts/build.mjs --flavour git`, into `crates/worker/build-git`) keeps it on a branch of a git repository
+instead, reached through GitHub's or Gitea's API with the `GIT_TOKEN` secret (see [To a git branch](#to-a-git-branch)).
+`backend.rs` is the one place that differs: it opens the store and the TaskChampion server for its build, and the
+routes, the page and `tc_core::wire` are the same. Two builds rather than a choice at run time, so each carries only
+its own. `BACKEND=git` in the deploy settings picks the git one.
+
 1. **Static files** (the app shell and the engine's `.wasm`) are served by Cloudflare without running the Worker. Only
    `/api/*` runs it, and every page address gets the app (single-page fallback).
 2. **`auth.rs`** checks the Cloudflare Access token on every `/api/*` request: RS256 signature against your team's
@@ -371,13 +382,14 @@ an exception across the boundary. It is the browser's engine with another way to
 `tc_core::request` for what a request means. See [the Android app](android.md).
 
 - **Sync.** It syncs straight with the bucket, signing S3 requests itself (`CloudServer` over an `S3Store`, the same
-  server code the Worker runs over R2), or with a TaskChampion sync server (`syncserver.rs`, the same sealed versions
-  over HTTP, keyed by the client id). `Sync.kt` keeps the web client's rules for when.
+  server code the Worker runs over R2), with a TaskChampion sync server (`syncserver.rs`, the same sealed versions
+  over HTTP, keyed by the client id), or with a branch of a git repository (`gitrepo.rs`: `tc_core::gitsync` over the
+  forge's API, with blocking `ureq`). `Sync.kt` keeps the web client's rules for when.
 - **Keys.** The connection and the key that seals the hooks' secrets are encrypted with a key that lives in the Android
   Keystore (`AndroidVault.kt`), and handed to the engine when it starts. No screen can read them.
 - **Settings.** The taskrc files, `settings.json` and the hooks script live in a folder on the phone under the same
-  names the Worker uses in the bucket (`files.rs`), and `filesync.rs` keeps them in step with the bucket's, never the
-  secrets. The folder's routes are `tc_core::webapi`, as on the Worker, answered by the engine's `api` call.
+  names the Worker uses in the bucket (`files.rs`), and `filesync.rs` keeps them in step with the bucket's (or the git
+  branch's), never the secrets. The folder's routes are `tc_core::webapi`, as on the Worker, answered by the engine's `api` call.
 - **Screens.** Drawn natively in Compose, not in a WebView. `shared` holds the engine's JSON types and API (mirroring
   `web/src/lib/types.ts` and `api.ts`), a `Store` that mirrors the web's, and the screens; `androidApp` holds the
   activity, the reminder alarm's receiver and the widgets. Only the web app's own view logic is ported to Kotlin;
@@ -522,7 +534,7 @@ commands; the terminal app and `meghnaad-hook` use only its helpers and hooks.
 
 | Area | Modules | What they do |
 | --- | --- | --- |
-| **Protocol** | `cloud`, `crypto`, `names`, `store`, `wire` | TaskChampion's cloud server over an object store; PBKDF2 → ChaCha20-Poly1305; object names; the storage trait the Worker implements over R2 and the phone over S3; and `wire`, the plain protocol between the page's replica and the Worker (a batched pull, a push, snapshots), with both halves so a test can run a whole sync through them |
+| **Protocol** | `cloud`, `crypto`, `names`, `store`, `wire`, `gitsync`, `forge` | TaskChampion's cloud server over an object store; PBKDF2 → ChaCha20-Poly1305; object names; the storage trait the Worker implements over R2 and the phone over S3; `wire`, the plain protocol between the page's replica and the Worker (a batched pull, a push, snapshots), with both halves so a test can run a whole sync through them; `gitsync`, TaskChampion's git server (`meta`, `v-…`, one `snapshot`, a commit per change) over a small `GitRepo` trait; and `forge`, that trait over GitHub's GraphQL and Gitea's contents API, with the host carrying only the HTTP (`Http`) |
 | **Replica storage** | `live`, `warm` | The in-memory database. TaskChampion's own copies every task on the first write of each transaction; this one changes its data in place and keeps a short journal to undo a dropped transaction. A test runs random transactions against both and compares them. It can be saved to bytes and loaded again (`save`, `load`), which is what the browser keeps in IndexedDB and the phone in a file. `warm` keeps the tasks between commands (see [Limits of the platform](#limits-of-the-platform)) |
 | **Requests** | `request`, `webapi` | What a request to an engine means, shared by the browser and the phone, and the settings routes the Worker and the phone both answer |
 | **Tasks** | `model`, `filter`, `modify`, `dates`, `rx`, `recur` | A plain view of a task; filter expressions; planning `modify` and `add`; Taskwarrior's date and duration parsing and regular expressions; recurring tasks |
@@ -642,6 +654,30 @@ CLI's cooperation.
 The page's replica syncs through `RemoteServer`, a TaskChampion `Server` that speaks `tc_core::wire` to the Worker
 instead of touching the bucket. The Worker runs `CloudServer` and answers from it, so everything above happens there,
 and the page never holds the key.
+### To a git branch
+
+`task` 3.5.0 can sync to a git repository (`sync.git.*`, TaskChampion's `gitsync`), and `tc_core::gitsync` is the same
+server, so `task`, the git Worker and the phone share one branch. Its layout is not the bucket's: one `meta` file
+holds the latest version and the salt (JSON), versions are `v-<parent>-<child>` sealed as in the bucket, and there is
+one `snapshot` file, overwritten. A push is one commit holding the version and the new `meta`. The CLI clones and
+pushes; the Worker and the phone have no `git`, so they use the forge's API (`tc_core::forge`):
+
+- **One request per commit.** GitHub's `createCommitOnBranch` with `expectedHeadOid`, or Gitea's and Forgejo's
+  multi-file `POST /contents`, which checks the blob each changed file had. A branch that moved since it was read is
+  the same as a rejected push: the server says the version's parent is no longer the latest, and TaskChampion pulls
+  and pushes again.
+- **Cheap when idle.** One read of `meta` (on GitHub the head and the file together). Catching up lists the root once
+  and fetches the versions it needs in batches of 32.
+- **Snapshots as the CLI takes them.** Its urgency is how many versions were added since the snapshot: up to 50 none,
+  up to 100 low, more high. After one, the versions it covers whose last commit is more than 180 days old are removed in
+  one commit, dated with one query on GitHub (up to 100 files) or one request a file on Gitea. As with the CLI, a
+  failed snapshot or cleanup is ignored.
+- **Settings beside the tasks.** `web/config.json`, `settings.json`, the hooks and the taskrc files live under `web/`
+  on the same branch (`GitObjects`, an object store over the repository; each change is a commit). `task` only touches
+  `meta`, `snapshot` and `v-*`, so it leaves them alone. They are plain text, so the repository must be private.
+- **Commits** are made as `taskchampion <taskchampion@local>` with the CLI's messages. History grows forever, as with
+  the CLI.
+
 
 - **Pull in batches.** TaskChampion asks for the version after the one it has, one at a time.
   `GET /api/tc/pull?since=` answers with up to 24 versions in one body (each 16 bytes of id, 16 of parent, a length and

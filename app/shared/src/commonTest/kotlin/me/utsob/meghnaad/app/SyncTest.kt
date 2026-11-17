@@ -141,6 +141,41 @@ class SyncTest {
     }
 
     @Test
+    fun aGitConnectionIsTypedAndSentAsTasksOnABranch() {
+        val c = Connection.typedGit(" ", " alice/tasks/ ", " ", " tok ", " pw ")
+        assertEquals(GitAddress("https://api.github.com", "alice/tasks", "taskchampion", "tok"), c.git)
+        assertNull(c.problem())
+        assertTrue(!c.hasBucket)
+        // The shared files go on the branch beside the tasks: no bucket is needed for them.
+        val json = c.toSyncJson(SyncOptions(settings = true, hooks = true).files())
+        assertTrue("\"kind\":\"git\"" in json && "\"repo\":\"alice/tasks\"" in json && "\"token\":\"tok\"" in json, json)
+        assertTrue("web/hooks.lua" in json && "files_bucket" !in json, json)
+        val gitea = Connection.typedGit("https://git.example.com/api/v1/", "me/t", "tasks", "t", "pw")
+        assertEquals("https://git.example.com/api/v1", gitea.git?.api)
+        assertNull(gitea.problem())
+    }
+
+    @Test
+    fun aGitConnectionNeedsARepositoryATokenAndASecret() {
+        assertNotNull(Connection.typedGit("", "", "", "tok", "pw").problem())
+        assertTrue("owner/name" in Connection.typedGit("", "tasks", "", "tok", "pw").problem()!!)
+        assertNotNull(Connection.typedGit("", "a/b", "", "", "pw").problem())
+        assertNotNull(Connection.typedGit("", "a/b", "", "tok", "").problem())
+        assertTrue("https://" in Connection.typedGit("http://x.example", "a/b", "", "tok", "pw").problem()!!)
+        assertNotNull(Connection.typedGit("", "a/b", "a..b", "tok", "pw").problem())
+        assertNull(Connection.typedGit("", "a/b", "work/tasks", "tok", "pw").problem())
+    }
+
+    @Test
+    fun theTabShowsTheRepositoryAndNeverTheToken() {
+        val info = Connection.typedGit("", "alice/tasks", "", "ghp_secret_token", "pw").info()
+        assertEquals("alice/tasks", info.gitRepo)
+        assertEquals("taskchampion", info.gitBranch)
+        assertTrue(info.sharesFiles)
+        assertTrue("ghp_secret_token" !in info.toString())
+    }
+
+    @Test
     fun aBucketConnectionSavedBeforeTheChoiceStillReads() {
         val old = """{"endpoint":"https://x.example","bucket":"tasks","region":"auto","accessKey":"k","secretKey":"s","encryptionSecret":"p"}"""
         val c = engineJson.decodeFromString(Connection.serializer(), old)

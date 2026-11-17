@@ -1,7 +1,8 @@
 # The Android app
 
 A native app in Kotlin and Compose, with the engine as a native library and widgets on the home screen. It keeps your
-tasks on the phone and syncs them straight with your bucket over S3, or with a TaskChampion sync server. No Worker and no
+tasks on the phone and syncs them straight with your bucket over S3, with a TaskChampion sync server, or with a branch of
+a git repository on GitHub, Gitea or Forgejo. No Worker and no
 Cloudflare Access are involved, and your keys stay on the phone. It does what the web app does, with a layout made for a
 phone, plus two things a browser tab can't: reminders that come with the app closed, and widgets.
 
@@ -183,7 +184,7 @@ section; set `ANDROID_UPDATE_REPO=owner/name` when building to try it.
 
 ## First run
 
-The app asks where your tasks sync: **an S3 bucket** or **a sync server**.
+The app asks where your tasks sync: **an S3 bucket**, **a sync server** or **a git repository**.
 
 **A bucket.** It asks for the S3 endpoint (`https://<account>.r2.cloudflarestorage.com` for R2), the bucket, the region
 (`auto` for R2, the real one for AWS), an access key and its secret, and the encryption secret (the same as
@@ -231,6 +232,31 @@ server doesn't hold the app's settings and hooks either. **A bucket for those fi
 settings and hooks in a bucket* and give it a bucket (a different one from the web app's tasks is fine), and the two
 switches under **Settings → Sync** keep them in step, as below. Without one they stay on the phone.
 
+### A git repository
+
+Choose **Git** to sync with a branch of a git repository: the same branch `task` 3.5.0 syncs to with `sync.git.*`, and
+the one the web app's git Worker uses, so all three share the tasks. The phone has no `git`; it uses the forge's API.
+
+| Field | What to put | In your taskrc |
+| --- | --- | --- |
+| Repository | `owner/name`, such as `alice/tasks` | the repository of `sync.git.remote` |
+| Branch | `taskchampion` unless you chose another | `sync.git.branch` |
+| API address | `https://api.github.com` for GitHub, `https://<host>/api/v1` for Gitea or Forgejo, `https://<host>/api/v3` for GitHub Enterprise | |
+| Token | a token that may read and write the repository's contents | |
+| Encryption secret | the same as `sync.encryption_secret` | `sync.encryption_secret` |
+
+- **The token.** On GitHub, a fine-grained personal access token for that one repository with **Contents: Read and
+  write**. On Gitea and Forgejo, an access token with the **repository** scope (read and write). It is kept in the
+  Keystore with the other keys and never shown.
+- **Keep the repository private.** The tasks are encrypted, but the app's settings and the hooks script go on the same
+  branch, under `web/`, as plain text. `task` leaves them alone.
+- **On GitHub the repository needs one commit** (a README will do) before the branch can be made; Gitea and Forgejo make
+  it from nothing. A branch that isn't there yet is made on the first sync.
+- The API address must be `https://` (`http://` only for `localhost` and `127.0.0.1`).
+
+The settings and hooks go to the branch, so no bucket is needed for them: the two switches under **Settings → Sync** keep
+them in step with the branch, as they would with a bucket.
+
 ### Syncing somewhere else
 
 A phone remembers where its tasks were last synced. If you point it at a different place (another server or bucket, or
@@ -251,7 +277,7 @@ with no tasks moves without asking.
 Unless you turn sharing on, the taskrc subset, the app's settings, the hooks script and the hook secrets are in the
 app's private storage. Under **Settings → Sync** (when connected) you can keep **the
 settings** (the taskrc files under `web/rc/`, `web/config.json`, `web/settings.json`) and/or **the hooks**
-(`web/hooks.lua`) in step with the bucket. They are the files the web app keeps there, so an edit on either side reaches
+(`web/hooks.lua`) in step with the bucket, or with the git branch. They are the files the web app keeps there, so an edit on either side reaches
 the other at the next sync.
 
 - What changed since the last sync wins. When both changed, the newer wins and the other is kept as the web app's restore
@@ -270,8 +296,9 @@ redirect are held to the rules the Worker applies to a taskrc link), and saves t
 
 ### Settings → Sync
 
-This shows where the phone syncs (the endpoint, bucket, region and a hint of the access key's name, or
-the sync server and a hint of the client ID; never a secret) and changes it. Blank fields keep their value, so you can
+This shows where the phone syncs (the endpoint, bucket, region and a hint of the access key's name, the
+sync server and a hint of the client ID, or the repository, branch and API address; never a secret or a token) and
+changes it. Blank fields keep their value, so you can
 correct the address without typing the keys again. The change is tried with a sync first, and one that doesn't work
 isn't kept.
 
@@ -307,8 +334,11 @@ your bucket
 - `syncserver.rs` is a TaskChampion sync server as a `taskchampion::Server` (`/v1/client/…`, `X-Client-Id`, the key
   derived with the client id as the salt). `tests/syncserver.rs` runs the engine against a server kept in the test and,
   with `--ignored` and `TC_SYNC_SERVER`, against the real `taskchampion-sync-server` and the `task` CLI.
-- `engine.rs` chooses between the sync server and the bucket for the tasks, keeps a bucket of its own for the shared
-  files, and remembers where the tasks were last synced. Another place makes `sync` fail with `backend-changed` until it
+- `gitrepo.rs` carries `tc_core::forge`'s requests over `ureq`: the tasks are `tc_core::gitsync::GitServer` and the
+  shared files `GitObjects`, both over the same branch. `tests/gitsync.rs` (`--ignored`, with `TC_GIT_API`,
+  `TC_GIT_REPO`, `TC_GIT_TOKEN` and `TC_GIT_REMOTE`) runs two phones and the real `task` on one branch of a real forge.
+- `engine.rs` chooses between the sync server, the git branch and the bucket for the tasks, keeps a bucket of its own
+  for the shared files (the branch keeps them itself), and remembers where the tasks were last synced. Another place makes `sync` fail with `backend-changed` until it
   is asked again with `switch` (`merge` or `replace`), and the new place's replica is made aside and swapped in only once
   it has synced.
 - The replica is saved to a file in the app's storage after every change. The screens, widgets and reminder alarm share one

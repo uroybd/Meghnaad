@@ -3,6 +3,7 @@ node_modules
 .wrangler
 .dev.vars
 crates/worker/build
+crates/worker/build-git
 web/dist
 web/.svelte-kit
 *.log

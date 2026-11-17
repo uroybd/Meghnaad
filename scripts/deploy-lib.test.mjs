@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { accessReady, buildConfig, problem, stripJsonc } from './deploy-lib.mjs';
+import { accessReady, buildConfig, problem, problems, stripJsonc } from './deploy-lib.mjs';
 
 const AUD = 'a'.repeat(64);
 const base = {
@@ -67,4 +67,38 @@ test('validation rejects typos with a readable reason', () => {
   assert.equal(problem('R2_BUCKET', ''), null, 'empty means not set');
   assert.equal(problem('CUSTOM_DOMAIN', 'tasks.example.co.uk'), null);
   assert.equal(accessReady({ TEAM_DOMAIN: 'https://me.cloudflareaccess.com' }), false);
+});
+
+test('BACKEND=git builds and deploys the git Worker, with the repository as vars and no bucket', () => {
+  const source = {
+    ...base,
+    main: 'crates/worker/build/worker/shim.mjs',
+    build: { command: 'node scripts/build.mjs', watch_dir: ['crates/worker/src'] },
+  };
+  const s = { BACKEND: 'git', GIT_REPO: 'alice/tasks', GIT_BRANCH: 'work', GIT_API: 'https://git.example.com/api/v1' };
+  const c = buildConfig(source, s);
+  assert.equal(c.r2_buckets, undefined);
+  assert.equal(c.main, 'crates/worker/build-git/worker/shim.mjs');
+  assert.equal(c.build.command, 'node scripts/build.mjs --flavour git');
+  assert.deepEqual(c.build.watch_dir, ['crates/worker/src']);
+  assert.deepEqual(c.vars, { GIT_REPO: 'alice/tasks', GIT_BRANCH: 'work', GIT_API: 'https://git.example.com/api/v1' });
+  // The defaults (GitHub, the taskchampion branch) are the Worker's: not written when not chosen.
+  assert.deepEqual(buildConfig(source, { BACKEND: 'git', GIT_REPO: 'a/b' }).vars, { GIT_REPO: 'a/b' });
+  // The source config is untouched, and r2 is what it was.
+  assert.equal(source.build.command, 'node scripts/build.mjs');
+  assert.equal(buildConfig(source, { BACKEND: 'r2' }).main, source.main);
+  // The token is a secret, never a setting in the file.
+  assert.ok(!JSON.stringify(c).includes('TOKEN'));
+});
+
+test('git settings are checked, and the repository is needed', () => {
+  assert.match(problem('BACKEND', 'github'), /r2 .* or git/);
+  assert.match(problem('GIT_REPO', 'tasks'), /owner\/name/);
+  assert.equal(problem('GIT_REPO', 'alice/tasks'), null);
+  assert.match(problem('GIT_BRANCH', 'a..b'), /branch/);
+  assert.equal(problem('GIT_BRANCH', 'work/tasks'), null);
+  assert.match(problem('GIT_API', 'http://git.example.com/api/v1'), /https/);
+  assert.equal(problem('GIT_API', 'https://api.github.com'), null);
+  assert.deepEqual(problems({ BACKEND: 'git' }), ['GIT_REPO is needed when BACKEND=git']);
+  assert.deepEqual(problems({ BACKEND: 'git', GIT_REPO: 'a/b' }), []);
 });
