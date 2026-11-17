@@ -40,7 +40,8 @@ Open the site. The first time on a device it asks for:
 - **Encryption secret**: your `sync.encryption_secret`.
 
 The token is kept on the device, sealed with the encryption secret (in OpenPGP's format: `gpg --decrypt` opens it too).
-Every later visit asks only for the secret. **Lock** (in the header) and an idle time lock every tab; **Settings →
+Every later visit asks only for the secret. A password manager can keep the token and the secret as one login (the
+token as the username, the secret as the password), so connecting another device is one fill. **Lock** (in the header) and an idle time lock every tab; **Settings →
 General → Forget this device** removes the token and the device's copy of the tasks.
 
 Set `config.json` to fill in the form for everyone who opens this site:

@@ -83,6 +83,37 @@ describe('a device that was never connected', () => {
     expect(unlocked).toBe(1);
   });
 
+  it('marks the token as the username and the secret as the password, for password managers', async () => {
+    vault.sealedAccess.mockResolvedValue(undefined);
+    await open();
+    expect(input('Token').autocomplete).toBe('username');
+    expect(input('Token').type).toBe('text');
+    expect(input('Encryption secret').autocomplete).toBe('current-password');
+    expect(input('Encryption secret').type).toBe('password');
+  });
+
+  it('asks the browser to save the token and the secret once connected, where it can', async () => {
+    vault.sealedAccess.mockResolvedValue(undefined);
+    session.connect.mockResolvedValue(undefined);
+    const store = vi.fn().mockResolvedValue(undefined);
+    class FakePasswordCredential {
+      constructor(public data: { id: string; password: string }) {}
+    }
+    vi.stubGlobal('PasswordCredential', FakePasswordCredential);
+    Object.defineProperty(navigator, 'credentials', { value: { store }, configurable: true });
+    try {
+      await open({ repo: 'alice/tasks' });
+      type('Token', 'ghp_x');
+      type('Encryption secret', 's3cret');
+      await submit('Connect');
+      expect(store).toHaveBeenCalledWith(new FakePasswordCredential({ id: 'ghp_x', password: 's3cret' }));
+      expect(unlocked).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+      Reflect.deleteProperty(navigator, 'credentials');
+    }
+  });
+
   it('says why it could not connect, and stays', async () => {
     vault.sealedAccess.mockResolvedValue(undefined);
     session.connect.mockRejectedValue(new Error('The tasks on the branch could not be opened: decryption failed.'));
@@ -101,7 +132,14 @@ describe('a connected device', () => {
     vault.sealedAccess.mockResolvedValue(new Uint8Array([1]));
     await open();
     expect(heading()).toBe('Unlock');
-    expect(document.querySelectorAll('input').length).toBe(1);
+    expect(document.querySelectorAll('label input').length).toBe(1);
+  });
+
+  it('has a hidden username, so a password manager fills its saved login here', async () => {
+    vault.sealedAccess.mockResolvedValue(new Uint8Array([1]));
+    await open();
+    expect(document.querySelector('input[autocomplete=username]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(input('Encryption secret').autocomplete).toBe('current-password');
   });
 
   it('is unlocked by another open tab without asking', async () => {

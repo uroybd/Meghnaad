@@ -31,12 +31,25 @@
     else mode = 'unlock';
   });
 
+  /**
+   * Password managers keep the pair as a login: the token as the username, the encryption secret as the password, so
+   * a new device fills both. The fields say so with `autocomplete`; where the browser has the Credential Management
+   * API (Chrome, Edge) it is also asked to offer saving them, since this page never navigates after a form.
+   */
+  async function offerToSave(): Promise<void> {
+    const make = (globalThis as { PasswordCredential?: new (data: { id: string; password: string }) => Credential })
+      .PasswordCredential;
+    if (!make || !navigator.credentials) return;
+    await navigator.credentials.store(new make({ id: token, password: secret })).catch(() => undefined);
+  }
+
   async function doConnect(e: SubmitEvent) {
     e.preventDefault();
     busy = true;
     error = '';
     try {
       await connect({ api, repo, branch, token, secret });
+      await offerToSave();
       token = '';
       secret = '';
       onunlocked();
@@ -89,13 +102,30 @@
         <span class="dim">GitHub's if empty; for Gitea or Forgejo, <code>https://&lt;host&gt;/api/v1</code></span>
       </label>
       <label
-        >Token <input type="password" bind:value={token} required autocomplete="off" />
-        <span class="dim">For this one repository: Contents, read and write.</span>
+        >Token <input
+          class="masked"
+          name="username"
+          bind:value={token}
+          required
+          autocomplete="username"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <span class="dim"
+          >For this one repository: Contents, read and write. A password manager keeps it as the username.</span
+        >
       </label>
       <label
-        >Encryption secret <input type="password" bind:value={secret} required autocomplete="current-password" />
+        >Encryption secret <input
+          type="password"
+          name="password"
+          bind:value={secret}
+          required
+          autocomplete="current-password"
+        />
         <span class="dim"
-          >Your <code>sync.encryption_secret</code>. Typed on each visit; the token is kept sealed with it.</span
+          >Your <code>sync.encryption_secret</code>, kept as the password. Typed on each visit; the token is kept sealed
+          with it.</span
         >
       </label>
       <button class="primary" disabled={busy}>{busy ? 'Connecting…' : 'Connect'}</button>
@@ -104,8 +134,16 @@
     <h1>Unlock</h1>
     <p class="lead">Type the encryption secret to open your tasks on this device.</p>
     <form onsubmit={doUnlock}>
+      <!-- The saved login's username (the token), so a password manager offers it here; only the secret is used. -->
+      <input class="for-password-manager" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" />
       <label
-        >Encryption secret <input type="password" bind:value={secret} required autocomplete="current-password" /></label
+        >Encryption secret <input
+          type="password"
+          name="password"
+          bind:value={secret}
+          required
+          autocomplete="current-password"
+        /></label
       >
       <div class="row">
         <button class="primary" disabled={busy}>{busy ? 'Unlocking…' : 'Unlock'}</button>
@@ -153,6 +191,13 @@
   }
   input {
     width: 100%;
+  }
+  /* Shown as dots, but a text field, so password managers take it for the username. */
+  .masked {
+    -webkit-text-security: disc;
+  }
+  .for-password-manager {
+    display: none;
   }
   code {
     font-family: var(--mono);

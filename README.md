@@ -320,6 +320,10 @@ No server of its own: each release has a static build of the web app that syncs 
 browser (GitHub, Gitea or Forgejo), unlocked with your encryption secret. Host it on GitHub Pages, Cloudflare Pages or
 Netlify from the template attached to the release. See **[The static app](docs/deploy.md#the-static-app)**.
 
+If your tasks sync with a git repository and you'd rather host nothing, **[mn.utsob.me](https://mn.utsob.me)** is the
+author's copy, open to anyone: your token, secret and tasks stay in your browser and your repository, and you trust only
+the code it serves ([more](docs/deploy.md#the-static-app)).
+
 ### The Cloudflare Worker, with R2 or git
 
 You need Workers and Access, and R2 for a bucket; each has a free plan. **No Rust needed:** CI publishes a prebuilt

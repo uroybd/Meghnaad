@@ -36,12 +36,22 @@ the `<base>` for the folder the site is served from. Its README has the steps fo
 
 To build it from source instead: `npm run build:static` writes it to `web/dist-static`.
 
+**Or use the public one.** If your tasks sync with a git repository and you'd rather not host anything,
+[mn.utsob.me](https://mn.utsob.me) is the author's own copy of the static site, the release as published, and anyone may
+use it with their own repository. The page talks to your repository from your browser, and your token, secret and
+tasks stay in your browser and your repository: nothing of yours reaches the site's owner, and nothing of the owner's
+reaches you. Its form starts filled with the author's repository, so put yours in its place. As with any web app, you
+trust the code it serves; host your own copy to choose that code yourself. For Gitea or Forgejo, allow
+`https://mn.utsob.me` in `[cors]` (below).
+
 **Connecting.** The first visit on a device asks for the repository, the branch, the API address (empty for GitHub), a
 token that can read and write the repository's contents, and the encryption secret. The token is kept on the device
 sealed with the secret (in OpenPGP's symmetric format, so `gpg --decrypt` opens it too); the key is derived from the
 secret and the salt in the branch's `meta`. Later visits ask only for the secret, and an unlocked tab unlocks the
 others. The device's copy of the tasks is sealed too. **Lock** and an idle time lock every tab; **Settings → General →
-Forget this device** removes the token and the copy. `config.json` beside the site fills in the form.
+Forget this device** removes the token and the copy. `config.json` beside the site fills in the form. A password
+manager can keep the token and the secret as one login (the token as the username, the secret as the password): the
+form marks them so, Chrome and Edge offer to save them once connected, and a new device fills both from the saved login.
 
 **Gitea and Forgejo** must allow the page to call their API: `[cors]` with `ENABLED = true`, `ALLOW_DOMAIN` the site's
 host and `ALLOW_HEADERS = Content-Type,Authorization`. GitHub allows it already.
