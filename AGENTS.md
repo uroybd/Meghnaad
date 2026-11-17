@@ -3,7 +3,8 @@
 Taskwarrior 3.5.0 in the browser: a pure engine (`crates/tc-core`) that runs **in the page** as WebAssembly
 (`crates/browser`, in a Web Worker, with its replica saved in IndexedDB), a Svelte 5 app (`web/`) that draws what it
 returns, a small Rust → WASM Cloudflare Worker (`crates/worker`) that checks Access, holds the secret and opens and seals
-versions, and an R2 bucket as the TaskChampion store. The same engine runs natively in the Android app (`crates/android`,
+versions, and the TaskChampion store: an R2 bucket or a branch of a git repository (the static flavour reaches the branch
+from the page itself, with no Worker). The same engine runs natively in the Android app (`crates/android`,
 `app/`), and a terminal app (`crates/tui`) drives the real `task` on the desktop. The README and `docs/architecture.md`
 explain the design; this file is how to change it.
 
@@ -45,9 +46,11 @@ crates/tui          meghnaad (crate meghnaad-tui), ratatui. Backend = real `task
                     app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,taskinfo,tests}.rs, info.rs; settings.json in
                     $MEGHNAAD_CONFIG_DIR or ~/.config/meghnaad; sync = background `task sync`. Never reaches the bucket.
 
-DATA in the bucket: salt, latest, v-<parent>-<child>, s-<version> (TaskChampion), web/rc/* (taskrc files),
-web/config.json (+ rc.prev.json), web/settings.json (taskCommands, boards, homepage, keys), web/hooks.lua (+ previous),
-web/hook-secrets.enc. Secrets: Worker secret TC_ENCRYPTION_SECRET; phone Keystore; never on a page.
+DATA in the store: a bucket holds salt, latest, v-<parent>-<child>, s-<version> (TaskChampion); a git branch holds
+TaskChampion's git layout (meta, snapshot). Both: web/rc/* (taskrc files), web/config.json (+ rc.prev.json),
+web/settings.json (taskCommands, boards, homepage, keys), web/hooks.lua (+ previous), web/hook-secrets.enc. Secrets:
+Worker secrets TC_ENCRYPTION_SECRET (+ GIT_TOKEN); phone Keystore; never on a page served by the Worker (the static
+flavour holds them in the browser, sealed at rest).
 
 SHARED ACROSS FRONT ENDS via tc_core::helpers only: dates/dateformat, command-line split, completion, highlight, cells,
 preview, markdown, time log, urgency names, sortspec, board, keymap. Everything else in layer 2 is ported per front end.
@@ -169,8 +172,8 @@ run `npm run format` after editing any code, not just at the end.
   setting, `docs/architecture.md` for a module, and the README if it is user-visible. Keep the Mermaid diagram identical
   in the README and `docs/architecture.md`.
 - **Taskwarrior logic lives in `tc-core`**; the page only draws. The engine runs in the page (`crates/browser`); the
-  Worker runs no commands and holds no tasks. The page talks to the bucket only through the Worker's `/api/tc/*`
-  (`tc_core::wire`). To run commands from a shell (seeding, interop, poking a deployment) use
+  Worker runs no commands and holds no tasks. The page talks to the store only through the Worker's `/api/tc/*`
+  (`tc_core::wire`), or, in the static flavour, to the git branch through the forge's API (`crates/browser` feature `git`). To run commands from a shell (seeding, interop, poking a deployment) use
   `node scripts/engine-cli.mjs --api URL '<command>'`, which runs the same engine under Node.
 - **Secrets never leave the Worker.** The encryption secret is only ever in the Worker (it derives the key and opens
   and seals versions; the page gets plain versions over HTTPS). The taskrc importer, `show` and `config` refuse sync and
@@ -182,8 +185,9 @@ run `npm run format` after editing any code, not just at the end.
   is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config` line editing) over a
   new instantiation. `twiggy` on a build made in a scratch directory shows where bytes go. The builds drop the debug
   names (`KEEP_WASM_NAMES=1` keeps them); measure with them left out, as the deploy does.
-- **Hooks** are user code, and not Rust: a Lua script the user edits in Settings, kept in the bucket and run on the Worker
-  (`tc_core::lua_hooks`, behind the `lua` feature the Worker turns on; the browser engine does not carry it). The engine
+- **Hooks** are user code, and not Rust: a Lua script the user edits in Settings, kept in the store and run on the Worker
+  (`tc_core::lua_hooks`, behind the `lua` feature the Worker turns on; the browser engine does not carry it, and the static
+  flavour loads it separately as `crates/browser-hooks`). The engine
   calls hooks through the async `HookHost`; `RemoteHooks` (`crates/browser`) is the one that asks the Worker. A hook is a
   task in and a task out as JSON, so change `task_to_json` / `task_from_json` and `lua/prelude.lua` together, and keep the
   tests in `crates/tc-core/tests/lua_hooks.rs` passing (run them with `cargo test -p tc-core --features lua`). The Lua

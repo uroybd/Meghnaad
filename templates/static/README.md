@@ -26,7 +26,8 @@ can hold both: the site on `main`, the tasks on the `taskchampion` branch (what 
 
 1. Make a **private** repository from this one.
 2. In Cloudflare Pages (or Netlify), connect it: build command `node fetch-release.mjs`, output directory `site`.
-3. Point `task` and the app at the same repository, branch `taskchampion`.
+3. Point `task` and the app at the same repository, branch `taskchampion` (`task`'s settings are in
+   [Where your tasks live](https://github.com/uroybd/Meghnaad/blob/main/docs/stores.md#a-git-repository)).
 
 ## Connect a device
 
@@ -69,5 +70,5 @@ version such as `0.8.0`. Change it and push, or run the workflow by hand.
 No server sees your tasks: the forge stores them encrypted, and this page decrypts them in your browser. What an
 unlocked page runs can read them, as with any web app: the site's own code (from the release it downloaded and
 checked), and your browser and its extensions. See
-[Deploying the static app](https://github.com/uroybd/Meghnaad/blob/main/docs/deploy.md#the-static-app) for how this
-compares with the Worker.
+[Running the web app](https://github.com/uroybd/Meghnaad/blob/main/docs/deploy.md) for how this compares with the
+Worker.
