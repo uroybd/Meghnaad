@@ -1,5 +1,9 @@
 # Meghnaad
 
+<p align="center">
+  <img src="assets/logo.png" alt="Meghnaad" width="160" />
+</p>
+
 [Taskwarrior 3](https://taskwarrior.org) in your browser and on your phone, and [around `task` in your
 terminal](terminal.md). Meghnaad is another **replica** of your Taskwarrior data: the `task` CLI keeps syncing as it
 does today, to a git repository, an S3 or R2 bucket or a TaskChampion sync server, and Meghnaad reads and writes the same
