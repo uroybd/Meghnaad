@@ -13,7 +13,9 @@
 <p align="center">
   <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" /></a>
   &nbsp;
-  <a href="https://github.com/uroybd/Meghnaad/releases/latest"><b>Get the Android app (APK)</b></a>
+  <a href="https://github.com/uroybd/Meghnaad/releases/latest"><img src="docs/badges/android.svg" alt="Get the Android app (APK)" /></a>
+  &nbsp;
+  <a href="docs/terminal.md#install"><img src="docs/badges/terminal.svg" alt="Get the terminal app" /></a>
 </p>
 
 ---
