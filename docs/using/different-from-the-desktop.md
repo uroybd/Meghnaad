@@ -11,10 +11,9 @@ Use uuid prefixes where it matters.
 
 Covers the last few commands made while this tab is open. Closing or reloading the tab forgets them.
 
-## Hooks are Lua
+## Hooks are Lua, not scripts
 
-, not scripts. A browser can't run local programs, so hooks are functions in a script you edit in
-Settings. See [Hooks](hooks.md#hooks).
+A browser can't run local programs, so hooks are functions in a script you edit in Settings. See [Hooks](hooks.md#hooks).
 
 ## Task commands and `settings.json` are the app's own
 
@@ -23,8 +22,7 @@ A desktop `task` knows nothing of them, though your taskrc's
 
 ## `&&`, `||` and `;` belong to the console
 
-, as in a shell: the page splits the line and sends one command at a
-time. Taskwarrior's own filter also reads `&&` and `||` but evaluates them wrongly (`+a || +b` finds only `+b`), so
+They work as in a shell: the page splits the line and sends one command at a time. Taskwarrior's own filter also reads `&&` and `||` but evaluates them wrongly (`+a || +b` finds only `+b`), so
 an unquoted operator here always ends a command. In a filter, write `and` and `or`. See
 [the console](console.md#the-console).
 
