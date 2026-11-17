@@ -6,18 +6,21 @@ How Meghnaad is put together, and why. For what it does, see [Using Meghnaad](us
 ## The idea
 
 Taskwarrior 3 keeps its data in **TaskChampion**, which syncs through a *server*: a place where every client pushes its
-changes (as numbered "versions") and pulls everyone else's. With `sync.server.type=aws` that place is a bucket, and the
-clients agree on its layout. Meghnaad is more clients of that bucket: one in the browser, one on Android, and a terminal
-app around the real `task` on the desktop.
+changes (as numbered "versions") and pulls everyone else's. That place is the **store**: a bucket (`sync.aws.*`), a
+branch of a git repository (`sync.git.*`) or a TaskChampion sync server (`sync.server.*`), and the clients agree on its
+layout. Meghnaad is more clients of the same store: one in the browser, one on Android, and a terminal app around the
+real `task` on the desktop ([Where your tasks live](stores.md) has which reaches which).
 
 - **A replica, not a copy.** The browser and the phone each hold a full TaskChampion replica and read and write the
-  bucket in TaskChampion's own format and encryption, so `task sync` and Meghnaad see each other's changes.
+  store in TaskChampion's own format and encryption, so `task sync` and Meghnaad see each other's changes.
 - **One library for Taskwarrior's rules.** Filters, reports, urgency, recurrence, confirmations and dates live in one
   Rust library, `tc-core`, checked against the real `task` 3.5.0. The browser runs it as WebAssembly, the phone as a
   native library. The screens around it only draw what it returns.
-- **The secret stays in one place.** In the browser, a small Cloudflare **Worker** sits between the page and the bucket:
-  it checks Cloudflare Access, holds the encryption secret, and opens and seals the versions that pass through. It never
-  runs a command and never parses a task. The phone has no Worker and keeps its keys in the Android Keystore.
+- **The secret stays in one place.** For the web app that place is either a small Cloudflare **Worker** between the page
+  and the store (a bucket or a git branch), which checks Cloudflare Access, holds the encryption secret, and opens and
+  seals the versions that pass through, never running a command or parsing a task; or, on the static site, the browser
+  itself, which keeps the secret only in memory while unlocked ([The static flavour](#the-static-flavour)). The phone
+  has no Worker and keeps its keys in the Android Keystore.
 
 The engine used to run on the Worker, so every request spent the free plan's 10 ms of CPU. Moved into the page, it costs
 the Worker nothing and answers at once.
@@ -26,11 +29,12 @@ the Worker nothing and answers at once.
 
 - **Engine**: `tc-core` built for one host: WebAssembly in the browser, a native library on Android. It runs Taskwarrior
   commands against a replica and answers in JSON.
-- **Replica**: a full copy of your tasks that TaskChampion keeps in step with the bucket. The one in memory is the one
+- **Replica**: a full copy of your tasks that TaskChampion keeps in step with the store. The one in memory is the one
   the engine works on; the saved copy (IndexedDB, or a file on the phone) only lets the next start skip the download.
 - **Front end**: anything that draws and sends command lines: the web app, the Android app, the terminal app.
 - **Worker** means the Cloudflare Worker, the small server program. The browser engine runs in a **Web Worker**, the
   browser's background thread; the two are unrelated.
+- **Store**: where the replicas meet: a bucket, a git branch or a sync server ([Where your tasks live](stores.md)).
 - **Access**: Cloudflare Access, which signs you in before any request reaches the Worker.
 - **The secret**: `TC_ENCRYPTION_SECRET`, the passphrase TaskChampion's encryption key is derived from. The same one is
   set in your taskrc for `task sync`.
@@ -120,7 +124,7 @@ the box that does its job on another (not every diagram has every colour):
 | Orange | `tc-core` and the Rust that hosts it | the engine in the browser and on the phone, the helpers every front end calls, the Worker's routes, the JNI layer |
 | Grey | Taskwarrior's own pieces | `task`, TaskChampion |
 | Blue | A replica and where it is kept | SQLite, memory and IndexedDB, a file on the phone |
-| Purple | The bucket | R2 or any S3-compatible store, or a branch of a git repository |
+| Purple | The store | R2 or any S3-compatible bucket, or a branch of a git repository |
 | Yellow | Cloudflare | Access and the Worker |
 | Red | Your Lua hooks | the one script, and each place that runs it |
 | Dashed | Not Taskwarrior: what people add around it | shell aliases and tasksh, and their counterparts here |
@@ -130,7 +134,7 @@ Meghnaad, **task commands** (`settings.json`) and **tasksh's `review`** (the Set
 attribute and `_reviewed` report it needs). Both only send ordinary commands to the engine, so it knows nothing about
 them.
 
-| Platform | Code | Runs the engine | Reaches the bucket |
+| Platform | Code | Runs the engine | Reaches the store |
 | --- | --- | --- | --- |
 | [Browser](#in-the-browser) | `web/`, `crates/browser` | in the page, as WebAssembly | through the Worker |
 | [Cloudflare](#on-cloudflare) | `crates/worker` | no; hooks only | an R2 binding, or (the git Worker) a forge's API |
@@ -465,7 +469,7 @@ the time log, keys and boards. Its task info (`info.rs`, `app/taskinfo.rs`) is i
 of the task and the tasks around it. Turning `export` into rows, chains, task commands, the Projects and Tags lists, the task form, review,
 reminders and the boards' glue are its own, ported from the web app and Android with their tests. Syncing is `task sync`
 run in the background, when the `sync` key of its `settings.json` says. It keeps that file in its config folder and never
-reaches the bucket. Its Export dialog (`app/export.rs`) and `meghnaad export` (`export.rs`, `task export` for scripts)
+reaches the store itself. Its Export dialog (`app/export.rs`) and `meghnaad export` (`export.rs`, `task export` for scripts)
 shape what `task export` wrote with `tc_core::table_export`, as the web app and the phone do. See
 [the terminal app](terminal.md).
 
@@ -485,25 +489,27 @@ hooks the script defines, and it picks the hook to run from the name it was call
 
 ```mermaid
 flowchart TB
-  script["your Lua script<br/>web/hooks.lua in the bucket"]
+  script["your Lua script<br/>web/hooks.lua in the store"]
   runner["LuaRunner<br/>tc_core::lua_hooks: sandbox, allowlist, limits, secrets to their hosts"]
   wk["on the Worker, for the browser<br/>net: hooknet.rs<br/>secrets: Worker secrets, a sealed file"]
   ph["on the phone<br/>net: net.rs<br/>secrets: a file sealed by the Keystore"]
   dt["meghnaad-hook, for task<br/>net: net.rs<br/>secrets: environment variables"]
+  pg["in the page, on the static site<br/>net: the page's fetch<br/>secrets: a sealed file"]
   script --> runner
   runner --> wk
   runner --> ph
   runner --> dt
+  runner --> pg
 
   classDef hooks fill:#f9d4dc,stroke:#d20f39,color:#1e1e2e
   classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
-  class script,wk,ph,dt hooks
+  class script,wk,ph,dt,pg hooks
   class runner engine
 ```
 
-Hooks are user code, written in Lua and edited in Settings: one script, kept in the bucket as `web/hooks.lua` with the
+Hooks are user code, written in Lua and edited in Settings: one script, kept in the store as `web/hooks.lua` with the
 previous one beside it (not in `settings.json`, which the page reads in full, since a script may hold secrets). The same
-runner runs it in three places; only the network and the secrets come from the host.
+runner runs it in four places; only the network and the secrets come from the host.
 
 ### When they run
 
@@ -935,7 +941,7 @@ the taskrc (the theme files are static assets).
 ### What the browser stores
 
 The replica (one IndexedDB record, see [The saved copy](#the-saved-copy)) and small conveniences (command history,
-reminder settings). Settings live in the bucket: `web/config.json` (with one backup) and the app's own
+reminder settings). Settings live in the store: `web/config.json` (with one backup) and the app's own
 `web/settings.json` (none).
 
 ## How correctness is kept
