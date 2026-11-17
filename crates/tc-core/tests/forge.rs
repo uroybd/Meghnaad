@@ -245,6 +245,26 @@ async fn github_reads_the_head_and_a_file_together_and_fetches_binary_ones() {
     )]);
     assert_eq!(github(&r).read("meta").await.unwrap(), (Some("h1".into()), None));
     token_only_in_headers(&r);
+
+    // What GitHub really answers for a file that isn't there: the data, and an error about that one field.
+    let r = Recorder::answering(vec![(
+        200,
+        json!({
+            "data": { "repository": { "ref": { "target": { "oid": "h1", "file": null } } } },
+            "errors": [{ "type": "NOT_FOUND", "path": ["repository", "ref", "target", "file"],
+                "locations": [{ "line": 1, "column": 120 }], "message": "Could not resolve file for path 'snapshot'." }]
+        }),
+    )]);
+    assert_eq!(github(&r).read("snapshot").await.unwrap(), (Some("h1".into()), None));
+
+    // Any other error is still one.
+    let r = Recorder::answering(vec![(
+        200,
+        json!({ "data": null, "errors": [{ "type": "NOT_FOUND", "path": ["repository"],
+            "message": "Could not resolve to a Repository with the name 'alice/tasks'." }] }),
+    )]);
+    let err = github(&r).read("meta").await.unwrap_err().to_string();
+    assert!(err.contains("Could not resolve to a Repository"), "{err}");
 }
 
 #[tokio::test]

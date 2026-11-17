@@ -242,7 +242,10 @@ impl<H: Http> ForgeRepo<H> {
             return Err(failed("GitHub", &res));
         }
         let mut v: Value = serde_json::from_slice(&res.body).map_err(|_| bad_answer("a query"))?;
-        if let Some(Value::Array(errors)) = v.get_mut("errors").map(Value::take) {
+        if let Some(Value::Array(mut errors)) = v.get_mut("errors").map(Value::take) {
+            // A file that isn't there is an error to GitHub ("Could not resolve file for path 'snapshot'"), with
+            // `file: null` in the data beside it; to a reader it is only an answer.
+            errors.retain(|e| !missing_file(e));
             if !errors.is_empty() {
                 return Ok(Err(errors));
             }
@@ -429,6 +432,21 @@ fn tree_entries(v: &Value, dir: &str) -> Vec<Entry> {
 
 /// GitHub's head and one file in it: `target { oid … on Commit { file(path:) { oid object { … on Blob { text isBinary
 /// isTruncated } } } } }`. The text is used when it is all there; otherwise the blob is fetched.
+/// GitHub's error for a `file(path:)` that names no file.
+fn missing_file(e: &Value) -> bool {
+    let on_file = e
+        .get("path")
+        .and_then(Value::as_array)
+        .and_then(|p| p.last())
+        .and_then(Value::as_str)
+        == Some("file");
+    let not_found = e.get("type").and_then(Value::as_str) == Some("NOT_FOUND")
+        || e.get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|m| m.starts_with("Could not resolve file for path"));
+    on_file && not_found
+}
+
 const GH_READ: &str = "query($owner:String!,$name:String!,$ref:String!,$path:String!){repository(owner:$owner,name:$name)\
 {ref(qualifiedName:$ref){target{oid ... on Commit{file(path:$path){oid type object{... on Blob{text isBinary isTruncated}}}}}}}}";
 
