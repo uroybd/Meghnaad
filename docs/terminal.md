@@ -9,18 +9,53 @@ own task commands, an add line that shows the task it will make, tasksh's review
 
 ## Install
 
-It needs `task` 3.5.0 on the `PATH` (or `MEGHNAAD_TASK` set to the binary). Get `meghnaad` any of three ways, then
-run `meghnaad`:
+It runs on macOS and Linux, around Taskwarrior's `task` 3.5.0. Pick one of the three ways below; each ends with
+`meghnaad` on your `PATH`.
 
-- **Homebrew**, for macOS and Linux: `brew install uroybd/tap/meghnaad`, which brings `task` with it, and
-  `brew upgrade` for a newer one.
-- **Prebuilt**, no Rust needed: download `meghnaad-<version>-<platform>.tar.gz` from the
-  [latest release](https://github.com/uroybd/Meghnaad/releases/latest) (Linux or macOS, x86_64 or arm64) and put
-  `meghnaad` where you keep programs, for example `~/.local/bin`. On macOS, if it is blocked for coming from the
-  internet, run `xattr -d com.apple.quarantine ~/.local/bin/meghnaad` (or fetch it with `curl`).
-- **From source**, with Rust 1.91 or later: `cargo install --git https://github.com/uroybd/Meghnaad meghnaad-tui --locked`
-  puts `meghnaad` in `~/.cargo/bin` (add `--tag v<version>` for a release instead of the latest commit), and
-  `cargo uninstall meghnaad-tui` removes it. The crate keeps its old name; the program it installs is `meghnaad`.
+### With Homebrew (macOS and Linux)
+
+The easiest: it brings `task` with it.
+
+```sh
+brew install uroybd/tap/meghnaad
+meghnaad
+```
+
+`brew upgrade meghnaad` gets a newer one.
+
+### Prebuilt, no Rust needed
+
+1. Install `task` 3.5.0 (from your package manager or [taskwarrior.org](https://taskwarrior.org/download/)), and check
+   it with `task --version`. If it isn't on your `PATH`, set `MEGHNAAD_TASK` to the binary instead.
+2. Download `meghnaad-<version>-<platform>.tar.gz` for your system (Linux or macOS, x86_64 or arm64) from the
+   [latest release](https://github.com/uroybd/Meghnaad/releases/latest).
+3. Unpack it and put `meghnaad`, which is in a folder of the same name, where you keep programs, for example
+   `~/.local/bin` (with your version and platform in the names, as in the file you downloaded):
+
+   ```sh
+   tar -xzf meghnaad-<version>-<platform>.tar.gz
+   mkdir -p ~/.local/bin && mv meghnaad-<version>-<platform>/meghnaad ~/.local/bin/
+   ```
+
+4. On macOS, if it is blocked for coming from the internet:
+
+   ```sh
+   xattr -d com.apple.quarantine ~/.local/bin/meghnaad
+   ```
+
+5. Run `meghnaad`.
+
+### From source, with Rust 1.91 or later
+
+With `task` 3.5.0 installed as in step 1 above:
+
+```sh
+cargo install --git https://github.com/uroybd/Meghnaad meghnaad-tui --locked
+meghnaad
+```
+
+It puts `meghnaad` in `~/.cargo/bin`. Add `--tag v<version>` for a release instead of the latest commit;
+`cargo uninstall meghnaad-tui` removes it. The crate keeps its old name; the program it installs is `meghnaad`.
 
 **It was called `meghnaad-tui`.** Up to 0.6.71 the program was `meghnaad-tui`. With Homebrew there is nothing to do:
 `brew update` moves the old formula to `meghnaad`, and it keeps a `meghnaad-tui` link to the program for a while, so
