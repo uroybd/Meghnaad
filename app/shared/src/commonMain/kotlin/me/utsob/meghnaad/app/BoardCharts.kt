@@ -329,16 +329,18 @@ private fun VerticalBars(chart: BoardChart, series: List<Color>, stacked: Boolea
         yAxisLabels = valueLabels(chart),
         modifier = Modifier.fillMaxWidth().height(plot ?: 240.dp),
     ) {
+        // Koala Plot hands a bar its category's place among the items (in the order they were added, which is [at]'s) and then its
+        // series' index, whatever its type's parameter names say: the label is the first.
         if (stacked) {
             StackedVerticalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series({ _, i, _ -> TippedBar(series[d], tipText(chart, i, d)) }) { at.forEach { i -> item(i, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
+                    series({ k, _, _ -> TippedBar(series[d], tipText(chart, at[k], d)) }) { at.forEach { i -> item(i, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
                 }
             }
         } else {
             GroupedVerticalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series({ _, i, _ -> TippedBar(series[d], tipText(chart, i, d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
+                    series({ k, _, _ -> TippedBar(series[d], tipText(chart, at[k], d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
                 }
             }
         }
@@ -368,16 +370,18 @@ private fun HorizontalBars(chart: BoardChart, series: List<Color>, stacked: Bool
         yAxisLabels = indexLabels(chart, 1, 14),
         modifier = Modifier.fillMaxWidth().height(maxOf((60 + at.size * 26 * perLabel).coerceIn(160, 600).dp, plot ?: 0.dp)),
     ) {
+        // The bar's category is the first of what Koala Plot hands it (see VerticalBars): reading the second, the series' index, as
+        // the label ran past the labels when there were more series than labels.
         if (stacked) {
             StackedHorizontalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series({ _, k, _ -> TippedBar(barColor(chart, series, labelColors, d, at[k]), tipText(chart, at[k], d)) }) { at.forEach { i -> item((ds.data.getOrNull(i) ?: 0.0).toFloat(), i) } }
+                    series({ k, _, _ -> TippedBar(barColor(chart, series, labelColors, d, at[k]), tipText(chart, at[k], d)) }) { at.forEach { i -> item((ds.data.getOrNull(i) ?: 0.0).toFloat(), i) } }
                 }
             }
         } else {
             GroupedHorizontalBarPlot {
                 chart.datasets.forEachIndexed { d, ds ->
-                    series({ _, k, _ -> TippedBar(barColor(chart, series, labelColors, d, at[k]), tipText(chart, at[k], d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
+                    series({ k, _, _ -> TippedBar(barColor(chart, series, labelColors, d, at[k]), tipText(chart, at[k], d)) }) { at.forEach { i -> item(i, 0f, (ds.data.getOrNull(i) ?: 0.0).toFloat()) } }
                 }
             }
         }
