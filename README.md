@@ -1,4 +1,4 @@
-# Meghnaad 0.6.83: prebuilt
+# Meghnaad 0.7.0: prebuilt
 
 This is the built app, ready to deploy: no Rust, no build. It is generated from
 [the source](https://github.com/uroybd/Meghnaad) by the Release workflow; don't edit it here.
@@ -13,7 +13,8 @@ and pointing your `task` CLI at the bucket, are in
 
 | | |
 | --- | --- |
-| `worker/` | the Worker (WebAssembly) |
+| `worker/` | the Worker (WebAssembly), keeping the tasks in an R2 bucket |
+| `worker-git/` | the Worker for `BACKEND=git`, keeping them on a branch of a git repository |
 | `app/` | the web app, including the engine that runs in your browser |
 | `wrangler.jsonc` | its configuration (the bucket `TASKS`; `keep_vars` keeps what you add in the dashboard) |
 | `scripts/` | what `npm run setup` and `npm run deploy` run |
