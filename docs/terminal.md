@@ -334,7 +334,7 @@ UDA, adds it: `Enter` asks, and `Enter` again runs `task config` for its type an
 ## Sync
 
 Syncing is `task sync`, with Taskwarrior's own sync settings (`sync.*` in the taskrc, `AWS_ENDPOINT_URL` and the like in
-the environment). It runs in the background: the screen stays yours, the top bar shows `⟳ syncing`, then how long ago it
+the environment; [Where your tasks live](stores.md) has them for each store). It runs in the background: the screen stays yours, the top bar shows `⟳ syncing`, then how long ago it
 worked or `⟳ failed`, and how it went is said in the status line and kept on the Console page, with what `task` wrote
 when it failed. The pages are read again when it ends. While it runs, a command you give waits for it, so the two never
 use the data at once.
@@ -359,7 +359,7 @@ The terminal app shows boards and does not make or change them. They are the `bo
 two ways to make one:
 
 - **On the web app or the phone**, where a board is made and laid out on the page (**Boards** → **New board**, then
-  **Edit**). Then copy that `settings.json` here: from the web app's Settings, or `web/settings.json` in the bucket.
+  **Edit**). Then copy that `settings.json` here: from the web app's Settings, or `web/settings.json` in the bucket or on the git branch.
 - **By hand**, in `settings.json` here: a board is an `id`, a `name` and its `sections`, each placed on the grid (`x`,
   `y`, `w`, `h`) with a `type` and what it shows. [Boards](using/boards.md) has every kind of section and a whole
   board as JSON. `R` reads the file again.
@@ -491,7 +491,7 @@ a click or Cmd/Ctrl+click and the rest show as its words; `task info` is shown a
 }
 ```
 
-It is the same JSON as the web app's (**Settings → Commands**, or `web/settings.json` in the bucket), so copying that
+It is the same JSON as the web app's (**Settings → Commands**, or `web/settings.json` in the bucket or on the git branch), so copying that
 file here gives you the same task commands and boards; the web app and the phone keep `tui` as it is and have no use
 for it. What the terminal app has no use for is kept as it is when it saves, at any depth: a key it doesn't know inside
 a task command stays when you change that command, and a task command it can't use (a bad name, no command) is listed
@@ -501,7 +501,7 @@ the web app's [settings.json box](using/settings.md) lists), is reported in Gene
 none, and the app will not save over it until it is put right.
 
 The app reads and writes `settings.json` in that folder and touches nothing else there. It writes the file in place, so
-a symlink stays a symlink and a dotfiles manager (stow and the like) can own the folder. It never reaches the bucket: syncing is `task sync`, and its settings (`sync.*`
+a symlink stays a symlink and a dotfiles manager (stow and the like) can own the folder. It never reaches the store itself: syncing is `task sync`, and its settings (`sync.*`
 in the taskrc, `AWS_ENDPOINT_URL` and the like in the environment) are Taskwarrior's.
 
 ## How it fits (for contributors)

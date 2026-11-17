@@ -3,9 +3,10 @@
 Taskwarrior runs your scripts when a command starts, when a task is added or changed, and when it ends. A browser can't
 run `~/.task/hooks/on-add.*`, so here a hook is a function in a **Lua script** you write in **Settings → Hooks**.
 
-The script lives in your bucket (as `web/hooks.lua`, beside your settings), not in the app, so a change is used by the
-next command with no rebuild or deploy. It runs on the server behind your sign-in, so it can hold secrets that never
-reach the page. Your desktop's own hooks are separate: they fire only for commands run there, unless you run this same
+The script lives in your store (as `web/hooks.lua`, beside your settings, in the bucket or on the git branch), not in the
+app, so a change is used by the next command with no rebuild or deploy. With a Worker it runs there, behind your
+sign-in, so its secrets never reach the page; on the static site it runs in the page, and on the phone in the Android
+app. Your desktop's own hooks are separate: they fire only for commands run there, unless you run this same
 script on the desktop too ([below](#the-same-script-with-the-real-task)).
 
 A command waits for each hook in turn, as `task` waits for its scripts (`add` asks for `on_launch`, `on_add` and
@@ -106,7 +107,7 @@ service slows the command, so give it a short timeout.
 
 `secret("name")` is a value kept apart from the script, and it goes **only to the hosts you saved it with**, whatever
 hosts the script declares. Set secrets in **Settings → Hooks → Secrets**, each with its value and its hosts
-(`acme.atlassian.net`, or `*.atlassian.net` for any name under it). Each is sealed in your bucket with the same key as your
+(`acme.atlassian.net`, or `*.atlassian.net` for any name under it). Each is sealed in your store with the same key as your
 tasks and can be replaced but never shown again. Its hosts can only be changed by typing the value again, so nothing that
 can't read a value can send it somewhere new.
 
@@ -125,7 +126,7 @@ up). Keep a value already in the form the service wants: for Jira's Basic auth, 
 
 Or set a Worker secret called `HOOK_SECRET_<NAME>` (`wrangler secret put HOOK_SECRET_JIRA`, the dashboard, or your deploy
 workflow), with its hosts in `HOOK_SECRET_<NAME>_HOSTS` (comma-separated, a Worker variable or secret). It wins over one
-kept in the app and never touches the bucket. Each call is logged as `hook http METHOD host -> status`, never the path,
+kept in the app and never touches the store. Each call is logged as `hook http METHOD host -> status`, never the path,
 which may hold a token. A missing secret fails the hook with a message that says so.
 
 ## The editor and the sandbox

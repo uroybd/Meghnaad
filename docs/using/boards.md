@@ -12,7 +12,7 @@ digits, `-` and `_`. It is made from the name when the board is created, and you
 
 ## Save as a copy
 
-(under **Edit**, so it isn't pressed by accident) saves what is on the page as a new board named
+**Save as a copy** (under **Edit**, so it isn't pressed by accident) saves what is on the page as a new board named
 "`<name> copy`" and shows it. The board you opened stays as last saved, and the home page stays where it was.
 
 ## Where it's kept
@@ -396,7 +396,7 @@ want to keep what was left out.
         { "id": "own", "title": "Done in October, per week", "x": 0, "y": 20, "w": 12, "h": 4, "type": "bar",
           "filter": "status:completed",
           "by": { "time": { "field": "end", "step": "week", "range": { "start": "2026-10-01", "end": "2026-10-31T23:59" } } } },
-        { "id": "outcome", "title": "Outcome", "type": "donut", "x": 0, "y": 24, "w": 4, "h": 4,
+        { "id": "outcomes", "title": "Outcome", "type": "donut", "x": 0, "y": 24, "w": 4, "h": 4,
           "by": { "groups": [
             { "label": "Succeeded", "filter": "status:completed outcome:success", "color": "green", "ignoreBoardFilter": true },
             { "label": "Failed", "filter": "status:completed outcome:failed", "color": "red", "ignoreBoardFilter": true },

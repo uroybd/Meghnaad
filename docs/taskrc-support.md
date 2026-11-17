@@ -4,8 +4,8 @@ Which of Taskwarrior's `taskrc` options Meghnaad handles, and which it doesn't. 
 `taskrc(5)` man page of Taskwarrior **3.5.0**, and the status of each comes from reading this repository's code.
 
 **How the taskrc is used.** You paste or choose your `~/.taskrc` (or a folder of files, with `include` followed). The text
-is kept as written in your bucket (`web/rc/…`), only an allowlist of settings is read from it (and what they add up to is
-kept in `web/config.json`), and your desktop file is never touched. Lines that can't be used are commented out; sync and
+is kept as written in your store (`web/rc/…`, in the bucket or on the git branch), only an allowlist of settings is read
+from it (and what they add up to is kept in `web/config.json`), and your desktop file is never touched. Lines that can't be used are commented out; sync and
 credential lines are removed. See [Your taskrc](using/settings.md#your-taskrc). The app's own settings, such as task
 commands, aren't taskrc options: they live in a `settings.json` of their own ([Commands](using/settings.md#commands)).
 
@@ -58,9 +58,9 @@ Each row below counts once, even where a row covers several related options.
 | `rc.report.<name>.<attr>:<value>` | Done | Changes one attribute of a report for one command. The table's header sort uses it |
 | `include <file>` | Done | Followed in the app's folder of files (Settings → taskrc): the path is relative to the file with the line, later lines win, and files nest to ten levels. A missing file or one outside the folder is reported with its file and line (Taskwarrior stops with an error; the app reports and goes on). Absolute paths, `~` and `$VAR` aren't followed, since there is no file system to read. Taskwarrior's `*.theme` files are expanded when you apply |
 | `purge.on-sync` | Not done | The app purges only when you run `purge`, never by itself on a sync. Leave that to your CLI |
-| `data.location`, `TASKDATA` | N/A | Data lives in the R2 bucket |
-| `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; its place is a folder of files in the bucket (`web/rc/`), the main one being `taskrc` |
-| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A browser can't run scripts, so hooks are functions in a Lua script kept in the bucket and edited in Settings: `on_launch`, `on_add`, `on_modify`, `on_exit`. The same script runs with the real `task` through `meghnaad-hook`, and `hooks=off` turns it off there too. See [Hooks](using/hooks.md#hooks) |
+| `data.location`, `TASKDATA` | N/A | Data lives in the store: a bucket or a git branch |
+| `TASKRC`, `XDG_CONFIG_HOME` | N/A | There is no local taskrc; its place is a folder of files in the store (`web/rc/`), the main one being `taskrc` |
+| `hooks` | Partial | The master switch (`hooks=off`, or `rc.hooks:off` for one command). A browser can't run scripts, so hooks are functions in a Lua script kept in the store and edited in Settings: `on_launch`, `on_add`, `on_modify`, `on_exit`. The same script runs with the real `task` through `meghnaad-hook`, and `hooks=off` turns it off there too. See [Hooks](using/hooks.md#hooks) |
 | `hooks.location`, `debug.hooks` | N/A | There is no hooks directory and no scripts to trace |
 | `gc` | N/A | Working-set ids are computed by the app, not stored |
 | `exit.on.missing.db` | N/A | There is no local database |
@@ -277,12 +277,13 @@ A UDA that exists on a task but isn't defined in the taskrc is shown but read-on
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `sync.*`, `taskd.*`, and any name containing `secret`, `password`, `token`, `credential` and similar | Blocked | Never stored, logged or shown; only the *names* of what was dropped are reported. The Worker syncs through its own R2 binding and secret, and the Android app takes its bucket, sync server (`sync.server.url`, `sync.server.client_id`) or git repository (the forge's API in place of `sync.git.remote`; the branch is `sync.git.branch`) on the phone, into its Keystore. The git Worker takes the repository and branch as deploy settings and the token as a secret |
+| `sync.*`, `taskd.*`, and any name containing `secret`, `password`, `token`, `credential` and similar | Blocked | Never stored, logged or shown; only the *names* of what was dropped are reported. The Worker syncs through its own R2 binding or repository token and secret, the static site through the repository and secret you give it on the device (kept sealed there), and the Android app takes its bucket, sync server (`sync.server.url`, `sync.server.client_id`) or git repository (the forge's API in place of `sync.git.remote`; the branch is `sync.git.branch`) on the phone, into its Keystore. The git Worker takes the repository and branch as deploy settings and the token as a secret |
 
-The bucket side of sync isn't configured from a taskrc, but it behaves like the CLI's. The Worker syncs before and after
-every command, writes a snapshot on about one push in ten (as `task sync` does), and picks the newest snapshot when it
-starts cold. It also tidies the bucket as the CLI does: after about one push in twenty it deletes versions that lost a
-race, older snapshots, and versions over 180 days old that a snapshot covers.
+The app's side of sync isn't configured from a taskrc, but it behaves like the CLI's. The page syncs after every write,
+when you come back to the tab and every 30 seconds while you look at it, writes a snapshot on about one push in ten (as
+`task sync` does), and picks the newest snapshot when it starts cold. With a bucket it also tidies as the CLI does: after
+about one push in twenty it deletes versions that lost a race, older snapshots, and versions over 180 days old that a
+snapshot covers.
 
 ## What is left
 

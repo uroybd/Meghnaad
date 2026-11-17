@@ -226,8 +226,9 @@ Keep your dotfiles repository as the source: paste the address of the file (a Gi
 raw link or a gist's) and choose **Import**.
 
 - It brings the main taskrc only. Included files aren't fetched, so add them (they show as *not found* until you do).
-- The Worker fetches it, so the site's CORS rules don't matter, and the file never reaches the browser. It keeps what a
-  pasted file would keep.
+- The Worker fetches it, so the site's CORS rules don't matter, and the file never reaches the browser. On the static
+  site there is no Worker, so the browser fetches it and the host must allow CORS. It keeps what a pasted file would
+  keep.
 - It saves straight away (**Restore previous** undoes it) and doesn't remember the link, so import again to refresh.
 - Only `https://` links to public sites are followed, with no addresses, ports or user names in the link (the same for any
   redirect), up to 256 KB. The request carries no login, so the link must work without one (a secret gist's does). A web
@@ -253,7 +254,7 @@ missing: look the list over.
 
 A public feed such as Google's holiday calendars
 (`https://calendar.google.com/calendar/ical/en.bd%23holiday%40group.v.calendar.google.com/public/basic.ics`;
-`webcal://` works too). The Worker fetches it under the same rules as the taskrc link import (https, a public host, up
+`webcal://` works too). The Worker (the browser, on the static site) fetches it under the same rules as the taskrc link import (https, a public host, up
 to 1 MB). All-day events become holidays, a multi-day one a stretch (`.start` and `.end`), and a plain yearly repeat is
 carried over the years. A **Keep** list has every name; what the calendar calls an observance (Valentine's Day) starts
 unticked. The file is named after the calendar unless you give a name.
@@ -269,7 +270,7 @@ remembered only if it has no `?`, since such a link can hold a secret. Saving ag
 previous** undoes it.
 
 Holidata and Nager.Date are asked from your browser (or phone) and learn your IP address and the country and years you
-asked for, nothing else. A calendar's host learns the Worker's (or the phone's) address and the link.
+asked for, nothing else. A calendar's host learns the Worker's (or the phone's, or on the static site your browser's) address and the link.
 
 ### Contexts
 

@@ -72,8 +72,9 @@ and highlighted, as a tag chip does on the Tags page.
 Every task has an address, `/task/<first 8 characters of its uuid>`, which opens its drawer. Back closes it, and a reload
 or pasted link opens it again. The link button in the drawer copies it.
 
-Whoever you send it to must be able to sign in to the same deployment, so it suits your own devices and people your
-Cloudflare Access policy lets in. It uses the uuid, not the number `task 3` uses, because numbers differ between replicas
+Whoever you send it to must be able to sign in to the same deployment, so it suits your own devices and people who can
+open it: those your Cloudflare Access policy lets in, or, on the static site, whoever has the repository and the
+secret. It uses the uuid, not the number `task 3` uses, because numbers differ between replicas
 and change as tasks finish. A longer prefix works; one that matches no task, or several, says so.
 
 ## Adding tasks

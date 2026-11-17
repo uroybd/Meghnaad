@@ -21,6 +21,7 @@ Taskwarrior advises that when several clients sync, one is primary and the other
 each make an instance before syncing make two. Meghnaad does not need that.
 
 ### No duplicates
+
 Before it makes an instance, the app looks for one already in that slot (the same `imask`), and makes it only if there is
 none. So `recurrence=1` everywhere is safe.
 

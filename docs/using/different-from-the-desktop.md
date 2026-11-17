@@ -38,7 +38,7 @@ tab defines are the lines tasksh adds to a desktop taskrc, so you can copy them 
 
 The detail view edits a task, and a browser can't read Taskwarrior 2's data
 files. `purge` works, with one difference: it removes the task from your current tasks, but older versions in the
-bucket still hold it until they are cleaned up. The app does that as the CLI does: after about one push in twenty,
+store still hold it until they are cleaned up. The app does that as the CLI does: after about one push in twenty,
 once they are over 180 days old and a snapshot covers them.
 
 ## Storage, sync and offline
@@ -52,9 +52,9 @@ you change still reaches the server, but anything not yet pushed is lost if you 
 
 ### Syncing
 
-Where it is pushed is the server your deployment uses: the R2 bucket, or with the git Worker a branch of a git
-repository, the same one `task` syncs to with `sync.git.*` ([deploying it](../deploy.md#a-git-repository-instead-of-r2)).
-Either way it is the CLI's own layout, so `task sync` sees the same tasks.
+Where it is pushed is the store your setup uses: an R2 bucket through the Worker, or a branch of a git repository
+through the git Worker or straight from the page on the static site ([Where your tasks live](../stores.md)). Either way
+it is the CLI's own layout, so `task sync` sees the same tasks.
 
 A change applies at once and is pushed in the background. The page pulls what other devices did when you
 return to the tab and every 30 seconds while you look at it, so a change from your laptop can take that long to show.
@@ -62,11 +62,11 @@ Tabs of the same browser tell each other.
 
 ### Offline
 
-If the server can't be reached, a banner says so. Changes keep working, are kept in the browser, and go up
-with the next sync that works (**Retry** tries now). The page itself must be loaded from the server, so it can't
+If the store can't be reached, a banner says so. Changes keep working, are kept in the browser, and go up
+with the next sync that works (**Retry** tries now). The page itself must be loaded from its host, so it can't
 start with no connection. **Start over from the server**, in the same banner, discards this browser's copy (including
-changes that never went up) and loads the tasks again. Use it when the copy and the bucket disagree, say after a
-replaced bucket.
+changes that never went up) and loads the tasks again. Use it when the copy and the store disagree, say after a
+replaced bucket or repository.
 
 ### What it needs
 

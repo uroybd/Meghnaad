@@ -16,4 +16,4 @@ Below about 760 px (a phone, or a narrow window) the layout changes:
   line that shows the last command. The prompt grows to show a long command, and suggestions can be tapped.
 
 You can add the web app to your home screen from the browser menu, or use [the Android app](../android.md): it keeps
-the tasks on the phone, works offline, syncs straight with your bucket and has widgets.
+the tasks on the phone, works offline, syncs directly with your store and has widgets.

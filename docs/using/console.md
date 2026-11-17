@@ -116,7 +116,7 @@ remembers only the last few commands, and not across a restart.
 
 **`import`** reads tasks from a file, such as one `export` wrote (or `task export` on your desktop).
 
-1. Typing it shows **Choose a file…**. The browser reads the file and the server checks it, then says how many tasks are
+1. Typing it shows **Choose a file…**. The browser reads the file and the engine checks it, then says how many tasks are
    new, how many would change and how many are already there, and lists them.
 2. Nothing is written until you press **Import**. Then all of it is, or none, as one `undo` step.
 3. Tasks are matched by `uuid`. New ones are added, a different one takes the file's attributes whole (what the file
@@ -164,7 +164,7 @@ rc.<setting>` answer with Taskwarrior's default when the taskrc is silent.
   narrows it to names containing that text.
 - `config weekstart monday` sets one (several words become one value; `config name ""` blanks it). `config weekstart`
   with no value removes it, bringing the default back. With `confirmation` on it asks first.
-- The change is saved in your bucket like an imported taskrc, and is the list the **taskrc** tab shows. Both follow the
+- The change is saved in your store like an imported taskrc, and is the list the **taskrc** tab shows. Both follow the
   [same rules as an import](settings.md#your-taskrc): sync and credential-like names are refused and never echoed, and
   a name the app doesn't read, or a value it can't accept (`weekstart someday`), is refused with the reason.
 
@@ -235,12 +235,12 @@ The same questions as on the desktop, from the same settings, answered on the pa
 - **Finishing or deleting a task in the middle of a dependency chain** offers to repair the chain
   (`dependency.confirmation`): what waited on it then waits on what it waited on. The question comes after what
   `task` prints before it (`dependency.reminder`): the tasks it was blocked by and the ones it was blocking.
+- **Editing, appending to, prepending to, annotating or deleting a task of a recurring series** asks whether to do the
+  same to the rest of the series (`recurrence.confirmation`).
 
 Starting, finishing or deleting a task that still waits on open tasks prints `Task 3 is blocked by:` and those tasks
 (`dependency.reminder`, on by default), under the result here. A button on another page shows it in a warning message
 instead, or with the question when it asks one.
-- **Editing, appending to, prepending to, annotating or deleting a task of a recurring series** asks whether to do the
-  same to the rest of the series (`recurrence.confirmation`).
 
 Taskwarrior asks yes / no / all / quit about each task in turn. Here the questions arrive together as a **table with a
 tick for each task the command would change**: tick all, none, or the ones you want, then go ahead. Only tasks the
