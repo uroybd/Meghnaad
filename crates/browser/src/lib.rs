@@ -28,6 +28,8 @@ use tc_core::warm::Warm;
 use tc_core::wire::RemoteServer;
 
 use crate::hooks::RemoteHooks;
+use tc_core::live::BaseVersion;
+use tc_core::prefetch::{self, Fetched, Prefetched};
 use tc_core::{save_replica, LiveStorage, Saver};
 use wasm_bindgen::prelude::*;
 
@@ -57,6 +59,8 @@ pub struct Engine {
     replica: Replica<LiveStorage>,
     saver: Saver,
     warm: Warm,
+    /// The replica's base version, read for a [`fetch`] without the replica.
+    synced: BaseVersion,
     undo: UndoStack,
     cfg: Config,
     /// The hooks the Worker's script defines (`on_add`, …): only these are ever called.
@@ -68,10 +72,36 @@ pub struct Engine {
     branch: Option<git::Branch>,
 }
 
-fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm) {
+fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm, BaseVersion) {
     let saver = storage.saver();
     let warm = Warm::new(storage.generation());
-    (Replica::new(storage), saver, warm)
+    let synced = storage.base_version();
+    (Replica::new(storage), saver, warm, synced)
+}
+
+/// Where a sync goes and the version it starts from, taken from the engine in a moment ([`Engine::source`]) so the
+/// slow part, [`fetch`], can run while the engine answers commands.
+#[wasm_bindgen]
+pub struct Source {
+    server: Box<dyn Server>,
+    base: uuid::Uuid,
+}
+
+/// What [`fetch`] found, for [`Engine::sync`] to apply.
+#[wasm_bindgen]
+pub struct Fetch {
+    server: Box<dyn Server>,
+    fetched: Fetched,
+}
+
+/// Ask the store what is new since the source's version, with no engine held (see `tc_core::prefetch`).
+#[wasm_bindgen]
+pub async fn fetch(source: Source) -> Result<Fetch, JsValue> {
+    let Source { mut server, base } = source;
+    let fetched = prefetch::fetch(server.as_mut(), base)
+        .await
+        .map_err(|e| js_error(request::root_cause(&e)))?;
+    Ok(Fetch { server, fetched })
 }
 
 impl Default for Engine {
@@ -85,11 +115,12 @@ impl Engine {
     /// An engine with no tasks, and the default settings until `set_config`.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Engine {
-        let (replica, saver, warm) = fresh(LiveStorage::new());
+        let (replica, saver, warm, synced) = fresh(LiveStorage::new());
         Engine {
             replica,
             saver,
             warm,
+            synced,
             undo: UndoStack::default(),
             cfg: Config::default(),
             hooks: Vec::new(),
@@ -119,8 +150,8 @@ impl Engine {
 
     /// Go on from where [`save`](Self::save) left off. An error means the copy is unusable: start from the server.
     pub fn restore(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
-        let (replica, saver, warm) = fresh(LiveStorage::load(bytes).map_err(js_error)?);
-        (self.replica, self.saver, self.warm) = (replica, saver, warm);
+        let (replica, saver, warm, synced) = fresh(LiveStorage::load(bytes).map_err(js_error)?);
+        (self.replica, self.saver, self.warm, self.synced) = (replica, saver, warm, synced);
         Ok(())
     }
 
@@ -134,16 +165,35 @@ impl Engine {
         self.warm.generation() as f64
     }
 
-    /// Pull what others have done and push what is waiting, with the git branch once connected, else the bucket behind
-    /// `base` (the Worker's address, empty for the page's own).
-    pub async fn sync(&mut self, base: String) -> Result<(), JsValue> {
+    /// The store: the git branch once connected, else the bucket behind `base` (the Worker's address, empty for the
+    /// page's own).
+    #[cfg_attr(
+        not(feature = "git"),
+        allow(clippy::unused_self, reason = "the git build reads the branch from it")
+    )]
+    fn server(&self, base: String) -> Box<dyn Server> {
         #[cfg(feature = "git")]
-        let mut server: Box<dyn Server> = match &self.branch {
-            Some(b) => b.server(),
-            None => Box::new(RemoteServer::new(server::Http::new(base))),
+        if let Some(b) = &self.branch {
+            return b.server();
+        }
+        Box::new(RemoteServer::new(server::Http::new(base)))
+    }
+
+    /// Where a sync goes and what it starts from, for [`fetch`] to run while the engine is free.
+    pub fn source(&self, base: String) -> Source {
+        Source {
+            server: self.server(base),
+            base: self.synced.get(),
+        }
+    }
+
+    /// Pull what others have done and push what is waiting: from what [`fetch`] found if it is given (the store is
+    /// then asked only for what it could not answer, a push above all), else from the store behind `base`.
+    pub async fn sync(&mut self, base: String, fetched: Option<Fetch>) -> Result<(), JsValue> {
+        let mut server = match fetched {
+            Some(f) => Prefetched::boxed(f.server, f.fetched),
+            None => self.server(base),
         };
-        #[cfg(not(feature = "git"))]
-        let mut server: Box<dyn Server> = Box::new(RemoteServer::new(server::Http::new(base)));
         // The page is not short of time, and a snapshot every so often is what keeps the next cold start short.
         self.replica
             .sync(&mut server, false)
@@ -199,6 +249,44 @@ fn remote_hooks(
     )))
 }
 
+#[cfg(feature = "git")]
+async fn settings_route(branch: Option<&git::Branch>, method: &str, path: &str, body: &[u8]) -> String {
+    let reply = match branch {
+        None => tc_core::webapi::Reply::error(409, "not connected to a git branch"),
+        // Checked first by the hooks module (`tc-browser-hooks`), which the engine's Web Worker loads for it.
+        Some(b) if method == "PUT" && path == "/api/hooks" => b.save_hooks(body).await,
+        Some(b) => match b.secrets_route(method, path, body).await {
+            Some(r) => r,
+            None => b.settings().handle(method, path, body).await.unwrap_or_else(|| {
+                tc_core::webapi::Reply::error(404, format!("there is no {method} {path} in the static app"))
+            }),
+        },
+    };
+    serde_json::json!({
+        "status": reply.status,
+        "type": reply.content_type,
+        "body": String::from_utf8_lossy(&reply.body),
+    })
+    .to_string()
+}
+
+/// The branch the engine syncs with, for reading the settings while the engine is busy: the page keeps the last ones it
+/// read and starts from them, then checks them with this.
+#[cfg(feature = "git")]
+#[wasm_bindgen]
+pub struct Reader {
+    branch: Option<git::Branch>,
+}
+
+#[cfg(feature = "git")]
+#[wasm_bindgen]
+impl Reader {
+    /// A `GET` of one of the settings routes, answered as [`Engine::api`] answers it.
+    pub async fn get(&self, path: &str) -> String {
+        settings_route(self.branch.as_ref(), "GET", path, &[]).await
+    }
+}
+
 /// The static flavour's part: the git branch and the settings routes, in the page.
 #[cfg(feature = "git")]
 #[wasm_bindgen]
@@ -222,23 +310,14 @@ impl Engine {
     /// A request for one of the settings routes the page makes of a Worker (`/api/config`, `/api/settings`,
     /// `/api/secrets`, …), answered from the git branch: `{ status, type, body }`. A route that is not one is a 404.
     pub async fn api(&self, method: &str, path: &str, body: &[u8]) -> String {
-        let reply = match &self.branch {
-            None => tc_core::webapi::Reply::error(409, "not connected to a git branch"),
-            // Checked first by the hooks module (`tc-browser-hooks`), which the engine's Web Worker loads for it.
-            Some(b) if method == "PUT" && path == "/api/hooks" => b.save_hooks(body).await,
-            Some(b) => match b.secrets_route(method, path, body).await {
-                Some(r) => r,
-                None => b.settings().handle(method, path, body).await.unwrap_or_else(|| {
-                    tc_core::webapi::Reply::error(404, format!("there is no {method} {path} in the static app"))
-                }),
-            },
-        };
-        serde_json::json!({
-            "status": reply.status,
-            "type": reply.content_type,
-            "body": String::from_utf8_lossy(&reply.body),
-        })
-        .to_string()
+        settings_route(self.branch.as_ref(), method, path, body).await
+    }
+
+    /// The branch, to read a setting from with no engine held ([`Reader::get`]).
+    pub fn reader(&self) -> Reader {
+        Reader {
+            branch: self.branch.clone(),
+        }
     }
 
     /// The hook secrets on the branch, opened (`{"NAME": {"value", "hosts"}}`), for the hooks module to run the script

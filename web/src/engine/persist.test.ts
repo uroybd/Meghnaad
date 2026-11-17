@@ -1,7 +1,17 @@
 // @vitest-environment node
 // (jsdom does not always carry the streams API the browser has; Node does.)
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { forgetReplica, loadReplica, pack, saveReplica, sealWith, unpack } from './persist';
+import {
+  forgetKept,
+  forgetReplica,
+  keepAnswer,
+  loadKept,
+  loadReplica,
+  pack,
+  saveReplica,
+  sealWith,
+  unpack,
+} from './persist';
 
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 
@@ -80,7 +90,15 @@ function memoryDb() {
         objectStore: () => ({
           get: (k: unknown) => request(() => data.get(k)),
           put: (v: unknown, k: unknown) => request(() => data.set(k, v)),
-          delete: (k: unknown) => request(() => data.delete(k)),
+          delete: (k: unknown) =>
+            request(() => {
+              // A key range (the stand-in for IDBKeyRange.bound below), or one key.
+              if (k && typeof k === 'object' && 'lo' in k && 'hi' in k) {
+                const { lo, hi } = k as { lo: string; hi: string };
+                for (const key of [...data.keys()])
+                  if (typeof key === 'string' && key >= lo && key <= hi) data.delete(key);
+              } else data.delete(k);
+            }),
         }),
       };
       setTimeout(() => t.oncomplete?.(), 0);
@@ -118,5 +136,35 @@ describe('the static flavour seals the copy', () => {
     // Another key (another secret) reads it as no copy at all: the tasks come from the branch again.
     await sealWith(crypto.getRandomValues(new Uint8Array(32)));
     expect(await loadReplica()).toBeUndefined();
+  });
+});
+
+describe('the settings the static flavour keeps', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('are kept sealed, read back with the key, and forgotten together without touching the tasks', async () => {
+    const mem = memoryDb();
+    vi.stubGlobal('indexedDB', mem.indexedDB);
+    vi.stubGlobal('IDBKeyRange', { bound: (lo: string, hi: string) => ({ lo, hi }) });
+    await sealWith(crypto.getRandomValues(new Uint8Array(32)));
+    await saveReplica(new TextEncoder().encode('{"format":1}'));
+    await keepAnswer('/api/config', '{"status":200,"body":"dateformat Y-M-D"}');
+    await keepAnswer('/api/settings', '{"status":200,"body":"{}"}');
+    expect(text(mem.data.get('kept:/api/config') as Uint8Array)).not.toContain('dateformat');
+    expect(await loadKept('/api/config')).toBe('{"status":200,"body":"dateformat Y-M-D"}');
+
+    await forgetKept();
+    expect(await loadKept('/api/config')).toBeUndefined();
+    expect(await loadKept('/api/settings')).toBeUndefined();
+    expect(await loadReplica()).toBeDefined();
+  });
+
+  it('are not read with another key', async () => {
+    const mem = memoryDb();
+    vi.stubGlobal('indexedDB', mem.indexedDB);
+    await sealWith(crypto.getRandomValues(new Uint8Array(32)));
+    await keepAnswer('/api/config', '{}');
+    await sealWith(crypto.getRandomValues(new Uint8Array(32)));
+    expect(await loadKept('/api/config')).toBeUndefined();
   });
 });

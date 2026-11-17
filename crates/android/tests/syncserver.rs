@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
-use tc_android::engine::Engine;
+use tc_android::engine::{fetch, Engine};
 
 const NIL: &str = "00000000-0000-0000-0000-000000000000";
 const CLIENT: &str = "3f2b8d1e-9c4a-4b7e-8f21-5a6d0c9e1b34";
@@ -34,6 +34,8 @@ struct Server {
     next: u128,
     /// Requests with no `X-Client-Id`.
     anonymous: usize,
+    /// Answers every request with an error, to show none is made.
+    down: bool,
 }
 
 /// A server on a local port. Returns its address and the shared state.
@@ -97,6 +99,9 @@ fn answer(
     headers: &BTreeMap<String, String>,
     body: Vec<u8>,
 ) -> (u16, String, Vec<u8>) {
+    if server.down {
+        return (503, String::new(), b"down".to_vec());
+    }
     let Some(client_id) = headers.get("x-client-id") else {
         server.anonymous += 1;
         return (400, String::new(), b"no client id".to_vec());
@@ -201,6 +206,53 @@ fn descriptions(engine: &mut Engine) -> Vec<String> {
         .collect();
     found.sort();
     found
+}
+
+#[test]
+fn a_sync_fetched_ahead_needs_the_server_only_to_push() {
+    let (url, state) = serve();
+    let s = settings(&url, "s3cret");
+    let (mut a, mut b) = (engine(), engine());
+    run(&mut a, "add Buy milk");
+    a.sync(&s).unwrap();
+    b.sync(&s).unwrap();
+    run(&mut a, "add Write report");
+    a.sync(&s).unwrap();
+
+    // The fetch takes no engine: b answers commands meanwhile, here a read.
+    let fetched = fetch(b.source(&s).unwrap().unwrap()).unwrap();
+    assert_eq!(descriptions(&mut b), ["Buy milk"]);
+    // Nothing of b's to push, so the sync makes no request.
+    state.lock().unwrap().down = true;
+    b.sync_fetched(&s, Some(fetched)).unwrap();
+    assert_eq!(descriptions(&mut b), ["Buy milk", "Write report"]);
+    state.lock().unwrap().down = false;
+
+    // A write made while the fetch was out goes with the sync, after what was fetched.
+    run(&mut a, "add Call Sam");
+    a.sync(&s).unwrap();
+    let fetched = fetch(b.source(&s).unwrap().unwrap()).unwrap();
+    run(&mut b, "add Water plants");
+    b.sync_fetched(&s, Some(fetched)).unwrap();
+    a.sync(&s).unwrap();
+    assert_eq!(
+        descriptions(&mut a),
+        ["Buy milk", "Call Sam", "Water plants", "Write report"]
+    );
+    assert_eq!(descriptions(&mut b), descriptions(&mut a));
+}
+
+#[test]
+fn a_change_of_server_is_not_fetched_ahead() {
+    let (url, _state) = serve();
+    let (other, _other_state) = serve();
+    let mut a = engine();
+    run(&mut a, "add Buy milk");
+    a.sync(&settings(&url, "s3cret")).unwrap();
+    // Synced elsewhere before: the sync asks what to do with the tasks, and nothing is fetched ahead of it.
+    assert!(a.source(&settings(&other, "s3cret")).unwrap().is_none());
+    assert!(a.source(&settings_with(&other, "s3cret", "merge")).unwrap().is_none());
+    assert!(a.source(&settings(&url, "s3cret")).unwrap().is_some());
 }
 
 #[test]

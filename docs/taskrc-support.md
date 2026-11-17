@@ -279,7 +279,7 @@ A UDA that exists on a task but isn't defined in the taskrc is shown but read-on
 | --- | --- | --- |
 | `sync.*`, `taskd.*`, and any name containing `secret`, `password`, `token`, `credential` and similar | Blocked | Never stored, logged or shown; only the *names* of what was dropped are reported. The Worker syncs through its own R2 binding or repository token and secret, the static site through the repository and secret you give it on the device (kept sealed there), and the Android app takes its bucket, sync server (`sync.server.url`, `sync.server.client_id`) or git repository (the forge's API in place of `sync.git.remote`; the branch is `sync.git.branch`) on the phone, into its Keystore. The git Worker takes the repository and branch as deploy settings and the token as a secret |
 
-The app's side of sync isn't configured from a taskrc, but it behaves like the CLI's. The page syncs after every write,
+The app's side of sync isn't configured from a taskrc, but it behaves like the CLI's. The page pushes soon after every write,
 when you come back to the tab and every 30 seconds while you look at it, writes a snapshot on about one push in ten (as
 `task sync` does), and picks the newest snapshot when it starts cold. With a bucket it also tidies as the CLI does: after
 about one push in twenty it deletes versions that lost a race, older snapshots, and versions over 180 days old that a

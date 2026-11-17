@@ -81,9 +81,14 @@ class LocalEngine(dir: File, private val vault: Vault) : EnginePort {
         // Read before the engine is taken: the Keystore can be slow, and nothing else should wait on it.
         val connection = vault.connection() ?: return@withContext SyncResult(false)
         val files = vault.syncOptions.files()
+        val settings = connection.toSyncJson(files, switch)
+        // What is new in the store is asked for first, with the engine taken only for a moment: a tap meanwhile is answered.
+        // The engine is then taken to apply it and push what is waiting, the one part that must hold it.
+        val source = synchronized(this@LocalEngine) { handleOf(NativeEngine.nativeSource(handle, settings), "source") }
+        val fetched = if (source == 0L) 0L else handleOf(NativeEngine.nativeFetch(source), "fetched")
         synchronized(this@LocalEngine) {
             val before = changes()
-            val answer = engineJson.parseToJsonElement(NativeEngine.nativeCall(handle, "sync", connection.toSyncJson(files, switch))).jsonObject
+            val answer = engineJson.parseToJsonElement(NativeEngine.nativeSyncFetched(handle, settings, fetched)).jsonObject
             answer["error"]?.let { throw SyncFailed(it.jsonPrimitive.content) }
             val pulled = (answer["settings"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList()
             // A switch put another replica in place of this one: it is the one to keep, and the screen is drawn again.
@@ -91,6 +96,13 @@ class LocalEngine(dir: File, private val vault: Vault) : EnginePort {
             save()
             SyncResult(switch != null || changes() != before, pulled)
         }
+    }
+
+    /** The handle named [key] in a native answer, 0 when there is none; its `error` is thrown. */
+    private fun handleOf(answer: String, key: String): Long {
+        val o = engineJson.parseToJsonElement(answer).jsonObject
+        o["error"]?.let { throw SyncFailed(it.jsonPrimitive.content) }
+        return o[key]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
     }
 
     override suspend fun forget() = withContext(Dispatchers.Default) {

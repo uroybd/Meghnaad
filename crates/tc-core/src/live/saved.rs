@@ -77,7 +77,7 @@ impl LiveStorage {
         }
         serde_json::to_vec(&View {
             format: SAVED_FORMAT,
-            base_version: self.base_version,
+            base_version: self.base_version.get(),
             tasks: &self.tasks,
             operations: &self.operations,
             working_set: &self.working_set,
@@ -99,7 +99,7 @@ impl LiveStorage {
             generation: Generation::default(),
             saver: Saver::default(),
             tasks: saved.tasks,
-            base_version: saved.base_version,
+            base_version: super::BaseVersion::new(saved.base_version),
             operations: saved.operations,
             working_set: saved.working_set,
         })

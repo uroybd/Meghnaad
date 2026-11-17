@@ -54,9 +54,11 @@ Where it is pushed is the store your setup uses: an R2 bucket through the Worker
 through the git Worker or straight from the page on the static site ([Where your tasks live](../stores.md)). Either way
 it is the CLI's own layout, so `task sync` sees the same tasks.
 
-A change applies at once and is pushed in the background. The page pulls what other devices did when you
-return to the tab and every 30 seconds while you look at it, so a change from your laptop can take that long to show.
-Tabs of the same browser tell each other.
+A change applies at once and is pushed in the background, two seconds after the last of a run of changes (or at once
+when you leave the tab), so a burst of edits is one push. The page pulls what other devices did when you return to the
+tab and every 30 seconds while you look at it, so a change from your laptop can take that long to show. Tabs of the
+same browser tell each other. Commands are answered while a sync runs. On the static site, unlocking starts from the
+settings this browser kept, and picks up a change made elsewhere a moment later.
 
 ### Offline
 

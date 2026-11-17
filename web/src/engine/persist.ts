@@ -130,3 +130,30 @@ export async function saveReplica(bytes: Uint8Array): Promise<void> {
 export async function forgetReplica(): Promise<void> {
   await tx('readwrite', (s) => s.delete(KEY));
 }
+
+// The static flavour keeps the settings it last read (the answers of `KEPT_ROUTES`), sealed as the copy of the tasks
+// is, so unlocking starts from them and reads the branch's after. Kept only while sealing is on.
+const KEPT = 'kept:';
+
+/** What was kept of a route, or nothing: never kept, sealing off, or unreadable. */
+export async function loadKept(path: string): Promise<string | undefined> {
+  if (!sealKey) return undefined;
+  const found = await tx<unknown>('readonly', (s) => s.get(KEPT + path)).catch(() => undefined);
+  if (!(found instanceof Uint8Array) || !isSealed(found)) return undefined;
+  try {
+    return new TextDecoder().decode(await opened(found, sealKey));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function keepAnswer(path: string, text: string): Promise<void> {
+  if (!sealKey) return;
+  const kept = await sealed(new TextEncoder().encode(text), sealKey);
+  await tx('readwrite', (s) => s.put(kept, KEPT + path));
+}
+
+/** Forget every kept route: a setting was written, and the next read is the branch's. */
+export async function forgetKept(): Promise<void> {
+  await tx('readwrite', (s) => s.delete(IDBKeyRange.bound(KEPT, `${KEPT}\uffff`)));
+}

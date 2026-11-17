@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private lateinit var engine: LocalEngine
     private lateinit var store: Store
+    private lateinit var sync: SyncController
 
     /** Who is waiting to hear whether the phone allowed notifications. */
     private var permissionAnswer: ((Boolean) -> Unit)? = null
@@ -43,7 +44,7 @@ class MainActivity : ComponentActivity() {
         APP_LOGO = android.graphics.BitmapFactory.decodeResource(resources, R.drawable.logo)?.asImageBitmap()
         val vault = AppEngine.vault(this)
         engine = AppEngine.get(this)
-        val sync = SyncController(engine, lifecycleScope, SystemClock)
+        sync = SyncController(engine, lifecycleScope, SystemClock)
         val reminders = AndroidReminders(this) { done ->
             permissionAnswer = done
             if (android.os.Build.VERSION.SDK_INT >= 33) askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS) else done(true)
@@ -125,6 +126,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        // A write still waiting to be pushed goes now, while the app is still allowed to.
+        sync.pushNow()
         engine.save()
     }
 }

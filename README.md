@@ -275,8 +275,8 @@ flowchart TB
 - **The static site has no Worker.** The page reaches the git branch through the forge's API itself, holds the token and
   the secret once you unlock it, and runs hooks in the page ([the static app](docs/deploy.md#the-static-app)).
 - **The browser keeps a copy** in IndexedDB, so a visit starts from where the last one ended and only pulls what is new.
-  It syncs after every write, when you come back to the tab, and every 30 seconds while you look at it; other tabs are
-  told when one pushes.
+  It pushes soon after every write, pulls when you come back to the tab and every 30 seconds while you look at it, and
+  answers commands while it syncs; other tabs are told when one pushes.
 - **Imported taskrc files** are kept in the store beside your tasks (as written, less sync and credential lines), so they
   survive restarts and follow you between devices. The app's own `settings.json` (task commands, boards, keys) is kept
   beside them; the Worker keeps its text as it is and only the browser reads it.
@@ -284,7 +284,7 @@ flowchart TB
 |                | Desktop Taskwarrior        | Meghnaad                                                                                                      |
 | -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Local state    | Persistent SQLite          | In the page, with a saved copy in the browser (IndexedDB)                                                     |
-| Sync           | When you run `task sync`   | After every write, when you return to the tab, every 30 s while you look at it                                |
+| Sync           | When you run `task sync`   | Soon after a write, when you return to the tab, every 30 s while you look at it                               |
 | Offline        | Works                      | Changes work and are kept; they go up when the connection is back. The page itself needs a connection to load |
 | Encryption key | Only on your machine       | In a Worker secret, and the Worker opens and seals what passes through it; on the static site, in the browser |
 | Task ids       | Local to that replica      | Computed separately, so they differ                                                                           |

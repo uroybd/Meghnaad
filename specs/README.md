@@ -46,3 +46,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0011 | [Git repository as the sync backend](0011-git-sync-backend.md) | in progress | both | web, Android | Everything: started 2026-11-17 |
 | 0012 | [Hook secrets bound to their hosts](0012-hook-secrets-bound-to-hosts.md) | in progress | both | all | Everything: started 2026-11-17 |
 | 0013 | [The web app as static files, on a git branch](0013-static-web-app.md) | in progress | both | web | Everything: started 2026-11-17 |
+| 0014 | [Sync without holding up the screen](0014-sync-without-blocking.md) | in progress | both | web, Android | Everything: started 2026-11-18 |

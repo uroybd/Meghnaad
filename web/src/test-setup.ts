@@ -39,6 +39,7 @@ vi.mock('./engine/client.svelte', () => ({
     sync: async () => undefined,
     forget: async () => undefined,
     onChanged: () => () => undefined,
+    onSettingsChanged: () => () => undefined,
     run: async (request: object) =>
       (
         await fetch('/api/cli', {

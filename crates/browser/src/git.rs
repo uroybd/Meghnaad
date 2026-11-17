@@ -91,6 +91,7 @@ fn now() -> i64 {
 }
 
 /// An unlocked branch: where it is and the key.
+#[derive(Clone)]
 pub struct Branch {
     remote: GitRemote,
     cryptor: Cryptor,

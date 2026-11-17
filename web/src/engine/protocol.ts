@@ -13,8 +13,21 @@ export type EngineRequest =
   | { op: 'sync' }
   /** Forget the saved replica (it is fetched again from the bucket on the next start). */
   | { op: 'forget' }
-  /** The static flavour: one of the settings routes, answered from the git branch. Answers an `ApiAnswer`. */
-  | { op: 'api'; method: string; path: string; body: string };
+  /** The static flavour: one of the settings routes, answered from the git branch. Answers an `ApiAnswer`. With `kept`,
+   * a `GET` of one of `KEPT_ROUTES` is answered from what this device kept of it, when it has kept it. */
+  | { op: 'api'; method: string; path: string; body: string; kept?: boolean }
+  /** The static flavour: read one of `KEPT_ROUTES` from the branch again, while the engine answers commands, and keep
+   * it. Answers a `Refreshed`. */
+  | { op: 'refresh'; path: string };
+
+/** The settings routes the static flavour keeps on the device (sealed), so unlocking starts from them at once. */
+export const KEPT_ROUTES: ReadonlySet<string> = new Set(['/api/config', '/api/settings', '/api/hooks/defined']);
+
+/** A kept route read from the branch again: whether it changed since it was kept, and what it is now. */
+export interface Refreshed {
+  changed: boolean;
+  answer: ApiAnswer;
+}
 
 /** The static flavour's unlocked branch: given to the engine at start, kept only in its memory. */
 export interface Vault {
@@ -31,6 +44,8 @@ export interface ApiAnswer {
   status: number;
   type: string;
   body: string;
+  /** Answered from what this device kept, not from the branch. */
+  kept?: boolean;
 }
 
 /** A sync's answer: whether anything of the tasks changed, and why the copy in this browser could not be saved

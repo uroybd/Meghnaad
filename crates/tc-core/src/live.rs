@@ -83,12 +83,35 @@ impl Generation {
     }
 }
 
+/// The version the replica was last synced to, readable while the storage is inside a replica: what a host fetches
+/// from the store before it takes the replica to sync ([`crate::prefetch`]). Read it between transactions; inside one
+/// it may hold a value the transaction later takes back.
+#[derive(Clone, Debug, Default)]
+pub struct BaseVersion(Arc<Mutex<Uuid>>);
+
+impl BaseVersion {
+    pub fn get(&self) -> Uuid {
+        *self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn set(&self, version: Uuid) -> Uuid {
+        std::mem::replace(
+            &mut *self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner),
+            version,
+        )
+    }
+
+    pub(crate) fn new(version: Uuid) -> Self {
+        BaseVersion(Arc::new(Mutex::new(version)))
+    }
+}
+
 pub struct LiveStorage {
     generation: Generation,
     #[cfg(feature = "save")]
     saver: Saver,
     tasks: HashMap<Uuid, TaskMap>,
-    base_version: Uuid,
+    base_version: BaseVersion,
     /// Every operation, oldest first, with whether the server has it.
     operations: Vec<(bool, Operation)>,
     /// Element 0 is always `None`; a task's number is its index.
@@ -108,7 +131,7 @@ impl LiveStorage {
             #[cfg(feature = "save")]
             saver: Saver::default(),
             tasks: HashMap::new(),
-            base_version: NO_VERSION,
+            base_version: BaseVersion::new(NO_VERSION),
             operations: Vec::new(),
             working_set: vec![None],
         }
@@ -117,6 +140,11 @@ impl LiveStorage {
     /// A handle on the change counter, to keep after the storage has moved into a replica.
     pub fn generation(&self) -> Generation {
         self.generation.clone()
+    }
+
+    /// A handle on the base version, to keep after the storage has moved into a replica.
+    pub fn base_version(&self) -> BaseVersion {
+        self.base_version.clone()
     }
 }
 
@@ -167,7 +195,9 @@ impl Txn<'_> {
                 Undo::Task(uuid, None) => {
                     db.tasks.remove(&uuid);
                 }
-                Undo::BaseVersion(v) => db.base_version = v,
+                Undo::BaseVersion(v) => {
+                    db.base_version.set(v);
+                }
                 Undo::OperationsAdded(n) => {
                     let keep = db.operations.len().saturating_sub(n);
                     db.operations.truncate(keep);
@@ -304,11 +334,11 @@ impl StorageTxn for Txn<'_> {
     }
 
     async fn base_version(&mut self) -> Result<Uuid> {
-        Ok(self.db.base_version)
+        Ok(self.db.base_version.get())
     }
 
     async fn set_base_version(&mut self, version: Uuid) -> Result<()> {
-        let old = std::mem::replace(&mut self.db.base_version, version);
+        let old = self.db.base_version.set(version);
         self.journal.push(Undo::BaseVersion(old));
         Ok(())
     }

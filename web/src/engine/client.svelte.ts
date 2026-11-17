@@ -1,17 +1,31 @@
 // The page's side of the engine: starts the Web Worker, sends it commands, and keeps it in step with the bucket.
 //
-// Syncing: before the first command if there was no saved replica to start from; then in the background after every
-// write (to push it), when the tab is looked at again, every so often while it is, and when another tab of this
-// browser has pushed (they tell each other over a BroadcastChannel). A write is already applied and saved here, so a
-// push that fails (offline, a signed-out session) is only tried again later; what is waiting is pushed with it.
+// Syncing: before the first command if there was no saved replica to start from; then in the background a moment
+// after a write (to push it: once for a run of writes, and at once when the tab is hidden), when the tab is looked at
+// again, every so often while it is, and when another tab of this browser has pushed (they tell each other over a
+// BroadcastChannel). A write is already applied and saved here, so a push that fails (offline, a signed-out session)
+// is only tried again later; what is waiting is pushed with it. A sync asks the store what is new while the engine
+// goes on answering commands, and holds it only to apply that and push (engine.worker.ts).
 
 import { STATIC } from './flavour';
-import type { ApiAnswer, Call, EngineReply, EngineRequest, Port, Synced, Vault } from './protocol';
+import {
+  KEPT_ROUTES,
+  type ApiAnswer,
+  type Call,
+  type EngineReply,
+  type EngineRequest,
+  type Port,
+  type Refreshed,
+  type Synced,
+  type Vault,
+} from './protocol';
 
 /** How often a visible tab pulls what other devices have done. */
 const PULL_EVERY_MS = 30_000;
 /** A pull that comes this soon after the last one is not worth a request. */
 const PULL_NOT_SOONER_MS = 4_000;
+/** How long after the last of a run of writes they are pushed. */
+export const PUSH_AFTER_MS = 2_000;
 const CHANNEL = 'meghnaad-engine';
 export type SyncStatus = 'idle' | 'syncing' | 'failed';
 
@@ -44,7 +58,12 @@ export class EngineClient {
   private lastPull = 0;
   private channel: BroadcastChannel | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
+  /** A push waiting for the writes to stop. */
+  private pushTimer: ReturnType<typeof setTimeout> | undefined;
   private changedListeners = new Set<() => void>();
+  private settingsListeners = new Set<(path: string) => void>();
+  /** The kept routes already answered from what this device kept: only the first read of each is. */
+  private askedKept = new Set<string>();
   /** The static flavour's unlocked branch, handed to the engine when it starts. */
   private vault: Vault | undefined;
 
@@ -128,6 +147,9 @@ export class EngineClient {
       return strict ? this.syncing : this.syncing.catch(() => {});
     }
     const run = async () => {
+      // This sync pushes whatever is waiting, so a push that was to follow it has nothing left to do.
+      clearTimeout(this.pushTimer);
+      this.pushTimer = undefined;
       this.status = 'syncing';
       try {
         const { changed, unkept } = (await this.send({ op: 'sync' })) as Synced;
@@ -158,11 +180,24 @@ export class EngineClient {
     return strict ? this.syncing : this.syncing.catch(() => {});
   }
 
-  /** After a write: push it, without making the caller wait. */
+  /** After a write: push it a moment later (once for a run of writes), without making the caller wait. */
   pushSoon(): void {
     this.announce = true;
-    void this.sync();
+    clearTimeout(this.pushTimer);
+    this.pushTimer = setTimeout(this.pushNow, PUSH_AFTER_MS);
   }
+
+  /** Push what is waiting now, if anything is: the tab is being hidden or closed. */
+  private pushNow = () => {
+    if (this.pushTimer === undefined) return;
+    clearTimeout(this.pushTimer);
+    this.pushTimer = undefined;
+    void this.sync();
+  };
+
+  private pushIfHidden = () => {
+    if (document.visibilityState === 'hidden') this.pushNow();
+  };
 
   private pullIfStale = () => {
     if (document.visibilityState === 'visible' && Date.now() - this.lastPull > PULL_NOT_SOONER_MS) void this.sync();
@@ -170,6 +205,8 @@ export class EngineClient {
 
   private watch(): void {
     document.addEventListener('visibilitychange', this.pullIfStale);
+    document.addEventListener('visibilitychange', this.pushIfHidden);
+    window.addEventListener('pagehide', this.pushNow);
     window.addEventListener('online', this.pullIfStale);
     this.timer = setInterval(() => {
       if (document.visibilityState === 'visible') void this.sync();
@@ -181,10 +218,43 @@ export class EngineClient {
     }
   }
 
-  /** The static flavour: a settings route, answered by the engine from the git branch. */
+  /** The static flavour: called when a setting this device started from turned out to have changed on the branch (the
+   * route's path), so it can be read again. The engine already has new `config`. */
+  onSettingsChanged(fn: (path: string) => void): () => void {
+    this.settingsListeners.add(fn);
+    return () => this.settingsListeners.delete(fn);
+  }
+
+  /**
+   * The static flavour: a settings route, answered by the engine from the git branch. The first read of each of
+   * `KEPT_ROUTES` is answered from what this device kept, when it has, and the branch's is read after, in the
+   * background; a change there is told to `onSettingsChanged`.
+   */
   async api(method: string, path: string, body: string): Promise<ApiAnswer> {
     await this.spawn();
-    return (await this.send({ op: 'api', method, path, body })) as ApiAnswer;
+    const kept = method === 'GET' && KEPT_ROUTES.has(path) && !this.askedKept.has(path);
+    if (kept) this.askedKept.add(path);
+    const answer = (await this.send({ op: 'api', method, path, body, kept })) as ApiAnswer;
+    if (answer.kept) void this.refreshKept(path);
+    return answer;
+  }
+
+  private async refreshKept(path: string): Promise<void> {
+    let fresh: Refreshed;
+    try {
+      fresh = (await this.send({ op: 'refresh', path })) as Refreshed;
+    } catch {
+      // Offline, say: what was kept stays in force, and the next unlock tries again.
+      return;
+    }
+    if (!fresh.changed) return;
+    if (path === '/api/config') {
+      // The engine started (or is starting) on the kept settings: these replace them.
+      await this.starting?.catch(() => undefined);
+      const config = (JSON.parse(fresh.answer.body) as { config?: unknown }).config;
+      if (config !== undefined) await this.setConfig(JSON.stringify(config)).catch(() => undefined);
+    }
+    for (const fn of this.settingsListeners) fn(path);
   }
 
   setHooks(defined: string[]): Promise<unknown> {
@@ -210,13 +280,18 @@ export class EngineClient {
 
   stop(): void {
     document.removeEventListener('visibilitychange', this.pullIfStale);
+    document.removeEventListener('visibilitychange', this.pushIfHidden);
+    window.removeEventListener('pagehide', this.pushNow);
     window.removeEventListener('online', this.pullIfStale);
     clearInterval(this.timer);
+    clearTimeout(this.pushTimer);
+    this.pushTimer = undefined;
     this.channel?.close();
     this.worker?.terminate();
     this.worker = undefined;
     this.starting = undefined;
     this.spawned = undefined;
+    this.askedKept.clear();
   }
 }
 

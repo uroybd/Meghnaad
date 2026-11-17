@@ -22,7 +22,9 @@ use tc_core::crypto::{Cryptor, KEY_LEN};
 use tc_core::forge::ForgeRepo;
 use tc_core::gitsync::{self, GitObjects, GitServer};
 use tc_core::hooks::HookHost;
+use tc_core::live::BaseVersion;
 use tc_core::lua_hooks::{LuaHooks, Net};
+use tc_core::prefetch::{self, Fetched, Prefetched};
 use tc_core::request;
 use tc_core::taskrc::Config;
 use tc_core::warm::Warm;
@@ -173,6 +175,8 @@ pub struct Engine {
     replica: Replica<LiveStorage>,
     saver: Saver,
     warm: Warm,
+    /// The replica's base version, for [`Engine::source`].
+    synced: BaseVersion,
     undo: UndoStack,
     cfg: Config,
     /// The app's settings, kept in a folder: what the Worker keeps in the bucket for the web app.
@@ -187,10 +191,34 @@ pub struct Engine {
     key: Option<(String, Cryptor)>,
 }
 
-fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm) {
+fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm, BaseVersion) {
     let saver = storage.saver();
     let warm = Warm::new(storage.generation());
-    (Replica::new(storage), saver, warm)
+    let synced = storage.base_version();
+    (Replica::new(storage), saver, warm, synced)
+}
+
+/// Where a sync goes and the version it starts from, taken from the engine in a moment so that [`fetch`] can run with
+/// the engine free (see `tc_core::prefetch`).
+pub struct Source {
+    server: Box<dyn Server>,
+    base: uuid::Uuid,
+    /// The key, and what it was made for: kept by the engine once a sync with it has worked.
+    key: (String, Cryptor),
+}
+
+/// What [`fetch`] found, for [`Engine::sync`] to apply.
+pub struct Fetch {
+    server: Box<dyn Server>,
+    fetched: Fetched,
+    key: (String, Cryptor),
+}
+
+/// Ask the store what is new since the source's version, with no engine held.
+pub fn fetch(source: Source) -> Result<Fetch, String> {
+    let Source { mut server, base, key } = source;
+    let fetched = pollster::block_on(prefetch::fetch(server.as_mut(), base)).map_err(|e| request::root_cause(&e))?;
+    Ok(Fetch { server, fetched, key })
 }
 
 fn now_secs() -> i64 {
@@ -202,12 +230,13 @@ impl Engine {
     /// secrets of its hooks sealed with `key`.
     pub fn new(dir: impl Into<std::path::PathBuf>, key: &[u8; KEY_LEN]) -> Engine {
         let dir = dir.into();
-        let (replica, saver, warm) = fresh(LiveStorage::new());
+        let (replica, saver, warm, synced) = fresh(LiveStorage::new());
         let secrets = Rc::new(Secrets::new(&dir, key));
         Engine {
             replica,
             saver,
             warm,
+            synced,
             undo: UndoStack::default(),
             cfg: Config::default(),
             web: WebSettings::new(FileStore::new(dir.clone())),
@@ -226,8 +255,8 @@ impl Engine {
 
     /// Go on from where [`save`](Self::save) left off. An error means the copy is unusable: start from the bucket.
     pub fn restore(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let (replica, saver, warm) = fresh(LiveStorage::load(bytes).map_err(|e| e.to_string())?);
-        (self.replica, self.saver, self.warm) = (replica, saver, warm);
+        let (replica, saver, warm, synced) = fresh(LiveStorage::load(bytes).map_err(|e| e.to_string())?);
+        (self.replica, self.saver, self.warm, self.synced) = (replica, saver, warm, synced);
         Ok(())
     }
 
@@ -254,6 +283,12 @@ impl Engine {
     /// [`CHANGED`] and changes nothing. Asking again with `switch` goes: `replace` starts from what the new place holds,
     /// `merge` keeps the phone's tasks and adds them to it. Nothing on the phone changes until the new place has answered.
     pub fn sync(&mut self, settings: &str) -> Result<Vec<String>, String> {
+        self.sync_fetched(settings, None)
+    }
+
+    /// [`sync`](Self::sync), with what [`fetch`] found (from [`Engine::source`], for these same settings): the store is
+    /// then asked only for what that could not answer, a push above all.
+    pub fn sync_fetched(&mut self, settings: &str, fetched: Option<Fetch>) -> Result<Vec<String>, String> {
         let s = SyncSettings::parse(settings)?;
         let origin = s.origin()?;
         // The files come from a bucket of their own, or the one the tasks are in.
@@ -291,7 +326,10 @@ impl Engine {
             }
         };
         let fingerprint = sha256_hex(format!("{origin}\n{}", s.encryption_secret).as_bytes());
-        let (mut server, cryptor) = self.connect(&s, &fingerprint)?;
+        let (mut server, cryptor) = match fetched {
+            Some(f) if f.key.0 == fingerprint => (Prefetched::boxed(f.server, f.fetched), f.key.1),
+            _ => self.connect(&s, &fingerprint)?,
+        };
 
         let recorded = pollster::block_on(tc_core::ObjectStore::get(&self.folder, ORIGIN_KEY))
             .map_err(|e| e.to_string())?
@@ -338,6 +376,31 @@ impl Engine {
 
     /// The place the tasks sync to as a TaskChampion server, with the key that opens it (kept from the last sync when it is
     /// the same place and secret: deriving it is slow on a phone).
+    /// Where a sync with these settings goes and what it starts from, for [`fetch`]; `None` when there is nothing to
+    /// fetch ahead (a change of place, which [`Engine::sync`] does on its own). Quick, but for the first sync, which
+    /// derives the key.
+    pub fn source(&mut self, settings: &str) -> Result<Option<Source>, String> {
+        let s = SyncSettings::parse(settings)?;
+        if s.switch.is_some() {
+            return Ok(None);
+        }
+        let origin = s.origin()?;
+        let recorded = pollster::block_on(tc_core::ObjectStore::get(&self.folder, ORIGIN_KEY))
+            .map_err(|e| e.to_string())?
+            .map(|b| String::from_utf8_lossy(&b).into_owned());
+        if recorded.is_some_and(|r| r != origin) && !self.is_empty() {
+            return Ok(None);
+        }
+        let fingerprint = sha256_hex(format!("{origin}\n{}", s.encryption_secret).as_bytes());
+        // The key goes with the fetch, and is kept again once the sync with it has worked, as without a fetch.
+        let (server, cryptor) = self.connect(&s, &fingerprint)?;
+        Ok(Some(Source {
+            server,
+            base: self.synced.get(),
+            key: (fingerprint, cryptor),
+        }))
+    }
+
     fn connect(&mut self, s: &SyncSettings, fingerprint: &str) -> Result<(Box<dyn Server>, Cryptor), String> {
         let kept = match self.key.take() {
             Some((f, c)) if f == fingerprint => Some(c),
@@ -390,7 +453,7 @@ impl Engine {
     /// Sync to a place the tasks were not synced with before. A replica of its own is made for it, and only when that has
     /// worked does it take the place of this one.
     fn sync_elsewhere(&mut self, server: &mut Box<dyn Server>, how: Switch) -> Result<(), String> {
-        let (mut replica, saver, warm) = fresh(LiveStorage::new());
+        let (mut replica, saver, warm, synced) = fresh(LiveStorage::new());
         let mut undo = UndoStack::default();
         if how == Switch::Merge {
             let answer = self.run(&serde_json::json!({ "line": "export", "now": now_secs() }).to_string());
@@ -411,7 +474,7 @@ impl Engine {
             }
         }
         pollster::block_on(replica.sync(server, false)).map_err(|e| request::root_cause(&e))?;
-        (self.replica, self.saver, self.warm, self.undo) = (replica, saver, warm, undo);
+        (self.replica, self.saver, self.warm, self.synced, self.undo) = (replica, saver, warm, synced, undo);
         Ok(())
     }
 

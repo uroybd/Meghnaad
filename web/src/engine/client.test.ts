@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Call } from './protocol';
+import { PUSH_AFTER_MS } from './client.svelte';
 
 // This tests the real client, not the stand-in that test-setup.ts gives every other test.
 vi.unmock('./client.svelte');
@@ -236,16 +237,83 @@ describe('syncing', () => {
   });
 
   it('tells the other tabs about a write it pushed, but never about a sync that only pulled', async () => {
+    vi.useFakeTimers();
     const Engine = await fresh();
     const e = new Engine();
-    await e.start('{}');
+    const started = e.start('{}');
+    await vi.advanceTimersByTimeAsync(0);
+    await started;
     posted.length = 0;
     await e.sync();
     expect(posted).toEqual([]);
     e.pushSoon();
-    await tick();
-    await tick();
+    await vi.advanceTimersByTimeAsync(PUSH_AFTER_MS);
     expect(posted).toEqual(['pushed']);
+    e.stop();
+  });
+
+  it('pushes a run of writes once, a moment after the last', async () => {
+    vi.useFakeTimers();
+    const Engine = await fresh();
+    const e = new Engine();
+    const started = e.start('{}');
+    await vi.advanceTimersByTimeAsync(0);
+    await started;
+    sent = [];
+    e.pushSoon();
+    await vi.advanceTimersByTimeAsync(1_500);
+    e.pushSoon();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(syncs()).toBe(0);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(syncs()).toBe(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(syncs()).toBe(1);
+    e.stop();
+  });
+
+  it('pushes at once when the tab is hidden or closed, and not when nothing waits', async () => {
+    vi.useFakeTimers();
+    const Engine = await fresh();
+    const e = new Engine();
+    const started = e.start('{}');
+    await vi.advanceTimersByTimeAsync(0);
+    await started;
+    sent = [];
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(syncs()).toBe(0);
+    e.pushSoon();
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(syncs()).toBe(1);
+    visibility.mockRestore();
+    e.pushSoon();
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(syncs()).toBe(2);
+    // Neither is pushed again when the moment comes.
+    await vi.advanceTimersByTimeAsync(PUSH_AFTER_MS);
+    expect(syncs()).toBe(2);
+    e.stop();
+  });
+
+  it('lets a sync that runs meanwhile carry the push', async () => {
+    vi.useFakeTimers();
+    const Engine = await fresh();
+    const e = new Engine();
+    const started = e.start('{}');
+    await vi.advanceTimersByTimeAsync(0);
+    await started;
+    sent = [];
+    posted.length = 0;
+    e.pushSoon();
+    await e.sync();
+    expect(syncs()).toBe(1);
+    expect(posted).toEqual(['pushed']);
+    await vi.advanceTimersByTimeAsync(PUSH_AFTER_MS);
+    expect(syncs()).toBe(1);
     e.stop();
   });
 
@@ -281,6 +349,78 @@ describe('syncing', () => {
     document.dispatchEvent(new Event('visibilitychange'));
     await vi.advanceTimersByTimeAsync(0);
     expect(syncs()).toBe(2);
+    e.stop();
+  });
+});
+
+describe('the settings the static site kept', () => {
+  const answer = (body: unknown) => ({ status: 200, type: 'application/json', body: JSON.stringify(body) });
+
+  it('answers the first read from what was kept, then reads the branch and says when it differed', async () => {
+    const Engine = await fresh();
+    const e = new Engine();
+    replies = (c) =>
+      c.op === 'start'
+        ? true
+        : c.op === 'api'
+          ? { ...answer({ config: { dateformat: 'kept' } }), kept: c.kept }
+          : c.op === 'refresh'
+            ? { changed: true, answer: answer({ config: { dateformat: 'branch' } }) }
+            : c.op === 'sync'
+              ? synced(false)
+              : null;
+    const told: string[] = [];
+    e.onSettingsChanged((path) => told.push(path));
+    const first = await e.api('GET', '/api/config', '');
+    expect(first.kept).toBe(true);
+    expect(JSON.parse(first.body)).toEqual({ config: { dateformat: 'kept' } });
+    await e.start(JSON.stringify({ dateformat: 'kept' }));
+    await tick();
+    await tick();
+    expect(sent.filter((c) => c.op === 'refresh').map((c) => c.op === 'refresh' && c.path)).toEqual(['/api/config']);
+    // The engine is given the branch's settings, after the kept ones it started on.
+    const configs = sent.flatMap((c) => (c.op === 'config' ? [c.config] : []));
+    expect(configs).toEqual([JSON.stringify({ dateformat: 'kept' }), JSON.stringify({ dateformat: 'branch' })]);
+    expect(told).toEqual(['/api/config']);
+    // Only the first read is answered from what was kept.
+    await e.api('GET', '/api/config', '');
+    const asked = sent.flatMap((c) => (c.op === 'api' ? [c.kept] : []));
+    expect(asked).toEqual([true, false]);
+    e.stop();
+  });
+
+  it('says nothing when the branch has what was kept, or when it could not be read', async () => {
+    const Engine = await fresh();
+    const e = new Engine();
+    let refreshes = 0;
+    replies = (c) => {
+      if (c.op === 'start') return true;
+      if (c.op === 'api') return { ...answer({}), kept: true };
+      if (c.op === 'refresh') {
+        if (++refreshes === 2) throw new Error('offline');
+        return { changed: false, answer: answer({}) };
+      }
+      return null;
+    };
+    const told: string[] = [];
+    e.onSettingsChanged((path) => told.push(path));
+    await e.api('GET', '/api/settings', '');
+    await e.api('GET', '/api/hooks/defined', '');
+    await tick();
+    await tick();
+    expect(refreshes).toBe(2);
+    expect(told).toEqual([]);
+    e.stop();
+  });
+
+  it('never asks for a kept answer for a write or a route that is not kept', async () => {
+    const Engine = await fresh();
+    const e = new Engine();
+    replies = (c) => (c.op === 'start' ? true : c.op === 'api' ? answer({}) : null);
+    await e.api('PUT', '/api/settings', '{}');
+    await e.api('GET', '/api/config/taskrc', '');
+    expect(sent.flatMap((c) => (c.op === 'api' ? [c.kept] : []))).toEqual([false, false]);
+    expect(sent.some((c) => c.op === 'refresh')).toBe(false);
     e.stop();
   });
 });

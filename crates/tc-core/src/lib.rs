@@ -37,6 +37,7 @@ pub mod modify;
 pub mod nager;
 pub mod names;
 pub(crate) mod ordered;
+pub mod prefetch;
 pub mod preview;
 pub mod rc_highlight;
 pub mod rc_url;

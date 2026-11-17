@@ -225,6 +225,11 @@ it imports the app.
   need it built), restores the saved replica from IndexedDB (`persist.ts`), and answers `protocol.ts` messages.
 - `client.svelte.ts` is the page's side: it starts the worker once, sends commands, runs the syncs, tells the other tabs
   when it pushed, and exposes `status`, `error` and `unkept` for the banners.
+- `queue.ts` is the worker's turn: one message at a time, but for a sync's fetch, which runs beside it.
+- On the static site, the settings the page starts from (`/api/config`, `/api/settings`, the hooks it defines) are kept in
+  IndexedDB, sealed as the saved copy is (`persist.ts`). Unlocking starts from them; the branch's are read after, outside
+  the worker's turn (`Reader` in `crates/browser`), and a change is applied and drawn again. A setting written from the
+  page goes to the branch and clears what was kept.
 - `api.ts` makes the choice: `runCli` and `importTasks` go to the engine in the page when it is available and to the
   Worker's endpoints when it isn't (the web tests run there, since jsdom has no Web Worker). `getConfig` starts the
   engine, which needs the settings first, and hands it the settings again whenever they are read again.
@@ -654,7 +659,7 @@ answers (`Options { confirmed, approved, extras }`).
 what they hand back is diffed and applied into the same batch, or the command is refused and nothing is saved.
 
 **One batch, one undo step.** Everything the command changes is built as one batch of operations and committed once.
-TaskChampion's own undo only covers unsynced changes, and the page syncs after every write, so the inverse operations
+TaskChampion's own undo only covers unsynced changes, and the page pushes soon after every write, so the inverse operations
 are committed as new changes instead. The undo stack lives in the engine's memory.
 
 ## Sync
@@ -717,10 +722,19 @@ and the page never holds the key.
 - **Push** is `POST /api/tc/push?parent=`, answered with the new version and how much the server would like a snapshot,
   or with `behind` and the newest version when somebody else got there first, which makes TaskChampion pull and push
   again. Snapshots go the same way (`GET`/`POST /api/tc/snapshot`) and are what a new device starts from.
-- **When.** After every write, when you return to the tab, every 30 seconds while it is visible, and when another tab of
-  the same browser says it pushed (over a `BroadcastChannel`; only a write is announced, so tabs don't answer each other
-  forever). Before the first command there is nothing to answer from unless a saved copy was found, so the first pull is
-  waited for.
+- **When.** Two seconds after the last of a run of writes (at once if the tab is hidden or closed first), when you
+  return to the tab, every 30 seconds while it is visible, and when another tab of the same browser says it pushed (over
+  a `BroadcastChannel`; only a write is announced, so tabs don't answer each other forever). Before the first command
+  there is nothing to answer from unless a saved copy was found, so the first pull is waited for.
+- **Without holding up the page.** The engine's Web Worker answers one message at a time, and TaskChampion's
+  `Replica::sync` holds the replica for every request it makes. So a sync is split (`tc_core::prefetch`): the page reads
+  the replica's base version (`LiveStorage::base_version`, a handle that outlives the move into the replica), and the
+  versions after it are fetched (`fetch` in `crates/browser`) outside the worker's turn (`queue.ts`), while commands
+  are answered. `Replica::sync` then runs in turn against `Prefetched`, which answers its questions from what was
+  fetched and passes the rest (a push, a snapshot) to the store. A sync with nothing to push holds the engine for no
+  request at all. If the store moved after the fetch, a pull takes only what was fetched and the next one the rest, and
+  a push is refused, after which `Prefetched` forgets what it fetched and TaskChampion pulls and pushes again from the
+  store. The phone does the same around its lock (`nativeSource`, `nativeFetch`, `nativeSyncFetched`).
 - **Failing.** A sync that can't reach the Worker (offline, or Access signed you out) changes nothing: the writes are in
   the replica and the saved copy, and go up with the next sync that works. The page says so and offers a retry and, as a
   last resort, to discard the saved copy and start from the bucket.

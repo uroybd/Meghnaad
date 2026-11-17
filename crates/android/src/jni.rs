@@ -1,7 +1,7 @@
 //! The functions Kotlin calls (`me.utsob.meghnaad.NativeEngine`). Every engine is a handle, and every call answers
 //! in JSON, so a failure is an `error` in the answer and never an exception thrown across the boundary.
 
-use crate::engine::Engine;
+use crate::engine::{self, Engine, Fetch, Source};
 use jni::objects::{JByteArray, JClass, JPrimitiveArray, JString};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
@@ -108,6 +108,69 @@ pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeCall(
 ) -> jstring {
     let (op, arg) = (text(&mut env, &op), text(&mut env, &arg));
     let reply = with_engine(handle, |e| call(e, &op, &arg)).unwrap_or_else(error);
+    answer(&env, reply)
+}
+
+/// A sync begins (see `tc_core::prefetch`): where it goes and what it starts from, taken with the engine locked for a
+/// moment. `{ source: "<handle>" }` for [`nativeFetch`], `{}` when there is nothing to ask ahead (a change of place:
+/// sync as usual), or `{ error }`. Handles go as text, since JSON numbers lose bits.
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeSource(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    settings: JString,
+) -> jstring {
+    let settings = text(&mut env, &settings);
+    let reply = match with_engine(handle, |e| e.source(&settings)).and_then(|r| r) {
+        Err(e) => error(e),
+        Ok(None) => "{}".to_owned(),
+        Ok(Some(source)) => json!({ "source": (Box::into_raw(Box::new(source)) as jlong).to_string() }).to_string(),
+    };
+    answer(&env, reply)
+}
+
+/// What is new since a source (which this takes), asked with no engine at all: `{ fetched: "<handle>" }` for
+/// [`nativeSyncFetched`], or `{ error }`, what the sync would have said.
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeFetch(
+    env: JNIEnv,
+    _class: JClass,
+    source: jlong,
+) -> jstring {
+    if source == 0 {
+        return answer(&env, error("no source to fetch from"));
+    }
+    // SAFETY: made by `nativeSource` and given to this call once, which takes it back here.
+    let source = *unsafe { Box::from_raw(source as *mut Source) };
+    let reply = match catch_unwind(AssertUnwindSafe(|| engine::fetch(source))) {
+        Ok(Ok(fetched)) => json!({ "fetched": (Box::into_raw(Box::new(fetched)) as jlong).to_string() }).to_string(),
+        Ok(Err(e)) => error(e),
+        Err(_) => error("the engine failed unexpectedly"),
+    };
+    answer(&env, reply)
+}
+
+/// The sync, with what `nativeFetch` found (`fetched`, which this takes and frees; 0 for none). The
+/// answer is the `sync` call's.
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeSyncFetched(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    settings: JString,
+    fetched: jlong,
+) -> jstring {
+    let settings = text(&mut env, &settings);
+    let fetched = (fetched != 0).then(|| {
+        // SAFETY: made by `nativeFetch` and given to this call once, which takes it back here.
+        *unsafe { Box::from_raw(fetched as *mut Fetch) }
+    });
+    let reply = with_engine(handle, |e| {
+        e.sync_fetched(&settings, fetched)
+            .map_or_else(error, |pulled| json!({ "settings": pulled }).to_string())
+    })
+    .unwrap_or_else(error);
     answer(&env, reply)
 }
 

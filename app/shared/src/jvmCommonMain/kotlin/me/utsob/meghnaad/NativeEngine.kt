@@ -18,6 +18,18 @@ object NativeEngine {
     /** `config`, `run`, `import`, `sync`, `changes` or `api`, with its argument as text; a JSON object back. */
     @JvmStatic external fun nativeCall(handle: Long, op: String, arg: String): String
 
+    /**
+     * A sync begins, with the engine taken for a moment: where it goes and what it starts from. `{ source: "<handle>" }` for
+     * [nativeFetch], `{}` when nothing is asked ahead (sync as usual), or `{ error }`.
+     */
+    @JvmStatic external fun nativeSource(handle: Long, settings: String): String
+
+    /** What is new in the store since [source] (which this takes), asked with no engine: `{ fetched: "<handle>" }` or `{ error }`. */
+    @JvmStatic external fun nativeFetch(source: Long): String
+
+    /** The sync with what [nativeFetch] found ([fetched], which this takes; 0 for none). Answers as `sync` does. */
+    @JvmStatic external fun nativeSyncFetched(handle: Long, settings: String, fetched: Long): String
+
     /** Everything the replica holds, to keep and give to [nativeRestore] next time; null if it could not be saved. */
     @JvmStatic external fun nativeSave(handle: Long): ByteArray?
 

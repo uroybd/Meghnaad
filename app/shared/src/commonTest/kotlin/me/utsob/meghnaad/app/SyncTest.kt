@@ -3,6 +3,7 @@ package me.utsob.meghnaad.app
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -79,6 +80,46 @@ class SyncTest {
         clock.now += 10
         sync.pullIfStale()
         assertEquals(2, port.syncs)
+    }
+
+    @Test
+    fun aRunOfWritesIsPushedOnceAMomentAfterTheLast() = runBlocking {
+        val port = FakePort()
+        val sync = SyncController(port, scope, FixedClock(), pushAfterMillis = 200)
+        sync.pushSoon()
+        delay(120)
+        sync.pushSoon()
+        delay(120)
+        assertEquals(0, port.syncs)
+        delay(200)
+        assertEquals(1, port.syncs)
+        delay(300)
+        assertEquals(1, port.syncs)
+    }
+
+    @Test
+    fun aWaitingPushGoesAtOnceWhenTheAppStopsAndNotAgain() = runBlocking {
+        val port = FakePort()
+        val sync = SyncController(port, scope, FixedClock(), pushAfterMillis = 200)
+        // Nothing waiting: nothing to push.
+        sync.pushNow()
+        assertEquals(0, port.syncs)
+        sync.pushSoon()
+        sync.pushNow()
+        assertEquals(1, port.syncs)
+        delay(300)
+        assertEquals(1, port.syncs)
+    }
+
+    @Test
+    fun aSyncThatRunsMeanwhileCarriesThePush() = runBlocking {
+        val port = FakePort()
+        val sync = SyncController(port, scope, FixedClock(), pushAfterMillis = 200)
+        sync.pushSoon()
+        sync.request().await()
+        assertEquals(1, port.syncs)
+        delay(300)
+        assertEquals(1, port.syncs)
     }
 
     @Test

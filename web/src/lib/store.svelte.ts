@@ -1,6 +1,15 @@
 import { engine } from '../engine/client.svelte';
 import { loadChoices, saveChoices, withContext, NO_CONTEXT, type Scope } from './pageContext';
-import { ApiError, getAppSettings, getConfig, putAppSettings, runCli, type Answers, type CliInput } from './api';
+import {
+  ApiError,
+  getAppSettings,
+  getConfig,
+  putAppSettings,
+  refreshHooks,
+  runCli,
+  type Answers,
+  type CliInput,
+} from './api';
 import {
   emptyAppearance,
   MAX_SETTINGS_BYTES,
@@ -260,6 +269,12 @@ class Store {
       engine.onChanged(() => {
         this.written();
         if (this.live) void this.refresh(this.live);
+      });
+      // The static site starts from the settings this device kept; the branch's, read after, differed.
+      engine.onSettingsChanged((path) => {
+        if (path === '/api/config') void this.settingsChanged();
+        else if (path === '/api/settings') void this.loadAppSettings();
+        else void refreshHooks();
       });
     }
   }
