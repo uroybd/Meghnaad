@@ -15,7 +15,8 @@
   - [Time tracking and reminders](./using/time-tracking.md)
   - [On a phone](./using/phone.md)
   - [Different from the desktop](./using/different-from-the-desktop.md)
-- [Deploying](./deploy.md)
+- [Where your tasks live](./stores.md)
+- [Running the web app](./deploy.md)
 - [The Android app](./android.md)
 - [The terminal app](./terminal.md)
 
