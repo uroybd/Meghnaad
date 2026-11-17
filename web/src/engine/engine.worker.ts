@@ -7,7 +7,7 @@
 // The static flavour has no Worker behind it: the engine is unlocked at start with the git branch and its key, answers
 // the settings routes itself (`api`), and runs the hooks with the hooks module, loaded the first time one runs.
 
-import init, { Engine, fetch as fetchNew } from 'tc-engine';
+import init, { Engine, fetchNew } from 'tc-engine';
 import wasmUrl from 'tc-engine-wasm?url';
 import { STATIC } from './flavour';
 import { forgetKept, forgetReplica, keepAnswer, loadKept, loadReplica, saveReplica, sealWith } from './persist';

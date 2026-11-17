@@ -26,7 +26,7 @@ declare module 'tc-engine' {
     get(path: string): Promise<string>;
   }
   /** Ask the store what is new since the source's version, with no engine held. */
-  export function fetch(source: Source): Promise<Fetch>;
+  export function fetchNew(source: Source): Promise<Fetch>;
   export class Engine {
     constructor();
     /** The settings (the `config` of `GET /api/config`), as JSON text. */

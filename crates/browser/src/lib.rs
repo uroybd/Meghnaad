@@ -94,8 +94,10 @@ pub struct Fetch {
     fetched: Fetched,
 }
 
-/// Ask the store what is new since the source's version, with no engine held (see `tc_core::prefetch`).
-#[wasm_bindgen]
+/// Ask the store what is new since the source's version, with no engine held (see `tc_core::prefetch`). Named
+/// `fetchNew` in JavaScript: an export called `fetch` would shadow the browser's own inside the generated glue, which
+/// loads the WebAssembly with it.
+#[wasm_bindgen(js_name = fetchNew)]
 pub async fn fetch(source: Source) -> Result<Fetch, JsValue> {
     let Source { mut server, base } = source;
     let fetched = prefetch::fetch(server.as_mut(), base)
