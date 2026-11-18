@@ -258,8 +258,10 @@ depends on (task ids); for a new task, whether to start it now and a note, and f
 under the ones it has. `↑` `↓` go from line to line, `Tab` completes the line's word as the command line would
 (`project:Ho` → `project:Home`), `Space` ticks Start, `Enter` saves and `Esc` leaves.
 
-A date is typed as `task` takes it (`fri`, `eom`, `2026-11-20`, `2026-11-20T14:30`) and shown after it as `task` will read
-it; a repeat shows its period in words. One task of a series shows its period but leaves it to the recurring task.
+A date is typed as `task` takes it (`fri`, `eom`, `2026-11-20`, `2026-11-20T14:30`, `tomorrow+19h`); an empty date
+field, when chosen, lists these examples with today in your `dateformat`. What is typed is shown after it as `task` will
+read it, in `dateformat.info` (`Y-M-D H:N:S` unless set) so a time shows, or in `dateformat` for a day at midnight; a
+repeat shows its period in words. One task of a series shows its period but leaves it to the recurring task.
 
 Saving sends only what changed: `<uuid> modify` with those attributes (`project:` to remove one, `+tag` and `-tag`,
 `depends:-3`), or `add` with what is filled in, then `+LATEST start` and `+LATEST annotate` when asked for. The bottom

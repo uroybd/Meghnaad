@@ -1511,10 +1511,37 @@ fn separators(f: &mut Frame, heads: &[Option<String>], heights: &[u16], offset: 
     }
 }
 
-/// A date of the add preview, in `dateformat`.
+/// A date of the add preview: in `dateformat.info` (Taskwarrior's `Y-M-D H:N:S` when it is not set), so a time
+/// (`tomorrow+19h`) shows, as the phone's preview does; a moment at local midnight in `dateformat`, the day alone.
 fn date(app: &App, ts: i64) -> String {
-    let pattern = app.cfg.settings.get("dateformat").cloned().unwrap_or_default();
-    format_date(&pattern, ts, local_offset(ts), app.cfg.week_starts_monday())
+    preview_date(&app.cfg, ts)
+}
+
+fn preview_date(cfg: &tc_core::taskrc::Config, ts: i64) -> String {
+    let get = |k: &str| cfg.settings.get(k).filter(|p| !p.is_empty()).map(String::as_str);
+    let offset = local_offset(ts);
+    let midnight = (ts + i64::from(offset)).rem_euclid(86_400) == 0;
+    let pattern = if midnight {
+        get("dateformat").unwrap_or("Y-M-D")
+    } else {
+        get("dateformat.info").unwrap_or("Y-M-D H:N:S")
+    };
+    format_date(pattern, ts, offset, cfg.week_starts_monday())
+}
+
+/// What an empty date field accepts, shown while it is chosen: today in `dateformat`, an ISO moment, a name, a sum and
+/// a duration, all of which `task` reads.
+fn date_examples(cfg: &tc_core::taskrc::Config, now: i64) -> String {
+    let get = |k: &str| cfg.settings.get(k).filter(|p| !p.is_empty()).map(String::as_str);
+    let offset = local_offset(now);
+    let today = format_date(
+        get("dateformat").unwrap_or("Y-M-D"),
+        now,
+        offset,
+        cfg.week_starts_monday(),
+    );
+    let iso = format_date("Y-M-D", now, offset, cfg.week_starts_monday());
+    format!("e.g. {today} · {iso}T19:00 · fri · eom · tomorrow+19h · +3d")
 }
 
 /// A line typed at the bottom: the command line, the filter, a report's name.
@@ -1722,6 +1749,9 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
             if chosen {
                 caret = Some((rows.len(), u16::try_from(field.input.caret_chars()).unwrap_or(0)));
             }
+            if chosen && field.kind == Kind::Date && !field.locked && field.value().is_empty() {
+                spans.push(Span::from(format!("  {}", date_examples(&app.cfg, crate::app::now()))).quiet());
+            }
             spans.extend(field_hint(app, field));
         }
         rows.push(Line::from(spans));
@@ -1854,6 +1884,48 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::local_offset;
+
+    /// A config with these settings and nothing else.
+    fn cfg(settings: &[(&str, &str)]) -> tc_core::taskrc::Config {
+        let mut c = tc_core::taskrc::Config::default();
+        for (k, v) in settings {
+            c.settings.insert((*k).to_owned(), (*v).to_owned());
+        }
+        c
+    }
+
+    /// A local moment as epoch seconds, in the zone the tests run in.
+    fn local(y: i32, m: u32, d: u32, h: u32, min: u32) -> i64 {
+        let naive = chrono::NaiveDate::from_ymd_opt(y, m, d)
+            .and_then(|d| d.and_hms_opt(h, min, 0))
+            .map(|t| t.and_utc().timestamp())
+            .unwrap_or_default();
+        naive - i64::from(local_offset(naive))
+    }
+
+    #[test]
+    fn a_previewed_date_shows_its_time_unless_it_is_midnight() {
+        let c = cfg(&[]);
+        assert_eq!(
+            super::preview_date(&c, local(2026, 11, 19, 19, 0)),
+            "2026-11-19 19:00:00"
+        );
+        assert_eq!(super::preview_date(&c, local(2026, 11, 19, 0, 0)), "2026-11-19");
+        let c = cfg(&[("dateformat", "D.M.Y"), ("dateformat.info", "D.M.Y H:N")]);
+        assert_eq!(super::preview_date(&c, local(2026, 11, 19, 19, 0)), "19.11.2026 19:00");
+        assert_eq!(super::preview_date(&c, local(2026, 11, 19, 0, 0)), "19.11.2026");
+    }
+
+    #[test]
+    fn an_empty_date_field_shows_what_it_accepts_in_the_users_format() {
+        let now = local(2026, 11, 18, 10, 0);
+        assert_eq!(
+            super::date_examples(&cfg(&[("dateformat", "D.M.Y")]), now),
+            "e.g. 18.11.2026 · 2026-11-18T19:00 · fri · eom · tomorrow+19h · +3d"
+        );
+    }
+
     #[test]
     fn a_progress_cell_is_a_bar_then_its_number() {
         let p = crate::settings::Progress { min: 0.0, max: 100.0 };
