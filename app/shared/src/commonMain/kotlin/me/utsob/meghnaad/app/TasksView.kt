@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.DropdownMenu
@@ -86,14 +89,13 @@ fun TasksView(store: Store) {
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)) {
         item { FilterBar(store) }
         item { BulkBar(store) }
+        item { ListTools(store, result.takeIf { entry?.failure == null }) }
         when {
             entry == null -> Unit
             entry.failure != null -> item { Text(entry.failure!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
             result == null -> item { ResultBlock(store, entry) }
             result.rows.isEmpty() -> item { Dim("No tasks match.", Modifier.padding(vertical = 16.dp), size = 14) }
             wide -> {
-                // The Group picker is how a table is grouped on a touch screen (the web's group buttons show on hover).
-                item { SortBar(store, result) }
                 reportTable(
                     store, result, ctx!!, widths, tableScroll, heads, entry,
                     activeTags = activeTags(store.filter),
@@ -103,7 +105,6 @@ fun TasksView(store: Store) {
                 )
             }
             else -> {
-                item { SortBar(store, result) }
                 items(result.rows.size, key = { result.rows[it].uuid }) { i ->
                     val row = result.rows[i]
                     heads.getOrNull(i)?.let { head ->
@@ -150,15 +151,61 @@ private fun groupReport(store: Store, result: ReportResult, column: String?) {
     store.filter = withSortOverride(store.filter, store.report, serializeSort(ks), default)
 }
 
-/** Phones have no column headers to tap, so a sort picker stands in for them (the same command underneath). */
+/** The columns a report can be sorted and grouped by from the sort picker. */
+private fun sortableColumns(store: Store, result: ReportResult): List<Column> {
+    val udas = store.config?.config?.udas ?: emptyMap()
+    return result.columns.filter { baseColumn(it.name) in SORTABLE || baseColumn(it.name) in udas }
+}
+
+/**
+ * Above the list, at its right: what the report and the context filter and sort by on their own (info), and the sort and
+ * group pickers (a phone has no column headers to tap, and a table's group buttons show on hover on the web). Each is a
+ * button that shows its part under the row, hidden to begin with.
+ */
+@Composable
+private fun ListTools(store: Store, result: ReportResult?) {
+    val about = reportAbout(store)
+    val columns = result?.let { sortableColumns(store, it) }.orEmpty()
+    if (about == null && columns.isEmpty()) return
+    var showAbout by remember { mutableStateOf(false) }
+    var showSort by remember { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+        if (about != null) {
+            IconAction(
+                "info", if (showAbout) "Hide what the report filters and sorts by" else "Show what the report filters and sorts by", { showAbout = !showAbout },
+                tint = if (showAbout) colors.primary else colors.onSurfaceVariant, size = 16.dp, box = 36.dp,
+            )
+        }
+        if (columns.isNotEmpty()) {
+            IconAction(
+                "arrow-down-up", if (showSort) "Hide sort and group" else "Sort and group", { showSort = !showSort },
+                tint = if (showSort) colors.primary else colors.onSurfaceVariant, size = 16.dp, box = 36.dp,
+            )
+        }
+    }
+    if (about != null && showAbout) Dim(about, size = 12)
+    if (result != null && columns.isNotEmpty() && showSort) SortControls(store, result, columns)
+}
+
+/** What the report and the context filter and sort by on their own, or null when they add nothing. */
+private fun reportAbout(store: Store): String? {
+    val meta = store.reports.firstOrNull { it.name == store.report }
+    val context = store.contextIn(Scope.Tasks)?.let { it to store.config?.config?.contexts?.get(it)?.read }
+    if (meta?.filter == null && meta?.sort == null && context == null) return null
+    return buildString {
+        if (meta?.filter != null) append("report filter ${meta.filter}")
+        if (meta?.sort != null) append("${if (isNotEmpty()) " · " else ""}default sort ${meta.sort}")
+        if (context != null) append("${if (isNotEmpty()) " · " else ""}context ${context.first}${context.second?.let { " ($it)" } ?: ""}")
+    } + " — applied automatically; your filters are added to these."
+}
+
+/** The sort and group pickers (the same command a header tap makes). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SortBar(store: Store, result: ReportResult) {
+private fun SortControls(store: Store, result: ReportResult, columns: List<Column>) {
     val keys = parseSort(result.sort)
     val primary = keys.firstOrNull()
-    val udas = store.config?.config?.udas ?: emptyMap()
-    val columns = result.columns.filter { baseColumn(it.name) in SORTABLE || baseColumn(it.name) in udas }
-    if (columns.isEmpty()) return
     fun sortBy(column: String) = sortReport(store, result, column, false)
 
     fun groupBy(column: String?) = groupReport(store, result, column)
@@ -220,14 +267,14 @@ fun Choice(current: String, options: List<String>, modifier: Modifier = Modifier
     }
 }
 
-/** The report and filters (FilterBar.svelte): a report to pick, a filter in Taskwarrior's syntax, and its words as chips. */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * The report and filters (FilterBar.svelte): a report to pick, a filter in Taskwarrior's syntax (with the filter helpers
+ * and Complete inside it), the context beside it, and the filter's words as chips.
+ */
 @Composable
 private fun FilterBar(store: Store) {
-    val meta = store.reports.firstOrNull { it.name == store.report }
     val words = splitWords(store.filter)
-    val cfg = store.config?.config
-    val context = store.contextIn(Scope.Tasks)?.let { it to cfg?.contexts?.get(it)?.read }
+    var helpersOpen by remember { mutableStateOf(false) }
 
     fun pickReport(name: String) {
         // Sort overrides belong to one report; drop the ones that no longer apply.
@@ -253,21 +300,21 @@ private fun FilterBar(store: Store) {
                 vocab = store.vocab,
                 modifier = Modifier.weight(1f),
                 placeholder = "Filters: +work due:eow",
-                trailing = { complete -> IconAction("arrow-right-to-line", "Complete", complete, size = 18.dp, box = 32.dp) },
+                trailing = { complete ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconAction(
+                            "sliders-horizontal", if (helpersOpen) "Hide the filter helpers" else "Filter helpers", { helpersOpen = !helpersOpen },
+                            tint = if (helpersOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, box = 32.dp,
+                        )
+                        IconAction("arrow-right-to-line", "Complete", complete, size = 18.dp, box = 32.dp)
+                    }
+                },
                 onSize = { fieldHeight = it.height },
             )
+            BesideField(fieldHeight) { ContextButton(store, Scope.Tasks, fillHeight = true) }
         }
-        ContextPicker(store, Scope.Tasks)
         FilterChips(store.filter) { store.filter = it }
-        // What the report and the context filter by and sort by on their own: kept out of the way until asked for.
-        val about = if (meta?.filter != null || meta?.sort != null || context != null) {
-            buildString {
-                if (meta?.filter != null) append("report filter ${meta.filter}")
-                if (meta?.sort != null) append("${if (isNotEmpty()) " · " else ""}default sort ${meta.sort}")
-                if (context != null) append("${if (isNotEmpty()) " · " else ""}context ${context.first}${context.second?.let { " ($it)" } ?: ""}")
-            } + " — applied automatically; your filters are added to these."
-        } else null
-        FilterHelpers(store, words, about)
+        if (helpersOpen) FilterHelpers(store, words)
     }
 }
 
@@ -305,27 +352,10 @@ fun FilterField(store: Store, value: String, onChange: (String) -> Unit, modifie
     }
 }
 
+/** Pickers that add a word to the filter: a project, a tag, a state, a priority. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterHelpers(store: Store, words: List<String>, about: String?) {
-    var open by remember { mutableStateOf(false) }
-    var showAbout by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        TextButton(onClick = { open = !open }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)) {
-            LucideIcon("sliders-horizontal", size = 13.dp)
-            Text("  Filter helpers", fontSize = 13.sp)
-        }
-        // What the report filters and sorts by itself, shown or hidden (hidden to begin with).
-        if (about != null) {
-            IconAction(
-                "info", if (showAbout) "Hide what the report filters and sorts by" else "Show what the report filters and sorts by", { showAbout = !showAbout },
-                tint = if (showAbout) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp, box = 36.dp,
-            )
-        }
-    }
-    if (about != null && showAbout) Dim(about, size = 12)
-    if (!open) return
-
+private fun FilterHelpers(store: Store, words: List<String>) {
     fun add(token: String) {
         if (token in words) return
         store.filter = joinWords(words + token)
@@ -358,7 +388,7 @@ fun ContextPicker(store: Store, scope: String, modifier: Modifier = Modifier, fi
     val choice = store.contextChoice(scope)
     if (contexts.isEmpty() && choice == null) return
     val names = contexts.keys.sorted()
-    val options = listOf("Context: ${store.activeContext ?: "none"} (same as console)", "Context: none") + names.map { "Context: $it" }
+    val options = contextOptions(store, names)
     val current = when (choice) {
         null -> options[0]
         NO_CONTEXT -> options[1]
@@ -366,5 +396,54 @@ fun ContextPicker(store: Store, scope: String, modifier: Modifier = Modifier, fi
     }
     Choice(current, options, modifier, hints = listOf(null, null) + names.map { contexts[it]?.read }, fillHeight = fillHeight) { i ->
         store.setContextChoice(scope, when (i) { 0 -> null; 1 -> NO_CONTEXT; else -> names[i - 2] })
+    }
+}
+
+private fun contextOptions(store: Store, names: List<String>) =
+    listOf("Context: ${store.activeContext ?: "none"} (same as console)", "Context: none") + names.map { "Context: $it" }
+
+/**
+ * The context picker as a small button, for beside a field: an icon and the first two letters of the context the page is in
+ * (`NA` for none); its menu is [ContextPicker]'s.
+ */
+@Composable
+fun ContextButton(store: Store, scope: String, modifier: Modifier = Modifier, fillHeight: Boolean = false) {
+    val contexts = store.config?.config?.contexts ?: emptyMap()
+    val choice = store.contextChoice(scope)
+    if (contexts.isEmpty() && choice == null) return
+    val names = contexts.keys.sorted()
+    val options = contextOptions(store, names)
+    val shown = when (choice) {
+        null -> store.activeContext
+        NO_CONTEXT -> null
+        else -> choice
+    }
+    val short = shown?.take(2)?.uppercase() ?: "NA"
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        OutlinedButton(
+            onClick = { open = true },
+            modifier = (if (fillHeight) Modifier.fillMaxHeight() else Modifier).semantics { contentDescription = "Context: ${shown ?: "none"}" },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+        ) {
+            LucideIcon("layers", size = 14.dp)
+            Text(short, Modifier.padding(start = 4.dp).widthIn(min = 22.dp), fontSize = 13.sp, maxLines = 1, fontWeight = FontWeight.SemiBold)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEachIndexed { i, o ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(o, fontSize = 14.sp)
+                            if (i >= 2) contexts[names[i - 2]]?.read?.takeIf { it.isNotEmpty() }?.let { Dim(it, size = 11) }
+                        }
+                    },
+                    onClick = {
+                        open = false
+                        store.setContextChoice(scope, when (i) { 0 -> null; 1 -> NO_CONTEXT; else -> names[i - 2] })
+                    },
+                )
+            }
+        }
     }
 }

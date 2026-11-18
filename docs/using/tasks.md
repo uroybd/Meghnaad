@@ -25,7 +25,8 @@ applied as `rc.report.<name>.sort:…`, so it matches what you would type.
 A `/` on a sort key (`project+/`) puts a gap in the table wherever that column's value changes, as in
 Taskwarrior. Here each group also gets a header saying what it has in common (`Project: Home`, or `Project: Home ·
 Outcome: fail` for two columns). Hover a column header and click **Group** to group by it (again to stop); on a phone
-use the **Group** picker beside **Sort**. Underneath it is the same command: grouping by `project` adds
+use the **Group** picker beside **Sort** (in the Android app, behind the sort-and-group button at the right above the
+list). Underneath it is the same command: grouping by `project` adds
 `rc.report.next.sort:project+/,urgency-` to the filter. It works with UDAs, and `minimal` starts grouped by project.
 
 ## Reading the table
