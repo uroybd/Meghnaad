@@ -75,40 +75,54 @@ pub fn urgency(f: &Facts, cfg: &Config, clock: &Clock) -> f64 {
     urgency_with(f, cfg, clock, &coefficients(cfg))
 }
 
-/// Same as [`urgency`] but reuses a precomputed coefficient table (cheap for whole reports).
-pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<String, f64>) -> f64 {
+/// One term of a task's urgency: what it is called in `info`'s breakdown, how much of it the task has, and its
+/// coefficient (the term adds `measure * coefficient`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Term {
+    pub label: String,
+    pub measure: f64,
+    pub coefficient: f64,
+}
+
+/// The built-in terms, in the order `info` lists them (`CmdInfo::execute`): the measure and the coefficient of each.
+fn base(f: &Facts, clock: &Clock, coef: &BTreeMap<String, f64>) -> [(&'static str, f64, f64); 10] {
     let c = |k: &str| coef.get(k).copied().unwrap_or(0.0);
-    let term = |coefficient: f64, factor: f64| {
-        if coefficient.abs() > EPSILON {
-            factor * coefficient
-        } else {
-            0.0
-        }
-    };
     let b = |x: bool| if x { 1.0 } else { 0.0 };
+    [
+        ("project", b(f.project.is_some()), c("urgency.project.coefficient")),
+        ("active", b(f.start.is_some()), c("urgency.active.coefficient")),
+        (
+            "scheduled",
+            b(f.scheduled.is_some_and(|s| s < clock.now)),
+            c("urgency.scheduled.coefficient"),
+        ),
+        ("waiting", b(f.is_waiting(clock)), c("urgency.waiting.coefficient")),
+        ("blocked", b(f.blocked), c("urgency.blocked.coefficient")),
+        ("blocking", b(f.blocking), c("urgency.blocking.coefficient")),
+        (
+            "annotations",
+            ramp(f.annotations.len()),
+            c("urgency.annotations.coefficient"),
+        ),
+        ("tags", ramp(f.tags.len()), c("urgency.tags.coefficient")),
+        (
+            "due",
+            f.due.map_or(0.0, |d| urgency_due(d, clock)),
+            c("urgency.due.coefficient"),
+        ),
+        (
+            "age",
+            urgency_age(f, c("urgency.age.max"), clock),
+            c("urgency.age.coefficient"),
+        ),
+    ]
+}
 
-    let mut v = 0.0;
-    v += term(c("urgency.project.coefficient"), b(f.project.is_some()));
-    v += term(c("urgency.active.coefficient"), b(f.start.is_some()));
-    v += term(
-        c("urgency.scheduled.coefficient"),
-        b(f.scheduled.is_some_and(|s| s < clock.now)),
-    );
-    v += term(c("urgency.waiting.coefficient"), b(f.is_waiting(clock)));
-    v += term(c("urgency.blocked.coefficient"), b(f.blocked));
-    v += term(c("urgency.annotations.coefficient"), ramp(f.annotations.len()));
-    v += term(c("urgency.tags.coefficient"), ramp(f.tags.len()));
-    v += term(
-        c("urgency.due.coefficient"),
-        f.due.map_or(0.0, |d| urgency_due(d, clock)),
-    );
-    v += term(c("urgency.blocking.coefficient"), b(f.blocking));
-    v += term(
-        c("urgency.age.coefficient"),
-        urgency_age(f, c("urgency.age.max"), clock),
-    );
-
+/// The user's project, tag, keyword and UDA coefficients that apply to the task, in the coefficients' order, each
+/// with its label in `info`'s breakdown (`PROJECT home`, `TAG next`, `KEYWORD call`, `UDA priority.H`).
+fn user_terms(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<String, f64>) -> Vec<(String, f64)> {
     let project = f.project.as_deref().unwrap_or("");
+    let mut out = Vec::new();
     for (key, &value) in coef {
         if value.abs() <= EPSILON {
             continue;
@@ -116,37 +130,70 @@ pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<Stri
         let Some(name) = key.strip_suffix(".coefficient") else {
             continue;
         };
-        if let Some(p) = name.strip_prefix("urgency.user.project.") {
+        let label = if let Some(p) = name.strip_prefix("urgency.user.project.") {
             // Exact project or any sub-project.
-            if project == p || project.starts_with(&format!("{p}.")) {
-                v += value;
-            }
+            (project == p || project.starts_with(&format!("{p}."))).then(|| format!("PROJECT {p}"))
         } else if let Some(t) = name.strip_prefix("urgency.user.tag.") {
-            if f.has_tag(t, cfg, clock) {
-                v += value;
-            }
+            f.has_tag(t, cfg, clock).then(|| format!("TAG {t}"))
         } else if let Some(k) = name.strip_prefix("urgency.user.keyword.") {
-            if f.description.contains(k) {
-                v += value;
-            }
+            f.description.contains(k).then(|| format!("KEYWORD {k}"))
         } else if let Some(u) = name.strip_prefix("urgency.uda.") {
-            match u.split_once('.') {
+            let applies = match u.split_once('.') {
                 // urgency.uda.<name>.coefficient: the UDA has any value.
-                None => {
-                    if uda_value(f, u).is_some() {
-                        v += value;
-                    }
-                }
+                None => uda_value(f, u).is_some(),
                 // urgency.uda.<name>.<value>.coefficient: the UDA equals <value>.
-                Some((name, want)) => {
-                    if uda_value(f, name) == Some(want) {
-                        v += value;
-                    }
-                }
-            }
+                Some((name, want)) => uda_value(f, name) == Some(want),
+            };
+            applies.then(|| format!("UDA {u}"))
+        } else {
+            None
+        };
+        if let Some(label) = label {
+            out.push((label, value));
         }
     }
+    out
+}
+
+/// Same as [`urgency`] but reuses a precomputed coefficient table (cheap for whole reports).
+pub fn urgency_with(f: &Facts, cfg: &Config, clock: &Clock, coef: &BTreeMap<String, f64>) -> f64 {
+    let term = |(_, factor, coefficient): (&str, f64, f64)| {
+        if f64::abs(coefficient) > EPSILON {
+            factor * coefficient
+        } else {
+            0.0
+        }
+    };
+    let b = base(f, clock, coef);
+    // Summed in `Task::urgency_c`'s order (blocking after due), which a float sum can tell from `info`'s.
+    let mut v = 0.0;
+    for i in [0, 1, 2, 3, 4, 6, 7, 8, 5, 9] {
+        v += term(b[i]);
+    }
+    for (_, value) in user_terms(f, cfg, clock, coef) {
+        v += value;
+    }
     v
+}
+
+/// The terms `info` lists under a task's urgency (`CmdInfo::urgencyTerm`): each that adds something, in its order.
+pub fn breakdown(f: &Facts, cfg: &Config, clock: &Clock) -> Vec<Term> {
+    let coef = coefficients(cfg);
+    let base = base(f, clock, &coef)
+        .into_iter()
+        .map(|(label, measure, coefficient)| Term {
+            label: label.to_owned(),
+            measure,
+            coefficient,
+        });
+    let user = user_terms(f, cfg, clock, &coef)
+        .into_iter()
+        .map(|(label, coefficient)| Term {
+            label,
+            measure: 1.0,
+            coefficient,
+        });
+    base.chain(user).filter(|t| t.measure * t.coefficient != 0.0).collect()
 }
 
 /// Taskwarrior's `urgency.inherit`: a blocking task is at least as urgent as every task it

@@ -1,0 +1,16 @@
+Name            Value
+--------------- ----------------------------------------------------------------
+ID              5
+Description     Repeat me
+Status          Pending
+Recurrence      weekly
+Parent task     84aeea39-1f76-474f-96b0-bfca23e42da6
+Mask Index      0
+Recurrence type periodic
+Entered         2026-11-18 23:18:37 (26s)
+Due             2026-11-25 00:00:00
+Last modified   2026-11-18 23:18:37 (26s)
+Virtual tags    CHILD INSTANCE LATEST MONTH PENDING QUARTER READY UNBLOCKED YEAR
+UUID            ad174c1f-b02f-4cc3-a319-cdf1ddfe0b1e
+Urgency         6.044
+

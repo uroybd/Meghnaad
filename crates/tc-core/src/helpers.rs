@@ -400,6 +400,27 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             a.req::<i64>(2)?,
             a.opt::<i32>(3)?.unwrap_or(0)
         )),
+        // `task info`'s text: the task (an `info` row), its `_history` (null: none), the open tasks it is blocked by and
+        // blocking (each `{id, description}`), the config, now, the zone and the width (0: `defaultwidth`).
+        "info_text" => {
+            use crate::info_text::{render, Around, HistoryEntry, InfoTask, Linked};
+            let value = |i: usize| a.opt::<serde_json::Value>(i).map(Option::unwrap_or_default);
+            let (history, blocked_by, blocking) = (value(1)?, Linked::list(&value(2)?), Linked::list(&value(3)?));
+            let history = (!history.is_null()).then(|| HistoryEntry::list(&history));
+            let around = Around {
+                history: history.as_deref(),
+                blocked_by: &blocked_by,
+                blocking: &blocking,
+            };
+            json!(render(
+                &InfoTask::from_value(&a.req::<serde_json::Value>(0)?),
+                &around,
+                &a.req::<crate::taskrc::Config>(4)?,
+                a.req::<i64>(5)?,
+                a.opt::<i32>(6)?.unwrap_or(0),
+                a.opt::<usize>(7)?.unwrap_or(0)
+            ))
+        }
         "holiday_clash" => json!(crate::clash::value(
             &a.req::<String>(0)?,
             &a.req::<String>(1)?,

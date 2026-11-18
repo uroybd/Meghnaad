@@ -25,4 +25,7 @@ interface FileHost {
 
     /** Ask for a folder; its files, each with its [PickedFile.relative] path. None when none was chosen. */
     suspend fun pickFolder(): List<PickedFile> = emptyList()
+
+    /** Hand [text] to another app through the system's share sheet, with [subject] for those that take one (mail); false when this build can't. */
+    fun share(subject: String, text: String): Boolean = false
 }

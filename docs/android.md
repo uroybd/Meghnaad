@@ -54,6 +54,25 @@ The link button in a task's details copies `meghnaad://task/1a2b3c4d` (the first
 uuid, like the web's `/task/1a2b3c4d`). Opening it from a note or another app opens the task, on the phone that has the
 task: the link names it and doesn't carry it.
 
+#### Sharing a task
+
+The share button in a task's details, beside the link button, hands the task to another app through Android's share
+sheet, as one of three texts (always in this order):
+
+- **Short text**, for a chat: the description, then its project, priority, due date and tags as the quick add reads
+  them, so the text shared back into Meghnaad fills the same fields:
+
+  ```
+  Buy milk
+  project:home priority:H due:2026-11-20 +errand +shop
+  ```
+
+- **Task JSON**: the object `task <uuid> export` writes for it (not the array around it), which `task import` takes.
+- **Task info**: the text `task <uuid> info` prints, at Taskwarrior's usual width (`defaultwidth`), colour off. It is for
+  reading; `task import` does not take it.
+
+Mail apps get the description as the subject.
+
 #### Page links
 
 Every page has a `meghnaad://` link mirroring the web's addresses: `meghnaad://report/<name>`,

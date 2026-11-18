@@ -1,6 +1,7 @@
 package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -94,6 +97,7 @@ fun DetailScreen(store: Store, ref: DetailRef) {
                 val rules = store.appearance.transformations
                 val tree = remember(title, rules) { if (live == null) null else markdownTrees(listOf(title), listOf("description"), rules).firstOrNull() }
                 DescriptionText(title, tree, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 3)
+                live?.let { ShareMenu(store, it) }
                 IconAction("link", "Copy a link to this task", { clipboard.setText(AnnotatedString(taskLink(uuid))); store.notify("Link copied.") }, size = 20.dp)
                 IconAction("x", "Close details", { store.detail = null }, size = 20.dp)
             }
@@ -165,6 +169,37 @@ fun DetailScreen(store: Store, ref: DetailRef) {
                 } else if (message == null) {
                     Dim("Loading…")
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Share the task as text (spec 0016): a short text, its JSON, or `task info`, through the phone's share sheet. Where there
+ * is none (the desktop preview), the text is copied instead.
+ */
+@Composable
+private fun ShareMenu(store: Store, task: Row) {
+    var open by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    Box {
+        IconAction("share-2", "Share this task", { open = true }, size = 20.dp)
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (form in ShareForm.entries) {
+                DropdownMenuItem(text = { Text(form.label, fontSize = 14.sp) }, onClick = {
+                    open = false
+                    store.go {
+                        try {
+                            val text = shareText(form, task)
+                            if (files?.share(task.description, text) != true) {
+                                clipboard.setText(AnnotatedString(text))
+                                notify("Copied.")
+                            }
+                        } catch (e: Exception) {
+                            notify(e.message ?: "The task could not be shared.", bad = true)
+                        }
+                    }
+                })
             }
         }
     }

@@ -51,8 +51,8 @@ pub struct Facts {
     pub mask: Option<String>,
     /// On an instance: its position in the parent's mask.
     pub imask: Option<usize>,
-    /// `periodic` or `chained`, on a recurring parent and its instances. Filters read it; no page does.
-    #[serde(skip)]
+    /// `periodic` or `chained`, on a recurring parent and its instances. Filters and `info`'s text read it.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rtype: Option<String>,
     /// Properties that aren't core attributes: candidate UDA values (and orphans).
     pub extra: BTreeMap<String, String>,

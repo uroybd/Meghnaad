@@ -1,0 +1,25 @@
+Name                 Value
+-------------------- -----------------------------------------------------------
+ID                   3
+Description          Blocked on milk
+Status               Pending
+This task blocked by 2 Buy milk and a long description that should wrap
+                     somewhere past the width of the value column for sure
+Entered              2026-11-18 23:18:37 ()
+Last modified        2026-11-18 23:18:37 ()
+Virtual tags         BLOCKED PENDING
+UUID                 186700c4-84b3-42da-b5a6-d289235ec49d
+Urgency              -5
+
+----------- ------ - ---- - ------
+    blocked      1 *   -5 =     -5
+                            ------
+                                -5
+
+Date                Modification
+------------------- -----------------------------------------------------------
+2026-11-18 23:18:37 Dependency on '8f3f4cbb-c9b2-4c8e-beca-9583d257635e' added.
+                    Description set to 'Blocked on milk'.
+                    Entry set to '2026-11-18 23:18:37'.
+                    Status set to 'pending'.
+

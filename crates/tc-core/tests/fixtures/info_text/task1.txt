@@ -1,0 +1,27 @@
+Name                  Value
+--------------------- ----------------------------------------------------------
+ID                    1
+Description           Dep one
+Status                Pending
+Project               home.kitchen
+This task is blocking 2 Buy milk and a long description that should wrap
+                      somewhere past the width of the value column for sure
+Entered               2026-11-18 23:18:37 ()
+Last modified         2026-11-18 23:18:37 ()
+Virtual tags          BLOCKING PENDING PROJECT READY UNBLOCKED
+UUID                  1e257d29-494c-4825-8ba2-b4c7064c3a98
+Urgency               9
+
+------------ ------ - ---- - ------
+    project       1 *    1 =      1
+    blocking      1 *    8 =      8
+                             ------
+                                  9
+
+Date                Modification
+------------------- -----------------------------------
+2026-11-18 23:18:37 Description set to 'Dep one'.
+                    Entry set to '2026-11-18 23:18:37'.
+                    Project set to 'home.kitchen'.
+                    Status set to 'pending'.
+

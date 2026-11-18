@@ -2093,6 +2093,40 @@ mod overrides_and_journal {
         assert!(h.is_empty());
     }
 
+    /// What `info` and `_history` answer is what `info_text` reads: the text has every part, as `task info` prints it.
+    #[tokio::test]
+    async fn info_text_reads_the_engines_own_info_and_history() {
+        let cfg = Config::default();
+        let mut r = replica();
+        run(&mut r, &cfg, "add Alpha project:home +x priority:H due:tomorrow").await;
+        run(&mut r, &cfg, "1 annotate a note").await;
+        let id = only(&mut r).await.uuid.to_string();
+        let CliResult::Info { tasks } = run(&mut r, &cfg, &format!("{id} info")).await.0 else {
+            panic!("not info")
+        };
+        let CliResult::Json { value: history } = run(&mut r, &cfg, &format!("_history {id}")).await.0 else {
+            panic!("not history")
+        };
+        let task = serde_json::to_value(&tasks[0]).unwrap();
+        let now = clock().now;
+        let args = serde_json::json!([task, history, [], [], cfg, now, 0]);
+        let text: String = serde_json::from_str(&tc_core::helpers::call("info_text", &args.to_string())).unwrap();
+        for part in [
+            "Name          Value\n-------------",
+            "Description   Alpha\n",
+            " a note\nStatus        Pending",
+            "Project       home",
+            "Tags          x",
+            "Priority      H",
+            &format!("UUID          {id}"),
+            "    due ",
+            "Description set to 'Alpha'.",
+            "Annotation of 'a note' added.",
+        ] {
+            assert!(text.contains(part), "{part:?} is not in\n{text}");
+        }
+    }
+
     #[tokio::test]
     async fn the_history_stays_out_of_reports_exports_and_info_and_is_asked_for_alone() {
         let cfg = Config::default();

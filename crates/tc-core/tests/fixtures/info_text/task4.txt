@@ -1,0 +1,30 @@
+Name            Value
+--------------- ---------------------------------------------
+ID              4
+Description     Repeat me
+Status          Recurring
+Recurrence      weekly
+Mask            -
+Recurrence type periodic
+Entered         2026-11-18 23:18:37 (6s)
+Due             2026-11-25 00:00:00
+Last modified   2026-11-18 23:18:37 (6s)
+Virtual tags    MONTH PARENT QUARTER TEMPLATE UNBLOCKED YEAR
+UUID            84aeea39-1f76-474f-96b0-bfca23e42da6
+Urgency         6.044
+
+------- ------ - ---- - ------
+    due  0.504 *   12 =   6.04
+                        ------
+                         6.044
+
+Date                Modification
+------------------- -----------------------------------
+2026-11-18 23:18:37 Description set to 'Repeat me'.
+                    Due set to '2026-11-25 00:00:00'.
+                    Entry set to '2026-11-18 23:18:37'.
+                    Recur set to 'weekly'.
+                    Rtype set to 'periodic'.
+                    Status set to 'recurring'.
+                    Mask set to '-'.
+

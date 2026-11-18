@@ -1,5 +1,6 @@
 package me.utsob.meghnaad.app
 
+import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -23,6 +24,12 @@ class ActivityFiles(private val activity: ComponentActivity) : FileHost {
     private val create = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { writing?.complete(it) }
     private val openMany = activity.registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { readingMany?.complete(it) }
     private val openFolder = activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { readingFolder?.complete(it) }
+
+    override fun share(subject: String, text: String): Boolean {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text).putExtra(Intent.EXTRA_SUBJECT, subject)
+        activity.startActivity(Intent.createChooser(send, null))
+        return true
+    }
 
     override suspend fun pick(): PickedFile? {
         val asked = CompletableDeferred<Uri?>().also { reading = it }

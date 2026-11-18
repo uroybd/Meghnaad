@@ -292,7 +292,7 @@ fn number(s: &[u8]) -> Option<(usize, bool)> {
 }
 
 /// An ISO 8601 duration (`P1D`, `PT90M`, `P1Y2M3DT4H5M6S`) at the start of `s`, in seconds.
-fn iso_duration(s: &[u8]) -> Option<(usize, i64)> {
+pub(crate) fn iso_duration(s: &[u8]) -> Option<(usize, i64)> {
     if s.first() != Some(&b'P') {
         return None;
     }
@@ -678,6 +678,12 @@ fn dequote(s: &str) -> &str {
 
 /// C++'s default `double` output (`%g`): six significant digits, no trailing zeros.
 pub(crate) fn fmt_real(x: f64) -> String {
+    fmt_g(x, 6)
+}
+
+/// C++'s default `double` output at a stream precision of `precision` significant digits (`%g`), no trailing zeros.
+pub(crate) fn fmt_g(x: f64, precision: usize) -> String {
+    let p = precision.max(1);
     if x == 0.0 {
         return "0".into();
     }
@@ -690,7 +696,7 @@ pub(crate) fn fmt_real(x: f64) -> String {
             "-inf".into()
         };
     }
-    let sci = format!("{x:.5e}");
+    let sci = format!("{x:.*e}", p - 1);
     let (mant, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
     let exp: i32 = exp.parse().unwrap_or(0);
     let trim = |s: &str| -> String {
@@ -700,15 +706,16 @@ pub(crate) fn fmt_real(x: f64) -> String {
             s.to_owned()
         }
     };
-    if !(-4..6).contains(&exp) {
+    let p = i32::try_from(p).unwrap_or(i32::MAX);
+    if !(-4..p).contains(&exp) {
         format!("{}e{}{:02}", trim(mant), if exp < 0 { '-' } else { '+' }, exp.abs())
     } else {
-        trim(&format!("{:.*}", (5 - exp).max(0) as usize, x))
+        trim(&format!("{:.*}", usize::try_from(p - 1 - exp).unwrap_or(0), x))
     }
 }
 
 /// `Duration::formatISO`.
-fn fmt_duration(secs: i64) -> String {
+pub(crate) fn fmt_duration(secs: i64) -> String {
     if secs == 0 {
         return "PT0S".into();
     }
