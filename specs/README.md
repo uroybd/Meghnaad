@@ -52,3 +52,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0017 | [Reminders keep coming while the static web app is locked](0017-reminders-while-locked.md) | in progress | 2 (UI) | web (static) | Seen by a person in a browser |
 | 0018 | [Trust this device (the static web app)](0018-trust-this-device.md) | done | 2 (UI) | web (static) | Done 2026-11-19 |
 | 0019 | [Unlock the static web app with a passkey](0019-passkey-unlock.md) | in progress | 2 (UI) | web (static) | Checked by a person: Firefox with Bitwarden, a Chromium browser |
+| 0020 | [Keys run functions, with vim-like motions](0020-key-functions.md) | in progress | 2 (UI), shared keymap | terminal, web | Building: agreed 2026-11-19 |
