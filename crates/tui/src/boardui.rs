@@ -105,16 +105,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     };
     let mut block = page_block(&board.name, focused);
     if app.boards.len() > 1 {
-        let keys = [
-            app.keymap.keys_of("boards.prev").first(),
-            app.keymap.keys_of("boards.next").first(),
-        ]
-        .into_iter()
-        .flatten()
-        .map(|k| tc_core::keymap::display(k))
-        .collect::<Vec<_>>()
-        .join("/");
-        block = block.title_top(note(&format!("{} of {} · {keys}", app.board + 1, app.boards.len())));
+        block = block.title_top(note(&format!("{} of {}", app.board + 1, app.boards.len())));
+    }
+    if focused {
+        block = block.title_bottom(crate::ui::border_hints(
+            &app.view_keys("boards"),
+            area.width.saturating_sub(4),
+        ));
     }
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -174,7 +171,13 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
 /// The boards to choose from: each one's name, description and what it has.
 fn list(f: &mut Frame, app: &App, area: Rect, focused: bool) {
-    let block = page_block("boards", focused);
+    let mut block = page_block("boards", focused);
+    if focused {
+        block = block.title_bottom(crate::ui::border_hints(
+            &app.view_keys("boards.list"),
+            area.width.saturating_sub(4),
+        ));
+    }
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut foot: Vec<Line> = errors(app);

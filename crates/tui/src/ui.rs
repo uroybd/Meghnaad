@@ -82,8 +82,34 @@ fn boxed(title: String) -> Block<'static> {
         .title(Span::styled(title, theme::accent()))
 }
 
+/// The columns a border has for keys: its width less the corners and the `n of total` note on its right (none when
+/// `total` is 0).
+fn room(area: Rect, total: usize) -> u16 {
+    let note = if total == 0 { 0 } else { 2 * total.to_string().len() + 7 };
+    area.width.saturating_sub(u16::try_from(note + 3).unwrap_or(u16::MAX))
+}
+
+/// A view's keys for its bottom border, as many whole hints as fit in `room` columns (the rest are in `? all keys`).
+pub(crate) fn border_hints(text: &str, room: u16) -> Line<'static> {
+    let room = usize::from(room);
+    let mut used = 2;
+    let mut kept: Vec<&str> = Vec::new();
+    for item in text.split(" · ").filter(|i| !i.is_empty()) {
+        let width = item.chars().count() + if kept.is_empty() { 0 } else { 2 };
+        if used + width > room {
+            break;
+        }
+        used += width;
+        kept.push(item);
+    }
+    if kept.is_empty() {
+        return Line::default();
+    }
+    hints(&kept.join(" · "))
+}
+
 /// A line of keys, `key what · key what`, with each key in the accent.
-fn hints(text: &str) -> Line<'static> {
+pub(crate) fn hints(text: &str) -> Line<'static> {
     let mut spans = vec![Span::from(" ")];
     for (i, item) in text.split(" · ").enumerate() {
         if i > 0 {
@@ -218,15 +244,8 @@ fn screen(f: &mut Frame, app: &App) {
             let keys = if app.review.is_some() {
                 hints("v the review's keys are on its card")
             } else {
-                let parts = [app.page_keys(), app.global_keys()];
-                hints(
-                    &parts
-                        .iter()
-                        .filter(|p| !p.is_empty())
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(" · "),
-                )
+                // A view's own keys are in its border; this line has the ones every page has.
+                hints(&app.global_keys())
             };
             // Kept in sight on the right however many keys the page has.
             let always = hints(&app.always_keys());
@@ -341,7 +360,9 @@ fn sidebar(f: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::Sidebar;
     let mut block = pane("Reports", focused);
     if focused {
-        block = block.title_bottom(note(&format!("{} of {}", app.sidebar + 1, names.len())));
+        block = block
+            .title_bottom(border_hints(&app.view_keys("sidebar"), room(area, names.len())))
+            .title_bottom(note(&format!("{} of {}", app.sidebar + 1, names.len())));
     }
     let list = List::new(items)
         .block(block)
@@ -357,14 +378,14 @@ fn page(f: &mut Frame, app: &App, area: Rect) {
         Page::Tasks => tasks(f, app, area),
         Page::Projects | Page::Tags => items(f, app, area),
         Page::Summary | Page::Calendar | Page::Burndown => {
-            let (title, keys) = match app.page {
-                Page::Burndown => (format!("burndown.{}", app.burndown), "d · w · m"),
-                Page::Calendar => (app.page.title().to_lowercase(), "h/l month"),
-                p => (p.title().to_lowercase(), ""),
+            let title = match app.page {
+                Page::Burndown => format!("burndown.{}", app.burndown),
+                p => p.title().to_lowercase(),
             };
-            let mut block = text_pane(&title, app.focus == Focus::Main);
-            if !keys.is_empty() {
-                block = block.title_top(note(keys));
+            let focused = app.focus == Focus::Main;
+            let mut block = text_pane(&title, focused);
+            if focused {
+                block = block.title_bottom(border_hints(&app.view_keys(app.context()), room(area, 0)));
             }
             f.render_widget(
                 Paragraph::new(app.output.clone()).scroll((app.scroll, 0)).block(block),
@@ -381,8 +402,11 @@ fn page(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 lines
             };
-            let block =
-                text_pane("console", app.focus == Focus::Main).title_top(note(&format!("{} lines", app.log.len())));
+            let focused = app.focus == Focus::Main;
+            let mut block = text_pane("console", focused).title_top(note(&format!("{} lines", app.log.len())));
+            if focused {
+                block = block.title_bottom(border_hints(&app.view_keys("console"), room(area, 0)));
+            }
             f.render_widget(Paragraph::new(body).block(block), area);
         }
         Page::Boards => crate::boardui::draw(f, app, area),
@@ -404,7 +428,9 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
             Span::from(" ] ").quiet(),
         ]));
     }
-    block = block.title_bottom(hints(&app.hints_of(&["tasks.filter", "tasks.sort", "app.context"])));
+    if focused {
+        block = block.title_bottom(border_hints(&app.view_keys("tasks"), room(area, count)));
+    }
     if count > 0 {
         block = block.title_bottom(note(&format!("{} of {count}", app.selected + 1)));
     }
@@ -665,6 +691,9 @@ fn items(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(Paragraph::new(" Nothing pending.").quiet().block(block), area);
         return;
     }
+    if app.focus == Focus::Main {
+        block = block.title_bottom(border_hints(&app.view_keys("lists"), room(area, list.len())));
+    }
     block = block.title_bottom(note(&format!("{} of {}", app.list_sel + 1, list.len())));
     let widget = List::new(rows)
         .block(block)
@@ -685,7 +714,7 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
     let section = |title: &str, s: S| {
         let b = pane(title, here(s)).padding(Padding::horizontal(1));
         if here(s) {
-            b.title_bottom(hints(&app.hints(&[s.group()])).right_aligned())
+            b.title_bottom(border_hints(&app.view_keys(s.group()), area.width.saturating_sub(4)).right_aligned())
         } else {
             b
         }

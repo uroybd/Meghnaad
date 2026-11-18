@@ -45,10 +45,9 @@ impl App {
         ))
     }
 
-    /// The page's own keys, as the bottom line says them: on Settings, those the page has in every section (the
-    /// focused section's own are in its border).
-    pub fn page_keys(&self) -> String {
-        let context = self.context();
+    /// A view's own keys, as its bottom border says them (`context` as [`App::context`] names it). The keys every page
+    /// has are on the bottom line instead (`global_keys`), so none is said twice. Adding a task is said there too.
+    pub fn view_keys(&self, context: &str) -> String {
         // With tasks marked: the keys that act on them, and how to clear them.
         if context == "tasks" && !self.marks.is_empty() {
             let acting = self.hints_of(&[
@@ -59,7 +58,6 @@ impl App {
                 "tasks.annotate",
                 "tasks.modify",
                 "tasks.command",
-                "app.prompt",
                 "tasks.mark",
                 "tasks.markRange",
                 "tasks.markAll",
@@ -68,28 +66,35 @@ impl App {
             return [Some(acting), clear]
                 .into_iter()
                 .flatten()
+                .filter(|p| !p.is_empty())
                 .collect::<Vec<_>>()
                 .join(" · ");
         }
-        let own: &[&str] = match context {
-            c if c.starts_with("settings.") => &["settings"],
+        let groups: &[&str] = match context {
+            c if c.starts_with("settings.") => &[c, "settings"],
             "summary" => &[],
             c => &[c],
         };
-        let mut parts: Vec<String> = Vec::new();
-        if context != "tasks" {
-            parts.extend(self.move_hint());
-        }
-        let own = self.hints(own);
-        if !own.is_empty() {
-            parts.push(own);
-        }
-        parts.join(" · ")
+        // What a border has room for comes first: on the table, info, filter and sort.
+        const FIRST: [&str; 3] = ["tasks.info", "tasks.filter", "tasks.sort"];
+        let mut words: Vec<&(&str, &str)> = keys::WORDS
+            .iter()
+            .filter(|w| groups.contains(&keymap::section_of(w.0)) && w.0 != "tasks.add")
+            .collect();
+        words.sort_by_key(|w| FIRST.iter().position(|f| *f == w.0).unwrap_or(FIRST.len()));
+        words
+            .into_iter()
+            .filter_map(|&(name, hint)| {
+                let keys = self.keymap.label(name);
+                (!keys.is_empty()).then(|| format!("{keys} {hint}"))
+            })
+            .collect::<Vec<_>>()
+            .join(" · ")
     }
 
     /// The keys every page has, as the bottom line says them: `1-9 pages · Tab reports · / command`.
     pub fn global_keys(&self) -> String {
-        let mut parts = Vec::new();
+        let mut parts: Vec<String> = self.move_hint().into_iter().collect();
         if let (Some(first), Some(last)) = (
             self.first_key(Page::Tasks.action()),
             self.first_key(Page::Settings.action()),
@@ -108,6 +113,15 @@ impl App {
         }
         if let Some(k) = self.first_key("app.prompt") {
             parts.push(format!("{k} command"));
+        }
+        // Adding a task is said with the keys every page has, not in the table's border.
+        let mut also = vec!["app.context"];
+        if self.context() == "tasks" {
+            also.insert(0, "tasks.add");
+        }
+        let more = self.hints_of(&also);
+        if !more.is_empty() {
+            parts.push(more);
         }
         parts.join(" · ")
     }

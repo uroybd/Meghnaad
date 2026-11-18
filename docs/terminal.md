@@ -73,8 +73,11 @@ one it found, and then behaves as that version does.
 The top bar has the pages, by number (with their names where they fit), then the started task with how long it has run,
 the context, review and the reminders. The reports are down the left side (on a terminal 72 columns wide or more) and
 the page fills the middle, each in a rounded pane titled in its border; the pane the keys go to has its border in the
-accent, and its bottom border says which row of how many is chosen. The bottom two lines are the status line and the
-command line, which shows the page's keys until you type into it, with `? all keys` and `q quit` always on the right.
+accent, and its bottom border lists that pane's own keys (as many as fit, the most used first) and which row of how
+many is chosen. The bottom two lines are the status line and the command line, which shows the keys every page has
+(moving, the pages, the reports, the command line, adding a task on Tasks, the context) until you type into it, with
+`? all keys` and `q quit` always on the right. A key is said in one place only: in the pane's border, or on the bottom
+line.
 
 | Page | Shows |
 | --- | --- |
@@ -144,7 +147,7 @@ turns colour off itself whenever it writes to a pipe, as it does for this app.
 
 These are the defaults; every one can be changed on the Settings page ([Keybindings](#the-settings-page)) or in
 `settings.json` ([Keys](using/settings.md#keys)), and `?` lists them as they are, with what each does. The hints along
-the bottom and in the Settings page's borders follow what you set.
+the bottom and in the panes' borders follow what you set.
 
 ![? lists every key as it is, a group at a time, with what it does](screenshots/terminal-keys-help.png)
 
@@ -235,7 +238,7 @@ changing task commands on the Settings page use the same box.
 
 `Space` marks a task (and moves down a row), `V` marks a range from the last one marked, as vim's visual line does, and
 `*` marks the whole report. A marked row has a `●` in front and the `marked` [colour](#colours); the status line says
-how many (`3 marked`) and the bottom line lists the keys that act on them. `Esc` clears the marks.
+how many (`3 marked`) and the table's border lists the keys that act on them. `Esc` clears the marks.
 
 With tasks marked, the quick keys act on all of them, as the web app's bulk bar does: `d` `s` `x` `D` run
 `task <uuids> done` (`start`, `stop`, `delete`), `A` asks for one note and adds it to each, and `c` runs the task

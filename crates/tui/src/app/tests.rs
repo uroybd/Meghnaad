@@ -294,11 +294,21 @@ fn keys_are_the_keymaps_and_the_hints_and_the_list_say_so() {
     app.key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
     assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Console));
     app.key(key(KeyCode::Esc));
-    assert!(app.global_keys().ends_with("Ctrl+K command"), "{}", app.global_keys());
+    assert!(app.global_keys().contains("Ctrl+K command"), "{}", app.global_keys());
     assert!(app.help().contains("Ctrl+K"));
     assert!(app.help().contains("F8"));
     app.key(key(KeyCode::Char('1')));
-    assert!(app.page_keys().contains("f filter"), "{}", app.page_keys());
+    // The table's own keys are in its border, not on the bottom line, and adding a task is on the bottom line.
+    assert!(
+        app.view_keys("tasks").contains("f filter"),
+        "{}",
+        app.view_keys("tasks")
+    );
+    assert!(app.view_keys("tasks").contains("↵ info"), "{}", app.view_keys("tasks"));
+    assert!(!app.view_keys("tasks").contains("add"), "{}", app.view_keys("tasks"));
+    assert!(!app.global_keys().contains("f filter"), "{}", app.global_keys());
+    assert!(app.global_keys().contains("a add"), "{}", app.global_keys());
+    assert!(app.global_keys().contains("C context"), "{}", app.global_keys());
 }
 
 #[test]
