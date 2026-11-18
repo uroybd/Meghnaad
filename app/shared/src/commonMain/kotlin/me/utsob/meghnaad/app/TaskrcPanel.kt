@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -438,6 +440,7 @@ class TaskrcState(private val store: Store) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskrcPanel(store: Store, st: TaskrcState) {
     val colors = MaterialTheme.colorScheme
@@ -587,7 +590,12 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End)) {
+        // Wraps on a phone: in one row the buttons before Apply took its width, leaving it there but not drawn.
+        FlowRow(
+            Modifier.fillMaxWidth().padding(bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
             if (store.config?.hasPrevious == true) {
                 TextButton(onClick = { store.go { st.restore() } }, enabled = !st.busy) {
                     LucideIcon("rotate-ccw", size = 14.dp)
