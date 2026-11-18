@@ -421,6 +421,17 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
                 a.opt::<usize>(7)?.unwrap_or(0)
             ))
         }
+        // The terms of a task's urgency as `task info` writes them: the task (an `info` row), the config, now and the
+        // zone. `{terms: [[label, measure, coefficient, value]], total}`, each number as text.
+        "urgency_breakdown" => {
+            let (terms, total) = crate::info_text::urgency_terms(
+                &crate::info_text::InfoTask::from_value(&a.req::<serde_json::Value>(0)?),
+                &a.req::<crate::taskrc::Config>(1)?,
+                a.req::<i64>(2)?,
+                a.opt::<i32>(3)?.unwrap_or(0),
+            );
+            json!({ "terms": terms, "total": total })
+        }
         "holiday_clash" => json!(crate::clash::value(
             &a.req::<String>(0)?,
             &a.req::<String>(1)?,

@@ -49,7 +49,9 @@ Click a row. It shows all fields, annotations, dependencies you can follow, a co
 (with `journal.time`) and a collapsed **History** of what changed and when (`journal.info`, on by default, worded like
 `task info`). History comes from the task's operation log, so changes before the last snapshot aren't in it. It is
 fetched when you open the section (the hidden `_history <uuid>`), so `info`, the pages and exports never carry it.
-Buttons: done, start/stop, edit, delete.
+Click (or tap) the **Urgency** to see how it adds up, term by term, as `task info` prints it: each term's measure,
+its coefficient (yours from the taskrc, or Taskwarrior's), and what it adds. The terminal app shows the same in the
+info view's raw tab. Buttons: done, start/stop, edit, delete.
 
 ### Links between tasks
 

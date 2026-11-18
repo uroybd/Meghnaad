@@ -57,6 +57,26 @@ private fun UrgencyText(u: Double) {
     Text(fixed(u, 2), color = c, fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = if (urgencyLevel(u) >= UrgencyLevel.High) FontWeight.SemiBold else FontWeight.Normal)
 }
 
+/** The terms of the urgency, a row each (label, measure × coefficient = what it adds), then the total. */
+@Composable
+private fun UrgencyTerms(b: UrgencyBreakdown) {
+    val mono = FontFamily.Monospace
+    Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        b.terms.forEach { t ->
+            Row(Modifier.fillMaxWidth()) {
+                Text(t[0], fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Dim("${t[1]} × ${t[2]} =", size = 12)
+                Text(t[3], fontSize = 12.sp, fontFamily = mono, modifier = Modifier.width(52.dp).padding(start = 6.dp))
+            }
+        }
+        HorizontalDivider()
+        Row(Modifier.fillMaxWidth()) {
+            Text("urgency", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(b.total, fontSize = 12.sp, fontFamily = mono, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(52.dp).padding(start = 6.dp))
+        }
+    }
+}
+
 /** Everything about one task: its state, dates, tracked time, links to other tasks, UDAs, notes and history (TaskInfo.svelte). */
 @Composable
 fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
@@ -172,7 +192,25 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
                 Text(if (defs.getValue(k).type == "numeric") trimNumber(v) else v, fontSize = 14.sp)
             }
         }
-        Field("Urgency") { UrgencyText(task.urgency) }
+        Field("Urgency") {
+            // How it adds up, as `task info` shows it: asked of the engine when it is opened.
+            var open by remember(task.uuid) { mutableStateOf(false) }
+            Row(
+                Modifier.androidxClickable { open = !open },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                UrgencyText(task.urgency)
+                LucideIcon(if (open) "chevron-up" else "chevron-down", size = 14.dp)
+            }
+            if (open) {
+                val breakdown = remember(task) {
+                    val now = store.clockNow()
+                    runCatching { urgencyBreakdown(task, store.config?.config, now, store.offsetAt(now)) }.getOrNull()
+                }
+                if (breakdown != null) UrgencyTerms(breakdown)
+            }
+        }
         if (task.virtualTags.isNotEmpty()) Field("Virtual tags") { Dim(task.virtualTags.joinToString(" "), size = 13) }
 
         // A recurring template lists its instances (newest first).

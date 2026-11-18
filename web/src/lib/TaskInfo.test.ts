@@ -188,3 +188,26 @@ describe('the time log', () => {
     expect(document.querySelector('[data-testid="sessions-total"]')?.textContent).toBe('1h 0m');
   });
 });
+
+describe('how the urgency adds up', () => {
+  it('opens from the urgency, with the terms task info prints', () => {
+    const t = { ...task('11111111-2222-3333-4444-555555555555'), tags: ['home'], urgency: 0.8 } as Row;
+    app = mount(TaskInfo, { target: document.body, props: { task: t } });
+    flushSync();
+    const toggle = [...document.querySelectorAll('button')].find((b) => b.textContent === '0.80');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('table.urgency')).toBeNull();
+    toggle?.click();
+    flushSync();
+    const table = document.querySelector('table.urgency');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    const rows = [...(table?.querySelectorAll('tr') ?? [])].map((r) =>
+      [...r.children].map((c) => c.textContent?.trim()).filter(Boolean),
+    );
+    expect(rows).toContainEqual(['tags', '0.8', '×', '1', '=', '0.8']);
+    expect(rows.at(-1)?.[0]).toBe('urgency');
+    toggle?.click();
+    flushSync();
+    expect(document.querySelector('table.urgency')).toBeNull();
+  });
+});

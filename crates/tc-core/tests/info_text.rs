@@ -175,3 +175,30 @@ fn a_recurring_parent_and_its_instance_show_the_recurrence() {
     let text = info(&instance, &json!(null), &json!([]), &json!([]), ENTRY + 26);
     assert!(text.starts_with(&fixture("task5.txt")), "{text}");
 }
+
+#[test]
+fn the_urgency_breakdown_is_the_one_info_prints() {
+    // The parent of task4.txt: due and age, as `task` printed them.
+    let parent = json!({
+        "uuid": PARENT, "status": "recurring", "description": "Repeat me", "entry": ENTRY, "modified": ENTRY,
+        "due": 1_795_543_200, "recur": "weekly", "rtype": "periodic", "mask": "-", "urgency": 6.0444, "id": 4
+    });
+    let cfg = serde_json::to_value(parse(RC).config).unwrap();
+    let answer: Value = serde_json::from_str(&call(
+        "urgency_breakdown",
+        &json!([parent, cfg, ENTRY + 6, TZ]).to_string(),
+    ))
+    .unwrap();
+    let printed = fixture("task4.txt");
+    for term in answer["terms"].as_array().unwrap() {
+        let t: Vec<&str> = term.as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+        let line = printed
+            .lines()
+            .find(|l| l.trim_start().starts_with(&format!("{} ", t[0])))
+            .unwrap_or_else(|| panic!("no {} line in {printed}", t[0]));
+        let words: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(&words[words.len() - 5..], &[t[1], "*", t[2], "=", t[3]], "{line}");
+    }
+    assert!(!answer["terms"].as_array().unwrap().is_empty());
+    assert_eq!(answer["total"], "6.044");
+}

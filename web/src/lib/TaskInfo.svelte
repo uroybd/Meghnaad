@@ -18,6 +18,7 @@
   import UuidTip from './UuidTip.svelte';
   import { store } from './store.svelte';
   import type { HistoryEntry, Row } from './types';
+  import { urgencyBreakdown } from './urgencyBreakdown';
 
   let {
     task,
@@ -32,6 +33,17 @@
     /** Inside the drawer: no card chrome or title (the drawer has its own). */
     embedded?: boolean;
   } = $props();
+
+  // How the urgency adds up, as `task info` shows it: asked of the engine when it is opened.
+  let urgencyOpen = $state(false);
+  const breakdown = $derived.by(() => {
+    if (!urgencyOpen) return null;
+    try {
+      return urgencyBreakdown(task, store.config?.config);
+    } catch {
+      return null;
+    }
+  });
 
   // The history is not part of the task: it is fetched when the section is opened, and again when the task changes.
   let histOpen = $state(false);
@@ -250,7 +262,35 @@
       {/if}
     {/each}
     <dt>Urgency</dt>
-    <dd class="urg-{urgencyLevel(task.urgency)}">{task.urgency.toFixed(2)}</dd>
+    <dd>
+      <button
+        class="urg urg-{urgencyLevel(task.urgency)}"
+        aria-expanded={urgencyOpen}
+        title={urgencyOpen ? 'Hide how it adds up' : 'Show how it adds up'}
+        onclick={() => (urgencyOpen = !urgencyOpen)}>{task.urgency.toFixed(2)}</button
+      >
+      {#if breakdown}
+        <table class="urgency mono" aria-label="How the urgency adds up">
+          <tbody>
+            {#each breakdown.terms as [label, measure, coefficient, value] (label)}
+              <tr>
+                <th scope="row">{label}</th>
+                <td>{measure}</td>
+                <td class="dim">×</td>
+                <td>{coefficient}</td>
+                <td class="dim">=</td>
+                <td>{value}</td>
+              </tr>
+            {/each}
+            <tr class="total">
+              <th scope="row">urgency</th>
+              <td colspan="4"></td>
+              <td>{breakdown.total}</td>
+            </tr>
+          </tbody>
+        </table>
+      {/if}
+    </dd>
     {#if task.virtual_tags?.length}
       <dt>Virtual tags</dt>
       <dd class="dim">{task.virtual_tags?.join(' ')}</dd>
@@ -371,6 +411,32 @@
 </article>
 
 <style>
+  .urg {
+    font: inherit;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+  .urgency {
+    margin-top: 6px;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .urgency th {
+    font-weight: 400;
+    text-align: left;
+    padding-right: 12px;
+  }
+  .urgency td {
+    text-align: right;
+    padding: 0 4px;
+  }
+  .urgency .total {
+    border-top: 1px solid var(--border);
+  }
   .card {
     border: 1px solid var(--line);
     border-radius: var(--radius);

@@ -370,6 +370,28 @@ fn uc_first(s: &str) -> String {
         .map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
 }
 
+/// The terms of a task's urgency as `task info` writes them, for a screen that draws them itself (the info panels):
+/// each `[label, measure, coefficient, value]`, as text, then the total. The numbers are the ones [`render`] prints.
+pub fn urgency_terms(task: &InfoTask, cfg: &Config, now: i64, tz: i32) -> (Vec<[String; 4]>, String) {
+    let mut clock = Clock::utc(now);
+    clock.tz_offset = tz;
+    clock.week_starts_monday = cfg.week_starts_monday();
+    let terms = crate::urgency::breakdown(&task.facts, cfg, &clock)
+        .into_iter()
+        .map(|term| {
+            #[expect(clippy::cast_possible_truncation, reason = "Taskwarrior works these out as float")]
+            let (measure, coefficient) = (term.measure as f32, term.coefficient as f32);
+            [
+                term.label,
+                number(f64::from(measure), 5, 3).trim().to_owned(),
+                number(f64::from(coefficient), 4, 2).trim().to_owned(),
+                number(f64::from(measure * coefficient), 5, 3).trim().to_owned(),
+            ]
+        })
+        .collect();
+    (terms, number(task.urgency, 4, 4).trim().to_owned())
+}
+
 /// The urgency breakdown (`CmdInfo::urgencyTerm`): a row for each term that adds something, then the total. Taskwarrior
 /// works these out in `float`, and so does this, so the rounding in the last digit is the same.
 fn urgency_table(f: &Facts, urgency: f64, cfg: &Config, clock: &Clock, width: usize) -> Table {
