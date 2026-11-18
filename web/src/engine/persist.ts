@@ -83,7 +83,8 @@ function isSealed(bytes: Uint8Array): boolean {
   return bytes.length > SEALED.length + IV && SEALED.every((b, i) => bytes[i] === b);
 }
 
-async function sealed(bytes: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
+/** `bytes` sealed with `key` (AES-GCM): SEALED, a fresh IV, then the cipher text. */
+export async function sealBytes(bytes: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
   const iv = crypto.getRandomValues(new Uint8Array(IV));
   const out = new Uint8Array(
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes as Uint8Array<ArrayBuffer>),
@@ -95,7 +96,8 @@ async function sealed(bytes: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
   return all;
 }
 
-async function opened(bytes: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
+/** What [`sealBytes`] sealed, opened with the same key: it throws if the key is not that one or the bytes changed. */
+export async function openBytes(bytes: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
   const iv = bytes.subarray(SEALED.length, SEALED.length + IV);
   const body = bytes.subarray(SEALED.length + IV);
   return new Uint8Array(
@@ -114,7 +116,7 @@ export async function loadReplica(): Promise<Uint8Array | undefined> {
   try {
     // Sealing on, a copy that isn't sealed is not this device's to trust; sealing off, a sealed one can't be opened.
     if (sealKey ? !isSealed(found) : isSealed(found)) return undefined;
-    return await unpack(sealKey ? await opened(found, sealKey) : found);
+    return await unpack(sealKey ? await openBytes(found, sealKey) : found);
   } catch {
     // Damaged: the same as no copy at all, and the next visit starts from the bucket.
     return undefined;
@@ -123,7 +125,7 @@ export async function loadReplica(): Promise<Uint8Array | undefined> {
 
 export async function saveReplica(bytes: Uint8Array): Promise<void> {
   const packed = await pack(bytes);
-  const kept = sealKey ? await sealed(packed, sealKey) : packed;
+  const kept = sealKey ? await sealBytes(packed, sealKey) : packed;
   await tx('readwrite', (s) => s.put(kept, KEY));
 }
 
@@ -141,7 +143,7 @@ export async function loadKept(path: string): Promise<string | undefined> {
   const found = await tx<unknown>('readonly', (s) => s.get(KEPT + path)).catch(() => undefined);
   if (!(found instanceof Uint8Array) || !isSealed(found)) return undefined;
   try {
-    return new TextDecoder().decode(await opened(found, sealKey));
+    return new TextDecoder().decode(await openBytes(found, sealKey));
   } catch {
     return undefined;
   }
@@ -149,7 +151,7 @@ export async function loadKept(path: string): Promise<string | undefined> {
 
 export async function keepAnswer(path: string, text: string): Promise<void> {
   if (!sealKey) return;
-  const kept = await sealed(new TextEncoder().encode(text), sealKey);
+  const kept = await sealBytes(new TextEncoder().encode(text), sealKey);
   await tx('readwrite', (s) => s.put(kept, KEPT + path));
 }
 

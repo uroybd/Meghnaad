@@ -27,12 +27,19 @@ if (STATIC) {
       const defaults = (await fetch('config.json', { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : {}))
         .catch(() => ({}))) as { repo?: string; branch?: string; api?: string };
-      const { default: Gate } = await import('./lib/StaticGate.svelte');
+      const [{ default: Gate }, { onLock }, locked] = await Promise.all([
+        import('./lib/StaticGate.svelte'),
+        import('./engine/session'),
+        import('./lib/lockedReminders'),
+      ]);
+      // A tab that locks keeps its reminder list for the locked page; one that forgets the device keeps nothing.
+      onLock((forgetting) => (forgetting ? locked.dropList() : locked.keepForLock()));
       const gate = mount(Gate, {
         target,
         props: {
           defaults,
           onunlocked: () => {
+            locked.dropList();
             void unmount(gate);
             engine.preload();
             prefetch();

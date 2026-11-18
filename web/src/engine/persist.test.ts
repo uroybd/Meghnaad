@@ -12,6 +12,7 @@ import {
   sealWith,
   unpack,
 } from './persist';
+import { memoryDb } from './memoryDb.testing';
 
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 
@@ -72,51 +73,6 @@ describe('when the browser will not keep it (a full disk, a blocked database)', 
     await expect(forgetReplica()).rejects.toThrow('QuotaExceededError');
   });
 });
-
-/** An IndexedDB in memory: one database, one store, the few calls persist.ts makes. */
-function memoryDb() {
-  const data = new Map<unknown, unknown>();
-  const request = <T>(value: () => T) => {
-    const req: { result?: T; onsuccess?: () => void } = {};
-    queueMicrotask(() => {
-      req.result = value();
-      req.onsuccess?.();
-    });
-    return req;
-  };
-  const db = {
-    transaction() {
-      const t: { oncomplete?: () => void; objectStore: () => unknown } = {
-        objectStore: () => ({
-          get: (k: unknown) => request(() => data.get(k)),
-          put: (v: unknown, k: unknown) => request(() => data.set(k, v)),
-          delete: (k: unknown) =>
-            request(() => {
-              // A key range (the stand-in for IDBKeyRange.bound below), or one key.
-              if (k && typeof k === 'object' && 'lo' in k && 'hi' in k) {
-                const { lo, hi } = k as { lo: string; hi: string };
-                for (const key of [...data.keys()])
-                  if (typeof key === 'string' && key >= lo && key <= hi) data.delete(key);
-              } else data.delete(k);
-            }),
-        }),
-      };
-      setTimeout(() => t.oncomplete?.(), 0);
-      return t;
-    },
-    close() {},
-  };
-  return {
-    data,
-    indexedDB: {
-      open() {
-        const req: { result: typeof db; onsuccess?: () => void } = { result: db };
-        queueMicrotask(() => req.onsuccess?.());
-        return req;
-      },
-    },
-  };
-}
 
 describe('the static flavour seals the copy', () => {
   afterEach(() => vi.unstubAllGlobals());

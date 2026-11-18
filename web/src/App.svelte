@@ -39,6 +39,7 @@
   import { actionOf } from './lib/keymap';
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
+  import { takeClicked } from './lib/lockedReminders';
   import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAddModal from './lib/QuickAddModal.svelte';
@@ -116,6 +117,9 @@
           if (canonical && canonical !== here) history.replaceState(null, '', toAddress(canonical));
         }
         addressReady = true;
+        // A reminder clicked while this tab was locked: its task, now that it is unlocked (spec 0017).
+        const clicked = STATIC ? takeClicked() : null;
+        if (clicked) store.openDetail(clicked);
       });
     void followAddress();
     // Reminders can wait for the table: the engine answers one command at a time, so a poll sent first would be

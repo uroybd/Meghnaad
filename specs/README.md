@@ -49,3 +49,6 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0014 | [Sync without holding up the screen](0014-sync-without-blocking.md) | in progress | both | web, Android | Everything: started 2026-11-18 |
 | 0015 | [Share text into the Android app to add a task](0015-android-share-into.md) | draft | 2 (UI) | Android | Open questions; design to agree |
 | 0016 | [Share a task out of the Android app](0016-android-share-task.md) | in progress | 2 (UI), one helper | Android | Seen by a person on a phone; the JSON read back by 0015 |
+| 0017 | [Reminders keep coming while the static web app is locked](0017-reminders-while-locked.md) | in progress | 2 (UI) | web (static) | Seen by a person in a browser |
+| 0018 | [Trust this device (the static web app)](0018-trust-this-device.md) | done | 2 (UI) | web (static) | Done 2026-11-19 |
+| 0019 | [Unlock the static web app with a passkey](0019-passkey-unlock.md) | in progress | 2 (UI) | web (static) | Checked by a person: Firefox with Bitwarden, a Chromium browser |

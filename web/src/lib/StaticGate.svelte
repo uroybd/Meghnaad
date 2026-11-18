@@ -1,11 +1,13 @@
 <script lang="ts">
   // The static flavour's front door: Connect (the first visit on a device) or Unlock (every later one). Nothing of the
-  // app is loaded until it is passed. See src/engine/session.ts and vault.ts.
-  import { onMount } from 'svelte';
+  // app is loaded until it is passed. See src/engine/session.ts and vault.ts. A tab that locked keeps reminding here from
+  // the list it kept (spec 0017, lockedReminders.ts).
+  import { onDestroy, onMount, tick } from 'svelte';
+  import { PasskeyCancelled } from '../engine/passkey';
   import { WrongPassword } from '../engine/pgp';
-  import { askOtherTabs, connect, forget, unlockWithSecret } from '../engine/session';
-  import { sealedAccess } from '../engine/vault';
+  import { connect, forget, openDevice, passkeyKind, unlockWithPasskey, unlockWithSecret } from '../engine/session';
   import { TriangleAlert } from './icons';
+  import { keptList, reminderSettings, remindWhileLocked } from './lockedReminders';
 
   let { onunlocked, defaults }: { onunlocked: () => void; defaults: { repo?: string; branch?: string; api?: string } } =
     $props();
@@ -18,18 +20,39 @@
   let api = $state('');
   let token = $state('');
   let secret = $state('');
+  let trust = $state(false);
+  /** The passkey this device unlocks with, if any (spec 0019). */
+  let passkey = $state<'prf' | 'signature' | undefined>();
+  /** How many tasks this locked tab still reminds of, and the last reminder when it can't show a notification. */
+  let reminding = $state(0);
+  let notice = $state('');
+  let stopReminding: (() => void) | undefined;
+  const remindingText = $derived(
+    `Reminders keep coming for ${reminding} ${reminding === 1 ? 'task' : 'tasks'}, as they were when this tab locked.`,
+  );
+  let secretField = $state<HTMLInputElement>();
 
   onMount(async () => {
     repo = defaults.repo ?? '';
     branch = defaults.branch ?? '';
     api = defaults.api ?? '';
-    if (!(await sealedAccess())) {
-      mode = 'connect';
+    const how = await openDevice();
+    if (how === 'unlocked') {
+      onunlocked();
       return;
     }
-    if (await askOtherTabs()) onunlocked();
-    else mode = 'unlock';
+    if (how === 'unlock') {
+      passkey = await passkeyKind();
+      const list = keptList();
+      if (list.length > 0 && reminderSettings().enabled) {
+        reminding = list.length;
+        stopReminding = remindWhileLocked(list, (n) => (notice = `${n.title}: ${n.body}`));
+      }
+    }
+    mode = how;
   });
+
+  onDestroy(() => stopReminding?.());
 
   /**
    * Password managers keep the pair as a login: the token as the username, the encryption secret as the password, so
@@ -48,7 +71,7 @@
     busy = true;
     error = '';
     try {
-      await connect({ api, repo, branch, token, secret });
+      await connect({ api, repo, branch, token, secret }, trust);
       await offerToSave();
       token = '';
       secret = '';
@@ -65,7 +88,7 @@
     busy = true;
     error = '';
     try {
-      await unlockWithSecret(secret);
+      await unlockWithSecret(secret, trust);
       secret = '';
       onunlocked();
     } catch (err) {
@@ -73,6 +96,24 @@
     } finally {
       busy = false;
     }
+  }
+
+  /** The passkey, else the secret: a cancelled passkey leaves the form as it was, ready for the secret. */
+  async function doPasskey() {
+    busy = true;
+    error = '';
+    try {
+      await unlockWithPasskey();
+      onunlocked();
+    } catch (err) {
+      if (!(err instanceof PasskeyCancelled)) error = err instanceof Error ? err.message : String(err);
+      passkey = await passkeyKind();
+      busy = false;
+      await tick();
+      secretField?.focus();
+      return;
+    }
+    busy = false;
   }
 
   async function doForget() {
@@ -128,11 +169,17 @@
           with it.</span
         >
       </label>
+      {@render trustBox()}
       <button class="primary" disabled={busy}>{busy ? 'Connecting…' : 'Connect'}</button>
     </form>
   {:else if mode === 'unlock'}
     <h1>Unlock</h1>
-    <p class="lead">Type the encryption secret to open your tasks on this device.</p>
+    {#if passkey}
+      <p class="lead">Use your passkey, or type the encryption secret, to open your tasks on this device.</p>
+      <button class="primary passkey" onclick={doPasskey} disabled={busy}>Unlock with passkey</button>
+    {:else}
+      <p class="lead">Type the encryption secret to open your tasks on this device.</p>
+    {/if}
     <form onsubmit={doUnlock}>
       <!-- The saved login's username (the token), so a password manager offers it here; only the secret is used. -->
       <input class="for-password-manager" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" />
@@ -140,13 +187,15 @@
         >Encryption secret <input
           type="password"
           name="password"
+          bind:this={secretField}
           bind:value={secret}
           required
           autocomplete="current-password"
         /></label
       >
+      {@render trustBox()}
       <div class="row">
-        <button class="primary" disabled={busy}>{busy ? 'Unlocking…' : 'Unlock'}</button>
+        <button class={passkey ? '' : 'primary'} disabled={busy}>{busy ? 'Unlocking…' : 'Unlock'}</button>
         <button type="button" class="ghost" onclick={doForget} disabled={busy}>Forget this device</button>
       </div>
     </form>
@@ -154,7 +203,20 @@
   {#if error}
     <p class="warn" role="alert"><TriangleAlert size={14} /> {error}</p>
   {/if}
+  {#if reminding}
+    <p class="dim reminders">{remindingText}</p>
+  {/if}
+  {#if notice}
+    <p class="notice" role="status">{notice}</p>
+  {/if}
 </main>
+
+{#snippet trustBox()}
+  <label class="check"
+    ><input type="checkbox" bind:checked={trust} /> Trust this device: stay unlocked here, without the password
+    <span class="dim">Anyone who can use this browser can open your tasks.</span></label
+  >
+{/snippet}
 
 <style>
   .gate {
@@ -191,6 +253,30 @@
   }
   input {
     width: 100%;
+  }
+  .check {
+    display: block;
+    font-weight: 400;
+  }
+  .check input {
+    width: auto;
+    margin-right: 6px;
+  }
+  .check .dim {
+    display: block;
+    margin-left: 22px;
+  }
+  .passkey {
+    width: 100%;
+    margin-bottom: 14px;
+  }
+  .reminders,
+  .notice {
+    margin-top: 14px;
+    font-size: 13px;
+  }
+  .dim {
+    color: var(--dim);
   }
   /* Shown as dots, but a text field, so password managers take it for the username. */
   .masked {

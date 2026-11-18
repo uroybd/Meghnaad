@@ -8,10 +8,8 @@ import {
   type NotifySettings,
   type Reminder,
 } from './notify';
+import { remember, SEEN_KEY, SETTINGS_KEY } from './lockedReminders';
 import { store } from './store.svelte';
-
-const SETTINGS_KEY = 'tw-notify';
-const SEEN_KEY = 'tw-notified';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -95,6 +93,8 @@ class Notifier {
       });
       if (res.result.kind === 'json' && Array.isArray(res.result.value)) {
         this.#rows = res.result.value as Reminder[];
+        // What a tab of the static flavour keeps to remind from once it is locked (spec 0017).
+        remember(this.#rows);
         this.clearDone();
         this.active = this.#rows.filter((r) => r.start != null);
         this.polledAt = Math.floor(Date.now() / 1000);

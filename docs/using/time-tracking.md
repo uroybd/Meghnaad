@@ -13,7 +13,12 @@ timer in the header and in the tab title.
 - one digest a day of what is overdue.
 
 In the browser the tab has to be open, because a page can't wake up in the background. System notifications also need
-HTTPS (or `localhost`) and your permission. In the Android app reminders work with the app closed; the digest comes at
+HTTPS (or `localhost`) and your permission. On the static site a tab that locks (after the idle minutes, or with
+**Lock now**) keeps reminding from the tasks it had when it locked: the locked page says how many. It keeps only what a
+reminder needs (each task's description and dates), in that tab alone, until it is unlocked or closed; it fetches
+nothing while locked, so a task finished meanwhile on another device can still be reminded of. Clicking such a reminder
+opens the unlock form, and the task once unlocked. A tab opened while every tab is locked reminds of nothing until
+unlocked. In the Android app reminders work with the app closed; the digest comes at
 the hour you chose for dates without a time (Menu → Reminders).
 
 A reminder goes away once its task is done or deleted, wherever you did it: the app takes it away the next time it

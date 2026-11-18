@@ -260,7 +260,15 @@ Lua runner through feature unification.
 - `vault.ts` and `session.ts` unlock it: PBKDF2 (SHA-256, 600,000 rounds) over the secret and the salt in `meta` gives the
   key the engine gets with `connect_git`. The access (repository, branch, API, token) is kept in IndexedDB sealed with
   the secret in OpenPGP's symmetric format (`pgp.ts`, over WebCrypto), and `persist.ts` seals the saved replica with
-  AES-GCM under a key derived from the same key. Tabs share an unlock over a `BroadcastChannel`.
+  AES-GCM under a key derived from the same key. Tabs share an unlock over a `BroadcastChannel`. A lock reloads every
+  tab, so nothing of the tasks is left in the page; first `onLock` hooks run, and `lockedReminders.ts` keeps the tab's
+  reminder list (only what a reminder reads) in its `sessionStorage` for the locked page (`StaticGate.svelte`) to remind
+  from.
+- A trusted device (`vault.ts`: `trustDevice`, `trustedCopy`) keeps the access and the key sealed with a non-extractable
+  AES-GCM key in the same database; `session.ts`'s `openDevice` tries another tab, then that copy (unless a `Lock now`
+  mark in `localStorage` says otherwise), then the form. A passkey (`passkey.ts`) either seals the access and the key with
+  a key derived (HKDF) from its PRF secret, or, on a trusted device, has its signature checked against the public key
+  kept (ES256 or RS256) before the trusted copy is opened.
 - Hooks: the engine's `/api/run` is answered inside the Web Worker by `pageHooks.ts`, which loads the hooks module
   (`tc_core::lua_hooks`, the same runner as the Worker's) the first time a hook runs; its network goes through the
   page's `fetch`.

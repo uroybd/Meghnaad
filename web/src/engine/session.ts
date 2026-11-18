@@ -1,20 +1,42 @@
 // The static flavour's session on this device: connecting it to a branch, unlocking it, and locking it again. The key
 // of the tasks and the token live only in the memory of unlocked tabs. Unlocking one tab hands them to the other open
 // tabs of this site (a same-origin BroadcastChannel), and locking one locks them all: a locked tab is one reloaded, so
-// nothing of them is left in it.
+// nothing of them is left in it (the hooks given to `onLock` run first: the reminders a locked tab keeps, spec 0017).
+// A trusted device (spec 0018) opens itself from a copy kept here; a passkey (spec 0019) unlocks in place of the secret.
 
 import { Engine } from 'tc-engine';
 import { engine } from './client.svelte';
-import { deriveKey, forgetDevice, keepAccess, toBase64, unlock, type Access, type Unlocked } from './vault';
+import { createPasskey, NoPrf, prfReported, signedHere, usePasskey } from './passkey';
+import {
+  deriveKey,
+  deviceTrusted,
+  distrust,
+  forgetDevice,
+  forgetPasskey,
+  keepAccess,
+  keepPrfPasskey,
+  keepSignaturePasskey,
+  keptPasskey,
+  openWithPrf,
+  sealedAccess,
+  toBase64,
+  trustDevice,
+  trustedCopy,
+  unlock,
+  type Access,
+  type Unlocked,
+} from './vault';
 
 const CHANNEL = 'meghnaad-vault';
 const ACTIVE = 'meghnaad-last-active';
 const IDLE = 'meghnaad-idle-minutes';
+/** Set by a lock, cleared by an unlock: a trusted device locked with Lock now stays locked until it is unlocked. */
+const LOCKED = 'meghnaad-locked';
 export const DEFAULT_IDLE_MINUTES = 30;
 /** How long a tab waits for another to hand it the key before it asks for the secret. */
 const ASK_FOR_MS = 400;
 
-type Message = { kind: 'ask' } | { kind: 'give'; unlocked: Unlocked } | { kind: 'lock' };
+type Message = { kind: 'ask' } | { kind: 'give'; unlocked: Unlocked } | { kind: 'lock' } | { kind: 'forget' };
 
 let channel: BroadcastChannel | undefined;
 let mine: Unlocked | undefined;
@@ -51,7 +73,7 @@ async function start(unlocked: Unlocked): Promise<void> {
 }
 
 /** Connect this device: the branch must answer and the secret must open the tasks there. Then it is kept, sealed. */
-export async function connect(form: ConnectForm): Promise<void> {
+export async function connect(form: ConnectForm, trust = false): Promise<void> {
   let salt: Uint8Array;
   try {
     salt = await Engine.git_salt(form.api.trim(), form.repo.trim(), form.branch.trim(), form.token.trim());
@@ -76,14 +98,132 @@ export async function connect(form: ConnectForm): Promise<void> {
     );
   }
   await keepAccess(access, form.secret);
+  if (trust) await trustDevice(unlocked);
   became(unlocked);
 }
 
 /** Unlock with the secret: `WrongPassword` if it isn't the one this device was connected with. */
-export async function unlockWithSecret(secret: string): Promise<void> {
+export async function unlockWithSecret(secret: string, trust = false): Promise<void> {
   const unlocked = await unlock(secret);
+  if (trust) await trustDevice(unlocked);
+  unlockedWith(unlocked);
+}
+
+function unlockedWith(unlocked: Unlocked): void {
   engine.unlockWith({ ...unlocked.access, key: unlocked.key });
   became(unlocked);
+}
+
+function mark(locked: boolean): void {
+  try {
+    if (locked) localStorage.setItem(LOCKED, '1');
+    else localStorage.removeItem(LOCKED);
+  } catch {
+    // Without it a trusted device opens itself again after a reload.
+  }
+}
+
+function markedLocked(): boolean {
+  try {
+    return localStorage.getItem(LOCKED) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How this tab opens: `connect` (never connected), `unlocked` (another open tab handed it the key, or the device is
+ * trusted and was not locked with Lock now), else `unlock`, the form.
+ */
+export async function openDevice(): Promise<'connect' | 'unlock' | 'unlocked'> {
+  if (!(await sealedAccess())) return 'connect';
+  if (await askOtherTabs()) return 'unlocked';
+  if (!markedLocked()) {
+    const copy = await trustedCopy();
+    if (copy) {
+      unlockedWith(copy);
+      return 'unlocked';
+    }
+  }
+  // A locked tab follows another forgetting the device: what it kept for its reminders goes too.
+  open()?.addEventListener('message', (e: MessageEvent<Message>) => {
+    if (e.data.kind === 'forget' && !mine) {
+      runHooks(true);
+      location.reload();
+    }
+  });
+  return 'unlock';
+}
+
+/** Is this device trusted (spec 0018)? */
+export const isTrusted = deviceTrusted;
+
+/** Trust this unlocked device, or stop: stopping removes the copy, and a passkey checked by signature with it. */
+export async function setTrusted(on: boolean): Promise<void> {
+  if (on) {
+    if (!mine) throw new Error('This device is locked.');
+    await trustDevice(mine);
+    return;
+  }
+  await distrust();
+  if ((await keptPasskey())?.kind === 'signature') await forgetPasskey();
+}
+
+/** Which passkey unlocks this device, if any. */
+export async function passkeyKind(): Promise<'prf' | 'signature' | undefined> {
+  return (await keptPasskey())?.kind;
+}
+
+/** Can a passkey be set up here? Any on a trusted device; on another, not where the browser says it has no PRF. */
+export async function passkeyPossible(): Promise<boolean> {
+  if (typeof PublicKeyCredential === 'undefined' || typeof navigator === 'undefined' || !navigator.credentials)
+    return false;
+  return (await deviceTrusted()) || (await prfReported()) !== false;
+}
+
+/** Set up a passkey for this unlocked device: checked by signature when it is trusted, else sealing with its PRF secret. */
+export async function setUpPasskey(): Promise<void> {
+  const unlocked = mine;
+  if (!unlocked) throw new Error('This device is locked.');
+  if (await deviceTrusted()) {
+    const made = await createPasskey('signature');
+    if (!made.publicKey || made.alg === undefined) throw new Error("This passkey's kind of key can't be checked here.");
+    await keepSignaturePasskey(made.id, made.publicKey, made.alg);
+    return;
+  }
+  const made = await createPasskey('prf');
+  if (!made.prf) throw new NoPrf();
+  await keepPrfPasskey(unlocked, made.id, made.prf.salt, made.prf.secret);
+}
+
+export const removePasskey = forgetPasskey;
+
+/** Unlock with the passkey this device has. Throws `PasskeyCancelled` when it was cancelled, else why it failed. */
+export async function unlockWithPasskey(): Promise<void> {
+  const kept = await keptPasskey();
+  if (!kept) throw new Error('No passkey unlocks this device.');
+  if (kept.kind === 'prf') {
+    const used = await usePasskey(kept.id, kept.salt);
+    if (!used.prf) throw new NoPrf();
+    let unlocked: Unlocked;
+    try {
+      unlocked = await openWithPrf(kept, used.prf);
+    } catch {
+      await forgetPasskey();
+      throw new Error('That passkey no longer opens this device, so it was removed. Type the encryption secret.');
+    }
+    unlockedWith(unlocked);
+    return;
+  }
+  const used = await usePasskey(kept.id);
+  if (!(await signedHere(used, kept, { origin: location.origin, rpId: location.hostname })))
+    throw new Error("That passkey's signature didn't check out.");
+  const copy = await trustedCopy();
+  if (!copy) {
+    await forgetPasskey();
+    throw new Error('This device is no longer trusted, so its passkey was removed. Type the encryption secret.');
+  }
+  unlockedWith(copy);
 }
 
 /** Another unlocked tab of this site, if one answers soon, hands this one the key; then this one is unlocked too. */
@@ -112,15 +252,43 @@ export function askOtherTabs(): Promise<boolean> {
 /** This tab is unlocked: it answers other tabs, follows a lock, and locks itself when the device has been idle. */
 function became(unlocked: Unlocked): void {
   mine = unlocked;
+  mark(false);
   const ch = open();
   ch?.addEventListener('message', (e: MessageEvent<Message>) => {
     if (e.data.kind === 'ask' && mine) ch.postMessage({ kind: 'give', unlocked: mine } satisfies Message);
     if (e.data.kind === 'lock') dropAndReload();
+    if (e.data.kind === 'forget') dropAndReload(true);
   });
   watchIdle();
 }
 
-function dropAndReload(): void {
+const lockHooks: ((forgetting: boolean) => void)[] = [];
+
+/**
+ * Run `fn` just before this tab locks and reloads, with nothing of the tasks left: `forgetting` when it is because the
+ * device is being forgotten (in this tab or another).
+ */
+export function onLock(fn: (forgetting: boolean) => void): void {
+  lockHooks.push(fn);
+}
+
+function runHooks(forgetting: boolean): void {
+  for (const fn of lockHooks) {
+    try {
+      fn(forgetting);
+    } catch {
+      // A hook that fails must not keep the tab unlocked.
+    }
+  }
+}
+
+let dropping = false;
+
+function dropAndReload(forgetting = false): void {
+  // Once: the reload is not immediate, and a second message (forget, then lock) must not keep the list again.
+  if (dropping) return;
+  dropping = true;
+  runHooks(forgetting);
   mine = undefined;
   engine.stop();
   location.reload();
@@ -133,15 +301,20 @@ export function connectedTo(): { repo: string; branch: string; api: string } | u
 
 /** Lock every tab of this site: the key and the token are dropped; the saved copy stays, sealed. */
 export function lock(): void {
+  mark(true);
   open()?.postMessage({ kind: 'lock' } satisfies Message);
   dropAndReload();
 }
 
 /** Forget this device: lock, and remove the sealed access and the saved copy of the tasks. */
 export async function forget(): Promise<void> {
+  // 'forget' first: a tab of this version reloads on it; one of an older version knows only 'lock'.
+  open()?.postMessage({ kind: 'forget' } satisfies Message);
   open()?.postMessage({ kind: 'lock' } satisfies Message);
+  runHooks(true);
   mine = undefined;
   engine.stop();
+  mark(false);
   await forgetDevice();
   location.reload();
 }
@@ -185,9 +358,9 @@ function watchIdle(): void {
   for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
     addEventListener(ev, note, { passive: true, capture: true });
   }
-  setInterval(() => {
+  setInterval(async () => {
     const minutes = idleMinutes();
-    if (!minutes) return;
+    if (!minutes || (await deviceTrusted())) return;
     let last = noted;
     try {
       last = Math.max(last, Number(localStorage.getItem(ACTIVE) ?? 0));

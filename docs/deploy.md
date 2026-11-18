@@ -49,7 +49,23 @@ token that can read and write the repository's contents, and the encryption secr
 sealed with the secret (in OpenPGP's symmetric format, so `gpg --decrypt` opens it too); the key is derived from the
 secret and the salt in the branch's `meta`. Later visits ask only for the secret, and an unlocked tab unlocks the
 others. The device's copy of the tasks is sealed too. **Lock** and an idle time lock every tab; **Settings → General →
-Forget this device** removes the token and the copy. `config.json` beside the site fills in the form. A password
+Forget this device** removes the token and the copy. A locked tab keeps reminding (below).
+
+**Trusting a device.** *Trust this device*, on the unlock and connect forms and in **Settings → General → This device**,
+keeps the device unlocked: a reload, a new tab or a browser restart opens without the password, and the idle lock is off.
+The access and the key are kept sealed with a key the browser makes and page code cannot read out, but the browser may
+keep that key in its profile as it is, so anyone who can use this browser (or a copy of its profile) can open your tasks.
+Only this browser knows of it: nothing is synced. **Lock now** still locks, and a trusted device then stays locked, a
+reload too, until it is unlocked. Turning the switch off, or forgetting the device, removes what was kept.
+
+**Unlocking with a passkey.** **Settings → General → This device → Unlock with a passkey on this device** makes a passkey
+for the site (in the browser, the phone, or a password manager such as Bitwarden), and the unlock form then offers it
+before the password. The password always still works. On a device that is not trusted the passkey must give a secret
+of its own (WebAuthn's PRF extension), which seals the access and the key; a browser or password manager that does not
+give it is told so, and nothing is kept. On a trusted device any passkey works: its signature is checked, and it then
+opens the trusted copy, so it guards the screen after **Lock now**, not the data (turning trust off removes it). Each
+device sets up its own: a passkey synced to another device unlocks nothing there until it is set up there too. **Stop
+unlocking with a passkey** removes what was kept; the passkey itself stays in your password manager. `config.json` beside the site fills in the form. A password
 manager can keep the token and the secret as one login (the token as the username, the secret as the password): the
 form marks them so, Chrome and Edge offer to save them once connected, and a new device fills both from the saved login.
 
@@ -59,7 +75,8 @@ host and `ALLOW_HEADERS = Content-Type,Authorization`. GitHub allows it already.
 **How it differs from the Worker.**
 
 - The token and the encryption secret are in the browser (sealed at rest, in memory while unlocked), not on a server.
-  What an unlocked page runs can read them: the site's own code, the browser and its extensions.
+  What an unlocked page runs can read them: the site's own code, the browser and its extensions. A trusted device keeps
+  them openable by its browser profile.
 - Hooks run in the page (a WebAssembly Lua runner loaded on first use). Their network requests and an importer's or a
   calendar's URL are fetched by the browser, so those hosts must allow CORS.
 - The settings, the hooks script and the sealed hook secrets are kept on the branch under `web/`, as the git Worker
