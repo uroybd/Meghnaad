@@ -710,6 +710,23 @@ impl<R: GitRepo> ObjectStore for GitObjects<R> {
         }
     }
 
+    /// The folder listed once, and each file read by its blob id, which a host may keep (the page does): a file that
+    /// did not change is not fetched again.
+    async fn get_all(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        let dir = prefix.rsplit_once('/').map_or("", |(d, _)| d);
+        let entries = if dir.is_empty() {
+            self.0.root().await?.1
+        } else {
+            self.0.tree(dir).await?
+        };
+        let mut out = Vec::new();
+        for e in entries.into_iter().filter(|e| e.path.starts_with(prefix)) {
+            let bytes = self.0.blob(&e.id).await?;
+            out.push((e.path, bytes));
+        }
+        Ok(out)
+    }
+
     async fn list(&self, prefix: &str) -> Result<Vec<String>> {
         // The folder the prefix is in, listed once.
         let dir = prefix.rsplit_once('/').map_or("", |(d, _)| d);

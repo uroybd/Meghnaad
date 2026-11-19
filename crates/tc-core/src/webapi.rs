@@ -203,11 +203,8 @@ impl Reply {
 pub async fn read_tree<S: ObjectStore>(store: &S) -> Result<Tree, String> {
     let s = |e: crate::Error| e.to_string();
     let mut tree = Tree::new();
-    for name in store.list(RC_PREFIX).await.map_err(s)? {
-        let Some(path) = name.strip_prefix(RC_PREFIX) else {
-            continue;
-        };
-        if let Some(bytes) = store.get(&name).await.map_err(s)? {
+    for (name, bytes) in store.get_all(RC_PREFIX).await.map_err(s)? {
+        if let Some(path) = name.strip_prefix(RC_PREFIX) {
             tree.insert(path.to_owned(), String::from_utf8_lossy(&bytes).into_owned());
         }
     }

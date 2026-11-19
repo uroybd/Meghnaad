@@ -41,6 +41,18 @@ pub trait ObjectStore {
     /// (seconds since the epoch).
     async fn list_dated(&self, prefix: &str) -> Result<Vec<(String, i64)>>;
 
+    /// Every object starting with `prefix`, with its bytes. A store that can read a folder's files by what they hold
+    /// (a git branch: blob ids) reads it at less cost than a get by name for each.
+    async fn get_all(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        let mut out = Vec::new();
+        for name in self.list(prefix).await? {
+            if let Some(bytes) = self.get(&name).await? {
+                out.push((name, bytes));
+            }
+        }
+        Ok(out)
+    }
+
     /// Names of all objects starting with `prefix`, across all pages.
     async fn list(&self, prefix: &str) -> Result<Vec<String>> {
         Ok(self

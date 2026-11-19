@@ -275,6 +275,16 @@ async fn settings_files_share_the_branch() {
     let mut listed = files.list("web/rc/").await.unwrap();
     listed.sort();
     assert_eq!(listed, ["web/rc/taskrc", "web/rc/themes/dark.theme"]);
+    // The whole folder at once, by the files' blob ids.
+    let mut all = files.get_all("web/rc/").await.unwrap();
+    all.sort();
+    assert_eq!(
+        all,
+        [
+            ("web/rc/taskrc".to_owned(), b"x=1".to_vec()),
+            ("web/rc/themes/dark.theme".to_owned(), b"color=on".to_vec())
+        ]
+    );
     // An unchanged put makes no commit.
     let commits = repo.messages().len();
     files.put("web/config.json", b"{}").await.unwrap();

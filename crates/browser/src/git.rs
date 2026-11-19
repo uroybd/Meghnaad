@@ -27,52 +27,92 @@ fn set(target: &Object, key: &str, value: &JsValue) -> Result<()> {
         .map_err(|_| fail("could not build the request"))
 }
 
+/// The most bytes of files kept by [`BLOBS`] before it starts again.
+const BLOBS_MAX: usize = 8 << 20;
+
+thread_local! {
+    /// Files and folders read by their id (`git/blobs/<id>`, `git/trees/<id>`), kept for as long as the tab is open. An
+    /// id names its contents, so a kept answer can't go stale, and reading the settings folder again (on every change,
+    /// every file opened) costs the one request that finds the folder's id.
+    static BLOBS: std::cell::RefCell<(usize, std::collections::HashMap<String, Vec<u8>>)> = std::cell::RefCell::default();
+}
+
+/// A request whose answer can't change: a file by its blob id, or a folder by its tree id (not by a branch's name).
+fn blob_url(request: &HttpRequest) -> Option<&str> {
+    let url = request.url.as_str();
+    let by_id = |part: &str| {
+        url.split_once(part).is_some_and(|(_, id)| {
+            let id = id.split(['?', '/']).next().unwrap_or_default();
+            id.len() >= 40 && id.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+    };
+    (request.method == "GET" && (by_id("/git/blobs/") || by_id("/git/trees/"))).then_some(url)
+}
+
 impl Http for FetchHttp {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse> {
-        let global = js_sys::global();
-        let fetch: Function = Reflect::get(&global, &"fetch".into())
-            .map_err(|_| fail("fetching is not available"))?
-            .unchecked_into();
-        let headers = Object::new();
-        // A browser sets its own; asking for another only adds to the CORS check.
-        for (k, v) in request.headers.iter().filter(|(k, _)| *k != "user-agent") {
-            set(&headers, k, &v.into())?;
+        if let Some(body) = blob_url(&request).and_then(|url| BLOBS.with(|b| b.borrow().1.get(url).cloned())) {
+            return Ok(HttpResponse { status: 200, body });
         }
-        let init = Object::new();
-        set(&init, "method", &request.method.into())?;
-        set(&init, "headers", &headers)?;
-        // Every answer is read fresh: a cached listing would hide what another device just pushed.
-        set(&init, "cache", &"no-store".into())?;
-        if let Some(body) = &request.body {
-            set(&init, "body", &Uint8Array::from(body.as_slice()))?;
+        let res = fetch(&request).await?;
+        if let Some(url) = blob_url(&request).filter(|_| res.status == 200) {
+            BLOBS.with(|b| {
+                let mut b = b.borrow_mut();
+                if b.0 + res.body.len() > BLOBS_MAX {
+                    *b = Default::default();
+                }
+                b.0 += res.body.len();
+                b.1.insert(url.to_owned(), res.body.clone());
+            });
         }
-        let promise: Promise = fetch
-            .call2(&global, &request.url.as_str().into(), &init)
-            .map_err(|_| fail("the request was refused"))?
-            .unchecked_into();
-        // Offline, or a forge that does not allow this page (CORS), both arrive here.
-        let res = JsFuture::from(promise)
-            .await
-            .map_err(|_| fail("could not be reached (offline, or it does not allow this page: CORS)"))?;
-        let status = Reflect::get(&res, &"status".into())
-            .ok()
-            .and_then(|s| s.as_f64())
-            .unwrap_or(0.0) as u16;
-        let read: Function = Reflect::get(&res, &"arrayBuffer".into())
-            .map_err(|_| fail("its answer could not be read"))?
-            .unchecked_into();
-        let buffer: Promise = read
-            .call0(&res)
-            .map_err(|_| fail("its answer could not be read"))?
-            .unchecked_into();
-        let bytes = JsFuture::from(buffer)
-            .await
-            .map_err(|_| fail("its answer could not be read"))?;
-        Ok(HttpResponse {
-            status,
-            body: Uint8Array::new(&bytes).to_vec(),
-        })
+        Ok(res)
     }
+}
+
+async fn fetch(request: &HttpRequest) -> Result<HttpResponse> {
+    let global = js_sys::global();
+    let fetch: Function = Reflect::get(&global, &"fetch".into())
+        .map_err(|_| fail("fetching is not available"))?
+        .unchecked_into();
+    let headers = Object::new();
+    // A browser sets its own; asking for another only adds to the CORS check.
+    for (k, v) in request.headers.iter().filter(|(k, _)| *k != "user-agent") {
+        set(&headers, k, &v.into())?;
+    }
+    let init = Object::new();
+    set(&init, "method", &request.method.into())?;
+    set(&init, "headers", &headers)?;
+    // Every answer is read fresh: a cached listing would hide what another device just pushed.
+    set(&init, "cache", &"no-store".into())?;
+    if let Some(body) = &request.body {
+        set(&init, "body", &Uint8Array::from(body.as_slice()))?;
+    }
+    let promise: Promise = fetch
+        .call2(&global, &request.url.as_str().into(), &init)
+        .map_err(|_| fail("the request was refused"))?
+        .unchecked_into();
+    // Offline, or a forge that does not allow this page (CORS), both arrive here.
+    let res = JsFuture::from(promise)
+        .await
+        .map_err(|_| fail("could not be reached (offline, or it does not allow this page: CORS)"))?;
+    let status = Reflect::get(&res, &"status".into())
+        .ok()
+        .and_then(|s| s.as_f64())
+        .unwrap_or(0.0) as u16;
+    let read: Function = Reflect::get(&res, &"arrayBuffer".into())
+        .map_err(|_| fail("its answer could not be read"))?
+        .unchecked_into();
+    let buffer: Promise = read
+        .call0(&res)
+        .map_err(|_| fail("its answer could not be read"))?
+        .unchecked_into();
+    let bytes = JsFuture::from(buffer)
+        .await
+        .map_err(|_| fail("its answer could not be read"))?;
+    Ok(HttpResponse {
+        status,
+        body: Uint8Array::new(&bytes).to_vec(),
+    })
 }
 
 pub type Repo = ForgeRepo<FetchHttp>;
