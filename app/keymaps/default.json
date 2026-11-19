@@ -192,6 +192,7 @@
     "app.context": "choose the context",
     "app.stopTimer": "stop the started task (the timer in the top bar)",
     "app.reminders": "the reminder options, and turning them on or off",
+    "app.lock": "lock the static web app: its PIN screen on a trusted device with a PIN, else the full lock",
     "app.sync": "task sync, in the background",
     "app.undo": "task undo, on the terminal",
     "app.reload": "read everything again",
