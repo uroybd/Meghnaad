@@ -11,6 +11,8 @@ export interface Keymap {
   keys: Record<string, string[]>;
   /** Each context's keys and the action each runs. */
   contexts: Record<string, Record<string, string>>;
+  /** Each context's groups, the most particular first: where a `:` command typed there acts. */
+  groups?: Record<string, string[]>;
   /** What is wrong with `keys` or `web.keys`, one line each. */
   problems: string[];
 }
@@ -82,18 +84,33 @@ export type KeySection = (typeof KEY_SECTIONS)[number];
 
 /** One action of a section, for the Keybindings tab (`tc_core::keymap::Binding`). */
 export interface Binding {
+  /** The action it runs, or the command as written where it has words (`filter +home`). */
   action: string;
-  /** What it does, from the asset's `about`; empty for a name that is no action. */
+  /** What it does, from the asset's `about`. */
   about: string;
+  /** The command it runs, as a key bound to it is saved (`done` for `tasks.done`; spec 0025). */
+  command: string;
   /** Its keys by default. */
   defaults: string[];
   /** The keys set in this section (`[]` for none); null where nothing is set. */
   keys: string[] | null;
 }
 
+/** A binding in `settings.json` that runs no command: skipped, and warned of with a way to take it out. */
+export interface BadKey {
+  section: KeySection;
+  group: string;
+  /** The key, as written. */
+  key: string;
+  /** What it runs, as written. */
+  runs: string;
+  why: string;
+}
+
 export interface Bindings {
   sections: { id: KeySection; actions: Binding[] }[];
   problems: string[];
+  bad: BadKey[];
 }
 
 const NONE: Keymap = { keys: {}, contexts: {}, problems: [] };
@@ -156,10 +173,13 @@ export function stepKey(
   }
 }
 
-/** A command line that runs a command (`:tabn Tasks`, `:5`); null for a line that goes to `task` as it is. */
-export function commandLine(line: string): Call | null {
+/**
+ * A command line that runs a command (`:tabn Tasks`, `:5`); null for a line that goes to `task` as it is. `groups` are
+ * those of the context it is typed in, for a command that acts in several places.
+ */
+export function commandLine(line: string, groups: string[] = []): Call | null {
   try {
-    return callHelper<Call | null>('key_command_line', line);
+    return callHelper<Call | null>('key_command_line', line, groups);
   } catch {
     return null;
   }
@@ -179,7 +199,7 @@ export function actionOf(keymap: Keymap, e: KeyboardEvent, context = 'app'): str
 
 /** Every section's actions, the user's first; none until the defaults are there. */
 export function keyBindings(settings: Record<string, unknown>, defaults: Record<string, unknown> | null): Bindings {
-  const none: Bindings = { sections: KEY_SECTIONS.map((id) => ({ id, actions: [] })), problems: [] };
+  const none: Bindings = { sections: KEY_SECTIONS.map((id) => ({ id, actions: [] })), problems: [], bad: [] };
   if (!defaults) return none;
   try {
     return callHelper<Bindings>('keymap_bindings', settings, defaults);
@@ -189,17 +209,41 @@ export function keyBindings(settings: Record<string, unknown>, defaults: Record<
 }
 
 /**
- * `settings` with an action's keys in a section set (`[]` for none), or taken out (`null`), bound in its group with its
- * default keys it no longer has unbound; the rest as it was.
+ * `settings` with the keys of what runs a command (`done`, `filter +home`) or an action in a section set (`[]` for none),
+ * or taken out (`null`): saved as given, bound in `group` (else that of what it runs), with the default keys of its
+ * action it no longer has unbound; the rest as it was.
  */
 export function withBinding(
   settings: Record<string, unknown>,
   defaults: Record<string, unknown> | null,
   section: KeySection,
-  action: string,
+  runs: string,
   keys: string[] | null,
+  group: string | null = null,
 ): Record<string, unknown> {
-  return callHelper<Record<string, unknown>>('keymap_set', settings, section, action, keys, defaults);
+  return callHelper<Record<string, unknown>>('keymap_set', settings, section, runs, keys, defaults, group);
+}
+
+/** `settings` without one key of a group of a section: a binding that runs no command, taken out. */
+export function withoutKey(
+  settings: Record<string, unknown>,
+  defaults: Record<string, unknown> | null,
+  bad: BadKey,
+): Record<string, unknown> {
+  return callHelper<Record<string, unknown>>('keymap_unset', settings, bad.section, bad.group, bad.key, defaults);
+}
+
+/** What a command typed for a key runs (spec 0025): its call, what that does and each group it can be bound in, with
+ * the action it runs there (several for one that acts in several places, as `next`). */
+export type Checked = { call: Call; about: string; places: { group: string; action: string }[] } | { problem: string };
+
+/** A command typed for a key, checked: what it runs, or why it is no command. */
+export function checkCommand(runs: string, defaults: Record<string, unknown> | null): Checked {
+  try {
+    return callHelper<Checked>('key_command_check', runs, defaults);
+  } catch (e) {
+    return { problem: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /**

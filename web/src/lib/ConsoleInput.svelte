@@ -127,7 +127,7 @@
       return;
     }
     // `:` joined to a command runs it (`:tabn Tasks`, `:5`); any other line goes to `task` (spec 0020).
-    const call = commandLine(l);
+    const call = commandLine(l, store.keymap.groups?.[store.view === 'tasks' ? 'tasks' : 'app'] ?? []);
     if (call) {
       if (!runCall(call)) store.notify(`:${l.slice(1)} is the terminal app's.`, 'err');
       return;

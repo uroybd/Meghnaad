@@ -252,6 +252,108 @@ pub fn group_column(keys: &[Key]) -> Option<String> {
     keys.iter().find(|k| k.brk).map(|k| k.column.clone())
 }
 
+/// One change of `:sort` (spec 0025): a field and what to do to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Change {
+    /// `due+`, `due-`: sort by it so (added last when it is not a key yet), `due+/` grouping by it too.
+    Set { desc: bool, brk: bool },
+    /// `due--`: take it out.
+    Remove,
+    /// `due=`: turn its direction round.
+    Flip,
+    /// `due/`: group by it, or stop (added ascending when it is not a key yet).
+    Group,
+}
+
+/// A field as a sort names one: a word of letters, digits, `_` and `.` (`due`, `due.relative`, a UDA).
+fn field_name(s: &str) -> bool {
+    s.starts_with(|c: char| c.is_ascii_alphabetic())
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+}
+
+fn change(word: &str) -> Option<(&str, Change)> {
+    let (body, brk) = match word.strip_suffix('/') {
+        Some(b) => (b, true),
+        None => (word, false),
+    };
+    let (column, what) = if let Some(c) = body.strip_suffix("--") {
+        (c, (!brk).then_some(Change::Remove)?)
+    } else if let Some(c) = body.strip_suffix('=') {
+        (c, (!brk).then_some(Change::Flip)?)
+    } else if let Some(c) = body.strip_suffix('+') {
+        (c, Change::Set { desc: false, brk })
+    } else if let Some(c) = body.strip_suffix('-') {
+        (c, Change::Set { desc: true, brk })
+    } else if brk {
+        (body, Change::Group)
+    } else {
+        return None;
+    };
+    field_name(column).then_some((column, what))
+}
+
+/// A sort as `:sort replace` takes it: keys with a direction, comma between (`due+,urgency-`, `project+/`).
+fn whole(words: &[String]) -> Option<Vec<Key>> {
+    let parts: Vec<&str> = words
+        .iter()
+        .flat_map(|w| w.split(','))
+        .filter(|p| !p.is_empty())
+        .collect();
+    let all = !parts.is_empty()
+        && parts.iter().all(|p| {
+            let body = p.strip_suffix('/').unwrap_or(p);
+            body.strip_suffix(['+', '-']).is_some_and(field_name)
+        });
+    all.then(|| parse(Some(&parts.join(","))))
+}
+
+/// Whether `words` are changes `:sort` takes: each a field with `+`, `-`, `--`, `=` or `/` after it, or `replace` and a
+/// whole sort.
+///
+/// # Errors
+///
+/// What is wrong, for a person to read.
+pub fn edit_words(words: &[String]) -> Result<(), String> {
+    if words.first().is_some_and(|w| w == "replace") {
+        return whole(&words[1..])
+            .map(|_| ())
+            .ok_or_else(|| "sort replace takes a whole sort, each key with + or - (due+,urgency-)".to_owned());
+    }
+    match words.iter().find(|w| change(w).is_none()) {
+        Some(w) => Err(format!(
+            "“{w}” is no change of the sort: a field with + (ascending), - (descending), -- (out), = (the other way) or / (grouped)"
+        )),
+        None => Ok(()),
+    }
+}
+
+/// `current` with `words` done to it, in order (see [`edit_words`]); a word that is none is passed over.
+pub fn edit(current: &[Key], words: &[String]) -> Vec<Key> {
+    if words.first().is_some_and(|w| w == "replace") {
+        return whole(&words[1..]).unwrap_or_else(|| current.to_vec());
+    }
+    let mut keys = current.to_vec();
+    for (column, what) in words.iter().filter_map(|w| change(w)) {
+        let column = base_column(column);
+        let at = keys.iter().position(|k| k.column == column);
+        match (what, at) {
+            (Change::Set { desc, brk }, Some(i)) => {
+                keys[i].desc = desc;
+                keys[i].brk = keys[i].brk || brk;
+            }
+            (Change::Set { desc, brk }, None) => keys.push(key(column, desc, brk)),
+            (Change::Remove, Some(i)) => {
+                keys.remove(i);
+            }
+            (Change::Flip, Some(i)) => keys[i].desc = !keys[i].desc,
+            (Change::Group, Some(i)) => keys[i].brk = !keys[i].brk,
+            (Change::Group, None) => keys.push(key(column, false, true)),
+            (Change::Remove | Change::Flip, None) => {}
+        }
+    }
+    keys
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,5 +544,31 @@ mod tests {
         assert_eq!(group_column(&keys).as_deref(), Some("project"));
         assert_eq!(s(&clear_groups(&keys)), "project+,outcome+,due+");
         assert_eq!(group_column(&clear_groups(&keys)), None);
+    }
+
+    #[test]
+    fn sort_words_change_the_sort_in_place() {
+        let w = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
+        let now = parse(Some("due+,urgency-,project+/"));
+        let out = |words: &str| serialize(&edit(&now, &w(words)));
+        assert_eq!(out("due-"), "due-,urgency-,project+/", "in its place");
+        assert_eq!(out("tags+"), "due+,urgency-,project+/,tags+", "added last");
+        assert_eq!(out("urgency--"), "due+,project+/");
+        assert_eq!(out("due="), "due-,urgency-,project+/");
+        assert_eq!(out("project/"), "due+,urgency-,project+", "grouping turned off");
+        assert_eq!(out("due/"), "due+/,urgency-,project+/");
+        assert_eq!(out("tags-/"), "due+,urgency-,project+/,tags-/");
+        assert_eq!(
+            out("tags= tags--"),
+            "due+,urgency-,project+/",
+            "nothing to turn round or take out"
+        );
+        assert_eq!(out("due- project-- tags+"), "due-,urgency-,tags+", "in order");
+        assert_eq!(out("replace entry+,id-"), "entry+,id-");
+        assert_eq!(out("replace entry+ id-"), "entry+,id-");
+        assert_eq!(edit_words(&w("due+ urgency-- tags= project/")), Ok(()));
+        for bad in ["due", "+", "due+-x", "due--/", "replace", "replace due", "9due+"] {
+            assert!(edit_words(&w(bad)).is_err(), "{bad}");
+        }
     }
 }

@@ -61,12 +61,11 @@ impl App {
                 }
             }
             "tasks.add" if !words.is_empty() => self.quick(&[vec!["add".to_owned()], call.args].concat()),
+            // Each word changes the sort in place (`due-`, `project--`), or `replace` sets it whole (spec 0025).
             "tasks.sort" if !words.is_empty() => {
-                let report = self.report_name.clone();
-                self.filter = format!("{} rc.report.{report}.sort:{}", self.filter, call.args.join(","))
-                    .trim()
-                    .to_owned();
-                self.reload();
+                let now = tc_core::sortspec::parse(self.sort_in_force().as_deref());
+                let keys = tc_core::sortspec::edit(&now, &call.args);
+                self.apply_sort(&keys);
             }
             "app.context" if !words.is_empty() => self.quick(&[vec!["context".to_owned()], call.args].concat()),
             "tasks.modify" | "tasks.annotate" | "tasks.denotate" if !words.is_empty() => {

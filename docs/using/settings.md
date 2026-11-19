@@ -41,9 +41,12 @@ with `+` or `-`: `/`, `G`, `ctrl+k`, `ctrl-shift-tab`, `enter`, `esc`, `space`, 
 after the other are written with a space between them (`g g`, `ctrl+k ctrl+s`), or two characters together (`gg`,
 `g1`).
 
-Your keys are bound by group, each key to what it runs: an action, or a command with its words as the `:` command line
-takes it (`tabn Tasks`; the commands are vim's where vim has them, listed by `?` and in
-[Commands](../commands.md)). `null` unbinds a key.
+Your keys are bound by group, each key to the command it runs, with its words, as the `:` command line takes it
+(`done`, `tabn Tasks`, `filter +home`; the commands are vim's where vim has them, listed by `?` and in
+[Commands](../commands.md)). Every action has a command, and an action's name is read as its command, so
+`"x": "tasks.done"` and `"x": "done"` are the same key. A command that means something on several pages (`next`, `open`,
+`back`, `export`) runs what it means in the group it is bound in, and on the `:` line, on the page it is typed on.
+`null` unbinds a key.
 
 ```json
 {
@@ -63,9 +66,11 @@ before the keys of every group around it, on that page only (a `tasks` key befor
 mean something on one page and something else elsewhere. The groups are `app`, `page`, `move`, `tasks`, `sort`,
 `sidebar`, `lists`, `info`, `calendar`, `burndown`, `boards`, `boards.list`, `console` and the Settings tabs'
 (`settings`, `settings.general`, `settings.commands`, `settings.boards`, `settings.keys`, `settings.sync`,
-`settings.theme`). A group that is none, a key that can't be read, what is no action or command, a key that starts a
-longer one (`g` beside `gg`, which could then never be pressed) and two of your keys for one key where both act are said
-(on **Keybindings**, and in the terminal app's Settings page), and the rest still applies. The default keys also say in a
+`settings.theme`). A key whose command is malformed (no such command or action, not enough of a name to say which,
+words it does not take, or none where it needs one: `done 3`, `burndown`, `lock now`) is skipped, so it does nothing,
+and **Keybindings** warns of it at the top, with **Take out**. A group that is none, a key that can't be read, a key
+that starts a longer one (`g` beside `gg`, which could then never be pressed) and two of your keys for one key where both
+act are said (on **Keybindings**, and in the terminal app's Settings page), and the rest still applies. The default keys also say in a
 line what each action does (`about`), which is what the lists of keys show.
 
 `settings.json` says which shape it is written in (`"version"`). A file without one is version 1, whose keys listed each action with its keys
@@ -107,9 +112,13 @@ The phone has `/` alone, with a hardware keyboard; the terminal app's are in [it
 you set; **Show defaults** lists the others too, with their keys drawn faint. The search at the top narrows every
 section to the actions whose name, line or key has what you type in it (`done`, `ctrl+k`).
 
-**Add** in a section searches its actions, each with the keys it has now. Pick one, then press the key, or type it
-(`ctrl+k`) where a key can't be pressed, and **Add key**; **No key** leaves the action without one. A key you add
-replaces the action's default keys, and a second one goes beside the first. **✕** takes out what you set, so the
+**Add** in a section searches its actions, each with the command it runs and the keys it has now, and ends with **Add
+a command**. Pick one, and the **Command** field has its command (`done`, `info details`), to keep or to change: a preset
+is a start for a command of your own (`filter` becomes `filter +home`). **Add a command** opens the same form with the
+field empty. Under the field is what the command runs and does, or, while it is malformed, why; a command that acts on
+several pages (`next`) asks **Where**. Then press the key, or type it (`ctrl+k`) where a key can't be pressed, and
+**Add key**, which stays off while the command is malformed; **No key** leaves it without one. The key is saved as the
+command. A key you add replaces the default keys of what it runs, and a second one goes beside the first. **✕** takes out what you set, so the
 action has its defaults again. Nothing is saved until **Apply**, and the tab shows a dot while there are changes. The
 phone has the same tab, and the terminal app [a Keybindings section](../terminal.md#the-settings-page) of its own.
 

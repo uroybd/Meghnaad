@@ -81,7 +81,25 @@ pub struct Keymap {
     pub keys: BTreeMap<String, Vec<String>>,
     /// Each context's keys and the action each runs.
     pub contexts: BTreeMap<String, BTreeMap<String, String>>,
+    /// Each context's groups, the most particular first: where a command typed there acts ([`command_line_in`]).
+    pub groups: BTreeMap<String, Vec<String>>,
     pub problems: Vec<String>,
+    /// The user's bindings that run no command, skipped (each is among `problems` too).
+    pub bad: Vec<BadKey>,
+}
+
+/// A binding in `settings.json` that runs no command: it is skipped, and a Keybindings page warns of it with a way to
+/// take it out ([`without_key`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BadKey {
+    /// Where: `general` (`keys`) or a front end's own (`tui`, `web`, `mobile`).
+    pub section: String,
+    pub group: String,
+    /// The key as written.
+    pub key: String,
+    /// What it runs, as written.
+    pub runs: String,
+    pub why: String,
 }
 
 impl Keymap {
@@ -288,10 +306,7 @@ pub fn resolve(defaults: &Value, settings: &Value, platform: Platform) -> Keymap
         keys.insert(name, list);
     }
     // Every action of any front end, so a name for another one's is not taken for a mistake.
-    let mut known: BTreeSet<String> = BTreeSet::new();
-    for v in std::iter::once(defaults.get("keys")).chain(Platform::ALL.map(|p| own_keys(defaults, p))) {
-        known.extend(v.and_then(Value::as_object).into_iter().flat_map(Map::keys).cloned());
-    }
+    let known = known_actions(defaults);
     let contexts_of = |p: Platform| -> Vec<(String, Vec<String>)> {
         defaults
             .get(p.key())
@@ -331,6 +346,7 @@ pub fn resolve(defaults: &Value, settings: &Value, platform: Platform) -> Keymap
     };
 
     let mut by_user: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut bad: Vec<BadKey> = Vec::new();
     let place = format!("{}.keys", platform.key());
     for (own, at, value) in [
         (false, "keys", settings.get("keys")),
@@ -362,17 +378,31 @@ pub fn resolve(defaults: &Value, settings: &Value, platform: Platform) -> Keymap
                 };
                 let name = match v {
                     Value::Null => None,
-                    Value::String(s) => match call_of(s).map(|c| c.action) {
-                        Some(a) if known.contains(&a) && keys.contains_key(&a) => Some(s.clone()),
+                    Value::String(s) => match check(s, &[group.as_str()], Some(&known)).and_then(|c| {
+                        // A command another front end's action runs is not wrong here; one with no action is.
+                        known
+                            .contains(&c.action)
+                            .then_some(c.action)
+                            .ok_or_else(|| format!("“{}” is no action", s.trim()))
+                    }) {
+                        Ok(a) if keys.contains_key(&a) => in_group(s, group).ok(),
                         // Shared keys may name another front end's actions; a front end's own may not.
-                        Some(a) if known.contains(&a) => {
+                        Ok(a) => {
                             if own {
                                 problems.push(format!("{at}: the {} app has no “{a}”", platform.key()));
                             }
                             continue;
                         }
-                        _ => {
-                            problems.push(format!("{at}.{group}: “{s}” is no action or command"));
+                        Err(why) => {
+                            let section = if own { platform.key() } else { "general" };
+                            problems.push(bad_line(at, group, text, s, &why));
+                            bad.push(BadKey {
+                                section: section.to_owned(),
+                                group: group.clone(),
+                                key: text.clone(),
+                                runs: s.clone(),
+                                why,
+                            });
                             continue;
                         }
                     },
@@ -459,11 +489,19 @@ pub fn resolve(defaults: &Value, settings: &Value, platform: Platform) -> Keymap
         by_context.insert(context.clone(), map);
     }
 
+    let groups = contexts.into_iter().collect();
     Keymap {
         keys,
         contexts: by_context,
+        groups,
         problems,
+        bad,
     }
+}
+
+/// How a binding that runs no command is said, among a keymap's problems.
+fn bad_line(at: &str, group: &str, key: &str, runs: &str, why: &str) -> String {
+    format!("{at}.{group}: {key} runs “{}”, which is skipped: {why}", runs.trim())
 }
 
 const MODIFIERS: [&str; 4] = ["ctrl", "alt", "shift", "meta"];
@@ -660,54 +698,221 @@ fn display_one(chord: &str) -> String {
 }
 
 /// A command of the command line (`:tabn 3`) and of a key bound to one (`"g h": "filter +home"`), as vim names it where
-/// vim has it: its full name, how much of it must be written (vim's `tabn[ext]` is 4), and the action it runs. What it
+/// vim has it. Commands are what keys run (spec 0025): every action but `app.commandLine` (the `:` itself) is run by
+/// one, and an action's name in `settings.json` is read as that command, its preset ([`preset_of`]). What a command
 /// does, the words it takes and since when are written for people in `web/public/keymaps/commands.json`, which every
-/// front end carries; a test keeps its names and shortest forms the same as these.
+/// front end carries; a test keeps its names, shortest forms and whether it takes words the same as these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Command {
     pub name: &'static str,
+    /// How much of the name must be written (vim's `tabn[ext]` is 4).
     pub shortest: usize,
-    pub action: &'static str,
+    /// What it runs with nothing after it: one action, or one for each place it acts in (`next` is the calendar's
+    /// next month and a board's next board), the one of the place it is used in. None: it needs a word.
+    pub bare: &'static [&'static str],
+    /// A word that runs an action of its own, alone after the name (`info details`, `sort raise`).
+    pub subs: &'static [(&'static str, &'static str)],
+    /// What other words it takes.
+    pub words: Words,
 }
 
-const fn cmd(name: &'static str, shortest: usize, action: &'static str) -> Command {
-    Command { name, shortest, action }
+/// The words a command takes, besides its [`Command::subs`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Words {
+    None,
+    /// Any words, for this action (`filter +home`).
+    Any(&'static str),
+    /// One of these, for this action (`lock pin`).
+    OneOf(&'static str, &'static [&'static str]),
+    /// A page's number (1 to 9) or the start of its name, for `page.go`.
+    Page,
+    /// Changes to the report's sort, for `tasks.sort` ([`crate::sortspec::edit`]).
+    Sort,
 }
+
+const fn cmd(name: &'static str, shortest: usize, bare: &'static [&'static str]) -> Command {
+    Command {
+        name,
+        shortest,
+        bare,
+        subs: &[],
+        words: Words::None,
+    }
+}
+
+const fn with(
+    name: &'static str,
+    shortest: usize,
+    bare: &'static [&'static str],
+    subs: &'static [(&'static str, &'static str)],
+    words: Words,
+) -> Command {
+    Command {
+        name,
+        shortest,
+        bare,
+        subs,
+        words,
+    }
+}
+
+/// The pages `tabnext` names, in the order of the top bar, Settings last.
+pub const PAGES: [&str; 9] = [
+    "tasks", "projects", "tags", "summary", "calendar", "burndown", "boards", "console", "settings",
+];
 
 /// Every command, vim's first (with vim's shortest forms), then the ones vim has none of. A row number (`:5`), `:$`,
 /// `:+3` and `:-3` move as in vim and are not in the table.
-pub const COMMANDS: [Command; 31] = [
-    cmd("tabnext", 4, "page.next"),
-    cmd("tabprevious", 4, "page.prev"),
-    cmd("tabNext", 4, "page.prev"),
-    cmd("tabfirst", 6, "page.first"),
-    cmd("tabrewind", 4, "page.first"),
-    cmd("tablast", 4, "page.last"),
-    cmd("quit", 1, "app.quit"),
-    cmd("undo", 1, "app.undo"),
-    cmd("write", 1, "app.sync"),
-    cmd("edit", 1, "app.reload"),
-    cmd("help", 1, "app.help"),
-    cmd("filter", 4, "tasks.filter"),
-    cmd("sort", 3, "tasks.sort"),
-    cmd("delete", 1, "tasks.delete"),
-    cmd("mark", 2, "tasks.mark"),
-    cmd("open", 1, "tasks.open"),
-    cmd("done", 2, "tasks.done"),
-    cmd("start", 3, "tasks.start"),
-    cmd("stop", 3, "tasks.stop"),
-    cmd("toggle", 2, "tasks.toggle"),
-    cmd("modify", 3, "tasks.modify"),
-    cmd("annotate", 2, "tasks.annotate"),
-    cmd("denotate", 3, "tasks.denotate"),
-    cmd("duplicate", 3, "tasks.duplicate"),
-    cmd("info", 2, "tasks.info"),
-    cmd("add", 2, "tasks.add"),
-    cmd("report", 3, "tasks.report"),
-    cmd("context", 3, "app.context"),
-    cmd("sync", 2, "app.sync"),
-    cmd("review", 3, "app.review"),
-    cmd("lock", 4, "app.lock"),
+pub const COMMANDS: [Command; 54] = [
+    with("tabnext", 4, &["page.next"], &[], Words::Page),
+    cmd("tabprevious", 4, &["page.prev"]),
+    cmd("tabNext", 4, &["page.prev"]),
+    cmd("tabfirst", 6, &["page.first"]),
+    cmd("tabrewind", 4, &["page.first"]),
+    cmd("tablast", 4, &["page.last"]),
+    cmd("quit", 1, &["app.quit"]),
+    cmd("undo", 1, &["app.undo"]),
+    cmd("write", 1, &["app.sync"]),
+    with(
+        "edit",
+        1,
+        &["app.reload"],
+        &[("settings", "settings.editFile")],
+        Words::None,
+    ),
+    cmd("help", 1, &["app.help"]),
+    with(
+        "filter",
+        4,
+        &["tasks.filter", "app.filter"],
+        &[],
+        Words::Any("tasks.filter"),
+    ),
+    with(
+        "sort",
+        3,
+        &["tasks.sort"],
+        &[
+            ("+", "sort.add"),
+            ("--", "sort.remove"),
+            ("=", "sort.reverse"),
+            ("/", "sort.group"),
+            ("raise", "sort.raise"),
+            ("lower", "sort.lower"),
+            ("reset", "sort.reset"),
+            ("apply", "sort.apply"),
+            ("cancel", "sort.cancel"),
+        ],
+        Words::Sort,
+    ),
+    with(
+        "delete",
+        1,
+        &["tasks.delete"],
+        &[("completed", "tasks.clearCompleted")],
+        Words::None,
+    ),
+    with(
+        "mark",
+        2,
+        &["tasks.mark"],
+        &[("all", "tasks.markAll"), ("range", "tasks.markRange")],
+        Words::None,
+    ),
+    cmd(
+        "open",
+        1,
+        &["tasks.open", "lists.open", "boards.list.open", "settings.boards.open"],
+    ),
+    cmd("done", 2, &["tasks.done"]),
+    cmd("start", 3, &["tasks.start"]),
+    cmd("stop", 3, &["tasks.stop"]),
+    cmd("toggle", 2, &["tasks.toggle"]),
+    with("modify", 3, &["tasks.modify"], &[], Words::Any("tasks.modify")),
+    with("annotate", 2, &["tasks.annotate"], &[], Words::Any("tasks.annotate")),
+    with("denotate", 3, &["tasks.denotate"], &[], Words::Any("tasks.denotate")),
+    cmd("duplicate", 3, &["tasks.duplicate"]),
+    with(
+        "info",
+        2,
+        &["tasks.info"],
+        &[
+            ("details", "info.details"),
+            ("recurrence", "info.recurrence"),
+            ("timelog", "info.timeLog"),
+            ("annotations", "info.annotations"),
+            ("unknown", "info.unknown"),
+            ("raw", "info.raw"),
+        ],
+        Words::None,
+    ),
+    with("add", 2, &["tasks.add", "app.add"], &[], Words::Any("tasks.add")),
+    with(
+        "report",
+        3,
+        &["tasks.report", "sidebar.open"],
+        &[],
+        Words::Any("tasks.report"),
+    ),
+    with("context", 3, &["app.context"], &[], Words::Any("app.context")),
+    cmd("sync", 2, &["app.sync"]),
+    cmd("review", 3, &["app.review"]),
+    with("lock", 4, &["app.lock"], &[], Words::OneOf("app.lock", &["pin", "key"])),
+    cmd("next", 1, &["calendar.next", "boards.next"]),
+    cmd("previous", 4, &["calendar.prev", "boards.prev"]),
+    cmd("snext", 2, &["move.sectionNext"]),
+    cmd("sprevious", 3, &["move.sectionPrev"]),
+    cmd("pagedown", 5, &["move.pageDown"]),
+    cmd("pageup", 5, &["move.pageUp"]),
+    cmd("halfdown", 5, &["move.halfPageDown"]),
+    cmd("halfup", 5, &["move.halfPageUp"]),
+    cmd("prompt", 3, &["app.prompt"]),
+    cmd("sidebar", 2, &["app.sidebar"]),
+    cmd("hidden", 3, &["sidebar.hidden"]),
+    cmd("back", 2, &["app.back", "boards.close"]),
+    cmd("stopall", 5, &["app.stopTimer"]),
+    cmd("reminders", 3, &["app.reminders"]),
+    cmd("export", 2, &["tasks.export", "boards.export"]),
+    cmd("clear", 2, &["console.clear"]),
+    with(
+        "burndown",
+        2,
+        &[],
+        &[
+            ("day", "burndown.daily"),
+            ("week", "burndown.weekly"),
+            ("month", "burndown.monthly"),
+        ],
+        Words::None,
+    ),
+    with(
+        "command",
+        3,
+        &["tasks.command"],
+        &[
+            ("add", "settings.commands.add"),
+            ("edit", "settings.commands.edit"),
+            ("delete", "settings.commands.delete"),
+        ],
+        Words::None,
+    ),
+    with(
+        "key",
+        3,
+        &[],
+        &[
+            ("add", "settings.keys.add"),
+            ("remove", "settings.keys.remove"),
+            ("none", "settings.keys.none"),
+            ("defaults", "settings.keys.defaults"),
+            ("search", "settings.keys.search"),
+        ],
+        Words::None,
+    ),
+    cmd("home", 2, &["settings.general.home"]),
+    cmd("syncwhen", 5, &["settings.sync.change"]),
+    cmd("theme", 2, &["settings.theme.preset"]),
+    cmd("shading", 2, &["settings.theme.shading"]),
 ];
 
 /// What a key or a command line asks for: an action, with the words after it and a count (`5j`).
@@ -737,12 +942,100 @@ pub fn command_named(word: &str) -> Option<&'static Command> {
         .find(|c| word.len() >= c.shortest && c.name.starts_with(word))
 }
 
-/// What an expression asks for: a command and its words (`tabn 3`, `filter +home`, split as the engine splits a line,
-/// so a word needs quotes only when it has a space), a row as vim writes one (`5`, `$`, `+3`, `-3`), or an action's
-/// own name with any words after it (`tasks.done`). `None` for anything else.
-pub fn call_of(expression: &str) -> Option<Call> {
+/// A command as vim writes it, the part that may be left out in brackets: `tabn[ext]`.
+pub fn written(c: &Command) -> String {
+    if c.shortest < c.name.len() {
+        format!("{}[{}]", &c.name[..c.shortest], &c.name[c.shortest..])
+    } else {
+        c.name.to_owned()
+    }
+}
+
+/// `a, b or c`.
+fn either(words: &[&str]) -> String {
+    match words {
+        [] => String::new(),
+        [one] => format!("“{one}”"),
+        [rest @ .., last] => format!(
+            "{} or “{last}”",
+            rest.iter().map(|w| format!("“{w}”")).collect::<Vec<_>>().join(", ")
+        ),
+    }
+}
+
+/// Of `actions`, the one acting in the first of `groups` that one acts in; the first where none does.
+fn in_place<'a>(actions: &[&'a str], groups: &[&str]) -> Option<&'a str> {
+    groups
+        .iter()
+        .find_map(|g| actions.iter().find(|a| section_of(a) == *g))
+        .or_else(|| actions.first())
+        .copied()
+}
+
+/// Whether `args` are words `words` takes, and the action they are for.
+fn words_for(name: &str, words: Words, args: &[String]) -> Result<&'static str, String> {
+    match words {
+        Words::None => Err(format!("{name} takes no words")),
+        Words::Any(a) => Ok(a),
+        Words::OneOf(a, list) => match args {
+            [w] if list.contains(&w.as_str()) => Ok(a),
+            _ => Err(format!("{name} takes {}", either(list))),
+        },
+        Words::Page => match args {
+            [w] if page_named(w).is_some() => Ok("page.go"),
+            _ => Err(format!(
+                "{name} takes a page's number (1 to 9) or the start of its name"
+            )),
+        },
+        Words::Sort => crate::sortspec::edit_words(args).map(|()| "tasks.sort"),
+    }
+}
+
+/// A page by its number (1 to 9) or the start of its name, in any case.
+pub fn page_named(word: &str) -> Option<&'static str> {
+    if let Ok(n) = word.parse::<usize>() {
+        return n.checked_sub(1).and_then(|i| PAGES.get(i)).copied();
+    }
+    let w = word.to_lowercase();
+    (!w.is_empty()).then(|| PAGES.iter().find(|p| p.starts_with(&w)).copied())?
+}
+
+/// What `c` with `args` after it runs, in a place where `groups` act.
+fn command_call(c: &Command, args: Vec<String>, groups: &[&str]) -> Result<Call, String> {
+    let subs: Vec<&str> = c.subs.iter().map(|(w, _)| *w).collect();
+    if args.is_empty() {
+        return match in_place(c.bare, groups) {
+            Some(a) => Ok(Call::of(a, args)),
+            None => Err(format!("{} needs a word: {}", c.name, either(&subs))),
+        };
+    }
+    if let [w] = args.as_slice() {
+        if let Some((_, a)) = c.subs.iter().find(|(s, _)| s == w) {
+            return Ok(Call::of(a, Vec::new()));
+        }
+    }
+    match (c.words, subs.is_empty()) {
+        (Words::None, false) => Err(format!("{} takes {}", c.name, either(&subs))),
+        (words, _) => words_for(c.name, words, &args).map(|a| Call::of(a, args)),
+    }
+}
+
+/// What an expression asks for, or why it is no command: a command and its words (`tabn 3`, `filter +home`, split as
+/// the engine splits a line, so a word needs quotes only when it has a space), a row as vim writes one (`5`, `$`, `+3`,
+/// `-3`), or an action's own name, with words where its command takes them (`tasks.done`, `tasks.filter +home`).
+/// `groups` are the groups acting where it is used, most particular first: a command that acts in several places
+/// (`next`) runs the action of the first of them it acts in. `known`, when given, are the actions there are: another
+/// dotted name is no action.
+///
+/// # Errors
+///
+/// The reason it is no command: an empty one, a name that is no command or not enough of one, words it does not take,
+/// or none where it needs one.
+pub fn check(expression: &str, groups: &[&str], known: Option<&BTreeSet<String>>) -> Result<Call, String> {
     let mut words = crate::filter::split_words(expression).into_iter();
-    let first = words.next()?;
+    let Some(first) = words.next() else {
+        return Err("an empty command".into());
+    };
     let args: Vec<String> = words.collect();
     let number = |s: &str| {
         (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
@@ -752,14 +1045,18 @@ pub fn call_of(expression: &str) -> Option<Call> {
     };
     if args.is_empty() {
         if first == "$" {
-            return Some(Call::of("move.last", Vec::new()));
+            return Ok(Call::of("move.last", Vec::new()));
+        }
+        // Row 1 is the first, which a count before it makes a row (`5gg`, as in vim).
+        if first == "1" {
+            return Ok(Call::of("move.first", Vec::new()));
         }
         if let Some(n) = number(&first) {
-            return Some(Call::of("move.row", vec![n.to_string()]));
+            return Ok(Call::of("move.row", vec![n.to_string()]));
         }
         for (sign, action) in [('+', "move.down"), ('-', "move.up")] {
             if let Some(n) = first.strip_prefix(sign).and_then(number) {
-                return Some(Call {
+                return Ok(Call {
                     count: Some(n),
                     ..Call::of(action, Vec::new())
                 });
@@ -767,26 +1064,112 @@ pub fn call_of(expression: &str) -> Option<Call> {
         }
     }
     if first.contains('.') && !first.starts_with('.') && !first.ends_with('.') {
-        return Some(Call::of(&first, args));
+        if known.is_some_and(|k| !k.contains(&first)) {
+            return Err(format!("“{first}” is no action"));
+        }
+        if args.is_empty() {
+            return Ok(Call::of(&first, args));
+        }
+        // Words go to an action whose command takes them, as they would after the command.
+        let taker = COMMANDS.iter().find(|c| match c.words {
+            Words::Any(a) | Words::OneOf(a, _) => a == first,
+            Words::Page => first == "page.go",
+            Words::Sort => first == "tasks.sort",
+            Words::None => false,
+        });
+        return match taker {
+            Some(c) => words_for(&first, c.words, &args).map(|_| Call::of(&first, args)),
+            None => Err(format!("{first} takes no words")),
+        };
     }
-    let c = command_named(&first)?;
-    // `tabn` alone is the next page, `tabn 3` and `tabn Tasks` a page of its own.
-    let action = if c.action == "page.next" && !args.is_empty() {
-        "page.go"
-    } else {
-        c.action
+    let Some(c) = command_named(&first) else {
+        let could: Vec<&str> = COMMANDS
+            .iter()
+            .filter(|c| c.name.starts_with(&first))
+            .map(|c| c.name)
+            .collect();
+        return Err(if could.is_empty() {
+            format!("“{first}” is no command")
+        } else {
+            format!("“{first}” is not enough to say which: {}", either(&could))
+        });
     };
-    Some(Call::of(action, args))
+    command_call(c, args, groups)
+}
+
+/// What an expression asks for (see [`check`]), wherever it is used; `None` for anything that is no command.
+pub fn call_of(expression: &str) -> Option<Call> {
+    check(expression, &[], None).ok()
+}
+
+/// The command an action runs, as a key bound to it is saved and the Keybindings page shows it: `done` for
+/// `tasks.done`, `info details` for `info.details`, `tabnext tasks` for `page.tasks`. `None` for `app.commandLine`
+/// (the `:` itself) and a name that is no action.
+pub fn preset_of(action: &str) -> Option<String> {
+    let own = match action {
+        "move.first" => Some("1"),
+        "move.last" => Some("$"),
+        "move.down" => Some("+1"),
+        "move.up" => Some("-1"),
+        "move.row" => Some("5"),
+        "page.go" => Some("tabnext 1"),
+        _ => None,
+    };
+    if let Some(p) = own {
+        return Some(p.to_owned());
+    }
+    if let Some(page) = action.strip_prefix("page.").filter(|p| PAGES.contains(p)) {
+        return Some(format!("tabnext {page}"));
+    }
+    for c in &COMMANDS {
+        if let Some((w, _)) = c.subs.iter().find(|(_, a)| *a == action) {
+            return Some(format!("{} {w}", c.name));
+        }
+    }
+    // The command named as the action is (`sync` before vim's `write`), else the first that runs it.
+    let last = action.rsplit('.').next().unwrap_or(action).to_lowercase();
+    let runs: Vec<&Command> = COMMANDS.iter().filter(|c| c.bare.contains(&action)).collect();
+    runs.iter()
+        .find(|c| c.name == last)
+        .or_else(|| runs.first())
+        .map(|c| c.name.to_owned())
+}
+
+/// What a binding is listed as on a Keybindings page, in `group`: the action it runs when it is an action alone
+/// (`done` and `tasks.done` are both `tasks.done`), else the command as written (`filter +home`).
+pub fn row_name(runs: &str, group: &str) -> String {
+    match check(runs, &[group], None) {
+        Ok(c) if c.args.is_empty() && c.count.is_none() => c.action,
+        _ => runs.trim().to_owned(),
+    }
+}
+
+/// A binding as a context keeps it, in `group`: the action alone where it is one (`sort raise` is `sort.raise`, and
+/// `next` bound for boards `boards.next`, so a screen matching on the action finds it), else the expression as written
+/// (`filter +home`, `+3`), whose words say the same wherever it is.
+fn in_group(runs: &str, group: &str) -> Result<String, String> {
+    let c = check(runs, &[group], None)?;
+    Ok(if c.count.is_none() && c.args.is_empty() {
+        c.action
+    } else {
+        runs.trim().to_owned()
+    })
 }
 
 /// A command line that runs a command rather than going to `task`: `:` first, joined to a command (`:tabn Tasks`,
 /// `:5`, `:done`). `None` for any other line, which goes to `task` as it is (`: tabn`, `:foo`, `!(+home)`).
 pub fn command_line(line: &str) -> Option<Call> {
+    command_line_in(line, &[])
+}
+
+/// [`command_line`] where `groups` act (a [`Keymap`]'s `groups` of the context it is typed in): `:next` on the
+/// calendar is its next month.
+pub fn command_line_in(line: &str, groups: &[&str]) -> Option<Call> {
     let rest = line.strip_prefix(':')?;
     if rest.starts_with(char::is_whitespace) {
         return None;
     }
-    call_of(rest)
+    check(rest, groups, None).ok()
 }
 
 /// The keys pressed so far that have not run anything yet: a count (`5` of `5j`) and the start of a longer key (`g` of
@@ -898,6 +1281,8 @@ pub struct Binding {
     pub action: String,
     /// What it does: the asset's `about`, empty for a name that is no action.
     pub about: String,
+    /// The command it runs, as a key bound to it is saved (`done` for `tasks.done`); empty for `app.commandLine`.
+    pub command: String,
     /// Its keys by default (for `general`, the shared defaults, else those of every front end that has it).
     pub defaults: Vec<String>,
     /// The keys the user set in this section (`[]` for none); `None` where they set nothing.
@@ -916,6 +1301,8 @@ pub struct BindingSection {
 pub struct Bindings {
     pub sections: Vec<BindingSection>,
     pub problems: Vec<String>,
+    /// The bindings that run no command, skipped, for a warning with a way to take each out.
+    pub bad: Vec<BadKey>,
 }
 
 /// A layer of keys, read: each action and its keys.
@@ -926,6 +1313,7 @@ pub fn bindings(defaults: &Value, settings: &Value) -> Bindings {
     let migrated = crate::settings_version::migrate(settings, defaults);
     let settings = migrated.as_ref().unwrap_or(settings);
     let root = settings.as_object().cloned().unwrap_or_default();
+    let known = known_actions(defaults);
     // What an action does; for a command with its words (`filter +home`), what the action it runs does.
     let about = |name: &str| {
         let line = |n: &str| defaults.get("about").and_then(|a| a.get(n)).and_then(Value::as_str);
@@ -983,7 +1371,9 @@ pub fn bindings(defaults: &Value, settings: &Value) -> Bindings {
             for (text, v) in entries.as_object().into_iter().flatten() {
                 let key = parse(text).unwrap_or_else(|_| text.clone());
                 match v {
-                    Value::String(name) => add(name, Some(key)),
+                    // One that runs no command is warned of instead (`bad`).
+                    Value::String(runs) if check(runs, &[group.as_str()], Some(&known)).is_err() => {}
+                    Value::String(runs) => add(&row_name(runs, group), Some(key)),
                     Value::Null => {
                         let unbound = names.iter().find(|(n, ks)| group_of(n) == *group && ks.contains(&key));
                         if let Some((n, _)) = unbound {
@@ -999,6 +1389,7 @@ pub fn bindings(defaults: &Value, settings: &Value) -> Bindings {
             .map(|(name, keys)| Binding {
                 action: name.clone(),
                 about: about(name),
+                command: preset_of(name).unwrap_or_else(|| name.clone()),
                 defaults: names.get(name).cloned().unwrap_or_default(),
                 keys: Some(keys.clone()),
             })
@@ -1009,6 +1400,7 @@ pub fn bindings(defaults: &Value, settings: &Value) -> Bindings {
                 .filter(|(n, _)| !set.iter().any(|(s, _)| s == n))
                 .map(|(name, defaults)| Binding {
                     about: about(&name),
+                    command: preset_of(&name).unwrap_or_default(),
                     action: name,
                     defaults,
                     keys: None,
@@ -1017,32 +1409,128 @@ pub fn bindings(defaults: &Value, settings: &Value) -> Bindings {
         sections.push(BindingSection { id, actions });
     }
     let mut problems: Vec<String> = Vec::new();
+    let mut bad: Vec<BadKey> = Vec::new();
+    let mut said: BTreeSet<String> = BTreeSet::new();
     for p in Platform::ALL {
-        for line in resolve(defaults, settings, p).problems {
-            if !problems.contains(&line) {
+        let m = resolve(defaults, settings, p);
+        for b in m.bad {
+            let at = if b.section == "general" {
+                "keys".to_owned()
+            } else {
+                format!("{}.keys", b.section)
+            };
+            said.insert(bad_line(&at, &b.group, &b.key, &b.runs, &b.why));
+            if !bad.contains(&b) {
+                bad.push(b);
+            }
+        }
+        for line in m.problems {
+            if !problems.contains(&line) && !said.contains(&line) {
                 problems.push(line);
             }
         }
     }
-    Bindings { sections, problems }
+    Bindings {
+        sections,
+        problems,
+        bad,
+    }
 }
 
-/// `settings` (brought to the latest version) with what runs `action` in `section` (`general`, `web`, `mobile` or
-/// `tui`) bound to `keys`, in the action's group: its default keys not among them are unbound (`null`). `None` takes out
-/// what the user bound to it there, so it has its defaults again. A section or a front end's object left empty is taken
-/// out; everything else in `settings` is kept.
-pub fn with_binding(settings: &Value, defaults: &Value, section: &str, action: &str, keys: Option<&[String]>) -> Value {
+/// Every action the keymap asset names, of any front end.
+pub fn known_actions(defaults: &Value) -> BTreeSet<String> {
+    let mut known: BTreeSet<String> = BTreeSet::new();
+    for v in std::iter::once(defaults.get("keys")).chain(Platform::ALL.map(|p| own_keys(defaults, p))) {
+        known.extend(v.and_then(Value::as_object).into_iter().flat_map(Map::keys).cloned());
+    }
+    known
+}
+
+/// What a Keybindings page says of a command typed for a key: what it runs and does, and the places it can be bound in
+/// (several for one that acts in several places, as `next`), or why it is no command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum Checked {
+    Runs {
+        call: Call,
+        about: String,
+        places: Vec<Place>,
+    },
+    Problem {
+        problem: String,
+    },
+}
+
+/// A group a command can be bound in, and the action it runs there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Place {
+    pub group: String,
+    pub action: String,
+}
+
+/// [`Checked`] for `runs`, against the keymap asset `defaults`.
+pub fn check_command(defaults: &Value, runs: &str) -> Checked {
+    let known = known_actions(defaults);
+    let call = check(runs, &[], Some(&known)).and_then(|c| {
+        known
+            .contains(&c.action)
+            .then_some(c)
+            .ok_or_else(|| format!("“{}” is no action", runs.trim()))
+    });
+    match call {
+        Err(problem) => Checked::Problem { problem },
+        Ok(call) => {
+            let place = |a: &str| Place {
+                group: section_of(a).to_owned(),
+                action: a.to_owned(),
+            };
+            let mut places = vec![place(&call.action)];
+            // A command alone that acts in several places can be bound in each.
+            if call.args.is_empty() && call.count.is_none() {
+                let first = crate::filter::split_words(runs).into_iter().next().unwrap_or_default();
+                if let Some(c) = command_named(&first) {
+                    for a in c.bare.iter().filter(|a| known.contains(**a) && **a != call.action) {
+                        places.push(place(a));
+                    }
+                }
+            }
+            let about = defaults
+                .get("about")
+                .and_then(|a| a.get(&call.action))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            Checked::Runs { call, about, places }
+        }
+    }
+}
+
+/// `settings` (brought to the latest version) with keys bound to `runs` in `section` (`general`, `web`, `mobile` or
+/// `tui`): a command (`done`, `filter +home`) or an action's name, saved as given. It is bound in `group`, else the
+/// group of what it runs. What the user bound there to the same thing (`done` and `tasks.done` alike) is replaced by
+/// `keys`, and the default keys of the action it runs that are not among them are unbound (`null`). `None` takes out
+/// what the user bound to it there, so it has its defaults again. A section or a front end's object left empty is
+/// taken out; everything else in `settings` is kept.
+pub fn with_binding(
+    settings: &Value,
+    defaults: &Value,
+    section: &str,
+    runs: &str,
+    group: Option<&str>,
+    keys: Option<&[String]>,
+) -> Value {
     let migrated = crate::settings_version::migrate(settings, defaults).unwrap_or_else(|| settings.clone());
     let mut root = migrated.as_object().cloned().unwrap_or_default();
     let platform = Platform::parse(section);
-    let own_defaults = default_keys(defaults, platform, action);
-    let home = group_of(action);
+    let home = group.map_or_else(|| group_of(runs), str::to_owned);
+    let row = row_name(runs, &home);
+    let own_defaults = default_keys(defaults, platform, &row);
     let mut map = section_of_settings(&root, platform).cloned().unwrap_or_default();
-    for (group, entries) in &mut map {
+    for (g, entries) in &mut map {
         if let Some(entries) = entries.as_object_mut() {
             entries.retain(|k, v| {
-                let runs_it = v.as_str() == Some(action);
-                let unbinds_its_own = v.is_null() && *group == home && own_defaults.contains(k);
+                let runs_it = v.as_str().is_some_and(|v| row_name(v, g) == row);
+                let unbinds_its_own = v.is_null() && *g == home && own_defaults.contains(k);
                 !runs_it && !unbinds_its_own
             });
         }
@@ -1054,7 +1542,7 @@ pub fn with_binding(settings: &Value, defaults: &Value, section: &str, action: &
             .as_object_mut()
         {
             for k in list {
-                entries.insert(k.clone(), Value::String(action.to_owned()));
+                entries.insert(k.clone(), Value::String(runs.trim().to_owned()));
             }
             for d in &own_defaults {
                 if !list.contains(d) {
@@ -1062,6 +1550,20 @@ pub fn with_binding(settings: &Value, defaults: &Value, section: &str, action: &
                 }
             }
         }
+    }
+    map.retain(|_, v| v.as_object().is_none_or(|m| !m.is_empty()));
+    put_section(&mut root, platform, map);
+    Value::Object(root)
+}
+
+/// `settings` without one binding: `key`, as written, in `group` of `section` (a [`BadKey`] taken out).
+pub fn without_key(settings: &Value, defaults: &Value, section: &str, group: &str, key: &str) -> Value {
+    let migrated = crate::settings_version::migrate(settings, defaults).unwrap_or_else(|| settings.clone());
+    let mut root = migrated.as_object().cloned().unwrap_or_default();
+    let platform = Platform::parse(section);
+    let mut map = section_of_settings(&root, platform).cloned().unwrap_or_default();
+    if let Some(entries) = map.get_mut(group).and_then(Value::as_object_mut) {
+        entries.remove(key);
     }
     map.retain(|_, v| v.as_object().is_none_or(|m| !m.is_empty()));
     put_section(&mut root, platform, map);
@@ -1267,7 +1769,7 @@ mod tests {
             "keys: “nowhere” is no group of keys",
             "keys.tasks: “hyper+d” is not a key",
             "keys.tasks: 3 is not an action",
-            "keys.tasks: “tasks.nope” is no action or command",
+            "keys.tasks: z runs “tasks.nope”, which is skipped: “tasks.nope” is no action",
         ] {
             assert!(tui.problems.contains(&line.to_owned()), "{line}: {:?}", tui.problems);
         }
@@ -1333,7 +1835,18 @@ mod tests {
             (tui[0].action.as_str(), tui[0].keys.as_deref()),
             ("tasks.done", Some(&[][..]))
         );
-        assert_eq!((tui[1].action.as_str(), tui[1].about.as_str()), ("tasks.nope", ""));
+        assert!(!tui.iter().any(|a| a.action == "tasks.nope"), "warned of, not listed");
+        assert_eq!(
+            b.bad,
+            [BadKey {
+                section: "tui".into(),
+                group: "tasks".into(),
+                key: "z".into(),
+                runs: "tasks.nope".into(),
+                why: "“tasks.nope” is no action".into(),
+            }]
+        );
+        assert_eq!(tui[0].command, "done", "the command it runs");
         let bound = bindings(
             &defaults(),
             &json!({ "version": 2, "keys": { "tasks": { "g h": "filter +home" } } }),
@@ -1351,9 +1864,10 @@ mod tests {
         let modify = tui.iter().find(|a| a.action == "tasks.modify").unwrap();
         assert_eq!(modify.defaults, ["m", "M"]);
         assert!(b.problems.contains(&"keys.tasks: “hyper+d” is not a key".to_owned()));
-        assert!(b
-            .problems
-            .contains(&"tui.keys.tasks: “tasks.nope” is no action or command".to_owned()));
+        assert!(
+            !b.problems.iter().any(|p| p.contains("tasks.nope")),
+            "a warning, not a problem"
+        );
         assert_eq!(
             b.problems.iter().filter(|p| p.contains("hyper+d")).count(),
             1,
@@ -1365,7 +1879,7 @@ mod tests {
     fn a_key_is_set_and_taken_out_and_nothing_else_moves() {
         let d = defaults();
         let s = json!({ "version": 2, "taskCommands": [1], "web": { "theme": "dark" } });
-        let one = with_binding(&s, &d, "web", "app.prompt", Some(&["ctrl+k".into()]));
+        let one = with_binding(&s, &d, "web", "app.prompt", None, Some(&["ctrl+k".into()]));
         // The key runs the action, in its group; the default key it no longer has is unbound.
         assert_eq!(
             one,
@@ -1373,23 +1887,31 @@ mod tests {
                     "web": { "theme": "dark", "keys": { "app": { "ctrl+k": "app.prompt", "/": null } } } })
         );
         assert_eq!(km(&one, Platform::Web).keys_of("app.prompt"), ["ctrl+k"]);
-        let two = with_binding(&one, &d, "general", "app.undo", Some(&["u".into(), "U".into()]));
+        let two = with_binding(&one, &d, "general", "app.undo", None, Some(&["u".into(), "U".into()]));
         assert_eq!(two["keys"], json!({ "app": { "u": "app.undo", "U": "app.undo" } }));
-        let none = with_binding(&two, &d, "tui", "tasks.done", Some(&[]));
+        let none = with_binding(&two, &d, "tui", "tasks.done", None, Some(&[]));
         assert_eq!(none["tui"], json!({ "keys": { "tasks": { "d": null } } }));
         assert!(km(&none, Platform::Tui).keys_of("tasks.done").is_empty());
         let back = with_binding(
-            &with_binding(&none, &d, "tui", "tasks.done", None),
+            &with_binding(&none, &d, "tui", "tasks.done", None, None),
             &d,
             "general",
             "app.undo",
             None,
+            None,
         );
-        let back = with_binding(&back, &d, "web", "app.prompt", None);
+        let back = with_binding(&back, &d, "web", "app.prompt", None, None);
         assert_eq!(back, s);
         // An old file is brought up to date first.
         assert_eq!(
-            with_binding(&json!({ "keys": { "app.undo": "U" } }), &d, "general", "app.help", None),
+            with_binding(
+                &json!({ "keys": { "app.undo": "U" } }),
+                &d,
+                "general",
+                "app.help",
+                None,
+                None
+            ),
             json!({ "version": 2, "keys": { "app": { "U": "app.undo", "u": null } } })
         );
     }
@@ -1474,6 +1996,10 @@ mod tests {
             .collect();
         let here: Vec<(&str, u64)> = COMMANDS.iter().map(|c| (c.name, c.shortest as u64)).collect();
         assert_eq!(described, here, "web/public/keymaps/commands.json");
+        for (c, d) in COMMANDS.iter().zip(doc["commands"].as_array().unwrap()) {
+            let takes = c.words != Words::None || !c.subs.is_empty();
+            assert_eq!(!d["takes"].as_str().unwrap().is_empty(), takes, "{}: its takes", c.name);
+        }
     }
 
     #[test]
@@ -1544,8 +2070,9 @@ mod tests {
         assert_eq!(m.action("summary", "T"), Some("tabn Tasks"));
         assert_eq!(m.action("summary", "g h"), None, "filter is the Tasks page's");
         assert!(
-            m.problems
-                .contains(&"tui.keys.tasks: “frobnicate 3” is no action or command".to_owned()),
+            m.problems.contains(
+                &"tui.keys.tasks: z runs “frobnicate 3”, which is skipped: “frobnicate” is no command".to_owned()
+            ),
             "{:?}",
             m.problems
         );
@@ -1564,5 +2091,187 @@ mod tests {
             "{:?}",
             m.problems
         );
+    }
+
+    #[test]
+    fn a_malformed_command_says_why() {
+        let why = |s: &str| check(s, &[], None).err();
+        assert_eq!(why("done 3").as_deref(), Some("done takes no words"));
+        assert_eq!(why("lock now").as_deref(), Some("lock takes “pin” or “key”"));
+        assert_eq!(why("lock pin"), None);
+        assert_eq!(
+            why("burndown").as_deref(),
+            Some("burndown needs a word: “day”, “week” or “month”")
+        );
+        assert_eq!(
+            why("info nope").as_deref(),
+            Some("info takes “details”, “recurrence”, “timelog”, “annotations”, “unknown” or “raw”")
+        );
+        assert_eq!(
+            why("st").as_deref(),
+            Some("“st” is not enough to say which: “start”, “stop” or “stopall”")
+        );
+        assert_eq!(why("frob").as_deref(), Some("“frob” is no command"));
+        assert_eq!(
+            why("tabn 12").as_deref(),
+            Some("tabnext takes a page's number (1 to 9) or the start of its name")
+        );
+        assert_eq!(why("tasks.done 3").as_deref(), Some("tasks.done takes no words"));
+        assert_eq!(why("tasks.filter +home"), None, "its command takes words");
+        assert!(why("sort due").is_some_and(|w| w.contains("no change of the sort")));
+        assert_eq!(why("  ").as_deref(), Some("an empty command"));
+        let known: BTreeSet<String> = ["tasks.done".to_owned()].into();
+        assert_eq!(
+            check("tasks.nope", &[], Some(&known)).err().as_deref(),
+            Some("“tasks.nope” is no action")
+        );
+    }
+
+    #[test]
+    fn words_run_actions_of_their_own() {
+        let a = |s: &str| call_of(s).map(|c| (c.action, c.args));
+        let alone = |x: &str| Some((x.to_owned(), Vec::<String>::new()));
+        assert_eq!(a("info details"), alone("info.details"));
+        assert_eq!(a("info"), alone("tasks.info"));
+        assert_eq!(a("mark all"), alone("tasks.markAll"));
+        assert_eq!(a("delete completed"), alone("tasks.clearCompleted"));
+        assert_eq!(a("burndown week"), alone("burndown.weekly"));
+        assert_eq!(a("sort raise"), alone("sort.raise"));
+        assert_eq!(a("sort ="), alone("sort.reverse"));
+        assert_eq!(a("sort"), alone("tasks.sort"));
+        assert_eq!(
+            a("sort due- project--"),
+            Some(("tasks.sort".into(), vec!["due-".into(), "project--".into()]))
+        );
+        assert_eq!(
+            a("sort replace due+,urgency-"),
+            Some(("tasks.sort".into(), vec!["replace".into(), "due+,urgency-".into()]))
+        );
+        assert_eq!(a("edit settings"), alone("settings.editFile"));
+        assert_eq!(
+            a("1"),
+            alone("move.first"),
+            "row 1 is the first, so 5 before it is row 5"
+        );
+    }
+
+    #[test]
+    fn a_command_of_several_places_runs_the_one_where_it_is() {
+        let a = |s: &str, g: &[&str]| check(s, g, None).map(|c| c.action).ok();
+        assert_eq!(a("next", &["calendar", "app"]).as_deref(), Some("calendar.next"));
+        assert_eq!(a("next", &["boards", "app"]).as_deref(), Some("boards.next"));
+        assert_eq!(
+            a("next", &[]).as_deref(),
+            Some("calendar.next"),
+            "the first where none is given"
+        );
+        assert_eq!(a("back", &["boards"]).as_deref(), Some("boards.close"));
+        assert_eq!(a("open", &["lists", "app"]).as_deref(), Some("lists.open"));
+        assert_eq!(a("report", &["sidebar", "app"]).as_deref(), Some("sidebar.open"));
+        // A binding acts in its group; a `:` line where its context's groups do.
+        let s = json!({ "version": 2, "tui": { "keys": { "calendar": { "n": "next" }, "boards": { "n": "next" } } } });
+        let m = km(&s, Platform::Tui);
+        assert_eq!(m.action("calendar", "n"), Some("calendar.next"));
+        assert_eq!(m.action("boards", "n"), Some("boards.next"));
+        let groups: Vec<&str> = m.groups["boards"].iter().map(String::as_str).collect();
+        assert_eq!(
+            command_line_in(":next", &groups).map(|c| c.action).as_deref(),
+            Some("boards.next")
+        );
+    }
+
+    #[test]
+    fn every_action_has_a_command_that_runs_it() {
+        let d = defaults();
+        for action in known_actions(&d) {
+            if action == "app.commandLine" {
+                assert_eq!(preset_of(&action), None, "the : itself");
+                continue;
+            }
+            let preset = preset_of(&action).unwrap_or_else(|| panic!("{action} has no command"));
+            let c = check(&preset, &[section_of(&action)], Some(&known_actions(&d)))
+                .unwrap_or_else(|e| panic!("{action}: {preset}: {e}"));
+            let page = action.strip_prefix("page.").filter(|p| PAGES.contains(p));
+            match page {
+                Some(p) => assert_eq!((c.action.as_str(), c.args.as_slice()), ("page.go", &[p.to_owned()][..])),
+                None => assert_eq!(c.action, action, "{preset}"),
+            }
+        }
+    }
+
+    #[test]
+    fn the_short_forms_name_one_command_each() {
+        for c in &COMMANDS {
+            for n in c.shortest..=c.name.len() {
+                let w = &c.name[..n];
+                assert_eq!(command_named(w).map(|x| x.name), Some(c.name), "{w}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_key_is_saved_as_its_command_and_old_names_still_read() {
+        let d = defaults();
+        let s = json!({ "version": 2, "tui": { "keys": { "tasks": { "x": "tasks.done" } } } });
+        assert_eq!(
+            km(&s, Platform::Tui).action("tasks", "x"),
+            Some("tasks.done"),
+            "an action's name still works"
+        );
+        let one = with_binding(&s, &d, "tui", "done", None, Some(&["x".into(), "y".into()]));
+        assert_eq!(
+            one["tui"]["keys"]["tasks"],
+            json!({ "x": "done", "y": "done", "d": null }),
+            "tasks.done and done are one: rewritten as the command, the default unbound"
+        );
+        let m = km(&one, Platform::Tui);
+        assert_eq!(m.keys_of("tasks.done"), ["x", "y"]);
+        let b = bindings(&d, &one);
+        let row = b.sections[3].actions.iter().find(|a| a.action == "tasks.done").unwrap();
+        assert_eq!(row.keys, Some(vec!["x".into(), "y".into()]));
+        // A command of several places is bound in the group given.
+        let next = with_binding(&s, &d, "tui", "next", Some("boards"), Some(&["N".into()]));
+        assert_eq!(
+            next["tui"]["keys"]["boards"],
+            json!({ "N": "next", "l": null, "right": null })
+        );
+        assert_eq!(km(&next, Platform::Tui).action("boards", "N"), Some("boards.next"));
+        // Taking out what runs it, by its row.
+        let back = with_binding(&one, &d, "tui", "tasks.done", None, None);
+        assert_eq!(back["tui"], json!(null), "{back}");
+    }
+
+    #[test]
+    fn a_skipped_key_can_be_taken_out() {
+        let d = defaults();
+        let s = json!({ "version": 2, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
+        let b = bindings(&d, &s);
+        assert_eq!(b.bad.len(), 1, "{:?}", b.bad);
+        assert_eq!(
+            (b.bad[0].key.as_str(), b.bad[0].why.as_str()),
+            ("z", "done takes no words")
+        );
+        let out = without_key(&s, &d, "general", "tasks", "z");
+        assert_eq!(out, json!({ "version": 2, "keys": { "tasks": { "x": "done" } } }));
+        assert!(bindings(&d, &out).bad.is_empty());
+    }
+
+    #[test]
+    fn a_command_typed_for_a_key_is_checked() {
+        let d = defaults();
+        let ok = serde_json::to_value(check_command(&d, "filter +home")).unwrap();
+        assert_eq!(ok["call"], json!({ "action": "tasks.filter", "args": ["+home"] }));
+        assert_eq!(ok["places"], json!([{ "group": "tasks", "action": "tasks.filter" }]));
+        assert_eq!(ok["about"], d["about"]["tasks.filter"]);
+        let next = serde_json::to_value(check_command(&d, "next")).unwrap();
+        assert_eq!(
+            next["places"],
+            json!([{ "group": "calendar", "action": "calendar.next" }, { "group": "boards", "action": "boards.next" }]),
+            "where it can be bound"
+        );
+        let bad = serde_json::to_value(check_command(&d, "done 3")).unwrap();
+        assert_eq!(bad, json!({ "problem": "done takes no words" }));
+        let nope = serde_json::to_value(check_command(&d, "tasks.nope")).unwrap();
+        assert_eq!(nope, json!({ "problem": "“tasks.nope” is no action" }));
     }
 }

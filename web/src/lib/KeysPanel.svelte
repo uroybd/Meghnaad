@@ -2,12 +2,15 @@
   import { untrack } from 'svelte';
   import { Check, Plus, Search, X } from './icons';
   import {
+    checkCommand,
     chordOf,
     keyBindings,
     keyCommands,
     keyLabel,
     parseKey,
     withBinding,
+    withoutKey,
+    type BadKey,
     type Binding,
     type KeySection,
   } from './keymap';
@@ -83,6 +86,7 @@
     const keys = b.keys ?? b.defaults;
     return (
       b.action.toLowerCase().includes(t) ||
+      b.command.toLowerCase().includes(t) ||
       b.about.toLowerCase().includes(t) ||
       keys.some((k) => k.toLowerCase() === t || keyLabel(k).toLowerCase() === t)
     );
@@ -99,20 +103,32 @@
   const rowsOf = (actions: Binding[]) =>
     actions.filter((b) => (b.keys !== null || (showDefaults && b.defaults.length > 0)) && matches(b, query));
 
-  /** `settings` with one change, its other keys in the order they were (the engine sorts the ones it writes). */
-  function change(section: KeySection, action: string, keys: string[] | null) {
+  /** `next` as the draft, its other keys in the order they were (the engine sorts the ones it writes). */
+  function keep(next: Settings) {
     done = false;
-    const next = withBinding($state.snapshot(draft) as Settings, store.keymapDefaults, section, action, keys);
     const out: Settings = {};
     for (const k of Object.keys(draft)) if (k in next) out[k] = next[k];
     for (const k of Object.keys(next)) if (!(k in out)) out[k] = next[k];
     draft = out;
   }
+  /** The keys of what runs `runs` in a section set (`[]` for none) or taken out (`null`), bound in `group`. */
+  function change(section: KeySection, runs: string, keys: string[] | null, group: string | null = null) {
+    keep(withBinding($state.snapshot(draft) as Settings, store.keymapDefaults, section, runs, keys, group));
+  }
+  /** A key that runs no command, taken out of the draft. */
+  function takeOut(bad: BadKey) {
+    keep(withoutKey($state.snapshot(draft) as Settings, store.keymapDefaults, bad));
+  }
+  const at = (b: BadKey) => `${b.section === 'general' ? 'keys' : `${b.section}.keys`}.${b.group}`;
 
-  // Adding: the section, its search, the action picked and the key for it.
+  // Adding: the section, its search, the preset picked (none for a command of one's own), the command it runs as
+  // typed, where it acts when it can act in several places, and the key for it.
   let adding = $state<KeySection | null>(null);
   let find = $state('');
   let picked = $state<Binding | null>(null);
+  let writing = $state(false);
+  let runs = $state('');
+  let where = $state<string | null>(null);
   let recording = $state(false);
   let typed = $state('');
   let pressed = $state<string | null>(null);
@@ -123,8 +139,33 @@
     adding = section;
     find = '';
     picked = null;
+    writing = false;
     resetKey();
   }
+  /** The form for a preset, its command to start from; or, with none, for a command of one's own. */
+  function pick(b: Binding | null) {
+    picked = b;
+    writing = true;
+    runs = b?.command || b?.action || '';
+    where = null;
+  }
+  // The command as typed, checked by the engine: what it runs, or why it is no command (spec 0025).
+  const checked = $derived(writing && runs.trim() ? checkCommand(runs, store.keymapDefaults) : null);
+  const runsOk = $derived(checked && 'call' in checked ? checked : null);
+  // Where it is bound: the place chosen, else the preset's own, else the first it acts in.
+  const place = $derived.by(() => {
+    const places = runsOk?.places ?? [];
+    return (
+      places.find((p) => p.group === where) ?? places.find((p) => p.action === picked?.action) ?? places[0] ?? null
+    );
+  });
+  // What it is listed as: the action alone, or the command as typed when it has words.
+  const row = $derived(
+    runsOk && place && !runsOk.call.args?.length && runsOk.call.count == null ? place.action : runs.trim(),
+  );
+  const rowNow = $derived(
+    adding ? bindings.sections.find((s) => s.id === adding)?.actions.find((b) => b.action === row) : undefined,
+  );
   function resetKey() {
     recording = false;
     typed = '';
@@ -133,6 +174,7 @@
   function closeAdd() {
     adding = null;
     picked = null;
+    writing = false;
     resetKey();
   }
   const found = $derived(
@@ -155,14 +197,14 @@
   }
 
   function addKey() {
-    if (!adding || !picked || !newKey) return;
-    const now = picked.keys ?? [];
-    change(adding, picked.action, now.includes(newKey) ? now : [...now, newKey]);
+    if (!adding || !runsOk || !place || !newKey) return;
+    const now = rowNow?.keys ?? [];
+    change(adding, runs.trim(), now.includes(newKey) ? now : [...now, newKey], place.group);
     closeAdd();
   }
   function noKey() {
-    if (!adding || !picked) return;
-    change(adding, picked.action, []);
+    if (!adding || !runsOk || !place) return;
+    change(adding, runs.trim(), [], place.group);
     closeAdd();
   }
 
@@ -186,6 +228,22 @@
 {/snippet}
 
 <section aria-label="Keybindings">
+  {#if bindings.bad.length}
+    <div class="warn" role="alert">
+      <p>These keys run no command, so they do nothing. Take them out, or fix them in <code>settings.json</code>:</p>
+      <ul>
+        {#each bindings.bad as b (`${b.section} ${b.group} ${b.key}`)}
+          <li>
+            <span
+              ><kbd>{b.key}</kbd> in <code>{at(b)}</code> runs <code>{b.runs}</code>:
+              <span class="why">{b.why}</span></span
+            >
+            <button class="small" onclick={() => takeOut(b)} aria-label="Take out {b.key} in {at(b)}">Take out</button>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
   <div class="top">
     <label class="search">
       <Search size={14} />
@@ -209,7 +267,7 @@
 
       {#if adding === s.id}
         <div class="add" role="group" aria-label="Add a key">
-          {#if !picked}
+          {#if !writing}
             <!-- svelte-ignore a11y_autofocus -->
             <input
               type="search"
@@ -222,23 +280,63 @@
             <ul class="found">
               {#each found as b (b.action)}
                 <li>
-                  <button class="result" onclick={() => (picked = b)}>
-                    <span><code>{b.action}</code> <span class="dim">{b.about}</span></span>
+                  <button class="result" onclick={() => pick(b)}>
+                    <span
+                      ><code>{b.command || b.action}</code>
+                      {#if b.command && b.command !== b.action}<span class="dim">{b.action}</span>{/if}
+                      <span class="dim">{b.about}</span></span
+                    >
                     <span>{@render keys(b.keys ?? b.defaults, b.keys === null)}</span>
                   </button>
                 </li>
               {:else}
                 <li class="dim">No action matches.</li>
               {/each}
+              <li>
+                <button class="result own" onclick={() => pick(null)}>
+                  <span><Plus size={14} /> Add a command <span class="dim">of your own, with its words</span></span>
+                </button>
+              </li>
             </ul>
             <div class="row"><button onclick={closeAdd}>Cancel</button></div>
           {:else}
-            <p>
-              <code>{picked.action}</code> <span class="dim">{picked.about}</span>
-              {#if picked.keys === null && picked.defaults.length}
-                <br /><span class="dim">Replaces its default {@render keys(picked.defaults, true)}</span>
+            <label class="runs">
+              <span>Command</span>
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                class="mono"
+                placeholder="filter +home"
+                aria-label="Command"
+                bind:value={runs}
+                autofocus={!picked}
+                spellcheck="false"
+                autocomplete="off"
+                onkeydown={(e) => e.key === 'Escape' && closeAdd()}
+              />
+            </label>
+            {#if checked && 'problem' in checked}
+              <p class="err" role="alert">{checked.problem}</p>
+            {:else if runsOk && place}
+              <p class="dim">
+                Runs <code>{place.action}</code>{#if runsOk.call.args?.length}&#32;with
+                  <code>{runsOk.call.args.join(' ')}</code>{/if}{#if runsOk.about}: {runsOk.about}{/if}
+              </p>
+              {#if runsOk.places.length > 1}
+                <label class="row">
+                  <span>Where</span>
+                  <select aria-label="Where" value={place.group} onchange={(e) => (where = e.currentTarget.value)}>
+                    {#each runsOk.places as p (p.group)}<option value={p.group}>{p.group}: {p.action}</option>{/each}
+                  </select>
+                </label>
               {/if}
-            </p>
+              {#if rowNow?.keys === null && rowNow.defaults.length}
+                <p class="dim">Replaces its default {@render keys(rowNow.defaults, true)}</p>
+              {/if}
+            {:else}
+              <p class="dim">
+                A command, with its words: <code>done</code>, <code>filter +home</code>, <code>sort due-</code>.
+              </p>
+            {/if}
             <div class="row">
               <button
                 class="capture"
@@ -262,9 +360,9 @@
             </div>
             {#if typedKey && 'problem' in typedKey}<p class="err">{typedKey.problem}</p>{/if}
             <div class="row">
-              <button class="primary" disabled={!newKey} onclick={addKey}>Add key</button>
-              <button onclick={noKey} title="Leave it without a key">No key</button>
-              <button onclick={() => ((picked = null), resetKey())}>Back</button>
+              <button class="primary" disabled={!newKey || !runsOk} onclick={addKey}>Add key</button>
+              <button onclick={noKey} disabled={!runsOk} title="Leave it without a key">No key</button>
+              <button onclick={() => ((writing = false), (picked = null), resetKey())}>Back</button>
               <button onclick={closeAdd}>Cancel</button>
             </div>
           {/if}
@@ -282,8 +380,9 @@
                   {:else}<span class="dim">no key</span>{/if}
                 </td>
                 <td>
-                  <code>{b.action}</code>
-                  {#if b.about}<span class="dim">{b.about}</span>{:else}<span class="err">no such action</span>{/if}
+                  <code>{b.command || b.action}</code>
+                  {#if b.command && b.command !== b.action}<span class="dim">{b.action}</span>{/if}
+                  {#if b.about}<span class="dim">· {b.about}</span>{/if}
                   {#if b.keys !== null && showDefaults && b.defaults.length}
                     <span class="dim">· default {@render keys(b.defaults, true)}</span>
                   {/if}
@@ -340,7 +439,8 @@
   {/if}
   <p class="dim">
     Kept in <code>settings.json</code>: <code>keys</code> for every front end, the others for one alone, each key under its
-    group. A key you set here replaces the action's defaults, and is taken from any action that had it.
+    group, saved as the command it runs. A key you set here replaces the defaults of what it runs, and is taken from any action
+    that had it.
   </p>
   {#if error}<p class="err" role="alert">{error}</p>{/if}
   <div class="row">
@@ -477,5 +577,42 @@
   .icon {
     padding: 2px 4px;
     line-height: 0;
+  }
+  .result.own {
+    color: var(--accent);
+  }
+  .runs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .runs input {
+    flex: 1;
+    min-width: 0;
+  }
+  .warn {
+    border: 1px solid var(--warn);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .warn p {
+    margin: 0 0 6px;
+  }
+  .warn ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .warn li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 0;
+  }
+  .why {
+    color: var(--dim);
   }
 </style>

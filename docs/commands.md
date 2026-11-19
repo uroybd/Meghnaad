@@ -22,10 +22,10 @@ the marked tasks when there are any, and else on the chosen one.
 | [`:e[dit]`](#edit) | read everything again |
 | [`:h[elp]`](#help) | every key and command, and what each does |
 | [`:filt[er]`](#filter) | the Tasks page with a filter |
-| [`:sor[t]`](#sort) | sort the report |
+| [`:sor[t]`](#sort) | change the report's sort |
 | [`:d[elete]`](#delete) | delete the task, or the marked ones |
 | [`:ma[rk]`](#mark) | mark the task, or unmark it, and move down |
-| [`:o[pen]`](#open) | open the task's link |
+| [`:o[pen]`](#open) | open the task's link, or what is under the cursor |
 | [`:do[ne]`](#done) | mark the task done |
 | [`:sta[rt]`](#start) | start the task, or the marked ones not started |
 | [`:sto[p]`](#stop) | stop the task, or the marked ones started |
@@ -41,6 +41,29 @@ the marked tasks when there are any, and else on the chosen one.
 | [`:sy[nc]`](#sync) | sync |
 | [`:rev[iew]`](#review) | review the tasks that need it |
 | [`:lock`](#lock) | lock the app: with the PIN where there is one, else with the encryption secret |
+| [`:n[ext]`](#next) | the next month, the next board |
+| [`:prev[ious]`](#previous) | the month before, the board before |
+| [`:sn[ext]`](#snext) | the next section |
+| [`:spr[evious]`](#sprevious) | the section before |
+| [`:paged[own]`](#pagedown) | a page down |
+| [`:pageu[p]`](#pageup) | a page up |
+| [`:halfd[own]`](#halfdown) | half a page down |
+| [`:halfu[p]`](#halfup) | half a page up |
+| [`:pro[mpt]`](#prompt) | the cursor in the prompt |
+| [`:si[debar]`](#sidebar) | between the page and the reports down the side |
+| [`:hid[den]`](#hidden) | show the hidden reports |
+| [`:ba[ck]`](#back) | back |
+| [`:stopa[ll]`](#stopall) | stop the started task |
+| [`:rem[inders]`](#reminders) | the reminder options |
+| [`:ex[port]`](#export) | export as a file |
+| [`:cl[ear]`](#clear) | clear the console |
+| [`:bu[rndown]`](#burndown) | the burndown by day, week or month |
+| [`:com[mand]`](#command) | run one of your task commands on the task |
+| [`:key`](#key) | add, take out or search keys |
+| [`:ho[me]`](#home) | choose the page the app opens on |
+| [`:syncw[hen]`](#syncwhen) | choose when to sync |
+| [`:th[eme]`](#theme) | the next theme preset |
+| [`:sh[ading]`](#shading) | the grey shading of tasks, or none |
 | `:5`, `:$` | a row by its number, the last row |
 | `:+3`, `:-3` | three rows down, up |
 
@@ -122,7 +145,9 @@ Since 0.8.11.
 
 ## :e[dit]
 
-Read the report and the settings again, as vim's `:e` reads the file again. The terminal app reads `settings.json` again too, so a change made in an editor applies.
+Takes settings.
+
+Read the report and the settings again, as vim's `:e` reads the file again. The terminal app reads `settings.json` again too, so a change made in an editor applies. `:edit settings` opens `settings.json` in `$VISUAL` or `$EDITOR`, on the terminal.
 
 Since 0.8.11.
 
@@ -140,7 +165,7 @@ Since 0.8.11.
 
 Takes a filter.
 
-With words, the Tasks page with them as its filter, as `task` reads a filter: `:filter +home due.before:eow`. With none, the cursor in the filter, to change it. Bound to a key, it is a saved filter a key away: `"tasks": { "g h": "filter +home" }`.
+With words, the Tasks page with them as its filter, as `task` reads a filter: `:filter +home due.before:eow`. With none, the cursor in the filter, to change it. Bound to a key, it is a saved filter a key away: `"tasks": { "g h": "filter +home" }`. On a page with a filter of its own (the web app's other pages), the cursor goes to that one.
 
 Since 0.8.11.
 
@@ -148,9 +173,9 @@ Since 0.8.11.
 
 ## :sor[t]
 
-Takes a sort, as a report's sort setting writes it (due+,urgency-).
+Takes fields with +, -, --, = or / after them; or replace and a whole sort.
 
-On the terminal. With words, the report sorted by them for now, written as `report.<name>.sort` writes it: `:sort due+,urgency-`. With none, the sort editor, to add, take out, reverse and reorder the report's sort keys.
+On the terminal. Each word changes the sort in place, in order: `due+` sorts by due ascending (added last when it is not a key yet), `due-` descending, `due--` takes it out, `due=` turns its direction round, and `due/` groups by it, or stops (`due+/` does both). `:sort due- project--` changes two keys and leaves the rest. `:sort replace due+,urgency-` sets the whole sort, as `report.<name>.sort` writes it. With none, the sort editor; in it, `:sort +` adds a key, and `--`, `=` and `/` do theirs to the key under the cursor, and `raise`, `lower`, `reset`, `apply` and `cancel` the editor's own steps.
 
 Since 0.8.11.
 
@@ -158,7 +183,9 @@ Since 0.8.11.
 
 ## :d[elete]
 
-Delete the chosen task, or the marked tasks when there are any. Taskwarrior asks first.
+Takes completed.
+
+Delete the chosen task, or the marked tasks when there are any. Taskwarrior asks first. `:delete completed` deletes the completed tasks of the report.
 
 Since 0.8.11.
 
@@ -166,7 +193,9 @@ Since 0.8.11.
 
 ## :ma[rk]
 
-Mark the chosen task, or unmark it, and move to the next row. With tasks marked, the task commands act on all of them.
+Takes all or range.
+
+Mark the chosen task, or unmark it, and move to the next row. With tasks marked, the task commands act on all of them. `:mark all` marks every row (or unmarks them all when they are all marked); `:mark range` every row from the last one marked to this one.
 
 Since 0.8.11.
 
@@ -174,7 +203,7 @@ Since 0.8.11.
 
 ## :o[pen]
 
-Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`).
+Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). On a list of projects or tags, of boards, or of the boards in Settings, it opens the one under the cursor.
 
 Since 0.8.11.
 
@@ -252,7 +281,9 @@ Since 0.8.11.
 
 ## :in[fo]
 
-The chosen task's info: everything about it, its notes and how its urgency adds up.
+Takes a tab: details, recurrence, timelog, annotations, unknown or raw.
+
+The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it.
 
 Since 0.8.11.
 
@@ -262,7 +293,7 @@ Since 0.8.11.
 
 Takes the task, as task add takes it.
 
-With words, add the task they describe, as `task add` reads them: `:add Buy milk +errand due:tomorrow`. With none, the box to add one, with a preview.
+With words, add the task they describe, as `task add` reads them: `:add Buy milk +errand due:tomorrow`. With none, the box to add one, with a preview. It works from any page.
 
 Since 0.8.11.
 
@@ -272,7 +303,7 @@ Since 0.8.11.
 
 Takes a report's name.
 
-With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from.
+With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from. In the terminal's list of reports down the side, the report under the cursor.
 
 Since 0.8.11.
 
@@ -311,6 +342,196 @@ Takes pin or key.
 In the static web app. With nothing after it, the PIN screen on a trusted device with a PIN, in every tab, and the four keys of the PIN take it down; on any other device the full lock, as the lock button does, and the encryption secret or a passkey opens it again. `:lock pin` asks for the PIN screen (and says so where there is no PIN), `:lock key` for the full lock. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.
 
 Since 0.8.15.
+
+<a id="next"></a>
+
+## :n[ext]
+
+On the calendar, the month after; on a board, the board after. Like the other commands that act in several places, it does what it means on the page it is used on.
+
+Since the next release.
+
+<a id="previous"></a>
+
+## :prev[ious]
+
+On the calendar, the month before; on a board, the board before.
+
+Since the next release.
+
+<a id="snext"></a>
+
+## :sn[ext]
+
+The next section of the settings, of a board, of the help or of a task's info, as vim's `:snext` is the next file in a split.
+
+Since the next release.
+
+<a id="sprevious"></a>
+
+## :spr[evious]
+
+The section before, as `:snext` goes on.
+
+Since the next release.
+
+<a id="pagedown"></a>
+
+## :paged[own]
+
+A page down the list. A count is that many pages.
+
+Since the next release.
+
+<a id="pageup"></a>
+
+## :pageu[p]
+
+A page up the list.
+
+Since the next release.
+
+<a id="halfdown"></a>
+
+## :halfd[own]
+
+Half a page down the list, as `ctrl+d` does.
+
+Since the next release.
+
+<a id="halfup"></a>
+
+## :halfu[p]
+
+Half a page up the list, as `ctrl+u` does.
+
+Since the next release.
+
+<a id="prompt"></a>
+
+## :pro[mpt]
+
+Put the cursor in the prompt, the command line at the bottom, as `/` does.
+
+Since the next release.
+
+<a id="sidebar"></a>
+
+## :si[debar]
+
+On the terminal, move between the page and the list of reports down the side.
+
+Since the next release.
+
+<a id="hidden"></a>
+
+## :hid[den]
+
+In the terminal's list of reports, show the hidden ones too (their names start with `_`), or hide them again.
+
+Since the next release.
+
+<a id="back"></a>
+
+## :ba[ck]
+
+Back to the page from the reports down the side, or from a board to the list of boards.
+
+Since the next release.
+
+<a id="stopall"></a>
+
+## :stopa[ll]
+
+Stop the task that is started, whichever it is (the timer in the top bar), where `:stop` stops the chosen one.
+
+Since the next release.
+
+<a id="reminders"></a>
+
+## :rem[inders]
+
+The reminder options, and turning reminders on or off.
+
+Since the next release.
+
+<a id="export"></a>
+
+## :ex[port]
+
+Export the report as a file (JSON, CSV or TSV, with the fields you choose); on a board, a table of the board.
+
+Since the next release.
+
+<a id="clear"></a>
+
+## :cl[ear]
+
+Clear what the console shows.
+
+Since the next release.
+
+<a id="burndown"></a>
+
+## :bu[rndown]
+
+Takes day, week or month.
+
+The burndown chart by day, by week or by month: `:burndown week`.
+
+Since the next release.
+
+<a id="command"></a>
+
+## :com[mand]
+
+Takes add, edit or delete.
+
+With nothing after it, one of your task commands to run on the chosen task, from a list. In the task commands of Settings, `:command add`, `:command edit` and `:command delete` add one, change the one under the cursor and delete it.
+
+Since the next release.
+
+<a id="key"></a>
+
+## :key
+
+Takes add, remove, none, defaults or search.
+
+In the Keybindings of Settings: `:key add` adds a key to the section, `:key remove` takes your key out (back to the default), `:key none` leaves the action without a key, `:key defaults` shows the default keys or only yours, `:key search` searches them.
+
+Since the next release.
+
+<a id="home"></a>
+
+## :ho[me]
+
+In the general settings, choose the page the app opens on: a report or a board.
+
+Since the next release.
+
+<a id="syncwhen"></a>
+
+## :syncw[hen]
+
+In the sync settings, go through when to sync, and save it.
+
+Since the next release.
+
+<a id="theme"></a>
+
+## :th[eme]
+
+In the appearance settings, go through the presets: auto, light, dark or mono.
+
+Since the next release.
+
+<a id="shading"></a>
+
+## :sh[ading]
+
+In the appearance settings, draw tasks' grey shading, or leave it out.
+
+Since the next release.
 
 ## Rows
 

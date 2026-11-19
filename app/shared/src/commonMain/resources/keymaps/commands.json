@@ -1,5 +1,5 @@
 {
-  "about": "The commands of the : line and of a key bound to one (spec 0020), as people read them, for every front end: the line each front end lists (summary, and the words it takes), the longer text of docs/commands.md (doc; the page is made from this file by scripts/commands-doc.mjs), and the version that brought each in (since: \"unreleased\" until the bump, when scripts/version.mjs sync writes the version; a release refuses one left). A front end lists only what its own version has. The engine keeps only what reading a line needs (tc_core::keymap::COMMANDS: name, shortest form, action); a test keeps the names and short forms the same.",
+  "about": "The commands of the : line and of a key bound to one (spec 0020), as people read them, for every front end: the line each front end lists (summary, and the words it takes), the longer text of docs/commands.md (doc; the page is made from this file by scripts/commands-doc.mjs), and the version that brought each in (since: \"unreleased\" until the bump, when scripts/version.mjs sync writes the version; a release refuses one left). A front end lists only what its own version has. The engine keeps only what reading a line needs (tc_core::keymap::COMMANDS: name, shortest form, the actions it runs, the words it takes); a test keeps the names, short forms and whether each takes words the same. Every action but the : itself has a command (spec 0025).",
   "docs": "https://meghnaad.utsob.me/commands.html",
   "commands": [
     {
@@ -78,8 +78,8 @@
       "name": "edit",
       "shortest": 1,
       "summary": "read everything again",
-      "takes": "",
-      "doc": "Read the report and the settings again, as vim's `:e` reads the file again. The terminal app reads `settings.json` again too, so a change made in an editor applies.",
+      "takes": "settings",
+      "doc": "Read the report and the settings again, as vim's `:e` reads the file again. The terminal app reads `settings.json` again too, so a change made in an editor applies. `:edit settings` opens `settings.json` in `$VISUAL` or `$EDITOR`, on the terminal.",
       "since": "0.8.11"
     },
     {
@@ -95,39 +95,39 @@
       "shortest": 4,
       "summary": "the Tasks page with a filter",
       "takes": "a filter",
-      "doc": "With words, the Tasks page with them as its filter, as `task` reads a filter: `:filter +home due.before:eow`. With none, the cursor in the filter, to change it. Bound to a key, it is a saved filter a key away: `\"tasks\": { \"g h\": \"filter +home\" }`.",
+      "doc": "With words, the Tasks page with them as its filter, as `task` reads a filter: `:filter +home due.before:eow`. With none, the cursor in the filter, to change it. Bound to a key, it is a saved filter a key away: `\"tasks\": { \"g h\": \"filter +home\" }`. On a page with a filter of its own (the web app's other pages), the cursor goes to that one.",
       "since": "0.8.11"
     },
     {
       "name": "sort",
       "shortest": 3,
-      "summary": "sort the report",
-      "takes": "a sort, as a report's sort setting writes it (due+,urgency-)",
-      "doc": "On the terminal. With words, the report sorted by them for now, written as `report.<name>.sort` writes it: `:sort due+,urgency-`. With none, the sort editor, to add, take out, reverse and reorder the report's sort keys.",
+      "summary": "change the report's sort",
+      "takes": "fields with +, -, --, = or / after them; or replace and a whole sort",
+      "doc": "On the terminal. Each word changes the sort in place, in order: `due+` sorts by due ascending (added last when it is not a key yet), `due-` descending, `due--` takes it out, `due=` turns its direction round, and `due/` groups by it, or stops (`due+/` does both). `:sort due- project--` changes two keys and leaves the rest. `:sort replace due+,urgency-` sets the whole sort, as `report.<name>.sort` writes it. With none, the sort editor; in it, `:sort +` adds a key, and `--`, `=` and `/` do theirs to the key under the cursor, and `raise`, `lower`, `reset`, `apply` and `cancel` the editor's own steps.",
       "since": "0.8.11"
     },
     {
       "name": "delete",
       "shortest": 1,
       "summary": "delete the task, or the marked ones",
-      "takes": "",
-      "doc": "Delete the chosen task, or the marked tasks when there are any. Taskwarrior asks first.",
+      "takes": "completed",
+      "doc": "Delete the chosen task, or the marked tasks when there are any. Taskwarrior asks first. `:delete completed` deletes the completed tasks of the report.",
       "since": "0.8.11"
     },
     {
       "name": "mark",
       "shortest": 2,
       "summary": "mark the task, or unmark it, and move down",
-      "takes": "",
-      "doc": "Mark the chosen task, or unmark it, and move to the next row. With tasks marked, the task commands act on all of them.",
+      "takes": "all or range",
+      "doc": "Mark the chosen task, or unmark it, and move to the next row. With tasks marked, the task commands act on all of them. `:mark all` marks every row (or unmarks them all when they are all marked); `:mark range` every row from the last one marked to this one.",
       "since": "0.8.11"
     },
     {
       "name": "open",
       "shortest": 1,
-      "summary": "open the task's link",
+      "summary": "open the task's link, or what is under the cursor",
       "takes": "",
-      "doc": "Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`).",
+      "doc": "Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). On a list of projects or tags, of boards, or of the boards in Settings, it opens the one under the cursor.",
       "since": "0.8.11"
     },
     {
@@ -198,8 +198,8 @@
       "name": "info",
       "shortest": 2,
       "summary": "the task's info",
-      "takes": "",
-      "doc": "The chosen task's info: everything about it, its notes and how its urgency adds up.",
+      "takes": "a tab: details, recurrence, timelog, annotations, unknown or raw",
+      "doc": "The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it.",
       "since": "0.8.11"
     },
     {
@@ -207,7 +207,7 @@
       "shortest": 2,
       "summary": "add a task",
       "takes": "the task, as task add takes it",
-      "doc": "With words, add the task they describe, as `task add` reads them: `:add Buy milk +errand due:tomorrow`. With none, the box to add one, with a preview.",
+      "doc": "With words, add the task they describe, as `task add` reads them: `:add Buy milk +errand due:tomorrow`. With none, the box to add one, with a preview. It works from any page.",
       "since": "0.8.11"
     },
     {
@@ -215,7 +215,7 @@
       "shortest": 3,
       "summary": "show a report",
       "takes": "a report's name",
-      "doc": "With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from.",
+      "doc": "With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from. In the terminal's list of reports down the side, the report under the cursor.",
       "since": "0.8.11"
     },
     {
@@ -249,6 +249,190 @@
       "takes": "pin or key",
       "doc": "In the static web app. With nothing after it, the PIN screen on a trusted device with a PIN, in every tab, and the four keys of the PIN take it down; on any other device the full lock, as the lock button does, and the encryption secret or a passkey opens it again. `:lock pin` asks for the PIN screen (and says so where there is no PIN), `:lock key` for the full lock. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.",
       "since": "0.8.15"
+    },
+    {
+      "name": "next",
+      "shortest": 1,
+      "summary": "the next month, the next board",
+      "takes": "",
+      "doc": "On the calendar, the month after; on a board, the board after. Like the other commands that act in several places, it does what it means on the page it is used on.",
+      "since": "unreleased"
+    },
+    {
+      "name": "previous",
+      "shortest": 4,
+      "summary": "the month before, the board before",
+      "takes": "",
+      "doc": "On the calendar, the month before; on a board, the board before.",
+      "since": "unreleased"
+    },
+    {
+      "name": "snext",
+      "shortest": 2,
+      "summary": "the next section",
+      "takes": "",
+      "doc": "The next section of the settings, of a board, of the help or of a task's info, as vim's `:snext` is the next file in a split.",
+      "since": "unreleased"
+    },
+    {
+      "name": "sprevious",
+      "shortest": 3,
+      "summary": "the section before",
+      "takes": "",
+      "doc": "The section before, as `:snext` goes on.",
+      "since": "unreleased"
+    },
+    {
+      "name": "pagedown",
+      "shortest": 5,
+      "summary": "a page down",
+      "takes": "",
+      "doc": "A page down the list. A count is that many pages.",
+      "since": "unreleased"
+    },
+    {
+      "name": "pageup",
+      "shortest": 5,
+      "summary": "a page up",
+      "takes": "",
+      "doc": "A page up the list.",
+      "since": "unreleased"
+    },
+    {
+      "name": "halfdown",
+      "shortest": 5,
+      "summary": "half a page down",
+      "takes": "",
+      "doc": "Half a page down the list, as `ctrl+d` does.",
+      "since": "unreleased"
+    },
+    {
+      "name": "halfup",
+      "shortest": 5,
+      "summary": "half a page up",
+      "takes": "",
+      "doc": "Half a page up the list, as `ctrl+u` does.",
+      "since": "unreleased"
+    },
+    {
+      "name": "prompt",
+      "shortest": 3,
+      "summary": "the cursor in the prompt",
+      "takes": "",
+      "doc": "Put the cursor in the prompt, the command line at the bottom, as `/` does.",
+      "since": "unreleased"
+    },
+    {
+      "name": "sidebar",
+      "shortest": 2,
+      "summary": "between the page and the reports down the side",
+      "takes": "",
+      "doc": "On the terminal, move between the page and the list of reports down the side.",
+      "since": "unreleased"
+    },
+    {
+      "name": "hidden",
+      "shortest": 3,
+      "summary": "show the hidden reports",
+      "takes": "",
+      "doc": "In the terminal's list of reports, show the hidden ones too (their names start with `_`), or hide them again.",
+      "since": "unreleased"
+    },
+    {
+      "name": "back",
+      "shortest": 2,
+      "summary": "back",
+      "takes": "",
+      "doc": "Back to the page from the reports down the side, or from a board to the list of boards.",
+      "since": "unreleased"
+    },
+    {
+      "name": "stopall",
+      "shortest": 5,
+      "summary": "stop the started task",
+      "takes": "",
+      "doc": "Stop the task that is started, whichever it is (the timer in the top bar), where `:stop` stops the chosen one.",
+      "since": "unreleased"
+    },
+    {
+      "name": "reminders",
+      "shortest": 3,
+      "summary": "the reminder options",
+      "takes": "",
+      "doc": "The reminder options, and turning reminders on or off.",
+      "since": "unreleased"
+    },
+    {
+      "name": "export",
+      "shortest": 2,
+      "summary": "export as a file",
+      "takes": "",
+      "doc": "Export the report as a file (JSON, CSV or TSV, with the fields you choose); on a board, a table of the board.",
+      "since": "unreleased"
+    },
+    {
+      "name": "clear",
+      "shortest": 2,
+      "summary": "clear the console",
+      "takes": "",
+      "doc": "Clear what the console shows.",
+      "since": "unreleased"
+    },
+    {
+      "name": "burndown",
+      "shortest": 2,
+      "summary": "the burndown by day, week or month",
+      "takes": "day, week or month",
+      "doc": "The burndown chart by day, by week or by month: `:burndown week`.",
+      "since": "unreleased"
+    },
+    {
+      "name": "command",
+      "shortest": 3,
+      "summary": "run one of your task commands on the task",
+      "takes": "add, edit or delete",
+      "doc": "With nothing after it, one of your task commands to run on the chosen task, from a list. In the task commands of Settings, `:command add`, `:command edit` and `:command delete` add one, change the one under the cursor and delete it.",
+      "since": "unreleased"
+    },
+    {
+      "name": "key",
+      "shortest": 3,
+      "summary": "add, take out or search keys",
+      "takes": "add, remove, none, defaults or search",
+      "doc": "In the Keybindings of Settings: `:key add` adds a key to the section, `:key remove` takes your key out (back to the default), `:key none` leaves the action without a key, `:key defaults` shows the default keys or only yours, `:key search` searches them.",
+      "since": "unreleased"
+    },
+    {
+      "name": "home",
+      "shortest": 2,
+      "summary": "choose the page the app opens on",
+      "takes": "",
+      "doc": "In the general settings, choose the page the app opens on: a report or a board.",
+      "since": "unreleased"
+    },
+    {
+      "name": "syncwhen",
+      "shortest": 5,
+      "summary": "choose when to sync",
+      "takes": "",
+      "doc": "In the sync settings, go through when to sync, and save it.",
+      "since": "unreleased"
+    },
+    {
+      "name": "theme",
+      "shortest": 2,
+      "summary": "the next theme preset",
+      "takes": "",
+      "doc": "In the appearance settings, go through the presets: auto, light, dark or mono.",
+      "since": "unreleased"
+    },
+    {
+      "name": "shading",
+      "shortest": 2,
+      "summary": "the grey shading of tasks, or none",
+      "takes": "",
+      "doc": "In the appearance settings, draw tasks' grey shading, or leave it out.",
+      "since": "unreleased"
     }
   ],
   "lines": [

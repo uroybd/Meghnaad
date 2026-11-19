@@ -49,14 +49,14 @@ afterEach(() => {
 describe('the Keybindings tab', () => {
   it('shows only your own keys until the defaults are asked for', async () => {
     await open({ version: 2, tui: { keys: { tasks: { x: 'tasks.done' } } } });
-    expect(rows('Terminal')).toEqual(['tasks.done']);
+    expect(rows('Terminal')).toEqual(['done']);
     expect(rows('General')).toEqual([]);
     expect(section('General').textContent).toContain('None of your own.');
 
     const toggle = document.querySelector('.top input[type=checkbox]') as HTMLInputElement;
     toggle.click();
     flushSync();
-    expect(rows('Web')).toContain('app.add');
+    expect(rows('Web')).toContain('add');
     expect(section('Web').querySelector('tr.default kbd.muted')).not.toBeNull();
     expect(localStorage.getItem('tw-web-keys-defaults')).toBe('1');
   });
@@ -69,9 +69,9 @@ describe('the Keybindings tab', () => {
     });
     const search = document.querySelector('input[aria-label="Search keys"]') as HTMLInputElement;
     type(search, 'start');
-    expect(rows('Terminal')).toEqual(['tasks.start']);
+    expect(rows('Terminal')).toEqual(['start']);
     type(search, 'ctrl+k');
-    expect(rows('General')).toEqual(['app.prompt']);
+    expect(rows('General')).toEqual(['prompt']);
     expect(rows('Terminal')).toEqual([]);
   });
 
@@ -91,7 +91,7 @@ describe('the Keybindings tab', () => {
     type(section('Web').querySelector('input[aria-label="Key"]') as HTMLInputElement, 'Ctrl-N');
     button('Add key').click();
     flushSync();
-    expect(rows('Web')).toEqual(['app.add']);
+    expect(rows('Web')).toEqual(['add']);
     expect(section('Web').querySelector('kbd')?.textContent).toBe('Ctrl+Shift+N');
 
     button('Apply').click();
@@ -99,8 +99,74 @@ describe('the Keybindings tab', () => {
     expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({
       version: 2,
       taskCommands: [],
-      web: { keys: { app: { 'ctrl+shift+n': 'app.add', a: null } } },
+      web: { keys: { app: { 'ctrl+shift+n': 'add', a: null } } },
     });
+  });
+
+  it('starts from the command a preset runs, checks it as typed, and saves the command', async () => {
+    await open({ version: 2, taskCommands: [] });
+    button('Add', section('General')).click();
+    flushSync();
+    type(section('General').querySelector('input[aria-label="Search actions"]') as HTMLInputElement, 'tasks.filter');
+    (section('General').querySelector('.result') as HTMLButtonElement).click();
+    flushSync();
+    const runs = section('General').querySelector('input[aria-label="Command"]') as HTMLInputElement;
+    expect(runs.value).toBe('filter');
+    type(runs, 'done 3');
+    expect(section('General').querySelector('.err')?.textContent).toBe('done takes no words');
+    type(section('General').querySelector('input[aria-label="Key"]') as HTMLInputElement, 'g h');
+    expect(button('Add key').disabled).toBe(true);
+    type(runs, 'filter +home');
+    expect(section('General').querySelector('.add')?.textContent).toContain('Runs tasks.filter with +home');
+    button('Add key').click();
+    flushSync();
+    expect(rows('General')).toEqual(['filter +home']);
+    button('Apply').click();
+    await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
+    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({
+      version: 2,
+      taskCommands: [],
+      keys: { tasks: { 'g h': 'filter +home' } },
+    });
+  });
+
+  it('adds a command of your own, asking where one of several places runs it', async () => {
+    await open({ version: 2 });
+    button('Add', section('Terminal')).click();
+    flushSync();
+    const own = [...section('Terminal').querySelectorAll('.result')].find((b) =>
+      b.textContent?.includes('Add a command'),
+    ) as HTMLButtonElement;
+    own.click();
+    flushSync();
+    const runs = section('Terminal').querySelector('input[aria-label="Command"]') as HTMLInputElement;
+    expect(runs.value).toBe('');
+    type(runs, 'next');
+    const where = section('Terminal').querySelector('select[aria-label="Where"]') as HTMLSelectElement;
+    expect([...where.options].map((o) => o.value)).toEqual(['calendar', 'boards']);
+    where.value = 'boards';
+    where.dispatchEvent(new Event('change', { bubbles: true }));
+    flushSync();
+    type(section('Terminal').querySelector('input[aria-label="Key"]') as HTMLInputElement, 'N');
+    button('Add key').click();
+    flushSync();
+    button('Apply').click();
+    await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
+    const saved = JSON.parse(api.putAppSettings.mock.calls[0][0]);
+    expect(saved, JSON.stringify(saved)).toMatchObject({ tui: { keys: { boards: { N: 'next' } } } });
+  });
+
+  it('warns of a key that runs no command, and takes it out', async () => {
+    await open({ version: 2, keys: { tasks: { z: 'done 3', x: 'done' } } });
+    const warn = document.querySelector('.warn') as HTMLElement;
+    expect(warn.textContent).toContain('done takes no words');
+    expect(warn.textContent).toContain('keys.tasks');
+    button('Take out', warn).click();
+    flushSync();
+    expect(document.querySelector('.warn')).toBeNull();
+    button('Apply').click();
+    await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
+    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({ version: 2, keys: { tasks: { x: 'done' } } });
   });
 
   it('records a key pressed, and leaves an action with none', async () => {

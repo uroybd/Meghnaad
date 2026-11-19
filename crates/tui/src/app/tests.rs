@@ -99,6 +99,26 @@ fn the_delete_key_asks_in_a_box() {
 }
 
 #[test]
+fn sort_words_change_the_sort_in_place_and_replace_sets_it_whole() {
+    let mut app = app();
+    app.report_name = "next".into();
+    app.cfg.reports.insert(
+        "next".into(),
+        serde_json::from_value(serde_json::json!({
+            "name": "next", "columns": ["id", "due.relative", "description"], "sort": "urgency-,project+"
+        }))
+        .unwrap(),
+    );
+    app.open(Page::Tasks);
+    app.console(":sort due+ project--");
+    assert_eq!(app.sort_in_force().as_deref(), Some("urgency-,due+"));
+    app.console(":sort urgency=");
+    assert_eq!(app.sort_in_force().as_deref(), Some("urgency+,due+"));
+    app.console(":sort replace entry-");
+    assert_eq!(app.filter, "rc.report.next.sort:entry-");
+}
+
+#[test]
 fn the_sort_box_adds_reverses_and_reorders_keys_and_writes_the_override() {
     let mut app = app();
     app.report_name = "next".into();
@@ -707,5 +727,5 @@ fn tab_completes_a_commands_name() {
         "{:?}",
         app.mode
     );
-    assert_eq!(app.status, "start stop");
+    assert_eq!(app.status, "start stop stopall");
 }

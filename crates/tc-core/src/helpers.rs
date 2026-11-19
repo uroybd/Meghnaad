@@ -603,28 +603,59 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<String>(2)?
         )),
         // A command line's command (`:tabn Tasks`): `{action, args?, count?}`, or `null` for a line that goes to `task`.
-        "key_command_line" => json!(crate::keymap::command_line(&a.req::<String>(0)?)),
+        // With the groups of the context it is typed in (a keymap's `groups[<context>]`), a command that acts in several
+        // places runs the one of that context (`:next` on the calendar).
+        "key_command_line" => {
+            let groups = a.opt::<Vec<String>>(1)?.unwrap_or_default();
+            let groups: Vec<&str> = groups.iter().map(String::as_str).collect();
+            json!(crate::keymap::command_line_in(&a.req::<String>(0)?, &groups))
+        }
+        // A command typed for a key (spec 0025), against the keymap asset: `{call, about, places}` (what it runs, what
+        // that does, each `{group, action}` it can be bound in), or `{problem}`, why it is no command.
+        "key_command_check" => json!(crate::keymap::check_command(
+            &a.opt::<serde_json::Value>(1)?.unwrap_or_default(),
+            &a.req::<String>(0)?
+        )),
+        // The command an action runs, as a key bound to it is saved (`done` for `tasks.done`); `null` for none.
+        "key_preset" => json!(crate::keymap::preset_of(&a.req::<String>(0)?)),
         // What an expression bound to a key runs (`filter +home`), the same way: `null` for none.
         "key_call" => json!(crate::keymap::call_of(&a.req::<String>(0)?)),
-        // What a Keybindings page shows, from the whole of `settings.json` and the keymap asset: `{sections, problems}`.
+        // What a Keybindings page shows, from the whole of `settings.json` and the keymap asset: `{sections, problems, bad}`.
         "keymap_bindings" => json!(crate::keymap::bindings(
             &a.opt::<serde_json::Value>(1)?.unwrap_or_default(),
             &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
         )),
-        // `settings.json` with an action's keys in a section set (a list, `[]` for none), or taken out (`null`), from
-        // the keymap asset (the action's default keys).
+        // `settings.json` with the keys of what runs a command (or an action) in a section set (a list, `[]` for none),
+        // or taken out (`null`), from the keymap asset (the action's default keys); bound in the group given, else
+        // that of what it runs. The command is saved as given.
         "keymap_set" => {
             let section = a.req::<String>(1)?;
             if !crate::keymap::SECTIONS.contains(&section.as_str()) {
                 return Err(format!("{section} is not a section of the keys"));
             }
             let keys = a.opt::<Vec<String>>(3)?;
+            let group = a.opt::<String>(5)?;
             crate::keymap::with_binding(
                 &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
                 &a.opt::<serde_json::Value>(4)?.unwrap_or_default(),
                 &section,
                 &a.req::<String>(2)?,
+                group.as_deref(),
                 keys.as_deref(),
+            )
+        }
+        // `settings.json` without one key of a group of a section (a binding that runs no command, taken out).
+        "keymap_unset" => {
+            let section = a.req::<String>(1)?;
+            if !crate::keymap::SECTIONS.contains(&section.as_str()) {
+                return Err(format!("{section} is not a section of the keys"));
+            }
+            crate::keymap::without_key(
+                &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
+                &a.opt::<serde_json::Value>(4)?.unwrap_or_default(),
+                &section,
+                &a.req::<String>(2)?,
+                &a.req::<String>(3)?,
             )
         }
         // `settings.json` brought to the latest version (`settings_version`), from the keymap asset; `null` when it is

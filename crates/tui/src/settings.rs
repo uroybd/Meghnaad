@@ -862,7 +862,12 @@ pub fn save_theme_preset(word: &str) -> Result<(), SettingsError> {
 /// As [`with_commands`].
 pub fn with_binding(text: &str, section: &str, action: &str, keys: Option<&[String]>) -> Result<String, SettingsError> {
     let raw = Value::Object(object(text)?);
-    let Value::Object(raw) = tc_core::keymap::with_binding(&raw, crate::keys::defaults(), section, action, keys) else {
+    // Saved as the command the action runs, as the other front ends save it (spec 0025).
+    let runs = tc_core::keymap::preset_of(action).unwrap_or_else(|| action.to_owned());
+    let group = tc_core::keymap::group_of(action);
+    let Value::Object(raw) =
+        tc_core::keymap::with_binding(&raw, crate::keys::defaults(), section, &runs, Some(&group), keys)
+    else {
         return Err(SettingsError::NotObject);
     };
     written(raw)
@@ -906,7 +911,8 @@ mod tests {
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(
             v["tui"],
-            serde_json::json!({ "sync": "manual", "keys": { "tasks": { "x": "tasks.done", "d": null } } })
+            serde_json::json!({ "sync": "manual", "keys": { "tasks": { "x": "done", "d": null } } }),
+            "saved as the command it runs"
         );
         assert_eq!(v["version"], tc_core::settings_version::VERSION);
         assert!(out.find("taskCommands") > out.find("\"tui\""), "the commands go last");

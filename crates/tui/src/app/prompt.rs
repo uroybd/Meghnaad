@@ -298,7 +298,13 @@ impl App {
             return Action::None;
         }
         // `:` joined to a command runs it (`:tabn Tasks`, `:5`); any other line goes to `task` (spec 0020).
-        if let Some(call) = tc_core::keymap::command_line(line) {
+        // A command of several places (`:next`) runs the one of the page it is typed on.
+        let groups: Vec<&str> = (self.keymap.groups.get(self.context()))
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        if let Some(call) = tc_core::keymap::command_line_in(line, &groups) {
             return self.run_call(call);
         }
         if let Some(limit) = review::parse_review(line) {

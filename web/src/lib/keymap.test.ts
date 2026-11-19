@@ -42,7 +42,7 @@ describe('the keymap', () => {
       keys: { app: { x: 'app.nope' } },
       tui: { keys: { tasks: { z: 'tasks.done' } } },
     });
-    expect(km.problems).toEqual(['keys.app: “app.nope” is no action or command']);
+    expect(km.problems).toEqual(['keys.app: x runs “app.nope”, which is skipped: “app.nope” is no action']);
   });
 
   it('has no keys until the defaults are there', () => {
