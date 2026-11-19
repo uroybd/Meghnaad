@@ -138,6 +138,7 @@
           kind={section.type as ChartKind}
           time={!!section.by?.time}
           stacked={isStacked(section)}
+          grouped={!!section.by}
           colors={seriesColors}
           {labelColors}
           format={fmt}

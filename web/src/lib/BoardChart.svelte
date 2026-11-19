@@ -15,6 +15,7 @@
     kind,
     time,
     stacked = false,
+    grouped = false,
     colors = [],
     labelColors = [],
     rowsAreSeries = false,
@@ -26,6 +27,8 @@
     /** The labels are periods in time order. */
     time: boolean;
     stacked?: boolean;
+    /** The chart is grouped (by a date or a field): its bars are named by their groups. */
+    grouped?: boolean;
     /** A series' own colour, by position (a colour name or `#rrggbb`); the page's palette where there is none. */
     colors?: (string | undefined)[];
     /** The taskrc's colour for each label's value (a UDA's `color.uda.<name>.<value>`), by position. */
@@ -76,6 +79,7 @@
       kind,
       time,
       stacked,
+      grouped,
       colors,
       labelColors,
       rowsAreSeries,

@@ -328,7 +328,7 @@ fn draw_section(buf: &mut Buffer, section: &Section, data: Option<&Data>, area: 
             let time = section.by.as_ref().is_some_and(|b| b.time.is_some());
             let stacked = section.is_stacked() && chart.datasets.len() > 1;
             match section.kind {
-                Kind::Bar if stacked => stacked_bars(buf, chart, &colors, time, inner),
+                Kind::Bar if stacked => stacked_bars(buf, chart, &colors, time, section.by.is_some(), inner),
                 Kind::Bar => bars(buf, chart, &colors, time, inner),
                 Kind::Line | Kind::Area => lines(buf, chart, &colors, section.kind == Kind::Area, stacked, inner),
                 Kind::Pie | Kind::Donut | Kind::Polar => round(buf, chart, section.kind, inner),
@@ -494,9 +494,13 @@ fn stack_tops(parts: &[Vec<Option<(f64, f64)>>], labels: usize) -> Vec<f64> {
         .collect()
 }
 
-/// The name of each stacked bar: the series with a value in it, joined by slashes, as the web app names them; a bar with
-/// nothing in it keeps its own label.
-fn bar_names(chart: &Chart) -> Vec<String> {
+/// The name of each stacked bar of a chart grouped by nothing: the series with a value in it, joined by slashes, as the
+/// web app names them; a bar with nothing in it keeps its own label. A grouped chart's bars are named by their groups (a
+/// date, a project), and the legend names the series.
+fn bar_names(chart: &Chart, grouped: bool) -> Vec<String> {
+    if grouped {
+        return chart.labels.iter().map(|l| l.label.clone()).collect();
+    }
     chart
         .labels
         .iter()
@@ -573,7 +577,7 @@ fn bar_parts(
 /// Bars with the series stacked on each other, the first at the bottom: across the page for dates (a column for each,
 /// its total above it), down it for values (a row for each, its total after it). A terminal cell has one colour, so where
 /// two parts meet in one, it takes the colour of the part at its middle.
-fn stacked_bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, area: Rect) {
+fn stacked_bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, grouped: bool, area: Rect) {
     const UP: [&str; 9] = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
     const ACROSS: [&str; 9] = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"];
     let labels = chart.labels.len();
@@ -582,7 +586,7 @@ fn stacked_bars(buf: &mut Buffer, chart: &Chart, colors: &[Color], time: bool, a
     let max = tops.iter().copied().fold(0.0, f64::max);
     let max = if max > 0.0 { max } else { 1.0 };
     let total = |i: usize| boards::format_value(tops.get(i).copied(), chart.unit);
-    let names = bar_names(chart);
+    let names = bar_names(chart, grouped);
     if time {
         let groups = u16::try_from(labels).unwrap_or(u16::MAX).max(1);
         let width = (area.width.saturating_sub(groups) / groups).clamp(1, 8);
@@ -1080,7 +1084,7 @@ mod tests {
         let colors = [Color::Blue, Color::Red];
         // A line for the totals, four for the bars, one for the dates.
         let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
-        stacked_bars(&mut buf, &chart, &colors, true, Rect::new(0, 0, 6, 6));
+        stacked_bars(&mut buf, &chart, &colors, true, false, Rect::new(0, 0, 6, 6));
         let column = |x: usize| -> Vec<(String, Color)> { (0..6).map(|y| row(&buf, y)[x].clone()).collect() };
         let full = |c: Color| ("█".to_owned(), c);
         // Two columns of two: the first is 4 tall (the whole plot), blue under red, its total in the line above.
@@ -1103,7 +1107,9 @@ mod tests {
             &["a", "b", "c"],
             &[&[Some(1.0), Some(2.0), None], &[Some(3.0), Some(0.0), None]],
         );
-        assert_eq!(bar_names(&chart), ["s0 / s1", "s0", "c"]);
+        assert_eq!(bar_names(&chart, false), ["s0 / s1", "s0", "c"]);
+        // Grouped (by a date, a project): the groups name the bars, and the legend the series.
+        assert_eq!(bar_names(&chart, true), ["a", "b", "c"]);
         assert_eq!(trim_label("Succeeded / Failed", 12), "Succeeded /…");
         assert_eq!(trim_label("short", 12), "short");
     }
@@ -1113,7 +1119,7 @@ mod tests {
         let chart = chart_of(&["home", "work"], &[&[Some(1.0), Some(2.0)], &[Some(1.0), None]]);
         let colors = [Color::Blue, Color::Red];
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 2));
-        stacked_bars(&mut buf, &chart, &colors, false, Rect::new(0, 0, 20, 2));
+        stacked_bars(&mut buf, &chart, &colors, false, false, Rect::new(0, 0, 20, 2));
         let text = |y| row(&buf, y).iter().map(|c| c.0.clone()).collect::<String>();
         // Each bar is named by its series ("s0 / s1", cut to a third of the width: 6), then a space, 11 cells of bar, a
         // space and a total 1 wide: 2 of 2 is all 11, half and half (the cell where they meet takes the colour at its middle).

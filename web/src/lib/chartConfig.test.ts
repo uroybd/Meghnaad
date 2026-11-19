@@ -286,6 +286,16 @@ describe('the labels of a stacked bar chart', () => {
     expect(cfg(input('bar', { chart: c, stacked: true })).data.labels).toEqual(['s0 / s2', 's0 / s1 / s2', '(none)']);
   });
 
+  it('are the groups of a grouped chart (a date, a project): the legend names the series', () => {
+    const c = chart(3);
+    expect(barLabels(c, 'bar', true, true)).toEqual(['Home', 'Work', '(none)']);
+    expect(cfg(input('bar', { chart: c, stacked: true, grouped: true })).data.labels).toEqual([
+      'Home',
+      'Work',
+      '(none)',
+    ]);
+  });
+
   it('leave bars side by side, one series, and other kinds to their own labels', () => {
     const own = ['Home', 'Work', '(none)'];
     expect(barLabels(chart(2), 'bar', false)).toEqual(own);

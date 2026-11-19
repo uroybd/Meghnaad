@@ -25,6 +25,8 @@ export interface ChartInput {
   /** The labels are periods in time order (so a bar chart stands up, rather than lies down). */
   time: boolean;
   stacked: boolean;
+  /** The chart is grouped (by a date or a field): its bars are named by their groups. */
+  grouped?: boolean;
   /** A series' own colour, by position: a Taskwarrior colour name or `#rrggbb`. The page's palette gives the rest. */
   colors?: (string | undefined)[];
   /** The colour of each label's value, by position, where the taskrc gives it one (`color.uda.<name>.<value>`). */
@@ -238,12 +240,13 @@ export const trimLabel = (label: string, room = LABEL_ROOM): string =>
   label.length > room ? `${label.slice(0, Math.max(room - 1, 1)).trimEnd()}…` : label;
 
 /**
- * The name of each bar of a stacked bar chart: the series it is made of (those with a value in it), joined by slashes. A bar
- * with nothing in it keeps its own label. Any other chart's labels are its own.
+ * The name of each bar of a stacked bar chart grouped by nothing: the series it is made of (those with a value in it),
+ * joined by slashes. A bar with nothing in it keeps its own label. A grouped chart's bars are named by their groups (a
+ * date, a project), and the legend names the series; any other chart's labels are its own.
  */
-export function barLabels(chart: Chart, kind: ChartKind, stacked: boolean): string[] {
+export function barLabels(chart: Chart, kind: ChartKind, stacked: boolean, grouped = false): string[] {
   const own = chart.labels.map((l) => l.label);
-  if (kind !== 'bar' || !stacked || chart.datasets.length < 2) return own;
+  if (grouped || kind !== 'bar' || !stacked || chart.datasets.length < 2) return own;
   return own.map((label, j) => {
     const parts = chart.datasets.filter((d) => (d.data[j] ?? 0) !== 0).map((d) => d.label);
     return parts.length ? parts.join(' / ') : label;
@@ -252,13 +255,13 @@ export function barLabels(chart: Chart, kind: ChartKind, stacked: boolean): stri
 
 /** What Chart.js is given for this chart. */
 export function chartConfig(input: ChartInput): ChartConfiguration {
-  const { chart, kind, time, stacked, format, theme, dark } = input;
+  const { chart, kind, time, stacked, grouped, format, theme, dark } = input;
   if (kind === 'heatmap') return heatmapConfig(input);
   const round = isRound(kind);
   const many = chart.datasets.length > 1;
   const colorOf = (i: number) => chartColor(input.colors?.[i], dark) ?? defaultSeriesColor(i, dark);
   const horizontal = kind === 'bar' && !time;
-  const labels = barLabels(chart, kind, stacked);
+  const labels = barLabels(chart, kind, stacked, grouped);
 
   const datasets = chart.datasets.map((d, i) => {
     if (round) {

@@ -405,8 +405,8 @@ radars are drawn in braille dots; a heatmap is a grid of shaded cells; a table i
 the section's width. A series' colour is the one it names, else blue, red, green, yellow, magenta and cyan in turn; a chart
 stacked by a field (`stackBy`) has a series for each value, in those colours, named in its legend. A stacked chart
 (`stacked`, on unless it is turned off for one stacked by a field) piles its series up, the first at the bottom: bars are
-drawn as one bar of coloured parts with the total beside it, named by the series in it (cut short where there is no
-room, as there is no tooltip here), and lines and areas add up, each area a band on the one
+drawn as one bar of coloured parts with the total beside it, named by its group (a date, a project) or, in a chart
+grouped by nothing, by the series in it (cut short where there is no room, as there is no tooltip here), and lines and areas add up, each area a band on the one
 below. A character cell has one colour, so where two parts of a bar meet inside one, it takes the colour at its middle.
 On a page narrower than 100 columns the board has six columns, as on a phone, and the sections keep their order. A board
 is read when its page opens, and again with `R`.

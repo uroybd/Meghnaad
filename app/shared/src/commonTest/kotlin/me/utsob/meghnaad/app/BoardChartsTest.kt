@@ -82,6 +82,8 @@ class BoardChartsTest {
         assertEquals(listOf("s0 / s1", "s0", "L2"), stackedBarLabels(c, "bar", stacked = true).labels.map { it.label })
         // Side by side, one series, or another kind: its own labels.
         assertEquals(c, stackedBarLabels(c, "bar", stacked = false))
+        // Grouped (by a date, a project): the groups name the bars, and the legend the series.
+        assertEquals(c, stackedBarLabels(c, "bar", stacked = true, grouped = true))
         assertEquals(c, stackedBarLabels(c, "area", stacked = true))
         val one = c.copy(datasets = c.datasets.take(1))
         assertEquals(one, stackedBarLabels(one, "bar", stacked = true))

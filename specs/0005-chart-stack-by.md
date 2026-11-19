@@ -109,3 +109,7 @@ while it is set. The terminal app has no board editor; it draws what `settings.j
   `trimLabel` in `BoardCharts.kt`, used by the screens and the widget (`BoardRenderer.kt`); a tap's tip is whole. Terminal:
   `bar_names` and `trim_label` in `boardui.rs`, the date axis cutting each name to its bar rather than shortening it as
   a date. Tests on each. `docs/using/boards.md` and `docs/terminal.md` say so.
+- 2026-11-19: A grouped chart (by a date or a field) names its bars by their groups again, and the legend names the
+  series (asked: the primary grouping takes precedence). Only a chart grouped by nothing names its stacked bars by the
+  series in them. `grouped` in `barLabels` (web, from `section.by`), `stackedBarLabels` (Android, screens and widget)
+  and `bar_names` (terminal), with tests.

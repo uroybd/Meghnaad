@@ -103,11 +103,12 @@ fun stackedValues(chart: BoardChart): List<List<Double>> =
     }
 
 /**
- * A stacked bar chart with each bar named by the series it is made of (those with a value in it), joined by slashes; a bar with nothing
- * in it keeps its own label. Any other chart is as it was (web/src/lib/boardChart.ts `barLabels`).
+ * A stacked bar chart grouped by nothing, with each bar named by the series it is made of (those with a value in it), joined by
+ * slashes; a bar with nothing in it keeps its own label. A grouped chart's bars are named by their groups (a date, a project), and the
+ * legend names the series; any other chart is as it was (web/src/lib/boardChart.ts `barLabels`).
  */
-fun stackedBarLabels(chart: BoardChart, type: String, stacked: Boolean): BoardChart {
-    if (type != "bar" || !stacked || chart.datasets.size < 2) return chart
+fun stackedBarLabels(chart: BoardChart, type: String, stacked: Boolean, grouped: Boolean = false): BoardChart {
+    if (grouped || type != "bar" || !stacked || chart.datasets.size < 2) return chart
     return chart.copy(
         labels = chart.labels.mapIndexed { i, l ->
             val parts = chart.datasets.filter { (it.data.getOrNull(i) ?: 0.0) != 0.0 }.map { it.label }
@@ -211,7 +212,7 @@ fun BoardChartView(chart: BoardChart, section: Section, dark: Boolean, modifier:
         // A legend names the series; a round chart's names its slices instead.
         if (legend) Legend(chart.datasets.map { it.label }, series)
         when (section.type) {
-            "bar" -> stackedBarLabels(chart, section.type, stacked).let { bars ->
+            "bar" -> stackedBarLabels(chart, section.type, stacked, grouped = section.by != null).let { bars ->
                 if (section.by?.time != null) VerticalBars(bars, series, stacked, plot) else HorizontalBars(bars, series, stacked, plot, labelColors)
             }
             "line", "area" -> Lines(chart, series, stacked, section.type == "area", plot)
