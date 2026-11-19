@@ -2200,6 +2200,23 @@ mod tests {
     }
 
     #[test]
+    fn every_action_described_is_one_a_key_can_run() {
+        let d = defaults();
+        let known = known_actions(&d);
+        let about = d
+            .get("about")
+            .and_then(Value::as_object)
+            .expect("the asset describes its actions");
+        for action in about.keys() {
+            assert!(
+                known.contains(action),
+                "{action} is described but listed under no front end's keys"
+            );
+        }
+        assert!(matches!(check_command(&d, "lock"), Checked::Runs { .. }));
+    }
+
+    #[test]
     fn the_short_forms_name_one_command_each() {
         for c in &COMMANDS {
             for n in c.shortest..=c.name.len() {

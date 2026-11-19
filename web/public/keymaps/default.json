@@ -135,6 +135,7 @@
       "app.context": "C",
       "app.reminders": "N",
       "app.sync": "S",
+      "app.lock": null,
       "page.tasks": "g 1",
       "page.projects": "g 2",
       "page.tags": "g 3",
