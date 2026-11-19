@@ -274,6 +274,56 @@ impl<H: Http> ForgeRepo<H> {
         }
     }
 
+    /// GitHub: every file under `dir` with its text, in one query for the folder and two levels in it, then one for
+    /// each [`GH_TREES_PER_QUERY`] folders deeper. A file whose text doesn't come back whole is fetched by its blob.
+    async fn github_read_dir(&self, dir: &str) -> Result<Vec<(String, Blob)>> {
+        let first = format!(
+            "query($owner:String!,$name:String!,$ref:String!,$path:String!){{repository(owner:$owner,name:$name)\
+{{ref(qualifiedName:$ref){{target{{... on Commit{{file(path:$path){{type object{{...T}}}}}}}}}}}}}} {GH_TREE}"
+        );
+        let data = self.query(&first, json!({ "path": dir })).await?;
+        let mut files = Vec::new();
+        let mut deeper = Vec::new();
+        let file = data.pointer("/repository/ref/target/file").filter(|f| !f.is_null());
+        if file.and_then(|f| f.get("type")).and_then(Value::as_str) == Some("tree") {
+            walk_entries(
+                file.and_then(|f| f.pointer("/object/entries")),
+                dir,
+                &mut files,
+                &mut deeper,
+            );
+        }
+        while !deeper.is_empty() {
+            let batch: Vec<(String, String)> = deeper.drain(..deeper.len().min(GH_TREES_PER_QUERY)).collect();
+            let mut asks = String::new();
+            for (i, (_, oid)) in batch.iter().enumerate() {
+                if !oid.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return Err(bad_answer("a listing"));
+                }
+                asks.push_str(&format!("t{i}:object(oid:\"{oid}\"){{...T}} "));
+            }
+            // `$ref` is always sent, and a query must use every variable it declares.
+            let more = format!(
+                "query($owner:String!,$name:String!,$ref:String!){{repository(owner:$owner,name:$name)\
+{{ref(qualifiedName:$ref){{name}} {asks}}}}} {GH_TREE}"
+            );
+            let data = self.query(&more, json!({})).await?;
+            for (i, (path, _)) in batch.iter().enumerate() {
+                let entries = data.pointer(&format!("/repository/t{i}/entries"));
+                walk_entries(entries, path, &mut files, &mut deeper);
+            }
+        }
+        let mut out = Vec::with_capacity(files.len());
+        for (path, id, text) in files {
+            let bytes = match text {
+                Some(t) => t.into_bytes(),
+                None => self.blob(&id).await?,
+            };
+            out.push((path, Blob { id, bytes }));
+        }
+        Ok(out)
+    }
+
     /// GitHub: a folder's files by the folder's tree id, however deep, by path from the root.
     async fn github_tree(&self, tree: &str, dir: &str) -> Result<Vec<Entry>> {
         let res = self.get(self.rest(&format!("git/trees/{tree}?recursive=1"))).await?;
@@ -453,6 +503,52 @@ const GH_READ: &str = "query($owner:String!,$name:String!,$ref:String!,$path:Str
 const GH_ROOT: &str = "query($owner:String!,$name:String!,$ref:String!){repository(owner:$owner,name:$name)\
 {ref(qualifiedName:$ref){target{oid ... on Commit{tree{entries{name type oid}}}}}}}";
 
+/// A folder and two levels of folders in it, each file with its text: `...T` on a tree. A folder deeper than that
+/// comes back without its entries, and is asked for after, several to a query.
+const GH_TREE: &str =
+    "fragment B on Blob{text isBinary isTruncated} fragment T on Tree{entries{name type oid object{...B \
+... on Tree{entries{name type oid object{...B ... on Tree{entries{name type oid object{...B}}}}}}}}}";
+
+/// How many deeper folders one query asks for.
+const GH_TREES_PER_QUERY: usize = 10;
+
+/// A file found in a folder read with [`GH_TREE`]: its path, blob id and text (`None`: binary or cut short, so fetched).
+type Found = (String, String, Option<String>);
+
+/// Walk the entries of a folder read with [`GH_TREE`]: its files into `files`, and the folders that came back without
+/// their entries (too deep for the query) into `deeper`, each with its path and tree id.
+fn walk_entries(entries: Option<&Value>, dir: &str, files: &mut Vec<Found>, deeper: &mut Vec<(String, String)>) {
+    for e in entries.and_then(Value::as_array).into_iter().flatten() {
+        let (Some(name), Some(oid)) = (
+            e.get("name").and_then(Value::as_str),
+            e.get("oid").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        let path = format!("{dir}/{name}");
+        let object = e.get("object");
+        match e.get("type").and_then(Value::as_str) {
+            Some("blob") => {
+                let text = object
+                    .filter(|o| {
+                        o.get("isBinary").and_then(Value::as_bool) == Some(false)
+                            && o.get("isTruncated").and_then(Value::as_bool) == Some(false)
+                    })
+                    .and_then(|o| o.get("text"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                files.push((path, oid.to_owned(), text));
+            }
+            Some("tree") => match object.and_then(|o| o.get("entries")) {
+                Some(inner) => walk_entries(Some(inner), &path, files, deeper),
+                None => deeper.push((path, oid.to_owned())),
+            },
+            // A submodule (`commit`) holds no files of ours.
+            _ => {}
+        }
+    }
+}
+
 const GH_COMMIT: &str = "mutation($input:CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid}}}";
 
 impl<H: Http> GitRepo for ForgeRepo<H> {
@@ -610,6 +706,13 @@ impl<H: Http> GitRepo for ForgeRepo<H> {
                 };
                 Ok(self.gitea_tree(id, true, dir).await?.unwrap_or_default())
             }
+        }
+    }
+
+    async fn read_dir(&self, dir: &str) -> Result<Option<Vec<(String, Blob)>>> {
+        match self.remote.forge() {
+            Forge::GitHub => Ok(Some(self.github_read_dir(dir).await?)),
+            Forge::Gitea => Ok(None),
         }
     }
 

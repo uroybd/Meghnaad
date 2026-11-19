@@ -392,3 +392,46 @@ fn futures_executor<F: std::future::Future>(f: F) -> F::Output {
         .unwrap()
         .block_on(f)
 }
+
+#[tokio::test]
+async fn github_reads_a_folder_two_levels_deep_in_one_query_and_deeper_ones_after() {
+    let blob = |text: Option<&str>| match text {
+        Some(t) => json!({ "text": t, "isBinary": false, "isTruncated": false }),
+        None => json!({ "text": null, "isBinary": true, "isTruncated": false }),
+    };
+    let first = json!({ "data": { "repository": { "ref": { "target": { "file": { "type": "tree", "object": { "entries": [
+        { "name": "taskrc", "type": "blob", "oid": "a1", "object": blob(Some("include themes/dark.rc\n")) },
+        { "name": "icon.png", "type": "blob", "oid": "b2", "object": blob(None) },
+        { "name": "themes", "type": "tree", "oid": "c3", "object": { "entries": [
+            { "name": "dark.rc", "type": "blob", "oid": "d4", "object": blob(Some("color.due=red\n")) },
+            { "name": "more", "type": "tree", "oid": "e5", "object": { "entries": [
+                { "name": "deep", "type": "tree", "oid": "f6", "object": {} }
+            ] } }
+        ] } }
+    ] } } } } } } });
+    let second = json!({ "data": { "repository": { "ref": { "name": "main" }, "t0": { "entries": [
+        { "name": "x.rc", "type": "blob", "oid": "a7", "object": blob(Some("bulk=2\n")) }
+    ] } } } });
+    let png = json!({ "content": "aGk=" });
+    let r = Recorder::answering(vec![(200, first), (200, second), (200, png)]);
+    let mut files = github(&r).read_dir("web/rc").await.unwrap().unwrap();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let got: Vec<(&str, &str, &[u8])> = files
+        .iter()
+        .map(|(p, b)| (p.as_str(), b.id.as_str(), b.bytes.as_slice()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("web/rc/icon.png", "b2", b"hi".as_slice()),
+            ("web/rc/taskrc", "a1", b"include themes/dark.rc\n".as_slice()),
+            ("web/rc/themes/dark.rc", "d4", b"color.due=red\n".as_slice()),
+            ("web/rc/themes/more/deep/x.rc", "a7", b"bulk=2\n".as_slice()),
+        ]
+    );
+    // Three requests: the folder and two levels, the folder too deep for it, and the binary file by its blob.
+    assert_eq!(r.asked.borrow().len(), 3);
+    assert_eq!(r.body(0)["variables"]["path"], "web/rc");
+    assert!(r.body(1)["query"].as_str().unwrap().contains("t0:object(oid:\"f6\")"));
+    assert!(r.asked.borrow()[2].url.ends_with("git/blobs/b2"));
+}

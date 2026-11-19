@@ -100,6 +100,12 @@ pub trait GitRepo {
     async fn tree(&self, dir: &str) -> Result<Vec<Entry>>;
     /// A file's contents by its blob id.
     async fn blob(&self, id: &str) -> Result<Vec<u8>>;
+    /// Every file under the folder `dir` with its contents, by its path from the root, when the forge can give them in
+    /// a few requests (GitHub's GraphQL); `None` where it can't, and the folder is read with [`tree`](Self::tree) and
+    /// [`blob`](Self::blob) instead.
+    async fn read_dir(&self, _dir: &str) -> Result<Option<Vec<(String, Blob)>>> {
+        Ok(None)
+    }
     /// Make one commit of `changes` on top of `head`.
     async fn commit(&self, head: Option<&str>, message: &str, changes: &[Change]) -> Result<Committed>;
     /// When each of `paths` was last changed on the branch (seconds since the epoch), `None` if never.
@@ -122,6 +128,9 @@ impl<R: GitRepo> GitRepo for &R {
     }
     async fn blob(&self, id: &str) -> Result<Vec<u8>> {
         (**self).blob(id).await
+    }
+    async fn read_dir(&self, dir: &str) -> Result<Option<Vec<(String, Blob)>>> {
+        (**self).read_dir(dir).await
     }
     async fn commit(&self, head: Option<&str>, message: &str, changes: &[Change]) -> Result<Committed> {
         (**self).commit(head, message, changes).await
@@ -714,6 +723,15 @@ impl<R: GitRepo> ObjectStore for GitObjects<R> {
     /// did not change is not fetched again.
     async fn get_all(&self, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
         let dir = prefix.rsplit_once('/').map_or("", |(d, _)| d);
+        if !dir.is_empty() {
+            if let Some(files) = self.0.read_dir(dir).await? {
+                return Ok(files
+                    .into_iter()
+                    .filter(|(p, _)| p.starts_with(prefix))
+                    .map(|(p, b)| (p, b.bytes))
+                    .collect());
+            }
+        }
         let entries = if dir.is_empty() {
             self.0.root().await?.1
         } else {
