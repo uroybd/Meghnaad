@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { settingsData } from './settingsData.svelte';
 import { mount, tick, unmount } from 'svelte';
 
 const api = vi.hoisted(() => ({
@@ -62,6 +63,7 @@ const button = (label: string) =>
 const status = () => document.querySelector('p.status')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
 beforeEach(() => {
+  settingsData.reset();
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   editors.length = 0;
   for (const f of Object.values(api)) f.mockReset();

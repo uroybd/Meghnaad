@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { getTaskrcText, importRcFiles, putRcFile } from './api';
   import { ROOT } from './rcpaths';
+  import { settingsData } from './settingsData.svelte';
   import { store } from './store.svelte';
   import { chooseTheme, chosenTheme, colourOff, fetchTheme, THEMES, withColour } from './themes';
 
@@ -14,10 +14,12 @@
   let error = $state<string | null>(null);
   let said = $state<string | null>(null);
 
-  // Read the main taskrc once shown, and again when the settings change elsewhere.
+  // Read the main taskrc once shown, and again when the settings change elsewhere (shared with the taskrc tab).
   $effect(() => {
-    void store.config;
-    getTaskrcText()
+    void settingsData.rev;
+    settingsData
+      .file(ROOT)
+      .get()
       .then((t) => (text = t))
       .catch((e: unknown) => (error = e instanceof Error ? e.message : String(e)));
   });
@@ -31,11 +33,11 @@
     said = null;
     try {
       if (theme) {
-        await importRcFiles([theme, { path: ROOT, text: next }], 'merge');
-        text = await getTaskrcText();
-      } else text = (await putRcFile(ROOT, next)).text;
+        await settingsData.importRcFiles([theme, { path: ROOT, text: next }], 'merge');
+        text = await settingsData.file(ROOT).get();
+      } else text = (await settingsData.putRcFile(ROOT, next)).text;
       said = `${what} Restore previous on the taskrc tab undoes it.`;
-      await store.settingsChanged();
+      await store.settingsChanged([ROOT]);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

@@ -1,19 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { STATIC } from '../engine/flavour';
-  import {
-    ApiError,
-    checkHooks,
-    deleteSecret,
-    getHooks,
-    getSecrets,
-    hostsFromText,
-    putHooks,
-    putSecret,
-    type HookCheck,
-    type SecretInfo,
-  } from './api';
+  import { ApiError, checkHooks, hostsFromText, type HookCheck, type SecretInfo } from './api';
   import type { HookEditor } from './hookEditor';
+  import { settingsData } from './settingsData.svelte';
   import { HOOKS_EXAMPLE } from './hooksExample';
   import { TriangleAlert } from './icons';
   import SecretInput from './SecretInput.svelte';
@@ -47,7 +37,7 @@
 
   async function loadSecrets() {
     try {
-      secrets = await getSecrets();
+      secrets = await settingsData.secrets.get();
     } catch {
       // The editor works without them; setting one says why it could not.
     }
@@ -58,7 +48,7 @@
     secretBusy = true;
     secretError = null;
     try {
-      await putSecret(secretName, secretValue, hostList);
+      await settingsData.putSecret(secretName, secretValue, hostList);
       store.notify(
         `Secret ${secretName} saved. Use it in a hook with secret("${secretName}"), in a request to ${hostList.join(', ')}.`,
         'ok',
@@ -77,7 +67,7 @@
   async function removeSecret(name: string) {
     secretError = null;
     try {
-      await deleteSecret(name);
+      await settingsData.deleteSecret(name);
       await loadSecrets();
     } catch (e) {
       secretError = e instanceof ApiError ? e.message : 'The secret could not be removed.';
@@ -111,7 +101,7 @@
     void loadSecrets();
     (async () => {
       try {
-        saved = text = await getHooks();
+        saved = text = await settingsData.hooks.get();
         const { createHookEditor } = await import('./hookEditor');
         if (!alive || !host) return;
         editor = createHookEditor(host, text, (t) => {
@@ -146,7 +136,7 @@
     busy = true;
     error = null;
     try {
-      const names = await putHooks(text);
+      const names = await settingsData.putHooks(text);
       saved = text;
       done = true;
       store.notify(

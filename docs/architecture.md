@@ -829,6 +829,12 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 `store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the answers
 to questions in flight, and the toast.
 
+What the settings screens read (the taskrc folder and its files, the hooks, the hook secrets' names) is kept in
+`settingsData.svelte.ts`, not fetched by each screen. Callers at the same moment share one request, and an answer is used
+again for 30 seconds. A save puts what it saved in its entry. A change made elsewhere (`config` in the console, another
+tab, the branch) marks the entries stale and bumps `rev`, which the screens follow. On the static web app every read is
+a request to the forge's API, so this is what keeps the settings page within its limits (spec 0023).
+
 The pages (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`,
 `SettingsPage`) are thin. Each asks the engine for a result and hands it to a shared component, so the console and the
 pages draw the same thing. `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`,

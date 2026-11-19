@@ -1,15 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
-  import {
-    deleteRcFile,
-    getRcFile,
-    getRcFiles,
-    getTaskrcText,
-    importRcFiles,
-    importTaskrcUrl,
-    putRcFile,
-    restoreTaskrc,
-  } from './api';
+  import { importTaskrcUrl, restoreTaskrc } from './api';
+  import { settingsData } from './settingsData.svelte';
   import { debounce } from './debounce';
   import { saveAs } from './download';
   import Drawer from './Drawer.svelte';
@@ -197,12 +189,12 @@
   onDestroy(() => checkNow.cancel());
 
   async function fetchFile(path: string): Promise<string> {
-    return path === ROOT ? getTaskrcText() : getRcFile(path);
+    return settingsData.file(path).get();
   }
 
   async function refreshList() {
     try {
-      folder = await getRcFiles();
+      folder = await settingsData.files.get();
     } catch {
       /* the list is a convenience: the file shown still works */
     }
@@ -255,11 +247,11 @@
     });
   });
 
-  // The saved settings changed somewhere else (the console's `config`, Task colours on Appearance): follow them,
-  // unless there are edits here, which are not thrown away.
-  let seen = store.config;
+  // The saved settings changed somewhere else (the console's `config`, Task colours on Appearance, another tab): follow
+  // them, unless there are edits here, which are not thrown away. A save made here is followed by the save itself.
+  let seen = settingsData.rev;
   $effect(() => {
-    const c = store.config;
+    const c = settingsData.rev;
     if (c === seen) return;
     seen = c;
     if (!anyEdited && !busy) {
@@ -278,6 +270,7 @@
   function applied(r: TaskrcResponse, path = current) {
     result = r;
     drafts[path] = { text: r.text, saved: r.text };
+    settingsData.file(path).set(r.text);
   }
 
   async function run(work: () => Promise<void>) {
@@ -297,9 +290,9 @@
     run(async () => {
       // `include dark-256.theme`, as a desktop taskrc has it, becomes that theme's lines.
       const body = await expandIncludes(text, fetchTheme);
-      applied(await putRcFile(current, body));
+      applied(await settingsData.putRcFile(current, body));
       skipped = [];
-      await store.settingsChanged();
+      await store.settingsChanged([current]);
       await refreshList();
     });
 
@@ -317,7 +310,7 @@
       drafts = {};
       await open(ROOT, true);
       applied(r, ROOT);
-      await store.settingsChanged();
+      await store.settingsChanged([ROOT]);
       await refreshList();
     });
 
@@ -348,7 +341,7 @@
       return;
     }
     void run(async () => {
-      applied(await putRcFile(path, ''), path);
+      applied(await settingsData.putRcFile(path, ''), path);
       empty = empty.filter((f) => !path.startsWith(`${f}/`));
       await refreshList();
       await open(path);
@@ -365,10 +358,10 @@
     confirmDelete = false;
     return run(async () => {
       const gone = current;
-      result = await deleteRcFile(gone);
+      result = await settingsData.deleteRcFile(gone);
       delete drafts[gone];
       await open(ROOT);
-      await store.settingsChanged();
+      await store.settingsChanged([ROOT]);
       await refreshList();
     });
   };
@@ -378,11 +371,11 @@
   const addHolidays = (c: Choice) =>
     run(async () => {
       note = null;
-      const saved = await putRcFile(c.path, c.text);
+      const saved = await settingsData.putRcFile(c.path, c.text);
       applied(saved, c.path);
       if (c.include || c.calendar) {
         const root = drafts[ROOT];
-        const before = root ? root.text : await getTaskrcText();
+        const before = root ? root.text : await settingsData.file(ROOT).get();
         let next = before;
         if (c.include) next = withInclude(next, ROOT, c.path);
         if (c.calendar) next = withSetting(next, 'calendar.holidays', 'full');
@@ -390,13 +383,13 @@
           root.text = next;
           note = 'The lines for the holidays are in the taskrc box; Apply there keeps them.';
         } else if (next !== before) {
-          applied(await putRcFile(ROOT, next), ROOT);
+          applied(await settingsData.putRcFile(ROOT, next), ROOT);
         }
       }
       result = saved;
       drawer = null;
       updating = null;
-      await store.settingsChanged();
+      await store.settingsChanged([c.path, ROOT]);
       await refreshList();
       await open(c.path, true);
     });
@@ -448,7 +441,7 @@
       const files = await Promise.all(
         into.map(async (f) => ({ ...f, text: await expandIncludes(f.text, fetchTheme) })),
       );
-      const r = await importRcFiles(files, mode);
+      const r = await settingsData.importRcFiles(files, mode);
       drafts = {};
       drawer = null;
       empty = empty.filter((f) => !files.some((x) => x.path.startsWith(`${f}/`)));
@@ -466,7 +459,7 @@
   // The whole folder, laid out as it is: unzipped, it is a folder Upload a folder takes back.
   const downloadAll = () =>
     run(async () => {
-      const list = await getRcFiles();
+      const list = await settingsData.files.get();
       const files = await Promise.all(list.files.map(async (f) => ({ path: f.path, text: await fetchFile(f.path) })));
       saveAs('taskrc.zip', new Blob([zipFiles(files)], { type: 'application/zip' }));
     });

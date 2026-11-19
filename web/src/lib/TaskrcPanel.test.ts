@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { settingsData } from './settingsData.svelte';
 import { flushSync, mount, unmount } from 'svelte';
 import { deleteRcFile, fetchCalendar, getRcFile, getRcFiles, getTaskrcText, importRcFiles, putRcFile } from './api';
 import { saveAs } from './download';
@@ -92,6 +93,7 @@ const tick = async () => {
 };
 
 beforeEach(() => {
+  settingsData.reset();
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute('open', '');
   };
@@ -101,7 +103,8 @@ beforeEach(() => {
   };
   store.settingsFile = null;
   store.config = { config: { settings: {} } } as never;
-  vi.spyOn(store, 'settingsChanged').mockResolvedValue(undefined);
+  // As the store does: the settings screens' reads are marked stale, except what was just saved.
+  vi.spyOn(store, 'settingsChanged').mockImplementation((fresh) => Promise.resolve(settingsData.changed(fresh)));
   vi.mocked(getRcFiles).mockImplementation(() => Promise.resolve(folder()));
   vi.mocked(getTaskrcText).mockImplementation(() => Promise.resolve(FILES.taskrc));
   vi.mocked(getRcFile).mockImplementation((p) => Promise.resolve(FILES[p] ?? ''));
@@ -184,6 +187,35 @@ describe('the list of files', () => {
 });
 
 describe('applying a file', () => {
+  it('reads each thing once: the file and the list on start, and after a save only the list, not the file saved', async () => {
+    vi.mocked(putRcFile).mockResolvedValue(saved('bulk=9\n'));
+    await start();
+    expect(getTaskrcText).toHaveBeenCalledTimes(1);
+    expect(getRcFiles).toHaveBeenCalledTimes(1);
+    await type(box(), 'bulk=9\n');
+    button('Apply').click();
+    await tick();
+    expect(getTaskrcText).toHaveBeenCalledTimes(1);
+    expect(getRcFiles).toHaveBeenCalledTimes(2);
+    // Another file, and back: the main taskrc is not read again.
+    store.settingsFile = 'lonely.rc';
+    await tick();
+    store.settingsFile = null;
+    await tick();
+    expect(getTaskrcText).toHaveBeenCalledTimes(1);
+    expect(getRcFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('a change made elsewhere is read again, once', async () => {
+    await start();
+    vi.mocked(getTaskrcText).mockResolvedValue('bulk=5\n');
+    settingsData.changed();
+    await tick();
+    expect(box().value).toBe('bulk=5\n');
+    expect(getTaskrcText).toHaveBeenCalledTimes(2);
+    expect(getRcFiles).toHaveBeenCalledTimes(2);
+  });
+
   it('saves that file, and shows what was kept, the lines commented out and the names removed', async () => {
     vi.mocked(putRcFile).mockResolvedValue(
       saved('bulk=9\n# [unsupported] nonsense=1\n', {

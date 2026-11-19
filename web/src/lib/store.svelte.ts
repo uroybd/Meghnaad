@@ -33,6 +33,7 @@ import {
   type Keymap,
 } from './keymap';
 import { lucide } from './lucideLib.svelte';
+import { settingsData } from './settingsData.svelte';
 import { isHiddenReport, offeredReports as pickable } from './reportList';
 import { parsePath, placePath, prefixFilter, taskPath, type Place, type SettingsTab } from './route';
 import { previewLine, reportArgs, shellQuote } from './cmdline';
@@ -290,16 +291,21 @@ class Store {
       engine.onSettingsChanged((path) => {
         if (path === '/api/config') void this.settingsChanged();
         else if (path === '/api/settings') void this.loadAppSettings();
-        else void refreshHooks();
+        else {
+          settingsData.hooksChanged();
+          void refreshHooks();
+        }
       });
     }
   }
 
   /**
    * The saved settings changed (the taskrc dialog, `config`): read them again, and draw again what is on screen,
-   * since they can change what it shows (colours, a UDA, a report, `dateformat`).
+   * since they can change what it shows (colours, a UDA, a report, `dateformat`). The settings screens read their files
+   * again when next shown, except `fresh`: files the caller has just saved and already holds (spec 0023).
    */
-  async settingsChanged() {
+  async settingsChanged(fresh: string[] = []) {
+    settingsData.changed(fresh);
     await this.loadConfig();
     if (this.live) void this.refresh(this.live);
     this.rev++;

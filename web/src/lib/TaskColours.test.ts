@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { settingsData } from './settingsData.svelte';
 import { flushSync, mount, unmount } from 'svelte';
 import { getTaskrcText, importRcFiles, putRcFile } from './api';
 import { store } from './store.svelte';
@@ -21,6 +22,7 @@ const tick = async () => {
 
 let app: ReturnType<typeof mount> | null = null;
 beforeEach(() => {
+  settingsData.reset();
   store.config = { config: { settings: {} } } as never;
   vi.spyOn(store, 'settingsChanged').mockResolvedValue(undefined);
   vi.mocked(getTaskrcText).mockResolvedValue('bulk=3\ncolor.due=red\n');
