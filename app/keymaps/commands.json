@@ -245,9 +245,9 @@
     {
       "name": "lock",
       "shortest": 4,
-      "summary": "lock the app: its PIN screen, on a trusted device with a PIN",
-      "takes": "",
-      "doc": "In the static web app. On a trusted device with a PIN, the PIN screen comes up in every tab, and the four keys of the PIN take it down; on any other device it locks fully, as Lock now does, and the encryption secret or a passkey opens it again. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.",
+      "summary": "lock the app: with the PIN where there is one, else with the encryption secret",
+      "takes": "pin or key",
+      "doc": "In the static web app. With nothing after it, the PIN screen on a trusted device with a PIN, in every tab, and the four keys of the PIN take it down; on any other device the full lock, as the lock button does, and the encryption secret or a passkey opens it again. `:lock pin` asks for the PIN screen (and says so where there is no PIN), `:lock key` for the full lock. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.",
       "since": "0.8.15"
     }
   ],
