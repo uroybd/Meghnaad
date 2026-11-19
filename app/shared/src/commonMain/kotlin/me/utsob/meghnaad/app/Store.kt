@@ -619,11 +619,21 @@ class Store(
         loadAppSettings()
     }
 
-    /** Read `settings.json`. A failure leaves what was there: the commands are a convenience, not needed to work. */
+    /**
+     * Read `settings.json`, brought to the latest version and saved so when it was older. A failure leaves what was
+     * there: the commands are a convenience, not needed to work.
+     */
     suspend fun loadAppSettings() {
         try {
             val (status, body) = tw.request("GET", "/api/settings")
-            appSettings = parseSettings(if (status in 200..299) body else "")
+            var text = if (status in 200..299) body else ""
+            val raw = runCatching { engineJson.parseToJsonElement(text) as? JsonObject }.getOrNull()
+            raw?.let(::migrateSettings)?.let { migrated ->
+                text = serializeSettings(migrated)
+                // Not saved is not lost: the old file is brought up to date the same way next time.
+                runCatching { tw.request("PUT", "/api/settings", text) }
+            }
+            appSettings = parseSettings(text)
         } catch (e: Exception) {
             if (appSettings == null) appSettings = parseSettings("")
         }

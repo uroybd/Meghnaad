@@ -77,10 +77,16 @@ fn three_tasks_marked_with_space_and_v_are_completed_with_d() {
     assert_eq!(shown.iter().filter(|l| l.contains('●')).count(), 3, "{shown:#?}");
     assert!(shown.iter().any(|l| l.contains("3 marked")), "{shown:#?}");
 
-    // `:` starts the line with them.
-    press(&mut app, KeyCode::Char(':'));
+    // `/` starts the line with them; `:` with a `:`, for a command, which acts on them too.
+    press(&mut app, KeyCode::Char('/'));
     match &app.mode {
         Mode::Prompt(p) => assert_eq!(p.input.line, "1-3 "),
+        m => panic!("{m:?}"),
+    }
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Char(':'));
+    match &app.mode {
+        Mode::Prompt(p) => assert_eq!(p.input.line, ":"),
         m => panic!("{m:?}"),
     }
     press(&mut app, KeyCode::Esc);
@@ -96,6 +102,7 @@ fn three_tasks_marked_with_space_and_v_are_completed_with_d() {
     assert_eq!(app.marks.count(), 0);
 
     // Mark three again and complete them, answering what `task` asks (a bulk change asks first).
+    press(&mut app, KeyCode::Char('g'));
     press(&mut app, KeyCode::Char('g'));
     press(&mut app, KeyCode::Char(' '));
     press(&mut app, KeyCode::Char('j'));

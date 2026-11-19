@@ -2,7 +2,7 @@
   import { BASE, fromAddress, toAddress } from './lib/base';
   import { STATIC } from './engine/flavour';
   import { lock } from './engine/session';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
   import { engine } from './engine/client.svelte';
   import {
@@ -36,7 +36,8 @@
   import DetailDrawer from './lib/DetailDrawer.svelte';
   import NotifyDialog from './lib/NotifyDialog.svelte';
   import KeysHelp from './lib/KeysHelp.svelte';
-  import { actionOf } from './lib/keymap';
+  import { chordOf, pendingLabel, stepKey, type Pending } from './lib/keymap';
+  import { runCall } from './lib/keyCalls';
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
   import { takeClicked } from './lib/lockedReminders';
@@ -221,65 +222,25 @@
       return;
     }
     if (typing || e.defaultPrevented || e.repeat || document.querySelector('dialog[open]')) return;
-    const action = actionOf(store.keymap, e, store.view === 'tasks' ? 'tasks' : 'app');
-    if (action && action !== 'app.prompt' && runKey(action)) e.preventDefault();
+    const chord = chordOf(e);
+    if (!chord) return;
+    // A count and the start of a longer key wait for the rest (`5j`, `gg`), as in vim (spec 0020).
+    const was = pendingLabel(keysPending);
+    const step = stepKey(store.keymap, store.view === 'tasks' ? 'tasks' : 'app', keysPending, chord);
+    keysPending = step.pending;
+    if (step.call && step.call.action !== 'app.prompt' && runCall(step.call)) e.preventDefault();
+    else if (was || pendingLabel(keysPending)) e.preventDefault();
   }
 
-  /** Focus a field of the page (and open a list where the browser can), after the page it is on is drawn. */
-  async function focusField(selector: string) {
-    await tick();
-    const el = document.querySelector<HTMLElement>(selector);
-    el?.focus();
-    if (el instanceof HTMLSelectElement) {
-      try {
-        el.showPicker();
-      } catch {
-        // Not every browser opens a list from code; it has the focus, so the arrow keys choose.
-      }
-    }
-  }
+  let keysPending = $state<Pending>({});
+  const pendingKeys = $derived(pendingLabel(keysPending));
 
-  /** Do what a key of the keymap stands for; false for an action the web app has nothing for. */
-  function runKey(action: string): boolean {
-    const page = action.startsWith('page.') ? action.slice(5) : null;
-    if (page === 'settings') {
-      store.openSettings();
-      return true;
-    }
-    if (page && PAGES.includes(page as (typeof PAGES)[number])) {
-      store.view = page as (typeof PAGES)[number];
-      return true;
-    }
-    switch (action) {
-      case 'app.help':
-        store.keysHelpOpen = true;
-        return true;
-      case 'app.review':
-        if (review.phase === 'idle') void review.start({ surface: 'card' });
-        return true;
-      case 'app.context':
-        void focusField('main select.context');
-        return true;
-      case 'app.reminders':
-        store.notifyOpen = true;
-        return true;
-      case 'app.sync':
-        void refreshPage();
-        return true;
-      case 'app.add':
-        store.quickAdd();
-        return true;
-      case 'app.filter':
-        // The page's own filter: the Tasks page's in its bar, the others' above their list.
-        void focusField(store.view === 'tasks' ? '#fb-filter' : 'main .filter input');
-        return true;
-      case 'tasks.report':
-        void focusField('#fb-report');
-        return true;
-    }
-    return false;
-  }
-  const PAGES = ['tasks', 'projects', 'tags', 'summary', 'calendar', 'burndown', 'boards', 'console'] as const;
+  // `:w` and `:e` (sync, reload) ask for the page to be read again, as pulling it down does.
+  onMount(() => {
+    const again = () => void refreshPage();
+    window.addEventListener('meghnaad:refresh', again);
+    return () => window.removeEventListener('meghnaad:refresh', again);
+  });
 </script>
 
 <svelte:window {onkeydown} onpopstate={() => void followAddress()} />
@@ -504,6 +465,7 @@
   {/if}
   {#if store.notifyOpen}<NotifyDialog />{/if}
   {#if store.keysHelpOpen}<KeysHelp />{/if}
+  {#if pendingKeys}<div class="pending-keys" role="status">{pendingKeys}</div>{/if}
 {/if}
 
 <style>
@@ -799,5 +761,18 @@
     .side.open {
       transition: none;
     }
+  }
+  /* What keys are pending (a count, the start of gg), as vim shows it, at the bottom right. */
+  .pending-keys {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 50;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 13px;
   }
 </style>

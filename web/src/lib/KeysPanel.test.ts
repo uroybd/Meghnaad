@@ -9,14 +9,17 @@ vi.mock('./api', async (original) => ({ ...(await original<typeof import('./api'
 import { parseSettings } from './appsettings';
 import KeysPanel from './KeysPanel.svelte';
 import { store } from './store.svelte';
+import type { CommandsDoc } from './keymap';
 
 const defaults = JSON.parse(readFileSync('public/keymaps/default.json', 'utf8')) as Record<string, unknown>;
+const commandsDoc = JSON.parse(readFileSync('public/keymaps/commands.json', 'utf8')) as CommandsDoc;
 
 let app: ReturnType<typeof mount> | null = null;
 
 async function open(settings: Record<string, unknown>) {
   store.appSettings = parseSettings(JSON.stringify(settings));
   store.keymapDefaults = defaults;
+  store.commandsDoc = commandsDoc;
   app = mount(KeysPanel, { target: document.body });
   await tick();
 }
@@ -45,7 +48,7 @@ afterEach(() => {
 
 describe('the Keybindings tab', () => {
   it('shows only your own keys until the defaults are asked for', async () => {
-    await open({ tui: { keys: { 'tasks.done': 'x' } } });
+    await open({ version: 2, tui: { keys: { tasks: { x: 'tasks.done' } } } });
     expect(rows('Terminal')).toEqual(['tasks.done']);
     expect(rows('General')).toEqual([]);
     expect(section('General').textContent).toContain('None of your own.');
@@ -59,7 +62,11 @@ describe('the Keybindings tab', () => {
   });
 
   it('searches what is shown by name, what it does, or a key', async () => {
-    await open({ keys: { 'app.prompt': 'ctrl+k' }, tui: { keys: { 'tasks.done': 'x', 'tasks.start': 'z' } } });
+    await open({
+      version: 2,
+      keys: { app: { 'ctrl+k': 'app.prompt' } },
+      tui: { keys: { tasks: { x: 'tasks.done', z: 'tasks.start' } } },
+    });
     const search = document.querySelector('input[aria-label="Search keys"]') as HTMLInputElement;
     type(search, 'start');
     expect(rows('Terminal')).toEqual(['tasks.start']);
@@ -69,7 +76,7 @@ describe('the Keybindings tab', () => {
   });
 
   it('adds a key from the search, typed, and applies it', async () => {
-    await open({ taskCommands: [] });
+    await open({ version: 2, taskCommands: [] });
     button('Add', section('Web')).click();
     flushSync();
     type(section('Web').querySelector('input[aria-label="Search actions"]') as HTMLInputElement, 'add');
@@ -90,8 +97,9 @@ describe('the Keybindings tab', () => {
     button('Apply').click();
     await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
     expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({
+      version: 2,
       taskCommands: [],
-      web: { keys: { 'app.add': 'ctrl+shift+n' } },
+      web: { keys: { app: { 'ctrl+shift+n': 'app.add', a: null } } },
     });
   });
 
@@ -117,13 +125,29 @@ describe('the Keybindings tab', () => {
     expect(section('Terminal').querySelector('tbody')?.textContent).toContain('no key');
   });
 
+  it('lists the commands a key can run, and a key bound to one with what it does', async () => {
+    await open({ version: 2, tui: { keys: { tasks: { 'g h': 'filter +home' } } } });
+    const names = () => [...section('Commands').querySelectorAll('kbd')].map((k) => k.textContent);
+    expect(names()).toContain(':tabn[ext]');
+    expect(section('Commands').textContent).toContain('takes');
+    const more = section('Commands').querySelector('a') as HTMLAnchorElement;
+    expect(more.href).toBe(`${commandsDoc.docs}#tabnext`);
+    expect(rows('Terminal')).toEqual(['filter +home']);
+    expect(section('Terminal').querySelector('.err')).toBeNull();
+    type(document.querySelector('input[aria-label="Search keys"]') as HTMLInputElement, 'tabn');
+    expect(names()).toEqual([':tabn[ext]', ':tabN[ext]']);
+    type(document.querySelector('input[aria-label="Search keys"]') as HTMLInputElement, 'denot');
+    expect(names()).toEqual([':den[otate]']);
+  });
+
   it('takes out a key of your own', async () => {
     await open({ web: { keys: { 'app.help': 'h' } } });
+    // An old file is read as brought up to date, and saved so.
     (section('Web').querySelector('button[aria-label="Take out app.help"]') as HTMLButtonElement).click();
     flushSync();
     expect(rows('Web')).toEqual([]);
     button('Apply').click();
     await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
-    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({});
+    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({ version: 2 });
   });
 });

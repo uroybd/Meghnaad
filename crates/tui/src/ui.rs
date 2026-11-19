@@ -976,6 +976,18 @@ fn key_items(app: &App) -> Vec<ListItem<'static>> {
                 }
                 ListItem::new(Line::from(spans))
             }
+            KeyLine::CommandsHead => ListItem::new(Line::from(vec![
+                Span::from("Commands").bold(),
+                Span::from(format!(
+                    "  a key runs one with its words (\"g h\": \"filter +home\")  · more: {}",
+                    crate::keys::commands_docs()
+                ))
+                .quiet(),
+            ])),
+            KeyLine::Command(name, what) => ListItem::new(Line::from(vec![
+                Span::from(format!("  {name}  ")).style(theme::accent()),
+                Span::from(what).quiet(),
+            ])),
         })
         .collect()
 }

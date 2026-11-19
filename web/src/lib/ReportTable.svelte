@@ -363,6 +363,7 @@
             class:overdue={isOpen(row) && row.due != null && row.due < store.now}
             class:started={row.start != null && row.end == null}
             data-pri={row.priority ?? undefined}
+            data-uuid={row.uuid}
             tabindex="0"
             aria-label="Open details: {row.description}"
             onclick={(e) => open(e, row)}

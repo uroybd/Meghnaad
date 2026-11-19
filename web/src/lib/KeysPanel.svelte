@@ -1,7 +1,16 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { Check, Plus, Search, X } from './icons';
-  import { chordOf, keyBindings, keyLabel, parseKey, withBinding, type Binding, type KeySection } from './keymap';
+  import {
+    chordOf,
+    keyBindings,
+    keyCommands,
+    keyLabel,
+    parseKey,
+    withBinding,
+    type Binding,
+    type KeySection,
+  } from './keymap';
   import { store } from './store.svelte';
 
   /** There are edits not yet applied (the tab shows a dot). */
@@ -78,13 +87,22 @@
       keys.some((k) => k.toLowerCase() === t || keyLabel(k).toLowerCase() === t)
     );
   }
+  // The commands a key can run in place of an action, with their words (spec 0020): what each does and takes, and a link
+  // to more of it.
+  const commands = $derived(
+    keyCommands(store.commandsDoc).filter((c) => {
+      const t = query.trim().toLowerCase();
+      // The name whole, as typed (`denot`), not as written (`den[otate]`).
+      return !t || [c.written.replace(/[[\]]/g, ''), c.what].some((x) => x.toLowerCase().includes(t));
+    }),
+  );
   const rowsOf = (actions: Binding[]) =>
     actions.filter((b) => (b.keys !== null || (showDefaults && b.defaults.length > 0)) && matches(b, query));
 
   /** `settings` with one change, its other keys in the order they were (the engine sorts the ones it writes). */
   function change(section: KeySection, action: string, keys: string[] | null) {
     done = false;
-    const next = withBinding($state.snapshot(draft) as Settings, section, action, keys);
+    const next = withBinding($state.snapshot(draft) as Settings, store.keymapDefaults, section, action, keys);
     const out: Settings = {};
     for (const k of Object.keys(draft)) if (k in next) out[k] = next[k];
     for (const k of Object.keys(next)) if (!(k in out)) out[k] = next[k];
@@ -290,14 +308,39 @@
     </section>
   {/each}
 
+  <section class="group" aria-label="Commands">
+    <h2>Commands</h2>
+    <p class="dim">
+      A key can run one of these, with its words, in place of an action: <code>"g h": "filter +home"</code> under
+      <code>tasks</code> runs <code>:filter +home</code>. The part in brackets may be left out, as in vim.
+    </p>
+    {#if commands.length}
+      <table class="keys">
+        <tbody>
+          {#each commands as c (c.written)}
+            <tr>
+              <td class="k"><kbd>{c.written}</kbd></td>
+              <td>
+                <span class="dim">{c.what}</span>
+                {#if c.link}<a href={c.link} target="_blank" rel="noopener">more</a>{/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else}
+      <p class="dim none">Nothing matches.</p>
+    {/if}
+  </section>
+
   {#if bindings.problems.length}
     <ul class="err" role="alert">
       {#each bindings.problems as line, i (i)}<li>{line}</li>{/each}
     </ul>
   {/if}
   <p class="dim">
-    Kept in <code>settings.json</code>: <code>keys</code> for every front end, the others for one alone. A key you set replaces
-    the action's defaults, and is taken from any action that had it.
+    Kept in <code>settings.json</code>: <code>keys</code> for every front end, the others for one alone, each key under its
+    group. A key you set here replaces the action's defaults, and is taken from any action that had it.
   </p>
   {#if error}<p class="err" role="alert">{error}</p>{/if}
   <div class="row">

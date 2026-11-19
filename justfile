@@ -104,7 +104,8 @@ release level="patch" tidy="": _clean
     just bump {{ level }}
     # The bump makes every build of our own crates stale (the version is in their hash); nothing would use them again.
     node scripts/prune-target.mjs
-    git add package.json package-lock.json Cargo.toml Cargo.lock
+    git add package.json package-lock.json Cargo.toml Cargo.lock web/public/keymaps/commands.json \
+      app/shared/src/commonMain/resources/keymaps/commands.json docs/commands.md
     git commit -q -m "chore: bump to $(just version)"
     git tag "v$(just version)"
     git push -q origin main "v$(just version)"

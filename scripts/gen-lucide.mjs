@@ -5,7 +5,7 @@
 // web's taskrc tab does, and the default keys (web/public/keymaps), which the app reads as the web fetches them. A task command can name any Lucide icon (`circle-x`), and the phone has no CDN to fetch it from, so all of them travel with it.
 //
 //   node scripts/gen-lucide.mjs        writes app/shared/src/commonMain/resources/lucide.json, themes/*.theme and
-//                                      keymaps/default.json
+//                                      keymaps/default.json, keymaps/commands.json
 //
 // Only a short list of shapes and attributes is kept, as web/src/lib/lucide.ts keeps from a fetched file.
 import { copyFileSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -80,5 +80,7 @@ for (const f of readdirSync(themes)) if (f.endsWith('.theme')) copyFileSync(join
 const keymapOut = join(dirname(OUT), 'keymaps');
 mkdirSync(keymapOut, { recursive: true });
 copyFileSync(join(ROOT, 'web', 'public', 'keymaps', 'default.json'), join(keymapOut, 'default.json'));
+// The commands as people read them (what each does, the words it takes, since when), from which docs/commands.md is made.
+copyFileSync(join(ROOT, 'web', 'public', 'keymaps', 'commands.json'), join(keymapOut, 'commands.json'));
 
 console.log(`${Object.keys(icons).length} icons of Lucide ${version} -> ${OUT}`);

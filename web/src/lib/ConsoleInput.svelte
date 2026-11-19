@@ -6,7 +6,8 @@
   import CompletionMenu from './CompletionMenu.svelte';
   import { ArrowRightToLine, Check, ChevronUp, Copy, CornerDownLeft, Pencil, TriangleAlert, X } from './icons';
   import { highlightPieces } from './highlight';
-  import { actionOf } from './keymap';
+  import { actionOf, commandLine } from './keymap';
+  import { runCall } from './keyCalls';
   import { clashMarks } from './holidayClash';
   import ReviewBar from './ReviewBar.svelte';
   import { review } from './review.svelte';
@@ -123,6 +124,12 @@
     completer.close();
     if (l === 'clear' || l === 'cls') {
       store.clear();
+      return;
+    }
+    // `:` joined to a command runs it (`:tabn Tasks`, `:5`); any other line goes to `task` (spec 0020).
+    const call = commandLine(l);
+    if (call) {
+      if (!runCall(call)) store.notify(`:${l.slice(1)} is the terminal app's.`, 'err');
       return;
     }
     // tasksh's `review` is the browser's own: it is not sent, it drives a session of ordinary commands.

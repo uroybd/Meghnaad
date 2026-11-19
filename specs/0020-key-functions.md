@@ -1,6 +1,6 @@
 # 0020: Keys run functions, with vim-like motions
 
-- **Status:** in progress <!-- draft | ready | in progress | done | dropped -->
+- **Status:** done <!-- draft | ready | in progress | done | dropped -->
 - **Created:** 2026-11-19
 - **Layer:** 2 (UI)
 - **Front ends:** terminal and web, together. The phone is left out: it has no keys (its `mobile` keymap is empty).
@@ -103,23 +103,23 @@ Agreed 2026-11-19 (the decisions are under Open questions).
 
 ## Acceptance criteria
 
-- [ ] `:tabn Tasks`, `:tabn 3`, `:tabnext`, `:5`, `:q`, `:done` on the command line run the function; `:` anywhere else,
+- [x] `:tabn Tasks`, `:tabn 3`, `:tabnext`, `:5`, `:q`, `:done` on the command line run the function; `:` anywhere else,
       `: tabn` (a space), or `:` before an unknown word sends the line to `task` unchanged.
-- [ ] The `:` key, from any view, opens the command line with `:` typed; `/` opens it empty.
-- [ ] A key bound to an expression in `settings.json` runs it, in the contexts it is bound in; an action name bound as
+- [x] The `:` key, from any view, opens the command line with `:` typed; `/` opens it empty.
+- [x] A key bound to an expression in `settings.json` runs it, in the contexts it is bound in; an action name bound as
       before still works.
-- [ ] A key with two meanings in one context is refused when the keymap loads, and the Keybindings section says which.
-- [ ] `5j` moves five rows; `gg` goes to the first; `g1` opens Tasks (`tabn 1`); `Esc` drops a pending count or key,
+- [x] A key with two meanings in one context is refused when the keymap loads, and the Keybindings section says which.
+- [x] `5j` moves five rows; `gg` goes to the first; `g1` opens Tasks (`tabn 1`); `Esc` drops a pending count or key,
       which the status line shows while pending.
-- [ ] `?` and the Keybindings section list the functions, their arguments and each binding's expression.
-- [ ] Tests: parsing expressions (quotes, numbers, unknown names, vim's abbreviations), the `:` rule, counts and pending
+- [x] `?` and the Keybindings section list the functions, their arguments and each binding's expression.
+- [x] Tests: parsing expressions (quotes, numbers, unknown names, vim's abbreviations), the `:` rule, counts and pending
       keys, refusing a double meaning, each function of the first set.
-- [ ] Docs: `docs/terminal.md` (functions, `:`, counts), `docs/using/settings.md` (Keys: expressions).
-- [ ] The web app: the task table has a chosen row that the motions move, the task commands act on it, and `:` opens
+- [x] Docs: `docs/terminal.md` (functions, `:`, counts), `docs/using/settings.md` (Keys: expressions).
+- [x] The web app: the task table has a chosen row that the motions move, the task commands act on it, and `:` opens
       the command line with `:` typed; the same `:` lines and bindings work as in the terminal app.
-- [ ] The table of commands, abbreviations, parsing and the pending keys are `tc_core::keymap`'s, tested there once;
+- [x] The table of commands, abbreviations, parsing and the pending keys are `tc_core::keymap`'s, tested there once;
       each app tests only what its commands do.
-- [ ] Sizes: the engine's WebAssembly measured before and after.
+- [x] Sizes: the engine's WebAssembly measured before and after.
 
 ## Open questions
 
@@ -151,3 +151,47 @@ Decided 2026-11-19:
 
 Filled in while building: what was done, where, anything that differed from the design and why, sizes measured, and
 what is left. Dated entries, newest last.
+
+- 2026-11-19: Built, terminal and web together.
+  - **Shared** (`crates/tc-core/src/keymap.rs`): key sequences (`g g`, written `gg` or `g1` for two characters),
+    `COMMANDS` (vim's names and shortest forms, then ours), `call_of` (an expression: a command and its words, a row
+    `5` `$` `+3` `-3`, or an action's own name), `command_line` (the `:` rule), `Pending` and `step` (counts, keys of
+    two presses, Esc), and in `resolve`: expressions bound as actions are, in the group of the action they run;
+    a key that is the start of a longer one, and a key two user bindings of different groups share in a context, are
+    said. Helpers `key_step` (a context's keys, not the whole keymap: 1 KB less), `key_command_line`, `key_call`,
+    `key_commands` (since removed, below). Tests in `keymap.rs` and `helpers.rs`.
+  - **Defaults** (`web/public/keymaps/default.json`, copied to the phone): as decided. Terminal: pages `g1`..`g9`,
+    `gt` `gT`, `gg`, `:` is `app.commandLine` and `/` alone is `app.prompt`, sort `s`, `+` toggles, start and stop
+    without keys, `m` `M` modify, `x` denotate, `o` open link, `p` duplicate, `X` clear completed. New actions
+    `page.next/prev/first/last/go`, `move.row`, `tasks.toggle/denotate/open/duplicate/clearCompleted`,
+    `app.commandLine`. Web: the same pages, `j` `k` `gg` `G`, and the task keys on Tasks (`move` added to its context).
+  - **Terminal** (`crates/tui`): `app/calls.rs` does what a call asks; `normal()` steps through pending keys and shows
+    them on the status line; `:` lines run in `console()`; `Tab` completes a command's name; `?` lists the commands
+    and the user's command keys. Tests in `app/tests.rs`, `tests/bulk.rs`, `tests/reminder.rs` (keys updated).
+  - **Web**: `lib/keyCalls.ts` (moved `runKey` out of `App.svelte`); the chosen row is the focused `tr[data-uuid]`;
+    `App.svelte` steps keys and shows what is pending at the bottom right; `ConsoleInput` runs `:` lines; `KeysHelp`
+    lists the commands. Tests in `keyCalls.test.ts`.
+  - **2026-11-19, What 2's shape**: the first build put the expression where an action's name goes
+    (`"filter +home": "g h"`); reworked to What 2: each section of keys is groups, each a key → what it runs (an
+    action or a command), `null` unbinding (`"tasks": { "g h": "filter +home", "d": null }`). A bound key adds to the
+    action's defaults; a key bound in a group still takes the default of a group that comes before it where both act.
+  - **Versioned settings**: `settings.json` now says its `"version"` (none = 1). `tc_core::settings_version::migrate`
+    runs each migration in turn (1 → 2: `keymap::keys_v1_to_v2`, the old action → keys sections to group → key →
+    action, with the default keys they replaced, the user's shared ones included for a front end's own, unbound). The
+    terminal app (`settings::migrated`, on load), the web store and the phone's `loadAppSettings` run it through the
+    `settings_migrate` helper and save the result; `resolve`, `bindings` and `with_binding` migrate what they are given
+    too, so an unsaved old file still reads right. The web skips it until the default keys are fetched.
+  - **2026-11-19, the commands described once**: the user asked for the commands' text out of the engine, in one JSON
+    that feeds every front end and a generated docs page with an anchor per command, and a `since` to leave out what a
+    build does not have. `web/public/keymaps/commands.json` (summary, takes, doc, since; copied to the phone by
+    `gen-lucide.mjs`), `docs/commands.md` from `scripts/commands-doc.mjs` (a test catches drift), linked from `?` and the
+    Keybindings sections (web, terminal, phone, each listing the commands now). `COMMANDS` lost `takes` and the
+    `key_commands` helper went; a test keeps names and short forms in step. `since` is `unreleased` until the bump
+    (`version.mjs sync` stamps it, `just release` commits it, the Release workflow refuses a tag with one left).
+  - **Sizes**: engine 880,556 → 887,662 bytes gzip (+7.1 KB): the command table, the step and the checks; the
+    group shape and `settings_version` brought it to 893,044; moving the commands' text out, 892,884 (+12.3 KB in all).
+  - **Left**: the Keybindings section lists each binding's expression but not the commands (the help `?` does); in the
+    terminal's info view and menus, `gg` is not read (they look up one key; Home works). The web's `G` reaches the
+    last row drawn (a long report draws more as it scrolls). Checked by tests, not yet by a person in a browser or a
+    terminal.
+

@@ -352,12 +352,31 @@ impl AppSettings {
         };
         match std::fs::read_to_string(&path) {
             Err(_) => (AppSettings::default(), None),
-            Ok(text) => match AppSettings::parse(&text) {
+            Ok(text) => match AppSettings::parse(&migrated(&path, text)) {
                 Ok(s) => (s, None),
                 Err(e) => (AppSettings::default(), Some(format!("{}: {e}", path.display()))),
             },
         }
     }
+}
+
+/// `text` brought to the latest version of `settings.json` (`tc_core::settings_version`) and saved over the file at
+/// `path`, as every front end does when it reads it; as it was when it is already there or is not settings. A file that
+/// cannot be written is still read as brought up to date, and tried again next time.
+fn migrated(path: &std::path::Path, text: String) -> String {
+    let Ok(Value::Object(raw)) = object(&text).map(Value::Object) else {
+        return text;
+    };
+    let Some(Value::Object(new)) = tc_core::settings_version::migrate(&Value::Object(raw), crate::keys::defaults())
+    else {
+        return text;
+    };
+    let Ok(out) = written(new) else {
+        return text;
+    };
+    // Not written is not lost: the old file is read the same way next time.
+    std::fs::write(path, &out).ok();
+    out
 }
 
 /// A Lucide icon's name: lower case words joined by dashes (`circle-x`, `arrow-up-0-1`).
@@ -843,7 +862,7 @@ pub fn save_theme_preset(word: &str) -> Result<(), SettingsError> {
 /// As [`with_commands`].
 pub fn with_binding(text: &str, section: &str, action: &str, keys: Option<&[String]>) -> Result<String, SettingsError> {
     let raw = Value::Object(object(text)?);
-    let Value::Object(raw) = tc_core::keymap::with_binding(&raw, section, action, keys) else {
+    let Value::Object(raw) = tc_core::keymap::with_binding(&raw, crate::keys::defaults(), section, action, keys) else {
         return Err(SettingsError::NotObject);
     };
     written(raw)
@@ -887,13 +906,30 @@ mod tests {
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(
             v["tui"],
-            serde_json::json!({ "sync": "manual", "keys": { "tasks.done": "x" } })
+            serde_json::json!({ "sync": "manual", "keys": { "tasks": { "x": "tasks.done", "d": null } } })
         );
+        assert_eq!(v["version"], tc_core::settings_version::VERSION);
         assert!(out.find("taskCommands") > out.find("\"tui\""), "the commands go last");
         let back = with_binding(&out, "tui", "tasks.done", None).unwrap();
         let v: Value = serde_json::from_str(&back).unwrap();
         assert_eq!(v["tui"], serde_json::json!({ "sync": "manual" }));
         assert!(with_binding("[1]", "tui", "tasks.done", None).is_err());
+    }
+
+    #[test]
+    fn an_old_file_is_brought_up_to_date_and_saved_once() {
+        let dir = std::env::temp_dir().join(format!("meghnaad-migrate-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        let old = r#"{ "tui": { "keys": { "tasks.done": "x" } } }"#;
+        std::fs::write(&path, old).unwrap();
+        let text = migrated(&path, old.to_owned());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text, "saved");
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["tui"]["keys"]["tasks"]["x"], "tasks.done");
+        assert_eq!(migrated(&path, text.clone()), text, "once");
+        assert_eq!(migrated(&path, "not json".into()), "not json");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -95,7 +95,12 @@ describe('the boards page', () => {
   });
 
   it('changes a board’s address, and the home page goes with it', async () => {
-    server({ boardsVersion: 1, boards: [board('week', 'My week'), board('q4', 'Q4')], homepage: { board: 'week' } });
+    server({
+      version: 2,
+      boardsVersion: 1,
+      boards: [board('week', 'My week'), board('q4', 'Q4')],
+      homepage: { board: 'week' },
+    });
     store.boardId = 'week';
     app = mount(BoardsPage, { target: document.body });
     await settle();
@@ -120,7 +125,12 @@ describe('the boards page', () => {
   });
 
   it('leaves the home page alone when another board’s address changes, and refuses an address in use', async () => {
-    server({ boardsVersion: 1, boards: [board('week', 'My week'), board('q4', 'Q4')], homepage: { board: 'week' } });
+    server({
+      version: 2,
+      boardsVersion: 1,
+      boards: [board('week', 'My week'), board('q4', 'Q4')],
+      homepage: { board: 'week' },
+    });
     store.boardId = 'q4';
     app = mount(BoardsPage, { target: document.body });
     await settle();

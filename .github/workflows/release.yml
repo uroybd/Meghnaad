@@ -59,6 +59,11 @@ jobs:
               echo "::error::The tag $REF_NAME does not match the version in package.json (v$declared). Change it there, commit, and tag again."
               exit 1
             fi
+            # A release says which version brought each command in: none may be left as "unreleased".
+            node scripts/commands-doc.mjs released || {
+              echo "::error::A command's since is still unreleased. Run node scripts/version.mjs sync, commit, and tag again."
+              exit 1
+            }
             version="$declared"
           else
             version="$declared-dev.${GITHUB_SHA::7}"

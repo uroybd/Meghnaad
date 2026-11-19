@@ -12,5 +12,7 @@ class KeymapAssetTest {
             .map { File(it, "web/public/keymaps/default.json") }
             .firstOrNull { it.exists() } ?: return
         assertEquals(web.readText(), readResource("/keymaps/default.json"), "run node scripts/gen-lucide.mjs")
+        val commands = File(web.parentFile, "commands.json")
+        assertEquals(commands.readText(), readResource("/keymaps/commands.json"), "run node scripts/gen-lucide.mjs")
     }
 }

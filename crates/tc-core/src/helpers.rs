@@ -594,12 +594,24 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             Ok(key) => json!({ "key": key }),
             Err(problem) => json!({ "problem": problem }),
         },
+        // A key pressed in a context, after the keys pending (spec 0020): `{pending, call?}`, from that context's keys
+        // (`contexts[<context>]` of what the `keymap` helper gave).
+        "key_step" => json!(crate::keymap::step(
+            &a.req::<std::collections::BTreeMap<String, String>>(0)?,
+            &a.opt::<crate::keymap::Pending>(1)?.unwrap_or_default(),
+            &a.req::<String>(2)?
+        )),
+        // A command line's command (`:tabn Tasks`): `{action, args?, count?}`, or `null` for a line that goes to `task`.
+        "key_command_line" => json!(crate::keymap::command_line(&a.req::<String>(0)?)),
+        // What an expression bound to a key runs (`filter +home`), the same way: `null` for none.
+        "key_call" => json!(crate::keymap::call_of(&a.req::<String>(0)?)),
         // What a Keybindings page shows, from the whole of `settings.json` and the keymap asset: `{sections, problems}`.
         "keymap_bindings" => json!(crate::keymap::bindings(
             &a.opt::<serde_json::Value>(1)?.unwrap_or_default(),
             &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
         )),
-        // `settings.json` with an action's keys in a section set (a list, `[]` for none), or taken out (`null`).
+        // `settings.json` with an action's keys in a section set (a list, `[]` for none), or taken out (`null`), from
+        // the keymap asset (the action's default keys).
         "keymap_set" => {
             let section = a.req::<String>(1)?;
             if !crate::keymap::SECTIONS.contains(&section.as_str()) {
@@ -608,11 +620,18 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             let keys = a.opt::<Vec<String>>(3)?;
             crate::keymap::with_binding(
                 &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
+                &a.opt::<serde_json::Value>(4)?.unwrap_or_default(),
                 &section,
                 &a.req::<String>(2)?,
                 keys.as_deref(),
             )
         }
+        // `settings.json` brought to the latest version (`settings_version`), from the keymap asset; `null` when it is
+        // already there, so a front end saves the file only when it changed.
+        "settings_migrate" => json!(crate::settings_version::migrate(
+            &a.opt::<serde_json::Value>(0)?.unwrap_or_default(),
+            &a.opt::<serde_json::Value>(1)?.unwrap_or_default()
+        )),
         _ => return Err(format!("{name} is not a helper")),
     })
 }
@@ -777,6 +796,15 @@ mod tests {
         assert_eq!(shell_quote(""), "''");
         assert_eq!(shell_quote("+tag"), "+tag");
         assert_eq!(call("split_words", r#"["a 'b c' d"]"#), r#"["a","b c","d"]"#);
+        assert_eq!(
+            call("key_command_line", r#"[":tabn Tasks"]"#),
+            r#"{"action":"page.go","args":["Tasks"]}"#
+        );
+        assert_eq!(call("key_command_line", r#"[": tabn"]"#), "null");
+        assert_eq!(
+            call("key_step", r#"[{"j":"move.down"},{"count":3},"j"]"#),
+            r#"{"call":{"action":"move.down","count":3},"pending":{}}"#
+        );
     }
 
     #[test]

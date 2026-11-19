@@ -66,13 +66,61 @@ fun keymapBindings(settings: JsonObject, defaults: JsonObject = KEYMAP_DEFAULTS)
     )
 }.getOrElse { KeyBindings() }
 
-/** [settings] with an action's keys in a section set (`[]` for none), or taken out (null); the rest in its order. */
-fun withBinding(settings: JsonObject, section: String, action: String, keys: List<String>?): JsonObject {
+/**
+ * [settings] with an action's keys in a section set (`[]` for none), or taken out (null), bound in its group with the
+ * default keys it no longer has unbound; the rest in its order.
+ */
+fun withBinding(
+    settings: JsonObject, section: String, action: String, keys: List<String>?, defaults: JsonObject = KEYMAP_DEFAULTS,
+): JsonObject {
     val next = callHelper(
         "keymap_set", settings, JsonPrimitive(section), JsonPrimitive(action),
-        keys?.let { k -> JsonArray(k.map(::JsonPrimitive)) } ?: JsonNull,
+        keys?.let { k -> JsonArray(k.map(::JsonPrimitive)) } ?: JsonNull, defaults,
     ).jsonObject
     return JsonObject(buildMap { for (k in settings.keys) next[k]?.let { put(k, it) }; putAll(next.filterKeys { it !in settings }) })
+}
+
+/**
+ * `settings.json` brought to the latest version (`tc_core::settings_version`: the keys bound per group since 2), or null
+ * when it already is. Every front end does this when it reads the file, and saves what comes back.
+ */
+fun migrateSettings(settings: JsonObject, defaults: JsonObject = KEYMAP_DEFAULTS): JsonObject? = runCatching {
+    callHelper("settings_migrate", settings, defaults) as? JsonObject
+}.getOrNull()
+
+/** A command of the `:` line (spec 0020), or a line that moves to a row: as written (`:tabn[ext]`), what it does and takes, and its part of the documentation (empty for a line). */
+data class KeyCommand(val written: String, val what: String, val link: String)
+
+/** The commands as people read them: `web/public/keymaps/commands.json`, copied into the resources by scripts/gen-lucide.mjs. */
+val COMMANDS_DOC: JsonObject by lazy {
+    runCatching { engineJson.parseToJsonElement(readResource("/keymaps/commands.json") ?: "{}").jsonObject }.getOrElse { JsonObject(emptyMap()) }
+}
+
+/** Whether what came in [since] is in a build of [version]: `unreleased` is (it comes out with it), and up to it; with no version known, all. */
+fun haveSince(since: String, version: String = APP_VERSION): Boolean =
+    since == "unreleased" || version.isEmpty() || !isNewer(since, version)
+
+private fun text(o: JsonObject, key: String): String = (o[key] as? JsonPrimitive)?.contentOrNull ?: ""
+
+/** Every command of this build, then the lines that move to a row, from [doc]. */
+fun keyCommands(doc: JsonObject = COMMANDS_DOC, version: String = APP_VERSION): List<KeyCommand> {
+    val docs = text(doc, "docs")
+    fun what(o: JsonObject) = text(o, "summary") + text(o, "takes").let { if (it.isEmpty()) "" else "; takes $it" }
+    fun list(key: String) = (doc[key] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.filter { haveSince(text(it, "since"), version) }
+    return list("commands").map { c ->
+        val name = text(c, "name")
+        val shortest = (c["shortest"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: name.length
+        val written = if (shortest < name.length) ":" + name.take(shortest) + "[" + name.drop(shortest) + "]" else ":$name"
+        KeyCommand(written, what(c), "$docs#$name")
+    } + list("lines").map { l ->
+        KeyCommand((l["written"] as? JsonArray).orEmpty().joinToString(" ") { (it as? JsonPrimitive)?.contentOrNull ?: "" }, what(l), "")
+    }
+}
+
+/** The commands that match [query] (KeysPanel.svelte): the name whole (`denot`), or what it does and takes. */
+fun commandRows(commands: List<KeyCommand>, query: String): List<KeyCommand> {
+    val t = query.trim().lowercase()
+    return commands.filter { c -> t.isEmpty() || listOf(c.written.replace("[", "").replace("]", ""), c.what).any { t in it.lowercase() } }
 }
 
 /** A key as typed (`Ctrl-K`), as `settings.json` writes it, or what is wrong with it: exactly one of the two. */

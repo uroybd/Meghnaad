@@ -34,36 +34,62 @@ the same time is still the last one wins.
 
 Every front end has its keys in one place: the defaults are `keymaps/default.json` (in the repository,
 `web/public/keymaps/default.json`; the web app fetches it, and the terminal app and the phone carry it), and yours go in
-`settings.json`, in the same shape. An action is named by where it acts, with dots, as in Zed and VS Code
-(`app.prompt`, `tasks.done`, `settings.commands.add`); a key is written as they write it, the modifiers then the key,
-with `+` or `-`: `/`, `G`, `ctrl+k`, `ctrl-shift-tab`, `enter`, `esc`, `space`, `pagedown`, `f5`.
+`settings.json`. An action is named by where it acts, with dots, as in Zed and VS Code (`app.prompt`, `tasks.done`,
+`settings.commands.add`); its group is the name up to the last dot (`app`, `tasks`, `settings.commands`). A key is
+written as they write it, the modifiers then the key,
+with `+` or `-`: `/`, `G`, `ctrl+k`, `ctrl-shift-tab`, `enter`, `esc`, `space`, `pagedown`, `f5`. Keys pressed one
+after the other are written with a space between them (`g g`, `ctrl+k ctrl+s`), or two characters together (`gg`,
+`g1`).
+
+Your keys are bound by group, each key to what it runs: an action, or a command with its words as the `:` command line
+takes it (`tabn Tasks`; the commands are vim's where vim has them, listed by `?` and in
+[Commands](../commands.md)). `null` unbinds a key.
 
 ```json
 {
-  "keys": { "app.prompt": ["/", "ctrl+k"] },
-  "tui": { "keys": { "tasks.filter": "F", "app.undo": null } },
+  "version": 2,
+  "keys": { "app": { "ctrl+k": "app.prompt" }, "page": { "T": "tabn Tasks" } },
+  "tui": { "keys": { "tasks": { "F": "tasks.filter", "f": null, "g h": "filter +home" }, "app": { "u": null } } },
   "web": { "keys": {} },
   "mobile": { "keys": {} }
 }
 ```
 
 `keys` is for every front end and `tui.keys`, `web.keys` and `mobile.keys` for one alone; the front end's own come
-last. A list gives an action several keys, and `null` (or `[]`) leaves it with none. A key you give one action is taken
-from the action that had it by default, so there is nothing to unbind first. A page's keys come before the keys of every
-page where both have one, on that page only (a `tasks` key before an `app` key), so the same key can mean something on
-one page and something else elsewhere. A name that is no action, a key that can't be read, or one key for two actions of
-one group is said (on **Keybindings**, and in the terminal app's Settings page) and the rest still applies. The file
-also says in a line what each action does (`about`), which is what the lists of keys show.
+last. A key adds to the action's default keys; to move an action to another key, unbind the old one with `null`, as
+`f` above. A key you bind is taken from a default that would otherwise come first, so there is nothing else to unbind. A
+group's keys act where the group does: `tasks` on the Tasks page, `page` and `app` everywhere, and a page's keys come
+before the keys of every group around it, on that page only (a `tasks` key before an `app` key), so the same key can
+mean something on one page and something else elsewhere. The groups are `app`, `page`, `move`, `tasks`, `sort`,
+`sidebar`, `lists`, `info`, `calendar`, `burndown`, `boards`, `boards.list`, `console` and the Settings tabs'
+(`settings`, `settings.general`, `settings.commands`, `settings.boards`, `settings.keys`, `settings.sync`,
+`settings.theme`). A group that is none, a key that can't be read, what is no action or command, a key that starts a
+longer one (`g` beside `gg`, which could then never be pressed) and two of your keys for one key where both act are said
+(on **Keybindings**, and in the terminal app's Settings page), and the rest still applies. The default keys also say in a
+line what each action does (`about`), which is what the lists of keys show.
 
-`/` puts the cursor in the prompt everywhere (`app.prompt`; the terminal app also keeps `:`). The web app has the
-terminal app's keys for what it can do, away from a text field and a dialog (Escape leaves a field), and `?` lists
-them:
+`settings.json` says which shape it is written in (`"version"`). A file without one is version 1, whose keys listed each action with its keys
+(`"tui": { "keys": { "tasks.filter": "F" } }`, which replaced the action's own).
+Every front end brings an older file up to date when it reads it and saves it so, once: those keys become the same keys
+bound by group, with the default keys they replaced unbound. A front end older than the file reads keys it does not
+understand and says so; update it.
+
+`/` puts the cursor in the prompt everywhere (`app.prompt`), and `:` puts it there with `:` typed, for a command
+(`app.commandLine`): a line that starts with `:` joined to a command (`:tabn Tags`, `:5`, `:done`) runs it, and any
+other line goes to `task`. The web app has the terminal app's keys for what it can do, away from a text field and a
+dialog (Escape leaves a field), and `?` lists them and the commands. A number before a move repeats it (`5j`), and a
+key of two presses (`gg`) waits for the second, shown at the bottom right:
 
 | Key | Does |
 | --- | --- |
 | `/` | Put the cursor in the prompt |
 | `?` | Every key and what it does |
-| `1` to `9` | Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings |
+| `:` | The prompt with `:` typed, for a command |
+| `g1` to `g9` | Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings; `gt` `gT` the next and the one before |
+| `j` `k`, `gg` `G` | On Tasks, the next row and the one before, the first and the last: the chosen row is the one with the focus |
+| `d` `+` `D` `m` `A` `x` `o` `p` `Space` | On Tasks, on the chosen row (or the ticked ones): done, start or stop, delete (asks), modify, annotate, denotate, open its link, duplicate, tick it |
+| `X` | On Tasks, delete the completed tasks the filter picks (asks) |
+| `u` | `undo`, put on the prompt for Enter |
 | `a` | Add a task, from any page (`app.add`) |
 | `f` | The page's filter (`app.filter`) |
 | `r` | Another report (on Tasks) |

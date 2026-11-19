@@ -22,5 +22,6 @@
 
 # Reference
 
+- [Commands](./commands.md)
 - [taskrc support](./taskrc-support.md)
 - [Architecture](./architecture.md)

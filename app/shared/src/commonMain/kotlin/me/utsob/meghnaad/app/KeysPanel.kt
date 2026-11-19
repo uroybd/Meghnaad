@@ -35,6 +35,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -204,6 +205,20 @@ fun KeysPanel(store: Store, state: KeysState) {
                     }
                     if (b.keys != null) TextButton({ state.change(section, b.action, null) }) { LucideIcon("x", size = 16.dp) }
                 }
+            }
+        }
+        Text("Commands", Modifier.padding(top = 10.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Dim("A key can run one of these, with its words, in place of an action: \"g h\": \"filter +home\" under tasks runs :filter +home. The part in brackets may be left out, as in vim.", size = 12)
+        val uri = LocalUriHandler.current
+        val commands = commandRows(remember { keyCommands() }, state.query)
+        if (commands.isEmpty()) Dim("Nothing matches.")
+        for (c in commands) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(c.written, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                    Dim(c.what, size = 12)
+                }
+                if (c.link.isNotEmpty()) TextButton({ runCatching { uri.openUri(c.link) } }) { Text("More") }
             }
         }
         bindings.problems.forEach { Text(it, color = colors.error, fontSize = 13.sp) }

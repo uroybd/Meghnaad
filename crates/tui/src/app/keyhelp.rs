@@ -146,6 +146,33 @@ impl App {
             }
             lines.push(String::new());
         }
+        // Keys bound to a command of the user's (`"filter +home": "g h"`).
+        let own: Vec<(String, &String)> = self
+            .keymap
+            .keys
+            .iter()
+            .filter(|(name, keys)| name.contains(' ') && !keys.is_empty())
+            .map(|(name, _)| (self.keymap.label(name), name))
+            .collect();
+        if !own.is_empty() {
+            lines.push("Your keys' commands".to_owned());
+            let width = own.iter().map(|r| r.0.chars().count()).max().unwrap_or(0).max(10);
+            for (keys, name) in own {
+                lines.push(format!("  {keys:<width$} :{name}"));
+            }
+            lines.push(String::new());
+        }
+        lines.push(
+            "Commands: type : then one (vim's, as short as vim allows), on the command line or bound to a key"
+                .to_owned(),
+        );
+        let rows = keys::commands();
+        let width = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0);
+        for (name, what) in rows {
+            lines.push(format!("  {name:<width$} {what}"));
+        }
+        lines.push(format!("  More on each: {}", keys::commands_docs()));
+        lines.push(String::new());
         lines.push(HELP_TAIL.to_owned());
         lines.join("\n")
     }
@@ -155,6 +182,7 @@ impl App {
     pub fn key_lines(&self) -> Vec<KeyLine> {
         let all = keymap::bindings(keys::defaults(), &self.settings.raw);
         let mut out = Vec::new();
+        let t = self.keys_query.trim().to_lowercase();
         for s in all.sections {
             out.push(KeyLine::Head(s.id));
             out.extend(
@@ -167,6 +195,18 @@ impl App {
                     .map(|b| KeyLine::Row(s.id, b)),
             );
         }
+        // The commands a key can run, with their words, in place of an action; narrowed by the same search.
+        out.push(KeyLine::CommandsHead);
+        out.extend(
+            keys::commands()
+                .into_iter()
+                .filter(|(name, what)| {
+                    // The name whole, as typed (`denot`), not as written (`:den[otate]`).
+                    let whole = name.replace(['[', ']'], "").to_lowercase();
+                    t.is_empty() || whole.contains(&t) || what.to_lowercase().contains(&t)
+                })
+                .map(|(name, what)| KeyLine::Command(name, what)),
+        );
         out
     }
 

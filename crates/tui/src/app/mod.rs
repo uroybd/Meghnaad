@@ -29,6 +29,7 @@ use tc_core::sortspec::{self, Key};
 use tc_core::taskrc::Config;
 
 mod actions;
+mod calls;
 mod export;
 mod job;
 mod keyhelp;
@@ -241,6 +242,10 @@ pub struct KeyAdd {
 pub enum KeyLine {
     Head(&'static str),
     Row(&'static str, Binding),
+    /// The commands a key can run in place of an action (spec 0020), after the sections.
+    CommandsHead,
+    /// A command as vim writes it (`:tabn[ext]`), and what it does and takes.
+    Command(String, String),
 }
 
 /// `b` matches what is typed: its name, what it does, or one of its keys (KeysPanel.svelte `matches`).
@@ -408,6 +413,8 @@ pub struct App {
 
     pub mode: Mode,
     pub status: String,
+    /// The keys pressed that have not run anything yet: a count, the start of a longer key (spec 0020).
+    pub keys_pending: keymap::Pending,
     /// The page's size, for what `task` prints into it.
     pub width: u16,
     pub height: u16,
@@ -634,6 +641,7 @@ impl App {
             last_read: 0,
             mode: Mode::Normal,
             status: String::new(),
+            keys_pending: keymap::Pending::default(),
             width: 80,
             height: 24,
         }

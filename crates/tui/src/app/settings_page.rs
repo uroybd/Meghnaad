@@ -47,7 +47,8 @@ impl App {
             "settings.keys.add" => {
                 let section = match self.key_lines().get(self.keys_sel) {
                     Some(KeyLine::Head(s) | KeyLine::Row(s, _)) => s,
-                    None => "general",
+                    // A key for a command goes with every front end's.
+                    _ => "general",
                 };
                 self.mode = Mode::KeyAdd(KeyAdd {
                     section,

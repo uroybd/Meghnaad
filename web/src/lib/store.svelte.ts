@@ -23,7 +23,14 @@ import {
   type TaskCommand,
 } from './appsettings';
 import type { Board, ControlValue } from './boards';
-import { fetchKeymapDefaults, resolveKeymap, type Keymap } from './keymap';
+import {
+  fetchCommandsDoc,
+  fetchKeymapDefaults,
+  migrateSettings,
+  resolveKeymap,
+  type CommandsDoc,
+  type Keymap,
+} from './keymap';
 import { lucide } from './lucideLib.svelte';
 import { isHiddenReport, offeredReports as pickable } from './reportList';
 import { parsePath, placePath, prefixFilter, taskPath, type Place, type SettingsTab } from './route';
@@ -132,12 +139,20 @@ class Store {
   /** The keys: the defaults, then `keys` and `web.keys` of `settings.json`. */
   keymap = $derived<Keymap>(resolveKeymap(this.appSettings?.raw ?? {}, this.keymapDefaults));
 
-  /** Fetch the default keys. Without them the page has no keys, only its buttons, so a failure is not said. */
+  /** The commands of the `:` line as people read them (`/keymaps/commands.json`), once fetched. */
+  commandsDoc = $state<CommandsDoc | null>(null);
+
+  /** Fetch the default keys and the commands. Without them the page has no keys, only its buttons, so a failure is not said. */
   async loadKeymapDefaults() {
     try {
       this.keymapDefaults = await fetchKeymapDefaults();
     } catch {
       // Left as none: the keys are a convenience.
+    }
+    try {
+      this.commandsDoc ??= await fetchCommandsDoc();
+    } catch {
+      // Left as none: the lists of keys show no commands.
     }
   }
   /** The tag the Tags page should show (`n` changes on every request, so asking for the same tag again still reacts). */
@@ -294,10 +309,25 @@ class Store {
     lucide.keep(this.taskCommands.flatMap((c) => (c.icon ? [c.icon] : [])));
   }
 
-  /** Read `settings.json`. A failure leaves what was there: the commands are a convenience, not needed to work. */
+  /**
+   * Read `settings.json`, brought to the latest version and saved so when it was older (the keys' migration reads the
+   * default keys, so they are fetched first). A failure leaves what was there: the commands are a convenience, not
+   * needed to work.
+   */
   async loadAppSettings() {
     try {
-      this.appSettings = parseSettings(JSON.stringify(await getAppSettings()));
+      let raw = (await getAppSettings()) as Record<string, unknown>;
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        if (!this.keymapDefaults) await this.loadKeymapDefaults();
+        // Without the default keys the old keys cannot be read rightly; the file waits for next time.
+        const migrated = this.keymapDefaults && migrateSettings(raw, this.keymapDefaults);
+        if (migrated) {
+          raw = migrated;
+          // Not saved is not lost: the old file is brought up to date the same way next time.
+          await putAppSettings(JSON.stringify(migrated, null, 2) + '\n').catch(() => undefined);
+        }
+      }
+      this.appSettings = parseSettings(JSON.stringify(raw));
       this.rememberIcons();
     } catch {
       this.appSettings ??= parseSettings('');

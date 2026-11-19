@@ -151,18 +151,23 @@ the bottom and in the panes' borders follow what you set.
 
 ![? lists every key as it is, a group at a time, with what it does](screenshots/terminal-keys-help.png)
 
+The defaults follow [vim-taskwarrior](https://github.com/farseer90718/vim-taskwarrior)'s, which vim users of
+Taskwarrior know. A number before a move repeats it, as in vim: `5j` is five rows down, `12G` row 12. A key of two
+presses (`gg`, `g1`) waits for the second; what is waiting shows on the status line, and `Esc` drops it.
+
 On every page:
 
 | Key | Does |
 | --- | --- |
-| `1` to `9` | Open a page |
+| `g1` to `g9` | Open a page; `gt` `gT` the next and the one before |
 | `j` `k` (or the arrows) | Down and up a row, a field, or a line |
 | `[` `]` | The section before and the next: of the settings, of a board, of `?` and a task's info |
 | `Ctrl+D` `Ctrl+U` | Half a page down and up |
 | `Ctrl+F` `Ctrl+B` (or PgDn PgUp) | A page down and up |
-| `g` `G` (or Home End) | The first and the last |
+| `gg` `G` (or Home End) | The first and the last; with a number before it, that row (`5G`) |
 | `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_` |
-| `/` or `:` | The command line |
+| `/` | The command line |
+| `:` | The command line with `:` typed, for a [command](#commands) (`:tabn Tasks`, `:5`, `:done`) |
 | `v` | Review the tasks that need it |
 | `C` | Choose the context (`task context <name>`, or `none`) |
 | `T` | Stop the started task the timer shows |
@@ -184,15 +189,19 @@ On the Tasks page:
 | `[` `]` | On a grouped report, the first row of the group before, or of the next |
 | `Enter` | The task's info, in tabs ([Task info](#task-info)); any other key closes it |
 | `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form) |
-| `m` | Modify the selected task, in [the full form](#the-form) |
+| `m` `M` | Modify the selected task, in [the full form](#the-form) |
 | `A` | Annotate the selected task, in a box that shows it as it is |
+| `x` | Take an annotation off the selected task: the command line opens with `<uuid> denotate ` |
+| `o` | Open the first link in the selected task (its description, then its notes) with the desktop's opener |
 | `d` | Mark the selected task done |
-| `s` `x` | Start, stop the selected task |
+| `+` | Start the selected task, or stop it when it is started; with tasks marked, `:start` and `:stop` start or stop them, passing over those already so |
 | `D` | Delete the selected task; its question opens in a box |
+| `p` | Duplicate the selected task |
+| `X` | Delete the completed tasks the filter picks (`task <filter> status:completed delete`, which asks) |
 | `c` | Run one of your [task commands](#settings) on the selected task: a box lists them, typing narrows the list, `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
 | `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
-| `o` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `b` groups by it (a `/` after it, as the web's **Group** does) or stops, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
+| `s` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `b` groups by it (a `/` after it, as the web's **Group** does) or stops, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
 | `e` | [Export](#export) the report as a file: JSON, CSV or TSV, with the fields you choose |
 | `Space` | Mark the selected task, or unmark it, and move down ([Bulk actions](#bulk-actions)) |
 | `V` | Mark every row from the last one marked to the selected one |
@@ -200,7 +209,7 @@ On the Tasks page:
 | `Esc` | With tasks marked, clear the marks |
 
 Over the table a line says what `task` adds to your filter: the report's own filter, the sort in force (and the
-report's own when you changed it) and the context; `f`, `o` and `C` change them. A sort is put in the filter as
+report's own when you changed it) and the context; `f`, `s` and `C` change them. A sort is put in the filter as
 `rc.report.<name>.sort:<spec>`, as the web app's header clicks do, so the command line sorts the same way; it belongs to
 its report, and showing another report drops it. The labels of the columns sorted by have `↑` or `↓`, and their place
 when there is more than one. `export` leaves out the context, so the app puts the context's read filter in front of the
@@ -219,12 +228,12 @@ a column the report doesn't show is named by its UDA label.
   3  Home  c
 ```
 
-The quick keys (`a`, `A`, `d`, `s`, `x`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
+The quick keys (`a`, `A`, `d`, `+`, `p`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
 (`Created task 3.`) in the status line. They add no overrides. When `task` asks a question (`Delete task 3 'x'? (yes/no)`, or whether to
 change every recurrence of a recurring task), the question opens in a box: `y` or `n` answers it, and `a` or `q` where
 it offers `all` and `quit`; `Esc` is `quit` where it is offered, else `no`. The box shows what `task` printed before
 the question, so the chain-repair question comes with `dependency.reminder`'s `Task 3 is blocked by:` and the rest.
-Where a key's command prints that reminder with no question (`s` on a task still waiting on others, or `d` on the end
+Where a key's command prints that reminder with no question (`+` on a task still waiting on others, or `d` on the end
 of a chain), it opens in a **task warns** box, bordered in `color.warning`, which any key closes. After every command
 the pages and what completion offers are read again.
 
@@ -294,7 +303,7 @@ as `task` prints it, for what the tabs leave out (its history of changes, among 
 
 ## The command line
 
-`:` takes a whole command line without the `task` in front, as the web app's console does.
+`/` takes a whole command line without the `task` in front, as the web app's console does.
 
 - **Where it runs.** A line runs here, and what `task` prints goes to the Console page (opened for you when it is more
   than a line; a single line goes to the status line). Its questions (`delete`, `undo`, `purge`, a bulk `modify`
@@ -309,6 +318,21 @@ as `task` prints it, for what the tabs leave out (its history of changes, among 
   it and the words after it: `3 fail` runs `3 done outcome:fail`. See [Commands](using/settings.md#commands).
 - **Review.** `review`, or `review 10` to stop after ten, begins a review, as `v` does.
 - **Sync.** `sync` alone syncs in the background, as `S` does.
+- **Commands.** A line that starts with `:` joined to a command runs the command instead (below); `: tabn` (a space
+  after the `:`), `:` before anything that is no command, or a `:` anywhere else goes to `task` as it is.
+
+### Commands
+
+The app's own commands, typed after `:` (the `:` key opens the command line with it) or bound to a key. They are vim's
+where vim has the command, and as short as vim allows: `:tabn`, `:tabne` and `:tabnext` are one command. `Tab`
+completes a command's name. `?` lists them all.
+
+Each command, what it does, the words it takes and the version that brought it in are in
+[Commands](commands.md), one part each (`commands.html#tabnext`), which `?` and the Keybindings section link to.
+
+A key runs a command when [settings.json](using/settings.md#keys) binds the command to it, with its words:
+`"tui": { "keys": { "tasks": { "g h": "filter +home" }, "page": { "T": "tabn Tasks" } } }`. The key acts where its
+group does (`tasks` on the Tasks page, `page` everywhere).
 
 ## Review
 

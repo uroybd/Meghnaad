@@ -24,6 +24,68 @@ pub fn resolve(settings: &Value) -> Keymap {
     keymap::resolve(defaults(), settings, Platform::Tui)
 }
 
+/// The commands of the `:` line as people read them (`web/public/keymaps/commands.json`), built into the app.
+const COMMANDS: &str = include_str!("../../../web/public/keymaps/commands.json");
+
+/// [`COMMANDS`], read once.
+fn commands_doc() -> &'static Value {
+    static READ: LazyLock<Value> = LazyLock::new(|| serde_json::from_str(COMMANDS).unwrap_or_default());
+    &READ
+}
+
+/// Whether what came in `since` is in this build: `unreleased` is (it comes out with it), and a version up to this one.
+fn have(since: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> { v.split(['.', '-']).take(3).map(|p| p.parse().unwrap_or(0)).collect() };
+    since == "unreleased" || parts(since) <= parts(env!("CARGO_PKG_VERSION"))
+}
+
+/// The page of the documentation that says more of each command; a command's own part is `#<its name>`.
+pub fn commands_docs() -> &'static str {
+    commands_doc()["docs"].as_str().unwrap_or_default()
+}
+
+/// Each command this build has, as vim writes it (`:tabn[ext]`), with what it does and the words it takes; then the
+/// lines that move to a row (`:5`). From [`COMMANDS`], less what came in a later version.
+pub fn commands() -> Vec<(String, String)> {
+    let doc = commands_doc();
+    let with_takes = |e: &Value| {
+        let summary = e["summary"].as_str().unwrap_or_default();
+        match e["takes"].as_str().filter(|t| !t.is_empty()) {
+            Some(t) => format!("{summary}; takes {t}"),
+            None => summary.to_owned(),
+        }
+    };
+    let list = |k: &str| {
+        doc[k]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|e| have(e["since"].as_str().unwrap_or("")))
+    };
+    list("commands")
+        .filter_map(|c| {
+            let name = c["name"].as_str()?;
+            let shortest = usize::try_from(c["shortest"].as_u64()?).ok()?;
+            let (must, may) = name.split_at(shortest.min(name.len()));
+            let written = if may.is_empty() {
+                format!(":{must}")
+            } else {
+                format!(":{must}[{may}]")
+            };
+            Some((written, with_takes(c)))
+        })
+        .chain(list("lines").map(|l| {
+            let written: Vec<&str> = l["written"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            (written.join("  "), with_takes(l))
+        }))
+        .collect()
+}
+
 /// What an action does, in a line: the asset's `about` (empty for a name that is no action).
 pub fn about(action: &str) -> &'static str {
     defaults()["about"][action].as_str().unwrap_or_default()
@@ -33,6 +95,7 @@ pub fn about(action: &str) -> &'static str {
 /// [`about`], shared with the other front ends.
 pub const WORDS: &[(&str, &str)] = &[
     ("app.prompt", "command line"),
+    ("app.commandLine", "command"),
     ("app.sidebar", "reports"),
     ("app.back", "back"),
     ("app.review", "review"),
@@ -53,6 +116,11 @@ pub const WORDS: &[(&str, &str)] = &[
     ("page.boards", "Boards"),
     ("page.console", "Console"),
     ("page.settings", "Settings"),
+    ("page.next", "next page"),
+    ("page.prev", "page before"),
+    ("page.first", "first page"),
+    ("page.last", "last page"),
+    ("page.go", "a page"),
     ("move.down", "down"),
     ("move.up", "up"),
     ("move.pageDown", "page down"),
@@ -63,6 +131,7 @@ pub const WORDS: &[(&str, &str)] = &[
     ("move.sectionPrev", "section before"),
     ("move.first", "first"),
     ("move.last", "last"),
+    ("move.row", "row"),
     ("sidebar.open", "open"),
     ("sidebar.hidden", "hidden"),
     ("tasks.info", "info"),
@@ -75,10 +144,15 @@ pub const WORDS: &[(&str, &str)] = &[
     ("tasks.add", "add"),
     ("tasks.modify", "modify"),
     ("tasks.annotate", "annotate"),
+    ("tasks.denotate", "denotate"),
+    ("tasks.open", "open link"),
     ("tasks.done", "done"),
     ("tasks.start", "start"),
     ("tasks.stop", "stop"),
+    ("tasks.toggle", "start/stop"),
     ("tasks.delete", "delete"),
+    ("tasks.duplicate", "duplicate"),
+    ("tasks.clearCompleted", "clear completed"),
     ("tasks.command", "task commands"),
     ("tasks.filter", "filter"),
     ("tasks.report", "report"),
@@ -235,12 +309,25 @@ mod tests {
     }
 
     #[test]
+    fn a_command_from_a_later_version_is_left_out() {
+        assert!(have("unreleased"));
+        assert!(have("0.1.0"));
+        assert!(have(env!("CARGO_PKG_VERSION")));
+        assert!(!have("999.0.0"));
+        let list = commands();
+        assert!(list.iter().any(|(n, w)| n == ":tabn[ext]" && w.contains("takes")));
+        assert!(list.iter().any(|(n, _)| n == ":5  :$"));
+        assert!(commands_docs().starts_with("https://"));
+    }
+
+    #[test]
     fn the_list_of_keys_is_grouped() {
-        let km = resolve(&serde_json::json!({ "keys": { "app.undo": null } }));
+        let km = resolve(&serde_json::json!({ "version": 2, "keys": { "app": { "u": null } } }));
         let list = help(&km);
         assert_eq!(list.first().map(|g| g.0), Some("Everywhere"));
         let rows = &list[0].1;
-        assert_eq!(rows[0].0, "/ :");
+        assert_eq!(rows[0].0, "/");
+        assert_eq!(rows[1].0, ":");
         assert!(rows.iter().any(|r| r.0 == "—" && r.1.starts_with("task undo")));
     }
 

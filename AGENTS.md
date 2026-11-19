@@ -84,12 +84,19 @@ or a TUI around `task`? Layer 2.
   exceptions, because they are pure functions every UI would otherwise write again and drift apart on: the header-sort
   helpers (`sortspec`), boards (`tc_core::board`: what a saved board means, the numbers a section shows from an
   `export`, and the grid layout) and the keys (`tc_core::keymap`: how a key is written, the user's keys over the
-  defaults, and which action a key runs in a context), all reached through `helpers`. Sorting and trimming a chart's
+  defaults, which action or command a key runs in a context, the `:` commands, counts and keys of two presses), all
+  reached through `helpers`. Sorting and trimming a chart's
   groups, all drawing, and what each action is called and does stay in each UI.
 - The default keys are an asset, as the colour themes are: `web/public/keymaps/default.json`, fetched by the web app,
   built into the terminal app and copied into the phone's resources by `scripts/gen-lucide.mjs` (a test fails when the
   copy drifts). A new key-driven action goes there, under its front end, with a context naming its group; the engine
   holds no table of its own.
+- The commands of the `:` line are described once, for people, in `web/public/keymaps/commands.json` (a summary, the
+  words each takes, a longer text and `since`, the version that brought it in), carried like the default keys
+  (`scripts/gen-lucide.mjs` copies it to the phone). `docs/commands.md` is made from it (`node scripts/commands-doc.mjs`;
+  a test fails when it drifts), one anchor per command for the front ends to link to. The engine's `COMMANDS` keeps
+  only name, shortest form and action, and a test keeps the two in step. A new command is written with
+  `"since": "unreleased"`; the bump writes the version in, and a tagged release refuses one left.
 - Charts are drawn by a charting library on each front end (Chart.js on the web), never by hand; the table is the one thing
   that stays ours, and the one exception is the heatmap on Android, a grid of cells (`Heatmap` in `BoardCharts.kt`), because Koala
   Plot has no plot for it. The web draws it with Chart.js's matrix plugin. The engine's `Chart` (labels and a dataset for each series, `tc_core::board::aggregate::chart`) is the

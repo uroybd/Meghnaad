@@ -5,6 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stampCommands } from './commands-doc.mjs';
 import { ROOT } from './deploy-lib.mjs';
 
 const SEMVER = /^v?(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$/;
@@ -39,11 +40,16 @@ export function withCargoVersion(toml, name) {
   return toml.replace(CARGO_VERSION, `$1"${name}"`);
 }
 
-/** Give the crates package.json's version, and Cargo.lock with them. */
+/**
+ * Give the crates package.json's version, and Cargo.lock with them; and the commands brought in since the last release
+ * (`"since": "unreleased"` in `web/public/keymaps/commands.json`) this version, in every copy and in docs/commands.md.
+ */
 export function syncCargo(root = ROOT) {
   const path = join(root, 'Cargo.toml');
-  writeFileSync(path, withCargoVersion(readFileSync(path, 'utf8'), currentVersion(root).name));
+  const version = currentVersion(root).name;
+  writeFileSync(path, withCargoVersion(readFileSync(path, 'utf8'), version));
   execFileSync('cargo', ['update', '--workspace', '--offline'], { cwd: root, stdio: 'inherit' });
+  stampCommands(version, root);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

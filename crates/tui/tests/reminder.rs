@@ -57,8 +57,9 @@ fn a_reminder_with_no_question_is_a_box_and_one_with_a_question_is_in_it() {
     app.reload();
     app.selected = 2; // c
 
-    // Starting it: no question, so the reminder opens in a box, which any key closes.
-    press(&mut app, 's');
+    // Starting it (`+`, which starts a task that is not started): no question, so the reminder opens in a box, which
+    // any key closes.
+    press(&mut app, '+');
     match &app.mode {
         Mode::Notice(lines) => assert_eq!(lines, &["Task 3 is blocked by:", "  1 a", "  2 b"]),
         m => panic!("{m:?}"),

@@ -10,11 +10,17 @@ impl App {
         let Some(chord) = keys::chord(key) else {
             return Action::None;
         };
-        match self.keymap.action(self.context(), &chord) {
-            Some(action) => {
-                let action = action.to_owned();
-                self.act(&action)
-            }
+        // A count and the start of a longer key wait for the rest (`5j`, `gg`), shown on the status line as vim does.
+        let was_pending = !self.keys_pending.is_empty();
+        let step = self.keymap.step(self.context(), &self.keys_pending, &chord);
+        self.keys_pending = step.pending;
+        if !self.keys_pending.is_empty() {
+            self.status = self.keys_pending.label();
+        } else if was_pending {
+            self.status.clear();
+        }
+        match step.call {
+            Some(call) => self.run_call(call),
             None => Action::None,
         }
     }
@@ -29,6 +35,8 @@ impl App {
                 self.prompt(PromptKind::Console, &line);
             }
             "app.prompt" => self.prompt(PromptKind::Console, ""),
+            // The command line with `:` typed, for a command (`:tabn Tasks`).
+            "app.commandLine" => self.prompt(PromptKind::Console, ":"),
             "app.sidebar" => {
                 self.focus = if self.focus == Focus::Main {
                     Focus::Sidebar

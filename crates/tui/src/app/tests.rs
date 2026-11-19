@@ -43,7 +43,7 @@ esac
 fn a_question_task_asks_is_answered_in_a_box() {
     let (mut app, _) = asking_app("delete");
     app.report.uuids = vec!["1499a653-f3c1-4764-b952-39d3a165870f".into()];
-    app.key(key(KeyCode::Char(':')));
+    app.key(key(KeyCode::Char('/')));
     typing(&mut app, "1 delete");
     assert_eq!(
         app.key(key(KeyCode::Enter)),
@@ -71,7 +71,7 @@ fn a_question_task_asks_is_answered_in_a_box() {
 #[test]
 fn a_bulk_change_asks_for_each_task_and_esc_quits() {
     let (mut app, _) = asking_app("bulk");
-    app.key(key(KeyCode::Char(':')));
+    app.key(key(KeyCode::Char('/')));
     typing(&mut app, "1-2 modify +x");
     app.key(key(KeyCode::Enter));
     app.key(key(KeyCode::Char('a')));
@@ -110,9 +110,9 @@ fn the_sort_box_adds_reverses_and_reorders_keys_and_writes_the_override() {
         .unwrap(),
     );
     app.open(Page::Tasks);
-    app.key(key(KeyCode::Char('o')));
+    app.key(key(KeyCode::Char('s')));
     let Mode::Sort(edit) = &app.mode else {
-        panic!("o opens the sort box");
+        panic!("s opens the sort box");
     };
     assert_eq!(sortspec::serialize(&edit.keys), "urgency-");
     // The report's columns come first when adding.
@@ -143,14 +143,14 @@ fn the_sort_box_adds_reverses_and_reorders_keys_and_writes_the_override() {
     assert_eq!(app.sort_in_force().as_deref(), Some("due-,urgency-"));
 
     // Back to the report's own: no override is left.
-    app.key(key(KeyCode::Char('o')));
+    app.key(key(KeyCode::Char('s')));
     app.key(KeyEvent::new(KeyCode::Char('R'), KeyModifiers::SHIFT));
     app.key(key(KeyCode::Enter));
     assert_eq!(app.filter, "");
 
     // Esc leaves it as it was; another report drops this one's override.
     app.filter = "+home rc.report.next.sort:due+".into();
-    app.key(key(KeyCode::Char('o')));
+    app.key(key(KeyCode::Char('s')));
     app.key(key(KeyCode::Char('d')));
     app.key(key(KeyCode::Esc));
     assert_eq!(app.filter, "+home rc.report.next.sort:due+");
@@ -171,7 +171,7 @@ fn e_on_the_settings_page_opens_settings_json_in_the_editor() {
 fn a_line_with_a_command_that_needs_the_terminal_runs_there() {
     let mut app = app();
     app.settings = AppSettings::parse(r#"{ "taskCommands": [ { "name": "fix", "command": "edit" } ] }"#).unwrap();
-    app.key(key(KeyCode::Char(':')));
+    app.key(key(KeyCode::Char('/')));
     typing(&mut app, "3 fix ; next");
     let Action::Run(steps) = app.key(key(KeyCode::Enter)) else {
         panic!("expected a run");
@@ -179,7 +179,7 @@ fn a_line_with_a_command_that_needs_the_terminal_runs_there() {
     let lines: Vec<&str> = steps.iter().map(|s| s.line.as_str()).collect();
     assert_eq!(lines, ["3 edit", "next"]);
     for line in ["+x edit", "!next", "!1 delete"] {
-        app.key(key(KeyCode::Char(':')));
+        app.key(key(KeyCode::Char('/')));
         typing(&mut app, line);
         assert!(matches!(app.key(key(KeyCode::Enter)), Action::Run(_)), "{line}");
     }
@@ -188,7 +188,7 @@ fn a_line_with_a_command_that_needs_the_terminal_runs_there() {
 #[test]
 fn sync_runs_in_the_background_and_never_takes_the_terminal() {
     let mut app = app();
-    app.key(key(KeyCode::Char(':')));
+    app.key(key(KeyCode::Char('/')));
     typing(&mut app, "sync");
     assert_eq!(app.key(key(KeyCode::Enter)), Action::None);
     assert!(app.syncer.running());
@@ -251,7 +251,7 @@ fn a_form_that_cannot_be_saved_stays_open_and_says_why() {
 #[test]
 fn a_line_that_asks_nothing_is_run_here_into_the_console() {
     let mut app = app();
-    app.key(key(KeyCode::Char(':')));
+    app.key(key(KeyCode::Char('/')));
     typing(&mut app, "1 done && next");
     assert_eq!(app.key(key(KeyCode::Enter)), Action::None);
     // `task` is not there: the first step says so and the `&&` stops the second.
@@ -265,7 +265,7 @@ fn a_line_that_asks_nothing_is_run_here_into_the_console() {
 #[test]
 fn a_broken_chain_is_said_and_not_run() {
     let mut app = app();
-    app.key(key(KeyCode::Char(':')));
+    app.key(key(KeyCode::Char('/')));
     typing(&mut app, "1 done &&");
     assert_eq!(app.key(key(KeyCode::Enter)), Action::None);
     assert_eq!(app.status, "Nothing after ‘&&’.");
@@ -284,9 +284,11 @@ fn an_add_the_engine_would_refuse_stays_open_with_why() {
 #[test]
 fn keys_are_the_keymaps_and_the_hints_and_the_list_say_so() {
     let mut app = app();
-    app.keymap = keys::resolve(
-        &serde_json::json!({ "keys": { "app.prompt": "ctrl+k" }, "tui": { "keys": { "page.console": "F8" } } }),
-    );
+    app.keymap = keys::resolve(&serde_json::json!({
+        "version": 2,
+        "keys": { "app": { "ctrl+k": "app.prompt", "/": null } },
+        "tui": { "keys": { "page": { "F8": "page.console" } } }
+    }));
     app.key(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE));
     assert_eq!(app.page, Page::Console);
     app.key(key(KeyCode::Char('/')));
@@ -297,7 +299,7 @@ fn keys_are_the_keymaps_and_the_hints_and_the_list_say_so() {
     assert!(app.global_keys().contains("Ctrl+K command"), "{}", app.global_keys());
     assert!(app.help().contains("Ctrl+K"));
     assert!(app.help().contains("F8"));
-    app.key(key(KeyCode::Char('1')));
+    typing(&mut app, "g1");
     // The table's own keys are in its border, not on the bottom line, and adding a task is on the bottom line.
     assert!(
         app.view_keys("tasks").contains("f filter"),
@@ -312,9 +314,9 @@ fn keys_are_the_keymaps_and_the_hints_and_the_list_say_so() {
 }
 
 #[test]
-fn numbers_open_pages_tab_moves_to_the_side_and_q_quits() {
+fn g_and_a_number_open_pages_tab_moves_to_the_side_and_q_quits() {
     let mut app = app();
-    app.key(key(KeyCode::Char('8')));
+    typing(&mut app, "g8");
     assert_eq!(app.page, Page::Console);
     app.key(key(KeyCode::Tab));
     assert_eq!(app.focus, Focus::Sidebar);
@@ -328,7 +330,7 @@ fn numbers_open_pages_tab_moves_to_the_side_and_q_quits() {
         "/ is the command line"
     );
     app.key(key(KeyCode::Esc));
-    app.key(key(KeyCode::Char('1')));
+    typing(&mut app, "g1");
     app.key(key(KeyCode::Char('f')));
     assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Filter));
     typing(&mut app, "q");
@@ -340,7 +342,7 @@ fn numbers_open_pages_tab_moves_to_the_side_and_q_quits() {
 #[test]
 fn a_task_command_name_is_checked_before_its_command_is_asked() {
     let mut app = app();
-    app.key(key(KeyCode::Char('9')));
+    typing(&mut app, "g9");
     app.key(key(KeyCode::Char(']')));
     app.key(key(KeyCode::Char(']')));
     app.key(key(KeyCode::Char(']')));
@@ -354,7 +356,7 @@ fn a_task_command_name_is_checked_before_its_command_is_asked() {
 #[test]
 fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     let mut app = app();
-    app.key(key(KeyCode::Char('9')));
+    typing(&mut app, "g9");
     assert_eq!(app.settings_section, SettingsSection::General);
     // General has two rows, the home page and what a task with no ID shows; `j` goes through them, then on.
     app.key(key(KeyCode::Char('j')));
@@ -456,7 +458,7 @@ fn ctrl_d_and_ctrl_u_move_half_a_page_and_ctrl_f_and_ctrl_b_a_page_as_in_vim() {
 fn on_keys(settings: &str) -> App {
     let mut app = app();
     app.settings = AppSettings::parse(settings).unwrap();
-    app.key(key(KeyCode::Char('9')));
+    typing(&mut app, "g9");
     app.key(key(KeyCode::Char('[')));
     assert_eq!(app.settings_section, SettingsSection::Keys);
     app
@@ -468,13 +470,39 @@ fn actions(app: &App) -> Vec<String> {
         .map(|l| match l {
             KeyLine::Head(s) => format!("# {s}"),
             KeyLine::Row(_, b) => b.action,
+            KeyLine::CommandsHead => "# commands".to_owned(),
+            KeyLine::Command(name, _) => name,
         })
+        // The commands come last; the tests of the keys look at what is before them.
+        .take_while(|l| l != "# commands")
         .collect()
 }
 
 #[test]
+fn the_keybindings_list_the_commands_after_the_keys() {
+    let mut app = on_keys("{}");
+    let lines = app.key_lines();
+    let at = lines.iter().position(|l| *l == KeyLine::CommandsHead).unwrap();
+    assert!(lines[at..]
+        .iter()
+        .any(|l| matches!(l, KeyLine::Command(n, w) if n == ":tabn[ext]" && w.contains("takes"))));
+    app.keys_query = "denot".into();
+    let names: Vec<_> = app
+        .key_lines()
+        .into_iter()
+        .filter_map(|l| match l {
+            KeyLine::Command(n, _) => Some(n),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(names, [":den[otate]"]);
+}
+
+#[test]
 fn the_keybindings_show_yours_then_the_defaults_and_search() {
-    let mut app = on_keys(r#"{ "keys": { "app.undo": "U" }, "tui": { "keys": { "tasks.done": "x" } } }"#);
+    let mut app = on_keys(
+        r#"{ "version": 2, "keys": { "app": { "U": "app.undo" } }, "tui": { "keys": { "tasks": { "x": "tasks.done" } } } }"#,
+    );
     assert_eq!(
         actions(&app),
         ["# general", "app.undo", "# web", "# mobile", "# tui", "tasks.done"]
@@ -527,7 +555,7 @@ fn the_home_page_is_chosen_from_a_list_in_general() {
     let mut app = app();
     app.settings = AppSettings::parse(r#"{ "homepage": { "report": "gone" } }"#).unwrap();
     assert!(app.homepage_label().contains("not there"));
-    app.key(key(KeyCode::Char('9')));
+    typing(&mut app, "g9");
     app.key(key(KeyCode::Enter));
     let Mode::Home { options, sel } = &app.mode else {
         panic!("expected the list of home pages");
@@ -546,7 +574,7 @@ fn boards_open_on_their_list_and_esc_comes_back_to_it() {
         { "id": "a", "name": "A", "sections": [] },
         { "id": "b", "name": "B", "sections": [] }
     ]));
-    app.key(key(KeyCode::Char('7')));
+    typing(&mut app, "g7");
     assert_eq!(app.page, Page::Boards);
     assert!(!app.board_open, "the list first");
     app.key(key(KeyCode::Char('j')));
@@ -556,8 +584,8 @@ fn boards_open_on_their_list_and_esc_comes_back_to_it() {
     app.key(key(KeyCode::Esc));
     assert!(!app.board_open);
     app.key(key(KeyCode::Enter));
-    app.key(key(KeyCode::Char('1')));
-    app.key(key(KeyCode::Char('7')));
+    typing(&mut app, "g1");
+    typing(&mut app, "g7");
     assert!(!app.board_open, "coming back to the page shows the list");
 }
 
@@ -592,4 +620,86 @@ fn c_lists_the_task_commands_and_runs_the_one_chosen_on_the_task() {
         .iter()
         .any(|l| l.to_string() == "$ task 1499a653-f3c1-4764-b952-39d3a165870f delete"));
     assert!(matches!(app.mode, Mode::Normal));
+}
+
+#[test]
+fn a_colon_line_runs_a_command_and_counts_repeat_a_move() {
+    let mut app = app();
+    app.key(key(KeyCode::Char(':')));
+    assert!(matches!(&app.mode, Mode::Prompt(p) if p.input.line == ":"));
+    typing(&mut app, "tabn 3");
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.page, Page::Tags);
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "tabn tasks");
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.page, Page::Tasks);
+    typing(&mut app, "gt");
+    assert_eq!(app.page, Page::Projects, "gt is the next page, as in vim");
+    typing(&mut app, "gT");
+    assert_eq!(app.page, Page::Tasks);
+
+    app.report.uuids = (0..20).map(|i| format!("u{i}")).collect();
+    app.report.ids = (0..20).map(|i| Some(i + 1)).collect();
+    typing(&mut app, "5");
+    assert_eq!(app.status, "5", "the count waits, shown");
+    typing(&mut app, "j");
+    assert_eq!(app.selected, 5);
+    assert_eq!(app.status, "");
+    typing(&mut app, "12G");
+    assert_eq!(app.selected, 11, "a count before G is a row");
+    typing(&mut app, "gg");
+    assert_eq!(app.selected, 0);
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "$");
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.selected, 19);
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "-4");
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.selected, 15);
+    typing(&mut app, "g");
+    app.key(key(KeyCode::Esc));
+    assert!(app.keys_pending.is_empty(), "Esc drops a pending key");
+    assert_eq!(app.page, Page::Tasks);
+
+    let help = app.help();
+    assert!(help.contains(":tabn[ext]"), "{help}");
+    assert!(help.contains(":q[uit]"), "{help}");
+}
+
+#[test]
+fn a_key_can_be_bound_to_a_command() {
+    let mut app = app();
+    app.settings =
+        AppSettings::parse(r#"{ "version": 2, "tui": { "keys": { "tasks": { "g h": "filter +home" } } } }"#).unwrap();
+    app.keymap = keys::resolve(&app.settings.raw);
+    assert_eq!(app.keymap.problems, Vec::<String>::new());
+    assert!(app.help().contains("gh         :filter +home"), "{}", app.help());
+    app.open(Page::Tasks);
+    typing(&mut app, "gh");
+    assert_eq!(app.filter, "+home");
+}
+
+#[test]
+fn tab_completes_a_commands_name() {
+    let mut app = app();
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "tabn");
+    app.key(key(KeyCode::Tab));
+    assert!(
+        matches!(&app.mode, Mode::Prompt(p) if p.input.line == ":tabnext "),
+        "{:?}",
+        app.mode
+    );
+    app.key(key(KeyCode::Esc));
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "st");
+    app.key(key(KeyCode::Tab));
+    assert!(
+        matches!(&app.mode, Mode::Prompt(p) if p.input.line == ":st"),
+        "{:?}",
+        app.mode
+    );
+    assert_eq!(app.status, "start stop");
 }

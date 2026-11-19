@@ -27,6 +27,33 @@ impl App {
                 return Action::None;
             }
             KeyCode::Enter => return self.submit(&p),
+            // A command's name after `:` (spec 0020): as far as the commands it may be agree, and which they are.
+            KeyCode::Tab
+                if p.kind == PromptKind::Console
+                    && p.input.line.starts_with(':')
+                    && !p.input.line.contains(char::is_whitespace) =>
+            {
+                let typed = &p.input.line[1..];
+                let names: Vec<&str> = tc_core::keymap::COMMANDS
+                    .iter()
+                    .map(|c| c.name)
+                    .filter(|n| n.starts_with(typed))
+                    .collect();
+                if let [one] = names.as_slice() {
+                    p.input = Input::new(&format!(":{one} "));
+                } else if let Some(first) = names.first() {
+                    let common = names.iter().fold(first.len(), |n, other| {
+                        first
+                            .bytes()
+                            .zip(other.bytes())
+                            .take(n)
+                            .take_while(|(a, b)| a == b)
+                            .count()
+                    });
+                    p.input = Input::new(&format!(":{}", &first[..common]));
+                    self.status = names.join(" ");
+                }
+            }
             KeyCode::Tab | KeyCode::BackTab => {
                 if let Some(prefix) = p.kind.prefix() {
                     let units = prefix.encode_utf16().count();
@@ -269,6 +296,10 @@ impl App {
     pub(super) fn console(&mut self, line: &str) -> Action {
         if line.is_empty() {
             return Action::None;
+        }
+        // `:` joined to a command runs it (`:tabn Tasks`, `:5`); any other line goes to `task` (spec 0020).
+        if let Some(call) = tc_core::keymap::command_line(line) {
+            return self.run_call(call);
         }
         if let Some(limit) = review::parse_review(line) {
             self.start_review(limit);

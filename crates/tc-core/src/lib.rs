@@ -49,6 +49,7 @@ pub mod request;
 pub mod run;
 pub mod rx;
 pub mod settings;
+pub mod settings_version;
 pub mod sortspec;
 pub mod stats;
 pub mod store;

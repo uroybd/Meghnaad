@@ -14,7 +14,7 @@ class KeysPanelTest {
 
     @Test
     fun onlyYourOwnKeysUntilTheDefaultsAreAskedFor() {
-        val b = keymapBindings(settings("""{ "tui": { "keys": { "tasks.done": "x" } } }"""))
+        val b = keymapBindings(settings("""{ "version": 2, "tui": { "keys": { "tasks": { "x": "tasks.done" } } } }"""))
         assertEquals(listOf("tasks.done"), bindingRows(b.sections["tui"].orEmpty(), false, "").map { it.action })
         assertEquals(emptyList(), bindingRows(b.sections["general"].orEmpty(), false, "").map { it.action })
         val web = bindingRows(b.sections["web"].orEmpty(), true, "")
@@ -23,19 +23,38 @@ class KeysPanelTest {
 
     @Test
     fun theSearchMatchesANameWhatItDoesOrAKey() {
-        val b = keymapBindings(settings("""{ "keys": { "app.prompt": "ctrl+k" }, "tui": { "keys": { "tasks.done": "x", "tasks.start": "z" } } }"""))
+        val b = keymapBindings(settings("""{ "version": 2, "keys": { "app": { "ctrl+k": "app.prompt" } }, "tui": { "keys": { "tasks": { "x": "tasks.done", "z": "tasks.start" } } } }"""))
         assertEquals(listOf("tasks.start"), bindingRows(b.sections["tui"].orEmpty(), false, "start").map { it.action })
         assertEquals(listOf("app.prompt"), bindingRows(b.sections["general"].orEmpty(), false, "Ctrl+K").map { it.action })
     }
 
     @Test
     fun aKeyIsSetAndTakenOutAndTheRestStaysInItsOrder() {
-        val s = settings("""{ "taskCommands": [], "appearance": {} }""")
+        val s = settings("""{ "version": 2, "taskCommands": [], "appearance": {} }""")
         val one = withBinding(s, "web", "app.add", listOf("ctrl+shift+n"))
-        assertEquals(listOf("taskCommands", "appearance", "web"), one.keys.toList())
-        assertEquals(JsonPrimitive("ctrl+shift+n"), one["web"]!!.jsonObject["keys"]!!.jsonObject["app.add"])
+        assertEquals(listOf("version", "taskCommands", "appearance", "web"), one.keys.toList())
+        val app = one["web"]!!.jsonObject["keys"]!!.jsonObject["app"]!!.jsonObject
+        assertEquals(JsonPrimitive("app.add"), app["ctrl+shift+n"])
         assertEquals(s, withBinding(one, "web", "app.add", null))
-        assertEquals(JsonObject(emptyMap()), withBinding(JsonObject(emptyMap()), "mobile", "app.prompt", null))
+        assertEquals(settings("""{ "version": 2 }"""), withBinding(JsonObject(emptyMap()), "mobile", "app.prompt", null))
+    }
+
+    @Test
+    fun anOldFileIsBroughtUpToDateOnce() {
+        val next = migrateSettings(settings("""{ "web": { "keys": { "app.help": "h" } } }"""))!!
+        assertEquals(JsonPrimitive("app.help"), next["web"]!!.jsonObject["keys"]!!.jsonObject["app"]!!.jsonObject["h"])
+        assertNull(migrateSettings(next))
+    }
+
+    @Test
+    fun theCommandsAreListedAndSearchedByTheirWholeName() {
+        val all = keyCommands(version = "0.1.0")
+        assertTrue(all.any { it.written == ":tabn[ext]" && "takes" in it.what && it.link.endsWith("#tabnext") })
+        assertEquals(listOf(":den[otate]"), commandRows(all, "denot").map { it.written })
+        assertEquals(all, commandRows(all, ""))
+        assertTrue(haveSince("unreleased", "0.1.0"))
+        assertTrue(!haveSince("999.0.0", "0.8.10"))
+        assertTrue(haveSince("0.8.10", "0.8.10"))
     }
 
     @Test
