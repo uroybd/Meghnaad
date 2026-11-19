@@ -54,6 +54,7 @@
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
+  import WaitBar from './lib/WaitBar.svelte';
 
   // How tall the prompt is: a long command wraps, and the floating + stays above it.
   let dockHeight = $state(0);
@@ -248,6 +249,7 @@
 {#if setup}
   <SetupGuide status={setup} onready={start} />
 {:else}
+  <WaitBar />
   <div class="app">
     <header class="top">
       <button

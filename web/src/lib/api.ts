@@ -1,6 +1,7 @@
 import { engine, engineAvailable } from '../engine/client.svelte';
 import { STATIC } from '../engine/flavour';
 import type { CliResponse, ConfigResponse, ImportReport, RcFiles, TaskrcResponse } from './types';
+import { waitFor } from './waiting.svelte';
 
 export class ApiError extends Error {
   constructor(
@@ -32,7 +33,11 @@ const RESOURCE_LIMIT = /\b1102\b|exceeded resource limits/i;
  * A request to one of the settings routes. In the static flavour there is no server: the engine answers them from the
  * git branch, as the Worker would have.
  */
-async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return waitFor(fetchOrAsk(path, init));
+}
+
+async function fetchOrAsk(path: string, init?: RequestInit): Promise<Response> {
   if (!STATIC) return fetch(path, init);
   const body = typeof init?.body === 'string' ? init.body : '';
   const a = await engine.api((init?.method ?? 'GET').toUpperCase(), path, body);
@@ -180,7 +185,7 @@ function answer<T>(text: string): T {
 export async function runCli(input: CliInput): Promise<CliResponse> {
   await ready();
   const res = answer<CliResponse & { config?: unknown }>(
-    await engine.run({ ...input, tz: tzOffsetSeconds(), now: Date.now() / 1000 }),
+    await waitFor(engine.run({ ...input, tz: tzOffsetSeconds(), now: Date.now() / 1000 })),
   );
   // `config` changed the settings: they are saved on the server, where they live, and the engine takes them up.
   const { config, ...response } = res;

@@ -10,6 +10,7 @@
   import TaskInfo from './TaskInfo.svelte';
   import type { Entry } from './store.svelte';
   import type { Row } from './types';
+  import Skeleton from './Skeleton.svelte';
 
   let {
     entry,
@@ -34,7 +35,7 @@
 {#if entry.failure}
   <p class="err" role="alert">{entry.failure}</p>
 {:else if !r}
-  <p class="dim">Running…</p>
+  <Skeleton label="Running…" />
 {:else if r.kind === 'report'}
   <ReportTable
     result={r}

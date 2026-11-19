@@ -18,6 +18,7 @@
   import { TriangleAlert } from './icons';
   import SecretInput from './SecretInput.svelte';
   import { store } from './store.svelte';
+  import Skeleton from './Skeleton.svelte';
 
   /** There are edits not yet saved (the tab shows a dot). */
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
@@ -185,7 +186,7 @@
   {#if loadFailed}
     <div class="bad" role="alert"><TriangleAlert size={15} /> The hooks could not be read: {loadFailed}</div>
   {/if}
-  {#if loading}<p class="dim" role="status">Loading…</p>{/if}
+  {#if loading}<Skeleton rows={8} />{/if}
 
   <div class="editor" bind:this={host} hidden={loading || !!loadFailed}></div>
 
