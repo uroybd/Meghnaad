@@ -658,6 +658,12 @@ fn a_colon_line_runs_a_command_and_counts_repeat_a_move() {
     typing(&mut app, "-4");
     app.key(key(KeyCode::Enter));
     assert_eq!(app.selected, 15);
+    app.key(key(KeyCode::Char(':')));
+    typing(&mut app, "+3");
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.selected, 18);
+    typing(&mut app, "3k");
+    assert_eq!(app.selected, 15);
     typing(&mut app, "g");
     app.key(key(KeyCode::Esc));
     assert!(app.keys_pending.is_empty(), "Esc drops a pending key");

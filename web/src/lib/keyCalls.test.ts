@@ -67,6 +67,17 @@ describe('keys and : lines in the web app', () => {
     expect(pendingLabel(pending)).toBe('3');
     press('j');
     expect(focused()).toBe('u3');
+    press('2');
+    press('k');
+    expect(focused()).toBe('u1');
+    for (const [line, at] of [
+      [':+3', 'u4'],
+      [':-2', 'u2'],
+    ] as const) {
+      const call = commandLine(line);
+      if (call) runCall(call);
+      expect(focused()).toBe(at);
+    }
     press('G');
     expect(focused()).toBe('u9');
     press('g');
