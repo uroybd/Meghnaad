@@ -56,7 +56,7 @@ describe('the keymap', () => {
     expect(have('0.8.10', '0.8.10')).toBe(true);
     expect(have('0.8.9', '0.10.0')).toBe(true);
     const later = { ...doc, commands: doc.commands.map((c, i) => (i ? c : { ...c, since: '999.0.0' })) };
-    const names = keyCommands(later, '0.8.10').map((c) => c.written);
+    const names = keyCommands(later, '998.0.0').map((c) => c.written);
     expect(names).not.toContain(':tabn[ext]');
     expect(names).toContain(':tabp[revious]');
     expect(keyCommands(doc).find((c) => c.written === ':tabp[revious]')?.link).toBe(`${doc.docs}#tabprevious`);

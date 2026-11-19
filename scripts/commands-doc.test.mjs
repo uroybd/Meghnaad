@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -42,9 +42,12 @@ test('a release writes its version over unreleased, and leaves a version that is
 test('the bump stamps every copy and the page, so a release has none unreleased', () => {
   const root = mkdtempSync(join(tmpdir(), 'commands-'));
   try {
+    // A command not released yet, whatever the real file holds now (a release has stamped all of its own).
+    const data = JSON.parse(readFileSync(join(ROOT, COMMANDS_FILES[0]), 'utf8'));
+    data.commands[0].since = 'unreleased';
     for (const f of [...COMMANDS_FILES, COMMANDS_DOC]) {
       mkdirSync(dirname(join(root, f)), { recursive: true });
-      cpSync(join(ROOT, COMMANDS_FILES[0]), join(root, f));
+      writeFileSync(join(root, f), JSON.stringify(data));
     }
     stampCommands('9.9.9', root);
     assert.deepEqual(unreleased(root), []);

@@ -48,7 +48,7 @@ class KeysPanelTest {
 
     @Test
     fun theCommandsAreListedAndSearchedByTheirWholeName() {
-        val all = keyCommands(version = "0.1.0")
+        val all = keyCommands(version = "998.0.0")
         assertTrue(all.any { it.written == ":tabn[ext]" && "takes" in it.what && it.link.endsWith("#tabnext") })
         assertEquals(listOf(":den[otate]"), commandRows(all, "denot").map { it.written })
         assertEquals(all, commandRows(all, ""))

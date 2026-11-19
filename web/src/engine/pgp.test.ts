@@ -17,7 +17,8 @@ describe('a message sealed with a password', () => {
       const data = new Uint8Array(size).map((_, i) => (i * 7) & 0xff);
       expect(await open(await seal(data, 'correct horse'), 'correct horse')).toEqual(data);
     }
-  });
+    // Fourteen runs of a key derivation made to be slow: more than the default 5 s on a shared CI runner.
+  }, 30_000);
 
   it('refuses another password, and a changed message', async () => {
     const sealed = await seal(bytes('{"token":"ghp_x"}'), 'right');
