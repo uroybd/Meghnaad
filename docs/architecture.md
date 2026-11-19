@@ -835,6 +835,13 @@ again for 30 seconds. A save puts what it saved in its entry. A change made else
 tab, the branch) marks the entries stale and bumps `rev`, which the screens follow. On the static web app every read is
 a request to the forge's API, so this is what keeps the settings page within its limits (spec 0023).
 
+Only Tasks and the console come with the app's first download. The other pages, the settings tabs (each drawn from
+the first time it is opened) and the occasional dialogs (the setup guide, review, reminders, the keys' help, export,
+import) load on demand: `pages.ts` lists them, each a `lazy()` of `lazy.svelte.ts`, and `LazyView.svelte` draws one
+once its code is there, counting the wait in the bar at the top, or says it could not be loaded, with Reload. Once the
+app is idle they are all fetched (`loadWhenIdle`), and pointing at a top-bar button fetches its page, so opening one is
+usually instant.
+
 The pages (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage`, `BurndownPage`, `ConsoleView`,
 `SettingsPage`) are thin. Each asks the engine for a result and hands it to a shared component, so the console and the
 pages draw the same thing. `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`,

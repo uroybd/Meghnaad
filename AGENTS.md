@@ -38,7 +38,8 @@ crates/hook-shim    meghnaad-hook: the Lua script as `task` hooks (run.rs protoc
 LAYER 2: front ends (send command lines, draw results; never touch the replica)
 web/                Svelte 5. src/engine/ (engine.worker.ts, client.svelte.ts, persist.ts → IndexedDB, protocol.ts,
                     helpers.ts = sync helper calls on page thread), src/lib/ (store.svelte.ts, settingsData.svelte.ts = what
-                    the settings screens read, fetched once and shared; api.ts, route.ts Place,
+                    the settings screens read, fetched once and shared; pages.ts + lazy.svelte.ts + LazyView.svelte =
+                    pages, settings tabs and dialogs loaded on demand; api.ts, route.ts Place,
                     pages, boards.ts, taskCommands.ts, review.svelte.ts, keymap.ts). Keys asset: public/keymaps/default.json.
 app/                Kotlin + Compose. shared/commonMain (Store.kt, Sync.kt, screens; ports of web/src/lib with tests),
                     jvmCommonMain/NativeEngine.kt (JNI names: keep package me.utsob.meghnaad), androidMain (AndroidVault

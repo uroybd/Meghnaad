@@ -1,6 +1,6 @@
 # 0005: Stack a chart by a field
 
-- **Status:** in progress <!-- draft | ready | in progress | done | dropped -->
+- **Status:** done <!-- draft | ready | in progress | done | dropped -->
 - **Created:** 2026-11-16
 - **Layer:** 2 (UI)
 - **Front ends:** all: web, Android (screens and the widget), terminal app
@@ -48,7 +48,7 @@ while it is set. The terminal app has no board editor; it draws what `settings.j
 
 ## Acceptance criteria
 
-- [ ] A bar, line or area chart with `stackBy` draws a series for each value, stacked, in the web app, on Android (and
+- [x] A bar, line or area chart with `stackBy` draws a series for each value, stacked, in the web app, on Android (and
       its widget) and in the terminal app.
 - [x] `only`, `except`, `(none)`, tags (a task under each), and the `Other` past 12 values work as described.
 - [x] `normalize` refuses `stackBy` on other kinds, with an empty field, or with two series or more.
@@ -113,3 +113,6 @@ while it is set. The terminal app has no board editor; it draws what `settings.j
   series (asked: the primary grouping takes precedence). Only a chart grouped by nothing names its stacked bars by the
   series in them. `grouped` in `barLabels` (web, from `section.by`), `stackedBarLabels` (Android, screens and widget)
   and `bar_names` (terminal), with tests.
+
+2026-11-20: seen by uroybd on the web (a date-grouped stacked chart, whose bar labels 0.8.20 fixed) and on
+Android; the terminal was checked earlier. Done.

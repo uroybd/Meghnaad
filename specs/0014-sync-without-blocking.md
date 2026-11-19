@@ -1,6 +1,6 @@
 # 0014: Sync without holding up the screen
 
-- **Status:** in progress
+- **Status:** done
 - **Created:** 2026-11-18
 - **Layer:** both (the hosts of layer 1, `crates/browser` and `crates/android`, with a shared piece in `tc-core`; and
   the web app and Android app around them)
@@ -98,7 +98,7 @@ first unlock on a device), it reads them first, as now. Writing a setting still 
 
 ## Acceptance criteria
 
-- [ ] Measured first, on a real GitHub branch: how long the engine is held per sync, idle and after one write, on the
+- [x] Measured first, on a real GitHub branch: how long the engine is held per sync, idle and after one write, on the
       web (static site) and Android. Measured again after; the numbers go in the implementation notes.
 - [x] An idle sync makes no request to the store while the replica is held: a `tc-core` test with a store that records
       when each request comes.
@@ -161,3 +161,5 @@ background sync stays as it is.
   (`filesync`) still runs under the lock after the tasks' sync; it is separate from this spec's tasks sync and could
   get the same split. On the static site, a hook script's source and secrets are still read from the branch when the
   hooks are prepared after unlocking (only when hooks are defined).
+
+2026-11-20: done; the last criteria checked by uroybd: sync on a real GitHub branch no longer holds up the screen.

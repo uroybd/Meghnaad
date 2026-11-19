@@ -129,16 +129,16 @@ Drawers and dialogs used on many pages (the detail drawer, the task form) stay i
 
 ## Acceptance criteria
 
-- [ ] Step 1:
+- [x] Step 1:
   - opening Settings and moving through every tab makes at most one request per settings route;
   - opening a file in the taskrc tab makes at most one request;
   - a save reads again only the entries it changed.
 
   Checked by a test that counts the calls of a mocked `api.ts`, and by the network panel of the static app on a real
   branch (by a person).
-- [ ] Step 1: a change from elsewhere still shows on the settings page without a reload: the console's `config`,
+- [x] Step 1: a change from elsewhere still shows on the settings page without a reload: the console's `config`,
   another tab, a change pulled from the branch. Unapplied edits in the taskrc tab are never overwritten. Covered by tests.
-- [ ] Step 1: no component fetches settings in an `$effect` that watches `store.config` (`grep` finds none).
+- [x] Step 1: no component fetches settings in an `$effect` that watches `store.config` (`grep` finds none).
 - [ ] Step 2: `store.svelte.ts` is under 300 lines; every component still imports `store` alone; no component changed
   for the split.
 - [ ] Step 3: no component in `web/src/lib` is over 600 lines.
@@ -147,7 +147,7 @@ Drawers and dialogs used on many pages (the detail drawer, the task form) stay i
   - `npm run check` is clean;
   - the pages are clicked through in the dev server, on a scratch stack: Tasks, the console, the detail drawer, boards,
     and every Settings tab.
-- [ ] Step 4: the main bundle (`App-*.js`, gzip) is at least a third smaller than the 144 KB measured here. The pages and
+- [x] Step 4: the main bundle (`App-*.js`, gzip) is at least a third smaller than the 144 KB measured here. The pages and
   settings tabs moved out are their own chunks (checked in the build output).
 - [ ] Step 4: after the app has been idle a few seconds, opening any page shows it with no loading line (by a person,
   in the dev server, with the network throttled). Offline, a page not yet loaded says so and offers Reload (test).
@@ -201,3 +201,13 @@ Resolved 2026-11-19, with the person:
   144.8 KB to 55.3 KB.
 - Clicked through in Chrome on a scratch dev stack: every page, every settings tab and three lazy pages opened by address,
   with no errors.
+
+2026-11-20, review:
+
+- Ticked step 1's three criteria: the request counts are tests (`settingsData.test.ts`, `TaskrcPanel.test.ts`, "reads
+  each thing once", "a change made elsewhere is read again, once"); no `$effect` fetches settings watching `store.config`
+  (checked with a script over `web/src/lib/*.svelte`); uroybd saw the static app's requests settle after 0.8.18.
+- Ticked step 4's bundle criterion: `App-*.js` 144.8 → 55.3 KB gzip, a first visit 182.9 → 123.4 KB; each page, tab and
+  dialog its own chunk.
+- Step 4's docs, missed in 0.8.20, written now: `docs/architecture.md` (Stores and pages) and the AGENTS.md map.
+- Still open for step 4: uroybd's check with the network throttled (pages open with no loading line after idle).

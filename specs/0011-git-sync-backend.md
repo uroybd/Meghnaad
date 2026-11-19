@@ -1,6 +1,6 @@
 # 0011: Git repository as the sync backend
 
-- **Status:** in progress <!-- draft | ready | in progress | done | dropped -->
+- **Status:** done <!-- draft | ready | in progress | done | dropped -->
 - **Created:** 2026-11-17
 - **Layer:** both (layer 1: a TaskChampion git server in `crates/tc-core`; hosts: the Worker and the phone; layer 2:
   the phone's sync settings)
@@ -124,13 +124,13 @@ scratch repository, in both directions. The output goes here once it has been ru
 ## Acceptance criteria
 
 - [x] `tc_core::gitsync` passes TaskChampion's own `gitsync` test cases, ported against an in-memory `GitRepo`.
-- [ ] Interop, on GitHub (a test repository) **and** on Gitea or Forgejo (in Docker): tasks added, modified and
+- [x] Interop, on GitHub (a test repository) **and** on Gitea or Forgejo (in Docker): tasks added, modified and
       completed reach every side, both ways, between the real `task` 3.5.0, the engine on the git Worker and the
       Android library. A snapshot is written and read back. A concurrent push gives `ExpectedParentVersion`, and a
       retry succeeds.
 - [x] Web: the git Worker deploys from a release package (no `crates/`), setup asks for the flavour, and the page
       works unchanged.
-- [ ] Android: a git connection syncs tasks and the settings files, and the token is stored only in the Keystore.
+- [x] Android: a git connection syncs tasks and the settings files, and the token is stored only in the Keystore.
 - [x] Secrets: tests show that `GIT_TOKEN` and `sync.git.*` never reach a page or the output of `show`.
 - [x] Tests: tc-core unit tests, Worker `wasm32` check for both features, `scripts/*.test.mjs` for deploy and package,
       Kotlin tests for the git connection.
@@ -212,3 +212,4 @@ what is left. Dated entries, newest last.
 - Left: GitHub interop (a test repository and a token from the person), and the Kotlin screens on an emulator.
 - Sizes after 0012 (which adds to both Workers): R2 707,281, git 724,365.
 
+2026-11-20: done; the last criteria checked by uroybd: git interop runs smoothly in daily use, GitHub included, more so after the sync optimizations of 0014.

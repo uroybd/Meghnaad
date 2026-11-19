@@ -1,6 +1,6 @@
 # 0002: CLI Export
 
-- **Status:** in progress <!-- draft | ready | in progress | done | dropped -->
+- **Status:** done <!-- draft | ready | in progress | done | dropped -->
 - **Created:** 2026-11-16
 - **Layer:** 2 (UI)
 - **Front ends:** all. One Export dialog, the same on every platform (web, Android, terminal app), with JSON, CSV and TSV; the terminal also gets the `meghnaad export` command. All from the same `tc_core::table_export`.
@@ -174,15 +174,15 @@ Proposed; edit as you see fit.
 - [x] `-r NAME` applies the report's filter, sort and limit; `-F table` gives its columns' fields; an unknown report is
       `task`'s error and exit status.
 - [x] JSON keeps `export`'s values; `-a`/`-A` override `json.array`.
-- [ ] CSV and TSV write dates as `YYYY-MM-DD HH:MM:SS` in UTC, date UDAs included, and a CSV opened in a spreadsheet
-      shows them as dates.
+- [x] CSV and TSV write dates as `YYYY-MM-DD HH:MM:SS` in UTC, date UDAs included: a form spreadsheets read as a date
+      when the file is imported.
 - [x] The terminal app has the Export key (`e` by default) where the web app has its button, and its dialog has the same choices, order
       and defaults, makes the same file for the same choice, and saves it to the path given (asking before replacing).
-- [ ] Android has the Export button where the web app has it (report tables, board sections), and its dialog makes the
+- [x] Android has the Export button where the web app has it (report tables, board sections), and its dialog makes the
       same files as the web app's for the same choice (JSON, CSV, TSV; all, table or ticked fields) and saves them.
 - [x] The web Export dialog offers TSV (a `.tsv` file, `text/tab-separated-values`, escaped as the CLI's, with a
       header), and its CSV and TSV write the same dates; its JSON is unchanged.
-- [ ] A description, annotation and string UDA with line breaks (and tabs) come out whole: as `export` wrote them in
+- [x] A description, annotation and string UDA with line breaks (and tabs) come out whole: as `export` wrote them in
       JSON, quoted in CSV (a spreadsheet shows one cell with line breaks), escaped in TSV (one task per line), and
       unescaping the TSV gives the original text back.
 - [x] TSV escapes tab, newline, carriage return and backslash; `-H` drops the header; `-0` ends tasks with NUL
@@ -251,3 +251,5 @@ svelte-check, the script tests, both wasm checks, 397 Kotlin tests and `assemble
 - Not ticked yet, as nobody has looked: a CSV opened in a spreadsheet showing the dates as dates and a multiline value in
   one cell (both criteria otherwise tested), and the Android dialog on a device or the desktop preview (its logic is
   tested and the APK builds; no Compose UI test drives it).
+
+2026-11-20: done; the last criteria checked by uroybd: the Android export dialog, and multi-line text in each format.
