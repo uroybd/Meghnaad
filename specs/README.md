@@ -55,3 +55,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0020 | [Keys run functions, with vim-like motions](0020-key-functions.md) | done | 2 (UI), shared keymap | terminal, web, phone | Done 2026-11-19; settings.json versioned (2), commands described in keymaps/commands.json |
 | 0021 | [The taskrc tab as a small workspace](0021-taskrc-workspace.md) | done | 2 (UI) | web, Android | Done 2026-11-19 |
 | 0022 | [A PIN on a trusted device](0022-pin-lock.md) | in progress | 2 (UI) | web (static) | Built 2026-11-19; to check by a person: the PIN screen in a browser |
+| 0023 | [The web app's settings reads in one place, its largest files split, and pages loaded on demand](0023-web-refactor.md) | in progress | 2 (UI) | web | Three releases: 1; 4; 2 and 3 |
