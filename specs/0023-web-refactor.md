@@ -139,10 +139,10 @@ Drawers and dialogs used on many pages (the detail drawer, the task form) stay i
 - [x] Step 1: a change from elsewhere still shows on the settings page without a reload: the console's `config`,
   another tab, a change pulled from the branch. Unapplied edits in the taskrc tab are never overwritten. Covered by tests.
 - [x] Step 1: no component fetches settings in an `$effect` that watches `store.config` (`grep` finds none).
-- [ ] Step 2: `store.svelte.ts` is under 300 lines; every component still imports `store` alone; no component changed
+- [x] Step 2: `store.svelte.ts` is under 300 lines; every component still imports `store` alone; no component changed
   for the split.
-- [ ] Step 3: no component in `web/src/lib` is over 600 lines.
-- [ ] No behaviour change:
+- [x] Step 3: no component in `web/src/lib` is over 600 lines.
+- [x] No behaviour change:
   - the web tests that pass before pass after, changed only where they import a moved module;
   - `npm run check` is clean;
   - the pages are clicked through in the dev server, on a scratch stack: Tasks, the console, the detail drawer, boards,
@@ -151,7 +151,7 @@ Drawers and dialogs used on many pages (the detail drawer, the task form) stay i
   settings tabs moved out are their own chunks (checked in the build output).
 - [ ] Step 4: after the app has been idle a few seconds, opening any page shows it with no loading line (by a person,
   in the dev server, with the network throttled). Offline, a page not yet loaded says so and offers Reload (test).
-- [ ] Docs: `docs/architecture.md`'s web section names the new modules; the AGENTS.md architecture map's `web/` line is
+- [x] Docs: `docs/architecture.md`'s web section names the new modules; the AGENTS.md architecture map's `web/` line is
   updated.
 - [ ] Size: the web bundle (`web/dist/assets`, gzip) measured before and after each step; it does not grow by more than
   a few KB.
@@ -211,3 +211,30 @@ Resolved 2026-11-19, with the person:
   dialog its own chunk.
 - Step 4's docs, missed in 0.8.20, written now: `docs/architecture.md` (Stores and pages) and the AGENTS.md map.
 - Still open for step 4: uroybd's check with the network throttled (pages open with no loading line after idle).
+
+2026-11-20, steps 2 and 3:
+
+- Step 2: the store is a chain of classes under `web/src/lib/store/`, each extending the one before: `base.svelte.ts`
+  (`Entry`, `Toast`, where the app is, the toast, completion names, `written`), `settings.svelte.ts`,
+  `navigation.svelte.ts`, `console.svelte.ts` and `tasks.svelte.ts`; `store.svelte.ts` (40 lines) is the class every
+  component imports, with the engine's listeners, and passes on `Entry`, `HISTORY_MAX` and `shortenUuids`. Departure from
+  the design: inheritance in place of forwarding getters, so `store.x` is the same field with no forwarding (the getters
+  alone would have passed 300 lines). `/api/config` moved with the settings part; it is still read through `getConfig`.
+- Step 3: `ReportTable` (1187 → 429) keeps the headers, sorting, grouping, select-all, export and the measuring of the
+  Actions column; `ReportRows` (592) the rows and cards, `ReportCell` a cell, `RowActions` a row's buttons and menu,
+  `lazyRows.svelte.ts` the drawing a part at a time. `TaskrcPanel` (928 → 580) keeps the drafts, Apply, Restore and the
+  address; `RcEditorBox`, `RcFileMenu`, `RcImport`, `RcSaved`, `RcAbout`, `rcCheck.svelte.ts` and `rcLayout.svelte.ts`.
+  No `taskrcState` was needed: each part takes a few props. Styles moved with what they draw; a rule reaching into a part
+  has its outer selector `:global(...)`, which keeps its specificity (Svelte 5 adds the scoping class once per selector).
+- Three more components had passed 600 lines since the spec was written, and the criterion covers them: `SectionForm`
+  (727 → 440) with `SectionGroups`, `SectionSeries` and `SectionItem` (the item both lists drew twice); `TaskInfo`
+  (631 → 471) with `TaskHistory` and `TaskSessions`; `KeysPanel` (618 → 382) with `KeyAddForm`, and `bindingMatches`
+  moved to `keymap.ts`.
+- No test changed: 973 pass before and after; `npm run check` clean.
+- Compared on a scratch stack (`wrangler dev --local`, scratch data, port 8931), the build of `HEAD` against this one,
+  headless Chrome driven over its DevTools protocol, pixel for pixel: a report at 1280, 820 (pinned, folded) and 390 px
+  (cards), a row's menu, the detail drawer and its history, the taskrc tab (menu, about, phone), the keys tab and its add
+  form, a board's series and groups forms, the console with a report and a chain, and every Settings tab. All identical
+  but for the clock (an age of 3min against 4min, an urgency of 18.90 against 18.91); no page errors on either.
+- Size (gzip -9, steps 2 and 3 together): `App-*.js` 55,287 → 55,599 bytes; all JS and CSS 422,356 → 423,891.
+- Left: the size criterion asks for each step measured, and step 1 was not; step 4's throttled check by uroybd.

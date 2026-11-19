@@ -827,7 +827,12 @@ A Svelte 5 single-page app (`web/`), built with Vite and served as static assets
 ### Stores and pages
 
 `store.svelte.ts` is the one store: the current page, the config, the console's entries, the live report, the answers
-to questions in flight, and the toast.
+to questions in flight, and the toast. Every component imports it alone; it is built in parts under `store/`, each a
+class on the one before: `base` (where the app is, the toast, the names offered for completion), `settings` (the config,
+`settings.json`, the keys, the contexts), `navigation` (the pages, their filters, the drawers, opening an address),
+`console` (its entries, the history, running a line and chains) and `tasks` (the live table, the pages' panels,
+questions and the buttons' actions). `store.svelte.ts` adds what follows the engine: the clock, and changes from
+elsewhere.
 
 What the settings screens read (the taskrc folder and its files, the hooks, the hook secrets' names) is kept in
 `settingsData.svelte.ts`, not fetched by each screen. Callers at the same moment share one request, and an answer is used
@@ -846,7 +851,10 @@ The pages (`TasksView`, `ProjectsView`, `TagsView`, `SummaryPage`, `CalendarPage
 `SettingsPage`) are thin. Each asks the engine for a result and hands it to a shared component, so the console and the
 pages draw the same thing. `ResultView` turns any `CliResult` into UI: `ReportTable`, `SummaryView`, `CalendarView`,
 `BurndownView`, `TaskInfo`, `ConfirmView`, and the lines hooks printed under the result (a toast when a button, not the
-console, ran the command). A report's cells are written by the engine (`tc_core::cells`), in one call for the whole
+console, ran the command). `ReportTable` draws the headers, the sort and grouping, select-all and export; `ReportRows`
+the rows (cards on a phone), `ReportCell` what a cell shows, `RowActions` a row's buttons and ⋯ menu, and
+`lazyRows.svelte.ts` draws a long report a part at a time. `TaskInfo` has `TaskSessions` and `TaskHistory` (fetched
+when opened). A report's cells are written by the engine (`tc_core::cells`), in one call for the whole
 table through `formatCells` in `format.ts`, which only tells it the browser's zone at each moment so summer time is
 right.
 
@@ -864,8 +872,10 @@ takes the cursor out of a field.
 ### Settings
 
 One page, `SettingsPage`, with a tab per panel: `TaskrcPanel` (the folder of taskrc files: a list, the text of one,
-themes, import of files, a folder or a link; `rcpaths.ts` has the path helpers; `HolidaysForm` and `holidays.ts` fetch a
-country's holidays and save them as a file), `TaskshPanel`, `CommandsPanel`, `HooksPanel`, `UrgencyPanel` and the keys.
+themes, import of files, a folder or a link; it keeps the drafts, Apply and Restore, and its parts are `RcTree` the list,
+`RcEditorBox` the CodeMirror box, `RcFileMenu` a file's ⋯ menu, `RcImport` the Import drawer, `RcSaved` what a save
+kept, `RcAbout`, `rcCheck.svelte.ts` the check as typed and `rcLayout.svelte.ts` the folding and height; `rcpaths.ts`
+has the path helpers; `HolidaysForm` and `holidays.ts` fetch a country's holidays and save them as a file), `TaskshPanel`, `CommandsPanel`, `HooksPanel`, `UrgencyPanel` and the keys (`KeysPanel`, with `KeyAddForm` for adding one).
 Each has its own Apply and tells the page when it has edits, and all stay mounted so edits survive a change of tab.
 `tasksh.ts` decides what the `reviewed` UDA and `_reviewed` report need and which `config` lines write them; the panel
 sends those to the engine like any command, so nothing about tasksh is in the Worker.
