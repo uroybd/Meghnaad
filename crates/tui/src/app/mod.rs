@@ -405,6 +405,9 @@ pub struct App {
     /// `task sync` in the background, and when it runs by itself.
     pub syncer: Syncer,
     pub sync_mode: SyncMode,
+    /// What the sync at the last close said, when it failed: said once the start's sync has failed too, or at once
+    /// when there is none.
+    pub close_failed: Option<String>,
     /// The reminder options, from `settings.json`.
     pub remind: remind::Settings,
     seen: BTreeSet<String>,
@@ -635,6 +638,7 @@ impl App {
             review: None,
             syncer: Syncer::default(),
             sync_mode: SyncMode::default(),
+            close_failed: None,
             remind: remind::Settings::default(),
             seen: BTreeSet::new(),
             notices: 0,
@@ -1025,9 +1029,14 @@ impl App {
         }
     }
 
-    /// A sync ended: say how, keep what it said in the console, and read everything again.
+    /// A sync ended: say how, keep what it said in the console, and read everything again. A failure at the last
+    /// close is said only when this one failed too; one that worked has put it right.
     fn synced(&mut self, result: &Result<crate::task::Output, String>) {
         let line = sync::said(result);
+        let failed = !matches!(result, Ok(o) if o.ok);
+        if let Some(close) = self.close_failed.take().filter(|_| failed) {
+            self.log.push(Line::from(format!("sync · {close}")));
+        }
         self.log.push(Line::from(format!("sync · {line}")));
         if let Ok(out) = result {
             if !out.ok {
@@ -1038,21 +1047,25 @@ impl App {
         self.reload();
     }
 
-    /// Before closing: wait for a sync that is running, then sync once more when set to. What went wrong, if anything.
-    pub fn sync_at_close(&mut self) -> Option<String> {
-        let mut failed = None;
-        if let Some(r) = self.syncer.wait(now()) {
-            let ok = matches!(&r, Ok(o) if o.ok);
-            failed = (!ok).then(|| sync::said(&r));
-        }
+    /// At start: what the sync at the last close kept, if it failed; said when the start's sync fails too, or at once
+    /// when the app does not sync at start.
+    pub fn close_failure(&mut self, said: Option<String>) {
+        let Some(said) = said else { return };
         if self.sync_mode.at_start_and_close() {
-            self.syncer.start(&self.task);
-            if let Some(r) = self.syncer.wait(now()) {
-                let ok = matches!(&r, Ok(o) if o.ok);
-                failed = (!ok).then(|| sync::said(&r));
-            }
+            self.close_failed = Some(said);
+        } else {
+            self.log.push(Line::from(format!("sync · {said}")));
+            self.status = said;
         }
-        failed
+    }
+
+    /// Before closing: hand the sync to `sh`, when set to sync at close, so the app quits at once (it
+    /// waits for a sync left running, which goes on by itself either way). What went wrong, if anything.
+    pub fn sync_at_close(&mut self) -> Option<String> {
+        if !self.sync_mode.at_start_and_close() {
+            return None;
+        }
+        sync::hand_over(&self.task, self.syncer.pid()).err()
     }
 
     /// The full form for the task with this uuid.

@@ -80,7 +80,7 @@ fn run_on_terminal(app: &App, steps: &[chain::Statement], pause: bool) -> io::Re
     Ok(())
 }
 
-/// Run until quit; what the closing sync said when it failed.
+/// Run until quit; why the sync at close could not be handed over, if it could not.
 fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<Option<String>> {
     loop {
         (app.width, app.height) = ui::page_size(terminal.size()?.into());
@@ -103,13 +103,7 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<Optio
         }
         match app.key(key) {
             Action::None => {}
-            Action::Quit => {
-                if app.syncer.running() || app.sync_mode.at_start_and_close() {
-                    "Syncing before closing…".clone_into(&mut app.status);
-                    terminal.draw(|f| ui::draw(f, app))?;
-                }
-                return Ok(app.sync_at_close());
-            }
+            Action::Quit => return Ok(app.sync_at_close()),
             Action::Run(steps) => {
                 run_on_terminal(app, &steps, true)?;
                 *terminal = init();
@@ -153,6 +147,7 @@ pub fn run() -> io::Result<()> {
     app.system_mode = appearance::system();
     app.reload();
     app.go_home();
+    app.close_failure(sync::take_failure());
     if app.sync_mode.at_start_and_close() {
         app.syncer.start(&app.task);
     }

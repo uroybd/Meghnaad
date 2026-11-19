@@ -4,6 +4,7 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -87,6 +88,11 @@ impl Task {
         }
     }
 
+    /// The program run as `task`.
+    pub fn bin(&self) -> &std::path::Path {
+        &self.bin
+    }
+
     /// Wait for any other run (a sync in the background) to finish; the turn is this caller's until it is dropped.
     fn turn(&self) -> Turn {
         let mut busy = self.turn.busy.lock().unwrap_or_else(PoisonError::into_inner);
@@ -122,6 +128,39 @@ impl Task {
             ok: out.status.success(),
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        })
+    }
+
+    /// As [`Task::capture`], for a run that may outlive the app (a sync when it is quit): its output goes to files
+    /// rather than pipes, which would close with the app and stop it, and it has its own process group, so the
+    /// terminal's signals reach the app and not it. `started` is told its process id.
+    ///
+    /// # Errors
+    ///
+    /// `task` could not be started, or its output could not be kept.
+    pub fn capture_lasting<S: AsRef<std::ffi::OsStr>>(
+        &self,
+        args: &[S],
+        started: impl FnOnce(u32),
+    ) -> Result<Output, String> {
+        let _turn = self.turn();
+        let (out_w, out_r) = unlinked("out")?;
+        let (err_w, err_r) = unlinked("err")?;
+        let mut c = self.command(args);
+        c.stdin(Stdio::null()).stdout(out_w).stderr(err_w);
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut c, 0);
+        let mut child = c
+            .spawn()
+            .map_err(|e| format!("could not run {}: {e}", self.bin.display()))?;
+        started(child.id());
+        let status = child
+            .wait()
+            .map_err(|e| format!("{} stopped: {e}", self.bin.display()))?;
+        Ok(Output {
+            ok: status.success(),
+            stdout: read_all(out_r)?,
+            stderr: read_all(err_r)?,
         })
     }
 
@@ -247,6 +286,27 @@ impl Task {
             .map(|s| s.success())
             .map_err(|e| format!("could not run {}: {e}", self.bin.display()))
     }
+}
+
+/// A new file to write and the same file to read back, its name already gone where the system allows (it is freed when
+/// both are closed, so nothing is left behind if the app is quit first).
+fn unlinked(what: &str) -> Result<(std::fs::File, std::fs::File), String> {
+    static N: AtomicU32 = AtomicU32::new(0);
+    let n = N.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("meghnaad-{}-{n}.{what}", std::process::id()));
+    let failed = |e: std::io::Error| format!("{}: {e}", path.display());
+    let w = std::fs::File::create(&path).map_err(failed)?;
+    let r = std::fs::File::open(&path).map_err(failed)?;
+    // Where an open file cannot be removed it is left in the temporary folder, which the system clears.
+    std::fs::remove_file(&path).ok();
+    Ok((w, r))
+}
+
+fn read_all(mut from: std::fs::File) -> Result<String, String> {
+    let mut buf = Vec::new();
+    from.read_to_end(&mut buf)
+        .map_err(|e| format!("could not read what task said: {e}"))?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// Copy what `from` writes into `into` as it comes, until it closes.

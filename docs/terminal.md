@@ -376,7 +376,12 @@ When it runs is the `tui.sync` setting, which `y` in the Sync section of the Set
 | `"startAndClose"` | Also when the app opens and when it closes |
 | `"everyChange"` | Also after every command that changes tasks (`add`, `modify`, `done`, `start`, `delete`, `undo`, …, from a key, the form, the command line or the terminal), and once when a review ends |
 
-Closing waits for a sync that is running, then syncs once more when set to, and says on the terminal if that failed.
+Closing never waits for a sync. When set to sync at close, the app quits at once and hands the sync to a process of its
+own, which waits for a sync the app left running and then runs `task sync`, so a slow store (a git branch, say) does not
+hold the terminal. A sync left running when closing goes on by itself either way. If the sync at close fails, what it
+said is kept in `close-sync.json` in the app's state folder (`$XDG_STATE_HOME/meghnaad`, else
+`~/.local/state/meghnaad`), and the next start reports it: after its own sync, when that fails too (one that works has
+put things right), or at once when the app no longer syncs at start.
 
 ## Boards
 
@@ -529,7 +534,8 @@ in General and stays in the file. A `sync` at the top of the file, where 0.6.53 
 the web app's [settings.json box](using/settings.md) lists), is reported in General and the status line and read as
 none, and the app will not save over it until it is put right.
 
-The app reads and writes `settings.json` in that folder and touches nothing else there. It writes the file in place, so
+The app reads and writes `settings.json` in that folder and touches nothing else there. Its one other file, `close-sync.json`, is in its state
+folder ([Sync](#sync)). It writes the file in place, so
 a symlink stays a symlink and a dotfiles manager (stow and the like) can own the folder. It never reaches the store itself: syncing is `task sync`, and its settings (`sync.*`
 in the taskrc, `AWS_ENDPOINT_URL` and the like in the environment) are Taskwarrior's.
 
