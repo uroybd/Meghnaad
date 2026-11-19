@@ -7,6 +7,7 @@ import {
   putAppSettings,
   refreshHooks,
   runCli,
+  useConfig,
   type Answers,
   type CliInput,
 } from './api';
@@ -405,6 +406,13 @@ class Store {
       throw new Error(`The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.`);
     await putAppSettings(text);
     await this.loadAppSettings();
+  }
+
+  /** Settings a save answered with, in place of reading them again. */
+  async takeConfig(config: ConfigResponse) {
+    await useConfig(config);
+    this.config = config;
+    this.configError = null;
   }
 
   async loadConfig(reuse = false) {

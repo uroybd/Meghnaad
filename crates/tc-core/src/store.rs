@@ -25,6 +25,18 @@ pub trait ObjectStore {
         Ok(())
     }
 
+    /// Write several objects (`None` deletes one), in order. A store that can make them one change (a git branch: one
+    /// commit) does, so they are never seen half written.
+    async fn write_many(&self, writes: &[(String, Option<Vec<u8>>)]) -> Result<()> {
+        for (name, value) in writes {
+            match value {
+                Some(v) => self.put(name, v).await?,
+                None => self.del(name).await?,
+            }
+        }
+        Ok(())
+    }
+
     /// Names of all objects starting with `prefix`, across all pages, each with when it was uploaded
     /// (seconds since the epoch).
     async fn list_dated(&self, prefix: &str) -> Result<Vec<(String, i64)>>;

@@ -260,6 +260,15 @@ async function readConfig(): Promise<ConfigResponse> {
 }
 
 /**
+ * Settings a save answered with, taken as read: the engine takes them up, if it is running. Reading them again could
+ * get an older copy (a forge's API may answer from one that has not caught up with the commit).
+ */
+export async function useConfig(config: ConfigResponse): Promise<void> {
+  lastConfig = config;
+  if (booted !== undefined) await booted.then(() => engine.setConfig(JSON.stringify(config.config))).catch(() => {});
+}
+
+/**
  * Read the saved settings from the server and hand them to the engine, starting it if it has not started. A call made
  * while a read is on its way joins it. With `reuse`, settings read a moment ago are used instead of asking again (the
  * page start asks for them from two places).
@@ -401,8 +410,15 @@ export function putAppSettings(text: string): Promise<{ ok: true }> {
 }
 
 /** Save the urgency settings: every one that differs from the built-in value, and `urgency.inherit`. */
-export function putUrgency(urgency: Record<string, number>, inherit: boolean): Promise<{ ok: true }> {
-  return request<{ ok: true }>('/api/config/urgency', {
+/** What saving the urgency settings answers: the settings now in force, and any an included file still overrides. */
+export interface UrgencySaved {
+  ok: true;
+  settings: ConfigResponse;
+  overridden: string[];
+}
+
+export function putUrgency(urgency: Record<string, number>, inherit: boolean): Promise<UrgencySaved> {
+  return request<UrgencySaved>('/api/config/urgency', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ urgency, inherit }),

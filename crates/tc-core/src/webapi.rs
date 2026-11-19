@@ -279,21 +279,28 @@ impl<S: ObjectStore> WebSettings<S> {
 
     /// Save new settings, keeping what was there as the "previous" version.
     pub async fn save_config(&self, cfg: &Config) -> Result<(), String> {
-        let bytes = encode(cfg)?;
-        let s = |e: crate::Error| e.to_string();
-        // Back up first: if we are interrupted between the two writes the worst case is that the backup equals the
-        // current settings, never that settings are lost.
-        if let Some(old) = self.store.get(CONFIG_KEY).await.map_err(s)? {
-            if decode(&old).is_ok() {
-                self.store.put(PREV_KEY, &old).await.map_err(s)?;
-            } else {
-                // Not a valid restore point, but don't destroy it either.
-                self.store.put(CORRUPT_KEY, &old).await.map_err(s)?;
-            }
-        }
-        self.store.put(CONFIG_KEY, &bytes).await.map_err(s)?;
+        let writes = self.config_writes(cfg).await?;
+        self.store.write_many(&writes).await.map_err(|e| e.to_string())?;
         *self.error.borrow_mut() = None;
         Ok(())
+    }
+
+    /// The writes that save `cfg`, none when it is what is saved already. The backup comes first: a store that writes
+    /// them one by one and is interrupted between them leaves the backup equal to the current settings at worst,
+    /// never settings lost.
+    async fn config_writes(&self, cfg: &Config) -> Result<Vec<(String, Option<Vec<u8>>)>, String> {
+        let bytes = encode(cfg)?;
+        let mut out = Vec::new();
+        if let Some(old) = self.store.get(CONFIG_KEY).await.map_err(|e| e.to_string())? {
+            if old == bytes {
+                return Ok(out);
+            }
+            // One that can't be read is not a restore point, but it is not destroyed either.
+            let keep = if decode(&old).is_ok() { PREV_KEY } else { CORRUPT_KEY };
+            out.push((keep.to_owned(), Some(old)));
+        }
+        out.push((CONFIG_KEY.to_owned(), Some(bytes)));
+        Ok(out)
     }
 
     /// Swap the current and previous settings; `None` if there is nothing to restore.
@@ -329,23 +336,27 @@ impl<S: ObjectStore> WebSettings<S> {
         Ok(tree)
     }
 
-    /// Make the files `new`, where they were `old`: write what changed, delete what went, and save the settings they
-    /// add up to. Nothing is checked here.
-    async fn write_tree(&self, old: &Tree, new: &Tree) -> Result<Resolved, String> {
-        let s = |e: crate::Error| e.to_string();
+    /// Make the files `new`, where they were `old`: after `writes`, write what changed, delete what went, and save the
+    /// settings they add up to, all as one change where the store can (one commit on a git branch). Nothing is
+    /// checked here.
+    async fn write_tree(
+        &self,
+        old: &Tree,
+        new: &Tree,
+        mut writes: Vec<(String, Option<Vec<u8>>)>,
+    ) -> Result<Resolved, String> {
         for (path, text) in new {
             if old.get(path) != Some(text) {
-                self.store
-                    .put(&format!("{RC_PREFIX}{path}"), text.as_bytes())
-                    .await
-                    .map_err(s)?;
+                writes.push((format!("{RC_PREFIX}{path}"), Some(text.as_bytes().to_vec())));
             }
         }
         for path in old.keys().filter(|p| !new.contains_key(*p)) {
-            self.store.del(&format!("{RC_PREFIX}{path}")).await.map_err(s)?;
+            writes.push((format!("{RC_PREFIX}{path}"), None));
         }
         let resolved = rcfiles::resolve(new);
-        self.save_config(&resolved.parsed.config).await?;
+        writes.extend(self.config_writes(&resolved.parsed.config).await?);
+        self.store.write_many(&writes).await.map_err(|e| e.to_string())?;
+        *self.error.borrow_mut() = None;
         Ok(resolved)
     }
 
@@ -359,11 +370,12 @@ impl<S: ObjectStore> WebSettings<S> {
             return Err("the files are too large together".to_owned());
         }
         // With nothing before, there is nothing to go back to.
+        let mut writes = Vec::new();
         if old != new && !old.is_empty() {
             let bytes = serde_json::to_vec(old).map_err(|e| e.to_string())?;
-            self.store.put(RC_PREV_KEY, &bytes).await.map_err(|e| e.to_string())?;
+            writes.push((RC_PREV_KEY.to_owned(), Some(bytes)));
         }
-        self.write_tree(old, new).await
+        self.write_tree(old, new, writes).await
     }
 
     async fn previous_tree(&self) -> Result<Option<Tree>, String> {
@@ -418,6 +430,8 @@ impl<S: ObjectStore> WebSettings<S> {
         let mut tree = old.clone();
         rcfiles::apply_edits(&mut tree, &rcfiles::edits(&before, new));
         if tree == old {
+            // The files say so already; the saved settings may not (a save cut short), and they are what is shown.
+            self.save_config(&before).await?;
             return Ok(before);
         }
         Ok(self.save_tree(&old, &tree).await?.parsed.config)
@@ -439,8 +453,8 @@ impl<S: ObjectStore> WebSettings<S> {
         };
         // Swap rather than overwrite, so restoring twice gets you back where you were.
         let bytes = serde_json::to_vec(&current).map_err(|e| e.to_string())?;
-        self.store.put(RC_PREV_KEY, &bytes).await.map_err(|e| e.to_string())?;
-        self.write_tree(&current, &prev).await?;
+        self.write_tree(&current, &prev, vec![(RC_PREV_KEY.to_owned(), Some(bytes))])
+            .await?;
         Ok(Some(prev))
     }
 
@@ -701,13 +715,28 @@ impl<S: ObjectStore> WebSettings<S> {
             Ok(c) => c,
             Err(reply) => return reply,
         };
-        if let Err(e) = taskrc::set_urgency(&mut cfg, req.urgency, req.inherit) {
+        if let Err(e) = taskrc::set_urgency(&mut cfg, req.urgency.clone(), req.inherit) {
             return Reply::error(400, e);
         }
-        match self.save_settings_change(&cfg).await {
-            Ok(config) => Reply::ok(json!({ "ok": true, "config": config })),
-            Err(e) => Reply::error(500, e),
-        }
+        let saved = match self.save_settings_change(&cfg).await {
+            Ok(c) => c,
+            Err(e) => return Reply::error(500, e),
+        };
+        // An included file that sets one of them still has the last word, as with `task config`: say which.
+        let overridden: std::collections::BTreeSet<&String> = req
+            .urgency
+            .keys()
+            .chain(saved.urgency.keys())
+            .filter(|k| req.urgency.get(*k) != saved.urgency.get(*k))
+            .collect();
+        let inherit = (saved.urgency_inherit() != req.inherit).then_some("urgency.inherit");
+        let previous = self.has_previous().await.unwrap_or(true);
+        Reply::ok(json!({
+            "ok": true,
+            "config": saved,
+            "settings": config_response(&saved, previous, None),
+            "overridden": overridden.into_iter().map(String::as_str).chain(inherit).collect::<Vec<_>>(),
+        }))
     }
 
     /// What a `config` command changed, as the engine worked it out: saved as the taskrc dialog saves it. Nothing

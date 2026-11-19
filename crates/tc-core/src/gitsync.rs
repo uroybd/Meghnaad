@@ -69,6 +69,15 @@ pub enum Change {
     Delete { path: String, was: String },
 }
 
+impl Change {
+    /// The file it changes.
+    pub fn path(&self) -> &str {
+        match self {
+            Change::Create { path, .. } | Change::Update { path, .. } | Change::Delete { path, .. } => path,
+        }
+    }
+}
+
 /// What came of a commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Committed {
@@ -630,6 +639,59 @@ impl<R: GitRepo> ObjectStore for GitObjects<R> {
         } else {
             Err(Error::TooMuchContention)
         }
+    }
+
+    /// One commit for them all: each file read for what it is now (and the head with it), then committed together; a
+    /// head that moved meanwhile starts it again.
+    async fn write_many(&self, writes: &[(String, Option<Vec<u8>>)]) -> Result<()> {
+        for _ in 0..RETRIES {
+            let mut head: Option<Option<String>> = None;
+            let mut moved = false;
+            let mut changes = Vec::new();
+            for (name, value) in writes {
+                let (h, current) = self.0.read(name).await?;
+                // Each read gives the head it was made at; they must agree, or the files are from two commits.
+                match &head {
+                    Some(seen) if *seen != h => moved = true,
+                    _ => head = Some(h),
+                }
+                // A file written twice in one go: the last write is the one kept.
+                changes.retain(|c: &Change| c.path() != name);
+                let change = match (current, value) {
+                    (Some(c), Some(v)) if c.bytes == *v => None,
+                    (Some(c), Some(v)) => Some(Change::Update {
+                        path: name.clone(),
+                        bytes: v.clone(),
+                        was: c.id,
+                    }),
+                    (None, Some(v)) => Some(Change::Create {
+                        path: name.clone(),
+                        bytes: v.clone(),
+                    }),
+                    (Some(c), None) => Some(Change::Delete {
+                        path: name.clone(),
+                        was: c.id,
+                    }),
+                    (None, None) => None,
+                };
+                changes.extend(change);
+            }
+            if moved {
+                continue;
+            }
+            if changes.is_empty() {
+                return Ok(());
+            }
+            let message = match changes.as_slice() {
+                [one] => format!("save {}", one.path()),
+                _ => format!("save {} files", changes.len()),
+            };
+            let head = head.flatten();
+            if let Committed::Done(_) = self.0.commit(head.as_deref(), &message, &changes).await? {
+                return Ok(());
+            }
+        }
+        Err(Error::TooMuchContention)
     }
 
     async fn del(&self, name: &str) -> Result<()> {

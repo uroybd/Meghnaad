@@ -29,6 +29,8 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let savedNote = $state(false);
+  /** Settings the last save could not change, because an included taskrc file still sets them. */
+  let overridden = $state<string[]>([]);
 
   const keys = $derived(sortKeys(new Set([...Object.keys(defaults), ...Object.keys(overrides)])));
   const edited = $derived(!sameOverrides(overrides, savedOverrides) || inherit !== savedInherit);
@@ -99,8 +101,12 @@
     busy = true;
     error = null;
     try {
-      await putUrgency(overrides, inherit);
-      await store.loadConfig();
+      const saved = await putUrgency(overrides, inherit);
+      await store.takeConfig(saved.settings);
+      // What is in force now, which an included file may still decide.
+      overrides = { ...savedOverrides };
+      inherit = savedInherit;
+      overridden = saved.overridden;
       // Scores, and so the order of tasks, may have changed.
       if (store.live) await store.refresh(store.live);
       savedNote = true;
@@ -234,7 +240,14 @@
   {/if}
 
   {#if error}<p class="err" role="alert">{error}</p>{/if}
-  {#if savedNote && !edited}<p class="ok" role="status">Saved. Task scores are updated.</p>{/if}
+  {#if savedNote && !edited}
+    {#if overridden.length}
+      <p class="warn" role="status">
+        Saved, but an included taskrc file still sets {#each overridden as key, i (key)}{i ? ', ' : ''}<code>{key}</code
+          >{/each}, and has the last word: change it there, in the taskrc tab.
+      </p>
+    {:else}<p class="ok" role="status">Saved. Task scores are updated.</p>{/if}
+  {/if}
 
   <footer class="row-actions">
     {#if edited}<button class="ghost" onclick={revert}>Revert edits</button>{/if}

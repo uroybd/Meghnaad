@@ -289,3 +289,49 @@ async fn a_holiday_file_with_locale_ids_is_read_through_an_include() {
     assert_eq!(config["config"]["settings"]["holiday.en-US1.name"], "New Year's Day");
     assert_eq!(config["config"]["settings"]["holiday.en-US1.date"], "20260101");
 }
+
+/// On a git branch, one save of the settings is one commit; an included file that still sets an urgency is named;
+/// and settings left behind the files (a save cut short) are brought up to them, since they are what the page shows.
+#[tokio::test(flavor = "current_thread")]
+async fn urgency_on_a_branch_is_one_commit_and_says_what_an_include_overrides() {
+    use tc_core::gitsync::{GitObjects, MemRepo};
+    let repo = MemRepo::new();
+    repo.insert(
+        "web/rc/taskrc",
+        b"urgency.user.project.Home.coefficient=1\ninclude urg.rc\n",
+    );
+    repo.insert("web/rc/urg.rc", b"urgency.user.project.Home.coefficient=2\n");
+    let web = WebSettings::new(GitObjects(repo.clone()));
+    let put = |body: &'static str| {
+        let web = &web;
+        async move {
+            let r = web.handle("PUT", "/api/config/urgency", body.as_bytes()).await.unwrap();
+            assert_eq!(r.status, 200);
+            serde_json::from_slice::<Value>(&r.body).unwrap()
+        }
+    };
+    let before = repo.messages().len();
+    let v = put(r#"{"urgency":{"urgency.user.project.Home.coefficient":3,"urgency.user.project.Work.coefficient":5},"inherit":false}"#).await;
+    assert_eq!(repo.messages().len(), before + 1, "{:?}", repo.messages());
+    // Home's line is above the include, which sets it too and so still wins; Work's new line goes last, and wins.
+    assert_eq!(v["overridden"], json!(["urgency.user.project.Home.coefficient"]));
+    assert_eq!(
+        v["settings"]["config"]["urgency"]["urgency.user.project.Home.coefficient"],
+        json!(2.0)
+    );
+    assert_eq!(
+        v["settings"]["config"]["urgency"]["urgency.user.project.Work.coefficient"],
+        json!(5.0)
+    );
+
+    // The saved settings fall behind the files; saving what the files already say brings them up.
+    repo.insert(CONFIG_KEY, br#"{"version":1,"config":{}}"#);
+    let v = put(r#"{"urgency":{"urgency.user.project.Home.coefficient":2,"urgency.user.project.Work.coefficient":5},"inherit":false}"#).await;
+    assert_eq!(v["overridden"], json!([]));
+    let r = web.handle("GET", "/api/config", b"").await.unwrap();
+    let got: Value = serde_json::from_slice(&r.body).unwrap();
+    assert_eq!(
+        got["config"]["urgency"]["urgency.user.project.Work.coefficient"],
+        json!(5.0)
+    );
+}

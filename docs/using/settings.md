@@ -448,7 +448,9 @@ hooks run, `undo` works and the Tasks table follows. Review steps aren't added t
 A task's urgency is the sum of Taskwarrior's `urgency.*` terms, with its built-in coefficients unless your taskrc changes
 them. The **Urgency** tab shows every coefficient next to its default. Edit one, add your own, or send one back to its
 default, then **Apply**. Edits are saved with your imported settings (as `urgency.*` lines in the taskrc tab). Your desktop
-`~/.taskrc` isn't touched, so copy any change you want there.
+`~/.taskrc` isn't touched, so copy any change you want there. As with `task config`, a change is written into the main
+taskrc; when a file it includes after that line sets the same coefficient, the included file still decides, and the tab
+names it after **Apply** so you can change it there. On a git branch one **Apply** is one commit.
 
 It follows Taskwarrior's rules, so nothing is inherited that Taskwarrior doesn't inherit:
 
