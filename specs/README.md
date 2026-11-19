@@ -57,4 +57,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0022 | [A PIN on a trusted device](0022-pin-lock.md) | in progress | 2 (UI) | web (static) | Built 2026-11-19; to check by a person: the PIN screen in a browser |
 | 0023 | [The web app's settings reads in one place, its largest files split, and pages loaded on demand](0023-web-refactor.md) | in progress | 2 (UI) | web | Three releases: 1; 4; 2 and 3 |
 | 0024 | [Boards load faster on Android](0024-android-boards-speed.md) | draft | TBD | Android | Placeholder: measure first |
-| 0025 | [Commands are what keys run; actions are presets of them](0025-commands-are-the-base.md) | in progress | 2 (UI), shared keymap | web, Android, terminal | Contextual names; sort suffixes + - -- = / |
+| 0025 | [Commands are what keys run; actions are presets of them](0025-commands-are-the-base.md) | done | 2 (UI), shared keymap | web, Android, terminal | Contextual names; sort suffixes + - -- = / |

@@ -33,16 +33,29 @@ val KEY_SECTIONS = listOf("general", "web", "mobile", "tui")
 
 /** One action of a section, for the Keybindings tab (`tc_core::keymap::Binding`). */
 data class Binding(
+    /** The action it runs, or the command as written where it has words (`filter +home`). */
     val action: String,
-    /** What it does, from the asset's `about`; empty for a name that is no action. */
+    /** What it does, from the asset's `about`. */
     val about: String,
+    /** The command it runs, as a key bound to it is saved (`done` for `tasks.done`; spec 0025). */
+    val command: String = "",
     /** Its keys by default. */
     val defaults: List<String>,
     /** The keys set in this section (`[]` for none); null where nothing is set. */
     val keys: List<String>?,
 )
 
-class KeyBindings(val sections: Map<String, List<Binding>> = emptyMap(), val problems: List<String> = emptyList())
+/** A binding in `settings.json` that runs no command: skipped, and warned of with a way to take it out. */
+data class BadKey(val section: String, val group: String, val key: String, val runs: String, val why: String) {
+    /** Where it is in `settings.json`: `keys.tasks`, `tui.keys.boards`. */
+    val at: String get() = (if (section == "general") "keys" else "$section.keys") + ".$group"
+}
+
+class KeyBindings(
+    val sections: Map<String, List<Binding>> = emptyMap(),
+    val problems: List<String> = emptyList(),
+    val bad: List<BadKey> = emptyList(),
+)
 
 private fun strings(v: JsonElement?): List<String> = (v as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList()
 
@@ -57,28 +70,78 @@ fun keymapBindings(settings: JsonObject, defaults: JsonObject = KEYMAP_DEFAULTS)
                 Binding(
                     action = ao.getValue("action").jsonPrimitive.content,
                     about = ao["about"]?.jsonPrimitive?.contentOrNull ?: "",
+                    command = ao["command"]?.jsonPrimitive?.contentOrNull ?: "",
                     defaults = strings(ao["defaults"]),
                     keys = ao["keys"]?.takeIf { it !is JsonNull }?.let(::strings),
                 )
             }
         } ?: emptyMap(),
         problems = strings(o["problems"]),
+        bad = o["bad"]?.jsonArray.orEmpty().map { b ->
+            val bo = b.jsonObject
+            fun f(k: String) = bo[k]?.jsonPrimitive?.contentOrNull ?: ""
+            BadKey(f("section"), f("group"), f("key"), f("runs"), f("why"))
+        },
     )
 }.getOrElse { KeyBindings() }
 
+/** [next] with the keys [settings] had first in their order, then the new ones. */
+private fun inOrder(settings: JsonObject, next: JsonObject): JsonObject =
+    JsonObject(buildMap { for (k in settings.keys) next[k]?.let { put(k, it) }; putAll(next.filterKeys { it !in settings }) })
+
 /**
- * [settings] with an action's keys in a section set (`[]` for none), or taken out (null), bound in its group with the
- * default keys it no longer has unbound; the rest in its order.
+ * [settings] with the keys of what runs a command (`done`, `filter +home`) or an action in a section set (`[]` for none),
+ * or taken out (null): saved as given, bound in [group] (else that of what it runs), with the default keys of its action
+ * it no longer has unbound; the rest in its order.
  */
 fun withBinding(
-    settings: JsonObject, section: String, action: String, keys: List<String>?, defaults: JsonObject = KEYMAP_DEFAULTS,
+    settings: JsonObject, section: String, runs: String, keys: List<String>?, defaults: JsonObject = KEYMAP_DEFAULTS,
+    group: String? = null,
 ): JsonObject {
     val next = callHelper(
-        "keymap_set", settings, JsonPrimitive(section), JsonPrimitive(action),
-        keys?.let { k -> JsonArray(k.map(::JsonPrimitive)) } ?: JsonNull, defaults,
+        "keymap_set", settings, JsonPrimitive(section), JsonPrimitive(runs),
+        keys?.let { k -> JsonArray(k.map(::JsonPrimitive)) } ?: JsonNull, defaults, group?.let(::JsonPrimitive) ?: JsonNull,
     ).jsonObject
-    return JsonObject(buildMap { for (k in settings.keys) next[k]?.let { put(k, it) }; putAll(next.filterKeys { it !in settings }) })
+    return inOrder(settings, next)
 }
+
+/** [settings] without one key of a group of a section: a binding that runs no command, taken out. */
+fun withoutKey(settings: JsonObject, bad: BadKey, defaults: JsonObject = KEYMAP_DEFAULTS): JsonObject {
+    val next = callHelper(
+        "keymap_unset", settings, JsonPrimitive(bad.section), JsonPrimitive(bad.group), JsonPrimitive(bad.key), defaults,
+    ).jsonObject
+    return inOrder(settings, next)
+}
+
+/** A group a command can be bound in, and the action it runs there. */
+data class KeyPlace(val group: String, val action: String)
+
+/** What a command typed for a key runs (spec 0025): the action and its words, what that does and each place it can be bound in; or why it is no command. */
+data class CheckedCommand(
+    val action: String = "",
+    val args: List<String> = emptyList(),
+    val count: Int? = null,
+    val about: String = "",
+    val places: List<KeyPlace> = emptyList(),
+    val problem: String? = null,
+)
+
+/** A command typed for a key, checked by the engine (KeysPanel.svelte `checkCommand`). */
+fun checkCommand(runs: String, defaults: JsonObject = KEYMAP_DEFAULTS): CheckedCommand = runCatching {
+    val o = callHelper("key_command_check", JsonPrimitive(runs), defaults).jsonObject
+    o["problem"]?.jsonPrimitive?.contentOrNull?.let { return@runCatching CheckedCommand(problem = it) }
+    val call = o.getValue("call").jsonObject
+    CheckedCommand(
+        action = call.getValue("action").jsonPrimitive.content,
+        args = strings(call["args"]),
+        count = call["count"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
+        about = o["about"]?.jsonPrimitive?.contentOrNull ?: "",
+        places = o["places"]?.jsonArray.orEmpty().map { p ->
+            val po = p.jsonObject
+            KeyPlace(po.getValue("group").jsonPrimitive.content, po.getValue("action").jsonPrimitive.content)
+        },
+    )
+}.getOrElse { CheckedCommand(problem = it.message ?: it.toString()) }
 
 /**
  * `settings.json` brought to the latest version (`tc_core::settings_version`: the keys bound per group since 2), or null

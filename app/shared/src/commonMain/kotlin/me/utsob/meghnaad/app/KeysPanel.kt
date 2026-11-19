@@ -44,12 +44,13 @@ import kotlinx.serialization.json.JsonObject
 /** The sections' titles, and where each is in `settings.json`. */
 val KEY_SECTION_TITLES = mapOf("general" to ("General" to "keys"), "web" to ("Web" to "web.keys"), "mobile" to ("Mobile" to "mobile.keys"), "tui" to ("Terminal" to "tui.keys"))
 
-/** [b] matches what is typed: its name, what it does, or one of its keys (KeysPanel.svelte `matches`). */
+/** [b] matches what is typed: its name, its command, what it does, or one of its keys (KeysPanel.svelte `matches`). */
 fun bindingMatches(b: Binding, query: String): Boolean {
     val t = query.trim().lowercase()
     if (t.isEmpty()) return true
     val keys = b.keys ?: b.defaults
-    return t in b.action.lowercase() || t in b.about.lowercase() || keys.any { it.lowercase() == t || keyLabel(it).lowercase() == t }
+    return t in b.action.lowercase() || t in b.command.lowercase() || t in b.about.lowercase() ||
+        keys.any { it.lowercase() == t || keyLabel(it).lowercase() == t }
 }
 
 /** The rows a section shows: the user's, and with [showDefaults] the actions that have only their defaults, that match [query]. */
@@ -67,13 +68,27 @@ class KeysState(private val store: Store) {
     var done by mutableStateOf(false)
     var query by mutableStateOf("")
 
-    // Adding: the section, its search, the action picked and the key for it.
+    // Adding: the section, its search, the preset picked (none for a command of one's own), the command it runs as
+    // typed, where it acts when it can act in several places, and the key for it (spec 0025).
     var adding by mutableStateOf<String?>(null)
     var find by mutableStateOf("")
     var picked by mutableStateOf<Binding?>(null)
+    var writing by mutableStateOf(false)
+    var runs by mutableStateOf("")
+    var where by mutableStateOf<String?>(null)
     var typed by mutableStateOf("")
     var pressed by mutableStateOf<String?>(null)
     var recording by mutableStateOf(false)
+
+    /** The command as typed, checked by the engine: what it runs, or why it is no command; null while it is empty. */
+    val checked: CheckedCommand? get() = runs.trim().takeIf { writing && it.isNotEmpty() }?.let { checkCommand(it) }
+
+    /** Where it is bound: the place chosen, else the preset's own, else the first it acts in. */
+    fun placeOf(c: CheckedCommand): KeyPlace? =
+        c.places.firstOrNull { it.group == where } ?: c.places.firstOrNull { it.action == picked?.action } ?: c.places.firstOrNull()
+
+    /** What it is listed as: the action alone, or the command as typed when it has words. */
+    fun rowOf(c: CheckedCommand, place: KeyPlace): String = if (c.args.isEmpty() && c.count == null) place.action else runs.trim()
 
     val edited get() = draft != saved
     val bindings: KeyBindings get() = keymapBindings(draft)
@@ -92,14 +107,35 @@ class KeysState(private val store: Store) {
         if (untouched) draft = now
     }
 
-    fun change(section: String, action: String, keys: List<String>?) {
+    fun change(section: String, runs: String, keys: List<String>?, group: String? = null) {
         done = false
-        runCatching { withBinding(draft, section, action, keys) }.onSuccess { draft = it }.onFailure { error = it.message }
+        runCatching { withBinding(draft, section, runs, keys, group = group) }.onSuccess { draft = it }.onFailure { error = it.message }
+    }
+
+    /** A key that runs no command, taken out of the draft. */
+    fun takeOut(bad: BadKey) {
+        done = false
+        runCatching { withoutKey(draft, bad) }.onSuccess { draft = it }.onFailure { error = it.message }
     }
 
     fun openAdd(section: String) {
         adding = section
         find = ""
+        picked = null
+        writing = false
+        resetKey()
+    }
+
+    /** The form for a preset, its command to start from; or, with none, for a command of one's own. */
+    fun pick(b: Binding?) {
+        picked = b
+        writing = true
+        runs = b?.command?.ifEmpty { null } ?: b?.action ?: ""
+        where = null
+    }
+
+    fun back() {
+        writing = false
         picked = null
         resetKey()
     }
@@ -113,22 +149,26 @@ class KeysState(private val store: Store) {
     fun closeAdd() {
         adding = null
         picked = null
+        writing = false
         resetKey()
     }
 
     fun addKey() {
         val section = adding ?: return
-        val b = picked ?: return
+        val c = checked?.takeIf { it.problem == null } ?: return
+        val place = placeOf(c) ?: return
         val key = newKey ?: return
-        val now = b.keys.orEmpty()
-        change(section, b.action, if (key in now) now else now + key)
+        val row = rowOf(c, place)
+        val now = bindings.sections[section].orEmpty().firstOrNull { it.action == row }?.keys.orEmpty()
+        change(section, runs.trim(), if (key in now) now else now + key, place.group)
         closeAdd()
     }
 
     fun noKey() {
         val section = adding ?: return
-        val b = picked ?: return
-        change(section, b.action, emptyList())
+        val c = checked?.takeIf { it.problem == null } ?: return
+        val place = placeOf(c) ?: return
+        change(section, runs.trim(), emptyList(), place.group)
         closeAdd()
     }
 
@@ -172,6 +212,22 @@ fun KeysPanel(store: Store, state: KeysState) {
     val colors = MaterialTheme.colorScheme
     val bindings = state.bindings
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (bindings.bad.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("These keys run no command, so they do nothing. Take them out, or fix them in settings.json:", fontSize = 13.sp)
+                    for (b in bindings.bad) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${keyLabel(b.key)} in ${b.at} runs ${b.runs}", fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                                Dim(b.why, size = 12)
+                            }
+                            TextButton({ state.takeOut(b) }) { Text("Take out") }
+                        }
+                    }
+                }
+            }
+        }
         OutlinedTextField(state.query, { state.query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Search keys") })
         Row(Modifier.clickable { store.showDefaultKeys(!store.showDefaultKeys) }, verticalAlignment = Alignment.CenterVertically) {
             Checkbox(store.showDefaultKeys, onCheckedChange = null, modifier = Modifier.padding(end = 8.dp))
@@ -196,9 +252,10 @@ fun KeysPanel(store: Store, state: KeysState) {
                                 b.keys.isEmpty() -> Dim("no key")
                                 else -> Keys(b.keys, false)
                             }
-                            Text(b.action, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = if (b.keys == null) colors.onSurfaceVariant else colors.onSurface)
+                            Text(b.command.ifEmpty { b.action }, fontSize = 13.sp, fontFamily = FontFamily.Monospace, color = if (b.keys == null) colors.onSurfaceVariant else colors.onSurface)
+                            if (b.command.isNotEmpty() && b.command != b.action) Dim(b.action, size = 12)
                         }
-                        if (b.about.isNotEmpty()) Dim(b.about, size = 12) else Text("no such action", color = colors.error, fontSize = 12.sp)
+                        if (b.about.isNotEmpty()) Dim(b.about, size = 12)
                         if (b.keys != null && store.showDefaultKeys && b.defaults.isNotEmpty()) {
                             Row(verticalAlignment = Alignment.CenterVertically) { Dim("default ", size = 12); Keys(b.defaults, true) }
                         }
@@ -222,7 +279,7 @@ fun KeysPanel(store: Store, state: KeysState) {
             }
         }
         bindings.problems.forEach { Text(it, color = colors.error, fontSize = 13.sp) }
-        Dim("Kept in settings.json: keys for every front end, the others for one alone. A key you set replaces the action's defaults, and is taken from any action that had it.")
+        Dim("Kept in settings.json: keys for every front end, the others for one alone, each saved as the command it runs. A key you set replaces the defaults of what it runs, and is taken from any action that had it.")
         state.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Button({ scope.launch { state.apply() } }, enabled = !state.busy && state.edited) { Text("Apply") }
@@ -232,31 +289,64 @@ fun KeysPanel(store: Store, state: KeysState) {
 }
 
 /** The search for an action to add a key to, then the key: pressed on a hardware keyboard, or typed. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AddKey(state: KeysState) {
     val colors = MaterialTheme.colorScheme
     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            val picked = state.picked
-            if (picked == null) {
+            if (!state.writing) {
                 OutlinedTextField(state.find, { state.find = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Search actions") })
                 val found = state.found
                 if (found.isEmpty()) Dim("No action matches.")
                 for (b in found.take(40)) {
-                    Row(Modifier.fillMaxWidth().clickable { state.picked = b }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable { state.pick(b) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(b.action, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                            Text(b.command.ifEmpty { b.action }, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                            if (b.command.isNotEmpty() && b.command != b.action) Dim(b.action, size = 12)
                             if (b.about.isNotEmpty()) Dim(b.about, size = 12)
                         }
                         Keys(b.keys ?: b.defaults, b.keys == null)
                     }
                 }
+                Row(Modifier.fillMaxWidth().clickable { state.pick(null) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    LucideIcon("plus", size = 14.dp, tint = colors.primary)
+                    Text(" Add a command", color = colors.primary, fontSize = 14.sp)
+                    Dim("  of your own, with its words", size = 12)
+                }
                 TextButton(state::closeAdd) { Text("Cancel") }
             } else {
-                Text(picked.action, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
-                if (picked.about.isNotEmpty()) Dim(picked.about, size = 12)
-                if (picked.keys == null && picked.defaults.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Dim("Replaces its default ", size = 12); Keys(picked.defaults, true) }
+                OutlinedTextField(
+                    state.runs,
+                    { state.runs = it },
+                    Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Command") },
+                    placeholder = { Text("filter +home") },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace),
+                )
+                val checked = state.checked
+                val place = checked?.takeIf { it.problem == null }?.let(state::placeOf)
+                when {
+                    checked == null -> Dim("A command, with its words: done, filter +home, sort due-.", size = 12)
+                    checked.problem != null -> Text(checked.problem, color = colors.error, fontSize = 13.sp)
+                    place != null -> {
+                        val words = if (checked.args.isEmpty()) "" else " with ${checked.args.joinToString(" ")}"
+                        Dim("Runs ${place.action}$words" + if (checked.about.isNotEmpty()) ": ${checked.about}" else "", size = 12)
+                        if (checked.places.size > 1) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Dim("Where", size = 12)
+                                for (p in checked.places) {
+                                    if (p == place) Button({ state.where = p.group }) { Text(p.group) }
+                                    else OutlinedButton({ state.where = p.group }) { Text(p.group) }
+                                }
+                            }
+                        }
+                        val now = state.adding?.let { s -> state.bindings.sections[s].orEmpty().firstOrNull { it.action == state.rowOf(checked, place) } }
+                        if (now != null && now.keys == null && now.defaults.isNotEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) { Dim("Replaces its default ", size = 12); Keys(now.defaults, true) }
+                        }
+                    }
                 }
                 val focus = remember { FocusRequester() }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -300,12 +390,9 @@ private fun AddKey(state: KeysState) {
                 }
                 state.typedKey?.second?.let { Text(it, color = colors.error, fontSize = 13.sp) }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(state::addKey, enabled = state.newKey != null) { Text("Add key") }
-                    TextButton(state::noKey) { Text("No key") }
-                    TextButton({
-                        state.picked = null
-                        state.resetKey()
-                    }) { Text("Back") }
+                    Button(state::addKey, enabled = state.newKey != null && place != null) { Text("Add key") }
+                    TextButton(state::noKey, enabled = place != null) { Text("No key") }
+                    TextButton(state::back) { Text("Back") }
                     TextButton(state::closeAdd) { Text("Cancel") }
                 }
             }

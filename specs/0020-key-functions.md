@@ -149,6 +149,9 @@ Decided 2026-11-19:
 
 ## Implementation notes
 
+2026-11-20: spec 0025 makes commands what keys run: every action has one, a key is saved as its command, and a
+malformed one is skipped and warned of. See [0025](0025-commands-are-the-base.md).
+
 Filled in while building: what was done, where, anything that differed from the design and why, sizes measured, and
 what is left. Dated entries, newest last.
 

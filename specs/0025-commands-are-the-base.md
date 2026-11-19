@@ -1,6 +1,6 @@
 # 0025: Commands are what keys run; actions are presets of them
 
-- **Status:** in progress <!-- draft | ready | in progress | done | dropped -->
+- **Status:** done <!-- draft | ready | in progress | done | dropped -->
 - **Created:** 2026-11-20
 - **Layer:** 2 (UI), the shared keymap (`tc_core::keymap`, reached through `helpers`) and its assets
 - **Front ends:** web, Android (both have a Keybindings tab), terminal (reads keys through the same engine code; it has
@@ -119,18 +119,18 @@ Proposed:
 
 ## Acceptance criteria
 
-- [ ] Every action in the keymap asset but `app.commandLine` has a command (a test walks the asset).
-- [ ] In the web and Android Keybindings tabs:
+- [x] Every action in the keymap asset but `app.commandLine` has a command (a test walks the asset).
+- [x] In the web and Android Keybindings tabs:
   - picking a preset fills the Command field with its command;
   - Add a command opens the same form empty;
   - a malformed command shows why, and Add key stays off;
   - a key is saved as the command.
-- [ ] A malformed binding in `settings.json` is skipped by every front end and shown as a warning at the top of the
+- [x] A malformed binding in `settings.json` is skipped by every front end and shown as a warning at the top of the
   Keybindings tab (web, Android) and in the terminal's settings problems, with a way to take it out.
-- [ ] `settings.json` files with action names keep working unchanged (tests with the current shape).
-- [ ] Tests: engine (`check`, `preset_of`, `resolve`/`bindings` skipping and warning), web panel, Kotlin panel, TUI.
-- [ ] Docs: `docs/commands.md` regenerated; `docs/using/settings.md`; spec 0020's notes point here.
-- [ ] Size: the engine wasm measured before and after.
+- [x] `settings.json` files with action names keep working unchanged (tests with the current shape).
+- [x] Tests: engine (`check`, `preset_of`, `resolve`/`bindings` skipping and warning), web panel, Kotlin panel, TUI.
+- [x] Docs: `docs/commands.md` regenerated; `docs/using/settings.md`; spec 0020's notes point here.
+- [x] Size: the engine wasm measured before and after.
 
 ## Open questions
 
@@ -176,5 +176,8 @@ Still open:
   command, then the action. `ConsoleInput` passes the context's groups.
 - Sizes (gzip -9): engine 896,526 (0.8.20's release, built in CI) → 907,000 bytes (this branch, built here), about
   +10 KB. The Worker links none of the keymap; its 1.1 KB difference is CI against a local build.
-- Left: Android's `KeysPanel.kt` (the field, the check, Where, the warning; its tests). Until then the phone's panel
-  saves action names, which still read as their commands, and shows no warning.
+- Shipped in 0.8.22 for the engine, the terminal and the web.
+- Android (after 0.8.22): `Keymap.kt` has `Binding.command`, `BadKey`, `withBinding(.., group)`, `withoutKey`,
+  `checkCommand` (`CheckedCommand`, `KeyPlace`); `KeysPanel.kt` has the Command field, the check, **Where** as buttons
+  (the app has no dropdown of its own), **Add a command**, and the warning card with **Take out**. Its tests call those
+  functions rather than `KeysState`, which needs a whole `Store`.
