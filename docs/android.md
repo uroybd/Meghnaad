@@ -305,9 +305,11 @@ either side reaches the other at the next sync.
 
 ### Without sharing
 
-Import your taskrc again in **Settings**: paste it, import it from a link, or choose files or a
-whole folder (**Add files**, **Import folder**). **Download** and **Download all (.zip)** keep a file or the whole
-folder through the save dialog. **Add holidays** (same tab) fetches a country's holidays from holidata.net or
+Import your taskrc again in **Settings → taskrc**: paste it, or use **+ New** to upload files or a whole folder or
+to import from a link (a bottom sheet). The tab is laid out as on the web, with the list of files folded away and opened
+over the editor ([Your taskrc](using/settings.md#your-taskrc)). **Download** (in the **⋯** menu by the file's name)
+and **Download all (.zip)** keep a file or the whole folder through the save dialog. **Add holidays** (under **+ New**,
+in a bottom sheet) fetches a country's holidays from holidata.net or
 date.nager.at, or a calendar (`.ics`) from a link, with a plain HTTPS request from the phone (a calendar's link and every
 redirect are held to the rules the Worker applies to a taskrc link), and saves them as a file in the taskrc folder.
 

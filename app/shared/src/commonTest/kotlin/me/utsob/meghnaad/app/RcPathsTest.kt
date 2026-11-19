@@ -69,4 +69,31 @@ class RcPathsTest {
             listing(listOf("holidays/en-US.rc", "taskrc", "a.rc", "holidays/de.rc")),
         )
     }
+
+    private fun show(rows: List<RcTreeRow>) = rows.map { r ->
+        "  ".repeat(r.depth) + (if (r.folder) "${if (r.open) "▾" else "▸"} ${r.name}/" else r.name) + if (r.empty) " (empty)" else ""
+    }
+
+    @Test
+    fun theTreeHasTaskrcFirstEveryFolderAPathRunsThroughAndFoldersBeforeFiles() {
+        val paths = listOf("z.rc", "taskrc", "a/b/c.rc", "a/d.rc", "holidays/en.rc")
+        assertEquals(listOf("taskrc", "▾ a/", "  ▾ b/", "    c.rc", "  d.rc", "▾ holidays/", "  en.rc", "z.rc"), show(rcTree(paths)))
+    }
+
+    @Test
+    fun theTreeLeavesOutWhatIsInAClosedFolderAndShowsTheEmptyOnes() {
+        val rows = rcTree(listOf("taskrc", "a/b/c.rc"), listOf("work", "a/new"), setOf("a/b"))
+        assertEquals(listOf("taskrc", "▾ a/", "  ▸ b/", "  ▾ new/ (empty)", "▾ work/ (empty)"), show(rows))
+    }
+
+    @Test
+    fun aNewNameIsCheckedAgainstTheFolderItGoesInAndWhatIsThere() {
+        val taken = listOf("taskrc", "holidays/en.rc")
+        assertEquals(null, newNameProblem("holidays", "de.rc", taken))
+        assertEquals("holidays/en.rc is there already", newNameProblem("holidays", "en.rc", taken))
+        assertEquals("holidays is there already", newNameProblem("", "holidays", taken))
+        assertEquals("no empty part, . or .. in a name", newNameProblem("", "../x", taken))
+        assertEquals("a name inside the folder, without / or ~ in front", newNameProblem("", "/etc/x", taken))
+        assertEquals("a name is needed", newNameProblem("", "  ", taken))
+    }
 }

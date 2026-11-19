@@ -77,8 +77,14 @@ class TaskrcStateTest {
         assertEquals("holidays/en.rc", st.current)
         assertEquals("holidays/en.rc", store.settingsFile)
         assertEquals(RC_ROOT, st.others.single())
-        st.newName = "holidays/de.rc"
-        st.addFile()
+        // A new file goes in the folder of the file shown.
+        assertEquals("holidays", st.here)
+        st.startNew(RcNew.File)
+        st.newName = "en.rc"
+        st.nameTyped()
+        assertEquals("holidays/en.rc is there already", st.nameProblem)
+        st.newName = "de.rc"
+        st.addNew()
         assertEquals("holidays/de.rc", st.current)
         st.includeIn = RC_ROOT
         st.include()
@@ -96,6 +102,9 @@ class TaskrcStateTest {
         st.removeFile()
         assertEquals(RC_ROOT, st.current)
         assertEquals(1, st.folder?.problems?.size)
+        // The same is found by the check run as the files are typed, before any Apply.
+        st.check()
+        assertEquals(st.folder?.problems, st.live)
         assertNotNull(st.folder?.problems?.single()?.message?.takeIf { "no such file" in it })
 
         // And back to before the delete.

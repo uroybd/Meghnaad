@@ -1,5 +1,25 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,7 +37,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +80,11 @@ class TaskrcState(private val store: Store) {
     var confirmRestore by mutableStateOf(false)
     var confirmDelete by mutableStateOf(false)
     var link by mutableStateOf("")
+    /** A new file or folder being named, in the folder [here]. */
+    var naming by mutableStateOf<RcNew?>(null)
     var newName by mutableStateOf("")
+    /** What is wrong with the name, checked once typing stops. */
+    var nameProblem by mutableStateOf<String?>(null)
     var replace by mutableStateOf(false)
     var includeIn by mutableStateOf(RC_ROOT)
     var note by mutableStateOf<String?>(null)
@@ -73,7 +96,18 @@ class TaskrcState(private val store: Store) {
     private fun currentYear() = civil(store.clockNow(), store.utcOffset).year
 
     val holidataPlaces by lazy { holidataPlaces() }
-    var holidaysOpen by mutableStateOf(false)
+    /** The bottom sheet open: Import, or Add holidays (drawers on the web). */
+    var sheet by mutableStateOf<RcSheet?>(null)
+
+    /** The list of files folded away; null until chosen, which is folded on a phone and shown on a wide screen. */
+    var folded by mutableStateOf<Boolean?>(null)
+    var closed by mutableStateOf<Set<String>>(emptySet())
+    /** Folders made here with no file in them yet: they live only on the screen, since a folder is kept through its files. */
+    var empty by mutableStateOf<List<String>>(emptyList())
+    /** The folder new files and uploads go in: the last folder tapped, else the shown file's. */
+    var here by mutableStateOf("")
+    /** What saving the files as typed would find, worked out by the engine once typing stops (null: not yet). */
+    var live by mutableStateOf<List<RcProblem>?>(null)
     var hSource by mutableStateOf(HolidaySource.Holidata)
     var hHolidata by mutableStateOf("")
     var hNager by mutableStateOf("")
@@ -109,12 +143,43 @@ class TaskrcState(private val store: Store) {
 
     /** Some file has edits (the tab shows a dot). */
     val edited get() = drafts.values.any { it.edited }
-    val coloursOff get() = colourOff(text)
     val paths get() = folder?.files?.map { it.path } ?: listOf(RC_ROOT)
-    val rows get() = listing(if (RC_ROOT in paths) paths else listOf(RC_ROOT) + paths)
+    private val listed get() = if (RC_ROOT in paths) paths else listOf(RC_ROOT) + paths
+    val rows get() = rcTree(listed, empty.filter { f -> listed.none { it.startsWith("$f/") } }, closed)
+    val taken get() = listed + empty + rows.filter { it.folder }.map { it.path }
     val info get() = folder?.files?.firstOrNull { it.path == current }
     val others get() = paths.filter { it != current }
-    val problems get() = folder?.problems?.filter { it.file == current } ?: emptyList()
+    val problems get() = (live ?: folder?.problems ?: emptyList()).filter { it.file == current }
+    fun unused(path: String) = path != RC_ROOT && folder != null && folder?.files?.firstOrNull { it.path == path }?.used != true
+
+    /** Every file's text as it is in its box (or as saved), for the check. */
+    val typed get() = listed.associateWith { drafts[it]?.text ?: "" }
+
+    /** What saving the files as typed would find: a line this app can't use, an include with no file, a credential. */
+    fun check(files: Map<String, String> = typed) {
+        live = try {
+            val arg = kotlinx.serialization.json.JsonObject(files.mapValues { kotlinx.serialization.json.JsonPrimitive(it.value) })
+            engineJson.decodeFromJsonElement(kotlinx.serialization.builtins.ListSerializer(RcProblem.serializer()), callHelper("taskrc_check", arg))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** A folder's row opens or closes it, and makes it the one new files and uploads go in. */
+    fun toggle(folder: String) {
+        closed = if (folder in closed) closed - folder else closed + folder
+        here = folder
+    }
+
+    fun startNew(kind: RcNew) {
+        naming = kind
+        newName = ""
+        nameProblem = null
+    }
+
+    fun nameTyped() {
+        nameProblem = newName.takeIf { it.isNotBlank() }?.let { newNameProblem(here, it, taken) }
+    }
     val isRoot get() = current == RC_ROOT
 
     val hPlace get() = if (hSource == HolidaySource.Nager) hNager else hHolidata
@@ -148,6 +213,7 @@ class TaskrcState(private val store: Store) {
     /** Open a file: its box starts from what is saved, so an edit changes it rather than replacing it with a blank page. */
     suspend fun open(path: String, force: Boolean = false) {
         current = path
+        here = if ('/' in path) path.substringBeforeLast('/') else ""
         store.settingsFile = path.takeIf { it != RC_ROOT }
         confirmDelete = false
         kept = null
@@ -188,17 +254,6 @@ class TaskrcState(private val store: Store) {
         val r = engineJson.decodeFromString(TaskrcResponse.serializer(), body)
         result = r
         drafts[path] = RcDraft(r.text, r.text)
-    }
-
-    /** A theme: its colour lines replace the box's colour lines (Apply keeps them). */
-    fun pickTheme(id: String) {
-        error = null
-        try {
-            text = applyTheme(text, id, if (id == "default") "" else loadTheme(id))
-            result = null
-        } catch (e: Exception) {
-            error = e.message ?: e.toString()
-        }
     }
 
     // A download holds what is saved, never the edits in a box that are not applied (nothing unsafe is in what is saved).
@@ -242,6 +297,7 @@ class TaskrcState(private val store: Store) {
     suspend fun fromLink() = run {
         val r = store.request("POST", "/api/config/taskrc/url", link.trim())
         link = ""
+        sheet = null
         drafts.clear()
         open(RC_ROOT, force = true)
         applied(r, RC_ROOT)
@@ -268,18 +324,27 @@ class TaskrcState(private val store: Store) {
         }
     }
 
-    suspend fun addFile() = run {
-        val path = newName.trim().removePrefix("./")
-        if (path.isEmpty()) return@run
-        if (path in paths) {
-            open(path)
-            newName = ""
-            return@run
-        }
-        applied(store.request("PUT", rcRoute(path)), path)
+    /** A new file is saved empty at once; a new folder is only on the screen until a file goes in it. */
+    suspend fun addNew() {
+        val kind = naming ?: return
+        nameProblem = newNameProblem(here, newName, taken)
+        if (nameProblem != null) return
+        val n = newName.trim().removePrefix("./")
+        val path = if (here.isEmpty()) n else "$here/$n"
+        naming = null
         newName = ""
-        refreshList()
-        open(path)
+        if (kind == RcNew.Folder) {
+            empty = empty + path
+            closed = closed - path
+            here = path
+            return
+        }
+        run {
+            applied(store.request("PUT", rcRoute(path)), path)
+            empty = empty.filter { !path.startsWith("$it/") }
+            refreshList()
+            open(path)
+        }
     }
 
     suspend fun removeFile() {
@@ -357,7 +422,7 @@ class TaskrcState(private val store: Store) {
     suspend fun updateHolidays(get: HolidayGet = ::httpGet) {
         val was = made ?: return
         val source = HolidaySource.entries.firstOrNull { it.id == was.source } ?: return
-        holidaysOpen = true
+        sheet = RcSheet.Holidays
         hSource = source
         hChosen = was.regions
         hSkip = if (source == HolidaySource.Ics) was.skip else null
@@ -383,14 +448,28 @@ class TaskrcState(private val store: Store) {
      * Save the holiday file, and the lines of the main taskrc that use it. If the main taskrc has edits that are not applied, the lines go
      * into its box instead of over them.
      */
-    suspend fun addHolidays() = run {
-        val built = hBuilt ?: return@run
-        val path = built.path
+    suspend fun addHolidays() {
+        val built = hBuilt ?: return
+        saveHolidays(built.path, built.text, hInclude && !included(built.path), hShow && !calendarOn)
+        holidaysAsked()
+    }
+
+    /** A holiday file picked: it goes in holidays/, and the main taskrc includes it and turns the calendar on. */
+    suspend fun holidayFile(picked: PickedFile?) {
+        val f = picked ?: return
+        val text = f.text
+        if (text == null) {
+            error = "${f.name} is too large."
+            return
+        }
+        val path = "holidays/" + f.name.trimStart('.').replace('/', '-').replace('\\', '-').ifEmpty { "holidays.rc" }
+        saveHolidays(path, text, !included(path), !calendarOn)
+    }
+
+    private suspend fun saveHolidays(path: String, text: String, wantInclude: Boolean, wantCalendar: Boolean) = run {
         note = null
-        applied(store.request("PUT", rcRoute(path), built.text), path)
+        applied(store.request("PUT", rcRoute(path), text), path)
         val saved = result
-        val wantInclude = hInclude && !included(path)
-        val wantCalendar = hShow && !calendarOn
         if (wantInclude || wantCalendar) {
             val root = drafts[RC_ROOT]
             val before = root?.text ?: store.request("GET", rcRoute(RC_ROOT))
@@ -405,15 +484,19 @@ class TaskrcState(private val store: Store) {
             }
         }
         result = saved
-        holidaysAsked()
+        sheet = null
         store.settingsChanged()
         refreshList()
         open(path, force = true)
     }
 
-    /** Add the files picked, or make them the whole folder: one step, one version to go back to. */
-    suspend fun upload(picked: List<PickedFile>) {
-        val up = uploadFiles(picked.map { Picked(it.name, it.relative, it.text) })
+    /**
+     * Add the files picked (into the folder [here]) or a whole folder (as it is; with [replace], it is the folder now): one step, one
+     * version to go back to.
+     */
+    suspend fun upload(picked: List<PickedFile>, whole: Boolean = true) {
+        val got = uploadFiles(picked.map { Picked(it.name, it.relative, it.text) })
+        val up = if (whole || here.isEmpty()) got else Upload(got.files.map { (p, t) -> "$here/$p" to t }, got.skipped)
         skipped = up.skipped
         if (up.files.isEmpty()) {
             error = "There was no taskrc file to add."
@@ -421,7 +504,7 @@ class TaskrcState(private val store: Store) {
         }
         run {
             val body = kotlinx.serialization.json.buildJsonObject {
-                put("mode", kotlinx.serialization.json.JsonPrimitive(if (replace) "replace" else "merge"))
+                put("mode", kotlinx.serialization.json.JsonPrimitive(if (whole && replace) "replace" else "merge"))
                 put("files", kotlinx.serialization.json.buildJsonArray {
                     for ((path, text) in up.files) add(kotlinx.serialization.json.buildJsonObject {
                         put("path", kotlinx.serialization.json.JsonPrimitive(path))
@@ -431,6 +514,8 @@ class TaskrcState(private val store: Store) {
             }
             val r = engineJson.decodeFromString(TaskrcResponse.serializer(), store.request("POST", "/api/config/files/import", body.toString()))
             drafts.clear()
+            sheet = null
+            empty = empty.filter { f -> up.files.none { it.first.startsWith("$f/") } }
             refreshList()
             if (folder?.files?.none { it.path == current } == true) current = RC_ROOT
             open(current, force = true)
@@ -440,45 +525,191 @@ class TaskrcState(private val store: Store) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+enum class RcNew { File, Folder }
+
+enum class RcSheet { Import, Holidays }
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TaskrcPanel(store: Store, st: TaskrcState) {
     val colors = MaterialTheme.colorScheme
     LaunchedEffect(Unit) { st.load() }
     // The link changed (a link, the back button): show that file.
     LaunchedEffect(store.settingsFile) { if (!st.loading && (store.settingsFile ?: RC_ROOT) != st.current) st.open(store.settingsFile ?: RC_ROOT) }
-    // The saved settings changed somewhere else (the console's `config`, a sync): follow them, unless there are edits here.
+    // The saved settings changed somewhere else (the console's `config`, Task colours, a sync): follow them, unless there are edits here.
     LaunchedEffect(store.config) { st.follow() }
+    // The check runs once typing stops, so typing stays quick.
+    val typed = st.typed
+    LaunchedEffect(typed) {
+        delay(300)
+        st.check(typed)
+    }
+    // The name of a new file or folder is checked once typing stops.
+    LaunchedEffect(st.newName) {
+        delay(300)
+        st.nameTyped()
+    }
+    var about by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("taskrc", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        Dim(
-            "UDAs, custom reports, contexts, holidays and journal settings live in your ~/.taskrc, not in your synced data, so this app keeps a copy: " +
-                "a folder of files, as written. include works as in Taskwarrior, with the path written from the file that has it. " +
-                "They are saved with your tasks and stay until you change them. A line this app can't use is commented out, not lost. " +
-                "Sync settings and anything that looks like a credential are removed; they are never stored, logged or shown.",
-            size = 13,
-        )
-        store.config?.configError?.let {
-            Text("The saved settings couldn't be read ($it). Tasks still work with the defaults. Importing below replaces them; the unreadable copy is kept aside.", color = colors.error, fontSize = 13.sp)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // A phone: the list of files is folded away, and opens over the editor. A wide screen: it sits beside it.
+        val wide = maxWidth >= 760.dp
+        val folded = st.folded ?: !wide
+        Column(Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("taskrc", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Dim("A copy of your taskrc, saved with your tasks.", Modifier.weight(1f), 13)
+                IconButton(onClick = { about = !about }) { LucideIcon("info", size = 16.dp) }
+            }
+            if (about) {
+                Dim(
+                    "UDAs, custom reports, contexts, holidays and journal settings live in your ~/.taskrc, not in your synced data, so this app keeps a copy: " +
+                        "a folder of files, as written. include works as in Taskwarrior, with the path written from the file that has it. " +
+                        "They are saved with your tasks and stay until you change them. A line this app can't use is commented out, not lost. " +
+                        "Sync settings and anything that looks like a credential are removed; they are never stored, logged or shown. The colours are set in Appearance.",
+                    size = 13,
+                )
+            }
+            store.config?.configError?.let {
+                Text("The saved settings couldn't be read ($it). Tasks still work with the defaults. Importing replaces them; the unreadable copy is kept aside.", color = colors.error, fontSize = 13.sp)
+            }
+            Row(Modifier.weight(1f).fillMaxWidth().border(1.dp, colors.outlineVariant, RoundedCornerShape(8.dp))) {
+                if (wide && !folded) {
+                    RcSidebar(store, st, Modifier.width(240.dp).fillMaxHeight())
+                    VerticalDivider()
+                }
+                EditorPane(store, st, folded, Modifier.weight(1f).fillMaxHeight())
+            }
         }
+        if (!wide && !folded) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).clickable { st.folded = true })
+            Surface(Modifier.fillMaxHeight().width(280.dp), shadowElevation = 8.dp, color = colors.surface) {
+                RcSidebar(store, st, Modifier.fillMaxSize())
+            }
+        }
+    }
 
-        // The files.
-        Column(Modifier.fillMaxWidth()) {
+    when (st.sheet) {
+        RcSheet.Holidays -> ModalBottomSheet(onDismissRequest = { st.sheet = null }) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Add holidays", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                HolidaysSection(store, st)
+            }
+        }
+        RcSheet.Import -> ModalBottomSheet(onDismissRequest = { st.sheet = null }) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Import", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LucideIcon("link", size = 14.dp)
+                    Text("From a link", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+                OutlinedTextField(
+                    st.link, { st.link = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    placeholder = { Text("https://raw.githubusercontent.com/you/dotfiles/main/.taskrc", fontSize = 12.sp, maxLines = 1) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
+                )
+                OutlinedButton(enabled = !st.busy && st.link.isNotBlank(), onClick = { store.go { st.fromLink() } }) { Text("Import") }
+                Dim("Fetched and saved as the main taskrc straight away (Restore previous undoes it). GitHub and GitLab file pages work too. A public link; keep it free of passwords. Files it includes are not fetched: add them with + New.", size = 12)
+                if (store.files != null) {
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LucideIcon("folder-up", size = 14.dp)
+                        Text("A folder, as it is", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = st.replace, onCheckedChange = { st.replace = it })
+                        Text("Replace what is here (needs a taskrc)", fontSize = 13.sp)
+                    }
+                    OutlinedButton(enabled = !st.busy, onClick = { store.go { st.upload(files?.pickFolder() ?: emptyList()) } }) { Text("Choose a folder") }
+                    Dim("Without Replace, the files are added to what is here, and same names are overwritten.", size = 12)
+                }
+            }
+        }
+        null -> {}
+    }
+}
+
+/** The files as a tree, with + New on top (every way to add something) and the zip at the bottom (RcTree.svelte). */
+@Composable
+private fun RcSidebar(store: Store, st: TaskrcState, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    var menu by remember { mutableStateOf(false) }
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                OutlinedButton(onClick = { menu = true }, enabled = !st.busy) {
+                    LucideIcon("plus", size = 15.dp)
+                    Text("  New", fontWeight = FontWeight.SemiBold)
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    @Composable
+                    fun item(icon: String, label: String, onClick: () -> Unit) = DropdownMenuItem(
+                        text = { Text(label) }, leadingIcon = { LucideIcon(icon, size = 16.dp) },
+                        onClick = { menu = false; onClick() },
+                    )
+                    item("file-plus", "New file") { st.startNew(RcNew.File) }
+                    item("folder-plus", "New folder") { st.startNew(RcNew.Folder) }
+                    if (store.files != null) {
+                        HorizontalDivider()
+                        item("upload", "Upload files") { store.go { st.upload(files?.pickMany() ?: emptyList(), whole = false) } }
+                        item("folder-up", "Upload a folder") { store.go { st.upload(files?.pickFolder() ?: emptyList()) } }
+                    }
+                    item("link", "Import from a link…") { st.sheet = RcSheet.Import }
+                    HorizontalDivider()
+                    item("calendar-plus", "Add holidays…") { st.sheet = RcSheet.Holidays }
+                    if (store.files != null) item("upload", "Upload a holiday file") { store.go { st.holidayFile(files?.pick()) } }
+                    Dim(
+                        "New files and uploads go in " + st.here.ifEmpty { "the top folder" } + ".",
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp).widthIn(max = 240.dp), 12,
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = { st.folded = true }) { LucideIcon("panel-left-close", size = 16.dp) }
+        }
+        st.naming?.let { kind ->
+            Column(Modifier.padding(horizontal = 8.dp).padding(bottom = 8.dp)) {
+                OutlinedTextField(
+                    st.newName, { st.newName = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text((if (kind == RcNew.File) "New file" else "New folder") + st.here.takeIf { it.isNotEmpty() }?.let { " in $it" }.orEmpty()) },
+                    placeholder = { Text(if (kind == RcNew.File) "en-US.rc" else "folder", fontSize = 12.sp) },
+                    isError = st.nameProblem != null,
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
+                )
+                st.nameProblem?.let { Text(it, color = extras.warn, fontSize = 12.sp) }
+                Row {
+                    TextButton(onClick = { st.naming = null }) { Text("Cancel") }
+                    TextButton(enabled = !st.busy && st.newName.isNotBlank(), onClick = { store.go { st.addNew() } }) { Text("Add") }
+                }
+            }
+        }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             for (r in st.rows) {
-                if (r.path.isEmpty()) {
-                    Row(Modifier.padding(start = (r.depth * 14 + 6).dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        LucideIcon("folder", size = 14.dp)
-                        Dim(r.name, size = 13)
+                if (r.folder) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { st.toggle(r.path) }
+                            .padding(start = (r.depth * 14 + 6).dp, top = 8.dp, bottom = 8.dp, end = 8.dp)
+                            .alpha(if (r.empty) 0.6f else 1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        LucideIcon(if (r.open) "chevron-down" else "chevron-right", size = 14.dp)
+                        LucideIcon(if (r.open) "folder-open" else "folder", size = 14.dp)
+                        Text(r.name, Modifier.weight(1f), fontSize = 14.sp, color = if (r.path == st.here) colors.onSurface else colors.onSurfaceVariant)
+                        if (r.empty) Dim("empty, not saved", size = 11)
                     }
                 } else {
                     val on = r.path == st.current
                     val d = st.drafts[r.path]
                     Row(
                         Modifier.fillMaxWidth()
-                            .background(if (on) colors.surfaceVariant else colors.background)
-                            .clickable { store.go { st.open(r.path) } }
-                            .padding(start = (r.depth * 14 + 6).dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
+                            .background(if (on) colors.surfaceVariant else Color.Transparent)
+                            .clickable {
+                                store.go { st.open(r.path) }
+                                // On a phone the list is over the editor: the file chosen is what is wanted next.
+                                if (st.folded != false) st.folded = null
+                            }
+                            .padding(start = (r.depth * 14 + 25).dp, top = 9.dp, bottom = 9.dp, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
@@ -486,92 +717,90 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
                         Text(r.name, Modifier.weight(1f), fontSize = 14.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
                         // Not applied yet.
                         if (d != null && d.edited) Box(Modifier.size(7.dp).background(colors.primary, CircleShape))
-                        if (st.folder != null && st.folder?.files?.firstOrNull { it.path == r.path }?.used == false) Dim("unused", size = 11)
+                        if (st.unused(r.path)) Dim("unused", size = 11)
                     }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                st.newName, { st.newName = it }, Modifier.weight(1f), singleLine = true,
-                placeholder = { Text("holidays/en-US.rc", fontSize = 12.sp, maxLines = 1) },
-                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
-            )
-            OutlinedButton(enabled = !st.busy && st.newName.isNotBlank(), onClick = { store.go { st.addFile() } }) { Text("Add") }
-        }
         if (store.files != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(enabled = !st.busy, onClick = { store.go { st.upload(files?.pickMany() ?: emptyList()) } }) { Text("Add files") }
-                OutlinedButton(enabled = !st.busy, onClick = { store.go { st.upload(files?.pickFolder() ?: emptyList()) } }) { Text("Import folder") }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = st.replace, onCheckedChange = { st.replace = it })
-                Text("Replace what is here (needs a taskrc)", fontSize = 13.sp)
-            }
-            OutlinedButton(enabled = !st.busy, onClick = { store.go { st.downloadAll() } }) {
+            HorizontalDivider()
+            TextButton(onClick = { store.go { st.downloadAll() } }, enabled = !st.busy, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
                 LucideIcon("download", size = 14.dp)
-                Text("  Download all (.zip)", fontSize = 13.sp)
+                Text("  Download all (.zip)", Modifier.weight(1f), fontSize = 13.sp)
             }
         }
+    }
+}
 
-        HolidaysSection(store, st)
-
-        // The file shown.
-        Text(st.current, fontSize = 14.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+/** The file shown: its name and ⋯, the editor taking the height, and under it what was found and the buttons, always in view. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EditorPane(store: Store, st: TaskrcState, folded: Boolean, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    var more by remember { mutableStateOf(false) }
+    Column(modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (folded) IconButton(onClick = { st.folded = false }) { LucideIcon("panel-left-open", size = 16.dp) }
+            Text(st.current, Modifier.weight(1f), fontSize = 14.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+            Box {
+                IconButton(onClick = { more = true }) { LucideIcon("ellipsis", size = 16.dp) }
+                DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                    if (store.files != null) {
+                        DropdownMenuItem(
+                            text = { Text("Download") }, leadingIcon = { LucideIcon("download", size = 16.dp) },
+                            enabled = !st.busy && !st.loading && st.draft != null,
+                            onClick = { more = false; store.go { st.downloadFile() } },
+                        )
+                    }
+                    if (st.made != null) {
+                        DropdownMenuItem(
+                            text = { Text("Update holidays") }, leadingIcon = { LucideIcon("calendar-days", size = 16.dp) },
+                            enabled = !st.busy && !st.hLoading,
+                            onClick = { more = false; store.go { st.updateHolidays() } },
+                        )
+                    }
+                    if (!st.isRoot && st.others.isNotEmpty()) {
+                        HorizontalDivider()
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp).widthIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Dim("Include this file in", size = 12)
+                            val at = st.others.indexOf(st.includeIn).takeIf { it >= 0 } ?: 0
+                            Choice(st.others[at], st.others) { st.includeIn = st.others[it] }
+                            Dim("Adds ${includeLine(st.others[at], st.current)} to that file; Apply keeps it.", size = 12)
+                            OutlinedButton(onClick = { more = false; st.includeIn = st.others[at]; store.go { st.include() } }) { Text("Include") }
+                        }
+                        HorizontalDivider()
+                    }
+                    if (!st.isRoot) {
+                        DropdownMenuItem(
+                            text = { Text(if (st.confirmDelete) "Tap again to delete" else "Delete file", color = colors.error) },
+                            leadingIcon = { LucideIcon("trash-2", size = 16.dp) },
+                            enabled = !st.busy,
+                            onClick = { store.go { st.removeFile() } },
+                        )
+                    }
+                }
+            }
+        }
         st.info?.takeIf { it.includes.isNotEmpty() }?.let { i ->
             Dim("Includes " + i.includes.joinToString(", ") { it.target + if (it.found == null) " (not found)" else "" } + ".", size = 12)
         }
-        for (p in st.problems) Text("Line ${p.line}: ${p.message}", color = extras.warn, fontSize = 13.sp)
 
-        if (st.isRoot) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Dim("Colour theme")
-                Choice("choose…", THEMES.map { it.label }, hints = THEMES.map { it.note }) { st.pickTheme(THEMES[it].id) }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Switch(checked = !st.coloursOff, onCheckedChange = { st.text = withColour(st.text, it) })
-                Text("Colours", fontSize = 14.sp)
-            }
-            Dim("A theme replaces the colour lines below; Apply to keep it. The Meghnaad theme is what applies when there are none.", size = 12)
-
-            if (store.files != null) {
-                OutlinedButton(onClick = { store.go { files?.pick()?.text?.let { st.text = it; st.result = null } } }) { Text("Choose a file") }
-            }
-            Dim("Or import from a link")
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    st.link, { st.link = it }, Modifier.weight(1f), singleLine = true,
-                    placeholder = { Text("https://raw.githubusercontent.com/you/dotfiles/main/.taskrc", fontSize = 12.sp, maxLines = 1) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
-                )
-                OutlinedButton(enabled = !st.busy && !st.loading && st.link.isNotBlank(), onClick = { store.go { st.fromLink() } }) { Text("Import") }
-            }
-            Dim("Fetched and saved straight away (Restore previous undoes it). GitHub and GitLab file pages work too. A public link; keep it free of passwords. Files it includes are not fetched: add them above.", size = 12)
+        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+            RcTextField(
+                st.text, { st.text = it }, enabled = !st.loading && st.draft != null,
+                placeholder = if (st.loading) "Loading…" else if (st.isRoot) "Nothing saved yet. Paste your taskrc here." else "An empty file.",
+                problems = st.problems.map { it.line }.toSet(),
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
-        RcTextField(
-            st.text, { st.text = it }, enabled = !st.loading && st.draft != null,
-            placeholder = if (st.loading) "Loading…" else if (st.isRoot) "Nothing saved yet. Paste your taskrc here." else "An empty file.",
-            problems = st.problems.map { it.line }.toSet(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        if (!st.isRoot && st.others.isNotEmpty()) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Dim("Include this file in")
-                val at = st.others.indexOf(st.includeIn).takeIf { it >= 0 } ?: 0
-                Choice(st.others[at], st.others) { st.includeIn = st.others[it] }
-                OutlinedButton(onClick = { store.go { st.include() } }) { Text("Include") }
-            }
-            Dim("Adds ${includeLine(st.others.getOrElse(st.others.indexOf(st.includeIn).coerceAtLeast(0)) { RC_ROOT }, st.current)} to that file; Apply keeps it.", size = 12)
-        }
-
-        st.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
-        st.note?.let { Dim(it, size = 13) }
-        if (st.skipped.isNotEmpty()) Text("Left out: ${st.skipped.joinToString(", ")}", color = extras.warn, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-        st.kept?.let { Dim(it, size = 12) }
-        st.result?.let { r ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (p in st.problems) Text("Line ${p.line}: ${p.message}", color = extras.warn, fontSize = 13.sp)
+            st.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
+            st.note?.let { Dim(it, size = 13) }
+            if (st.skipped.isNotEmpty()) Text("Left out: ${st.skipped.joinToString(", ")}", color = extras.warn, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            st.kept?.let { Dim(it, size = 12) }
+            st.result?.let { r ->
                 Text("Saved ${r.udas} UDA${if (r.udas == 1) "" else "s"}, ${r.reports} report${if (r.reports == 1) "" else "s"}, ${r.contexts} context${if (r.contexts == 1) "" else "s"}.", color = extras.ok, fontSize = 13.sp)
                 if (r.blocked.isNotEmpty()) Text("Removed for safety (${r.blocked.size}): ${r.blocked.joinToString(", ")}", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 if (r.commented.isNotEmpty()) {
@@ -592,54 +821,26 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
         }
         // Wraps on a phone: in one row the buttons before Apply took its width, leaving it there but not drawn.
         FlowRow(
-            Modifier.fillMaxWidth().padding(bottom = 24.dp),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
             itemVerticalAlignment = Alignment.CenterVertically,
         ) {
+            if (st.fileEdited) TextButton(onClick = { st.draft?.let { it.text = it.saved } }) { Text("Revert edits") }
             if (store.config?.hasPrevious == true) {
                 TextButton(onClick = { store.go { st.restore() } }, enabled = !st.busy) {
                     LucideIcon("rotate-ccw", size = 14.dp)
                     Text("  " + if (st.confirmRestore) "Tap again to restore" else "Restore previous", fontSize = 13.sp)
                 }
             }
-            if (store.files != null) {
-                TextButton(onClick = { store.go { st.downloadFile() } }, enabled = !st.busy && !st.loading && st.draft != null) {
-                    LucideIcon("download", size = 14.dp)
-                    Text("  Download", fontSize = 13.sp)
-                }
-            }
-            if (!st.isRoot) {
-                TextButton(onClick = { store.go { st.removeFile() } }, enabled = !st.busy) {
-                    LucideIcon("trash-2", size = 14.dp)
-                    Text("  " + if (st.confirmDelete) "Tap again to delete" else "Delete file", fontSize = 13.sp, color = colors.error)
-                }
-            }
-            if (st.made != null) {
-                TextButton(onClick = { store.go { st.updateHolidays() } }, enabled = !st.busy && !st.hLoading) {
-                    LucideIcon("calendar-days", size = 14.dp)
-                    Text("  Update holidays", fontSize = 13.sp)
-                }
-            }
-            if (st.fileEdited) TextButton(onClick = { st.draft?.let { it.text = it.saved } }) { Text("Revert edits") }
             Button(onClick = { store.go { st.save() } }, enabled = !st.busy && !st.loading && st.fileEdited) { Text("Apply") }
         }
     }
 }
 
-/** Add holidays: where from, a country or a link and the years, what was found, and the file that makes. */
+/** Add holidays, in its sheet: where from, a country or a link and the years, what was found, and the file that makes. */
 @Composable
 private fun HolidaysSection(store: Store, st: TaskrcState) {
     val colors = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().clickable { st.holidaysOpen = !st.holidaysOpen }.padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        LucideIcon("calendar-days", size = 14.dp)
-        Text("Add holidays", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-        LucideIcon(if (st.holidaysOpen) "chevron-down" else "chevron-right", size = 14.dp)
-    }
-    if (!st.holidaysOpen) return
     LaunchedEffect(st.hSource) { if (st.hSource == HolidaySource.Nager) st.loadNagerPlaces() }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Dim(

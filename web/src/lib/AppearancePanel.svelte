@@ -11,6 +11,7 @@
   import { ArrowDown, ArrowUp, Check, Plus, X } from './icons';
   import { transformProblems } from './markdown';
   import { store } from './store.svelte';
+  import TaskColours from './TaskColours.svelte';
 
   /** There are edits not yet applied (the tab shows a dot). */
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
@@ -125,6 +126,8 @@
 </script>
 
 <section aria-label="Appearance settings">
+  <TaskColours />
+
   <h2>IDs</h2>
   <label class="pick">
     <input type="checkbox" bind:checked={idFallback} onchange={() => (done = false)} />

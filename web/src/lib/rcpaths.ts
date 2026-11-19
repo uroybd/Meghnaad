@@ -96,3 +96,68 @@ export function listing(paths: string[]): Row[] {
   }
   return rows;
 }
+
+/** A row of the file tree: a folder (open or not; empty when no file is in it) or a file. */
+export interface TreeRow {
+  kind: 'folder' | 'file';
+  /** From the top of the folder: `holidays/en.rc`, or a folder's own path, `holidays`. */
+  path: string;
+  name: string;
+  depth: number;
+  /** A folder: whether its rows are shown. */
+  open: boolean;
+  /** A folder with no file in it, anywhere below: it lives only in the page, and is never saved. */
+  empty: boolean;
+}
+
+/**
+ * The files as a tree: `taskrc` first, then in each folder its folders and then its files, by name. Every folder a path
+ * runs through is a row, as are the empty ones the page holds (`empty`); the rows in a folder that is `closed` are left
+ * out.
+ */
+export function tree(paths: string[], empty: string[] = [], closed: ReadonlySet<string> = new Set()): TreeRow[] {
+  const folders = new Set<string>();
+  const addFolders = (path: string, includeSelf: boolean) => {
+    const parts = path.split('/');
+    for (let i = 1; i < parts.length + (includeSelf ? 1 : 0); i++) folders.add(parts.slice(0, i).join('/'));
+  };
+  for (const p of paths) addFolders(p, false);
+  for (const f of empty) addFolders(f, true);
+  const parent = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+  const name = (p: string) => p.slice(p.lastIndexOf('/') + 1);
+  const hasFile = (f: string) => paths.some((p) => p.startsWith(`${f}/`));
+  const rows: TreeRow[] = [];
+  const walk = (dir: string, depth: number) => {
+    const byName = (a: string, b: string) => name(a).localeCompare(name(b));
+    const files = paths
+      .filter((p) => parent(p) === dir)
+      .sort((a, b) => Number(b === ROOT) - Number(a === ROOT) || byName(a, b));
+    const subs = [...folders].filter((f) => parent(f) === dir).sort(byName);
+    const top: string[] = dir === '' ? files.filter((p) => p === ROOT) : [];
+    for (const p of top) rows.push({ kind: 'file', path: p, name: name(p), depth, open: false, empty: false });
+    for (const f of subs) {
+      const open = !closed.has(f);
+      rows.push({ kind: 'folder', path: f, name: name(f), depth, open, empty: !hasFile(f) });
+      if (open) walk(f, depth + 1);
+    }
+    for (const p of files.filter((p) => !top.includes(p)))
+      rows.push({ kind: 'file', path: p, name: name(p), depth, open: false, empty: false });
+  };
+  walk('', 0);
+  return rows;
+}
+
+/** What is wrong with `name` as a new file or folder in the folder `dir`, or `null`. `taken` are the paths there are. */
+export function newNameProblem(dir: string, name: string, taken: string[]): string | null {
+  const n = name.trim().replace(/^\.\//, '');
+  if (!n) return 'a name is needed';
+  if (n.startsWith('/') || n.startsWith('~') || n.includes('\\'))
+    return 'a name inside the folder, without / or ~ in front';
+  const parts = n.split('/');
+  if (parts.some((p) => p === '' || p === '.' || p === '..')) return 'no empty part, . or .. in a name';
+  if ([...n].some((c) => c < ' ')) return 'no control characters';
+  const path = dir ? `${dir}/${n}` : n;
+  if (path.length > 200) return 'at most 200 characters';
+  if (taken.some((t) => t === path || t.startsWith(`${path}/`))) return `${path} is there already`;
+  return null;
+}

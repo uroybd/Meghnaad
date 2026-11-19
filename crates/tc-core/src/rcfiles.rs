@@ -114,6 +114,33 @@ pub fn sanitize(text: &str) -> Sanitized {
     out
 }
 
+/// What saving the files `tree` as they are would find, without saving them: each line that would be removed as a sync
+/// or credential setting, each line that would be commented out and why, and what following the includes finds (an
+/// include that names no file, nesting too deep). By file, then line. For the editor, while typing.
+pub fn check(tree: &Tree) -> Vec<Problem> {
+    let mut out = resolve(tree).problems;
+    for (file, text) in tree {
+        let contents: Vec<&str> = text.lines().collect();
+        let (parsed, verdicts) = taskrc::parse_lines(&contents);
+        for (i, content) in contents.iter().enumerate() {
+            let message = if secret_name(content).is_some() || verdicts.get(i) == Some(&Verdict::Blocked) {
+                "a sync or credential setting: removed on Apply, never stored".to_owned()
+            } else if verdicts.get(i) == Some(&Verdict::Unsupported) {
+                format!("{}: commented out on Apply", unsupported_reason(content, &parsed))
+            } else {
+                continue;
+            };
+            out.push(Problem {
+                file: file.clone(),
+                line: i + 1,
+                message,
+            });
+        }
+    }
+    out.sort_by(|a, b| (&a.file, a.line).cmp(&(&b.file, b.line)));
+    out
+}
+
 fn unsupported_reason(line: &str, parsed: &Parsed) -> String {
     let line = line.split('#').next().unwrap_or("").trim();
     let Some((name, _)) = line.split_once('=') else {
@@ -352,6 +379,38 @@ mod tests {
 
     fn tree(files: &[(&str, &str)]) -> Tree {
         files.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect()
+    }
+
+    #[test]
+    fn a_check_finds_what_saving_would_change_without_saving() {
+        let t = tree(&[
+            (
+                "taskrc",
+                "bulk=3\ninclude nowhere.rc\nsync.encryption_secret=x\nnonsense line\n",
+            ),
+            ("a.rc", "rc.x=1\n"),
+        ]);
+        let found: Vec<(String, usize)> = check(&t).into_iter().map(|p| (p.file, p.line)).collect();
+        assert!(
+            found.contains(&("taskrc".to_owned(), 2)),
+            "the include that names no file: {found:?}"
+        );
+        assert!(found.contains(&("taskrc".to_owned(), 3)), "the credential: {found:?}");
+        assert!(
+            found.contains(&("taskrc".to_owned(), 4)),
+            "the line that is no setting: {found:?}"
+        );
+        assert!(!found.contains(&("taskrc".to_owned(), 1)));
+        let messages: Vec<String> = check(&t).into_iter().map(|p| p.message).collect();
+        assert!(
+            messages.iter().all(|m| !m.contains("=x")),
+            "never the value: {messages:?}"
+        );
+        // Sorted by file, then line.
+        let mut sorted = found.clone();
+        sorted.sort();
+        assert_eq!(found, sorted);
+        assert!(check(&tree(&[("taskrc", "bulk=3\n")])).is_empty());
     }
 
     #[test]

@@ -281,6 +281,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<Vec<String>>(1)?.into_iter().collect()
         )),
         "taskrc_highlight" => json!(crate::rc_highlight::highlight(&a.req::<String>(0)?)),
+        "taskrc_check" => json!(crate::rcfiles::check(&a.req::<crate::rcfiles::Tree>(0)?)),
         "describe_urgency_key" => json!(urgency_settings::describe(&a.req::<String>(0)?)),
         "urgency_terms" => json!(urgency_settings::TERMS
             .iter()

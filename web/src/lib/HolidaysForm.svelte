@@ -17,7 +17,6 @@
     type Place,
     type Source,
   } from './holidays';
-  import { CalendarDays } from './icons';
 
   let {
     busy = false,
@@ -43,7 +42,6 @@
   /** How many holidays to list before "and N more". */
   const SHOWN = 60;
 
-  let open = $state(false);
   let source = $state<Source>('holidata');
   let place = $state<Record<'holidata' | 'nager', string>>({ holidata: guess, nager: '' });
   let nager = $state<Place[] | null>(null);
@@ -86,7 +84,7 @@
 
   // Nager.Date's countries are asked for once, when it is first chosen.
   $effect(() => {
-    if (source !== 'nager' || nager || !open) return;
+    if (source !== 'nager' || nager) return;
     untrack(() => {
       void (async () => {
         try {
@@ -104,7 +102,6 @@
     const was = settingsOf(again.text);
     if (!was) return;
     untrack(() => {
-      open = true;
       source = was.source;
       chosen = was.regions;
       skip = was.source === 'ics' ? was.skip : null;
@@ -177,8 +174,7 @@
   ];
 </script>
 
-<details class="holidays" bind:open>
-  <summary><CalendarDays size={14} /> Add holidays</summary>
+<div class="holidays">
   <p class="dim small">
     Public holidays for a country, saved as a file here and shown in the calendar. Holidata is the data behind
     Taskwarrior's own holiday files. Nager.Date covers more countries, but for some it lists only the days that fall on
@@ -314,21 +310,12 @@
     <button class="primary" onclick={save} disabled={busy || built.count === 0}>Save <code>{built.path}</code></button>
     <span class="dim small">replaces that file if it is there; Restore previous undoes it</span>
   {/if}
-</details>
+</div>
 
 <style>
   .holidays {
-    margin-top: 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 6px 10px;
-  }
-  summary {
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
+    display: grid;
+    gap: 8px;
   }
   .sources {
     display: flex;

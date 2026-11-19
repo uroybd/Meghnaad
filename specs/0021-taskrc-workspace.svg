@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
+  <title>The taskrc tab as a small workspace (spec 0021)</title>
+  <style>
+    .bg { fill: #1b1b18; }
+    .panel { fill: #23231f; stroke: #34352c; }
+    .t { fill: #e8e8e2; }
+    .d { fill: #9a9a90; }
+    .a { fill: #58a6ff; }
+    .w { fill: #d29922; }
+    .mono { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+    .line { stroke: #34352c; }
+    .note { fill: #c3a6ff; font-size: 12.5px; }
+    .arrow { stroke: #c3a6ff; stroke-width: 1.2; fill: none; marker-end: url(#tip); }
+  </style>
+  <defs>
+    <symbol id="up" viewBox="0 0 14 14"><path d="M7,10 V2 M3.5,5.5 L7,2 L10.5,5.5 M2,12.5 H12" fill="none" stroke="#9a9a90" stroke-width="1.3"/></symbol>
+    <symbol id="down" viewBox="0 0 14 14"><path d="M7,2 V10 M3.5,6.5 L7,10 L10.5,6.5 M2,12.5 H12" fill="none" stroke="#9a9a90" stroke-width="1.3"/></symbol>
+    <symbol id="link" viewBox="0 0 14 14"><path d="M6,8 L8,6 M5,6.5 L3.5,8 A2,2 0 0 0 6,10.5 L7.5,9 M9,7.5 L10.5,6 A2,2 0 0 0 8,3.5 L6.5,5" fill="none" stroke="#9a9a90" stroke-width="1.3"/></symbol>
+    <symbol id="cal" viewBox="0 0 14 14"><rect x="1.5" y="2.5" width="11" height="10" rx="1.5" fill="none" stroke="#9a9a90" stroke-width="1.3"/><path d="M1.5,5.5 H12.5 M4.5,1 V4 M9.5,1 V4 M7,7 V11 M5,9 H9" stroke="#9a9a90" stroke-width="1.2"/></symbol>
+    <symbol id="file" viewBox="0 0 12 14"><path d="M1,1 h7 l3,3 v9 h-10 z" fill="none" stroke="#9a9a90" stroke-width="1.2"/></symbol>
+    <symbol id="folder" viewBox="0 0 14 12"><path d="M1,2 h4 l1.5,1.5 h6.5 v7.5 h-12 z" fill="none" stroke="#9a9a90" stroke-width="1.2"/></symbol>
+    <marker id="tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#c3a6ff"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1200" height="780"/>
+
+  <!-- Tabs and heading -->
+  <text x="40" y="38" class="t" font-size="22" font-weight="700">Settings</text>
+  <text x="40" y="72" class="d">General   Appearance   Keybindings</text>
+  <text x="300" y="72" class="t" font-weight="600">taskrc</text>
+  <rect x="294" y="80" width="56" height="3" class="a"/>
+  <text x="370" y="72" class="d">tasksh   Commands   Hooks   Urgency</text>
+  <line x1="40" y1="84" x2="900" y2="84" class="line"/>
+  <text x="40" y="112" class="t" font-size="17" font-weight="700">taskrc</text>
+  <text x="104" y="112" class="d">A copy of your taskrc, as a folder of files, saved with your tasks.</text>
+  <circle cx="555" cy="107" r="8" fill="none" stroke="#9a9a90"/><text x="552" y="112" class="d" font-size="11">i</text>
+
+  <!-- Workspace frame -->
+  <rect x="40" y="128" width="860" height="600" rx="8" class="panel"/>
+
+  <!-- Sidebar -->
+  <line x1="290" y1="128" x2="290" y2="728" class="line"/>
+  <rect x="56" y="144" width="96" height="32" rx="16" fill="#2c3a52" stroke="#58a6ff"/>
+  <text x="74" y="165" class="t" font-weight="600">+  New</text>
+  <text x="262" y="165" class="d" font-size="16">◀</text>
+
+  <use href="#file" x="76" y="194" width="14" height="14"/><text x="96" y="206" class="t">taskrc</text>
+  <rect x="52" y="190" width="230" height="24" rx="4" fill="#ffffff" opacity="0.06"/>
+  <text x="60" y="234" class="d">▾</text><use href="#folder" x="76" y="222" width="14" height="14"/><text x="96" y="234" class="t">holidays</text>
+  <use href="#file" x="100" y="248" width="14" height="14"/><text x="120" y="260" class="t">nager-BD.rc</text>
+  <text x="60" y="286" class="d">▸</text><use href="#folder" x="76" y="274" width="14" height="14"/><text x="96" y="286" class="t">themes</text>
+  <text x="60" y="312" class="d" opacity="0.6">▸</text><use href="#folder" x="76" y="300" width="14" height="14" opacity="0.6"/><text x="96" y="312" class="d" opacity="0.6">work</text>
+  <text x="150" y="312" class="d" font-size="11.5" font-style="italic" opacity="0.8">empty, not saved</text>
+
+  <line x1="40" y1="684" x2="290" y2="684" class="line"/>
+  <use href="#down" x="58" y="699" width="15" height="15"/><text x="80" y="711" class="t">Download all (.zip)</text>
+
+  <!-- Editor pane -->
+  <text x="310" y="158" class="t mono" font-weight="700">taskrc</text>
+  <text x="370" y="158" class="d">includes</text>
+  <text x="432" y="158" class="d mono">holidays/nager-BD.rc</text>
+  <rect x="846" y="142" width="38" height="26" rx="5" fill="none" stroke="#4a4b40"/><text x="857" y="160" class="t">⋯</text>
+
+  <rect x="310" y="178" width="574" height="440" rx="6" fill="#1f1f1b" stroke="#34352c"/>
+  <g class="mono">
+    <text x="322" y="204" class="d">63</text><text x="356" y="204" class="d" font-style="italic"># Urgency</text>
+    <text x="322" y="226" class="d">64</text><text x="356" y="226" fill="#c3a6ff">urgency.inherit</text><text x="477" y="226" class="t">=1</text>
+    <text x="322" y="248" class="d">65</text><text x="356" y="248" fill="#c3a6ff">urgency.user.project.FUL.coefficient</text><text x="645" y="248" class="t">=1.5</text>
+    <text x="322" y="270" class="d">66</text><text x="356" y="270" fill="#c3a6ff">urgency.user.project.Meghnaad.coefficient</text><text x="684" y="270" class="t">=1.2</text>
+    <text x="322" y="292" class="d">67</text>
+    <text x="322" y="314" class="d">68</text><text x="356" y="314" class="d" font-style="italic"># Review</text>
+    <text x="322" y="336" class="d">69</text><text x="356" y="336" fill="#c3a6ff">uda.reviewed.type</text><text x="493" y="336" class="t">=date</text>
+    <text x="312" y="358" class="w">▲</text><text x="322" y="358" class="d">70</text><text x="356" y="358" fill="#c3a6ff">include</text><text x="420" y="358" class="t"> work/deadlines.rc</text>
+    <rect x="352" y="362" width="226" height="2" class="w"/>
+    <text x="322" y="380" class="d">71</text><text x="356" y="380" fill="#c3a6ff">color.project.FUL</text><text x="493" y="380" class="t">=bright blue</text>
+  </g>
+
+  <!-- The open New menu, dropped from + New over the editor -->
+  <g id="menu">
+  <rect x="300" y="150" width="262" height="262" rx="8" fill="#2a2a25" stroke="#4a4b40"/>
+  <use href="#file" x="316" y="164" width="14" height="14"/><text x="338" y="176" class="t">New file</text>
+  <use href="#folder" x="316" y="192" width="14" height="14"/><text x="338" y="204" class="t">New folder</text>
+  <line x1="308" y1="216" x2="554" y2="216" class="line"/>
+  <use href="#up" x="316" y="228" width="14" height="14"/><text x="338" y="240" class="t">Upload files</text>
+  <use href="#up" x="316" y="256" width="14" height="14"/><text x="338" y="268" class="t">Upload a folder</text>
+  <use href="#link" x="316" y="284" width="14" height="14"/><text x="338" y="296" class="t">Import from a link…</text>
+  <line x1="308" y1="308" x2="554" y2="308" class="line"/>
+  <use href="#cal" x="316" y="320" width="14" height="14"/><text x="338" y="332" class="t">Add holidays…</text>
+  <use href="#up" x="316" y="348" width="14" height="14"/><text x="338" y="360" class="t">Upload a holiday file</text>
+  <text x="316" y="392" class="d" font-size="12">New ones and uploads go in the open folder</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="310" y="646" class="w">⚠ 1 problem:</text>
+  <text x="400" y="646" class="d">line 70, there is no </text><text x="540" y="646" class="d mono">work/deadlines.rc</text>
+  <text x="310" y="668" class="d" font-size="12">checked 300 ms after you stop typing</text>
+  <rect x="560" y="680" width="80" height="30" rx="5" fill="none" stroke="#4a4b40"/><text x="575" y="700" class="t">Revert</text>
+  <rect x="650" y="680" width="140" height="30" rx="5" fill="none" stroke="#4a4b40"/><text x="664" y="700" class="t">Restore previous</text>
+  <rect x="800" y="680" width="84" height="30" rx="5" class="a"/><text x="824" y="700" fill="#0b1220" font-weight="600">Apply</text>
+
+  <!-- Notes -->
+  <text x="930" y="150" class="note" font-weight="600">Notes</text>
+  <text x="930" y="174" class="note">1. Every way to add something is</text>
+  <text x="944" y="192" class="note">under + New, at the top (as in a</text>
+  <text x="944" y="210" class="note">file drive).</text>
+  <path class="arrow" d="M926,176 C 700,120 300,110 152,150"/>
+
+  <text x="930" y="244" class="note">2. Folders open and close; ◀ folds</text>
+  <text x="944" y="262" class="note">the whole list away.</text>
+
+  <text x="930" y="296" class="note">3. A new empty folder is greyed out:</text>
+  <text x="944" y="314" class="note">git keeps no empty folders, so Apply</text>
+  <text x="944" y="332" class="note">leaves it out (a bucket deletes it).</text>
+  <path class="arrow" d="M926,322 C 700,470 300,440 196,318"/>
+
+  <text x="930" y="366" class="note">4. Add holidays… and Import from a</text>
+  <text x="944" y="384" class="note">link… open in a drawer.</text>
+  <path class="arrow" d="M926,376 C 760,380 660,330 564,322"/>
+
+  <text x="930" y="418" class="note">5. ⋯ holds: Include this file in…,</text>
+  <text x="944" y="436" class="note">Delete (Rename: an open question).</text>
+  <path class="arrow" d="M926,426 C 905,420 900,200 886,166"/>
+
+  <text x="930" y="470" class="note">6. The editor fills the height;</text>
+  <text x="944" y="488" class="note">the problems and Apply stay in view.</text>
+
+  <text x="930" y="522" class="note">7. The colour theme and the colours</text>
+  <text x="944" y="540" class="note">switch move to Appearance.</text>
+
+  <text x="930" y="700" class="note">8. Download all sits at the bottom</text>
+  <text x="944" y="718" class="note">of the list.</text>
+  <path class="arrow" d="M926,706 C 700,720 400,720 260,708"/>
+
+  <text x="40" y="760" class="d" font-size="12">Spec 0021: the taskrc tab as a small workspace. Web app; the phone and the terminal have no taskrc editor.</text>
+</svg>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { includeLine, listing, uploadFiles, withInclude } from './rcpaths';
+import { includeLine, listing, newNameProblem, tree, uploadFiles, withInclude } from './rcpaths';
 
 describe('the include line that names a file from another', () => {
   it('is written from the folder of the file that holds it', () => {
@@ -68,5 +68,44 @@ describe('the list of files', () => {
       { path: 'holidays/de.rc', depth: 1, name: 'de.rc', folder: 'holidays' },
       { path: 'holidays/en-US.rc', depth: 1, name: 'en-US.rc', folder: 'holidays' },
     ]);
+  });
+});
+
+describe('the file tree', () => {
+  const show = (rows: ReturnType<typeof tree>) =>
+    rows.map(
+      (r) =>
+        `${'  '.repeat(r.depth)}${r.kind === 'folder' ? `${r.open ? '▾' : '▸'} ${r.name}/` : r.name}${r.empty ? ' (empty)' : ''}`,
+    );
+
+  it('has taskrc first, every folder a path runs through, and folders before files', () => {
+    const paths = ['z.rc', 'taskrc', 'a/b/c.rc', 'a/d.rc', 'holidays/en.rc'];
+    expect(show(tree(paths))).toEqual([
+      'taskrc',
+      '▾ a/',
+      '  ▾ b/',
+      '    c.rc',
+      '  d.rc',
+      '▾ holidays/',
+      '  en.rc',
+      'z.rc',
+    ]);
+  });
+
+  it('leaves out what is in a closed folder, and shows the empty ones the page holds', () => {
+    const rows = tree(['taskrc', 'a/b/c.rc'], ['work', 'a/new'], new Set(['a/b']));
+    expect(show(rows)).toEqual(['taskrc', '▾ a/', '  ▸ b/', '  ▾ new/ (empty)', '▾ work/ (empty)']);
+  });
+});
+
+describe('a new name', () => {
+  it('is checked against the folder it goes in, and what is there', () => {
+    const taken = ['taskrc', 'holidays/en.rc'];
+    expect(newNameProblem('holidays', 'de.rc', taken)).toBeNull();
+    expect(newNameProblem('holidays', 'en.rc', taken)).toContain('there already');
+    expect(newNameProblem('', 'holidays', taken)).toContain('there already');
+    expect(newNameProblem('', '../x', taken)).toContain('..');
+    expect(newNameProblem('', '/etc/x', taken)).toContain('inside the folder');
+    expect(newNameProblem('', '  ', taken)).toBe('a name is needed');
   });
 });

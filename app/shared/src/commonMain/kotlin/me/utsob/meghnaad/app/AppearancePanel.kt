@@ -159,7 +159,9 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
     val scope = rememberCoroutineScope()
     val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("IDs", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        TaskColours(store)
+
+        Text("IDs", Modifier.padding(top = 16.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Row(
             Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { state.idFallback = !state.idFallback; state.done = false },
             verticalAlignment = Alignment.CenterVertically,

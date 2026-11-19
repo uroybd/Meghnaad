@@ -66,6 +66,11 @@ fun SettingsPage(store: Store, state: SettingsState) {
                 }
             }
         }
+        // The taskrc tab is a workspace that takes the height (its editor scrolls inside it, and Apply stays in view); the others scroll.
+        if (store.settingsTab == SettingsTab.Taskrc) {
+            Box(Modifier.weight(1f).widthIn(max = 1100.dp).padding(horizontal = 16.dp).padding(bottom = 72.dp)) { TaskrcPanel(store, state.taskrc) }
+            return@Column
+        }
         Column(Modifier.weight(1f).widthIn(max = 820.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             when (store.settingsTab) {
                 SettingsTab.General -> GeneralPanel(store, state.general)

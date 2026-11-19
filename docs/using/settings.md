@@ -116,7 +116,8 @@ phone has the same tab, and the terminal app [a Keybindings section](../terminal
 ## Appearance
 
 How the app draws things. It is kept in the app's own `settings.json`, not your taskrc, so it is the same on the web
-and on the phone.
+and on the phone. The one exception is **Task colours** at the top, which is your taskrc's colour lines (see
+[Colours](#colours)).
 
 ### IDs
 
@@ -172,16 +173,18 @@ description is drawn as Markdown only when a rule changed it. Where a rule chang
 checkboxes are shown but can't be clicked. They apply to tables, the phone's cards, the task's details and, in the
 [terminal app](../terminal.md), report rows (where a link is a terminal hyperlink).
 
-![The Settings page, on its taskrc tab: the saved settings as text to edit, with a colour theme picker and import from a file or a link](../screenshots/settings-taskrc.png)
-
-(The screenshot predates the list of files beside the text, described under [Your taskrc](#your-taskrc).)
+![The taskrc tab: the files as a tree on the left under + New, the main taskrc in the editor, and Apply under it](../screenshots/settings-taskrc.png)
 
 ## Your taskrc
 
 UDAs, custom reports, contexts, holidays and your other settings live in `~/.taskrc`, not in your synced data, so the app
-keeps its own copy: **a folder of files**, kept as you wrote them. Open the **taskrc** tab. The files are on the left
-(the main one, `taskrc`, first); choose one to edit it on the right, then **Apply**. Only an allowlist of settings is
-read; the full list is in [taskrc support](../taskrc-support.md).
+keeps its own copy: **a folder of files**, kept as you wrote them. Open the **taskrc** tab. It is laid out like a file
+drive: the files are a tree on the left (the main one, `taskrc`, first, then each folder, which opens and closes), and
+the file you choose fills the rest, with **Apply** under it. The ⓘ next to the title says what is kept. Only an
+allowlist of settings is read; the full list is in [taskrc support](../taskrc-support.md).
+
+The panel icon at the top of the tree folds it away for a wider editor (the web remembers it). On a phone, or a narrow
+window, the tree starts folded: the icon beside the file's name opens it over the editor, and choosing a file closes it.
 
 ### The editor
 
@@ -191,6 +194,9 @@ commented out when you Apply), and a credential-like name is struck through (it 
 warning for, such as an `include` that points nowhere, is marked in the line numbers. On the web it is CodeMirror
 (Tab indents, Ctrl+Z undoes within one file); on the phone it is a text box with the same colours. The engine says what
 each piece is, so both agree.
+
+The file is checked as you type, once you stop for a moment: a line the app can't use, an `include` that names no file
+and a setting that would be removed as a credential are listed under the editor before you Apply, as well as after.
 
 ### What is kept and what is not
 
@@ -214,27 +220,37 @@ include reaches is kept but marked *unused*.
 
 ### Files
 
-#### Add a file
+#### + New
 
-Type its name (`holidays/en-US.rc`) and press **Add**, or use **Add files** to upload several.
+Everything that adds something is under **+ New**, at the top of the tree. New files and uploads go in the folder you
+last opened or closed in the tree, else in the folder of the file shown.
 
-#### Import folder
-
-Uploads a whole folder (your dotfiles checkout). `.taskrc` or `taskrc` at its top becomes the main
-taskrc. Hidden files and folders (`.git`), binary files and anything over 256 KB are left out and listed, and up to 64
-files or 1 MB are taken. It adds to what is here; tick **Replace what is here** to make the folder the whole of it (it
-needs a `taskrc`). One import is one step, so **Restore previous** undoes all of it.
+- **New file** and **New folder**: type the name; what is wrong with it (a name that is there already, `..`) is said as
+  you type. A new file is saved empty at once. A new folder is greyed out (*empty, not saved*) until a file goes in it:
+  a folder is kept only through its files, since a git branch keeps no empty folder and a bucket has only file names,
+  so an empty one is never written, and a folder whose last file is deleted is gone.
+- **Upload files**: one or several files, into that folder.
+- **Upload a folder**: a whole folder (your dotfiles checkout), as it is. `.taskrc` or `taskrc` at its top becomes the
+  main taskrc. Hidden files and folders (`.git`), binary files and anything over 256 KB are left out and listed, and up
+  to 64 files or 1 MB are taken. It adds to what is here. One upload is one step, so **Restore previous** undoes all of
+  it.
+- **Import from a link…** opens a drawer (a bottom sheet on the phone) with the link import (below), and a folder import
+  with **Replace what is here**, which makes the folder the whole of it (it needs a `taskrc`).
+- **Add holidays…** opens the [holiday picker](#add-holidays) in a drawer.
+- **Upload a holiday file**: a holiday file you already have goes in `holidays/`, and the main taskrc gets the
+  `include` and `calendar.holidays=full` lines, as **Add holidays** does.
 
 #### Download
 
-Keeps the file shown (under its own name) and **Download all (.zip)** every file, keeping folders. They
-hold what is *saved*, not unapplied edits, and never a credential. **Import folder** takes an unzipped copy back. On a
-phone the system's save dialog asks where to keep it.
+**Download** in the **⋯** menu by the file's name keeps the file shown (under its own name), and **Download all (.zip)**
+at the bottom of the tree every file, keeping folders. They hold what is *saved*, not unapplied edits, and never a
+credential. **Upload a folder** takes an unzipped copy back. On a phone the system's save dialog asks where to keep it.
 
-#### Include this file in…
+#### The ⋯ menu
 
-On any file but the main one, this adds `include <path>` to the file you choose and shows it;
-**Apply** keeps it. **Delete file** removes one (the main taskrc can only be emptied).
+On any file but the main one, **Include this file in…** adds `include <path>` to the file you choose and shows it;
+**Apply** keeps it. **Delete file** removes one (the main taskrc can only be emptied). On a file made by Add holidays,
+**Update holidays** fetches it again.
 
 #### `config` and the settings pages
 
@@ -248,7 +264,9 @@ Undoes the last save, import or delete (all files together).
 
 ### Import from a link
 
-Keep your dotfiles repository as the source: paste the address of the file (a GitHub or GitLab file page works, as does a
+![The Import drawer: a link to fetch the main taskrc from, and a folder to upload, with Replace what is here](../screenshots/settings-import.png)
+
+Keep your dotfiles repository as the source (**+ New**, then **Import from a link…**): paste the address of the file (a GitHub or GitLab file page works, as does a
 raw link or a gist's) and choose **Import**.
 
 - It brings the main taskrc only. Included files aren't fetched, so add them (they show as *not found* until you do).
@@ -262,8 +280,10 @@ raw link or a gist's) and choose **Import**.
 
 ### Add holidays
 
-This makes a file of a country's public holidays from one of three sources, and shows the list it found before anything is
-saved:
+**+ New**, then **Add holidays…**, opens a drawer that makes a file of a country's public holidays from one of three
+sources, and shows the list it found before anything is saved:
+
+![The Add holidays drawer: Holidata, Nager.Date or a calendar link, the country and the years](../screenshots/settings-holidays.png)
 
 #### Holidata
 
@@ -290,8 +310,8 @@ Holidays of one region only (Massachusetts' Patriots' Day, a Swiss canton's) are
 
 **Save** writes the file and, unless they are there already, adds `include holidays/<file>.rc` and
 `calendar.holidays=full` to the main taskrc (you can untick them). If the main taskrc has unapplied edits, the lines go
-into its box and **Apply** keeps them. A file made this way records where it came from, so **Update holidays** on that file
-fetches it again for the years now with the same regions and names (a year with no data is named). A calendar's link is
+into its box and **Apply** keeps them. A file made this way records where it came from, so **Update holidays** (in the
+**⋯** menu of that file) fetches it again for the years now with the same regions and names (a year with no data is named). A calendar's link is
 remembered only if it has no `?`, since such a link can hold a secret. Saving again replaces the file, and **Restore
 previous** undoes it.
 
@@ -318,7 +338,7 @@ exception is `color.alternate`: rows are not shaded every other one unless your 
   `due` (a task due within `rc.due` days) or `project.` claims the row first. The Priority cell always shows its
   colour too, whatever colour the rest of the row has; that one field is the app's addition, from the same settings.
 - **Meghnaad's own theme** (soft colours, due today in bold amber, nothing for due later this week, no zebra) is in
-  the picker below; choosing it writes its lines into your taskrc.
+  the theme picker; choosing it writes its lines into your taskrc.
 
 Your `color.*` lines work as on the desktop:
 
@@ -330,9 +350,10 @@ rule.precedence.color=overdue,active,tag.  # which rule wins first; with `rule.c
 color.alternate=on gray2                   # shade every other row
 ```
 
-The **taskrc** tab has a **Colour theme** picker (Meghnaad's own, Taskwarrior's default and the 16 standard themes such as
-`dark-256` and `solarized-light-256`) and a **Colours** switch. Choosing a theme replaces the colour lines in the box, and
-Apply keeps them. A pasted `include dark-256.theme` is read as that theme. `color=off` (or `rc.color:off`) turns every
+**Task colours**, at the top of the **Appearance** tab, has a **Colour theme** picker (Meghnaad's own, Taskwarrior's
+default and the 16 standard themes such as `dark-256` and `solarized-light-256`) and a **Colours** switch. Each saves at
+once: a theme replaces the colour lines of the main taskrc, and the switch writes `color=off` there or takes it out, so
+**Restore previous** on the taskrc tab undoes either. A pasted `include dark-256.theme` is read as that theme. `color=off` (or `rc.color:off`) turns every
 colour off, and a task tagged `nocolor` is never coloured.
 
 `colors` in the Console draws the palette, `colors bold coral on sky` a sample, and `colors legend` every colour in force,

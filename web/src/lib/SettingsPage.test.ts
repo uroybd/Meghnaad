@@ -131,6 +131,8 @@ describe('the Settings page', () => {
     const text = panel('taskrc').querySelector('textarea') as HTMLTextAreaElement;
     text.value = 'bulk=9';
     text.dispatchEvent(new Event('input', { bubbles: true }));
+    // What is typed reaches the draft once typing stops.
+    await new Promise((r) => setTimeout(r, 200));
     await tick();
     expect(apply('taskrc').disabled).toBe(false);
     expect(tab('taskrc').querySelector('.dot')).not.toBeNull();

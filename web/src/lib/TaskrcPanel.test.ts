@@ -92,6 +92,13 @@ const tick = async () => {
 };
 
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open');
+    this.dispatchEvent(new Event('close'));
+  };
   store.settingsFile = null;
   store.config = { config: { settings: {} } } as never;
   vi.spyOn(store, 'settingsChanged').mockResolvedValue(undefined);
@@ -116,6 +123,20 @@ const button = (text: string | RegExp) =>
 const type = async (el: HTMLTextAreaElement | HTMLInputElement, value: string) => {
   el.value = value;
   el.dispatchEvent(new Event('input', { bubbles: true }));
+  // What is typed in the editor reaches the draft once typing stops (150 ms), and the checks 300 ms after that.
+  if (el instanceof HTMLTextAreaElement) await new Promise((r) => setTimeout(r, 500));
+  await tick();
+};
+/** The ⋯ menu of the file shown. */
+const more = async () => {
+  (document.querySelector('[aria-label="More for this file"]') as HTMLButtonElement).click();
+  await tick();
+};
+/** An item of + New. */
+const fromNew = async (item: string) => {
+  button('New').click();
+  await tick();
+  button(item).click();
   await tick();
 };
 
@@ -208,6 +229,7 @@ describe('including a file in another', () => {
   it('adds the include line, written from the other file, and shows that file', async () => {
     store.settingsFile = 'lonely.rc';
     await start();
+    await more();
     expect(button('Include')).toBeTruthy();
     expect(document.body.textContent).toContain('include lonely.rc');
     button('Include').click();
@@ -221,6 +243,7 @@ describe('including a file in another', () => {
 
   it('is not offered for the main taskrc', async () => {
     await start();
+    await more();
     expect(button('Include')).toBeUndefined();
   });
 });
@@ -230,6 +253,7 @@ describe('deleting a file', () => {
     vi.mocked(deleteRcFile).mockResolvedValue(saved(''));
     store.settingsFile = 'lonely.rc';
     await start();
+    await more();
     button('Delete file').click();
     await tick();
     expect(deleteRcFile).not.toHaveBeenCalled();
@@ -242,6 +266,7 @@ describe('deleting a file', () => {
 
   it('is not offered for the main taskrc', async () => {
     await start();
+    await more();
     expect(button(/Delete file/)).toBeUndefined();
   });
 });
@@ -280,12 +305,15 @@ describe('uploading', () => {
   it('replaces the folder when asked to', async () => {
     vi.mocked(importRcFiles).mockResolvedValue(saved(FILES.taskrc));
     await start();
+    await fromNew('Import from a link…');
     const tickbox = [...document.querySelectorAll('input[type=checkbox]')].find((c) =>
       c.parentElement?.textContent?.includes('Replace what is here'),
     ) as HTMLInputElement;
     tickbox.click();
     await tick();
-    pick(folderInput(), [['taskrc', 'bulk=5\n', 'dots/taskrc']]);
+    pick(document.querySelector('dialog input[webkitdirectory]') as HTMLInputElement, [
+      ['taskrc', 'bulk=5\n', 'dots/taskrc'],
+    ]);
     await tick();
     expect(importRcFiles).toHaveBeenCalledWith([{ path: 'taskrc', text: 'bulk=5\n' }], 'replace');
   });
@@ -303,6 +331,7 @@ describe('adding a file', () => {
   it('makes it empty and shows it', async () => {
     vi.mocked(putRcFile).mockResolvedValue(saved(''));
     await start();
+    await fromNew('New file');
     await type(document.querySelector('#rc-new') as HTMLInputElement, 'holidays/de.rc');
     button('Add').click();
     await tick();
@@ -336,11 +365,13 @@ describe('downloading', () => {
   it('downloads the saved file under its own name, not the edits in the box', async () => {
     await start();
     await type(box(), 'bulk=9\n');
+    await more();
     button('Download').click();
     await tick();
     expect(saveAs).toHaveBeenCalledWith('taskrc', FILES.taskrc);
     (document.querySelectorAll('.file-row')[1] as HTMLButtonElement).click();
     await tick();
+    await more();
     button('Download').click();
     await tick();
     expect(saveAs).toHaveBeenLastCalledWith('en.rc', FILES['holidays/en.rc']);
@@ -380,6 +411,7 @@ describe('adding holidays', () => {
     vi.mocked(putRcFile).mockImplementation((_p, t) => Promise.resolve(saved(t)));
     fetched();
     await start();
+    await fromNew('Add holidays…');
     await pickCountry('en-US');
     button('Find holidays').click();
     await tick();
@@ -402,6 +434,7 @@ describe('adding holidays', () => {
     fetched();
     await start();
     await type(box(), 'bulk=9\n');
+    await fromNew('Add holidays…');
     await pickCountry('en-US');
     button('Find holidays').click();
     await tick();
@@ -418,6 +451,7 @@ describe('adding holidays', () => {
   it('is not asked to include a file the taskrc already includes', async () => {
     fetched();
     await start();
+    await fromNew('Add holidays…');
     await pickCountry('en-US');
     // en-US is not included in the fixture; a locale whose file is can't be tested without one, so tick it off instead.
     button('Find holidays').click();
@@ -452,6 +486,7 @@ describe('adding holidays', () => {
       ].join('\r\n'),
     );
     await start();
+    await fromNew('Add holidays…');
     await source('ics');
     await type(
       document.querySelector('.holidays input[type=url]') as HTMLInputElement,
@@ -480,6 +515,7 @@ describe('adding holidays', () => {
 
   it('says what is wrong with a link that cannot be used, without fetching it', async () => {
     await start();
+    await fromNew('Add holidays…');
     await source('ics');
     await type(document.querySelector('.holidays input[type=url]') as HTMLInputElement, 'http://example.org/a.ics');
     button('Find holidays').click();
@@ -502,7 +538,7 @@ describe('adding holidays', () => {
     );
     vi.stubGlobal('fetch', get);
     await start();
-    (document.querySelector('.holidays') as HTMLDetailsElement).open = true;
+    await fromNew('Add holidays…');
     await source('nager');
     await tick();
     const select = document.querySelector('.holidays select') as HTMLSelectElement;
@@ -522,5 +558,85 @@ describe('adding holidays', () => {
     );
     expect(document.body.textContent).toContain('Language Day');
     expect(document.body.textContent).toContain('may not have the holidays that move with the moon');
+  });
+});
+
+describe('the workspace', () => {
+  it('closes and opens a folder, and makes a new folder in the page only, where new files then go', async () => {
+    vi.mocked(putRcFile).mockResolvedValue(saved(''));
+    await start();
+    const folderRow = () =>
+      [...document.querySelectorAll('nav li button')].find((b) =>
+        b.textContent?.includes('holidays'),
+      ) as HTMLButtonElement;
+    folderRow().click();
+    await tick();
+    expect(rows()).toEqual(['taskrc', 'holidays', 'lonely.rc unused']);
+    folderRow().click();
+    await tick();
+    expect(rows()).toContain('en.rc');
+
+    await fromNew('New folder');
+    await type(document.querySelector('#rc-new') as HTMLInputElement, 'work');
+    button('Add').click();
+    await tick();
+    expect(rows()).toContain('work empty, not saved');
+    expect(putRcFile).not.toHaveBeenCalled();
+    await fromNew('New file');
+    await type(document.querySelector('#rc-new') as HTMLInputElement, 'a.rc');
+    button('Add').click();
+    await tick();
+    // holidays was the folder last pressed, so the new folder went in it, and the new file in that.
+    expect(putRcFile).toHaveBeenCalledWith('holidays/work/a.rc', '');
+  });
+
+  it('says what is wrong with a new name once typing stops', async () => {
+    await start();
+    await fromNew('New file');
+    const input = document.querySelector('#rc-new') as HTMLInputElement;
+    await type(input, 'lonely.rc');
+    expect(document.querySelector('.naming [role=alert]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 350));
+    await tick();
+    expect(document.querySelector('.naming [role=alert]')?.textContent).toContain('there already');
+  });
+
+  it('checks the file as it is typed, before Apply, once typing stops', async () => {
+    await start();
+    await type(box(), 'bulk=3\ninclude nowhere.rc\nsync.encryption_secret=x\n');
+    const lines = editor.marks.map((m) => m.line);
+    expect(lines).toEqual([2, 3]);
+    expect(editor.marks[1].message).toContain('credential');
+    expect(document.body.textContent).toContain('Line 2:');
+    expect(putRcFile).not.toHaveBeenCalled();
+  });
+
+  it('puts an uploaded holiday file in holidays/, includes it and turns the calendar on', async () => {
+    vi.mocked(putRcFile).mockImplementation((_p, t) => Promise.resolve(saved(t)));
+    await start();
+    const input = [...document.querySelectorAll('nav input[type=file]')].find(
+      (i) => !i.hasAttribute('multiple'),
+    ) as HTMLInputElement;
+    Object.defineProperty(input, 'files', {
+      value: [new File(['holiday.x.name=X\n'], 'de-DE.rc')],
+      configurable: true,
+    });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    const calls = vi.mocked(putRcFile).mock.calls;
+    expect(calls[0]).toEqual(['holidays/de-DE.rc', 'holiday.x.name=X\n']);
+    expect(calls[1][0]).toBe('taskrc');
+    expect(calls[1][1]).toContain('include holidays/de-DE.rc');
+    expect(calls[1][1]).toContain('calendar.holidays=full');
+  });
+
+  it('folds the list of files away, and back', async () => {
+    await start();
+    (document.querySelector('[aria-label="Hide the files"]') as HTMLButtonElement).click();
+    await tick();
+    expect(document.querySelector('nav[aria-label="Config files"]')).toBeNull();
+    (document.querySelector('[aria-label="Show the files"]') as HTMLButtonElement).click();
+    await tick();
+    expect(document.querySelector('nav[aria-label="Config files"]')).not.toBeNull();
   });
 });
