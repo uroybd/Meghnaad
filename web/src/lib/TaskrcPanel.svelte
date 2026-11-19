@@ -1,30 +1,23 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import { importTaskrcUrl, restoreTaskrc } from './api';
   import { settingsData } from './settingsData.svelte';
-  import { debounce } from './debounce';
   import { saveAs } from './download';
   import Drawer from './Drawer.svelte';
   import HolidaysForm from './HolidaysForm.svelte';
   import { settingsOf, withSetting, type Choice } from './holidays';
-  import {
-    CalendarDays,
-    Download,
-    Ellipsis,
-    Info,
-    Link,
-    PanelLeftOpen,
-    RotateCcw,
-    Trash2,
-    TriangleAlert,
-    Upload,
-  } from './icons';
-  import { includeLine, ROOT, tree, uploadFiles, withInclude, type Picked } from './rcpaths';
+  import { PanelLeftOpen, RotateCcw, TriangleAlert } from './icons';
+  import { ROOT, tree, uploadFiles, withInclude, type Picked } from './rcpaths';
+  import RcAbout from './RcAbout.svelte';
+  import { rcCheck } from './rcCheck.svelte';
+  import RcEditorBox from './RcEditorBox.svelte';
+  import { rcLayout } from './rcLayout.svelte';
+  import RcFileMenu from './RcFileMenu.svelte';
+  import RcImport from './RcImport.svelte';
+  import RcSaved from './RcSaved.svelte';
   import RcTree from './RcTree.svelte';
-  import { callHelper } from '../engine/helpers';
   import { expandIncludes, fetchTheme } from './themes';
   import { store } from './store.svelte';
-  import type { RcEditor } from './rcEditor';
   import type { RcFiles, TaskrcResponse } from './types';
   import { zipFiles } from './zip';
   import Skeleton from './Skeleton.svelte';
@@ -44,100 +37,24 @@
   let skipped = $state<string[]>([]);
   let error = $state<string | null>(null);
   let confirmRestore = $state(false);
-  let confirmDelete = $state(false);
   let link = $state('');
   let replace = $state(false);
-  let includeIn = $state(ROOT);
   let note = $state<string | null>(null);
   /** A holiday file to update, when its button was pressed. */
   let updating = $state<{ path: string; text: string } | null>(null);
   /** Which drawer is open. */
   let drawer = $state<'import' | 'holidays' | null>(null);
-  /** The ⋯ menu of the file shown. */
-  let moreOpen = $state(false);
-  let aboutOpen = $state(false);
 
-  // The list of files: folded away or not, and which folders are closed, remembered in this browser. On a narrow screen
-  // it starts folded, and opens over the editor.
-  const NARROW = '(max-width: 760px)';
-  const narrow = typeof window !== 'undefined' && !!window.matchMedia?.(NARROW).matches;
-  const remembered = <T,>(key: string, fallback: T): T => {
-    try {
-      const v = localStorage.getItem(key);
-      return v === null ? fallback : (JSON.parse(v) as T);
-    } catch {
-      return fallback;
-    }
-  };
-  const remember = (key: string, value: unknown) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      /* private window: not remembered, and that is fine */
-    }
-  };
-  let folded = $state(narrow || remembered('meghnaad.rc.folded', false));
-  let closed = $state(new Set<string>(remembered<string[]>('meghnaad.rc.closed', [])));
   /** Folders made here with no file in them yet: they live only in the page, since a folder is kept through its files. */
   let empty = $state<string[]>([]);
   /** The folder new files and uploads go in: the last folder pressed, else the shown file's. */
   let here = $state('');
 
-  // The workspace fills what is left of the page's scrolling area below it, so the editor takes the height and Apply
-  // stays on screen, whatever sits above it (the tabs, a warning) and below it (the console bar).
   let workspace: HTMLElement | undefined = $state();
-  let fill = $state<number | null>(null);
-  $effect(() => {
-    const ws = workspace;
-    const area = ws?.closest('main') as HTMLElement | null;
-    if (!ws || !area || typeof ResizeObserver === 'undefined') return;
-    const measure = () => {
-      const top = ws.getBoundingClientRect().top - area.getBoundingClientRect().top + area.scrollTop;
-      const pad = parseFloat(getComputedStyle(area).paddingBottom) || 0;
-      fill = Math.max(360, Math.floor(area.clientHeight - top - pad - 4));
-    };
-    measure();
-    const seen = new ResizeObserver(measure);
-    seen.observe(area);
-    return () => seen.disconnect();
-  });
+  const layout = rcLayout(() => workspace);
 
-  function fold(next: boolean) {
-    folded = next;
-    if (!narrow) remember('meghnaad.rc.folded', next);
-  }
-
-  // The text is edited in CodeMirror (line numbers, colour for what each line is, markers for lines with a problem), which loads
-  // with this tab. The drafts stay the one place the text is kept: the editor shows the file shown, and what is typed
-  // reaches the draft once typing stops (`typed`), read from the editor then, so nothing typed meanwhile is lost.
-  let host: HTMLElement | undefined = $state();
-  let editor = $state.raw<RcEditor>();
-  const typed = debounce(() => {
-    if (editor) setText(editor.text());
-  }, 150);
-  $effect(() => {
-    if (!host) return;
-    let alive = true;
-    const parent = host;
-    void import('./rcEditor').then(({ createRcEditor }) => {
-      if (alive) editor = createRcEditor(parent, () => typed());
-    });
-    return () => {
-      alive = false;
-      typed.cancel();
-      editor?.destroy();
-      editor = undefined;
-    };
-  });
-  $effect(() => {
-    if (!editor || !draft) return;
-    const hint = isRoot ? 'Nothing saved yet. Paste your taskrc here.' : 'An empty file.';
-    const [name, now] = [current, text];
-    untrack(() => editor?.show(name, now, hint));
-  });
-  $effect(() => {
-    editor?.setEditable(!loading && !!draft);
-  });
+  // The text is edited in CodeMirror (`RcEditorBox`); the drafts here stay the one place it is kept.
+  let box = $state<RcEditorBox>();
 
   const draft = $derived(drafts[current]);
   const text = $derived(draft?.text ?? '');
@@ -149,7 +66,7 @@
     tree(
       listed,
       empty.filter((f) => !listed.some((p) => p.startsWith(`${f}/`))),
-      closed,
+      layout.closed,
     ),
   );
   const taken = $derived([...listed, ...empty, ...rows.filter((r) => r.kind === 'folder').map((r) => r.path)]);
@@ -159,34 +76,14 @@
   const made = $derived(draft && !edited && settingsOf(draft.saved) ? draft.saved : null);
   const calendarOn = $derived((store.config?.config?.settings?.['calendar.holidays'] ?? 'none') !== 'none');
 
-  // What saving the files as typed would find (a line this app can't use, an include with no file, a credential),
-  // worked out by the engine once typing stops, for the file shown. Until then, what the server said.
-  let live = $state<{ file: string; line: number; message: string }[] | null>(null);
-  const checkNow = debounce((files: Record<string, string>) => {
-    try {
-      live = callHelper<{ file: string; line: number; message: string }[]>('taskrc_check', files);
-    } catch {
-      live = null;
-    }
-  }, 300);
-  $effect(() => {
-    const files = Object.fromEntries(listed.map((p) => [p, drafts[p]?.text ?? '']));
-    if (!drafts[current]) return;
-    checkNow(files);
-  });
-  const mine = $derived(
-    (live ?? folder?.problems ?? [])
-      .filter((p) => p.file === current)
-      .map((p) => ({ line: p.line, message: p.message })),
+  const check = rcCheck(
+    () => {
+      const files = Object.fromEntries(listed.map((p) => [p, drafts[p]?.text ?? '']));
+      return drafts[current] ? files : null;
+    },
+    () => current,
+    () => folder?.problems,
   );
-  // The markers in the editor follow the problems; drawn again whenever another file is shown.
-  $effect(() => {
-    void current;
-    const ed = editor;
-    const problems = mine;
-    untrack(() => ed?.mark(problems));
-  });
-  onDestroy(() => checkNow.cancel());
 
   async function fetchFile(path: string): Promise<string> {
     return settingsData.file(path).get();
@@ -202,13 +99,11 @@
 
   // Open a file: its box starts from what is saved, so an edit changes it rather than replacing it with a blank page.
   async function open(path: string, force = false) {
-    typed.flush();
+    box?.flush();
     current = path;
     store.settingsFile = path === ROOT ? null : path;
-    confirmDelete = false;
-    moreOpen = false;
     here = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-    if (narrow) folded = true;
+    if (layout.narrow) layout.fold(true);
     if (drafts[path] && !force) return;
     loading = true;
     try {
@@ -224,11 +119,8 @@
 
   // A folder's row opens or closes it, and makes it the one new files and uploads go in.
   function toggle(f: string) {
-    const next = new Set(closed);
-    if (!next.delete(f)) next.add(f);
-    closed = next;
+    layout.toggle(f);
     here = f;
-    remember('meghnaad.rc.closed', [...next]);
   }
 
   // Start with the list and the file the address names.
@@ -274,7 +166,7 @@
   }
 
   async function run(work: () => Promise<void>) {
-    typed.flush();
+    box?.flush();
     busy = true;
     error = null;
     try {
@@ -297,7 +189,7 @@
     });
 
   function revert() {
-    typed.cancel();
+    box?.cancel();
     setText(draft?.saved ?? '');
   }
 
@@ -336,7 +228,7 @@
   function addNew(kind: 'file' | 'folder', path: string) {
     if (kind === 'folder') {
       empty = [...empty, path];
-      closed = new Set([...closed].filter((f) => f !== path));
+      layout.reveal(path);
       here = path;
       return;
     }
@@ -348,15 +240,9 @@
     });
   }
 
-  const removeFile = () => {
-    if (isRoot) return Promise.resolve();
-    if (!confirmDelete) {
-      confirmDelete = true;
-      setTimeout(() => (confirmDelete = false), 4000);
-      return Promise.resolve();
-    }
-    confirmDelete = false;
-    return run(async () => {
+  // The menu asks twice first.
+  const removeFile = () =>
+    run(async () => {
       const gone = current;
       result = await settingsData.deleteRcFile(gone);
       delete drafts[gone];
@@ -364,7 +250,6 @@
       await store.settingsChanged([ROOT]);
       await refreshList();
     });
-  };
 
   // Holidays made by Add holidays, or a holiday file uploaded: the file is saved, and the main taskrc gets the lines
   // that use it. If the main taskrc has edits that are not applied, the lines go into its box instead of over them.
@@ -406,10 +291,9 @@
   }
 
   // `include <this file>` goes into another file's box (Apply keeps it), which is then shown.
-  async function include() {
-    typed.flush();
+  async function include(target: string) {
+    box?.flush();
     const file = current;
-    const target = includeIn;
     if (!drafts[target]) await open(target);
     const d = drafts[target];
     if (!d) return;
@@ -469,34 +353,8 @@
   });
 </script>
 
-<svelte:window
-  onclick={(e) => {
-    if (moreOpen && !(e.target as Element).closest?.('.more')) moreOpen = false;
-  }}
-/>
-
 <section class="taskrc" aria-label="taskrc settings">
-  <header class="head">
-    <h2>taskrc</h2>
-    <span class="dim">A copy of your taskrc, as a folder of files, saved with your tasks.</span>
-    <button
-      class="ghost about"
-      aria-expanded={aboutOpen}
-      aria-label="About the taskrc copy"
-      title="About the taskrc copy"
-      onclick={() => (aboutOpen = !aboutOpen)}><Info size={15} /></button
-    >
-  </header>
-  {#if aboutOpen}
-    <p class="dim about-text">
-      UDAs, custom reports, contexts, holidays and journal settings live in your <code>~/.taskrc</code>, not in your
-      synced data, so this app keeps a copy: a folder of files, as written. <code>include</code> works as in
-      Taskwarrior, with the path written from the file that has it. They are saved with your tasks and stay until you
-      change them. A line this app can't use is commented out, not lost.
-      <strong>Sync settings and anything that looks like a credential are removed</strong>: they're never stored, logged
-      or shown. The colours are set in Appearance.
-    </p>
-  {/if}
+  <RcAbout />
 
   {#if store.config?.config_error}
     <p class="bad" role="alert">
@@ -505,9 +363,16 @@
     </p>
   {/if}
 
-  <div class="workspace" class:folded class:narrow bind:this={workspace} style:height={fill ? `${fill}px` : null}>
-    {#if !folded}
-      {#if narrow}<button class="backdrop" aria-label="Hide the files" onclick={() => fold(true)}></button>{/if}
+  <div
+    class="workspace"
+    class:folded={layout.folded}
+    class:narrow={layout.narrow}
+    bind:this={workspace}
+    style:height={layout.fill ? `${layout.fill}px` : null}
+  >
+    {#if !layout.folded}
+      {#if layout.narrow}<button class="backdrop" aria-label="Hide the files" onclick={() => layout.fold(true)}
+        ></button>{/if}
       <aside class="side">
         <RcTree
           {rows}
@@ -525,16 +390,19 @@
           onholidays={() => (drawer = 'holidays')}
           onholidayfile={holidayFile}
           ondownload={downloadAll}
-          onfold={() => fold(true)}
+          onfold={() => layout.fold(true)}
         />
       </aside>
     {/if}
 
     <div class="pane">
       <div class="bar">
-        {#if folded}
-          <button class="ghost icon" aria-label="Show the files" title="Show the files" onclick={() => fold(false)}
-            ><PanelLeftOpen size={16} /></button
+        {#if layout.folded}
+          <button
+            class="ghost icon"
+            aria-label="Show the files"
+            title="Show the files"
+            onclick={() => layout.fold(false)}><PanelLeftOpen size={16} /></button
           >
         {/if}
         <h3 class="mono">{current}</h3>
@@ -545,106 +413,35 @@
           >
         {/if}
         <span class="grow"></span>
-        <div class="more">
-          <button
-            class="ghost icon"
-            aria-label="More for this file"
-            title="More for this file"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            onclick={() => (moreOpen = !moreOpen)}><Ellipsis size={16} /></button
-          >
-          {#if moreOpen}
-            <div class="menu" role="menu" aria-label="This file">
-              <button
-                role="menuitem"
-                onclick={downloadFile}
-                disabled={busy || loading || !draft}
-                title="Download the saved file"><Download size={14} /> Download</button
-              >
-              {#if made}
-                <button
-                  role="menuitem"
-                  onclick={() => {
-                    updating = { path: current, text: made };
-                    drawer = 'holidays';
-                    moreOpen = false;
-                  }}
-                  title="Fetch these holidays again, for the current years"
-                  ><CalendarDays size={14} /> Update holidays</button
-                >
-              {/if}
-              {#if !isRoot && others.length}
-                <div class="include">
-                  <label for="rc-include">Include this file in</label>
-                  <select id="rc-include" bind:value={includeIn}>
-                    {#each others as p (p)}<option value={p}>{p}</option>{/each}
-                  </select>
-                  <button class="ghost" onclick={include} title={includeLine(includeIn, current)}>Include</button>
-                  <span class="dim small"
-                    >adds <code>{includeLine(includeIn, current)}</code> to that file; Apply keeps it</span
-                  >
-                </div>
-              {/if}
-              {#if !isRoot}
-                <button role="menuitem" class="danger" onclick={removeFile} disabled={busy} title="Delete this file">
-                  <Trash2 size={14} />
-                  {confirmDelete ? 'Click again to delete' : 'Delete file'}
-                </button>
-              {/if}
-            </div>
-          {/if}
-        </div>
+        <RcFileMenu
+          {current}
+          {others}
+          {busy}
+          canDownload={!busy && !loading && !!draft}
+          {made}
+          ondownload={downloadFile}
+          onupdate={(text) => {
+            updating = { path: current, text };
+            drawer = 'holidays';
+          }}
+          oninclude={include}
+          ondelete={removeFile}
+        />
       </div>
 
       {#if loading && !draft}<Skeleton rows={10} />{/if}
-      <div class="rc-editor" bind:this={host} aria-busy={loading} hidden={loading && !draft}></div>
+      <RcEditorBox
+        bind:this={box}
+        name={current}
+        {text}
+        hint={isRoot ? 'Nothing saved yet. Paste your taskrc here.' : 'An empty file.'}
+        {loading}
+        ready={!!draft}
+        problems={check.mine}
+        ontext={setText}
+      />
 
-      <div class="below">
-        {#each mine as p, i (i)}<p class="warn"><TriangleAlert size={14} /> Line {p.line}: {p.message}</p>{/each}
-        {#if error}<p class="err" role="alert">{error}</p>{/if}
-        {#if note}<p class="dim" role="status">{note}</p>{/if}
-        {#if skipped.length}
-          <p class="warn" role="status">
-            <TriangleAlert size={14} /> Left out: <span class="mono">{skipped.join(', ')}</span>
-          </p>
-        {/if}
-        {#if result}
-          <div class="result" role="status">
-            <p class="ok">
-              Saved {result.udas} UDA{result.udas === 1 ? '' : 's'}, {result.reports} report{result.reports === 1
-                ? ''
-                : 's'}, {result.contexts} context{result.contexts === 1 ? '' : 's'}.
-            </p>
-            {#if result.blocked.length}
-              <p>
-                <strong>Removed for safety ({result.blocked.length}):</strong>
-                <span class="mono dim">{result.blocked.join(', ')}</span>
-              </p>
-            {/if}
-            {#if result.commented?.length}
-              <details open>
-                <summary class="dim"
-                  >{result.commented.length} line{result.commented.length === 1 ? '' : 's'} commented out</summary
-                >
-                {#each result.commented as c, i (i)}
-                  <p class="dim small">
-                    <span class="mono">{c.file ? `${c.file}:` : 'line '}{c.line}</span>
-                    {c.message}
-                  </p>
-                {/each}
-              </details>
-            {/if}
-            {#each result.warnings as w, _i (_i)}<p class="warn"><TriangleAlert size={14} /> {w}</p>{/each}
-            {#if result.ignored.length}
-              <details>
-                <summary class="dim">{result.ignored.length} other settings not used</summary>
-                <p class="mono dim">{result.ignored.join(', ')}</p>
-              </details>
-            {/if}
-          </div>
-        {/if}
-      </div>
+      <RcSaved problems={check.mine} {error} {note} {skipped} {result} />
 
       <footer class="row">
         {#if edited}<button class="ghost" onclick={revert}>Revert edits</button>{/if}
@@ -667,37 +464,7 @@
 
   {#if drawer === 'import'}
     <Drawer title="Import" onclose={() => (drawer = null)}>
-      <form
-        class="link"
-        onsubmit={(e) => {
-          e.preventDefault();
-          void fromLink();
-        }}
-      >
-        <label for="rc-link"><Link size={14} /> From a link</label>
-        <input
-          id="rc-link"
-          type="url"
-          bind:value={link}
-          placeholder="https://raw.githubusercontent.com/you/dotfiles/main/.taskrc"
-          spellcheck="false"
-          autocomplete="off"
-        />
-        <button disabled={busy || !link.trim()}>Import</button>
-        <p class="dim small">
-          Fetched and saved as the main taskrc straight away (Restore previous undoes it). GitHub and GitLab file pages
-          work too. A public link; keep it free of passwords. Files it includes are not fetched: add them with + New.
-        </p>
-      </form>
-      <hr />
-      <div class="folder-import">
-        <p><Upload size={14} /> A folder, as it is</p>
-        <label class="check"
-          ><input type="checkbox" bind:checked={replace} /> Replace what is here (needs a <code>taskrc</code>)</label
-        >
-        <input type="file" multiple webkitdirectory onchange={upload} disabled={busy} aria-label="Folder to import" />
-        <p class="dim small">Without Replace, the files are added to what is here, and same names are overwritten.</p>
-      </div>
+      <RcImport {busy} bind:link bind:replace onlink={() => void fromLink()} onupload={upload} />
     </Drawer>
   {/if}
 
@@ -719,23 +486,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-  .head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 4px 10px;
-  }
-  h2 {
-    margin: 0;
-    font-size: 18px;
-  }
-  .about {
-    line-height: 0;
-    align-self: center;
-  }
-  .about-text {
-    margin: 0;
   }
   .workspace {
     position: relative;
@@ -799,68 +549,6 @@
   .grow {
     flex: 1;
   }
-  .rc-editor {
-    flex: 1;
-    min-height: 120px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-  }
-  .rc-editor :global(.cm-editor) {
-    height: 100%;
-  }
-  .rc-editor :global(.cm-scroller) {
-    overflow: auto;
-  }
-  .below {
-    max-height: 30%;
-    overflow: auto;
-  }
-  .below:empty {
-    display: none;
-  }
-  .more {
-    position: relative;
-  }
-  .menu {
-    position: absolute;
-    z-index: 20;
-    right: 0;
-    top: calc(100% + 4px);
-    width: 280px;
-    display: grid;
-    gap: 2px;
-    padding: 6px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
-  }
-  .menu > button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    text-align: left;
-    background: none;
-    border: 0;
-    padding: 7px 8px;
-    border-radius: 5px;
-  }
-  .menu > button:hover {
-    background: var(--panel-2);
-  }
-  .include {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 6px;
-    padding: 6px 8px;
-    border-block: 1px solid var(--border);
-  }
-  .include select {
-    flex: 1;
-    min-width: 0;
-  }
   .small {
     font-size: 12.5px;
   }
@@ -870,53 +558,17 @@
     align-items: center;
     gap: 8px;
   }
-  .link {
-    display: grid;
-    gap: 8px;
-  }
-  .link label,
-  .folder-import p:first-child {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-    margin: 0;
-  }
-  .folder-import {
-    display: grid;
-    gap: 8px;
-  }
-  hr {
-    border: 0;
-    border-top: 1px solid var(--border);
-    margin: 16px 0;
-  }
-  .check {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .warn,
   .bad {
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--warn);
-    margin: 2px 0;
-  }
-  .bad {
     color: var(--err);
-  }
-  .result p {
-    margin: 4px 0;
+    margin: 2px 0;
   }
   .btn {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-  }
-  .danger {
-    color: var(--err);
   }
   code {
     font-family: var(--mono);

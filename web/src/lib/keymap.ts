@@ -278,3 +278,16 @@ export function keyLabel(chord: string): string {
     return chord;
   }
 }
+
+/** `b` matches what is typed in a search of the keys: its name, its command, what it does, or one of its keys. */
+export function bindingMatches(b: Binding, q: string): boolean {
+  const t = q.trim().toLowerCase();
+  if (!t) return true;
+  const keys = b.keys ?? b.defaults;
+  return (
+    b.action.toLowerCase().includes(t) ||
+    b.command.toLowerCase().includes(t) ||
+    b.about.toLowerCase().includes(t) ||
+    keys.some((k) => k.toLowerCase() === t || keyLabel(k).toLowerCase() === t)
+  );
+}

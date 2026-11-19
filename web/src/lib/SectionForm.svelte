@@ -1,17 +1,13 @@
 <script lang="ts">
-  import ColorPicker from './ColorPicker.svelte';
   import FilterInput from './FilterInput.svelte';
   import {
     FNS,
     SECTION_TYPES,
-    SPAN_PRESETS,
     STEPS,
     isChartType,
     isRoundType,
     isStackableType,
-    isStacked,
     largestGroups,
-    moveSeries,
     ROW_PARTS,
     controlLabel,
     zoneNow,
@@ -22,12 +18,10 @@
     type Rows,
     type Section,
     type SectionType,
-    type Series,
-    type Span,
     type StackBy,
-    type WrittenGroup,
   } from './boards';
-  import { ArrowDown, ArrowUp, Plus, Trash2 } from './icons';
+  import SectionGroups from './SectionGroups.svelte';
+  import SectionSeries from './SectionSeries.svelte';
   import { store } from './store.svelte';
 
   /** The settings of one board section. It edits a copy and reports it; saving is the board's. */
@@ -104,19 +98,6 @@
     });
   }
 
-  /** The groups the board writes, as Chart.js has labels: each a label, a filter, and a colour of its own. */
-  const MAX_GROUPS = 24;
-  const written = $derived(section.by?.groups ?? []);
-  const setGroups = (list: WrittenGroup[]) => set({ by: { groups: list } });
-  const patchGroup = (i: number, patch: Partial<WrittenGroup>) =>
-    setGroups(written.map((g, j) => (j === i ? { ...g, ...patch } : g)));
-  const addGroup = () => {
-    const taken = new Set(written.map((g) => g.label.trim()));
-    let n = written.length + 1;
-    while (taken.has(`Group ${n}`)) n++;
-    setGroups([...written, { label: `Group ${n}` }]);
-  };
-
   /** What a heatmap's rows are, as the choice it is in the list: none, a part of a date, or the value of an attribute. */
   const rowsKind = $derived(section.rows?.time ? section.rows.time.part : section.rows ? 'field' : '');
   const setRows = (rows: Rows | undefined) => set({ rows });
@@ -127,34 +108,8 @@
       setRows({ time: { field: section.rows?.time?.field ?? section.by?.time?.field ?? 'entry', part: v as RowPart } });
   }
 
-  const MAX_SERIES = 12;
+  /** The series, whose count Stack by needs (several series and Stack by are one or the other). */
   const series = $derived(section.series ?? []);
-  /** Stacked by a field has one series at most: its values are the series. */
-  const seriesFull = $derived(series.length >= (section.stackBy ? 1 : MAX_SERIES));
-  const setSeries = (list: Series[]) => set({ series: list.length ? list : undefined });
-  const patchSeries = (i: number, patch: Partial<Series>) =>
-    setSeries(series.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  /** Which of the states of `task burndown` a span is, `custom` for any other, and `period` for none. */
-  const spanKind = (x: Series): string =>
-    !x.span ? 'period' : (SPAN_PRESETS.find((p) => JSON.stringify(p.span) === JSON.stringify(x.span))?.id ?? 'custom');
-  function pickSpan(i: number, kind: string) {
-    const span: Span | undefined =
-      kind === 'period'
-        ? undefined
-        : kind === 'custom'
-          ? { from: 'entry' }
-          : SPAN_PRESETS.find((p) => p.id === kind)?.span;
-    patchSeries(i, { span: span && { ...span } });
-  }
-  const patchSpan = (i: number, patch: Partial<Span>) => {
-    const x = series[i];
-    if (!x?.span) return;
-    const next: Span = { ...x.span, ...patch };
-    // An empty choice takes the date out.
-    for (const k of ['to', 'unless'] as const) if (!next[k]) delete next[k];
-    patchSeries(i, { span: next });
-  };
-  const addSeries = () => setSeries([...series, { label: `Series ${series.length + 1}` }]);
 
   /** The grouping by a date with some of it changed; what is not changed (the range of the axis) stays. */
   const setTime = (patch: Partial<NonNullable<NonNullable<Section['by']>['time']>>) =>
@@ -428,210 +383,11 @@
   {/if}
 
   {#if chart && section.by?.groups}
-    <fieldset class="wide series">
-      <legend>Groups</legend>
-      <p class="dim hint">
-        Each group is a slice of a pie, a bar or a point: the tasks its filter picks (added to the filters of the board,
-        the chart and each series, unless it leaves them out), in this order.
-      </p>
-      {#each written as g, i (i)}
-        <div class="series-item">
-          <div class="row-series">
-            <input
-              class="label"
-              aria-label="Label of group {i + 1}"
-              placeholder="Label"
-              value={g.label}
-              oninput={(e) => patchGroup(i, { label: e.currentTarget.value })}
-            />
-            <div class="grow">
-              <FilterInput
-                bind:value={() => g.filter ?? '', (v) => patchGroup(i, { filter: v || undefined })}
-                id="group-filter-{section.id}-{i}"
-                placeholder="Which tasks: status:completed outcome:success"
-              />
-            </div>
-          </div>
-          <ColorPicker
-            value={g.color}
-            position={i}
-            label="Colour of group {i + 1}"
-            onchange={(color) => patchGroup(i, { color })}
-          />
-          <div class="row-series">
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={!!g.ignoreSectionFilter}
-                onchange={(e) => patchGroup(i, { ignoreSectionFilter: e.currentTarget.checked || undefined })}
-              />
-              Without the chart's filter
-            </label>
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={!!g.ignoreBoardFilter}
-                onchange={(e) => patchGroup(i, { ignoreBoardFilter: e.currentTarget.checked || undefined })}
-              />
-              Without the board's filter
-            </label>
-          </div>
-          <div class="row-series">
-            <button
-              aria-label="Move group {i + 1} up"
-              title="Move earlier"
-              disabled={i === 0}
-              onclick={() => setGroups(moveSeries(written, i, -1))}><ArrowUp size={14} /></button
-            >
-            <button
-              aria-label="Move group {i + 1} down"
-              title="Move later"
-              disabled={i === written.length - 1}
-              onclick={() => setGroups(moveSeries(written, i, 1))}><ArrowDown size={14} /></button
-            >
-            <button
-              class="danger"
-              aria-label="Remove group {i + 1}"
-              disabled={written.length === 1}
-              onclick={() => setGroups(written.filter((_, j) => j !== i))}><Trash2 size={14} /> Remove group</button
-            >
-          </div>
-        </div>
-      {/each}
-      <div class="row-series">
-        <button onclick={addGroup} disabled={written.length >= MAX_GROUPS}><Plus size={14} /> Add group</button>
-      </div>
-    </fieldset>
+    <SectionGroups {section} {set} />
   {/if}
 
   {#if manySeries}
-    <fieldset class="wide series">
-      <legend>Series</legend>
-      <p class="dim hint">
-        Each series is its own line or set of bars, of the tasks its filter picks (added to the filters above). With
-        none, the chart is the one measure above. When they are stacked, the first is at the bottom and the next on it:
-        the arrows change the order. In a heatmap with rows a series is a colour and a grid of its own, or, stacked,
-        they are added into one; with no rows a series is a row, and stacked they are one row.
-      </p>
-      {#each series as x, i (i)}
-        <div class="series-item">
-          <div class="row-series">
-            <input
-              class="label"
-              aria-label="Label of series {i + 1}"
-              placeholder="Label"
-              value={x.label}
-              oninput={(e) => patchSeries(i, { label: e.currentTarget.value })}
-            />
-            <div class="grow">
-              <FilterInput
-                bind:value={() => x.filter ?? '', (v) => patchSeries(i, { filter: v || undefined })}
-                id="series-filter-{section.id}-{i}"
-                placeholder="Which tasks: outcome:failed"
-              />
-            </div>
-          </div>
-          {#if section.by?.time}
-            <div class="span-row">
-              <label>
-                Counts
-                <select value={spanKind(x)} onchange={(e) => pickSpan(i, e.currentTarget.value)}>
-                  <option value="period">What happened in each period</option>
-                  {#each SPAN_PRESETS as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
-                  <option value="custom">Open between two dates…</option>
-                </select>
-              </label>
-              {#if x.span && spanKind(x) === 'custom'}
-                <label>
-                  From
-                  <select value={x.span.from} onchange={(e) => patchSpan(i, { from: e.currentTarget.value })}>
-                    {#each DATES as d (d)}<option value={d}>{d}</option>{/each}
-                  </select>
-                </label>
-                <label>
-                  Until
-                  <select value={x.span.to ?? ''} onchange={(e) => patchSpan(i, { to: e.currentTarget.value })}>
-                    <option value="">never</option>
-                    {#each DATES as d (d)}<option value={d}>{d}</option>{/each}
-                  </select>
-                </label>
-                <label>
-                  Unless
-                  <select value={x.span.unless ?? ''} onchange={(e) => patchSpan(i, { unless: e.currentTarget.value })}>
-                    <option value="">nothing</option>
-                    {#each DATES as d (d)}<option value={d}>{d} has passed</option>{/each}
-                  </select>
-                </label>
-              {/if}
-            </div>
-          {/if}
-          <ColorPicker
-            value={x.color}
-            position={i}
-            label="Colour of series {i + 1}"
-            onchange={(color) => patchSeries(i, { color })}
-          />
-          <div class="row-series">
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={!!x.ignoreSectionFilter}
-                onchange={(e) => patchSeries(i, { ignoreSectionFilter: e.currentTarget.checked || undefined })}
-              />
-              Without the chart's filter
-            </label>
-            <label class="check">
-              <input
-                type="checkbox"
-                checked={!!x.ignoreBoardFilter}
-                onchange={(e) => patchSeries(i, { ignoreBoardFilter: e.currentTarget.checked || undefined })}
-              />
-              Without the board's filter
-            </label>
-          </div>
-          <div class="row-series">
-            <button
-              aria-label="Move series {i + 1} up"
-              title="Move earlier: lower in a stack"
-              disabled={i === 0}
-              onclick={() => setSeries(moveSeries(series, i, -1))}><ArrowUp size={14} /></button
-            >
-            <button
-              aria-label="Move series {i + 1} down"
-              title="Move later: higher in a stack"
-              disabled={i === series.length - 1}
-              onclick={() => setSeries(moveSeries(series, i, 1))}><ArrowDown size={14} /></button
-            >
-            <button
-              class="danger"
-              aria-label="Remove series {i + 1}"
-              onclick={() => setSeries(series.filter((_, j) => j !== i))}><Trash2 size={14} /> Remove series</button
-            >
-          </div>
-        </div>
-      {/each}
-      <div class="row-series">
-        <button onclick={addSeries} disabled={seriesFull}><Plus size={14} /> Add series</button>
-        {#if series.length > 1 || section.stacked || section.stackBy}
-          <label class="check">
-            <input
-              type="checkbox"
-              checked={isStacked(section)}
-              onchange={(e) =>
-                set({
-                  // Stacked by a field is stacked unless it says not.
-                  stacked: section.stackBy
-                    ? e.currentTarget.checked
-                      ? undefined
-                      : false
-                    : e.currentTarget.checked || undefined,
-                })}
-            />
-            Stacked
-          </label>
-        {/if}
-      </div>
-    </fieldset>
+    <SectionSeries {section} {set} dates={DATES} />
   {/if}
 
   <div class="wide filter">
@@ -674,50 +430,6 @@
   }
   .wide {
     grid-column: 1 / -1;
-  }
-  .series {
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 8px 10px;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .series legend {
-    padding: 0 4px;
-    font-size: 12px;
-    color: var(--dim);
-  }
-  .hint {
-    margin: 0;
-  }
-  .row-series {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .row-series .label {
-    width: 130px;
-    flex: none;
-    font-size: 14px;
-    color: var(--text);
-  }
-  .span-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 10px;
-    align-items: end;
-  }
-  .span-row select {
-    max-width: 260px;
-  }
-  .series-item {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--line);
   }
   .check {
     flex-direction: row;
