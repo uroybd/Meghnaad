@@ -86,9 +86,10 @@
     outline: none;
     color: var(--fg, inherit);
     text-align: center;
-    background: color-mix(in srgb, var(--bg, #111) 45%, transparent);
-    backdrop-filter: blur(28px) saturate(160%) brightness(0.9);
-    -webkit-backdrop-filter: blur(28px) saturate(160%) brightness(0.9);
+    background: color-mix(in srgb, var(--bg, #111) 55%, transparent);
+    /* Only the standard name: with the -webkit- copy beside it, the build's minifier kept that one alone, which
+       Firefox doesn't read. */
+    backdrop-filter: blur(40px) saturate(150%);
   }
   .pin[open] {
     display: flex;
