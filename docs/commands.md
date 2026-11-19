@@ -51,7 +51,7 @@ Takes a page's number or name.
 
 With nothing after it, the next page, from the last back to the first. With a number, the page at that place in the top bar (1 to 9, Settings last); with a word, the first page whose name starts with it, in any case: `:tabn 3`, `:tabn tasks`, `:tabn bu`. The keys `gt` and `g1` to `g9` run it.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="tabprevious"></a>
 
@@ -59,7 +59,7 @@ Since the next release.
 
 The page before this one, from the first round to the last. `gT` runs it.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="tabNext"></a>
 
@@ -67,7 +67,7 @@ Since the next release.
 
 The same as `:tabprevious`, as in vim.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="tabfirst"></a>
 
@@ -75,7 +75,7 @@ Since the next release.
 
 The first page of the top bar, Tasks.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="tabrewind"></a>
 
@@ -83,7 +83,7 @@ Since the next release.
 
 The same as `:tabfirst`, as in vim.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="tablast"></a>
 
@@ -91,7 +91,7 @@ Since the next release.
 
 The last page of the top bar, Settings.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="quit"></a>
 
@@ -99,7 +99,7 @@ Since the next release.
 
 Quit the terminal app. The web app and the phone have nothing to quit.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="undo"></a>
 
@@ -107,7 +107,7 @@ Since the next release.
 
 Taskwarrior's `undo`, which asks first: on the terminal in a box, on the web with the line put on the command line for Enter.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="write"></a>
 
@@ -115,7 +115,7 @@ Since the next release.
 
 Sync, as vim's `:w` writes what has changed: on the terminal `task sync` in the background, with Taskwarrior's own settings; on the web and the phone, with the store. The same as `:sync`.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="edit"></a>
 
@@ -123,7 +123,7 @@ Since the next release.
 
 Read the report and the settings again, as vim's `:e` reads the file again. The terminal app reads `settings.json` again too, so a change made in an editor applies.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="help"></a>
 
@@ -131,7 +131,7 @@ Since the next release.
 
 The list of keys and commands, as `?` opens it.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="filter"></a>
 
@@ -141,7 +141,7 @@ Takes a filter.
 
 With words, the Tasks page with them as its filter, as `task` reads a filter: `:filter +home due.before:eow`. With none, the cursor in the filter, to change it. Bound to a key, it is a saved filter a key away: `"tasks": { "g h": "filter +home" }`.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="sort"></a>
 
@@ -151,7 +151,7 @@ Takes a sort, as a report's sort setting writes it (due+,urgency-).
 
 On the terminal. With words, the report sorted by them for now, written as `report.<name>.sort` writes it: `:sort due+,urgency-`. With none, the sort editor, to add, take out, reverse and reorder the report's sort keys.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="delete"></a>
 
@@ -159,7 +159,7 @@ Since the next release.
 
 Delete the chosen task, or the marked tasks when there are any. Taskwarrior asks first.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="mark"></a>
 
@@ -167,7 +167,7 @@ Since the next release.
 
 Mark the chosen task, or unmark it, and move to the next row. With tasks marked, the task commands act on all of them.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="open"></a>
 
@@ -175,7 +175,7 @@ Since the next release.
 
 Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`).
 
-Since the next release.
+Since 0.8.11.
 
 <a id="done"></a>
 
@@ -183,7 +183,7 @@ Since the next release.
 
 Mark the chosen task done, or the marked tasks when there are any.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="start"></a>
 
@@ -191,7 +191,7 @@ Since the next release.
 
 Start the chosen task. With tasks marked, start those not started yet and pass over the others.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="stop"></a>
 
@@ -199,7 +199,7 @@ Since the next release.
 
 Stop the chosen task. With tasks marked, stop those started and pass over the others.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="toggle"></a>
 
@@ -207,7 +207,7 @@ Since the next release.
 
 Start the chosen task, or stop it when it is started, as `+` does. With tasks marked, use `:start` or `:stop`.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="modify"></a>
 
@@ -217,7 +217,7 @@ Takes what to change.
 
 With words, `task modify` with them on the marked tasks, or else on the chosen one: `:modify due:eow +next`. With none, the full form.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="annotate"></a>
 
@@ -227,7 +227,7 @@ Takes the note.
 
 With words, add them as a note to the marked tasks, or else to the chosen one: `:annotate called back`. With none, a box for the note.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="denotate"></a>
 
@@ -237,7 +237,7 @@ Takes the note, or the start of it.
 
 With words, take off the note that starts with them, as `task denotate` does. With none, the command line with the task and `denotate` typed, for the note.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="duplicate"></a>
 
@@ -245,7 +245,7 @@ Since the next release.
 
 Taskwarrior's `duplicate` on the chosen task, or the marked ones.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="info"></a>
 
@@ -253,7 +253,7 @@ Since the next release.
 
 The chosen task's info: everything about it, its notes and how its urgency adds up.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="add"></a>
 
@@ -263,7 +263,7 @@ Takes the task, as task add takes it.
 
 With words, add the task they describe, as `task add` reads them: `:add Buy milk +errand due:tomorrow`. With none, the box to add one, with a preview.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="report"></a>
 
@@ -273,7 +273,7 @@ Takes a report's name.
 
 With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="context"></a>
 
@@ -283,7 +283,7 @@ Takes a context's name, or none.
 
 With a name, Taskwarrior's `context` with it: `:context work`, or `:context none` to have none. With nothing after it, the list of contexts to choose from.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="sync"></a>
 
@@ -291,7 +291,7 @@ Since the next release.
 
 The same as `:write`.
 
-Since the next release.
+Since 0.8.11.
 
 <a id="review"></a>
 
@@ -299,7 +299,7 @@ Since the next release.
 
 tasksh's review: each task the `_reviewed` report lists, one at a time, to mark reviewed, skip, change or finish.
 
-Since the next release.
+Since 0.8.11.
 
 ## Rows
 
