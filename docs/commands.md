@@ -349,7 +349,7 @@ Since 0.8.15.
 
 On the calendar, the month after; on a board, the board after. Like the other commands that act in several places, it does what it means on the page it is used on.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="previous"></a>
 
@@ -357,7 +357,7 @@ Since the next release.
 
 On the calendar, the month before; on a board, the board before.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="snext"></a>
 
@@ -365,7 +365,7 @@ Since the next release.
 
 The next section of the settings, of a board, of the help or of a task's info, as vim's `:snext` is the next file in a split.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="sprevious"></a>
 
@@ -373,7 +373,7 @@ Since the next release.
 
 The section before, as `:snext` goes on.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="pagedown"></a>
 
@@ -381,7 +381,7 @@ Since the next release.
 
 A page down the list. A count is that many pages.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="pageup"></a>
 
@@ -389,7 +389,7 @@ Since the next release.
 
 A page up the list.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="halfdown"></a>
 
@@ -397,7 +397,7 @@ Since the next release.
 
 Half a page down the list, as `ctrl+d` does.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="halfup"></a>
 
@@ -405,7 +405,7 @@ Since the next release.
 
 Half a page up the list, as `ctrl+u` does.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="prompt"></a>
 
@@ -413,7 +413,7 @@ Since the next release.
 
 Put the cursor in the prompt, the command line at the bottom, as `/` does.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="sidebar"></a>
 
@@ -421,7 +421,7 @@ Since the next release.
 
 On the terminal, move between the page and the list of reports down the side.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="hidden"></a>
 
@@ -429,7 +429,7 @@ Since the next release.
 
 In the terminal's list of reports, show the hidden ones too (their names start with `_`), or hide them again.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="back"></a>
 
@@ -437,7 +437,7 @@ Since the next release.
 
 Back to the page from the reports down the side, or from a board to the list of boards.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="stopall"></a>
 
@@ -445,7 +445,7 @@ Since the next release.
 
 Stop the task that is started, whichever it is (the timer in the top bar), where `:stop` stops the chosen one.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="reminders"></a>
 
@@ -453,7 +453,7 @@ Since the next release.
 
 The reminder options, and turning reminders on or off.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="export"></a>
 
@@ -461,7 +461,7 @@ Since the next release.
 
 Export the report as a file (JSON, CSV or TSV, with the fields you choose); on a board, a table of the board.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="clear"></a>
 
@@ -469,7 +469,7 @@ Since the next release.
 
 Clear what the console shows.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="burndown"></a>
 
@@ -479,7 +479,7 @@ Takes day, week or month.
 
 The burndown chart by day, by week or by month: `:burndown week`.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="command"></a>
 
@@ -489,7 +489,7 @@ Takes add, edit or delete.
 
 With nothing after it, one of your task commands to run on the chosen task, from a list. In the task commands of Settings, `:command add`, `:command edit` and `:command delete` add one, change the one under the cursor and delete it.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="key"></a>
 
@@ -499,7 +499,7 @@ Takes add, remove, none, defaults or search.
 
 In the Keybindings of Settings: `:key add` adds a key to the section, `:key remove` takes your key out (back to the default), `:key none` leaves the action without a key, `:key defaults` shows the default keys or only yours, `:key search` searches them.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="home"></a>
 
@@ -507,7 +507,7 @@ Since the next release.
 
 In the general settings, choose the page the app opens on: a report or a board.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="syncwhen"></a>
 
@@ -515,7 +515,7 @@ Since the next release.
 
 In the sync settings, go through when to sync, and save it.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="theme"></a>
 
@@ -523,7 +523,7 @@ Since the next release.
 
 In the appearance settings, go through the presets: auto, light, dark or mono.
 
-Since the next release.
+Since 0.8.22.
 
 <a id="shading"></a>
 
@@ -531,7 +531,7 @@ Since the next release.
 
 In the appearance settings, draw tasks' grey shading, or leave it out.
 
-Since the next release.
+Since 0.8.22.
 
 ## Rows
 

@@ -256,7 +256,7 @@
       "summary": "the next month, the next board",
       "takes": "",
       "doc": "On the calendar, the month after; on a board, the board after. Like the other commands that act in several places, it does what it means on the page it is used on.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "previous",
@@ -264,7 +264,7 @@
       "summary": "the month before, the board before",
       "takes": "",
       "doc": "On the calendar, the month before; on a board, the board before.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "snext",
@@ -272,7 +272,7 @@
       "summary": "the next section",
       "takes": "",
       "doc": "The next section of the settings, of a board, of the help or of a task's info, as vim's `:snext` is the next file in a split.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "sprevious",
@@ -280,7 +280,7 @@
       "summary": "the section before",
       "takes": "",
       "doc": "The section before, as `:snext` goes on.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "pagedown",
@@ -288,7 +288,7 @@
       "summary": "a page down",
       "takes": "",
       "doc": "A page down the list. A count is that many pages.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "pageup",
@@ -296,7 +296,7 @@
       "summary": "a page up",
       "takes": "",
       "doc": "A page up the list.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "halfdown",
@@ -304,7 +304,7 @@
       "summary": "half a page down",
       "takes": "",
       "doc": "Half a page down the list, as `ctrl+d` does.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "halfup",
@@ -312,7 +312,7 @@
       "summary": "half a page up",
       "takes": "",
       "doc": "Half a page up the list, as `ctrl+u` does.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "prompt",
@@ -320,7 +320,7 @@
       "summary": "the cursor in the prompt",
       "takes": "",
       "doc": "Put the cursor in the prompt, the command line at the bottom, as `/` does.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "sidebar",
@@ -328,7 +328,7 @@
       "summary": "between the page and the reports down the side",
       "takes": "",
       "doc": "On the terminal, move between the page and the list of reports down the side.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "hidden",
@@ -336,7 +336,7 @@
       "summary": "show the hidden reports",
       "takes": "",
       "doc": "In the terminal's list of reports, show the hidden ones too (their names start with `_`), or hide them again.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "back",
@@ -344,7 +344,7 @@
       "summary": "back",
       "takes": "",
       "doc": "Back to the page from the reports down the side, or from a board to the list of boards.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "stopall",
@@ -352,7 +352,7 @@
       "summary": "stop the started task",
       "takes": "",
       "doc": "Stop the task that is started, whichever it is (the timer in the top bar), where `:stop` stops the chosen one.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "reminders",
@@ -360,7 +360,7 @@
       "summary": "the reminder options",
       "takes": "",
       "doc": "The reminder options, and turning reminders on or off.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "export",
@@ -368,7 +368,7 @@
       "summary": "export as a file",
       "takes": "",
       "doc": "Export the report as a file (JSON, CSV or TSV, with the fields you choose); on a board, a table of the board.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "clear",
@@ -376,7 +376,7 @@
       "summary": "clear the console",
       "takes": "",
       "doc": "Clear what the console shows.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "burndown",
@@ -384,7 +384,7 @@
       "summary": "the burndown by day, week or month",
       "takes": "day, week or month",
       "doc": "The burndown chart by day, by week or by month: `:burndown week`.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "command",
@@ -392,7 +392,7 @@
       "summary": "run one of your task commands on the task",
       "takes": "add, edit or delete",
       "doc": "With nothing after it, one of your task commands to run on the chosen task, from a list. In the task commands of Settings, `:command add`, `:command edit` and `:command delete` add one, change the one under the cursor and delete it.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "key",
@@ -400,7 +400,7 @@
       "summary": "add, take out or search keys",
       "takes": "add, remove, none, defaults or search",
       "doc": "In the Keybindings of Settings: `:key add` adds a key to the section, `:key remove` takes your key out (back to the default), `:key none` leaves the action without a key, `:key defaults` shows the default keys or only yours, `:key search` searches them.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "home",
@@ -408,7 +408,7 @@
       "summary": "choose the page the app opens on",
       "takes": "",
       "doc": "In the general settings, choose the page the app opens on: a report or a board.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "syncwhen",
@@ -416,7 +416,7 @@
       "summary": "choose when to sync",
       "takes": "",
       "doc": "In the sync settings, go through when to sync, and save it.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "theme",
@@ -424,7 +424,7 @@
       "summary": "the next theme preset",
       "takes": "",
       "doc": "In the appearance settings, go through the presets: auto, light, dark or mono.",
-      "since": "unreleased"
+      "since": "0.8.22"
     },
     {
       "name": "shading",
@@ -432,7 +432,7 @@
       "summary": "the grey shading of tasks, or none",
       "takes": "",
       "doc": "In the appearance settings, draw tasks' grey shading, or leave it out.",
-      "since": "unreleased"
+      "since": "0.8.22"
     }
   ],
   "lines": [
