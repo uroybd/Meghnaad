@@ -86,7 +86,10 @@ export default defineConfig({
         : [
             // The Worker runs the hooks: nothing to bundle.
             { find: /^tc-hooks$/, replacement: fileURLToPath(new URL('./src/engine/hooks-stub.ts', import.meta.url)) },
-            { find: /^tc-hooks-wasm\?url$/, replacement: 'data:application/wasm,' },
+            {
+              find: /^tc-hooks-wasm\?url$/,
+              replacement: fileURLToPath(new URL('./src/engine/hooks-wasm-stub.ts', import.meta.url)),
+            },
           ]),
     ],
     ...(process.env.VITEST ? { conditions: ['browser'] } : {}),
