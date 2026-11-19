@@ -28,34 +28,29 @@
   } from './lib/icons';
   import NavMenu from './lib/NavMenu.svelte';
   import { pullToRefresh, PULL_THRESHOLD } from './lib/pullRefresh';
-  import BoardsPage from './lib/BoardsPage.svelte';
-  import BurndownPage from './lib/BurndownPage.svelte';
-  import CalendarPage from './lib/CalendarPage.svelte';
   import ConsoleView from './lib/ConsoleView.svelte';
-  import ProjectsView from './lib/ProjectsView.svelte';
-  import TagsView from './lib/TagsView.svelte';
+  import LazyView from './lib/LazyView.svelte';
+  import { DIALOGS, PAGES, preloadPage, preloadPages } from './lib/pages';
   import DetailDrawer from './lib/DetailDrawer.svelte';
-  import NotifyDialog from './lib/NotifyDialog.svelte';
-  import KeysHelp from './lib/KeysHelp.svelte';
   import { chordOf, pendingLabel, stepKey, type Pending } from './lib/keymap';
   import { runCall } from './lib/keyCalls';
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
   import { takeClicked } from './lib/lockedReminders';
-  import SetupGuide from './lib/SetupGuide.svelte';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAddModal from './lib/QuickAddModal.svelte';
-  import SettingsPage from './lib/SettingsPage.svelte';
-  import SummaryPage from './lib/SummaryPage.svelte';
   import { chartProps } from './lib/colors';
   import { parsePath, placePath, prefixFromPath } from './lib/route';
-  import ReviewCard from './lib/ReviewCard.svelte';
   import { review } from './lib/review.svelte';
   import { scheme } from './lib/scheme.svelte';
   import { store } from './lib/store.svelte';
   import TaskEditor from './lib/TaskEditor.svelte';
   import TasksView from './lib/TasksView.svelte';
   import WaitBar from './lib/WaitBar.svelte';
+
+  /** The page a button of the top bar opens (its label), to start fetching it when pointed at. */
+  const navView = (e: Event) =>
+    (e.target as Element | null)?.closest?.('button')?.getAttribute('aria-label')?.toLowerCase();
 
   // How tall the prompt is: a long command wraps, and the floating + stays above it.
   let dockHeight = $state(0);
@@ -123,6 +118,8 @@
         // A reminder clicked while this tab was locked: its task, now that it is unlocked (spec 0017).
         const clicked = STATIC ? takeClicked() : null;
         if (clicked) store.openDetail(clicked);
+        // The other pages' code, once the first screen is up and the page is idle, so none of them waits when opened.
+        preloadPages();
       });
     void followAddress();
     // Reminders can wait for the table: the engine answers one command at a time, so a poll sent first would be
@@ -248,7 +245,7 @@
 <svelte:window {onkeydown} onpopstate={() => void followAddress()} />
 
 {#if setup}
-  <SetupGuide status={setup} onready={start} />
+  <LazyView of={DIALOGS.setup} props={{ status: setup, onready: start }} />
 {:else}
   <WaitBar />
   {#if STATIC}<PinLock />{/if}
@@ -267,7 +264,12 @@
         <img class="logo" src="logo-64.png" width="28" height="28" alt="" />
         <strong class="name">Meghnaad</strong>
       </a>
-      <nav class="tabs" aria-label="View">
+      <nav
+        class="tabs"
+        aria-label="View"
+        onpointerover={(e) => preloadPage(navView(e))}
+        onfocusin={(e) => preloadPage(navView(e))}
+      >
         <button class:on={store.view === 'tasks'} aria-label="Tasks" onclick={() => (store.view = 'tasks')}
           ><ListChecks size={15} /> <span class="lbl">Tasks</span></button
         >
@@ -386,12 +388,12 @@
     </aside>
 
     <main class="main" class:console={store.view === 'console'} use:pullToRefresh={pullOptions}>
-      {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'projects'}<ProjectsView
-        />{:else if store.view === 'tags'}<TagsView />{:else if store.view === 'summary'}<SummaryPage
-        />{:else if store.view === 'calendar'}<CalendarPage />{:else if store.view === 'burndown'}<BurndownPage
-        />{:else if store.view === 'boards'}<BoardsPage />{:else if store.view === 'console'}<ConsoleView />{/if}
+      {#if store.view === 'tasks'}<TasksView />{:else if store.view === 'console'}<ConsoleView
+        />{:else if store.view in PAGES && store.view !== 'settings'}<LazyView
+          of={PAGES[store.view as keyof typeof PAGES]}
+        />{/if}
       <!-- Once opened it stays, hidden, so what was typed in a tab is still there when you come back. -->
-      {#if seenSettings}<div hidden={store.view !== 'settings'}><SettingsPage /></div>{/if}
+      {#if seenSettings}<div hidden={store.view !== 'settings'}><LazyView of={PAGES.settings} /></div>{/if}
     </main>
 
     {#if pulled.distance > 0 || refreshing}
@@ -463,12 +465,12 @@
       {/if}
     {/key}
   {/if}
-  {#if review.surface === 'card' && review.phase !== 'idle'}<ReviewCard />{/if}
+  {#if review.surface === 'card' && review.phase !== 'idle'}<LazyView of={DIALOGS.review} />{/if}
   {#if store.detail}
     {#key store.detail.uuid}<DetailDrawer uuid={store.detail.uuid} />{/key}
   {/if}
-  {#if store.notifyOpen}<NotifyDialog />{/if}
-  {#if store.keysHelpOpen}<KeysHelp />{/if}
+  {#if store.notifyOpen}<LazyView of={DIALOGS.notify} />{/if}
+  {#if store.keysHelpOpen}<LazyView of={DIALOGS.keys} />{/if}
   {#if pendingKeys}<div class="pending-keys" role="status">{pendingKeys}</div>{/if}
 {/if}
 

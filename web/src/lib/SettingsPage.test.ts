@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TABS as PANELS } from './pages';
 import { flushSync, mount, unmount } from 'svelte';
 import { getAppSettings, getConfig, getRcFiles, getTaskrcText, putAppSettings, runCli } from './api';
 import { parseSettings } from './appsettings';
@@ -49,12 +50,18 @@ function bare(): ConfigResponse {
 }
 
 const ok = { result: { kind: 'text', lines: ['Config modified.'] }, wrote: false, feedback: [] };
+// A tab's code is fetched when it is first opened (a dynamic import), which takes a turn of the event loop or two.
 const tick = async () => {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
   flushSync();
 };
 
 let app: ReturnType<typeof mount> | null = null;
+// The tabs' code is fetched on demand in the app; here it is fetched once, before the tests, so a tab opened is drawn at
+// once.
+beforeAll(async () => {
+  await Promise.all(Object.values(PANELS).map((p) => p.load()));
+});
 beforeEach(() => {
   vi.mocked(getTaskrcText).mockResolvedValue('');
   vi.mocked(getRcFiles).mockResolvedValue({
@@ -118,6 +125,11 @@ describe('the Settings page', () => {
   it('gives each tab its own Apply, and a tab with edits a dot that stays while another is shown', async () => {
     app = mount(SettingsPage, { target: document.body });
     await tick();
+    // A tab is drawn once it has been opened.
+    for (const name of ['tasksh', 'commands', 'urgency', 'taskrc']) {
+      tab(name).click();
+      await tick();
+    }
     const apply = (name: string) => button(panel(name), 'Apply');
     expect(apply('taskrc')).toBeTruthy();
     expect(apply('tasksh')).toBeTruthy();
@@ -173,7 +185,9 @@ describe('the tasksh tab', () => {
     button(panel('tasksh'), 'Apply').click();
     await tick();
     await tick();
-    const sent = vi.mocked(runCli).mock.calls.map(([input]) => (input.args ?? []).slice(2));
+    // The tab's own commands; reading the settings again also asks for the completion names (`_names`).
+    const own = vi.mocked(runCli).mock.calls.filter(([input]) => input.args?.[0] !== '_names');
+    const sent = own.map(([input]) => (input.args ?? []).slice(2));
     expect(sent).toEqual([
       ['config', 'uda.reviewed.type', 'date'],
       ['config', 'uda.reviewed.label', 'Reviewed'],
@@ -187,8 +201,7 @@ describe('the tasksh tab', () => {
       ],
     ]);
     // No questions are asked, and only the tasksh names are touched.
-    for (const [input] of vi.mocked(runCli).mock.calls)
-      expect(input.args?.slice(0, 2)).toEqual(['rc.confirmation:no', 'rc.verbose:nothing']);
+    for (const [input] of own) expect(input.args?.slice(0, 2)).toEqual(['rc.confirmation:no', 'rc.verbose:nothing']);
     expect(getConfig).toHaveBeenCalled();
   });
 

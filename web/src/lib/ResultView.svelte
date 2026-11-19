@@ -3,7 +3,8 @@
   import CalendarView from './CalendarView.svelte';
   import ConfirmView from './ConfirmView.svelte';
   import FileView from './FileView.svelte';
-  import ImportView from './ImportView.svelte';
+  import LazyView from './LazyView.svelte';
+  import { DIALOGS } from './pages';
   import ReportTable from './ReportTable.svelte';
   import StyledView from './StyledView.svelte';
   import SummaryView from './SummaryView.svelte';
@@ -86,7 +87,7 @@
 {:else if r.kind === 'file'}
   <FileView result={r} />
 {:else if r.kind === 'import'}
-  <ImportView />
+  <LazyView of={DIALOGS.import} />
 {:else if r.kind === 'json'}
   <pre class="mono">{JSON.stringify(r.value, null, 2)}</pre>
 {:else if r.kind === 'changed'}

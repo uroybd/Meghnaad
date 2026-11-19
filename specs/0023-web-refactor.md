@@ -189,3 +189,15 @@ Resolved 2026-11-19, with the person:
   - moving between tabs made no requests before or after (the panels stay mounted).
 - Tests: `settingsData.test.ts` (joining, the 30 s, saves, imports, `changed`, a read made stale on its way), and two in
   `TaskrcPanel.test.ts` that count the reads of a start, an Apply, moving between files and a change from elsewhere.
+
+2026-11-19, step 4:
+
+- `lazy.svelte.ts` (`lazy`, `loadWhenIdle`), `LazyView.svelte` (draws it, counts the wait in `WaitBar`, says so with
+  Reload and Try again when the code can't be fetched), `pages.ts` (`PAGES`, `TABS`, `DIALOGS`, `preloadPage`,
+  `preloadPages`). Pages other than Tasks and the console, the settings tabs (each drawn from the first time it is
+  opened), and the setup guide, review card, reminders, keys' help, export and import load on demand. Everything is
+  fetched once the app is idle; pointing at a top-bar button starts its page.
+- Measured (gzip -9): a first visit downloaded 182.9 KB of JavaScript before and 123.4 KB after; `App-*.js` went from
+  144.8 KB to 55.3 KB.
+- Clicked through in Chrome on a scratch dev stack: every page, every settings tab and three lazy pages opened by address,
+  with no errors.

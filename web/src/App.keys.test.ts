@@ -6,10 +6,16 @@ import { flushSync, mount, tick, unmount } from 'svelte';
 import { readFileSync } from 'node:fs';
 import App from './App.svelte';
 import { store } from './lib/store.svelte';
+import { PAGES } from './lib/pages';
 
 let app: ReturnType<typeof mount> | null = null;
 const DEFAULTS = readFileSync('public/keymaps/default.json', 'utf8');
 const CONFIG = { reports: [], config: { settings: {}, contexts: {}, active_context: null } };
+
+// The pages' code is fetched on demand in the app; here once, before the tests, so a page opened is drawn at once.
+beforeAll(async () => {
+  await Promise.all(Object.values(PAGES).map((p) => p.load()));
+});
 
 beforeAll(() => {
   // Set up already (no answer about setup starts the app), and every other request answered with nothing.

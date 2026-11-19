@@ -1,13 +1,9 @@
 <script lang="ts">
-  import AppearancePanel from './AppearancePanel.svelte';
-  import CommandsPanel from './CommandsPanel.svelte';
-  import GeneralPanel from './GeneralPanel.svelte';
-  import HooksPanel from './HooksPanel.svelte';
-  import KeysPanel from './KeysPanel.svelte';
+  import { onMount } from 'svelte';
+  import { loadWhenIdle } from './lazy.svelte';
+  import LazyView from './LazyView.svelte';
+  import { TABS as PANELS } from './pages';
   import { store } from './store.svelte';
-  import TaskrcPanel from './TaskrcPanel.svelte';
-  import TaskshPanel from './TaskshPanel.svelte';
-  import UrgencyPanel from './UrgencyPanel.svelte';
 
   type Tab = 'general' | 'appearance' | 'keys' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
@@ -40,6 +36,15 @@
     hooks: false,
     urgency: false,
   });
+
+  // The tabs opened so far: each is drawn from the first time it is shown, and its code fetched then.
+  let opened = $state<Set<Tab>>(new Set());
+  $effect(() => {
+    const tab = (store.settingsTab ?? 'general') as Tab;
+    if (!opened.has(tab)) opened = new Set([...opened, tab]);
+  });
+  // The other tabs' code, once the page is idle, so switching to one doesn't wait.
+  onMount(() => loadWhenIdle(Object.values(PANELS)));
 
   // A tab chosen from the keyboard, a link or the code may be off the edge of a narrow bar: bring it into view.
   $effect(() => {
@@ -89,14 +94,18 @@
     {/each}
   </div>
 
-  <!-- They all stay mounted, so edits survive a trip to another tab. -->
+  <!-- A tab is drawn once first opened (its code fetched then, spec 0023), and then stays, so edits survive a trip to
+       another tab. -->
   <div
     role="tabpanel"
     id="settings-panel-general"
     aria-labelledby="settings-tab-general"
     hidden={store.settingsTab !== 'general'}
   >
-    <GeneralPanel ondirty={(v) => (dirty.general = v)} />
+    {#if opened.has('general')}<LazyView
+        of={PANELS.general}
+        props={{ ondirty: (v: boolean) => (dirty.general = v) }}
+      />{/if}
   </div>
   <div
     role="tabpanel"
@@ -104,7 +113,10 @@
     aria-labelledby="settings-tab-appearance"
     hidden={store.settingsTab !== 'appearance'}
   >
-    <AppearancePanel ondirty={(v) => (dirty.appearance = v)} />
+    {#if opened.has('appearance')}<LazyView
+        of={PANELS.appearance}
+        props={{ ondirty: (v: boolean) => (dirty.appearance = v) }}
+      />{/if}
   </div>
   <div
     role="tabpanel"
@@ -112,7 +124,7 @@
     aria-labelledby="settings-tab-keys"
     hidden={store.settingsTab !== 'keys'}
   >
-    <KeysPanel ondirty={(v) => (dirty.keys = v)} />
+    {#if opened.has('keys')}<LazyView of={PANELS.keys} props={{ ondirty: (v: boolean) => (dirty.keys = v) }} />{/if}
   </div>
   <div
     role="tabpanel"
@@ -120,7 +132,10 @@
     aria-labelledby="settings-tab-taskrc"
     hidden={store.settingsTab !== 'taskrc'}
   >
-    <TaskrcPanel ondirty={(v) => (dirty.taskrc = v)} />
+    {#if opened.has('taskrc')}<LazyView
+        of={PANELS.taskrc}
+        props={{ ondirty: (v: boolean) => (dirty.taskrc = v) }}
+      />{/if}
   </div>
   <div
     role="tabpanel"
@@ -128,7 +143,10 @@
     aria-labelledby="settings-tab-tasksh"
     hidden={store.settingsTab !== 'tasksh'}
   >
-    <TaskshPanel ondirty={(v) => (dirty.tasksh = v)} />
+    {#if opened.has('tasksh')}<LazyView
+        of={PANELS.tasksh}
+        props={{ ondirty: (v: boolean) => (dirty.tasksh = v) }}
+      />{/if}
   </div>
   <div
     role="tabpanel"
@@ -136,7 +154,10 @@
     aria-labelledby="settings-tab-commands"
     hidden={store.settingsTab !== 'commands'}
   >
-    <CommandsPanel ondirty={(v) => (dirty.commands = v)} />
+    {#if opened.has('commands')}<LazyView
+        of={PANELS.commands}
+        props={{ ondirty: (v: boolean) => (dirty.commands = v) }}
+      />{/if}
   </div>
   <div
     role="tabpanel"
@@ -144,7 +165,7 @@
     aria-labelledby="settings-tab-hooks"
     hidden={store.settingsTab !== 'hooks'}
   >
-    <HooksPanel ondirty={(v) => (dirty.hooks = v)} />
+    {#if opened.has('hooks')}<LazyView of={PANELS.hooks} props={{ ondirty: (v: boolean) => (dirty.hooks = v) }} />{/if}
   </div>
   <div
     role="tabpanel"
@@ -152,7 +173,10 @@
     aria-labelledby="settings-tab-urgency"
     hidden={store.settingsTab !== 'urgency'}
   >
-    <UrgencyPanel ondirty={(v) => (dirty.urgency = v)} />
+    {#if opened.has('urgency')}<LazyView
+        of={PANELS.urgency}
+        props={{ ondirty: (v: boolean) => (dirty.urgency = v) }}
+      />{/if}
   </div>
   <p class="version">Meghnaad {__APP_VERSION__}</p>
 </div>

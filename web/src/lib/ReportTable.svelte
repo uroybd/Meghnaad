@@ -10,7 +10,8 @@
   import ProjectPath from './ProjectPath.svelte';
   import TagChip from './TagChip.svelte';
   import DepLink from './DepLink.svelte';
-  import ExportDialog from './ExportDialog.svelte';
+  import LazyView from './LazyView.svelte';
+  import { DIALOGS } from './pages';
   import { exportArgs } from './exportScope';
   import UuidTip from './UuidTip.svelte';
   import { describeRecur } from './recurrence';
@@ -530,7 +531,10 @@
     {/if}
   </p>
   {#if exporting && exportLine}
-    <ExportDialog args={exportLine} columns={result.columns} onclose={() => (exporting = false)} />
+    <LazyView
+      of={DIALOGS.export}
+      props={{ args: exportLine, columns: result.columns, onclose: () => (exporting = false) }}
+    />
   {/if}
 {/if}
 
