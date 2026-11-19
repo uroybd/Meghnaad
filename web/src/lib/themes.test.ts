@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { THEMES, applyTheme, colourOff, expandIncludes, includedTheme, themeLines, withColour } from './themes';
+import {
+  THEMES,
+  chooseTheme,
+  chosenTheme,
+  colourOff,
+  expandIncludes,
+  includedTheme,
+  themeLines,
+  withColour,
+} from './themes';
 
 const dark = `# header
 color.active=rgb555 on rgb410   # active
@@ -20,28 +29,25 @@ describe('themeLines', () => {
   });
 });
 
-describe('applyTheme', () => {
+describe('chooseTheme', () => {
   const rc = 'bulk=5\ncolor.overdue=red\ncolor=off\nrule.color.merge=off\nuda.size.type=string\n';
-  it('replaces the colour lines and keeps everything else, including the colour switch', () => {
-    const out = applyTheme(rc, 'dark-256', dark);
-    expect(out).toContain('bulk=5');
-    expect(out).toContain('uda.size.type=string');
-    expect(out).toContain('color=off');
-    expect(out).not.toContain('color.overdue=red');
-    expect(out).not.toContain('rule.color.merge=off');
-    expect(out).toContain('# theme: dark-256\ncolor.active=rgb555 on rgb410');
+  it('puts the theme in a file of its own, as it is, and includes it in place of the colour lines', () => {
+    const { main, theme } = chooseTheme(rc, 'dark-256', dark);
+    expect(theme).toEqual({ path: 'themes/dark-256.rc', text: dark });
+    expect(main).toBe('bulk=5\ncolor=off\nuda.size.type=string\n\ninclude themes/dark-256.rc\n');
+    expect(chosenTheme(main)).toBe('dark-256');
   });
 
-  it("choosing Taskwarrior's defaults just clears the colour lines (they are what applies when none are set)", () => {
-    const out = applyTheme(rc, 'default', '');
-    expect(out).toBe('bulk=5\ncolor=off\nuda.size.type=string\n');
+  it("choosing Taskwarrior's defaults just clears the colour lines, with no file", () => {
+    expect(chooseTheme(rc, 'default', '')).toEqual({ main: 'bulk=5\ncolor=off\nuda.size.type=string\n', theme: null });
   });
 
-  it('a second theme replaces the first rather than piling up', () => {
-    const once = applyTheme('bulk=5\n', 'dark-256', dark);
-    const twice = applyTheme(once, 'light-16', 'color.active=black on yellow\n');
-    expect(twice.match(/color\.active/g)).toHaveLength(1);
-    expect(twice).toContain('color.active=black on yellow');
+  it('a second theme takes the place of the first, and a theme pasted in as lines goes too', () => {
+    const once = chooseTheme('bulk=5\n# theme: meghnaad\ncolor.due=red\n', 'dark-256', dark).main;
+    const twice = chooseTheme(once, 'light-16', 'color.active=black on yellow').main;
+    expect(twice).toBe('bulk=5\n\ninclude themes/light-16.rc\n');
+    expect(chooseTheme(twice, 'default', '').main).toBe('bulk=5\n');
+    expect(chosenTheme('bulk=5\n')).toBeNull();
   });
 });
 

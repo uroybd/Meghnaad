@@ -27,27 +27,27 @@ color.tag.next=rgb440
     private val rc = "bulk=5\ncolor.overdue=red\ncolor=off\nrule.color.merge=off\nuda.size.type=string\n"
 
     @Test
-    fun applyingReplacesTheColourLinesAndKeepsTheRest() {
-        val out = applyTheme(rc, "dark-256", dark)
-        assertTrue("bulk=5" in out)
-        assertTrue("uda.size.type=string" in out)
-        assertTrue("color=off" in out)
-        assertFalse("color.overdue=red" in out)
-        assertFalse("rule.color.merge=off" in out)
-        assertTrue("# theme: dark-256\ncolor.active=rgb555 on rgb410" in out)
+    fun aThemeGoesInAFileOfItsOwnIncludedInPlaceOfTheColourLines() {
+        val chosen = chooseTheme(rc, "dark-256", dark)
+        assertEquals("themes/dark-256.rc" to dark, chosen.theme)
+        assertEquals("bulk=5\ncolor=off\nuda.size.type=string\n\ninclude themes/dark-256.rc\n", chosen.main)
+        assertEquals("dark-256", chosenTheme(chosen.main))
     }
 
     @Test
     fun taskwarriorsDefaultsJustClearTheColourLines() {
-        assertEquals("bulk=5\ncolor=off\nuda.size.type=string\n", applyTheme(rc, "default", ""))
+        val chosen = chooseTheme(rc, "default", "")
+        assertEquals("bulk=5\ncolor=off\nuda.size.type=string\n", chosen.main)
+        assertNull(chosen.theme)
     }
 
     @Test
-    fun aSecondThemeReplacesTheFirstRatherThanPilingUp() {
-        val once = applyTheme("bulk=5\n", "dark-256", dark)
-        val twice = applyTheme(once, "light-16", "color.active=black on yellow\n")
-        assertEquals(1, Regex("color\\.active").findAll(twice).count())
-        assertTrue("color.active=black on yellow" in twice)
+    fun aSecondThemeTakesThePlaceOfTheFirst() {
+        val once = chooseTheme("bulk=5\n# theme: meghnaad\ncolor.due=red\n", "dark-256", dark).main
+        val twice = chooseTheme(once, "light-16", "color.active=black on yellow").main
+        assertEquals("bulk=5\n\ninclude themes/light-16.rc\n", twice)
+        assertEquals("bulk=5\n", chooseTheme(twice, "default", "").main)
+        assertNull(chosenTheme("bulk=5\n"))
     }
 
     @Test

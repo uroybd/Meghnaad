@@ -1,6 +1,7 @@
 // Colour themes: sets of `color.*` lines. Taskwarrior's own are plain files (`include dark-256.theme`), which a
-// browser cannot include, so they are served as static files from /themes and put into the taskrc text when
-// picked. They are not part of the Worker; the engine only ever sees the lines that were saved.
+// browser cannot include, so they are served as static files from /themes. One picked in Appearance is saved as a file
+// of the taskrc folder, `themes/<id>.rc`, which the main taskrc includes. They are not part of the Worker; the engine
+// only ever sees what was saved.
 
 export interface Theme {
   id: string;
@@ -42,15 +43,37 @@ export function themeLines(file: string): string[] {
     .filter(Boolean);
 }
 
+/** Where a theme picked in Appearance is saved, as a file of the taskrc folder. */
+export const themePath = (id: string) => `themes/${id}.rc`;
+
+/** The line of the main taskrc that includes a theme picked in Appearance. */
+const themeInclude = (l: string) => /^\s*include\s+themes\/[\w.-]+\.rc\s*(#.*)?$/.test(l);
+
 /**
- * `text` with its colour lines replaced by the theme's. Taskwarrior's defaults are what applies when no colour is set,
- * so choosing them just clears the colour lines. The `color=on|off` line and everything else are kept.
+ * Choosing a theme: its file goes in the folder as `themes/<id>.rc`, as it is, and the main taskrc (`text`) includes it.
+ * The main taskrc loses its own colour lines, which would win over the theme, and the include of any theme picked
+ * before. Taskwarrior's defaults are what applies when no colour is set, so choosing them only clears those, with no
+ * file. The `color=on|off` line and everything else are kept.
  */
-export function applyTheme(text: string, id: string, file: string): string {
-  const kept = text.split('\n').filter((l) => !colourLine(l));
+export function chooseTheme(
+  text: string,
+  id: string,
+  file: string,
+): { main: string; theme: { path: string; text: string } | null } {
+  const kept = text.split('\n').filter((l) => !colourLine(l) && !themeInclude(l) && !/^# theme: /.test(l));
   while (kept.length && kept[kept.length - 1].trim() === '') kept.pop();
-  if (id === 'default') return kept.join('\n') + (kept.length ? '\n' : '');
-  return [...kept, ...(kept.length ? [''] : []), `# theme: ${id}`, ...themeLines(file)].join('\n') + '\n';
+  if (id === 'default') return { main: kept.join('\n') + (kept.length ? '\n' : ''), theme: null };
+  const main = [...kept, ...(kept.length ? [''] : []), `include ${themePath(id)}`].join('\n') + '\n';
+  return { main, theme: { path: themePath(id), text: file.endsWith('\n') ? file : `${file}\n` } };
+}
+
+/** The theme the main taskrc includes, picked in Appearance, if any. */
+export function chosenTheme(text: string): string | null {
+  for (const l of text.split('\n').reverse()) {
+    const m = /^\s*include\s+themes\/([\w.-]+)\.rc\s*(#.*)?$/.exec(l);
+    if (m && isTheme(m[1])) return m[1];
+  }
+  return null;
 }
 
 /** Turn colours on or off: the `color` line of the taskrc. */

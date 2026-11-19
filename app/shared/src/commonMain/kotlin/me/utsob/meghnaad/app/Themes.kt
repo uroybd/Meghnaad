@@ -1,8 +1,8 @@
 package me.utsob.meghnaad.app
 
 // Colour themes: sets of `color.*` lines. Taskwarrior's own are plain files (`include dark-256.theme`), which an app cannot include,
-// so they travel with it (resources/themes) and are put into the taskrc text when picked. The engine only ever sees the lines that
-// were saved (web/src/lib/themes.ts).
+// so they travel with it (resources/themes). One picked in Appearance is saved as a file of the taskrc folder, `themes/<id>.rc`,
+// which the main taskrc includes. The engine only ever sees what was saved (web/src/lib/themes.ts).
 
 class Theme(val id: String, val label: String, val note: String? = null)
 
@@ -39,16 +39,31 @@ private fun dropTrailingBlanks(lines: MutableList<String>) {
     while (lines.isNotEmpty() && lines.last().isBlank()) lines.removeAt(lines.lastIndex)
 }
 
+/** Where a theme picked in Appearance is saved, as a file of the taskrc folder. */
+fun themePath(id: String) = "themes/$id.rc"
+
+private val THEME_INCLUDE = Regex("^\\s*include\\s+themes/([\\w.-]+)\\.rc\\s*(#.*)?$")
+
+/** The main taskrc's new text, and the theme's file to save beside it (none for Taskwarrior's defaults). */
+class ChosenTheme(val main: String, val theme: Pair<String, String>?)
+
 /**
- * [text] with its colour lines replaced by the theme's. Taskwarrior's defaults are what applies when no colour is set, so
- * choosing them just clears the colour lines. The `color=on|off` line and everything else are kept.
+ * Choosing a theme: its file goes in the folder as `themes/<id>.rc`, as it is, and the main taskrc ([text]) includes it. The main
+ * taskrc loses its own colour lines, which would win over the theme, and the include of any theme picked before. Taskwarrior's
+ * defaults are what applies when no colour is set, so choosing them only clears those, with no file. The `color=on|off` line and
+ * everything else are kept (chooseTheme in web/src/lib/themes.ts).
  */
-fun applyTheme(text: String, id: String, file: String): String {
-    val kept = text.split('\n').filter { !colourLine(it) }.toMutableList()
+fun chooseTheme(text: String, id: String, file: String): ChosenTheme {
+    val kept = text.split('\n').filter { !colourLine(it) && !THEME_INCLUDE.matches(it) && !it.startsWith("# theme: ") }.toMutableList()
     dropTrailingBlanks(kept)
-    if (id == "default") return kept.joinToString("\n") + if (kept.isNotEmpty()) "\n" else ""
-    return (kept + (if (kept.isNotEmpty()) listOf("") else emptyList()) + "# theme: $id" + themeLines(file)).joinToString("\n") + "\n"
+    if (id == "default") return ChosenTheme(kept.joinToString("\n") + if (kept.isNotEmpty()) "\n" else "", null)
+    val main = (kept + (if (kept.isNotEmpty()) listOf("") else emptyList()) + "include ${themePath(id)}").joinToString("\n") + "\n"
+    return ChosenTheme(main, themePath(id) to if (file.endsWith("\n")) file else "$file\n")
 }
+
+/** The theme the main taskrc includes, picked in Appearance, if any. */
+fun chosenTheme(text: String): String? =
+    text.split('\n').asReversed().firstNotNullOfOrNull { l -> THEME_INCLUDE.find(l)?.groupValues?.get(1)?.takeIf { isTheme(it) } }
 
 /** Turn colours on or off: the `color` line of the taskrc. */
 fun withColour(text: String, on: Boolean): String {

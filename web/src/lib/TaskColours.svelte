@@ -1,12 +1,13 @@
 <script lang="ts">
-  import { getTaskrcText, putRcFile } from './api';
+  import { getTaskrcText, importRcFiles, putRcFile } from './api';
   import { ROOT } from './rcpaths';
   import { store } from './store.svelte';
-  import { applyTheme, colourOff, fetchTheme, THEMES, withColour } from './themes';
+  import { chooseTheme, chosenTheme, colourOff, fetchTheme, THEMES, withColour } from './themes';
 
   /**
-   * The colours of tasks, which are the `color.*` lines of the main taskrc: a theme replaces them, and the switch is
-   * `color=off`. Each change is saved at once, as one save of the taskrc, so Restore previous on the taskrc tab undoes it.
+   * The colours of tasks. A theme is saved as its own file, `themes/<id>.rc`, which the main taskrc includes in place of
+   * its own colour lines; the switch is `color=off` in the main taskrc. Each change is saved at once, as one save (the
+   * theme's file and the main taskrc together), so Restore previous on the taskrc tab undoes it.
    */
   let text = $state<string | null>(null);
   let busy = $state(false);
@@ -22,14 +23,17 @@
   });
 
   const off = $derived(text === null ? false : colourOff(text));
+  const chosen = $derived(text === null ? null : chosenTheme(text));
 
-  async function save(next: string, what: string) {
+  async function save(next: string, what: string, theme: { path: string; text: string } | null = null) {
     busy = true;
     error = null;
     said = null;
     try {
-      const r = await putRcFile(ROOT, next);
-      text = r.text;
+      if (theme) {
+        await importRcFiles([theme, { path: ROOT, text: next }], 'merge');
+        text = await getTaskrcText();
+      } else text = (await putRcFile(ROOT, next)).text;
       said = `${what} Restore previous on the taskrc tab undoes it.`;
       await store.settingsChanged();
     } catch (e) {
@@ -40,13 +44,12 @@
   }
 
   async function pickTheme(e: Event) {
-    const el = e.currentTarget as HTMLSelectElement;
-    const id = el.value;
-    el.value = '';
+    const id = (e.currentTarget as HTMLSelectElement).value;
     if (!id || text === null) return;
     const label = THEMES.find((t) => t.id === id)?.label ?? id;
     try {
-      await save(applyTheme(text, id, id === 'default' ? '' : await fetchTheme(id)), `Saved the ${label} colours.`);
+      const { main, theme } = chooseTheme(text, id, id === 'default' ? '' : await fetchTheme(id));
+      await save(main, theme ? `Saved the ${label} colours, in ${theme.path}.` : `Saved the ${label} colours.`, theme);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
@@ -56,14 +59,14 @@
 <section class="colours" aria-label="Task colours">
   <h2>Task colours</h2>
   <p class="dim small">
-    The <code>color.*</code> lines of your taskrc. A theme replaces them; the Meghnaad theme is what applies when there are
-    none. Saved at once.
+    A theme is kept as its own file, <code>themes/&lt;name&gt;.rc</code>, which your taskrc includes in place of its own
+    <code>color.*</code> lines; the Meghnaad theme is what applies when there are none. Saved at once.
   </p>
   <div class="row">
     <label
       >Colour theme
-      <select onchange={pickTheme} disabled={busy || text === null} aria-label="Colour theme">
-        <option value="">choose…</option>
+      <select value={chosen ?? ''} onchange={pickTheme} disabled={busy || text === null} aria-label="Colour theme">
+        <option value="">{text !== null && !chosen ? 'your own, or the default' : 'choose…'}</option>
         {#each THEMES as t (t.id)}<option value={t.id} title={t.note}>{t.label}</option>{/each}
       </select>
     </label>

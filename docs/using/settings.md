@@ -338,7 +338,7 @@ exception is `color.alternate`: rows are not shaded every other one unless your 
   `due` (a task due within `rc.due` days) or `project.` claims the row first. The Priority cell always shows its
   colour too, whatever colour the rest of the row has; that one field is the app's addition, from the same settings.
 - **Meghnaad's own theme** (soft colours, due today in bold amber, nothing for due later this week, no zebra) is in
-  the theme picker; choosing it writes its lines into your taskrc.
+  the theme picker; choosing it saves its lines as `themes/meghnaad.rc` and includes that file from your taskrc.
 
 Your `color.*` lines work as on the desktop:
 
@@ -352,8 +352,11 @@ color.alternate=on gray2                   # shade every other row
 
 **Task colours**, at the top of the **Appearance** tab, has a **Colour theme** picker (Meghnaad's own, Taskwarrior's
 default and the 16 standard themes such as `dark-256` and `solarized-light-256`) and a **Colours** switch. Each saves at
-once: a theme replaces the colour lines of the main taskrc, and the switch writes `color=off` there or takes it out, so
-**Restore previous** on the taskrc tab undoes either. A pasted `include dark-256.theme` is read as that theme. `color=off` (or `rc.color:off`) turns every
+once. A theme is saved as a file of its own, `themes/<name>.rc` (the theme's file as Taskwarrior ships it), and the main
+taskrc gets `include themes/<name>.rc` in place of its own colour lines and of the theme picked before; Taskwarrior's
+default removes the include. Colour lines you write after the include win over the theme's. The switch writes
+`color=off` in the main taskrc or takes it out. Either is one save, so **Restore previous** on the taskrc tab undoes
+it. A theme picked before leaves its file in `themes/`, marked *unused*; delete it there if you like. A pasted `include dark-256.theme` is read as that theme. `color=off` (or `rc.color:off`) turns every
 colour off, and a task tagged `nocolor` is never coloured.
 
 `colors` in the Console draws the palette, `colors bold coral on sky` a sample, and `colors legend` every colour in force,
