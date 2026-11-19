@@ -1,0 +1,266 @@
+{
+  "about": "The commands of the : line and of a key bound to one (spec 0020), as people read them, for every front end: the line each front end lists (summary, and the words it takes), the longer text of docs/commands.md (doc; the page is made from this file by scripts/commands-doc.mjs), and the version that brought each in (since: \"unreleased\" until the bump, when scripts/version.mjs sync writes the version; a release refuses one left). A front end lists only what its own version has. The engine keeps only what reading a line needs (tc_core::keymap::COMMANDS: name, shortest form, action); a test keeps the names and short forms the same.",
+  "docs": "https://meghnaad.utsob.me/commands.html",
+  "commands": [
+    {
+      "name": "tabnext",
+      "shortest": 4,
+      "summary": "the next page, or a page by its number or name",
+      "takes": "a page's number or name",
+      "doc": "With nothing after it, the next page, from the last back to the first. With a number, the page at that place in the top bar (1 to 9, Settings last); with a word, the first page whose name starts with it, in any case: `:tabn 3`, `:tabn tasks`, `:tabn bu`. The keys `gt` and `g1` to `g9` run it.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "tabprevious",
+      "shortest": 4,
+      "summary": "the page before",
+      "takes": "",
+      "doc": "The page before this one, from the first round to the last. `gT` runs it.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "tabNext",
+      "shortest": 4,
+      "summary": "the page before, as :tabprevious",
+      "takes": "",
+      "doc": "The same as `:tabprevious`, as in vim.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "tabfirst",
+      "shortest": 6,
+      "summary": "the first page",
+      "takes": "",
+      "doc": "The first page of the top bar, Tasks.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "tabrewind",
+      "shortest": 4,
+      "summary": "the first page, as :tabfirst",
+      "takes": "",
+      "doc": "The same as `:tabfirst`, as in vim.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "tablast",
+      "shortest": 4,
+      "summary": "the last page",
+      "takes": "",
+      "doc": "The last page of the top bar, Settings.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "quit",
+      "shortest": 1,
+      "summary": "quit",
+      "takes": "",
+      "doc": "Quit the terminal app. The web app and the phone have nothing to quit.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "undo",
+      "shortest": 1,
+      "summary": "task undo",
+      "takes": "",
+      "doc": "Taskwarrior's `undo`, which asks first: on the terminal in a box, on the web with the line put on the command line for Enter.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "write",
+      "shortest": 1,
+      "summary": "sync",
+      "takes": "",
+      "doc": "Sync, as vim's `:w` writes what has changed: on the terminal `task sync` in the background, with Taskwarrior's own settings; on the web and the phone, with the store. The same as `:sync`.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "edit",
+      "shortest": 1,
+      "summary": "read everything again",
+      "takes": "",
+      "doc": "Read the report and the settings again, as vim's `:e` reads the file again. The terminal app reads `settings.json` again too, so a change made in an editor applies.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "help",
+      "shortest": 1,
+      "summary": "every key and command, and what each does",
+      "takes": "",
+      "doc": "The list of keys and commands, as `?` opens it.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "filter",
+      "shortest": 4,
+      "summary": "the Tasks page with a filter",
+      "takes": "a filter",
+      "doc": "With words, the Tasks page with them as its filter, as `task` reads a filter: `:filter +home due.before:eow`. With none, the cursor in the filter, to change it. Bound to a key, it is a saved filter a key away: `\"tasks\": { \"g h\": \"filter +home\" }`.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "sort",
+      "shortest": 3,
+      "summary": "sort the report",
+      "takes": "a sort, as a report's sort setting writes it (due+,urgency-)",
+      "doc": "On the terminal. With words, the report sorted by them for now, written as `report.<name>.sort` writes it: `:sort due+,urgency-`. With none, the sort editor, to add, take out, reverse and reorder the report's sort keys.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "delete",
+      "shortest": 1,
+      "summary": "delete the task, or the marked ones",
+      "takes": "",
+      "doc": "Delete the chosen task, or the marked tasks when there are any. Taskwarrior asks first.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "mark",
+      "shortest": 2,
+      "summary": "mark the task, or unmark it, and move down",
+      "takes": "",
+      "doc": "Mark the chosen task, or unmark it, and move to the next row. With tasks marked, the task commands act on all of them.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "open",
+      "shortest": 1,
+      "summary": "open the task's link",
+      "takes": "",
+      "doc": "Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`).",
+      "since": "0.8.11"
+    },
+    {
+      "name": "done",
+      "shortest": 2,
+      "summary": "mark the task done",
+      "takes": "",
+      "doc": "Mark the chosen task done, or the marked tasks when there are any.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "start",
+      "shortest": 3,
+      "summary": "start the task, or the marked ones not started",
+      "takes": "",
+      "doc": "Start the chosen task. With tasks marked, start those not started yet and pass over the others.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "stop",
+      "shortest": 3,
+      "summary": "stop the task, or the marked ones started",
+      "takes": "",
+      "doc": "Stop the chosen task. With tasks marked, stop those started and pass over the others.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "toggle",
+      "shortest": 2,
+      "summary": "start the task, or stop it when it is started",
+      "takes": "",
+      "doc": "Start the chosen task, or stop it when it is started, as `+` does. With tasks marked, use `:start` or `:stop`.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "modify",
+      "shortest": 3,
+      "summary": "modify the task, or the marked ones",
+      "takes": "what to change",
+      "doc": "With words, `task modify` with them on the marked tasks, or else on the chosen one: `:modify due:eow +next`. With none, the full form.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "annotate",
+      "shortest": 2,
+      "summary": "annotate the task, or the marked ones",
+      "takes": "the note",
+      "doc": "With words, add them as a note to the marked tasks, or else to the chosen one: `:annotate called back`. With none, a box for the note.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "denotate",
+      "shortest": 3,
+      "summary": "take a note off the task",
+      "takes": "the note, or the start of it",
+      "doc": "With words, take off the note that starts with them, as `task denotate` does. With none, the command line with the task and `denotate` typed, for the note.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "duplicate",
+      "shortest": 3,
+      "summary": "duplicate the task",
+      "takes": "",
+      "doc": "Taskwarrior's `duplicate` on the chosen task, or the marked ones.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "info",
+      "shortest": 2,
+      "summary": "the task's info",
+      "takes": "",
+      "doc": "The chosen task's info: everything about it, its notes and how its urgency adds up.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "add",
+      "shortest": 2,
+      "summary": "add a task",
+      "takes": "the task, as task add takes it",
+      "doc": "With words, add the task they describe, as `task add` reads them: `:add Buy milk +errand due:tomorrow`. With none, the box to add one, with a preview.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "report",
+      "shortest": 3,
+      "summary": "show a report",
+      "takes": "a report's name",
+      "doc": "With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "context",
+      "shortest": 3,
+      "summary": "choose the context",
+      "takes": "a context's name, or none",
+      "doc": "With a name, Taskwarrior's `context` with it: `:context work`, or `:context none` to have none. With nothing after it, the list of contexts to choose from.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "sync",
+      "shortest": 2,
+      "summary": "sync",
+      "takes": "",
+      "doc": "The same as `:write`.",
+      "since": "0.8.11"
+    },
+    {
+      "name": "review",
+      "shortest": 3,
+      "summary": "review the tasks that need it",
+      "takes": "",
+      "doc": "tasksh's review: each task the `_reviewed` report lists, one at a time, to mark reviewed, skip, change or finish.",
+      "since": "0.8.11"
+    }
+  ],
+  "lines": [
+    {
+      "written": [
+        ":5",
+        ":$"
+      ],
+      "summary": "a row by its number, the last row",
+      "doc": "A number alone goes to that row of the list, as in vim; `:$` goes to the last. A count before `G` or `gg` does the same (`5G`).",
+      "since": "0.8.11"
+    },
+    {
+      "written": [
+        ":+3",
+        ":-3"
+      ],
+      "summary": "three rows down, up",
+      "doc": "A number with `+` or `-` moves that many rows down or up, as `3j` and `3k` do.",
+      "since": "0.8.11"
+    }
+  ]
+}
