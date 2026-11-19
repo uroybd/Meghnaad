@@ -62,6 +62,20 @@ android {
 
 kotlin { jvmToolchain(21) }
 
+// Robolectric's Android (the jar for the tests' `@Config(sdk = 35)`), fetched by Gradle and used offline: left to itself
+// Robolectric downloads it while the tests run, outside Gradle's cache, and a failed download fails the build.
+val robolectricAndroid: Configuration by configurations.creating
+val robolectricJars = tasks.register<Sync>("robolectricJars") {
+    from(robolectricAndroid)
+    into(layout.buildDirectory.dir("robolectric"))
+}
+tasks.withType<Test>().configureEach {
+    dependsOn(robolectricJars)
+    val dir = layout.buildDirectory.dir("robolectric").get().asFile.absolutePath
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", dir)
+}
+
 dependencies {
     implementation(project(":shared"))
     implementation(compose.foundation)
@@ -75,4 +89,5 @@ dependencies {
     // Real Android graphics on the JVM, so the widgets' pictures can be drawn (and looked at) in a test.
     testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.test:core:1.6.1")
+    robolectricAndroid("org.robolectric:android-all-instrumented:15-robolectric-13954326-i7")
 }
