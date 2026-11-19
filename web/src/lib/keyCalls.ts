@@ -154,8 +154,13 @@ export function runCall(call: Call): boolean {
       return true;
     case 'app.lock':
       // The static app's lock: its PIN screen on a trusted device with a PIN, else the full lock (spec 0022).
-      if (STATIC) void import('../engine/session').then((s) => s.lockNow());
-      else say('Nothing to lock: this app signs in with Cloudflare Access.');
+      if (!STATIC) say('Nothing to lock: this app signs in with Cloudflare Access.');
+      else if (args.length > 1 || (args[0] && args[0] !== 'pin' && args[0] !== 'key'))
+        say(':lock takes pin (the PIN screen) or key (the full lock), or nothing.');
+      else
+        void import('../engine/session')
+          .then((s) => s.lockNow((args[0] as 'pin' | 'key' | undefined) ?? null))
+          .catch((e: unknown) => say(e instanceof Error ? e.message : String(e)));
       return true;
     case 'app.sync':
     case 'app.reload':

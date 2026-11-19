@@ -111,8 +111,13 @@ None left. Decided 2026-11-19:
 - `web/src/lib/PinLock.svelte`, mounted by `App.svelte` in the static flavour: a `<dialog>` opened with `showModal()`.
   It sits in the top layer above any open drawer, makes the page under it inert, and is blurred with `::backdrop`. Escape
   can't close it. Keys are read at the window in the capture phase and stopped, so the app's own keys never see them.
+- Asked for by the person, 2026-11-19: a reload of a trusted device with a PIN opens on the PIN screen (from the trusted
+  copy, or by a reload beside other open tabs; a new tab beside open ones does not). The screen is frosted glass: the
+  dialog covers the screen and blurs what is behind with `backdrop-filter`.
 - `web/src/lib/PinSettings.svelte`, under *This device* while the device is trusted.
-- `:lock` (shortest `:lock`, action `app.lock`) is a shared command (`tc_core::keymap::COMMANDS`, `commands.json`, `since:
+- `:lock` (action `app.lock`): with nothing after it the PIN screen where there is a PIN, else the full lock; `:lock pin`
+  and `:lock key` ask for one (asked for by the person, 2026-11-19). The lock button in the top bar is always the full
+  lock. It is a shared command (`tc_core::keymap::COMMANDS`, `commands.json`, `since:
   unreleased`). The static web app runs `lockNow`. The web app on a Worker and the terminal say there is nothing to lock.
   The phone only lists commands.
 - Not seen in a browser: the static flavour needs a real forge branch and token, and there is no local stand-in. The

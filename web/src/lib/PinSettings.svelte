@@ -105,7 +105,7 @@
   {/if}
   {#if have}
     <label class="field"
-      >PIN screen after this many idle minutes (0: only with Lock with PIN now or <code>:lock</code>)
+      ><span>PIN screen after this many idle minutes (0: only with Lock with PIN now or <code>:lock</code>)</span>
       <input
         type="number"
         min="0"

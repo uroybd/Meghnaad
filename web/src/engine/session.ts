@@ -144,11 +144,17 @@ function markedLocked(): boolean {
  */
 export async function openDevice(): Promise<'connect' | 'unlock' | 'unlocked'> {
   if (!(await sealedAccess())) return 'connect';
-  if (await askOtherTabs()) return 'unlocked';
+  if (await askOtherTabs()) {
+    // A reload of a tab on a device with a PIN opens on the PIN screen; a new tab beside open ones does not.
+    if (reloaded()) pinLock();
+    return 'unlocked';
+  }
   if (!markedLocked()) {
     const copy = await trustedCopy();
     if (copy) {
       unlockedWith(copy);
+      // Opened from the trusted copy (a reload, or the first tab): with a PIN, behind the PIN screen.
+      pinLock();
       return 'unlocked';
     }
   }
@@ -275,6 +281,16 @@ function became(unlocked: Unlocked): void {
 }
 
 // The PIN screen of a trusted device (spec 0022): up and down in every tab together. What is shown follows `onPin`.
+/** Whether this page was opened by a reload. */
+function reloaded(): boolean {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    return nav?.type === 'reload';
+  } catch {
+    return false;
+  }
+}
+
 const pinWatchers = new Set<(locked: boolean) => void>();
 
 function told(locked: boolean): void {
@@ -305,9 +321,15 @@ export async function pinUnlock(keys: string[]): Promise<boolean> {
   return true;
 }
 
-/** `:lock`: the PIN screen on a trusted device that has a PIN, else the full lock. */
-export async function lockNow(): Promise<void> {
-  if (hasPin() && (await deviceTrusted())) pinLock();
+/**
+ * `:lock`: with no word, the PIN screen on a trusted device that has a PIN, else the full lock. `pin` asks for the PIN
+ * screen (an error where there is none) and `key` for the full lock, the encryption secret's.
+ */
+export async function lockNow(how: 'pin' | 'key' | null = null): Promise<void> {
+  const pin = hasPin() && (await deviceTrusted());
+  if (how === 'pin' && !pin)
+    throw new Error('This device has no PIN: set one in Settings → General, on a trusted device.');
+  if (how !== 'key' && pin) pinLock();
   else lock();
 }
 

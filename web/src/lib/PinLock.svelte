@@ -72,18 +72,32 @@
 </dialog>
 
 <style>
+  /* Frosted glass over the whole screen: the dialog itself covers it and blurs what is behind (a filter on ::backdrop
+     is not drawn by every browser). */
   .pin {
+    box-sizing: border-box;
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
     border: 0;
-    background: transparent;
-    color: var(--fg, inherit);
-    text-align: center;
     padding: 24px;
     outline: none;
+    color: var(--fg, inherit);
+    text-align: center;
+    background: color-mix(in srgb, var(--bg, #111) 45%, transparent);
+    backdrop-filter: blur(28px) saturate(160%) brightness(0.9);
+    -webkit-backdrop-filter: blur(28px) saturate(160%) brightness(0.9);
+  }
+  .pin[open] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
   .pin::backdrop {
-    background: rgb(0 0 0 / 0.35);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: transparent;
   }
   .title {
     margin: 0;

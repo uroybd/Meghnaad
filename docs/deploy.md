@@ -61,7 +61,7 @@ reload too, until it is unlocked. Turning the switch off, or forgetting the devi
 **A PIN on a trusted device.** **Settings → General → This device → Set a PIN** takes four keys (the arrows, letters and
 digits; a capital counts as its lowercase letter), pressed twice; it is saved as the second four match, with no button.
 After the idle minutes you choose there (5 to begin with; 0 for only when asked), or at once with **Lock with PIN now**
-or `:lock`, every tab shows a blurred screen over the app, and the four keys take it away again (Backspace takes one
+or `:lock` (`:lock pin` to ask for it; `:lock key` and the lock button in the top bar lock fully), every tab shows a frosted screen (a reload opens on it too) over the app, and the four keys take it away again (Backspace takes one
 back; there is no OK). The app runs on underneath: sync, reminders, a half-typed edit. It is a visual block, not a lock:
 it seals nothing, and anyone who can open the browser's developer tools gets past it. **Forgot the PIN?** locks fully,
 as **Lock now** does. Only this browser knows of the PIN; turning trust off removes it.

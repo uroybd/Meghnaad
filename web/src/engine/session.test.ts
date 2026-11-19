@@ -158,7 +158,18 @@ describe('the PIN of a trusted device', () => {
     expect(again).toHaveBeenLastCalledWith(false);
   });
 
-  it(':lock puts the PIN screen up on a trusted device with a PIN, and locks fully on any other', async () => {
+  it('a reload of a trusted device with a PIN opens on the PIN screen, even if it was not up', async () => {
+    let { session } = await page();
+    await session.unlockWithSecret(SECRET, true);
+    await (await import('./pin')).setPin(PIN);
+    ({ session } = await page());
+    expect(await session.openDevice()).toBe('unlocked');
+    const shown = vi.fn();
+    session.onPin(shown);
+    expect(shown).toHaveBeenLastCalledWith(true);
+  });
+
+  it(':lock puts the PIN screen up on a trusted device with a PIN, and locks fully on any other or with key', async () => {
     let { session } = await page();
     await session.unlockWithSecret(SECRET, true);
     await session.lockNow();
@@ -171,6 +182,16 @@ describe('the PIN of a trusted device', () => {
     session.onPin(shown);
     await session.lockNow();
     expect(shown).toHaveBeenLastCalledWith(true);
+    expect(reload).not.toHaveBeenCalled();
+    // `:lock key` is the full lock even with a PIN.
+    await session.lockNow('key');
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it(':lock pin says so where there is no PIN, and locks nothing', async () => {
+    const { session } = await page();
+    await session.unlockWithSecret(SECRET, true);
+    await expect(session.lockNow('pin')).rejects.toThrow('no PIN');
     expect(reload).not.toHaveBeenCalled();
   });
 

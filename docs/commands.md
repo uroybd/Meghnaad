@@ -40,7 +40,7 @@ the marked tasks when there are any, and else on the chosen one.
 | [`:con[text]`](#context) | choose the context |
 | [`:sy[nc]`](#sync) | sync |
 | [`:rev[iew]`](#review) | review the tasks that need it |
-| [`:lock`](#lock) | lock the app: its PIN screen, on a trusted device with a PIN |
+| [`:lock`](#lock) | lock the app: with the PIN where there is one, else with the encryption secret |
 | `:5`, `:$` | a row by its number, the last row |
 | `:+3`, `:-3` | three rows down, up |
 
@@ -306,7 +306,9 @@ Since 0.8.11.
 
 ## :lock
 
-In the static web app. On a trusted device with a PIN, the PIN screen comes up in every tab, and the four keys of the PIN take it down; on any other device it locks fully, as Lock now does, and the encryption secret or a passkey opens it again. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.
+Takes pin or key.
+
+In the static web app. With nothing after it, the PIN screen on a trusted device with a PIN, in every tab, and the four keys of the PIN take it down; on any other device the full lock, as the lock button does, and the encryption secret or a passkey opens it again. `:lock pin` asks for the PIN screen (and says so where there is no PIN), `:lock key` for the full lock. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.
 
 Since 0.8.15.
 
