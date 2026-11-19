@@ -86,6 +86,8 @@ impl App {
                 };
             }
             "app.reminders" => self.open_reminders(),
+            // The static web app's lock; the terminal has none to put up.
+            "app.lock" => self.status = "Nothing to lock: the terminal uses your desktop's own task data.".into(),
             "move.down" => self.step(Step::By(1)),
             "move.up" => self.step(Step::By(-1)),
             "move.pageDown" => self.step(Step::By(10)),

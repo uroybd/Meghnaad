@@ -3,6 +3,7 @@
 // the row that has the focus: the motions move it, and the task actions act on it (or on the ticked rows).
 
 import { tick } from 'svelte';
+import { STATIC } from '../engine/flavour';
 import { splitWords } from './cmdline';
 import { review } from './review.svelte';
 import { selection } from './selection.svelte';
@@ -150,6 +151,11 @@ export function runCall(call: Call): boolean {
       return true;
     case 'app.reminders':
       store.notifyOpen = true;
+      return true;
+    case 'app.lock':
+      // The static app's lock: its PIN screen on a trusted device with a PIN, else the full lock (spec 0022).
+      if (STATIC) void import('../engine/session').then((s) => s.lockNow());
+      else say('Nothing to lock: this app signs in with Cloudflare Access.');
       return true;
     case 'app.sync':
     case 'app.reload':

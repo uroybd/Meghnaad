@@ -2,6 +2,7 @@
   import { BASE, fromAddress, toAddress } from './lib/base';
   import { STATIC } from './engine/flavour';
   import { lock } from './engine/session';
+  import PinLock from './lib/PinLock.svelte';
   import { onMount } from 'svelte';
   import ConsoleInput from './lib/ConsoleInput.svelte';
   import { engine } from './engine/client.svelte';
@@ -250,6 +251,7 @@
   <SetupGuide status={setup} onready={start} />
 {:else}
   <WaitBar />
+  {#if STATIC}<PinLock />{/if}
   <div class="app">
     <header class="top">
       <button

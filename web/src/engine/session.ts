@@ -7,6 +7,7 @@
 import { Engine } from 'tc-engine';
 import { engine } from './client.svelte';
 import { createPasskey, NoPrf, prfReported, signedHere, usePasskey } from './passkey';
+import { checkPin, clearPin, hasPin, markPinLocked, pinLocked, pinMinutes } from './pin';
 import {
   deriveKey,
   deviceTrusted,
@@ -36,7 +37,13 @@ export const DEFAULT_IDLE_MINUTES = 30;
 /** How long a tab waits for another to hand it the key before it asks for the secret. */
 const ASK_FOR_MS = 400;
 
-type Message = { kind: 'ask' } | { kind: 'give'; unlocked: Unlocked } | { kind: 'lock' } | { kind: 'forget' };
+type Message =
+  | { kind: 'ask' }
+  | { kind: 'give'; unlocked: Unlocked }
+  | { kind: 'lock' }
+  | { kind: 'forget' }
+  | { kind: 'pin' }
+  | { kind: 'unpin' };
 
 let channel: BroadcastChannel | undefined;
 let mine: Unlocked | undefined;
@@ -166,6 +173,9 @@ export async function setTrusted(on: boolean): Promise<void> {
     return;
   }
   await distrust();
+  // A device that is not trusted has the full lock and nothing in between.
+  clearPin();
+  told(false);
   if ((await keptPasskey())?.kind === 'signature') await forgetPasskey();
 }
 
@@ -258,8 +268,47 @@ function became(unlocked: Unlocked): void {
     if (e.data.kind === 'ask' && mine) ch.postMessage({ kind: 'give', unlocked: mine } satisfies Message);
     if (e.data.kind === 'lock') dropAndReload();
     if (e.data.kind === 'forget') dropAndReload(true);
+    if (e.data.kind === 'pin') told(true);
+    if (e.data.kind === 'unpin') told(false);
   });
   watchIdle();
+}
+
+// The PIN screen of a trusted device (spec 0022): up and down in every tab together. What is shown follows `onPin`.
+const pinWatchers = new Set<(locked: boolean) => void>();
+
+function told(locked: boolean): void {
+  for (const fn of pinWatchers) fn(locked);
+}
+
+/** Follow the PIN screen: `fn` is called with whether it is up, now and on each change, until the returned stop. */
+export function onPin(fn: (locked: boolean) => void): () => void {
+  pinWatchers.add(fn);
+  fn(pinLocked());
+  return () => pinWatchers.delete(fn);
+}
+
+/** Put the PIN screen up in every tab, if this device has a PIN. */
+export function pinLock(): void {
+  if (!hasPin()) return;
+  markPinLocked(true);
+  open()?.postMessage({ kind: 'pin' } satisfies Message);
+  told(true);
+}
+
+/** Take the PIN screen down in every tab, if `keys` are the PIN. */
+export async function pinUnlock(keys: string[]): Promise<boolean> {
+  if (!(await checkPin(keys))) return false;
+  markPinLocked(false);
+  open()?.postMessage({ kind: 'unpin' } satisfies Message);
+  told(false);
+  return true;
+}
+
+/** `:lock`: the PIN screen on a trusted device that has a PIN, else the full lock. */
+export async function lockNow(): Promise<void> {
+  if (hasPin() && (await deviceTrusted())) pinLock();
+  else lock();
 }
 
 const lockHooks: ((forgetting: boolean) => void)[] = [];
@@ -302,6 +351,8 @@ export function connectedTo(): { repo: string; branch: string; api: string } | u
 /** Lock every tab of this site: the key and the token are dropped; the saved copy stays, sealed. */
 export function lock(): void {
   mark(true);
+  // The full lock takes the place of the PIN screen: the secret or a passkey opens the device again.
+  markPinLocked(false);
   open()?.postMessage({ kind: 'lock' } satisfies Message);
   dropAndReload();
 }
@@ -315,6 +366,7 @@ export async function forget(): Promise<void> {
   mine = undefined;
   engine.stop();
   mark(false);
+  clearPin();
   await forgetDevice();
   location.reload();
 }
@@ -359,14 +411,20 @@ function watchIdle(): void {
     addEventListener(ev, note, { passive: true, capture: true });
   }
   setInterval(async () => {
-    const minutes = idleMinutes();
-    if (!minutes || (await deviceTrusted())) return;
     let last = noted;
     try {
       last = Math.max(last, Number(localStorage.getItem(ACTIVE) ?? 0));
     } catch {
       // This tab's own use.
     }
-    if (Date.now() - last > minutes * 60_000) lock();
+    const idle = Date.now() - last;
+    // A trusted device never locks by itself; with a PIN, the PIN screen comes up instead (spec 0022).
+    if (await deviceTrusted()) {
+      const minutes = pinMinutes();
+      if (minutes && hasPin() && !pinLocked() && idle > minutes * 60_000) pinLock();
+      return;
+    }
+    const minutes = idleMinutes();
+    if (minutes && idle > minutes * 60_000) lock();
   }, 60_000);
 }

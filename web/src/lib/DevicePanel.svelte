@@ -17,6 +17,7 @@
     setTrusted,
     setUpPasskey,
   } from '../engine/session';
+  import PinSettings from './PinSettings.svelte';
 
   const where = connectedTo();
   let minutes = $state(idleMinutes());
@@ -98,6 +99,7 @@
     />
     {#if trusted}<span>Off while this device is trusted.</span>{/if}</label
   >
+  {#if trusted}<PinSettings />{/if}
   {#if passkey}
     <p class="dim">
       {passkey === 'prf'

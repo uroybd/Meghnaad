@@ -676,7 +676,7 @@ const fn cmd(name: &'static str, shortest: usize, action: &'static str) -> Comma
 
 /// Every command, vim's first (with vim's shortest forms), then the ones vim has none of. A row number (`:5`), `:$`,
 /// `:+3` and `:-3` move as in vim and are not in the table.
-pub const COMMANDS: [Command; 30] = [
+pub const COMMANDS: [Command; 31] = [
     cmd("tabnext", 4, "page.next"),
     cmd("tabprevious", 4, "page.prev"),
     cmd("tabNext", 4, "page.prev"),
@@ -707,6 +707,7 @@ pub const COMMANDS: [Command; 30] = [
     cmd("context", 3, "app.context"),
     cmd("sync", 2, "app.sync"),
     cmd("review", 3, "app.review"),
+    cmd("lock", 4, "app.lock"),
 ];
 
 /// What a key or a command line asks for: an action, with the words after it and a count (`5j`).

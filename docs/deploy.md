@@ -58,6 +58,14 @@ keep that key in its profile as it is, so anyone who can use this browser (or a 
 Only this browser knows of it: nothing is synced. **Lock now** still locks, and a trusted device then stays locked, a
 reload too, until it is unlocked. Turning the switch off, or forgetting the device, removes what was kept.
 
+**A PIN on a trusted device.** **Settings → General → This device → Set a PIN** takes four keys (the arrows, letters and
+digits; a capital counts as its lowercase letter), pressed twice; it is saved as the second four match, with no button.
+After the idle minutes you choose there (5 to begin with; 0 for only when asked), or at once with **Lock with PIN now**
+or `:lock`, every tab shows a blurred screen over the app, and the four keys take it away again (Backspace takes one
+back; there is no OK). The app runs on underneath: sync, reminders, a half-typed edit. It is a visual block, not a lock:
+it seals nothing, and anyone who can open the browser's developer tools gets past it. **Forgot the PIN?** locks fully,
+as **Lock now** does. Only this browser knows of the PIN; turning trust off removes it.
+
 **Unlocking with a passkey.** **Settings → General → This device → Unlock with a passkey on this device** makes a passkey
 for the site (in the browser, the phone, or a password manager such as Bitwarden), and the unlock form then offers it
 before the password. The password always still works. On a device that is not trusted the passkey must give a secret

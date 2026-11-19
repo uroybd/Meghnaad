@@ -129,6 +129,102 @@ describe('locking', () => {
   });
 });
 
+describe('the PIN of a trusted device', () => {
+  const PIN = ['1', 'a', '↑', '9'];
+
+  it('comes up after its idle minutes instead of locking, goes with the PIN, and stays up over a reload', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'Date'] });
+    let { session } = await page();
+    await session.unlockWithSecret(SECRET, true);
+    const pin = await import('./pin');
+    await pin.setPin(PIN);
+    const shown = vi.fn();
+    session.onPin(shown);
+    expect(shown).toHaveBeenLastCalledWith(false);
+    await vi.advanceTimersByTimeAsync(6 * 60_000);
+    await settle();
+    expect(shown).toHaveBeenLastCalledWith(true);
+    expect(reload).not.toHaveBeenCalled();
+
+    // A reload opens unlocked (the device is trusted), with the PIN screen still up.
+    ({ session } = await page());
+    expect(await session.openDevice()).toBe('unlocked');
+    const again = vi.fn();
+    session.onPin(again);
+    expect(again).toHaveBeenLastCalledWith(true);
+    expect(await session.pinUnlock(['1', 'a', '↑', '8'])).toBe(false);
+    expect(again).toHaveBeenLastCalledWith(true);
+    expect(await session.pinUnlock(PIN)).toBe(true);
+    expect(again).toHaveBeenLastCalledWith(false);
+  });
+
+  it(':lock puts the PIN screen up on a trusted device with a PIN, and locks fully on any other', async () => {
+    let { session } = await page();
+    await session.unlockWithSecret(SECRET, true);
+    await session.lockNow();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    ({ session } = await page());
+    await session.unlockWithSecret(SECRET, true);
+    await (await import('./pin')).setPin(PIN);
+    const shown = vi.fn();
+    session.onPin(shown);
+    await session.lockNow();
+    expect(shown).toHaveBeenLastCalledWith(true);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('comes up and goes in every open tab together', async () => {
+    // Two tabs: two copies of the modules, over one BroadcastChannel.
+    type Listen = (e: { data: unknown }) => void;
+    class Channel {
+      static open: Channel[] = [];
+      listeners: Listen[] = [];
+      constructor() {
+        Channel.open.push(this);
+      }
+      addEventListener(_: string, fn: Listen) {
+        this.listeners.push(fn);
+      }
+      removeEventListener(_: string, fn: Listen) {
+        this.listeners = this.listeners.filter((f) => f !== fn);
+      }
+      postMessage(data: unknown) {
+        for (const c of Channel.open) if (c !== this) for (const fn of [...c.listeners]) fn({ data });
+      }
+    }
+    vi.stubGlobal('BroadcastChannel', Channel);
+    const { session: one } = await page();
+    await one.unlockWithSecret(SECRET, true);
+    await (await import('./pin')).setPin(PIN);
+    const { session: two } = await page();
+    expect(await two.openDevice()).toBe('unlocked');
+    const shown = vi.fn();
+    two.onPin(shown);
+    one.pinLock();
+    expect(shown).toHaveBeenLastCalledWith(true);
+    expect(await one.pinUnlock(PIN)).toBe(true);
+    expect(shown).toHaveBeenLastCalledWith(false);
+  });
+
+  it('goes with the trust, and the full lock takes the place of its screen', async () => {
+    let { session } = await page();
+    await session.unlockWithSecret(SECRET, true);
+    let pin = await import('./pin');
+    await pin.setPin(PIN);
+    session.pinLock();
+    session.lock();
+    expect(pin.pinLocked()).toBe(false);
+    expect(pin.hasPin()).toBe(true);
+
+    ({ session } = await page());
+    await session.unlockWithSecret(SECRET);
+    pin = await import('./pin');
+    await session.setTrusted(false);
+    expect(pin.hasPin()).toBe(false);
+  });
+});
+
 describe('trusting', () => {
   it('turned off, removes the copy and a passkey checked by signature, but not a PRF one', async () => {
     const { session, vault } = await page();
