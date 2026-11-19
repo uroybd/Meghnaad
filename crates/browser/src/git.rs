@@ -30,11 +30,29 @@ fn set(target: &Object, key: &str, value: &JsValue) -> Result<()> {
 /// The most bytes of files kept by [`BLOBS`] before it starts again.
 const BLOBS_MAX: usize = 8 << 20;
 
+/// How long a read by name (the branch's head, a file by its path) is answered again without asking: one action on
+/// the settings page reads the same folder several times over (the settings, the file shown, the list).
+const RECENT_MS: f64 = 5_000.0;
+
 thread_local! {
     /// Files and folders read by their id (`git/blobs/<id>`, `git/trees/<id>`), kept for as long as the tab is open. An
     /// id names its contents, so a kept answer can't go stale, and reading the settings folder again (on every change,
     /// every file opened) costs the one request that finds the folder's id.
     static BLOBS: std::cell::RefCell<(usize, std::collections::HashMap<String, Vec<u8>>)> = std::cell::RefCell::default();
+    /// Reads by name, each with when it was answered, kept for [`RECENT_MS`] and all dropped by any write, so a commit
+    /// always starts from the head as it is.
+    static RECENT: std::cell::RefCell<std::collections::HashMap<String, (f64, HttpResponse)>> = std::cell::RefCell::default();
+}
+
+/// A request that reads (a GET, or a GraphQL query that is not a mutation), keyed by what it asks.
+fn read_key(request: &HttpRequest) -> Option<String> {
+    let body = request.body.as_deref().map(String::from_utf8_lossy).unwrap_or_default();
+    let reads = match request.method {
+        "GET" => true,
+        "POST" => request.url.ends_with("/graphql") && !body.contains("\"mutation"),
+        _ => false,
+    };
+    reads.then(|| format!("{} {} {body}", request.method, request.url))
 }
 
 /// A request whose answer can't change: a file by its blob id, or a folder by its tree id (not by a branch's name).
@@ -54,7 +72,30 @@ impl Http for FetchHttp {
         if let Some(body) = blob_url(&request).and_then(|url| BLOBS.with(|b| b.borrow().1.get(url).cloned())) {
             return Ok(HttpResponse { status: 200, body });
         }
-        let res = fetch(&request).await?;
+        let key = read_key(&request);
+        let now = js_sys::Date::now();
+        if let Some(res) = key.as_ref().and_then(|k| {
+            RECENT.with(|r| {
+                r.borrow()
+                    .get(k)
+                    .filter(|(at, _)| now - at < RECENT_MS)
+                    .map(|(_, res)| res.clone())
+            })
+        }) {
+            return Ok(res);
+        }
+        let res = fetch(&request).await;
+        match (&key, &res) {
+            (Some(k), Ok(r)) if r.status == 200 => RECENT.with(|c| {
+                let mut c = c.borrow_mut();
+                c.retain(|_, (at, _)| now - *at < RECENT_MS);
+                c.insert(k.clone(), (now, r.clone()));
+            }),
+            (Some(_), _) => {}
+            // A write (made or not): what was read before it may be out of date.
+            (None, _) => RECENT.with(|c| c.borrow_mut().clear()),
+        }
+        let res = res?;
         if let Some(url) = blob_url(&request).filter(|_| res.status == 200) {
             BLOBS.with(|b| {
                 let mut b = b.borrow_mut();
