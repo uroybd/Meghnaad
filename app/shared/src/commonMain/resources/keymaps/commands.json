@@ -248,18 +248,24 @@
       "summary": "lock the app: its PIN screen, on a trusted device with a PIN",
       "takes": "",
       "doc": "In the static web app. On a trusted device with a PIN, the PIN screen comes up in every tab, and the four keys of the PIN take it down; on any other device it locks fully, as Lock now does, and the encryption secret or a passkey opens it again. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.",
-      "since": "unreleased"
+      "since": "0.8.15"
     }
   ],
   "lines": [
     {
-      "written": [":5", ":$"],
+      "written": [
+        ":5",
+        ":$"
+      ],
       "summary": "a row by its number, the last row",
       "doc": "A number alone goes to that row of the list, as in vim; `:$` goes to the last. A count before `G` or `gg` does the same (`5G`).",
       "since": "0.8.11"
     },
     {
-      "written": [":+3", ":-3"],
+      "written": [
+        ":+3",
+        ":-3"
+      ],
       "summary": "three rows down, up",
       "doc": "A number with `+` or `-` moves that many rows down or up, as `3j` and `3k` do.",
       "since": "0.8.11"

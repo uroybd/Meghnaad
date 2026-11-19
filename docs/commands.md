@@ -308,7 +308,7 @@ Since 0.8.11.
 
 In the static web app. On a trusted device with a PIN, the PIN screen comes up in every tab, and the four keys of the PIN take it down; on any other device it locks fully, as Lock now does, and the encryption secret or a passkey opens it again. Elsewhere (the web app on a Worker, the terminal) it says there is nothing to lock.
 
-Since the next release.
+Since 0.8.15.
 
 ## Rows
 
