@@ -88,7 +88,7 @@ line.
 | `5` Calendar | `task calendar`, from this month; `h` `l` go a month back or on |
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
 | `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` go to the board before or after, `[` `]` to its next section or the one before, and `Esc` (or `b`) comes back to the list |
-| `8` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards (`g8` or `gk` opens it): the list of kanbans, then one, its columns side by side (each on a deeper shade, its title on a lighter line, every card framed in the task's colour, the chosen one's frame inverted); `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
+| `8` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards (`g8` or `gk` opens it): the list of kanbans, then one, its columns side by side (each on a deeper shade, its title on a lighter line, every card framed in the task's colour, the chosen one's frame thick, with a ● in its top edge); `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
 | `9` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
 | `0` Settings | A section each for when to sync, the theme, your task commands, your boards, Kanban and your keys ([Settings](#the-settings-page)) |
 

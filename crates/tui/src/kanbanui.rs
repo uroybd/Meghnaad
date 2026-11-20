@@ -9,7 +9,7 @@ use crate::theme::{self, Roles};
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding, Paragraph};
 use ratatui::Frame;
 
 /// The width of Other while it is folded.
@@ -188,7 +188,7 @@ fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
     lines
 }
 
-/// A column: its cards, each in a frame of the task's colour (the one chosen in that colour inverted), with a swimlane's
+/// A column: its cards, each in a frame of the task's colour (the one chosen thick, with a dot), with a swimlane's
 /// heading above its first card here, scrolled to keep the one chosen in sight.
 #[allow(clippy::too_many_arguments, reason = "a column's parts, each drawn as given")]
 fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usize>, here: bool, icons: bool) {
@@ -231,14 +231,14 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
         match card.and_then(|n| cards.get(n).map(|c| (n, c))) {
             None => f.render_widget(Paragraph::new(lines.clone()), at),
             Some((n, c)) => {
-                // The frame takes the task's colour, as the table's row has it; the chosen card's is that colour
-                // inverted: a band of it, on the column's ground.
+                // The frame takes the task's colour, as the table's row has it; the chosen card's is drawn thick and
+                // bold, as a pane with the keys is, with a dot in its top edge, so it shows without colour too.
                 let colour = c.style.fg.or(theme::border(false).fg).unwrap_or(Color::Reset);
-                let ground = theme::column().bg;
-                let edge = match (sel == Some(n), ground) {
-                    (false, _) => Style::new().fg(colour),
-                    (true, Some(g)) => Style::new().fg(g).bg(colour),
-                    (true, None) => Style::new().fg(colour).add_modifier(Modifier::REVERSED),
+                let chosen = sel == Some(n);
+                let edge = if chosen {
+                    Style::new().fg(colour).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::new().fg(colour)
                 };
                 // A card cut off at the column's foot has no bottom edge.
                 let sides = if h < height(piece) {
@@ -246,12 +246,15 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
                 } else {
                     Borders::ALL
                 };
-                let frame = Block::new()
+                let mut frame = Block::new()
                     .borders(sides)
-                    .border_type(BorderType::Rounded)
+                    .border_type(theme::border_type(chosen))
                     .border_style(edge)
                     .style(theme::column())
                     .padding(Padding::horizontal(1));
+                if chosen {
+                    frame = frame.title(Span::styled(" ● ", edge));
+                }
                 f.render_widget(Paragraph::new(lines.clone()).block(frame), at);
             }
         }
