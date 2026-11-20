@@ -77,7 +77,13 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # The cache CI's web job saves on main, where it builds the same (a tag can read main's caches, never another
+      # tag's): the dependencies are built and worker-build is installed. A tag saves none of its own, which nothing
+      # could read and which would push main's out of the repository's 10 GB.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Its version follows the `worker` crate's (0.8 in crates/worker): worker-build 0.9 refuses worker 0.8.
       - name: Install worker-build
@@ -193,9 +199,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
+      # No cache: a tag's could only be read by that tag again, and these builds take a minute or two.
 
       - name: Build and package
         env:
@@ -310,7 +314,15 @@ jobs:
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
+      # Main's cache of CI's android job (the same job name, so the same key); a tag saves none.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The Gradle caches CI's android job saves on main (the dependencies, the wrapper), read only here.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
 
       - name: Install cargo-ndk
         run: command -v cargo-ndk >/dev/null || cargo install cargo-ndk --locked

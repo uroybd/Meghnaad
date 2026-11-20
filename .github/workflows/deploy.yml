@@ -1,6 +1,10 @@
-# Build and deploy the Worker to Cloudflare. Run by hand: Actions > "Deploy" > Run workflow.
+# Deploy the Worker and the web app to Cloudflare. Run by hand: Actions > "Deploy" > Run workflow (`just deploy`).
 # It does not run the tests: CI does that on every push and pull request, so run this from a commit CI has passed.
 # What it needs, and how to set it up, is in docs/deploy.md ("D. From GitHub Actions").
+#
+# When the Release workflow has built this very commit (a released version: `just ship` tags it and starts this), the
+# built package on the `release` branch is deployed as it is, with no Rust and nothing built again; while that Release is
+# still building, this waits for it. Any other commit (main ahead of the last release) is built here from source.
 name: Deploy
 
 on:
@@ -18,6 +22,8 @@ concurrency:
 
 permissions:
   contents: read
+  # To see whether a Release run is building this commit.
+  actions: read
 
 jobs:
   deploy:
@@ -33,6 +39,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `package` when the release branch holds this commit's build (waiting while a Release run is building it),
+      # else `source`. The branch's commits say which commit each was built from: "Release 1.2.3 (from abc1234)".
+      - name: Find the build
+        id: build
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short="${GITHUB_SHA::7}"
+          built() {
+            git fetch -q --depth 1 origin release 2>/dev/null || return 1
+            git log -1 --format=%s FETCH_HEAD | grep -q "(from $short)"
+          }
+          building() {
+            [ -n "$(gh run list --workflow release.yml --commit "$GITHUB_SHA" --json status \
+              -q '.[] | select(.status != "completed") | .status')" ]
+          }
+          # Up to 30 minutes; the first minute also waits for a Release run just started by the tag to show up.
+          for i in $(seq 120); do
+            if built; then echo "from=package" >> "$GITHUB_OUTPUT"; echo "Deploying the release build of $short"; exit 0; fi
+            building || [ "$i" -le 4 ] || break
+            sleep 15
+          done
+          if built; then echo "from=package" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "from=source" >> "$GITHUB_OUTPUT"
+          echo "No release build of $short: building it here"
+
+      - uses: actions/checkout@v4
+        if: ${{ steps.build.outputs.from == 'package' }}
+        with:
+          ref: release
+          path: package
+
+      # The folder deployed from: the release package, or this checkout.
+      - name: Where to deploy from
+        run: echo "DIR=${{ steps.build.outputs.from == 'package' && 'package' || '.' }}" >> "$GITHUB_ENV"
+
       # Your deployment choices are one repository (or environment) *variable*, DEPLOY_VARS, holding what
       # `.deploy.vars` would: one KEY=value per line (BACKEND, R2_BUCKET or GIT_REPO/GIT_BRANCH/GIT_API, CUSTOM_DOMAIN,
       # TEAM_DOMAIN, POLICY_AUD, WORKER_NAME, all optional but GIT_REPO with BACKEND=git; # comments are fine). It is written out as that file, which the deploy script
@@ -40,36 +83,44 @@ jobs:
       - name: Write the deploy settings
         env:
           DEPLOY_VARS: ${{ vars.DEPLOY_VARS }}
-        run: printf '%s\n' "$DEPLOY_VARS" > .deploy.vars
+        run: printf '%s\n' "$DEPLOY_VARS" > "$DIR/.deploy.vars"
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: ${{ steps.build.outputs.from != 'package' && 'npm' || '' }}
 
+      # The release package has no lockfile: it needs only wrangler.
       - name: Install dependencies
-        run: npm ci
+        working-directory: ${{ env.DIR }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
 
       - name: Show the config that would be deployed
         if: ${{ inputs.dry_run }}
         run: npm run deploy -- --check
 
-      # Everything below is skipped on a dry run.
+      # Building from source only: everything below to Deploy is skipped for the release package and on a dry run.
       - uses: dtolnay/rust-toolchain@stable
-        if: ${{ !inputs.dry_run }}
+        if: ${{ steps.build.outputs.from == 'source' }}
         with:
           targets: wasm32-unknown-unknown
 
+      # CI's web job's cache, as the Release workflow uses it.
       - uses: Swatinem/rust-cache@v2
-        if: ${{ !inputs.dry_run }}
+        if: ${{ steps.build.outputs.from == 'source' }}
+        with:
+          shared-key: web
+          save-if: false
 
       - name: Install worker-build
-        if: ${{ !inputs.dry_run }}
+        if: ${{ steps.build.outputs.from == 'source' }}
         run: command -v worker-build >/dev/null || cargo install worker-build --version '~0.8' --locked
 
-      # Builds the web app and the Worker (wrangler's build command), then deploys.
+      # From source, builds the web app and the Worker (wrangler's build command) first; the release package has them.
       - name: Deploy
         if: ${{ !inputs.dry_run }}
+        working-directory: ${{ env.DIR }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -79,6 +130,7 @@ jobs:
       # (`wrangler secret put`, or the dashboard). It is set after the deploy so the Worker exists.
       - name: Set the encryption secret
         if: ${{ !inputs.dry_run && env.HAS_ENCRYPTION_SECRET == 'true' }}
+        working-directory: ${{ env.DIR }}
         env:
           TC_ENCRYPTION_SECRET: ${{ secrets.TC_ENCRYPTION_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -88,6 +140,7 @@ jobs:
       # Optional, for BACKEND=git: the token that may read and write the repository, set the same way.
       - name: Set the git token
         if: ${{ !inputs.dry_run && env.HAS_GIT_TOKEN == 'true' }}
+        working-directory: ${{ env.DIR }}
         env:
           GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

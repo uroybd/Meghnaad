@@ -97,7 +97,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      # Shared with the Release workflow's build (`shared-key: web`): saved here on main, read there by a tag.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: web
+
+      # The Workers' build tool, for the release build below (kept in the cache after the first time).
+      - name: Install worker-build
+        run: command -v worker-build >/dev/null || cargo install worker-build --version '~0.8' --locked
 
       - name: Web tests
         run: npm --prefix web test
@@ -105,11 +112,13 @@ jobs:
       - name: Deploy-script tests
         run: node --test scripts/*.test.mjs
 
-      # The app has to build, not just pass its tests. That includes the engine that runs in the browser (Rust compiled to
-      # WebAssembly, then wasm-bindgen), which `build:web` builds first (the tests above built it already, and it is
-      # not built again); wasm-bindgen's tool is installed if missing.
+      # The app has to build, not just pass its tests: everything the Release workflow builds for the web, the same way,
+      # so that a release cannot fail to build and its cache (above) is warm. The engine that runs in the browser (Rust
+      # compiled to WebAssembly, then wasm-bindgen; the tests above built it already), both Workers, and the static app.
       - name: Build
-        run: npm run build:web
+        run: |
+          node scripts/build.mjs --flavour all
+          node scripts/build-static.mjs
 
   # The Android app (`app/`, Kotlin): its tests on the JVM (the screens' logic, what the widgets show of a task), with the
   # engine's library built for this machine so that the tests that run the real engine do (they skip without it), and the

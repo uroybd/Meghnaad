@@ -217,7 +217,9 @@ git-ignored `wrangler.deploy.jsonc`.
 ### D. From GitHub Actions (manual)
 
 The repository has a workflow, [`.github/workflows/deploy.yml`](https://github.com/uroybd/Meghnaad/blob/main/.github/workflows/deploy.yml),
-that builds and deploys the Worker when you start it: **Actions → Deploy → Run workflow**. It never runs on a push. Do
+that deploys the Worker when you start it: **Actions → Deploy → Run workflow**. When the [Release](#making-a-release-for-maintainers) workflow
+has built that commit (a released version), it deploys that build from the `release` branch as it is, waiting for the
+release while it is still building; any other commit it builds from source first. It never runs on a push. Do
 route 0, A or C **once** first, since the store and Access have to exist and the first deploy is where you find out they
 work. After that, updating is one click. In your fork:
 
@@ -374,6 +376,12 @@ builds once and publishes:
 - the Android APK, added to that release when its build finishes ([signing it](android.md#releases-and-signing)).
 - `meghnaad-hook` and `meghnaad` (the terminal app) for Linux and macOS (x86_64 and arm64), as `<program>-<version>-<platform>.tar.gz`,
   added to that release when their builds finish.
+
+**Build times.** A tag's run can read the caches saved on `main` but never another tag's, so the Release workflow
+saves none of its own and reads `main`'s: CI's web job builds what the release builds for the web (both Workers and
+the static app too) under the shared Rust cache key `web`, and the APK reads CI's android job's Rust and Gradle caches.
+The terminal programs build without a cache. The Deploy workflow that `just ship` starts deploys the release's own
+build once it is on the `release` branch, without building it again.
 
 **A Homebrew tap.** The release can also keep the `meghnaad-hook` and `meghnaad` formulas up to date in a tap, so
 people install them with `brew install <owner>/tap/meghnaad-hook` (or `meghnaad`, which brings `task` with it). It is off until you set the repository **variable** `HOMEBREW_TAP` to the tap
