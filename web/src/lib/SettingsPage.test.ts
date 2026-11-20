@@ -85,26 +85,28 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const tab = (name: string) => document.getElementById(`settings-tab-${name}`) as HTMLButtonElement;
+const group = (name: string) => document.getElementById(`settings-group-${name}`) as HTMLButtonElement;
+/** A tab's button, opening its group first when another is shown (only the shown group's tabs are listed). */
+const tab = (name: string) => {
+  const found = document.getElementById(`settings-tab-${name}`) as HTMLButtonElement | null;
+  if (found) return found;
+  store.settingsTab = name as typeof store.settingsTab;
+  flushSync();
+  return document.getElementById(`settings-tab-${name}`) as HTMLButtonElement;
+};
 const panel = (name: string) => document.getElementById(`settings-panel-${name}`) as HTMLElement;
 const button = (within: HTMLElement, text: string) =>
   [...within.querySelectorAll('button')].find((b) => b.textContent?.trim() === text) as HTMLButtonElement;
 
 describe('the Settings page', () => {
-  it('has a tab each for general, appearance, taskrc, tasksh, commands, hooks and urgency, and shows one at a time', async () => {
+  it("puts the tabs in two groups, Meghnaad's and Taskwarrior's, and shows one tab at a time", async () => {
     app = mount(SettingsPage, { target: document.body });
     await tick();
-    expect([...document.querySelectorAll('[role=tab]')].map((t) => t.textContent?.trim())).toEqual([
-      'General',
-      'Appearance',
-      'Keybindings',
-      'taskrc',
-      'tasksh',
-      'Kanban',
-      'Commands',
-      'Hooks',
-      'Urgency',
-    ]);
+    const labels = (sel: string) => [...document.querySelectorAll(sel)].map((t) => t.textContent?.trim());
+    expect(labels('.groups [role=tab]')).toEqual(['Meghnaad', 'Taskwarrior']);
+    // The store opens on taskrc, so Taskwarrior's tabs are the ones listed.
+    expect(group('taskwarrior').getAttribute('aria-selected')).toBe('true');
+    expect(labels('.tabs [role=tab]')).toEqual(['taskrc', 'Urgency', 'Hooks', 'tasksh']);
     expect(panel('taskrc').hidden).toBe(false);
     expect(panel('tasksh').hidden).toBe(true);
 
@@ -113,6 +115,21 @@ describe('the Settings page', () => {
     expect(tab('tasksh').getAttribute('aria-selected')).toBe('true');
     expect(panel('taskrc').hidden).toBe(true);
     expect(panel('tasksh').hidden).toBe(false);
+
+    // The other group opens on its first tab, and coming back goes to the tab left there.
+    group('meghnaad').click();
+    await tick();
+    expect(labels('.tabs [role=tab]')).toEqual(['General', 'Appearance', 'Keybindings', 'Kanban', 'Commands']);
+    expect(store.settingsTab).toBe('general');
+    group('taskwarrior').click();
+    await tick();
+    expect(store.settingsTab).toBe('tasksh');
+
+    // A tab named from elsewhere (an address, a key) opens its group.
+    store.settingsTab = 'kanban';
+    await tick();
+    expect(group('meghnaad').getAttribute('aria-selected')).toBe('true');
+    expect(panel('kanban').hidden).toBe(false);
   });
 
   it('opens on the tab the store asks for', async () => {
@@ -151,10 +168,16 @@ describe('the Settings page', () => {
     expect(tab('taskrc').querySelector('.dot')).not.toBeNull();
     expect(tab('tasksh').querySelector('.dot')).toBeNull();
 
-    // Another tab, and back: the edit is still there.
+    // Another tab, another group, and back: the edit is still there, and the group says so too.
     tab('urgency').click();
     await tick();
     expect(tab('taskrc').querySelector('.dot')).not.toBeNull();
+    group('meghnaad').click();
+    await tick();
+    expect(group('taskwarrior').querySelector('.dot')).not.toBeNull();
+    expect(group('meghnaad').querySelector('.dot')).toBeNull();
+    group('taskwarrior').click();
+    await tick();
     tab('taskrc').click();
     await tick();
     expect((panel('taskrc').querySelector('textarea') as HTMLTextAreaElement).value).toBe('bulk=9');

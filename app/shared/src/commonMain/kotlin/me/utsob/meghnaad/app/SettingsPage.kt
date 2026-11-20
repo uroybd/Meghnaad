@@ -16,8 +16,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -49,22 +53,49 @@ private val TABS = listOf(
     SettingsTabInfo(SettingsTab.Hooks, "Hooks"),
     SettingsTabInfo(SettingsTab.Urgency, "Urgency"),
     SettingsTabInfo(SettingsTab.Sync, "Sync"),
+).associateBy { it.tab }
+
+/** Settings in two groups, as on the web (SettingsPage.svelte): the app's own, and what Taskwarrior itself reads. */
+class SettingsGroup(val label: String, val tabs: List<SettingsTab>)
+
+val SETTINGS_GROUPS = listOf(
+    SettingsGroup("Meghnaad", listOf(SettingsTab.General, SettingsTab.Appearance, SettingsTab.Keys, SettingsTab.Kanban, SettingsTab.Commands, SettingsTab.Sync)),
+    SettingsGroup("Taskwarrior", listOf(SettingsTab.Taskrc, SettingsTab.Urgency, SettingsTab.Hooks, SettingsTab.Tasksh)),
 )
 
-/** One page with a tab each for the taskrc, tasksh, commands, hooks, urgency and sync; each has its own Apply (SettingsPage.svelte). */
+/** The group that holds a tab: an address names only the tab. */
+fun settingsGroupOf(tab: SettingsTab): SettingsGroup = SETTINGS_GROUPS.firstOrNull { tab in it.tabs } ?: SETTINGS_GROUPS[0]
+
+@Composable
+private fun DirtyLabel(label: String, dirty: Boolean) {
+    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 14.sp)
+        // Not applied yet.
+        if (dirty) Box(Modifier.padding(start = 6.dp).size(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+    }
+}
+
+/** Two groups, Meghnaad's and Taskwarrior's, each with its tabs in a row; each tab has its own Apply (SettingsPage.svelte). */
 @Composable
 fun SettingsPage(store: Store, state: SettingsState) {
     val dirty = mapOf(SettingsTab.General to state.general.edited, SettingsTab.Appearance to state.appearance.edited, SettingsTab.Keys to state.keys.edited, SettingsTab.Taskrc to state.taskrc.edited, SettingsTab.Commands to state.commands.edited, SettingsTab.Urgency to state.urgency.edited, SettingsTab.Tasksh to state.tasksh.edited, SettingsTab.Hooks to state.hooks.edited, SettingsTab.Kanban to state.kanban.edited)
+    val group = settingsGroupOf(store.settingsTab)
+    // The tab last shown in each group, so going back to a group goes back to it.
+    val last = remember { mutableStateMapOf<String, SettingsTab>() }
+    LaunchedEffect(store.settingsTab) { last[group.label] = store.settingsTab }
     Column(Modifier.fillMaxSize()) {
         Text("Settings", Modifier.padding(start = 16.dp, top = 10.dp), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-        ScrollableTabRow(selectedTabIndex = TABS.indexOfFirst { it.tab == store.settingsTab }.coerceAtLeast(0), edgePadding = 8.dp, containerColor = MaterialTheme.colorScheme.background) {
-            for (t in TABS) {
-                Tab(selected = store.settingsTab == t.tab, onClick = { store.settingsTab = t.tab }) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(t.label, fontSize = 14.sp)
-                        // Not applied yet.
-                        if (dirty[t.tab] == true) Box(Modifier.padding(start = 6.dp).size(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                    }
+        TabRow(selectedTabIndex = SETTINGS_GROUPS.indexOf(group), Modifier.widthIn(max = 420.dp), containerColor = MaterialTheme.colorScheme.background) {
+            for (g in SETTINGS_GROUPS) {
+                Tab(selected = g === group, onClick = { store.settingsTab = last[g.label] ?: g.tabs.first() }) {
+                    DirtyLabel(g.label, g.tabs.any { dirty[it] == true })
+                }
+            }
+        }
+        ScrollableTabRow(selectedTabIndex = group.tabs.indexOf(store.settingsTab).coerceAtLeast(0), edgePadding = 8.dp, containerColor = MaterialTheme.colorScheme.background) {
+            for (t in group.tabs) {
+                Tab(selected = store.settingsTab == t, onClick = { store.settingsTab = t }) {
+                    DirtyLabel(TABS[t]?.label ?: t.name, dirty[t] == true)
                 }
             }
         }

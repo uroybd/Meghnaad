@@ -1,9 +1,12 @@
 # Settings
 
-**Settings** in the header has a tab each for **General**, **Appearance**, the **taskrc**, **tasksh**, **Kanban**, **Commands**,
-**Hooks** and **Urgency**. Every tab has its own **Apply** (**Save**, on Hooks), and applying one doesn't touch the others. A tab with
-unapplied edits has a dot, and the edits stay while you look at another tab or page. If the saved settings change
-elsewhere (the Console's `config`, another tab), a tab with no edits of its own follows them.
+**Settings** in the header is in two groups. **Meghnaad** is the app's own: **General**, **Appearance**,
+**Keybindings**, **Kanban** and **Commands** (and **Sync** on the phone). **Taskwarrior** is what `task` itself reads:
+the **taskrc**, **Urgency**, **Hooks** and **tasksh**. A group's tabs are listed down the left (in a row on a phone),
+and an address names the tab alone (`/settings/hooks`), so the group follows from it. Every tab has its own **Apply**
+(**Save**, on Hooks), and applying one doesn't touch the others. A tab with unapplied edits has a dot, and so does its
+group; the edits stay while you look at another tab, group or page. If the saved settings change elsewhere (the
+Console's `config`, another tab), a tab with no edits of its own follows them.
 
 **General** sets the **home page**, the page the app opens on: any report (including your own) or any of your boards.
 The default is `next`. It is kept in the app's own `settings.json` (`"homepage": { "report": "list" }` or `{ "board":
