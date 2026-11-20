@@ -12,6 +12,9 @@
 | **Kanban** | Your tasks as columns of cards, moved from one to another; there once it is set up ([Kanban](kanban.md)) |
 | **Console** | Type commands; reports and answers print here |
 
+**Boards** and **Kanban** hold several of something, so in the top bar each opens a menu: every board (or kanban), to
+open it directly, and last the list of them. On a phone the menu lists them under the page.
+
 ## Addresses
 
 Every page has an address. You can share a link with anyone who can sign in to the same deployment, open it in a new

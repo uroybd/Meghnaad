@@ -1,5 +1,7 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.VerticalDivider
@@ -185,7 +187,37 @@ private fun WideTopBar(store: Store, labels: Boolean, buttonLabels: Boolean) {
                 Logo(28.dp)
                 Text("Meghnaad", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
-            for (t in TABS.filter { it.view != View.Kanban || store.kanbanSettings.enabled }) Button(t.icon, t.label, store.view == t.view, labels) { store.view = t.view }
+            for (t in TABS.filter { it.view != View.Kanban || store.kanbanSettings.enabled }) {
+                if (t.view != View.Boards && t.view != View.Kanban) {
+                    Button(t.icon, t.label, store.view == t.view, labels) { store.view = t.view }
+                    continue
+                }
+                // Boards and Kanban open a menu of each one, so one opens directly, with the page's list last (NavPick.svelte).
+                Box {
+                    var menu by remember { mutableStateOf(false) }
+                    Button(t.icon, t.label, store.view == t.view, labels) { menu = true }
+                    val items = if (t.view == View.Boards) store.boards.map { it.id to it.name } else store.kanbans.map { it.id to it.name }
+                    val current = if (t.view == View.Boards) store.boardId else store.kanbanId
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        for ((id, name) in items) {
+                            val on = store.view == t.view && current == id
+                            DropdownMenuItem(
+                                text = { Text(name, color = if (on) colors.primary else colors.onSurface, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal) },
+                                onClick = { menu = false; openOne(store, t.view, id) },
+                            )
+                        }
+                        if (items.isNotEmpty()) HorizontalDivider(color = colors.outlineVariant)
+                        DropdownMenuItem(
+                            text = { Text(if (t.view == View.Boards) "All boards" else "All kanbans", color = colors.onSurfaceVariant) },
+                            onClick = {
+                                menu = false
+                                if (t.view == View.Boards) store.boardId = null else store.kanbanId = null
+                                store.view = t.view
+                            },
+                        )
+                    }
+                }
+            }
             Box(Modifier.weight(1f))
             TimerChip(store, Modifier)
             store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(horizontal = 8.dp), background = extras.warn, color = contextText(), bold = true) }

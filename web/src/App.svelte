@@ -28,6 +28,7 @@
     X,
   } from './lib/icons';
   import NavMenu from './lib/NavMenu.svelte';
+  import NavPick from './lib/NavPick.svelte';
   import { pullToRefresh, PULL_THRESHOLD } from './lib/pullRefresh';
   import ConsoleView from './lib/ConsoleView.svelte';
   import LazyView from './lib/LazyView.svelte';
@@ -289,13 +290,28 @@
         <button class:on={store.view === 'burndown'} aria-label="Burndown" onclick={() => (store.view = 'burndown')}
           ><TrendingDown size={15} /> <span class="lbl">Burndown</span></button
         >
-        <button class:on={store.view === 'boards'} aria-label="Boards" onclick={() => (store.view = 'boards')}
-          ><LayoutDashboard size={15} /> <span class="lbl">Boards</span></button
+        <NavPick
+          label="Boards"
+          on={store.view === 'boards'}
+          items={store.boards}
+          current={store.boardId}
+          all="All boards"
+          onpick={(id) => {
+            store.boardId = id;
+            store.view = 'boards';
+          }}><LayoutDashboard size={15} /> <span class="lbl">Boards</span></NavPick
         >
-        {#if store.kanbanSettings.enabled}<button
-            class:on={store.view === 'kanban'}
-            aria-label="Kanban"
-            onclick={() => (store.view = 'kanban')}><SquareKanban size={15} /> <span class="lbl">Kanban</span></button
+        {#if store.kanbanSettings.enabled}<NavPick
+            label="Kanban"
+            on={store.view === 'kanban'}
+            items={store.kanbans}
+            current={store.kanbanId}
+            all="All kanbans"
+            onpick={(id) => {
+              store.kanbanReport = null;
+              store.kanbanId = id;
+              store.view = 'kanban';
+            }}><SquareKanban size={15} /> <span class="lbl">Kanban</span></NavPick
           >{/if}
         <button class:on={store.view === 'console'} aria-label="Console" onclick={() => (store.view = 'console')}
           ><Terminal size={15} /> <span class="lbl">Console</span></button
@@ -514,7 +530,8 @@
     display: flex;
     gap: 2px;
   }
-  .tabs button {
+  /* The bar's buttons, a page that opens a menu (NavPick) among them. */
+  .tabs > :global(button) {
     border-color: transparent;
     background: transparent;
     display: inline-flex;
@@ -533,7 +550,7 @@
   .top button.btn {
     line-height: inherit;
   }
-  .tabs button.on,
+  .tabs > :global(button.on),
   .top button.settings.on,
   .top button.review.on {
     background: var(--panel-2);
@@ -758,12 +775,12 @@
     }
   }
   @media (max-width: 1100px) {
-    .tabs .lbl {
+    .tabs :global(.lbl) {
       display: none;
     }
   }
   @media (max-width: 430px) {
-    .tabs .lbl,
+    .tabs :global(.lbl),
     .top .btn .lbl {
       display: none;
     }

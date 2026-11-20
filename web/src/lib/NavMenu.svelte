@@ -47,6 +47,19 @@
   }
 
   function go(view: (typeof VIEWS)[number]['id']) {
+    // The page itself is its list.
+    if (view === 'boards') store.boardId = null;
+    if (view === 'kanban') store.kanbanId = null;
+    store.view = view;
+    onnavigate();
+  }
+
+  function openOne(view: 'boards' | 'kanban', id: string) {
+    if (view === 'boards') store.boardId = id;
+    else {
+      store.kanbanReport = null;
+      store.kanbanId = id;
+    }
     store.view = view;
     onnavigate();
   }
@@ -110,6 +123,23 @@
         <Icon size={18} />
         <span class="grow">{v.label}</span>
       </button>
+      {@const subs = v.id === 'boards' ? store.boards : v.id === 'kanban' ? store.kanbans : []}
+      {#if subs.length}
+        <!-- Each board or kanban, so one opens directly. -->
+        <ul class="subs" aria-label={v.label}>
+          {#each subs as it (it.id)}
+            {@const here = store.view === v.id && (v.id === 'boards' ? store.boardId : store.kanbanId) === it.id}
+            <li>
+              <button
+                class="ghost sub"
+                class:on={here}
+                aria-current={here ? 'page' : undefined}
+                onclick={() => openOne(v.id === 'boards' ? 'boards' : 'kanban', it.id)}>{it.name}</button
+              >
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/each}
     <hr />
     <button
@@ -153,6 +183,26 @@
 </nav>
 
 <style>
+  .subs {
+    list-style: none;
+    margin: 0 0 4px;
+    padding: 0 0 0 30px;
+  }
+  .sub {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 14px;
+    border-color: transparent;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sub.on {
+    font-weight: 600;
+    color: var(--accent);
+  }
   .reports-head {
     display: flex;
     align-items: center;

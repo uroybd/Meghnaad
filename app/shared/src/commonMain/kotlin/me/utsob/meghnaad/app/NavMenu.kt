@@ -42,6 +42,16 @@ private val VIEWS = listOf(
     MenuItem(View.Console, "Console", "terminal"),
 )
 
+/** Opens one board or kanban (NavMenu.svelte's openOne). */
+fun openOne(store: Store, view: View, id: String) {
+    if (view == View.Boards) store.boardId = id
+    else {
+        store.kanbanReport = null
+        store.kanbanId = id
+    }
+    store.view = view
+}
+
 /** One line of the menu: an icon, a label that takes the room, and a small state at the end. */
 @Composable
 private fun Item(icon: String, label: String, on: Boolean, state: String? = null, enabled: Boolean = true, trailing: @Composable () -> Unit = {}, onClick: () -> Unit) {
@@ -119,8 +129,31 @@ fun NavMenu(store: Store, onNavigate: () -> Unit, pages: Boolean = true) {
         if (pages) {
             for (v in VIEWS.filter { it.view != View.Kanban || store.kanbanSettings.enabled }) {
                 Item(v.icon, v.label, store.view == v.view) {
+                    // The page itself is its list.
+                    if (v.view == View.Boards) store.boardId = null
+                    if (v.view == View.Kanban) store.kanbanId = null
                     store.view = v.view
                     onNavigate()
+                }
+                // Each board or kanban, so one opens directly.
+                val subs = when (v.view) {
+                    View.Boards -> store.boards.map { it.id to it.name }
+                    View.Kanban -> store.kanbans.map { it.id to it.name }
+                    else -> emptyList()
+                }
+                for ((id, name) in subs) {
+                    val on = store.view == v.view && (if (v.view == View.Boards) store.boardId else store.kanbanId) == id
+                    Text(
+                        name,
+                        Modifier.fillMaxWidth().padding(start = 28.dp).heightIn(min = 36.dp).clip(RoundedCornerShape(8.dp))
+                            .background(if (on) colors.primary.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent)
+                            .clickable { openOne(store, v.view, id); onNavigate() }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        fontSize = 14.sp,
+                        color = if (on) colors.primary else colors.onSurface,
+                        fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                    )
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 6.dp), color = colors.outlineVariant)
