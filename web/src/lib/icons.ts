@@ -1,5 +1,6 @@
 // The icons the app uses, in one place (Lucide, https://lucide.dev). Deep imports keep the
 // bundle to just these.
+
 export { default as ArrowDown } from '@lucide/svelte/icons/arrow-down';
 export { default as ArrowLeft } from '@lucide/svelte/icons/arrow-left';
 export { default as ArrowRight } from '@lucide/svelte/icons/arrow-right';
@@ -11,13 +12,17 @@ export { default as BellOff } from '@lucide/svelte/icons/bell-off';
 export { default as Calendar } from '@lucide/svelte/icons/calendar';
 export { default as CalendarDays } from '@lucide/svelte/icons/calendar-days';
 export { default as CalendarPlus } from '@lucide/svelte/icons/calendar-plus';
+export { default as CalendarX } from '@lucide/svelte/icons/calendar-x';
 export { default as ChartColumn } from '@lucide/svelte/icons/chart-column';
 export { default as Check } from '@lucide/svelte/icons/check';
 export { default as ChevronDown } from '@lucide/svelte/icons/chevron-down';
 export { default as ChevronLeft } from '@lucide/svelte/icons/chevron-left';
 export { default as ChevronRight } from '@lucide/svelte/icons/chevron-right';
 export { default as ChevronUp } from '@lucide/svelte/icons/chevron-up';
+export { default as CircleCheck } from '@lucide/svelte/icons/circle-check';
+export { default as CircleDot } from '@lucide/svelte/icons/circle-dot';
 export { default as ClipboardCheck } from '@lucide/svelte/icons/clipboard-check';
+export { default as Clock } from '@lucide/svelte/icons/clock';
 export { default as Copy } from '@lucide/svelte/icons/copy';
 export { default as CornerDownLeft } from '@lucide/svelte/icons/corner-down-left';
 export { default as CornerUpLeft } from '@lucide/svelte/icons/corner-up-left';
@@ -28,10 +33,15 @@ export { default as Eye } from '@lucide/svelte/icons/eye';
 export { default as EyeOff } from '@lucide/svelte/icons/eye-off';
 export { default as FilePlus } from '@lucide/svelte/icons/file-plus';
 export { default as FileText } from '@lucide/svelte/icons/file-text';
+export { default as FingerprintPattern } from '@lucide/svelte/icons/fingerprint-pattern';
+export { default as Flag } from '@lucide/svelte/icons/flag';
 export { default as Folder } from '@lucide/svelte/icons/folder';
 export { default as FolderOpen } from '@lucide/svelte/icons/folder-open';
 export { default as FolderPlus } from '@lucide/svelte/icons/folder-plus';
 export { default as FolderUp } from '@lucide/svelte/icons/folder-up';
+export { default as GitBranch } from '@lucide/svelte/icons/git-branch';
+export { default as Hash } from '@lucide/svelte/icons/hash';
+export { default as Hourglass } from '@lucide/svelte/icons/hourglass';
 export { default as Info } from '@lucide/svelte/icons/info';
 export { default as LayoutDashboard } from '@lucide/svelte/icons/layout-dashboard';
 export { default as Link } from '@lucide/svelte/icons/link';
@@ -66,3 +76,4 @@ export { default as TrendingDown } from '@lucide/svelte/icons/trending-down';
 export { default as TriangleAlert } from '@lucide/svelte/icons/triangle-alert';
 export { default as Upload } from '@lucide/svelte/icons/upload';
 export { default as X } from '@lucide/svelte/icons/x';
+export { default as Zap } from '@lucide/svelte/icons/zap';

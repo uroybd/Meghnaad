@@ -6,6 +6,9 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -95,6 +98,22 @@ class KanbanTest {
         assertEquals(listOf("description", "columns", "labels", "filter", "sort").map { "report.kanban.$it" }, lines.map { it.first })
         assertEquals("( +PENDING or +COMPLETED )", lines.toMap()["report.kanban.filter"])
         assertEquals(emptyList(), kanbanReportLines(ConfigResponse(config = ConfigBody(reports = mapOf("kanban" to ReportCfg())))))
+    }
+
+    @Test
+    fun readsAndWritesWhetherCardsShowIconsOffWhenUnsaid() {
+        assertEquals(false, parseKanban(buildJsonObject {}).first.icons)
+        assertEquals(true, parseKanban(buildJsonObject { put("icons", JsonPrimitive(true)) }).first.icons)
+        assertEquals(listOf("kanban.icons must be true or false"), parseKanban(buildJsonObject { put("icons", JsonPrimitive("yes")) }).second)
+        assertEquals(JsonPrimitive(true), kanbanJson(KanbanSettings(icons = true))["icons"])
+        assertEquals(null, kanbanJson(KanbanSettings())["icons"])
+    }
+
+    @Test
+    fun choosesACardsIconByTheFieldsNameAndNoneForAUda() {
+        assertEquals("clock", fieldIcon("due"))
+        assertEquals("flag", fieldIcon("priority"))
+        assertEquals(null, fieldIcon("progressState"))
     }
 
     @Test

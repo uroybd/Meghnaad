@@ -11,9 +11,42 @@
   import FilterInput from './FilterInput.svelte';
   import { css, look } from './colors';
   import { formatTable, rowClass, type Cell } from './format';
-  import { ChevronDown, ChevronRight, Settings, SlidersHorizontal } from './icons';
+  import type { Component } from 'svelte';
+  import {
+    Calendar,
+    CalendarPlus,
+    CalendarX,
+    ChevronDown,
+    ChevronRight,
+    CircleCheck,
+    CircleDot,
+    Clock,
+    FingerprintPattern,
+    Flag,
+    Folder,
+    GitBranch,
+    Hash,
+    Hourglass,
+    Link,
+    Pencil,
+    Play,
+    Repeat,
+    Settings,
+    SlidersHorizontal,
+    Tag,
+    Zap,
+  } from './icons';
   import { groupHeads } from './groups';
-  import { columnArgs, columnOf, lanesOf, moveSteps, placeTasks, type Kanban, type KanbanView } from './kanban';
+  import {
+    columnArgs,
+    columnOf,
+    fieldIcon,
+    lanesOf,
+    moveSteps,
+    placeTasks,
+    type Kanban,
+    type KanbanView,
+  } from './kanban';
   import ReportCell from './ReportCell.svelte';
   import { kanbanPath } from './route';
   import { scheme } from './scheme.svelte';
@@ -127,6 +160,32 @@
   function cells(rows: Row[]): Cell[][] {
     return board && rows.length ? formatTable(board.meta, rows, ctx).cells : [];
   }
+  // Kanban's `icons`: each field by its icon, chosen by the field's name; a UDA as a badge of its label and value.
+  const iconsOn = $derived(store.kanbanSettings.icons);
+  const ICON: Record<string, Component<{ size?: number }>> = {
+    hash: Hash,
+    'fingerprint-pattern': FingerprintPattern,
+    'circle-dot': CircleDot,
+    flag: Flag,
+    folder: Folder,
+    tag: Tag,
+    clock: Clock,
+    calendar: Calendar,
+    hourglass: Hourglass,
+    'calendar-x': CalendarX,
+    'calendar-plus': CalendarPlus,
+    pencil: Pencil,
+    play: Play,
+    'circle-check': CircleCheck,
+    repeat: Repeat,
+    link: Link,
+    zap: Zap,
+    'git-branch': GitBranch,
+  };
+  const iconOf = (name: string) => {
+    const n = fieldIcon(name);
+    return n ? ICON[n] : undefined;
+  };
   /** The fields a card shows under its description: the report's other columns with something in them. */
   const fieldsOf = (row: Cell[]) =>
     (board?.meta ?? [])
@@ -246,8 +305,11 @@
     </button>
     <dl>
       {#each fieldsOf(cs) as f (f.col.spec)}
-        <div>
-          <dt>{f.col.label}</dt>
+        {@const Icon = iconsOn ? iconOf(f.col.name) : undefined}
+        <div class:badge={iconsOn && !Icon}>
+          {#if Icon}<dt class="ic" title={f.col.label}>
+              <Icon size={13} /><span class="sr-only">{f.col.label}</span>
+            </dt>{:else}<dt>{f.col.label}</dt>{/if}
           <dd class="{f.col.kind} {f.c.cls ?? ''}" style={priorityStyle(f.col.name, row)}>
             <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
           </dd>
@@ -693,21 +755,24 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
+  /* Spaced as the phone's task cards are (TaskCard.kt): room inside, a line between the title and the fields. */
   .card {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 8px;
+    border-radius: 8px;
+    padding: 11px 12px 12px 14px;
     cursor: grab;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 9px;
   }
   .open {
     text-align: left;
     font-weight: 600;
+    font-size: 14.5px;
+    line-height: 1.35;
     padding: 0;
     overflow-wrap: anywhere;
   }
@@ -716,7 +781,8 @@
     margin: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 3px 14px;
+    align-items: center;
+    gap: 7px 14px;
     font-size: 12.5px;
   }
   dl div {
@@ -733,6 +799,27 @@
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  dt.ic {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.85;
+  }
+  /* A UDA with icons on: a badge, its label on one half and its value on the other. */
+  dl div.badge {
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    line-height: 1.5;
+  }
+  .badge dt {
+    padding: 0 6px;
+    background: var(--panel-2);
+  }
+  .badge dd {
+    padding: 0 6px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
   /* As the table draws them: a priority in its colour, a finished task tinted, a waiting one dim. */
   dd.priority {

@@ -88,9 +88,9 @@ line.
 | `5` Calendar | `task calendar`, from this month; `h` `l` go a month back or on |
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
 | `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` go to the board before or after, `[` `]` to its next section or the one before, and `Esc` (or `b`) comes back to the list |
-| `8` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
-| `·` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards, with no number (`gk` opens it): the list of kanbans, then one, its columns side by side; `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
-| `9` Settings | A section each for when to sync, the theme, your task commands, your boards, Kanban and your keys ([Settings](#the-settings-page)) |
+| `8` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards (`g8` or `gk` opens it): the list of kanbans, then one, its columns side by side (each on a deeper shade, its title on a lighter line, every card framed in the task's colour, the chosen one's frame inverted); `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
+| `9` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
+| `0` Settings | A section each for when to sync, the theme, your task commands, your boards, Kanban and your keys ([Settings](#the-settings-page)) |
 
 `Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Colours
 follow `task` ([Colours](#colours)).
@@ -160,7 +160,7 @@ On every page:
 
 | Key | Does |
 | --- | --- |
-| `g1` to `g9` | Open a page; `gt` `gT` the next and the one before |
+| `g1` to `g9`, `g0` | Open a page by its number in the top bar: Kanban is `g8`, Console `g9`, Settings `g0`; `gt` `gT` the next and the one before |
 | `j` `k` (or the arrows) | Down and up a row, a field, or a line |
 | `[` `]` | The section before and the next: of the settings, of a board, of `?` and a task's info |
 | `Ctrl+D` `Ctrl+U` | Half a page down and up |

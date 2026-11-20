@@ -58,6 +58,8 @@ data class KanbanSettings(
     val completedSince: String = "",
     val columns: List<KanbanColumn> = emptyList(),
     val kanbans: List<KanbanEntry> = emptyList(),
+    /** Cards show each field by an icon (a badge for a UDA) rather than its report label. */
+    val icons: Boolean = false,
 )
 
 /** [k] as it is drawn: each setting its own, else Kanban's. */
@@ -223,7 +225,10 @@ fun parseKanban(v: JsonElement?): Pair<KanbanSettings, List<String>> {
     val setupText = o["setup"].str()
     val setup = setupText.takeIf { it == "automatic" || it == "manual" }
     if (o["setup"] != null && setup == null) errors += "kanban.setup must be \"automatic\" or \"manual\""
-    var base = KanbanSettings(enabled ?: false, setup)
+    val iconsValue = o["icons"]
+    val icons = (iconsValue as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
+    if (iconsValue != null && icons == null) errors += "kanban.icons must be true or false"
+    var base = KanbanSettings(enabled ?: false, setup, icons = icons ?: false)
     o["uda"]?.let { u ->
         val name = (u as? JsonPrimitive)?.takeIf { it.isString }?.content
         val bad = if (name == null) "must be a UDA name" else udaNameProblem(name)
@@ -297,11 +302,26 @@ private fun columnsJson(columns: List<KanbanColumn>) = JsonArray(
     },
 )
 
+/**
+ * The Lucide icon a card shows for one of Taskwarrior's own fields, by the field's name (`due`, whatever the report's
+ * format or label), when Kanban's `icons` is on (kanban.ts `FIELD_ICONS`). None for a UDA or a field without one: that is a
+ * badge, its label then its value.
+ */
+val FIELD_ICONS: Map<String, String> = mapOf(
+    "id" to "hash", "uuid" to "fingerprint-pattern", "status" to "circle-dot", "priority" to "flag", "project" to "folder",
+    "tags" to "tag", "due" to "clock", "scheduled" to "calendar", "wait" to "hourglass", "until" to "calendar-x",
+    "entry" to "calendar-plus", "modified" to "pencil", "start" to "play", "end" to "circle-check", "recur" to "repeat",
+    "depends" to "link", "urgency" to "zap", "parent" to "git-branch",
+)
+
+fun fieldIcon(name: String): String? = FIELD_ICONS[name]
+
 /** `kanban` as it is written to `settings.json`. */
 fun kanbanJson(k: KanbanSettings): JsonObject = buildJsonObject {
     put("enabled", JsonPrimitive(k.enabled))
     k.setup?.let { put("setup", JsonPrimitive(it)) }
     put("uda", JsonPrimitive(k.uda))
+    if (k.icons) put("icons", JsonPrimitive(true))
     put("report", JsonPrimitive(k.report))
     put("filter", JsonPrimitive(k.filter))
     put("completedSince", JsonPrimitive(k.completedSince))

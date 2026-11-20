@@ -104,6 +104,15 @@ moved, without asking about the rest of its series (`rc.recurrence.confirmation:
 After a move the columns are read again. If the task didn't land in the column you moved it to (the On move doesn't
 make it match that column's filter, or `task` refused it), you are told where it is.
 
+### Icons on the cards
+
+A card shows the report's columns under the task's description, each with its label from the report (`Due 2d`). Tick
+**Show the fields on cards as icons** under Every kanban (in `settings.json`, `"icons": true` in `kanban`) and every
+kanban shows Taskwarrior's own fields by an icon instead: `#` for the ID, a flag for the priority, a folder for the
+project, a tag for the tags, a clock for `due`, and so on. The icon goes by the field itself, whatever the report's label
+or format (`due.relative` is still a clock). A UDA, which has no icon, is a badge: its label, then its value. In the
+terminal app the icons are symbols (`⚑ H`, `◷ 2d`), and the row Card fields in Settings → Kanban turns them on.
+
 ### Swimlanes
 
 A report whose sort marks a group with `/`, as Taskwarrior's own does (`report.kanban.sort=project+/,urgency-`), gives

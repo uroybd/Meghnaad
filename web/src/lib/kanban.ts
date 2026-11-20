@@ -60,6 +60,8 @@ export interface KanbanSettings extends KanbanDefaults {
   setup: Setup | null;
   /** The UDA the automatic setup defines and its columns use. */
   uda: string;
+  /** Cards show each field by an icon (a badge for a UDA) rather than its report label. */
+  icons: boolean;
   kanbans: KanbanEntry[];
 }
 
@@ -72,6 +74,7 @@ export const emptyKanbanSettings = (): KanbanSettings => ({
   enabled: false,
   setup: null,
   uda: PROGRESS_UDA,
+  icons: false,
   report: 'next',
   filter: '',
   completedSince: '',
@@ -265,6 +268,8 @@ export function parseKanban(v: unknown): { kanban: KanbanSettings; errors: strin
   if (!isObject(v)) return { kanban, errors: ['kanban must be an object: { "enabled": true, "kanbans": [ … ] }'] };
   if (typeof v.enabled === 'boolean') kanban.enabled = v.enabled;
   else if (v.enabled !== undefined) errors.push('kanban.enabled must be true or false');
+  if (typeof v.icons === 'boolean') kanban.icons = v.icons;
+  else if (v.icons !== undefined) errors.push('kanban.icons must be true or false');
   if (v.setup === 'automatic' || v.setup === 'manual') kanban.setup = v.setup;
   else if (v.setup !== undefined) errors.push('kanban.setup must be "automatic" or "manual"');
   if (v.uda !== undefined) {
@@ -314,6 +319,7 @@ export function kanbanJson(k: KanbanSettings): Record<string, unknown> {
   const out: Record<string, unknown> = { enabled: k.enabled };
   if (k.setup) out.setup = k.setup;
   out.uda = k.uda;
+  if (k.icons) out.icons = true;
   out.report = k.report;
   out.filter = k.filter;
   out.completedSince = k.completedSince;
@@ -326,6 +332,34 @@ export function kanbanJson(k: KanbanSettings): Record<string, unknown> {
   });
   return out;
 }
+
+/**
+ * The Lucide icon a card shows for one of Taskwarrior's own fields, by the field's name (`due`, whatever the report's
+ * format or label), when Kanban's `icons` is on. None for a UDA or a field without one: that is a badge, its label then
+ * its value.
+ */
+export const FIELD_ICONS: Readonly<Record<string, string>> = {
+  id: 'hash',
+  uuid: 'fingerprint-pattern',
+  status: 'circle-dot',
+  priority: 'flag',
+  project: 'folder',
+  tags: 'tag',
+  due: 'clock',
+  scheduled: 'calendar',
+  wait: 'hourglass',
+  until: 'calendar-x',
+  entry: 'calendar-plus',
+  modified: 'pencil',
+  start: 'play',
+  end: 'circle-check',
+  recur: 'repeat',
+  depends: 'link',
+  urgency: 'zap',
+  parent: 'git-branch',
+};
+
+export const fieldIcon = (name: string): string | null => FIELD_ICONS[name] ?? null;
 
 // Reading a kanban's tasks.
 

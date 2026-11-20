@@ -345,7 +345,7 @@ private fun KanbanCard(store: Store, kanban: Kanban, meta: List<Column>, row: Ro
         val marks = meta.zip(cells).filter { (col, c) -> col.name != "description" && (c.text.isNotBlank() || !c.chips.isNullOrEmpty()) }
         if (marks.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                for ((col, c) in marks) Mark(store, col, c, row, overdue, emptyList(), null, !open)
+                for ((col, c) in marks) Mark(store, col, c, row, overdue, emptyList(), null, !open, icons = store.kanbanSettings.icons)
             }
         }
         if (targets.isNotEmpty()) {

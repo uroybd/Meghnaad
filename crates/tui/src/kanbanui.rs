@@ -6,10 +6,10 @@ use crate::app::kanbans::{Card, KanbanRow};
 use crate::app::{App, Focus};
 use crate::kanban::{self, Part};
 use crate::theme::{self, Roles};
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style, Stylize};
+use ratatui::layout::{Constraint, Layout, Margin, Rect};
+use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph};
 use ratatui::Frame;
 
 /// The width of Other while it is folded.
@@ -98,83 +98,163 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             for (i, (c, cards)) in k.columns.iter().zip(&data.columns).enumerate() {
                 let here = focused && app.kanban_col == i;
                 let title = format!("{} {}", c.name, cards.len());
-                lane(f, areas[i], &title, cards, here.then_some(app.kanban_card), here);
+                lane(
+                    f,
+                    areas[i],
+                    &title,
+                    cards,
+                    here.then_some(app.kanban_card),
+                    here,
+                    app.kanban.icons,
+                );
             }
             let n = k.columns.len();
             let here = focused && app.kanban_col == n;
             if app.kanban_other {
                 let title = format!("Other {}", data.other.len());
-                lane(f, areas[n], &title, &data.other, here.then_some(app.kanban_card), here);
+                lane(
+                    f,
+                    areas[n],
+                    &title,
+                    &data.other,
+                    here.then_some(app.kanban_card),
+                    here,
+                    app.kanban.icons,
+                );
             } else {
-                let block = Block::bordered()
-                    .border_type(theme::border_type(false))
-                    .border_style(theme::border(false))
-                    .title(Span::from(format!(" Other {} ", data.other.len())).quiet());
                 let key = app.first_key("kanban.other").unwrap_or_default();
-                let inner = block.inner(areas[n]);
-                f.render_widget(block, areas[n]);
+                let inner = column(f, areas[n], &format!("Other {}", data.other.len()), here);
                 f.render_widget(Paragraph::new(Line::from(format!("{key} shows")).quiet()), inner);
             }
         }
     }
 }
 
-/// A column: its cards, two lines or more each, scrolled to keep the one chosen in sight.
-fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usize>, here: bool) {
-    let block = Block::bordered()
-        .border_type(theme::border_type(here))
-        .border_style(theme::border(here))
-        .title(Span::styled(format!(" {title} "), theme::title(here)));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    let width = usize::from(inner.width);
-    let mut items: Vec<ListItem> = Vec::new();
-    // With swimlanes, a heading above each lane's first card here; the card chosen is found past the headings.
-    let mut shown_sel = sel;
-    for (n, c) in cards.iter().enumerate() {
-        if c.lane.is_some() && (n == 0 || cards[n - 1].lane != c.lane) {
-            items.push(ListItem::new(
-                Line::from(format!("▸ {}", c.lane.as_deref().unwrap_or(""))).bold(),
-            ));
-            if sel.is_some_and(|s| s >= n) {
-                shown_sel = shown_sel.map(|s| s + 1);
-            }
-        }
-        let id = c.id.map(|i| format!("{i} ")).unwrap_or_default();
-        let mut lines = vec![Line::from(vec![
-            Span::from(id).quiet(),
-            Span::styled(c.title.clone(), c.style.add_modifier(Modifier::BOLD)),
-        ])];
-        let mut line: Vec<Span> = Vec::new();
-        let mut used = 0;
-        for (label, text) in &c.fields {
-            let piece = if label.is_empty() {
+/// A column's ground, a shade deeper than the page, and its title on a line a shade lighter; the room left for cards.
+fn column(f: &mut Frame, area: Rect, title: &str, here: bool) -> Rect {
+    f.render_widget(Block::new().style(theme::column()), area);
+    let [head, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+    let style = if here {
+        theme::title(true)
+    } else {
+        Style::new().add_modifier(Modifier::BOLD)
+    };
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(format!(" {title}"), style))).style(theme::column_head()),
+        head,
+    );
+    body.inner(Margin::new(1, 1))
+}
+
+/// What a card says: its number and title, then its fields as many to a line as fit in `width`.
+fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
+    let id = c.id.map(|i| format!("{i} ")).unwrap_or_default();
+    let mut lines = vec![Line::from(vec![
+        Span::from(id).quiet(),
+        Span::styled(c.title.clone(), c.style.add_modifier(Modifier::BOLD)),
+    ])];
+    let mut line: Vec<Span> = Vec::new();
+    let mut used = 0;
+    for (name, label, text) in &c.fields {
+        // With icons: a symbol before the text, or a UDA as a badge (its label, then its value); else the label.
+        let symbol = if icons { kanban::field_icon(name) } else { None };
+        let badge = icons && symbol.is_none() && !label.is_empty();
+        let piece: Vec<Span> = if badge {
+            vec![
+                Span::styled(format!(" {label} "), Style::new().add_modifier(Modifier::REVERSED)).quiet(),
+                Span::styled(format!(" {text} "), Style::new().add_modifier(Modifier::UNDERLINED)),
+            ]
+        } else {
+            let head = symbol.map_or_else(|| label.clone(), str::to_owned);
+            let piece = if head.is_empty() {
                 text.clone()
             } else {
-                format!("{label} {text}")
+                format!("{head} {text}")
             };
-            let w = piece.chars().count() + 2;
-            if used > 0 && used + w > width {
-                lines.push(Line::from(std::mem::take(&mut line)));
-                used = 0;
+            vec![Span::from(piece).quiet()]
+        };
+        let w = piece.iter().map(|p| p.content.chars().count()).sum::<usize>() + 2;
+        if used > 0 && used + w > width {
+            lines.push(Line::from(std::mem::take(&mut line)));
+            used = 0;
+        }
+        used += w;
+        line.extend(piece);
+        line.push(Span::from("  "));
+    }
+    if !line.is_empty() {
+        lines.push(Line::from(line));
+    }
+    lines
+}
+
+/// A column: its cards, each in a frame of the task's colour (the one chosen in that colour inverted), with a swimlane's
+/// heading above its first card here, scrolled to keep the one chosen in sight.
+#[allow(clippy::too_many_arguments, reason = "a column's parts, each drawn as given")]
+fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usize>, here: bool, icons: bool) {
+    let body = column(f, area, title, here);
+    if cards.is_empty() {
+        f.render_widget(Paragraph::new(Line::from("none").quiet()), body);
+        return;
+    }
+    // Inside a card: its frame, and a space each side.
+    let width = usize::from(body.width.saturating_sub(4));
+    // Each piece: a lane's heading (no card) or a card, with its lines; a card is two lines taller for its frame.
+    let mut pieces: Vec<(Option<usize>, Vec<Line>)> = Vec::new();
+    for (n, c) in cards.iter().enumerate() {
+        if c.lane.is_some() && (n == 0 || cards[n - 1].lane != c.lane) {
+            let heading = Line::from(format!("▸ {}", c.lane.as_deref().unwrap_or(""))).bold();
+            pieces.push((None, vec![heading]));
+        }
+        pieces.push((Some(n), card_lines(c, width, icons)));
+    }
+    let height = |(card, lines): &(Option<usize>, Vec<Line>)| {
+        u16::try_from(lines.len()).unwrap_or(u16::MAX) + if card.is_some() { 2 } else { 0 }
+    };
+    // From the first piece that keeps the chosen card's bottom in sight.
+    let chosen = sel
+        .and_then(|s| pieces.iter().position(|(c, _)| *c == Some(s)))
+        .unwrap_or(0);
+    let mut first = 0;
+    let bottom = |from: usize| pieces[from..=chosen].iter().map(|p| height(p) + 1).sum::<u16>();
+    while first < chosen && bottom(first) > body.height {
+        first += 1;
+    }
+    let mut y = body.y;
+    for piece in &pieces[first..] {
+        if y >= body.bottom() {
+            break;
+        }
+        let h = height(piece).min(body.bottom() - y);
+        let at = Rect::new(body.x, y, body.width, h);
+        let (card, lines) = piece;
+        match card.and_then(|n| cards.get(n).map(|c| (n, c))) {
+            None => f.render_widget(Paragraph::new(lines.clone()), at),
+            Some((n, c)) => {
+                // The frame takes the task's colour, as the table's row has it; the chosen card's is inverted.
+                let edge = Style::new().fg(c.style.fg.or(theme::border(false).fg).unwrap_or(Color::Reset));
+                let edge = if sel == Some(n) {
+                    edge.add_modifier(Modifier::REVERSED)
+                } else {
+                    edge
+                };
+                // A card cut off at the column's foot has no bottom edge.
+                let sides = if h < height(piece) {
+                    Borders::TOP | Borders::LEFT | Borders::RIGHT
+                } else {
+                    Borders::ALL
+                };
+                let frame = Block::new()
+                    .borders(sides)
+                    .border_type(BorderType::Rounded)
+                    .border_style(edge)
+                    .style(Style::new().bg(Color::Reset))
+                    .padding(Padding::horizontal(1));
+                f.render_widget(Paragraph::new(lines.clone()).block(frame), at);
             }
-            used += w;
-            line.push(Span::from(format!("{piece}  ")).quiet());
         }
-        if !line.is_empty() {
-            lines.push(Line::from(line));
-        }
-        lines.push(Line::default());
-        items.push(ListItem::new(lines));
+        y = y.saturating_add(h + 1);
     }
-    if items.is_empty() {
-        items.push(ListItem::new(Line::from("none").quiet()));
-    }
-    f.render_stateful_widget(
-        List::new(items).highlight_style(if here { theme::selected() } else { Style::new() }),
-        inner,
-        &mut ListState::default().with_selected(shown_sel.filter(|_| !cards.is_empty())),
-    );
 }
 
 fn list(f: &mut Frame, app: &App, area: Rect, focused: bool) {
@@ -262,6 +342,18 @@ fn row_line(app: &App, row: KanbanRow) -> Line<'static> {
                     "  your taskrc's own; Enter: all instead"
                 } else {
                     "  added to your taskrc, its filter enough; Enter: all instead"
+                })
+                .quiet(),
+            );
+        }
+        KanbanRow::Icons => {
+            spans.push(label("Card fields"));
+            spans.push(value(if s.icons { "icons" } else { "labels" }));
+            spans.push(
+                Span::from(if s.icons {
+                    "  a symbol each, a UDA as a badge; Enter: the report's labels"
+                } else {
+                    "  the report's labels; Enter: a symbol each, a UDA as a badge"
                 })
                 .quiet(),
             );

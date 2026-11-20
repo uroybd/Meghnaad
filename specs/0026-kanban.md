@@ -288,3 +288,8 @@ asking (not yet committed):
   board scrolling as a whole. Terminal: a heading per lane inside each column. A card moves only within its lane
   (uroybd: a task's group is changed by editing the task). No setting of our own: the report says it.
 
+**2026-11-21, later still.** Lanes and the phone's folded controls shipped in 0.8.28. Then, at uroybd's asking (not yet
+committed): Kanban's `icons` (`settings.json`, off unless true): cards show each of Taskwarrior's fields by an icon chosen
+by the field's name (`FIELD_ICONS` / `fieldIcon` in kanban.ts and Kanban.kt, `field_icon` in the terminal as one-column
+symbols), and a UDA as a badge of its label and value. A checkbox under Every kanban (web, Android), the row Card fields
+(terminal). On the web the cards got the phone's report cards' spacing.

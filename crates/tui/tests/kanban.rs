@@ -74,7 +74,7 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
 
     // Settings → Kanban, the automatic setup: Enter says what it will write, Enter again writes it.
     press(&mut app, 'g');
-    press(&mut app, '9');
+    press(&mut app, '0');
     assert_eq!(app.page, Page::Settings);
     app.settings_section = SettingsSection::Kanban;
     // The rows: the UDA, whether to add a kanban report (yes, to begin with), then the two ways.

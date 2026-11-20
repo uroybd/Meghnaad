@@ -13,8 +13,8 @@ pub struct Card {
     pub uuid: String,
     pub id: Option<u64>,
     pub title: String,
-    /// The report's other cells that have something, each with its label.
-    pub fields: Vec<(String, String)>,
+    /// The report's other cells that have something: each field's name (`due`), its label and its text.
+    pub fields: Vec<(String, String, String)>,
     pub style: Style,
     /// The swimlane it is in: the heading of its group in the report (a `/` in its sort); none without groups.
     pub lane: Option<String>,
@@ -41,6 +41,8 @@ pub enum KanbanRow {
     Uda,
     /// Whether the automatic setup adds a `kanban` report to the taskrc and draws the kanbans on it.
     WithReport,
+    /// Whether cards show their fields as symbols (Kanban's `icons`).
+    Icons,
     Automatic,
     Manual,
     Report(Option<usize>),
@@ -427,6 +429,7 @@ impl App {
             R::Report(None),
             R::Filter(None),
             R::Since(None),
+            R::Icons,
             R::Columns(None),
         ];
         rows.extend((0..s.columns.len()).map(|j| R::Column(None, j)));
@@ -523,6 +526,15 @@ impl App {
             }
             ("settings.kanban.edit", Some(R::WithReport)) => {
                 self.kanban_with_report = !self.kanban_with_report;
+            }
+            ("settings.kanban.edit", Some(R::Icons)) => {
+                next.icons = !next.icons;
+                let said = if next.icons {
+                    "Cards show their fields as symbols, a UDA as a badge."
+                } else {
+                    "Cards show their fields by their report labels."
+                };
+                self.save_kanban(&next, said);
             }
             ("settings.kanban.edit", Some(R::Manual)) => {
                 next.enabled = true;
@@ -867,8 +879,11 @@ fn cards(r: &model::Report, keep: &[usize]) -> Vec<Card> {
             });
             let fields = (0..cells.len())
                 .filter(|j| Some(*j) != desc && Some(*j) != id)
-                .map(|j| (r.labels.get(j).cloned().unwrap_or_default(), text(j)))
-                .filter(|(_, t)| !t.is_empty() && *t != title)
+                .map(|j| {
+                    let name = r.names.get(j).cloned().unwrap_or_default();
+                    (name, r.labels.get(j).cloned().unwrap_or_default(), text(j))
+                })
+                .filter(|(_, _, t)| !t.is_empty() && *t != title)
                 .collect();
             Some(Card {
                 uuid: r.uuids.get(i)?.clone(),

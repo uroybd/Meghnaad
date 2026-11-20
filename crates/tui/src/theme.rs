@@ -428,6 +428,24 @@ pub fn title(focused: bool) -> Style {
     }
 }
 
+/// A Kanban column's ground: a shade deeper than the page's; nothing without colour.
+pub fn column() -> Style {
+    shade("#e8e8e4", "#18191c")
+}
+
+/// A Kanban column's title line: a shade lighter than the page's.
+pub fn column_head() -> Style {
+    shade("#d8d8d2", "#34363b")
+}
+
+fn shade(light: &str, dark: &str) -> Style {
+    let t = current();
+    if t.mono {
+        return Style::new();
+    }
+    style_of(&format!("on {}", if t.mode == Mode::Light { light } else { dark })).unwrap_or_default()
+}
+
 /// Notes, help, what matters less.
 pub fn dim() -> Style {
     current().dim

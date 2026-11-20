@@ -197,13 +197,39 @@ internal fun Mark(
     activeTags: List<String>,
     onTag: ((String) -> Unit)?,
     done: Boolean,
+    /**
+     * The kanban's cards (Kanban's `icons`): true, every one of Taskwarrior's fields by its icon and a UDA as a badge;
+     * false, each by its report label. Null, as a task card has it: a few by an icon, the rest by label.
+     */
+    icons: Boolean? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val dim = colors.onSurfaceVariant
-    val icon = markIcon(col)
-    val iconOnly = col.format in ICON_ONLY
+    val icon = when (icons) {
+        null -> markIcon(col)
+        true -> fieldIcon(col.name)
+        false -> null
+    }
+    val iconOnly = icons == null && col.format in ICON_ONLY
+    // A label, or the icon, before a mark that draws only its value (chips, a project path) where the kanban asks.
+    @Composable
+    fun lead() {
+        when {
+            icons == null -> {}
+            icon != null -> LucideIcon(icon, size = 13.dp, tint = dim.copy(alpha = 0.85f))
+            else -> Text(col.label, fontSize = 12.sp, color = dim.copy(alpha = 0.8f))
+        }
+    }
     when {
-        col.name == "priority" && row.priority != null -> {
+        icons == true && icon == null -> Row(
+            Modifier.clip(RoundedCornerShape(4.dp)).border(1.dp, colors.outlineVariant, RoundedCornerShape(4.dp)),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // A UDA as a badge: its label on one half, its value on the other.
+            Text(col.label, Modifier.background(colors.surfaceVariant).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 12.sp, color = dim)
+            Text(c.text, Modifier.background(colors.primary.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        col.name == "priority" && row.priority != null && icons != false -> {
             // The priority as a small pill of its own colour: the user's `color.uda.priority.*` washes it, the text stays readable.
             val style = store.config?.colors?.get("uda.priority.${row.priority}")
             val tint = style?.tintSource(extras.dark) ?: dim
@@ -216,7 +242,8 @@ internal fun Mark(
                 Text(c.text, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
             }
         }
-        c.chips != null && !iconOnly -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        c.chips != null && !iconOnly -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+            lead()
             for (t in c.chips) {
                 val on = t in activeTags
                 Pill(
@@ -229,13 +256,14 @@ internal fun Mark(
             }
         }
         c.segments != null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            LucideIcon("folder", size = 13.dp, tint = dim.copy(alpha = 0.85f))
+            if (icons == null) LucideIcon("folder", size = 13.dp, tint = dim.copy(alpha = 0.85f)) else lead()
             ProjectPath(c.segments, onPick = { store.showProject(it) })
         }
         else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             // A numeric UDA the settings show as a progress bar (Settings → Appearance) is a bar here too, after its label.
             val bar = store.appearance.progress[col.name]?.let { range -> c.text.trim().toDoubleOrNull()?.let { range to it } }
             if (icon != null) LucideIcon(icon, size = 13.dp, tint = if (col.name == "due" && overdue) colors.error else dim.copy(alpha = 0.85f))
+            else if (icons == false) Text(col.label, fontSize = 12.sp, color = dim.copy(alpha = 0.8f))
             else Text(col.label.uppercase(), fontSize = 11.sp, letterSpacing = 0.6.sp, color = dim.copy(alpha = 0.75f))
             if (bar != null) {
                 ProgressBar(bar.second, trimNumber(c.text), bar.first, col.label, dim, Modifier.width(120.dp))
