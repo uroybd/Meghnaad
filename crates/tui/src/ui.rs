@@ -298,11 +298,11 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
     let mut left = vec![Span::styled(" ◆ Meghnaad ", theme::accent())];
     for p in &pages {
         let title: String = p.title().chars().take(letters).collect();
-        // A page's number is its place in `Page::ALL` (what g1 to g9 open); Kanban has none.
+        // A page's number is its place in `Page::ALL`, 1 to 9 then 0 (what g1 to g0 open).
         let number = Page::ALL
             .iter()
             .position(|q| q == p)
-            .map_or_else(|| "·".to_owned(), |i| (i + 1).to_string());
+            .map_or_else(|| "·".to_owned(), |i| ((i + 1) % 10).to_string());
         let tab = Span::from(if title.is_empty() {
             format!(" {number} ")
         } else {

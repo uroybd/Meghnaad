@@ -336,7 +336,7 @@ fn keys_are_the_keymaps_and_the_hints_and_the_list_say_so() {
 #[test]
 fn g_and_a_number_open_pages_tab_moves_to_the_side_and_q_quits() {
     let mut app = app();
-    typing(&mut app, "g8");
+    typing(&mut app, "g9");
     assert_eq!(app.page, Page::Console);
     app.key(key(KeyCode::Tab));
     assert_eq!(app.focus, Focus::Sidebar);
@@ -362,7 +362,7 @@ fn g_and_a_number_open_pages_tab_moves_to_the_side_and_q_quits() {
 #[test]
 fn a_task_command_name_is_checked_before_its_command_is_asked() {
     let mut app = app();
-    typing(&mut app, "g9");
+    typing(&mut app, "g0");
     app.key(key(KeyCode::Char(']')));
     app.key(key(KeyCode::Char(']')));
     app.key(key(KeyCode::Char(']')));
@@ -376,7 +376,7 @@ fn a_task_command_name_is_checked_before_its_command_is_asked() {
 #[test]
 fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     let mut app = app();
-    typing(&mut app, "g9");
+    typing(&mut app, "g0");
     assert_eq!(app.settings_section, SettingsSection::General);
     // General has two rows, the home page and what a task with no ID shows; `j` goes through them, then on.
     app.key(key(KeyCode::Char('j')));
@@ -489,7 +489,7 @@ fn ctrl_d_and_ctrl_u_move_half_a_page_and_ctrl_f_and_ctrl_b_a_page_as_in_vim() {
 fn on_keys(settings: &str) -> App {
     let mut app = app();
     app.settings = AppSettings::parse(settings).unwrap();
-    typing(&mut app, "g9");
+    typing(&mut app, "g0");
     app.key(key(KeyCode::Char('[')));
     assert_eq!(app.settings_section, SettingsSection::Keys);
     app
@@ -586,7 +586,7 @@ fn the_home_page_is_chosen_from_a_list_in_general() {
     let mut app = app();
     app.settings = AppSettings::parse(r#"{ "homepage": { "report": "gone" } }"#).unwrap();
     assert!(app.homepage_label().contains("not there"));
-    typing(&mut app, "g9");
+    typing(&mut app, "g0");
     app.key(key(KeyCode::Enter));
     let Mode::Home { options, sel } = &app.mode else {
         panic!("expected the list of home pages");

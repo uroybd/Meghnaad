@@ -75,7 +75,7 @@ the marked tasks when there are any, and else on the chosen one.
 
 Takes a page's number or name.
 
-With nothing after it, the next page, from the last back to the first. With a number, the page at that place in the top bar (1 to 9, Settings last); with a word, the first page whose name starts with it, in any case: `:tabn 3`, `:tabn tasks`, `:tabn bu`. The keys `gt` and `g1` to `g9` run it.
+With nothing after it, the next page, from the last back to the first. With a number, the page at that place in the top bar (1 to 9, Settings last; in the terminal app Kanban is 8, Console 9 and Settings 0); with a word, the first page whose name starts with it, in any case: `:tabn 3`, `:tabn tasks`, `:tabn bu`. The keys `gt` and `g1` to `g9` (and `g0` in the terminal app) run it.
 
 Since 0.8.11.
 

@@ -63,7 +63,8 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Page; 9] = [
+    /// The pages in order; their numbers run 1 to 9, then 0 (`g 0`, Settings).
+    pub const ALL: [Page; 10] = [
         Page::Tasks,
         Page::Projects,
         Page::Tags,
@@ -71,6 +72,7 @@ impl Page {
         Page::Calendar,
         Page::Burndown,
         Page::Boards,
+        Page::Kanban,
         Page::Console,
         Page::Settings,
     ];
@@ -1171,13 +1173,12 @@ impl App {
         tc_core::preview::add(line, &self.cfg, now, model::local_offset(now))
     }
 
-    /// The pages of the top bar, in order: [`Page::ALL`], with Kanban after Boards while it is on.
+    /// The pages of the top bar, in order: [`Page::ALL`], less Kanban while it is off.
     pub fn pages(&self) -> Vec<Page> {
-        let mut out = Page::ALL.to_vec();
-        if self.kanban.enabled {
-            out.insert(7, Page::Kanban);
-        }
-        out
+        Page::ALL
+            .into_iter()
+            .filter(|p| *p != Page::Kanban || self.kanban.enabled)
+            .collect()
     }
 
     fn open(&mut self, page: Page) {

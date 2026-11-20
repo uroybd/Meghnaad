@@ -2119,7 +2119,7 @@ mod tests {
         assert!(
             m.problems
                 .iter()
-                .any(|p| p.starts_with("keys: g (move.first) is the start of g1 (page.tasks)")),
+                .any(|p| p.starts_with("keys: g (move.first) is the start of g0 (page.settings)")),
             "{:?}",
             m.problems
         );

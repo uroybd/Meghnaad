@@ -148,9 +148,7 @@ impl App {
             }
             "settings.editFile" => return Action::EditSettings,
             a if a.starts_with("page.") => {
-                if a == Page::Kanban.action() {
-                    self.open(Page::Kanban);
-                } else if let Some(&p) = Page::ALL.iter().find(|p| p.action() == a) {
+                if let Some(&p) = Page::ALL.iter().find(|p| p.action() == a) {
                     self.open(p);
                 }
             }

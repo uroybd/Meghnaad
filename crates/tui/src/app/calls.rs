@@ -191,7 +191,13 @@ impl App {
 /// A page by its number (1 to 9) or the start of its name, any case (`:tabn 3`, `:tabn tasks`, `:tabn bu`).
 fn page_named(word: &str) -> Option<Page> {
     if let Ok(n) = word.parse::<usize>() {
-        return n.checked_sub(1).and_then(|i| Page::ALL.get(i)).copied();
+        // 1 to 9, then 0 for the tenth.
+        let at = if n == 0 {
+            Some(9)
+        } else {
+            n.checked_sub(1).filter(|&i| i < 9)
+        };
+        return at.and_then(|i| Page::ALL.get(i)).copied();
     }
     let w = word.to_lowercase();
     if w.is_empty() {
@@ -207,9 +213,10 @@ mod tests {
     #[test]
     fn a_page_by_number_or_name() {
         assert_eq!(page_named("1"), Some(Page::Tasks));
-        assert_eq!(page_named("9"), Some(Page::Settings));
+        assert_eq!(page_named("8"), Some(Page::Kanban));
+        assert_eq!(page_named("9"), Some(Page::Console));
+        assert_eq!(page_named("0"), Some(Page::Settings));
         assert_eq!(page_named("10"), None);
-        assert_eq!(page_named("0"), None);
         assert_eq!(page_named("Tasks"), Some(Page::Tasks));
         assert_eq!(page_named("bu"), Some(Page::Burndown));
         assert_eq!(page_named("nope"), None);
