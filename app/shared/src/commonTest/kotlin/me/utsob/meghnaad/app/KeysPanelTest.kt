@@ -81,7 +81,7 @@ class KeysPanelTest {
     @Test
     fun aCommandOfSeveralPlacesIsBoundWhereChosen() {
         val c = checkCommand("next")
-        assertEquals(listOf("calendar", "boards"), c.places.map { it.group })
+        assertEquals(listOf("calendar", "boards", "kanban"), c.places.map { it.group })
         val out = withBinding(settings("""{ "version": 2 }"""), "tui", "next", listOf("N"), group = "boards")
         assertEquals(JsonPrimitive("next"), out["tui"]!!.jsonObject["keys"]!!.jsonObject["boards"]!!.jsonObject["N"])
     }

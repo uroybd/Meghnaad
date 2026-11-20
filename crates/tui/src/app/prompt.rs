@@ -238,6 +238,7 @@ impl App {
                     .unwrap_or_default();
                 self.prompt(PromptKind::CommandLine(*at, line.to_owned()), &command);
             }
+            PromptKind::Kanban(edit) => return self.submit_kanban(p, edit.clone(), line),
             PromptKind::CommandLine(at, name) => {
                 if let Some(e) = settings::command_problem(line) {
                     self.status = e;

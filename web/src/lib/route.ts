@@ -4,6 +4,7 @@
 //   /report/<name>      Tasks, as that report (a report is its own slug: `next`, `list`, `_reviewed`, one of yours)
 //   /projects /tags /summary /calendar /burndown /console
 //   /boards             the list of boards;  /board/<slug>  one of them
+//   /kanbans            the list of kanbans; /kanban/<slug>  one of them, on its report; /kanban/<slug>/<report> on another
 //   /settings           Settings;  /settings/<tab>  one of its tabs;  /settings/taskrc/<path>  one file of the taskrc folder
 //   /task/<8 characters>  a task's detail drawer (the first 8 characters of its uuid; the numbers `task 3` uses differ
 //                       from one replica to the next and change as tasks finish)
@@ -20,6 +21,7 @@ export const SETTINGS_TABS = [
   'keys',
   'taskrc',
   'tasksh',
+  'kanban',
   'commands',
   'hooks',
   'urgency',
@@ -34,6 +36,7 @@ export type Place =
   | { page: 'tasks'; report: string }
   | { page: PlainPage }
   | { page: 'boards'; board: string | null }
+  | { page: 'kanban'; kanban: string | null; report?: string }
   | { page: 'settings'; tab: SettingsTab | null; file?: string }
   | { page: 'task'; prefix: string };
 
@@ -44,6 +47,8 @@ export function parsePath(path: string): Place | null {
   const board = boardFromPath(path);
   if (board !== null) return { page: 'boards', board };
   if (isBoardsPath(path)) return { page: 'boards', board: null };
+  const kanban = kanbanFromPath(path);
+  if (kanban) return kanban;
   const report = /^\/report\/([^/]+)\/?$/.exec(path);
   if (report) {
     try {
@@ -76,6 +81,8 @@ export function placePath(p: Place): string {
       return `/report/${encodeURIComponent(p.report)}`;
     case 'boards':
       return p.board === null ? BOARDS_PATH : boardPath(p.board);
+    case 'kanban':
+      return p.kanban === null ? KANBANS_PATH : kanbanPath(p.kanban, p.report);
     case 'settings':
       if (p.tab === 'taskrc' && p.file)
         return `/settings/taskrc/${p.file.split('/').map(encodeURIComponent).join('/')}`;
@@ -135,6 +142,31 @@ export function boardFromPath(path: string): string | null {
 /** Whether the address is the list of boards. */
 export function isBoardsPath(path: string): boolean {
   return /^\/boards\/?$/.test(path);
+}
+
+// A kanban's address is `/kanban/<slug>`, on its own report, or `/kanban/<slug>/<report>` on another (a report is its
+// own slug, as in `/report/<name>`); the list of kanbans is `/kanbans`.
+
+/** The list of kanbans. */
+export const KANBANS_PATH = '/kanbans';
+
+/** The address that opens this kanban, on `report` when it is not the kanban's own. */
+export function kanbanPath(slug: string, report?: string): string {
+  return report ? `/kanban/${slug}/${encodeURIComponent(report)}` : `/kanban/${slug}`;
+}
+
+/** The kanban place an address names, or `null` when it is not a kanban's or the list of them. */
+export function kanbanFromPath(path: string): Extract<Place, { page: 'kanban' }> | null {
+  if (/^\/kanbans\/?$/.test(path)) return { page: 'kanban', kanban: null };
+  const m = /^\/kanban\/([a-z0-9_-]{1,40})(?:\/([^/]+))?\/?$/.exec(path);
+  if (!m) return null;
+  if (m[2] === undefined) return { page: 'kanban', kanban: m[1] };
+  try {
+    const report = decodeURIComponent(m[2]);
+    return report ? { page: 'kanban', kanban: m[1], report } : null;
+  } catch {
+    return null; // a broken %-escape
+  }
 }
 
 // One file of the taskrc folder has an address too, `/settings/taskrc/<path>` (`/settings/taskrc/holidays/en-US.rc`),

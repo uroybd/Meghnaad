@@ -146,6 +146,10 @@ class ParsedSettings(
     val appearance: Appearance = Appearance(),
     /** What is wrong with `appearance`, one line each. */
     val appearanceErrors: List<String> = emptyList(),
+    /** The kanbans (spec 0026): whether they are on, and the valid ones. */
+    val kanban: KanbanSettings = KanbanSettings(),
+    /** What is wrong with `kanban`, one line each; a kanban with a problem is left out. */
+    val kanbanErrors: List<String> = emptyList(),
 )
 
 /** A Lucide icon's name: lower case words joined by dashes (`circle-x`, `arrow-up-0-1`). */
@@ -192,11 +196,15 @@ fun parseSettings(text: String): ParsedSettings {
     }
     val homepage = parseHomepage(value["homepage"])
     val (appearance, appearanceErrors) = parseAppearance(value["appearance"])
+    val (kanban, kanbanErrors) = parseKanban(value["kanban"])
     val normalized = value["boards"]?.let { normalizeBoards(it) }
     val boards = normalized?.boards ?: emptyList()
     val boardErrors = normalized?.errors ?: emptyList()
-    val list = value["taskCommands"] ?: return ParsedSettings(value, emptyList(), emptyList(), boards, boardErrors, homepage, appearance, appearanceErrors)
-    if (list !is JsonArray) return ParsedSettings(value, emptyList(), listOf("taskCommands must be a list"), boards, boardErrors, homepage, appearance, appearanceErrors)
+    val list = value["taskCommands"]
+        ?: return ParsedSettings(value, emptyList(), emptyList(), boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors)
+    if (list !is JsonArray) {
+        return ParsedSettings(value, emptyList(), listOf("taskCommands must be a list"), boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors)
+    }
     val errors = mutableListOf<String>()
     val commands = mutableListOf<TaskCommand>()
     val seen = HashSet<String>()
@@ -233,7 +241,7 @@ fun parseSettings(text: String): ParsedSettings {
         }
         commands += TaskCommand(name, command.trim(), icon)
     }
-    return ParsedSettings(value, commands, errors, boards, boardErrors, homepage, appearance, appearanceErrors)
+    return ParsedSettings(value, commands, errors, boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors)
 }
 
 private val pretty = Json { prettyPrint = true; prettyPrintIndent = "  " }
@@ -443,16 +451,25 @@ private fun withAppearance(raw: JsonObject, appearance: Appearance, read: Boolea
 fun serializeAppearance(raw: JsonObject, appearance: Appearance): String =
     written(mergeSettings(raw, withAppearance(raw, reread(raw).appearance, read = true), withAppearance(raw, appearance)))
 
+private fun withKanban(raw: JsonObject, kanban: KanbanSettings, read: Boolean = false) = buildJsonObject {
+    for ((k, v) in raw) if (k != "kanban") put(k, v)
+    if (kanban.enabled || kanban.setup != null || kanban.kanbans.isNotEmpty() || (read && raw["kanban"] is JsonObject)) put("kanban", kanbanJson(kanban))
+}
+
+/** The text to save: `kanban` as given, and everything else in the file as it was. */
+fun serializeKanban(raw: JsonObject, kanban: KanbanSettings): String =
+    written(mergeSettings(raw, withKanban(raw, reread(raw).kanban, read = true), withKanban(raw, kanban)))
+
 /** What is wrong with a `settings.json`, as a linter says it: an error stops it being saved, a warning doesn't. */
 data class Lint(val errors: List<String>, val warnings: List<String>)
 
-private val OBJECT_KEYS = listOf("homepage", "appearance", "keys", "web", "mobile", "tui")
+private val OBJECT_KEYS = listOf("homepage", "appearance", "kanban", "keys", "web", "mobile", "tui")
 private val LIST_KEYS = listOf("taskCommands", "boards")
 private const val NOT_SETTINGS = "The settings must be a JSON object: { \"taskCommands\": [ … ] }"
 private const val APPEARANCE_NOT_OBJECT = "appearance must be an object: { \"progress\": { … } }"
 private const val PROGRESS_NOT_OBJECT = "appearance.progress must be an object: { \"<uda>\": { \"min\": 0, \"max\": 100 } }"
 private const val TRANSFORMATIONS_NOT_LIST = "appearance.transformations must be a list: [ { \"match\": …, \"replace\": …, \"fields\": [ … ] } ]"
-private val SHAPES = Regex("^(boards must be a list|board \\d+: not an object|taskCommands must be a list)$")
+private val SHAPES = Regex("^(boards must be a list|board \\d+: not an object|taskCommands must be a list|kanban must be an object.*|kanban\\.(kanbans|columns) must be a list)$")
 
 /**
  * Lint [text] as `settings.json` (web/src/lib/appsettings.ts `lintSettings`). Errors: not JSON, not an object, over 64 KB,
@@ -483,8 +500,12 @@ fun lintSettings(text: String, more: (JsonObject) -> List<String> = { emptyList(
         if (b !is JsonObject) errors += "boards[$i] must be an object"
         else if (b["sections"] !is JsonArray) errors += "boards[$i]${b["id"]?.text()?.let { " ($it)" } ?: ""}: needs a sections list"
     }
+    (raw["kanban"] as? JsonObject)?.let { k ->
+        if ("kanbans" in k && k["kanbans"] !is JsonArray) errors += "kanban.kanbans must be a list"
+        if ("columns" in k && k["columns"] !is JsonArray) errors += "kanban.columns must be a list"
+    }
     val said = errors.toSet()
-    val warnings = (read.errors + read.appearanceErrors + read.boardErrors + more(raw)).filter { it !in said && !SHAPES.matches(it) }
+    val warnings = (read.errors + read.appearanceErrors + read.boardErrors + read.kanbanErrors + more(raw)).filter { it !in said && !SHAPES.matches(it) }
     return Lint(errors, warnings)
 }
 

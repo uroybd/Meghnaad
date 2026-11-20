@@ -32,6 +32,7 @@ mod actions;
 mod calls;
 mod export;
 mod job;
+pub mod kanbans;
 mod keyhelp;
 mod menus;
 mod prompt;
@@ -42,6 +43,7 @@ mod sort;
 mod taskinfo;
 
 pub use export::{format_name as export_format_name, ExportBox, Row as ExportRow};
+pub use kanbans::{KanbanData, KanbanEdit, KanbanRow};
 pub use reminders::{RemindBox, RemindRow};
 
 /// The pages, in the order of the top bar; each is opened by its number.
@@ -54,6 +56,8 @@ pub enum Page {
     Calendar,
     Burndown,
     Boards,
+    /// Not numbered: there only while Kanban is on (spec 0026), after Boards ([`App::pages`]).
+    Kanban,
     Console,
     Settings,
 }
@@ -80,6 +84,7 @@ impl Page {
             Page::Calendar => "Calendar",
             Page::Burndown => "Burndown",
             Page::Boards => "Boards",
+            Page::Kanban => "Kanban",
             Page::Console => "Console",
             Page::Settings => "Settings",
         }
@@ -95,6 +100,7 @@ impl Page {
             Page::Calendar => "page.calendar",
             Page::Burndown => "page.burndown",
             Page::Boards => "page.boards",
+            Page::Kanban => "page.kanban",
             Page::Console => "page.console",
             Page::Settings => "page.settings",
         }
@@ -131,6 +137,8 @@ pub enum PromptKind {
     KeysSearch,
     /// What the task command named stands for.
     CommandLine(Option<usize>, String),
+    /// A kanban's setting, or what the Kanban page shows a kanban with.
+    Kanban(KanbanEdit),
 }
 
 impl PromptKind {
@@ -145,6 +153,7 @@ impl PromptKind {
             PromptKind::CommandName(_) => "name",
             PromptKind::CommandLine(..) => "command",
             PromptKind::KeysSearch => "search keys",
+            PromptKind::Kanban(e) => e.label(),
         }
     }
 
@@ -153,7 +162,11 @@ impl PromptKind {
     pub fn popup(&self) -> bool {
         !matches!(
             self,
-            PromptKind::Console | PromptKind::Filter | PromptKind::Report | PromptKind::KeysSearch
+            PromptKind::Console
+                | PromptKind::Filter
+                | PromptKind::Report
+                | PromptKind::KeysSearch
+                | PromptKind::Kanban(KanbanEdit::Filter | KanbanEdit::Report | KanbanEdit::Since)
         )
     }
 
@@ -166,7 +179,10 @@ impl PromptKind {
             PromptKind::ReviewModify => Some("1 modify ".into()),
             PromptKind::Console | PromptKind::Filter | PromptKind::Report => Some(String::new()),
             PromptKind::CommandLine(..) => Some("1 ".into()),
-            PromptKind::CommandName(_) | PromptKind::KeysSearch => None,
+            PromptKind::Kanban(KanbanEdit::Filter | KanbanEdit::Text(KanbanRow::Filter(_))) => Some(String::new()),
+            PromptKind::Kanban(KanbanEdit::ColumnFilter { .. }) => Some(String::new()),
+            PromptKind::Kanban(KanbanEdit::ColumnMove { .. }) => Some("1 ".into()),
+            PromptKind::CommandName(_) | PromptKind::KeysSearch | PromptKind::Kanban(_) => None,
         }
     }
 }
@@ -225,6 +241,12 @@ pub enum Mode {
     },
     /// The reminder options, and the `remind_in` UDA.
     Reminders(RemindBox),
+    /// Choosing the column a kanban's card goes to: the columns' names, and where each is among the kanban's.
+    KanbanMove {
+        options: Vec<String>,
+        targets: Vec<usize>,
+        sel: usize,
+    },
 }
 
 /// A key being added: the section of the keys, the search for the action and the action chosen, then the key pressed.
@@ -292,16 +314,18 @@ pub enum SettingsSection {
     Theme,
     Commands,
     Boards,
+    Kanban,
     Keys,
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 6] = [
+    pub const ALL: [SettingsSection; 7] = [
         SettingsSection::General,
         SettingsSection::Sync,
         SettingsSection::Theme,
         SettingsSection::Commands,
         SettingsSection::Boards,
+        SettingsSection::Kanban,
         SettingsSection::Keys,
     ];
 
@@ -313,6 +337,7 @@ impl SettingsSection {
             SettingsSection::Theme => "settings.theme",
             SettingsSection::Commands => "settings.commands",
             SettingsSection::Boards => "settings.boards",
+            SettingsSection::Kanban => "settings.kanban",
             SettingsSection::Keys => "settings.keys",
         }
     }
@@ -368,6 +393,24 @@ pub struct App {
     pub board_data: Vec<(String, boards::Data)>,
     /// Where each section of the open board starts, in lines from its top, as last drawn (they depend on the width).
     pub board_tops: std::cell::RefCell<Vec<u16>>,
+
+    /// Kanban (spec 0026): its settings and what was wrong with any left out, the kanban chosen in the list, whether it
+    /// is open, what was typed over each kanban's report, filter and Completed since (by id, while the app runs), what
+    /// the open one has, the card chosen (column, row; the column after the last is Other), and whether Other is shown.
+    pub kanban: crate::kanban::Settings,
+    pub kanban_errors: Vec<String>,
+    pub kanban_sel: usize,
+    pub kanban_open: bool,
+    pub kanban_views: std::collections::BTreeMap<String, kanbans::Typed>,
+    pub kanban_data: Option<KanbanData>,
+    pub kanban_col: usize,
+    pub kanban_card: usize,
+    pub kanban_other: bool,
+    /// A card just moved: its uuid, the column it was in and the one it was moved to, to say where it went.
+    kanban_moved: Option<(String, Option<usize>, usize)>,
+    /// The row of Settings → Kanban, and whether the automatic setup is waiting for a second Enter.
+    pub kanban_row: usize,
+    pub kanban_asking: bool,
 
     pub log: Vec<Line<'static>>,
     /// How far the console is scrolled back from its end.
@@ -616,6 +659,18 @@ impl App {
             board_open: false,
             board_data: Vec::new(),
             board_tops: std::cell::RefCell::new(Vec::new()),
+            kanban: crate::kanban::Settings::default(),
+            kanban_errors: Vec::new(),
+            kanban_sel: 0,
+            kanban_open: false,
+            kanban_views: std::collections::BTreeMap::new(),
+            kanban_data: None,
+            kanban_col: 0,
+            kanban_card: 0,
+            kanban_other: false,
+            kanban_moved: None,
+            kanban_row: 0,
+            kanban_asking: false,
             log: Vec::new(),
             log_back: 0,
             settings_section: SettingsSection::General,
@@ -839,6 +894,16 @@ impl App {
         }
         (self.boards, self.board_errors) = boards::read(&self.settings.boards);
         self.board = self.board.min(self.boards.len().saturating_sub(1));
+        let was_on = self.kanban.enabled;
+        (self.kanban, self.kanban_errors) = crate::kanban::read(Some(&self.settings.kanban).filter(|v| !v.is_null()));
+        self.kanban_sel = self.kanban_sel.min(self.kanban.kanbans.len().saturating_sub(1));
+        // Turned off, or the open kanban gone: back to where there is something.
+        if self.page == Page::Kanban && !self.kanban.enabled && was_on {
+            self.page = Page::Settings;
+        }
+        if self.kanban_sel >= self.kanban.kanbans.len() {
+            self.kanban_open = false;
+        }
     }
 
     /// Put the theme the settings and the terminal's appearance make in force.
@@ -884,6 +949,10 @@ impl App {
             Page::Burndown => args.push(format!("burndown.{}", self.burndown)),
             Page::Boards => {
                 self.load_board();
+                return;
+            }
+            Page::Kanban => {
+                self.load_kanban();
                 return;
             }
             Page::Tasks | Page::Projects | Page::Tags | Page::Console | Page::Settings => return,
@@ -1099,7 +1168,23 @@ impl App {
         tc_core::preview::add(line, &self.cfg, now, model::local_offset(now))
     }
 
+    /// The pages of the top bar, in order: [`Page::ALL`], with Kanban after Boards while it is on.
+    pub fn pages(&self) -> Vec<Page> {
+        let mut out = Page::ALL.to_vec();
+        if self.kanban.enabled {
+            out.insert(7, Page::Kanban);
+        }
+        out
+    }
+
     fn open(&mut self, page: Page) {
+        // Kanban is off until it is set up: its section of Settings says how.
+        if page == Page::Kanban && !self.kanban.enabled {
+            self.status = "Kanban is off: set it up in Settings, Kanban.".into();
+            self.settings_section = SettingsSection::Kanban;
+            self.kanban_row = 0;
+            return self.open(Page::Settings);
+        }
         if page != Page::Tasks {
             self.marks.clear();
         }
@@ -1177,6 +1262,20 @@ impl App {
             Mode::KeyAdd(add) => self.in_key_add(add, key),
             Mode::Export(b) => self.in_export(b, key),
             Mode::Reminders(b) => self.in_reminders(b, key),
+            Mode::KanbanMove { options, targets, sel } => {
+                if let Some(step) = self.step_of(key) {
+                    self.mode = Mode::KanbanMove {
+                        sel: moved(sel, options.len(), step),
+                        options,
+                        targets,
+                    };
+                } else if key.code == KeyCode::Enter {
+                    if let Some(&to) = targets.get(sel) {
+                        self.move_card(to);
+                    }
+                }
+                Action::None
+            }
             Mode::ExportPick { options, words, sel } => {
                 if let Some(step) = self.step_of(key) {
                     self.mode = Mode::ExportPick {
@@ -1247,6 +1346,8 @@ impl App {
             Page::Burndown => "burndown",
             Page::Boards if self.board_open => "boards",
             Page::Boards => "boards.list",
+            Page::Kanban if self.kanban_open => "kanban",
+            Page::Kanban => "kanban.list",
             Page::Console => "console",
             Page::Settings => self.settings_section.group(),
         }

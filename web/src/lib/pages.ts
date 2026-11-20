@@ -10,6 +10,7 @@ export const PAGES = {
   calendar: lazy(() => import('./CalendarPage.svelte')),
   burndown: lazy(() => import('./BurndownPage.svelte')),
   boards: lazy(() => import('./BoardsPage.svelte')),
+  kanban: lazy(() => import('./KanbanPage.svelte')),
   settings: lazy(() => import('./SettingsPage.svelte')),
 } satisfies Record<string, Lazy>;
 
@@ -19,6 +20,7 @@ export const TABS = {
   keys: lazy(() => import('./KeysPanel.svelte')),
   taskrc: lazy(() => import('./TaskrcPanel.svelte')),
   tasksh: lazy(() => import('./TaskshPanel.svelte')),
+  kanban: lazy(() => import('./KanbanPanel.svelte')),
   commands: lazy(() => import('./CommandsPanel.svelte')),
   hooks: lazy(() => import('./HooksPanel.svelte')),
   urgency: lazy(() => import('./UrgencyPanel.svelte')),

@@ -32,7 +32,7 @@ impl App {
     }
 
     /// The first key of `action` as a hint shows it, if it has one.
-    pub(super) fn first_key(&self, action: &str) -> Option<String> {
+    pub fn first_key(&self, action: &str) -> Option<String> {
         self.keymap.keys_of(action).first().map(|k| keymap::display(k))
     }
 

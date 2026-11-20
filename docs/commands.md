@@ -41,8 +41,8 @@ the marked tasks when there are any, and else on the chosen one.
 | [`:sy[nc]`](#sync) | sync |
 | [`:rev[iew]`](#review) | review the tasks that need it |
 | [`:lock`](#lock) | lock the app: with the PIN where there is one, else with the encryption secret |
-| [`:n[ext]`](#next) | the next month, the next board |
-| [`:prev[ious]`](#previous) | the month before, the board before |
+| [`:n[ext]`](#next) | the next month, the next board, the next column |
+| [`:prev[ious]`](#previous) | the month before, the board before, the column before |
 | [`:sn[ext]`](#snext) | the next section |
 | [`:spr[evious]`](#sprevious) | the section before |
 | [`:paged[own]`](#pagedown) | a page down |
@@ -64,6 +64,8 @@ the marked tasks when there are any, and else on the chosen one.
 | [`:syncw[hen]`](#syncwhen) | choose when to sync |
 | [`:th[eme]`](#theme) | the next theme preset |
 | [`:sh[ading]`](#shading) | the grey shading of tasks, or none |
+| [`:ka[nban]`](#kanban) | the Kanban page, or a kanban's settings |
+| [`:mov[e]`](#move) | move the card to another column |
 | `:5`, `:$` | a row by its number, the last row |
 | `:+3`, `:-3` | three rows down, up |
 
@@ -203,7 +205,7 @@ Since 0.8.11.
 
 ## :o[pen]
 
-Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). On a list of projects or tags, of boards, or of the boards in Settings, it opens the one under the cursor.
+Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). On a list of projects or tags, of boards or kanbans, or of the boards or kanbans in Settings, it opens the one under the cursor.
 
 Since 0.8.11.
 
@@ -283,7 +285,7 @@ Since 0.8.11.
 
 Takes a tab: details, recurrence, timelog, annotations, unknown or raw.
 
-The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it.
+The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it. On a kanban in the terminal, the info of the card under the cursor.
 
 Since 0.8.11.
 
@@ -303,7 +305,7 @@ Since 0.8.11.
 
 Takes a report's name.
 
-With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from. In the terminal's list of reports down the side, the report under the cursor.
+With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from. In the terminal's list of reports down the side, the report under the cursor. On a kanban, the report it is shown with here, without changing the saved kanban.
 
 Since 0.8.11.
 
@@ -347,7 +349,7 @@ Since 0.8.15.
 
 ## :n[ext]
 
-On the calendar, the month after; on a board, the board after. Like the other commands that act in several places, it does what it means on the page it is used on.
+On the calendar, the month after; on a board, the board after; on a kanban in the terminal, the column after. Like the other commands that act in several places, it does what it means on the page it is used on.
 
 Since 0.8.22.
 
@@ -355,7 +357,7 @@ Since 0.8.22.
 
 ## :prev[ious]
 
-On the calendar, the month before; on a board, the board before.
+On the calendar, the month before; on a board, the board before; on a kanban in the terminal, the column before.
 
 Since 0.8.22.
 
@@ -435,7 +437,7 @@ Since 0.8.22.
 
 ## :ba[ck]
 
-Back to the page from the reports down the side, or from a board to the list of boards.
+Back to the page from the reports down the side, from a board to the list of boards, or from a kanban to the list of kanbans.
 
 Since 0.8.22.
 
@@ -532,6 +534,26 @@ Since 0.8.22.
 In the appearance settings, draw tasks' grey shading, or leave it out.
 
 Since 0.8.22.
+
+<a id="kanban"></a>
+
+## :ka[nban]
+
+Takes since, other, new, column, edit, delete, raise, lower, write or off.
+
+With nothing after it, the Kanban page (in the terminal, where Kanban is on). On a kanban, `:kanban since` changes Completed since there and `:kanban other` shows or hides Other, the tasks no column has. In the Kanban section of the terminal's Settings: `:kanban new` adds a kanban, `:kanban column` a column, `:kanban edit` and `:kanban delete` change and delete what is under the cursor (while Kanban is off, `:kanban edit` sets it up the way under the cursor, Automatic or Manual), `:kanban raise` and `:kanban lower` move a column, `:kanban write` writes the `progressState` UDA and `:kanban off` turns Kanban off. See [Kanban](using/kanban.md).
+
+Since the next release.
+
+<a id="move"></a>
+
+## :mov[e]
+
+Takes left or right.
+
+On a kanban in the terminal, the card under the cursor to a column chosen from a list, running that column's On move on the task; `:move left` and `:move right` to the column beside it.
+
+Since the next release.
 
 ## Rows
 

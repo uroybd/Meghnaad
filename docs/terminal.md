@@ -89,7 +89,8 @@ line.
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
 | `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` go to the board before or after, `[` `]` to its next section or the one before, and `Esc` (or `b`) comes back to the list |
 | `8` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
-| `9` Settings | A section each for when to sync, the theme, your task commands, your boards and your keys ([Settings](#the-settings-page)) |
+| `·` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards, with no number (`gk` opens it): the list of kanbans, then one, its columns side by side; `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
+| `9` Settings | A section each for when to sync, the theme, your task commands, your boards, Kanban and your keys ([Settings](#the-settings-page)) |
 
 `Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Colours
 follow `task` ([Colours](#colours)).
@@ -470,7 +471,7 @@ meghnaad export -f csv -r _x rc.report._x.columns=id rc.report._x.filter= rc.rep
 
 ## The Settings page
 
-The page has a section each for General, Sync, Theme, Task commands, Boards and Keybindings, one under the other. A key acts on the
+The page has a section each for General, Sync, Theme, Task commands, Boards, Kanban and Keybindings, one under the other. A key acts on the
 section that has the focus, whose border is in the accent and names its keys: `j` `k` move through a section's rows
 and on into the next one, and `[` `]` jump between sections. `E`, in any section, opens `settings.json` in your editor
 (`$VISUAL`, else `$EDITOR`, else `vi`) on the terminal, and reads it again when the editor closes.
@@ -482,6 +483,7 @@ and on into the next one, and `[` `]` jump between sections. `E`, in any section
 | Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
 | Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
 | Boards | `Enter` opens the board chosen |
+| Kanban | While it is off, the UDA and the two ways to set it up (`Enter` twice on the automatic one writes its lines); then Kanban's settings and each kanban's, a row each: `e` or `Enter` changes the row, `a` adds a column, `D` deletes a column or kanban or takes away a kanban's own setting, `K` `J` move a column, `n` adds a kanban, `o` opens one, `w` writes the UDA, `x` turns Kanban off ([Kanban](using/kanban.md#in-the-terminal-app)) |
 | Keybindings | Your keys, under a heading for each place they go: General (`keys`, every front end), Web, Mobile and Terminal (`tui.keys`). `t` shows the default keys too, faint; `f` searches the actions, what they do and their keys; `a` adds a key to the section of the line chosen; `D` takes out what you set, back to the defaults; `n` leaves the action without a key |
 
 ![The Keybindings section: your keys, under General, Web, Mobile and Terminal](screenshots/terminal-keybindings.png)

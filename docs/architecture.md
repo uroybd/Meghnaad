@@ -952,6 +952,18 @@ about 67 KB compressed, fetched when a board first draws a chart). What it is gi
 is a change of names and colours from the engine's `Chart`. On Android the charts are Koala Plot's, except the heatmap,
 which Koala Plot lacks and the app lays out as a grid of cells; the terminal app draws with ratatui's charts.
 
+### Kanban
+
+A UI feature only (spec 0026): no command of its own in the engine. `kanban.ts` reads and writes `settings.json`'s
+`kanban` (the UDA, and the report, filter, Completed since and columns every kanban is drawn with, which a kanban may
+have of its own; the store hands the pages each kanban resolved), makes the automatic setup's `config` lines as
+`tasksh.ts` does, and builds what a column runs: `( filter ) ( -COMPLETED or end.after:<since> ) ( column ) <report>`,
+a report command, whose rows and columns the cards draw. Each task goes in the first column that has it, by uuid; Other
+is the same line without a column's filter, less those. A move is the column's On move with the task's uuid in front of
+each statement, through `planChain` as the console runs a line. `KanbanPage` and `KanbanPanel` are the page and the
+settings tab. Android ports them (`Kanban.kt`, `KanbanPage.kt`, `KanbanPanel.kt`); the terminal app has `kanban.rs`,
+`app/kanbans.rs` and `kanbanui.rs`, which run the same lines through the real `task`.
+
 ### Task commands
 
 The browser's own. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name, command, icon? }] }`,

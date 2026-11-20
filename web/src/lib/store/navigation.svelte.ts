@@ -38,11 +38,15 @@ export abstract class NavigationStore extends SettingsStore {
         ? { page: 'tasks', report: this.report }
         : this.view === 'boards'
           ? { page: 'boards', board: this.boardId }
-          : this.view === 'settings'
-            ? this.settingsTab === 'taskrc' && this.settingsFile
-              ? { page: 'settings', tab: 'taskrc', file: this.settingsFile }
-              : { page: 'settings', tab: this.settingsTab }
-            : { page: this.view },
+          : this.view === 'kanban'
+            ? this.kanbanReport && this.kanbanId
+              ? { page: 'kanban', kanban: this.kanbanId, report: this.kanbanReport }
+              : { page: 'kanban', kanban: this.kanbanId }
+            : this.view === 'settings'
+              ? this.settingsTab === 'taskrc' && this.settingsFile
+                ? { page: 'settings', tab: 'taskrc', file: this.settingsFile }
+                : { page: 'settings', tab: this.settingsTab }
+              : { page: this.view },
   );
 
   /**
@@ -181,6 +185,22 @@ export abstract class NavigationStore extends SettingsStore {
         this.boardId = place.board;
         this.view = 'boards';
         return place.board === null ? undefined : placePath(place);
+      case 'kanban':
+        if (!this.appSettings) return undefined;
+        if (!this.kanbanSettings.enabled) {
+          this.notify('Kanban is off. Set it up in Settings → Kanban.', 'err');
+          this.openSettings('kanban');
+          return placePath({ page: 'settings', tab: 'kanban' });
+        }
+        if (place.kanban !== null && !this.kanbans.some((k) => k.id === place.kanban)) {
+          this.notify(`There is no kanban called ${place.kanban}.`, 'err');
+          this.goHome(true);
+          return '/';
+        }
+        this.kanbanId = place.kanban;
+        this.kanbanReport = place.report ?? null;
+        this.view = 'kanban';
+        return place.kanban === null ? undefined : placePath(place);
       case 'settings':
         if (place.tab) {
           this.settingsTab = place.tab;

@@ -81,6 +81,9 @@ describe('every page has an address', () => {
     ...PLAIN_PAGES.map((page) => ({ page }) as Place),
     { page: 'boards', board: null },
     { page: 'boards', board: 'weekly' },
+    { page: 'kanban', kanban: null },
+    { page: 'kanban', kanban: 'work' },
+    { page: 'kanban', kanban: 'work', report: 'my report/2 é' },
     { page: 'settings', tab: null },
     ...SETTINGS_TABS.map((tab) => ({ page: 'settings', tab }) as Place),
     { page: 'settings', tab: 'taskrc', file: 'taskrc' },
@@ -131,6 +134,18 @@ describe('every page has an address', () => {
       '/api/config',
       '/assets/app.js',
     ])
+      expect(parsePath(p), p).toBeNull();
+  });
+});
+
+describe('a kanban’s address', () => {
+  it('is its slug, with a report after it when it is not its own', () => {
+    expect(placePath({ page: 'kanban', kanban: null })).toBe('/kanbans');
+    expect(placePath({ page: 'kanban', kanban: 'work' })).toBe('/kanban/work');
+    expect(placePath({ page: 'kanban', kanban: 'work', report: 'list' })).toBe('/kanban/work/list');
+    expect(parsePath('/kanban/work/')).toEqual({ page: 'kanban', kanban: 'work' });
+    expect(parsePath('/kanbans/')).toEqual({ page: 'kanban', kanban: null });
+    for (const p of ['/kanban', '/kanban/', '/kanban/Work', '/kanban/a/b/c', '/kanbans/x', '/kanban/a/%zz'])
       expect(parsePath(p), p).toBeNull();
   });
 });

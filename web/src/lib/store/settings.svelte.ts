@@ -9,8 +9,10 @@ import {
   type Appearance,
   type Homepage,
   type ParsedSettings,
+  serializeKanban,
   type TaskCommand,
 } from '../appsettings';
+import { emptyKanbanSettings, resolveKanban, type Kanban, type KanbanSettings } from '../kanban';
 import type { Board, ControlValue } from '../boards';
 import type { Vocab } from '../completion';
 import {
@@ -66,6 +68,15 @@ export abstract class SettingsStore extends StoreBase {
    * is open (nothing saved). A control not here has its own.
    */
   boardControls = $state<Record<string, Record<string, ControlValue>>>({});
+
+  /** The kanbans in `settings.json` (spec 0026), and whether they are on. */
+  kanbanSettings = $derived<KanbanSettings>(this.appSettings?.kanban ?? emptyKanbanSettings());
+  /** Each kanban as it is drawn: its own settings, else Kanban's. */
+  kanbans = $derived<Kanban[]>(this.kanbanSettings.kanbans.map((k) => resolveKanban(this.kanbanSettings, k)));
+  /** The filter typed above a kanban, by its id, in place of its own while the page is open (nothing saved). */
+  kanbanFilters = $state<Record<string, string>>({});
+  /** The same for its Completed since. */
+  kanbanSince = $state<Record<string, string>>({});
 
   /** The task commands in `settings.json`: words that stand for a command line, and buttons that run it. */
   taskCommands = $derived<TaskCommand[]>(this.appSettings?.commands ?? []);
@@ -206,6 +217,14 @@ export abstract class SettingsStore extends StoreBase {
   /** Save the boards (the rest of `settings.json` as it was) and read them back. Throws what the server refused. */
   async saveBoards(boards: Board[], homepage?: Homepage | null) {
     const text = serializeBoards(this.appSettings?.raw ?? {}, boards, homepage);
+    fits(text);
+    await putAppSettings(text);
+    await this.loadAppSettings();
+  }
+
+  /** Save the kanbans (the rest of `settings.json` as it was) and read them back. Throws what the server refused. */
+  async saveKanban(kanban: KanbanSettings) {
+    const text = serializeKanban(this.appSettings?.raw ?? {}, kanban);
     fits(text);
     await putAppSettings(text);
     await this.loadAppSettings();

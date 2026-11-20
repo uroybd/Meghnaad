@@ -5,7 +5,7 @@
   import { TABS as PANELS } from './pages';
   import { store } from './store.svelte';
 
-  type Tab = 'general' | 'appearance' | 'keys' | 'taskrc' | 'tasksh' | 'commands' | 'hooks' | 'urgency';
+  type Tab = 'general' | 'appearance' | 'keys' | 'taskrc' | 'tasksh' | 'kanban' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
     { id: 'general', label: 'General', hint: 'Where the app opens' },
     { id: 'appearance', label: 'Appearance', hint: 'How the app draws things: UDAs shown as progress bars' },
@@ -16,6 +16,7 @@
       hint: 'Your taskrc as a folder of files: UDAs, reports, contexts, holidays, colours and includes',
     },
     { id: 'tasksh', label: 'tasksh', hint: 'What tasksh review needs: the reviewed UDA and the _reviewed report' },
+    { id: 'kanban', label: 'Kanban', hint: 'Kanbans: columns of tasks, and what moving a card to one runs' },
     { id: 'commands', label: 'Commands', hint: 'Words that stand for a command line, and show under ⋯ on a task' },
     {
       id: 'hooks',
@@ -32,6 +33,7 @@
     keys: false,
     taskrc: false,
     tasksh: false,
+    kanban: false,
     commands: false,
     hooks: false,
     urgency: false,
@@ -146,6 +148,17 @@
     {#if opened.has('tasksh')}<LazyView
         of={PANELS.tasksh}
         props={{ ondirty: (v: boolean) => (dirty.tasksh = v) }}
+      />{/if}
+  </div>
+  <div
+    role="tabpanel"
+    id="settings-panel-kanban"
+    aria-labelledby="settings-tab-kanban"
+    hidden={store.settingsTab !== 'kanban'}
+  >
+    {#if opened.has('kanban')}<LazyView
+        of={PANELS.kanban}
+        props={{ ondirty: (v: boolean) => (dirty.kanban = v) }}
       />{/if}
   </div>
   <div

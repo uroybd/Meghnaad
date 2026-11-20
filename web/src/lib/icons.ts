@@ -55,6 +55,7 @@ export { default as Settings } from '@lucide/svelte/icons/settings';
 export { default as SkipForward } from '@lucide/svelte/icons/skip-forward';
 export { default as SlidersHorizontal } from '@lucide/svelte/icons/sliders-horizontal';
 export { default as Square } from '@lucide/svelte/icons/square';
+export { default as SquareKanban } from '@lucide/svelte/icons/square-kanban';
 export { default as SquarePen } from '@lucide/svelte/icons/square-pen';
 export { default as Tag } from '@lucide/svelte/icons/tag';
 export { default as Terminal } from '@lucide/svelte/icons/terminal';

@@ -1,0 +1,477 @@
+<script lang="ts">
+  // The Kanban page (spec 0026): the list of kanbans, or one of them. Each column is the kanban's report run over its
+  // filters (`columnArgs`), so which task is where, in what order and with which fields is the engine's answer; a task
+  // is in the first column that has it, and Other holds what the report picks and no column does. A card dropped on a
+  // column runs that column's On move on it.
+  import { untrack } from 'svelte';
+  import { runCli } from './api';
+  import { toAddress } from './base';
+  import { formatFor } from './dateformat';
+  import { debounce } from './debounce';
+  import FilterInput from './FilterInput.svelte';
+  import { formatTable, type Cell } from './format';
+  import { ChevronDown, ChevronRight, Settings } from './icons';
+  import { columnArgs, columnOf, moveSteps, placeTasks, type Kanban, type KanbanView } from './kanban';
+  import ReportCell from './ReportCell.svelte';
+  import { kanbanPath } from './route';
+  import { store } from './store.svelte';
+  import type { Column, ReportResult, Row } from './types';
+
+  const kanban = $derived<Kanban | null>(store.kanbans.find((k) => k.id === store.kanbanId) ?? null);
+
+  // What the page shows it with: the saved report, filter and Completed since, or what was chosen over them here.
+  const report = $derived(store.kanbanReport ?? kanban?.report ?? 'next');
+  let filter = $state('');
+  let since = $state('');
+  // A kanban opened (or its saved filter changed): what was typed over it this visit, else its own.
+  $effect(() => {
+    const k = kanban;
+    if (!k) return;
+    untrack(() => {
+      filter = store.kanbanFilters[k.id] ?? k.filter;
+      since = store.kanbanSince[k.id] ?? k.completedSince;
+    });
+  });
+  // Typing waits until it stops before the columns are read again.
+  let typed = $state<{ filter: string; since: string }>({ filter: '', since: '' });
+  const settle = debounce((f: string, s: string) => (typed = { filter: f, since: s }), 400);
+  $effect(() => {
+    const k = kanban;
+    if (!k) return;
+    store.kanbanFilters[k.id] = filter;
+    store.kanbanSince[k.id] = since;
+    settle(filter, since);
+  });
+  $effect(() => {
+    void kanban?.id;
+    settle.flush();
+  });
+
+  interface Board {
+    columns: Row[][];
+    other: Row[];
+    meta: Column[];
+  }
+  let board = $state<Board | null>(null);
+  let error = $state<string | null>(null);
+  let loading = $state(false);
+  let otherOpen = $state(false);
+  let seq = 0;
+
+  async function read(k: Kanban, v: KanbanView): Promise<Board> {
+    const ask = async (args: string[]): Promise<ReportResult> => {
+      const r = (await runCli({ args })).result;
+      if (r.kind === 'error') throw new Error(r.message);
+      if (r.kind !== 'report') throw new Error(`${v.report} is not a report.`);
+      return r;
+    };
+    const results = [];
+    // One at a time: the engine answers one command at a time anyway.
+    for (const c of k.columns) results.push(await ask(columnArgs(v, c)));
+    const all = await ask(columnArgs(v, null));
+    const placed = placeTasks(
+      results.map((r) => r.rows),
+      all.rows,
+    );
+    return { ...placed, meta: all.columns };
+  }
+
+  async function load() {
+    const k = kanban;
+    if (!k) return;
+    const n = ++seq;
+    loading = true;
+    try {
+      const b = await read(k, { report, filter: typed.filter, completedSince: typed.since });
+      if (n === seq) {
+        board = b;
+        error = null;
+      }
+    } catch (e) {
+      if (n === seq) error = e instanceof Error ? e.message : String(e);
+    } finally {
+      if (n === seq) loading = false;
+    }
+  }
+
+  $effect(() => {
+    void kanban;
+    void report;
+    void typed;
+    void store.rev;
+    void load();
+  });
+
+  // The cards' fields: the report's columns, as its table draws them.
+  const settings = $derived(store.config?.config.settings);
+  const ctx = $derived({
+    now: store.now,
+    udas: store.config?.config.udas ?? {},
+    journal: store.config?.journal ?? null,
+    dates: { report: formatFor('report', settings, undefined), annotation: formatFor('annotation', settings) },
+    recurIndicator: settings?.['recurrence.indicator'] || undefined,
+    indicators: {
+      active: settings?.['active.indicator'],
+      tag: settings?.['tag.indicator'],
+      dependency: settings?.['dependency.indicator'],
+    },
+    transformations: store.appearance.transformations,
+    idFallback: store.appearance.idFallback,
+  });
+  function cells(rows: Row[]): Cell[][] {
+    return board && rows.length ? formatTable(board.meta, rows, ctx).cells : [];
+  }
+  /** The fields a card shows under its description: the report's other columns with something in them. */
+  const fieldsOf = (row: Cell[]) =>
+    (board?.meta ?? [])
+      .map((col, i) => ({ col, c: row[i] }))
+      .filter(({ col, c }) => col.name !== 'description' && c && c.text.trim() !== '');
+  const descriptionAt = $derived(board?.meta.findIndex((c) => c.name === 'description') ?? -1);
+
+  // Moving a card.
+  let dragging = $state<{ uuid: string; from: number } | null>(null);
+  let over = $state<number | null>(null);
+
+  async function move(uuid: string, from: number, to: number) {
+    const k = kanban;
+    const col = k?.columns[to];
+    if (!k || !col || !col.move.trim() || from === to) return;
+    const ok = await store.actSteps(null, moveSteps(col.move, uuid, store.taskCommands));
+    // `act` reads the page again through `rev`; read it now to say where the task went.
+    await load();
+    if (!ok || !board) return;
+    const at = columnOf(board.columns, uuid);
+    if (at !== to) {
+      const where = at >= 0 ? k.columns[at].name : board.other.some((r) => r.uuid === uuid) ? 'Other' : null;
+      store.notify(
+        where
+          ? `${col.move} ran, but the task is in ${where}, not ${col.name}: ${col.name}’s filter doesn’t match it.`
+          : `${col.move} ran, and the task is no longer on this kanban.`,
+        'err',
+      );
+    }
+  }
+
+  function chooseReport(name: string) {
+    store.kanbanReport = kanban && name === kanban.report ? null : name;
+  }
+
+  function editKanbans() {
+    store.openSettings('kanban');
+  }
+</script>
+
+{#snippet card(row: Row, cs: Cell[], from: number)}
+  <li
+    class="card"
+    draggable="true"
+    ondragstart={(e) => {
+      dragging = { uuid: row.uuid, from };
+      e.dataTransfer?.setData('text/plain', row.uuid);
+    }}
+    ondragend={() => ((dragging = null), (over = null))}
+  >
+    <button class="open ghost" onclick={() => store.openDetail(row.uuid)}>
+      {descriptionAt >= 0 && cs[descriptionAt] ? cs[descriptionAt].text : row.description}
+    </button>
+    <dl>
+      {#each fieldsOf(cs) as f (f.col.spec)}
+        <div>
+          <dt>{f.col.label}</dt>
+          <dd><ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} /></dd>
+        </div>
+      {/each}
+    </dl>
+    {#if kanban && kanban.columns.some((c, i) => i !== from && c.move.trim())}
+      <select
+        class="moveto"
+        aria-label="Move {row.description} to"
+        value=""
+        onchange={(e) => {
+          const to = Number((e.currentTarget as HTMLSelectElement).value);
+          (e.currentTarget as HTMLSelectElement).value = '';
+          if (Number.isInteger(to)) void move(row.uuid, from, to);
+        }}
+      >
+        <option value="" disabled>Move to…</option>
+        {#each kanban.columns as c, i (i)}
+          {#if i !== from && c.move.trim()}<option value={i}>{c.name}</option>{/if}
+        {/each}
+      </select>
+    {/if}
+  </li>
+{/snippet}
+
+<div class="page">
+  {#if !store.kanbanSettings.enabled}
+    <h1>Kanban</h1>
+    <p class="dim">Kanban is off.</p>
+    <button class="btn" onclick={editKanbans}><Settings size={14} /> Set it up in Settings → Kanban</button>
+  {:else if !kanban}
+    <h1>Kanbans</h1>
+    {#if store.kanbans.length}
+      <ul class="list">
+        {#each store.kanbans as k (k.id)}
+          <li>
+            <a
+              href={toAddress(kanbanPath(k.id))}
+              onclick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+                e.preventDefault();
+                store.kanbanReport = null;
+                store.kanbanId = k.id;
+              }}><strong>{k.name}</strong></a
+            >
+            <span class="dim">on {k.report}, {k.columns.length} {k.columns.length === 1 ? 'column' : 'columns'}</span>
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="dim">No kanbans yet.</p>
+    {/if}
+    <button class="btn" onclick={editKanbans}><Settings size={14} /> New kanban or edit them in Settings</button>
+  {:else}
+    <header class="head">
+      <h1>{kanban.name}</h1>
+      <span class="grow"></span>
+      <button class="ghost btn" onclick={editKanbans} title="Edit this kanban in Settings → Kanban"
+        ><Settings size={14} /> Edit</button
+      >
+    </header>
+    <div class="controls">
+      <label class="report"
+        >Report
+        <select value={report} onchange={(e) => chooseReport((e.currentTarget as HTMLSelectElement).value)}>
+          {#if !store.offeredReports.some((r) => r.name === report)}<option value={report}>{report}</option>{/if}
+          {#each store.offeredReports as r (r.name)}<option value={r.name}
+              >{r.name}{r.name === kanban.report ? ' (default)' : ''}</option
+            >{/each}
+        </select>
+      </label>
+      <div class="filter">
+        <FilterInput id="kanban-filter" bind:value={filter} placeholder="Filter: project:Home +work  (Tab completes)" />
+      </div>
+      <label class="since"
+        >Completed since
+        <input
+          class="mono"
+          bind:value={since}
+          placeholder="today-14d"
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+        />
+      </label>
+    </div>
+
+    {#if error}<p class="err" role="alert">{error}</p>{/if}
+
+    {#if !kanban.columns.length}
+      <p class="dim">This kanban has no columns yet: add them under <strong>Edit</strong>.</p>
+    {:else if board}
+      <div class="columns" class:loading aria-busy={loading}>
+        {#each kanban.columns as col, i (i)}
+          {@const rows = board.columns[i] ?? []}
+          {@const cs = cells(rows)}
+          {@const takes = !!col.move.trim()}
+          <section
+            class="column"
+            class:over={over === i && takes && dragging?.from !== i}
+            aria-label={col.name}
+            ondragover={(e) => {
+              if (!takes || !dragging || dragging.from === i) return;
+              e.preventDefault();
+              over = i;
+            }}
+            ondragleave={() => (over = over === i ? null : over)}
+            ondrop={(e) => {
+              e.preventDefault();
+              const d = dragging;
+              dragging = null;
+              over = null;
+              if (d && takes) void move(d.uuid, d.from, i);
+            }}
+          >
+            <h2>{col.name} <span class="count dim">{rows.length}</span></h2>
+            {#if !takes}<p class="dim note">Takes no cards: it has no On move.</p>{/if}
+            <ul class="cards">
+              {#each rows as row, j (row.uuid)}{@render card(row, cs[j] ?? [], i)}{/each}
+            </ul>
+          </section>
+        {/each}
+        <section class="column other" aria-label="Other">
+          <h2>
+            <button class="ghost fold" aria-expanded={otherOpen} onclick={() => (otherOpen = !otherOpen)}>
+              {#if otherOpen}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if} Other
+            </button>
+            <span class="count dim">{board.other.length}</span>
+          </h2>
+          {#if otherOpen}
+            {@const cs = cells(board.other)}
+            <p class="dim note">What the report picks and no column does. Takes no cards.</p>
+            <ul class="cards">
+              {#each board.other as row, j (row.uuid)}{@render card(row, cs[j] ?? [], -1)}{/each}
+            </ul>
+          {/if}
+        </section>
+      </div>
+    {:else if loading}
+      <p class="dim">Loading…</p>
+    {/if}
+  {/if}
+</div>
+
+<style>
+  .page {
+    padding: 16px;
+    max-width: 100%;
+  }
+  h1 {
+    margin: 0 0 12px;
+    font-size: 20px;
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .grow {
+    flex: 1;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .list li {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .filter {
+    flex: 1;
+    min-width: 220px;
+  }
+  .since input {
+    width: 120px;
+  }
+  .columns {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  .columns.loading {
+    opacity: 0.7;
+  }
+  .column {
+    flex: 0 0 280px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 120px;
+  }
+  .column.over {
+    outline: 2px dashed var(--accent);
+  }
+  .column.other {
+    flex-basis: 220px;
+    min-height: 0;
+  }
+  .column h2 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .fold {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+  }
+  .note {
+    font-size: 12px;
+    margin: 0 0 8px;
+  }
+  .cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px;
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .open {
+    text-align: left;
+    font-weight: 600;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+  dl {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12.5px;
+  }
+  dl div {
+    display: flex;
+    gap: 6px;
+  }
+  dt {
+    color: var(--dim);
+    flex: 0 0 auto;
+  }
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .moveto {
+    font-size: 12px;
+    align-self: flex-start;
+  }
+  @media (max-width: 760px) {
+    .column {
+      flex-basis: 82vw;
+    }
+  }
+</style>

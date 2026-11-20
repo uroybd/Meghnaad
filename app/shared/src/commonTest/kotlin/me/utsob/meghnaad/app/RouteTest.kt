@@ -55,7 +55,11 @@ class RouteTest {
             AppPlace.Page(View.Console),
             AppPlace.Boards(),
             AppPlace.Boards("q4-review_2"),
+            AppPlace.Kanbans(),
+            AppPlace.Kanbans("work"),
+            AppPlace.Kanbans("work", "my report/2 é"),
             AppPlace.SettingsAt(),
+            AppPlace.SettingsAt(SettingsTab.Kanban),
             AppPlace.SettingsAt(SettingsTab.Hooks),
             AppPlace.SettingsAt(SettingsTab.Taskrc, "taskrc"),
             AppPlace.SettingsAt(SettingsTab.Taskrc, "holidays/en-US.rc"),
@@ -66,6 +70,8 @@ class RouteTest {
         assertEquals("meghnaad://report/next", placeLink(AppPlace.Report("next")))
         assertEquals("meghnaad://report/a%20b%2Fc", placeLink(AppPlace.Report("a b/c")))
         assertEquals("meghnaad://board/week", placeLink(AppPlace.Boards("week")))
+        assertEquals("meghnaad://kanbans", placeLink(AppPlace.Kanbans()))
+        assertEquals("meghnaad://kanban/work/list", placeLink(AppPlace.Kanbans("work", "list")))
         assertEquals("meghnaad://settings/urgency", placeLink(AppPlace.SettingsAt(SettingsTab.Urgency)))
         assertEquals("meghnaad://settings/taskrc/holidays/en-US.rc", placeLink(AppPlace.SettingsAt(SettingsTab.Taskrc, "holidays/en-US.rc")))
         assertEquals("meghnaad://settings/taskrc/my%20notes.rc", placeLink(AppPlace.SettingsAt(SettingsTab.Taskrc, "my notes.rc")))
@@ -77,6 +83,7 @@ class RouteTest {
         for (bad in listOf(
             "", "https://example.com", "meghnaad://", "meghnaad://nope", "meghnaad://report", "meghnaad://report/%E0%A4%A",
             "meghnaad://board/Weekly", "meghnaad://board/a b", "meghnaad://board/a/b", "meghnaad://boards/x", "meghnaad://settings/nope",
+            "meghnaad://kanban", "meghnaad://kanban/Work", "meghnaad://kanban/a/b/c", "meghnaad://kanbans/x", "meghnaad://kanban/a/%zz",
             "meghnaad://settings/taskrc/../x", "meghnaad://settings/taskrc/a//b", "meghnaad://settings/taskrc/a/./b", "meghnaad://settings/taskrc/%2E%2E/x",
             "meghnaad://settings/taskrc/%E0%A4%A", "meghnaad://settings/hooks/x",
             "meghnaad://projects/x", "meghnaad://task/zzzzzzzz", "meghnaad://task/1a2b3c",

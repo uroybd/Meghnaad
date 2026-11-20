@@ -1,0 +1,104 @@
+# Kanban
+
+A **kanban** shows your tasks as columns, left to right. Each column has a **filter** that picks its tasks and an **On
+move** command line, which runs on a task when you move its card into that column. Taskwarrior has no kanban of its
+own: this one is made of filters and command lines, so `task` decides which task goes in which column, and a move is a
+`modify` or a `done` like any other.
+
+A kanban is drawn from a **report**. It uses that report's filter, its order and its columns, and a card shows the
+report's columns: the description first, then the rest. It adds a **filter** of its own, and **Completed since** to
+leave out tasks finished long ago.
+
+## Setting it up
+
+Kanban is off until you set it up in **Settings → Kanban**. There are two ways:
+
+- **Automatic** defines a string UDA (`progressState` unless you name another) with the values `inprogress` and
+  `review`, using the same `config` lines the tasksh tab uses. It shows the lines first and writes nothing else to your
+  taskrc. It also sets Kanban's report to `all`, its filter to `( +PENDING or +COMPLETED )` (this leaves out deleted
+  and waiting tasks and recurring templates, which `all` shows), Completed since to `today-14d`, and these columns:
+
+  | Column | Filter | On move |
+  | --- | --- | --- |
+  | To do | `status:pending progressState:` | `modify status:pending progressState:` |
+  | In progress | `status:pending progressState:inprogress` | `modify status:pending progressState:inprogress` |
+  | Review | `status:pending progressState:review` | `modify status:pending progressState:review` |
+  | Done | `status:completed` | `done` |
+
+  It then makes a first kanban, called Kanban, with nothing of its own. A completed task is in Done whatever its
+  `progressState` is. Moving a card out of Done reopens the task, because each move sets `status:pending`. No column
+  starts a task: started is for time tracking, not a stage. If tasksh's review is set up (the `reviewed` UDA is
+  defined), moving a card to Review also clears `reviewed`, which puts the task back in the review queue.
+- **Manual** changes nothing in your taskrc. You write the columns yourself, using tags (`+next`), a UDA of your own,
+  `+ACTIVE`, or anything else a filter can say.
+
+## Kanban's settings, and a kanban's own
+
+The **UDA**, the **report**, the **filter**, **Completed since** and the **columns** belong to Kanban as a whole, and
+every kanban uses them. A kanban has a **name** and an **address**. It can also have its own report, filter,
+Completed since or columns in place of Kanban's: tick **Its own …** (on the phone too), or, in the terminal app, press
+Enter on that row. Take it away again and the kanban goes back to Kanban's. The UDA is Kanban's alone.
+
+A column's **On move** is any command line you could type after a filter. A chain works (`modify +doing ; annotate
+started`), and so does one of your [task commands](settings.md#commands). It runs on the moved task only, with the
+task's uuid in front of each part. A column with an empty On move takes no cards. The columns' filters and moves name
+the UDA themselves, so if you rename the UDA, change them to match.
+
+Everything is kept in the app's own `settings.json`, under `kanban`:
+
+```json
+"kanban": {
+  "enabled": true, "setup": "automatic", "uda": "progressState",
+  "report": "all", "filter": "( +PENDING or +COMPLETED )", "completedSince": "today-14d",
+  "columns": [ { "name": "To do", "filter": "status:pending progressState:",
+                 "move": "modify status:pending progressState:" } ],
+  "kanbans": [ { "id": "kanban", "name": "Kanban" },
+               { "id": "work", "name": "Work", "filter": "project:Work" } ]
+}
+```
+
+**Turn Kanban off** hides the page. The kanbans stay in `settings.json`, and the UDA stays in your taskrc.
+
+## The page
+
+**Kanban** lists your kanbans, and opens one at `/kanban/<address>`. Each column is the report run over the kanban's
+filter, Completed since and the column's filter:
+
+```text
+( <filter> ) ( -COMPLETED or end.after:<completed since> ) ( <column's filter> ) <report>
+```
+
+Each part is in brackets, so an `or` in one stays in it. A task goes in the **first** column whose filter matches it,
+in the report's order. **Other** is last: the tasks the report and the kanban's filter pick that no column has. It is
+folded until you open it, and takes no cards.
+
+Above the columns, the **report**, the **filter** and **Completed since** start as the kanban's, and you can change
+them on the page. The kanban stays as saved. A report you pick is part of the address (`/kanban/work/list`).
+
+Move a card by dragging it to another column, or with its **Move to…** menu. On the phone, use **Move to…**. In the
+terminal app, `H` and `L` move the card to the column on either side, and `m` picks a column. After a move the columns
+are read again. If the task didn't land in the column you moved it to (the On move doesn't make it match that column's
+filter, or `task` refused it), you are told where it is.
+
+## In the terminal app
+
+Kanban is a page in the top bar after Boards while it is on. It has no number: `gk` opens it, and `gt` and `gT` go
+through it. `:kanban` opens it too.
+
+| Key | What it does |
+| --- | --- |
+| Enter, `l` | open the kanban (in the list) |
+| `b`, Backspace | back to the list |
+| `h` `l` | the column before, the column after |
+| `j` `k` | the card below, the card above |
+| `H` `L` | move the card to the column before or after (`:move left`, `:move right`) |
+| `m` | move the card to a column chosen from a list (`:move`) |
+| Enter | the card's task info |
+| `f` `r` `s` | change the filter, the report or Completed since here, without saving them |
+| `o` | show or hide Other |
+
+**Settings → Kanban** shows Kanban's settings and each kanban's, one row each. While Kanban is off, its rows are the
+UDA and the two ways to set it up: Enter on **Set up automatically** shows the lines it will write, and Enter again
+writes them. Once it is on, `e` or Enter changes the row under the cursor, `a` adds a column, `D` deletes a column or a
+kanban (or, on a kanban's own setting, goes back to Kanban's), `K` and `J` move a column, `n` adds a kanban, `o` opens
+one, `w` writes the UDA if your taskrc doesn't have it as needed, and `x` turns Kanban off.

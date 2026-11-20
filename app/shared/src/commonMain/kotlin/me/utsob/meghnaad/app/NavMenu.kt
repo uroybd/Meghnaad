@@ -38,6 +38,7 @@ private val VIEWS = listOf(
     MenuItem(View.Calendar, "Calendar", "calendar-days"),
     MenuItem(View.Burndown, "Burndown", "trending-down"),
     MenuItem(View.Boards, "Boards", "layout-dashboard"),
+    MenuItem(View.Kanban, "Kanban", "square-kanban"),
     MenuItem(View.Console, "Console", "terminal"),
 )
 
@@ -116,7 +117,7 @@ fun NavMenu(store: Store, onNavigate: () -> Unit, pages: Boolean = true) {
             }
         }
         if (pages) {
-            for (v in VIEWS) {
+            for (v in VIEWS.filter { it.view != View.Kanban || store.kanbanSettings.enabled }) {
                 Item(v.icon, v.label, store.view == v.view) {
                     store.view = v.view
                     onNavigate()

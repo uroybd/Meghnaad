@@ -9,6 +9,7 @@
   - [The console](./using/console.md)
   - [Tasks](./using/tasks.md)
   - [Boards](./using/boards.md)
+  - [Kanban](./using/kanban.md)
   - [Settings](./using/settings.md)
   - [Recurring tasks](./using/recurring.md)
   - [Hooks](./using/hooks.md)

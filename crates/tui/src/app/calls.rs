@@ -35,15 +35,17 @@ impl App {
                 None => self.status = format!("No page ‘{words}’: :tabn takes 1 to 9 or a page's name."),
             },
             "page.next" | "page.prev" | "page.first" | "page.last" => {
-                let at = Page::ALL.iter().position(|p| *p == self.page).unwrap_or(0);
-                let n = Page::ALL.len();
+                // Kanban, while it is on, is gone through too.
+                let pages = self.pages();
+                let at = pages.iter().position(|p| *p == self.page).unwrap_or(0);
+                let n = pages.len();
                 let to = match call.action.as_str() {
                     "page.next" => (at + 1) % n,
                     "page.prev" => (at + n - 1) % n,
                     "page.first" => 0,
                     _ => n - 1,
                 };
-                self.open(Page::ALL[to]);
+                self.open(pages[to]);
             }
             "tasks.filter" if !words.is_empty() => {
                 self.filter = words;

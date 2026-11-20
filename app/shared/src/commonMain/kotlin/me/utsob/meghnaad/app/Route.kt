@@ -6,6 +6,7 @@ package me.utsob.meghnaad.app
 //   meghnaad://report/<name>        Tasks, as that report (a report is its own slug)
 //   meghnaad://projects  tags  summary  calendar  burndown  console
 //   meghnaad://boards               the list of boards;  meghnaad://board/<slug>  one of them
+//   meghnaad://kanbans              the list of kanbans; meghnaad://kanban/<slug>  one, on its report; …/kanban/<slug>/<report> on another
 //   meghnaad://settings             Settings;  meghnaad://settings/<tab>  one of its tabs;  meghnaad://settings/taskrc/<path>  one file
 //                                   of the taskrc folder
 //   meghnaad://task/<8 characters>  a task's detail (the first 8 characters of its uuid; the numbers `task 3` uses differ from one
@@ -36,6 +37,9 @@ sealed interface AppPlace {
 
     /** The list of boards, or one of them by its slug. */
     data class Boards(val slug: String? = null) : AppPlace
+
+    /** The list of kanbans, or one of them by its slug, on [report] when it is not its own. */
+    data class Kanbans(val slug: String? = null, val report: String? = null) : AppPlace
 
     /** Settings, on a tab; on the taskrc tab, [file] is the file of the folder it shows (null: the main taskrc). */
     data class SettingsAt(val tab: SettingsTab? = null, val file: String? = null) : AppPlace
@@ -93,6 +97,10 @@ fun parseLink(link: String): AppPlace? {
         head == "report" && rest.size == 1 -> percentDecode(rest[0])?.takeIf { it.isNotEmpty() }?.let { AppPlace.Report(it) }
         head == "boards" && rest.isEmpty() -> AppPlace.Boards()
         head == "board" && rest.size == 1 -> rest[0].takeIf { BOARD_SLUG.matches(it) }?.let { AppPlace.Boards(it) }
+        head == "kanbans" && rest.isEmpty() -> AppPlace.Kanbans()
+        head == "kanban" && rest.size == 1 -> rest[0].takeIf { BOARD_SLUG.matches(it) }?.let { AppPlace.Kanbans(it) }
+        head == "kanban" && rest.size == 2 && BOARD_SLUG.matches(rest[0]) ->
+            percentDecode(rest[1])?.takeIf { it.isNotEmpty() }?.let { AppPlace.Kanbans(rest[0], it) }
         head == "settings" && rest.isEmpty() -> AppPlace.SettingsAt()
         head == "settings" && rest.size == 1 -> SettingsTab.entries.firstOrNull { it.name.lowercase() == rest[0] }?.let { AppPlace.SettingsAt(it) }
         head == "settings" && rest.size > 1 && rest[0] == "taskrc" -> rcFileFromLink(rest.drop(1))?.let { AppPlace.SettingsAt(SettingsTab.Taskrc, it) }
@@ -106,6 +114,11 @@ fun placeLink(place: AppPlace): String = LINK_SCHEME + when (place) {
     is AppPlace.Report -> "report/${percentEncode(place.name)}"
     is AppPlace.Page -> PLAIN_PAGES.entries.first { it.value == place.view }.key
     is AppPlace.Boards -> if (place.slug == null) "boards" else "board/${place.slug}"
+    is AppPlace.Kanbans -> when {
+        place.slug == null -> "kanbans"
+        place.report == null -> "kanban/${place.slug}"
+        else -> "kanban/${place.slug}/${percentEncode(place.report)}"
+    }
     is AppPlace.SettingsAt -> when {
         place.tab == null -> "settings"
         place.tab == SettingsTab.Taskrc && place.file != null -> "settings/taskrc/" + place.file.split('/').joinToString("/") { percentEncode(it) }

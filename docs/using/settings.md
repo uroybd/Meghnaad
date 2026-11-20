@@ -1,6 +1,6 @@
 # Settings
 
-**Settings** in the header has a tab each for **General**, **Appearance**, the **taskrc**, **tasksh**, **Commands**,
+**Settings** in the header has a tab each for **General**, **Appearance**, the **taskrc**, **tasksh**, **Kanban**, **Commands**,
 **Hooks** and **Urgency**. Every tab has its own **Apply** (**Save**, on Hooks), and applying one doesn't touch the others. A tab with
 unapplied edits has a dot, and the edits stay while you look at another tab or page. If the saved settings change
 elsewhere (the Console's `config`, another tab), a tab with no edits of its own follows them.
@@ -19,8 +19,8 @@ saves it as written. The phone has the same box under General.
 The file is linted as you type, and each problem is listed with where it is:
 
 - An **error** stops **Apply**: text that is not JSON or not an object, a file over 64 KB, or a known key in the wrong
-  shape (`homepage`, `appearance`, `keys`, `web`, `mobile` or `tui` that is not an object, `taskCommands` or `boards`
-  that is not a list, `appearance.progress` that is not an object, `appearance.transformations` that is not a list, a
+  shape (`homepage`, `appearance`, `keys`, `web`, `mobile`, `tui` or `kanban` that is not an object, `taskCommands`,
+  `boards`, `kanban.kanbans` or `kanban.columns` that is not a list, `appearance.progress` that is not an object, `appearance.transformations` that is not a list, a
   board that is not an object or has no `sections` list).
 - A **warning** is something this app can't use, such as a task command with a bad name, a board with a bad id or a
   progress bar with no range. It is saved with the rest and kept in the file until you take it out.
@@ -64,9 +64,9 @@ last. A key adds to the action's default keys; to move an action to another key,
 group's keys act where the group does: `tasks` on the Tasks page, `page` and `app` everywhere, and a page's keys come
 before the keys of every group around it, on that page only (a `tasks` key before an `app` key), so the same key can
 mean something on one page and something else elsewhere. The groups are `app`, `page`, `move`, `tasks`, `sort`,
-`sidebar`, `lists`, `info`, `calendar`, `burndown`, `boards`, `boards.list`, `console` and the Settings tabs'
-(`settings`, `settings.general`, `settings.commands`, `settings.boards`, `settings.keys`, `settings.sync`,
-`settings.theme`). A key whose command is malformed (no such command or action, not enough of a name to say which,
+`sidebar`, `lists`, `info`, `calendar`, `burndown`, `boards`, `boards.list`, `kanban`, `kanban.list`, `console` and the
+Settings tabs' (`settings`, `settings.general`, `settings.commands`, `settings.boards`, `settings.kanban`,
+`settings.keys`, `settings.sync`, `settings.theme`). A key whose command is malformed (no such command or action, not enough of a name to say which,
 words it does not take, or none where it needs one: `done 3`, `burndown`, `lock now`) is skipped, so it does nothing,
 and **Keybindings** warns of it at the top, with **Take out**. A group that is none, a key that can't be read, a key
 that starts a longer one (`g` beside `gg`, which could then never be pressed) and two of your keys for one key where both
@@ -473,6 +473,12 @@ this one. (`rc.confirmation:no` doesn't silence it, since `recurrence.confirmati
 
 Every step is an ordinary command (`task <uuid> modify reviewed:now`, `done`, `delete`) sent with `rc.confirmation:no`, so
 hooks run, `undo` works and the Tasks table follows. Review steps aren't added to the command history.
+
+## Kanban
+
+The **Kanban** tab sets up [Kanban](kanban.md#setting-it-up), Automatic or Manual, and then holds its settings: the UDA,
+the report, filter, Completed since and columns every kanban is drawn with, and each kanban's name, address and what it
+has of its own. **Apply** saves them all; **Turn Kanban off** hides the page and keeps them.
 
 ## Urgency
 

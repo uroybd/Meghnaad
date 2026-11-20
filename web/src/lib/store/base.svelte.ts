@@ -36,7 +36,7 @@ export interface Toast {
 }
 
 export type View =
-  'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'boards' | 'console' | 'settings';
+  'tasks' | 'projects' | 'tags' | 'summary' | 'calendar' | 'burndown' | 'boards' | 'kanban' | 'console' | 'settings';
 
 let lastId = 0;
 
@@ -74,6 +74,10 @@ export abstract class StoreBase {
   view = $state<View>('tasks');
   /** The board the Boards page shows (null: the list of boards). */
   boardId = $state<string | null>(null);
+  /** The kanban the Kanban page shows (null: the list of kanbans). */
+  kanbanId = $state<string | null>(null);
+  /** The report it is shown on in place of its own, for this visit (null: its own). */
+  kanbanReport = $state<string | null>(null);
   /** The tab the Settings page shows. */
   settingsTab = $state<SettingsTab>('taskrc');
   /** The file of the taskrc folder the taskrc tab shows (`null`: the main taskrc). */

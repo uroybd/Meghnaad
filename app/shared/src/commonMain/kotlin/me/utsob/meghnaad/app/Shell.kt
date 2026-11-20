@@ -127,6 +127,7 @@ private val TABS = listOf(
     Tab(View.Calendar, "Calendar", "calendar-days"),
     Tab(View.Burndown, "Burndown", "trending-down"),
     Tab(View.Boards, "Boards", "layout-dashboard"),
+    Tab(View.Kanban, "Kanban", "square-kanban"),
     Tab(View.Console, "Console", "terminal"),
 )
 
@@ -184,7 +185,7 @@ private fun WideTopBar(store: Store, labels: Boolean, buttonLabels: Boolean) {
                 Logo(28.dp)
                 Text("Meghnaad", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
-            for (t in TABS) Button(t.icon, t.label, store.view == t.view, labels) { store.view = t.view }
+            for (t in TABS.filter { it.view != View.Kanban || store.kanbanSettings.enabled }) Button(t.icon, t.label, store.view == t.view, labels) { store.view = t.view }
             Box(Modifier.weight(1f))
             TimerChip(store, Modifier)
             store.config?.config?.activeContext?.let { Pill("context: $it", Modifier.padding(horizontal = 8.dp), background = extras.warn, color = contextText(), bold = true) }
@@ -328,6 +329,7 @@ private fun MainView(store: Store) {
             View.Calendar -> CalendarPage(store)
             View.Burndown -> BurndownPage(store)
             View.Boards -> BoardsPage(store)
+            View.Kanban -> KanbanPage(store)
             else -> ComingSoon(store.view.name)
         }
     }

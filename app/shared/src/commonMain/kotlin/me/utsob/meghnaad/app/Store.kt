@@ -37,9 +37,9 @@ enum class Setup {
     Failed,
 }
 
-enum class View { Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings }
+enum class View { Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Kanban, Console, Settings }
 
-enum class SettingsTab { General, Appearance, Keys, Taskrc, Tasksh, Commands, Hooks, Urgency, Sync }
+enum class SettingsTab { General, Appearance, Keys, Taskrc, Tasksh, Kanban, Commands, Hooks, Urgency, Sync }
 
 /** The pages that show one command's answer with the same component the console uses. */
 enum class Panel { Summary, Calendar, Burndown }
@@ -181,6 +181,11 @@ class Store(
     /** The boards in `settings.json`: pages of numbers, tables and charts. */
     val boards: List<Board> get() = appSettings?.boards ?: emptyList()
 
+    /** The kanbans in `settings.json` (spec 0026), and whether they are on. */
+    val kanbanSettings: KanbanSettings get() = appSettings?.kanban ?: KanbanSettings()
+    /** Each kanban as it is drawn: its own settings, else Kanban's. */
+    val kanbans: List<Kanban> get() = kanbanSettings.let { s -> s.kanbans.map { resolveKanban(s, it) } }
+
     /** Where the app opens: a report or a board of `settings.json`, or `next` when it says nothing. */
     val homepage: Homepage? get() = appSettings?.homepage
 
@@ -213,6 +218,18 @@ class Store(
 
     /** The board the Boards page shows (null: the list of boards). */
     var boardId by mutableStateOf<String?>(null)
+
+    /** The kanban the Kanban page shows (null: the list of kanbans). */
+    var kanbanId by mutableStateOf<String?>(null)
+
+    /** The report it is shown on in place of its own, for this visit (null: its own). */
+    var kanbanReport by mutableStateOf<String?>(null)
+
+    /** The filter typed above a kanban, by its id, in place of its own while the page is open (nothing saved). */
+    val kanbanFilters = mutableStateMapOf<String, String>()
+
+    /** The same for its Completed since. */
+    val kanbanSince = mutableStateMapOf<String, String>()
 
     /** The board being changed, if one is (a draft: nothing is kept until it is saved). */
     var boardEditor by mutableStateOf<BoardEditor?>(null)
@@ -593,6 +610,29 @@ class Store(
         loadAppSettings()
     }
 
+    /** Save the kanbans (the rest of `settings.json` as it was) and read them back. Throws what the engine refused. */
+    suspend fun saveKanban(next: KanbanSettings) {
+        val text = serializeKanban(appSettings?.raw ?: JsonObject(emptyMap()), next)
+        if (text.encodeToByteArray().size > MAX_SETTINGS_BYTES) error("The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.")
+        request("PUT", "/api/settings", text)
+        loadAppSettings()
+    }
+
+    /**
+     * What a kanban shows (spec 0026): its report run once per column over the kanban's filters ([columnArgs]), each task in
+     * the first column that has it, and once more for Other. Throws what the engine refused.
+     */
+    suspend fun loadKanban(k: Kanban, v: KanbanView): Pair<Placed, List<Column>> {
+        suspend fun ask(args: List<String>): ReportResult = when (val r = tw.run(args = args).result) {
+            is CliResult.Report -> r.value
+            is CliResult.Error -> throw EngineError(r.value.message)
+            else -> throw EngineError("${v.report} is not a report.")
+        }
+        val results = k.columns.map { ask(columnArgs(v, it)) }
+        val all = ask(columnArgs(v, null))
+        return placeTasks(results.map { it.rows }, all.rows) to all.columns
+    }
+
     /** Save how the app draws things, the rest of `settings.json` as it was. Throws what the engine refused. */
     suspend fun saveAppearance(appearance: Appearance) {
         request("PUT", "/api/settings", serializeAppearance(appSettings?.raw ?: JsonObject(emptyMap()), appearance))
@@ -903,6 +943,7 @@ class Store(
         get() = detail?.let { AppPlace.TaskAt(it.uuid.take(8)) } ?: when (view) {
             View.Tasks -> AppPlace.Report(report)
             View.Boards -> AppPlace.Boards(boardId)
+            View.Kanban -> AppPlace.Kanbans(kanbanId, kanbanReport.takeIf { kanbanId != null })
             View.Settings -> AppPlace.SettingsAt(settingsTab, settingsFile.takeIf { settingsTab == SettingsTab.Taskrc })
             else -> AppPlace.Page(view)
         }
@@ -926,6 +967,21 @@ class Store(
             } else {
                 notify("There is no board called ${place.slug}.", bad = true)
                 goHome(force = true)
+            }
+            is AppPlace.Kanbans -> when {
+                !kanbanSettings.enabled -> {
+                    notify("Kanban is off. Set it up in Settings → Kanban.", bad = true)
+                    openSettings(SettingsTab.Kanban)
+                }
+                place.slug != null && kanbans.none { it.id == place.slug } -> {
+                    notify("There is no kanban called ${place.slug}.", bad = true)
+                    goHome(force = true)
+                }
+                else -> {
+                    kanbanId = place.slug
+                    kanbanReport = place.report
+                    view = View.Kanban
+                }
             }
             is AppPlace.SettingsAt -> {
                 if (place.tab != null) settingsFile = place.file
@@ -972,6 +1028,7 @@ class Store(
             selection.count > 0 -> selection.clear()
             boardEditor != null -> boardEditor = null
             view == View.Boards && boardId != null -> boardId = null
+            view == View.Kanban && kanbanId != null -> kanbanId = null
             view != View.Tasks -> view = View.Tasks
             else -> return false
         }

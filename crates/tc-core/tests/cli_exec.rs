@@ -6695,3 +6695,69 @@ mod priority_values {
         assert!(wrote);
     }
 }
+
+/// The kanban's automatic setup (spec 0026) leans on these, each checked against `task` 3.5.0: a camelCase UDA name,
+/// an empty value matched by `name:`, `status:pending` reopening a completed task (and clearing `end`), and the filters
+/// the kanban adds to `all`.
+#[tokio::test]
+async fn kanban_progress_state_behaves_as_task_does() {
+    let cfg = parse(
+        "uda.progressState.type=string\nuda.progressState.label=Progress\nuda.progressState.values=inprogress,review\n",
+    )
+    .config;
+    let mut r = replica();
+    run(&mut r, &cfg, "add one").await;
+    run(&mut r, &cfg, "add two progressState:review").await;
+    run(&mut r, &cfg, "add three").await;
+    run(&mut r, &cfg, "add gone").await;
+    run_yes(&mut r, &cfg, "4 delete").await;
+    run(&mut r, &cfg, "3 modify progressState:inprogress").await;
+    run(&mut r, &cfg, "3 done").await;
+    let (res, _) = run(&mut r, &cfg, "add bad progressState:foo").await;
+    assert!(message(&res).starts_with("ERROR"), "{}", message(&res));
+
+    let names = |res: &CliResult| -> Vec<String> {
+        let CliResult::Report(o) = res else { panic!("{res:?}") };
+        let mut v: Vec<String> = o.rows.iter().map(|r| r.facts.description.clone()).collect();
+        v.sort();
+        v
+    };
+    let (res, _) = run(&mut r, &cfg, "status:pending progressState: all").await;
+    assert_eq!(names(&res), ["one"]);
+    let (res, _) = run(&mut r, &cfg, "status:pending progressState:review all").await;
+    assert_eq!(names(&res), ["two"]);
+    // Done keeps its progressState, as `task` does: the Done column picks it by status alone.
+    let (res, _) = run(&mut r, &cfg, "status:completed progressState:inprogress all").await;
+    assert_eq!(names(&res), ["three"]);
+    // The automatic kanban's filter on `all`: no deleted task; and Completed since.
+    let (res, _) = run(&mut r, &cfg, "( +PENDING or +COMPLETED ) all").await;
+    assert_eq!(names(&res), ["one", "three", "two"]);
+    let (res, _) = run(
+        &mut r,
+        &cfg,
+        "( +PENDING or +COMPLETED ) ( -COMPLETED or end.after:today-14d ) all",
+    )
+    .await;
+    assert_eq!(names(&res), ["one", "three", "two"]);
+    let (res, _) = run(
+        &mut r,
+        &cfg,
+        "( +PENDING or +COMPLETED ) ( -COMPLETED or end.after:tomorrow ) all",
+    )
+    .await;
+    assert_eq!(names(&res), ["one", "two"]);
+
+    // Moving a done task back reopens it and clears `end`.
+    let (res, _) = run(
+        &mut r,
+        &cfg,
+        "status:completed modify status:pending progressState:review",
+    )
+    .await;
+    assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
+    let (res, _) = run(&mut r, &cfg, "status:pending progressState:review all").await;
+    assert_eq!(names(&res), ["three", "two"]);
+    let facts = load_facts(&mut r).await.unwrap();
+    let three = facts.iter().find(|f| f.description == "three").unwrap();
+    assert!(three.end.is_none(), "end cleared on reopening");
+}

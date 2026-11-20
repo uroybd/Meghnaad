@@ -10,6 +10,7 @@
     EyeOff,
     Folder,
     LayoutDashboard,
+    SquareKanban,
     ListChecks,
     Settings,
     Tag,
@@ -35,6 +36,7 @@
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'burndown', label: 'Burndown', icon: TrendingDown },
     { id: 'boards', label: 'Boards', icon: LayoutDashboard },
+    { id: 'kanban', label: 'Kanban', icon: SquareKanban },
     { id: 'console', label: 'Console', icon: Terminal },
   ] as const;
 
@@ -97,7 +99,7 @@
   </div>
 
   <div class="views">
-    {#each VIEWS as v (v.id)}
+    {#each VIEWS.filter((v) => v.id !== 'kanban' || store.kanbanSettings.enabled) as v (v.id)}
       {@const Icon = v.icon}
       <button
         class="ghost item"

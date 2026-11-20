@@ -763,7 +763,7 @@ pub const PAGES: [&str; 9] = [
 
 /// Every command, vim's first (with vim's shortest forms), then the ones vim has none of. A row number (`:5`), `:$`,
 /// `:+3` and `:-3` move as in vim and are not in the table.
-pub const COMMANDS: [Command; 54] = [
+pub const COMMANDS: [Command; 56] = [
     with("tabnext", 4, &["page.next"], &[], Words::Page),
     cmd("tabprevious", 4, &["page.prev"]),
     cmd("tabNext", 4, &["page.prev"]),
@@ -784,7 +784,7 @@ pub const COMMANDS: [Command; 54] = [
     with(
         "filter",
         4,
-        &["tasks.filter", "app.filter"],
+        &["tasks.filter", "app.filter", "kanban.filter"],
         &[],
         Words::Any("tasks.filter"),
     ),
@@ -822,7 +822,14 @@ pub const COMMANDS: [Command; 54] = [
     cmd(
         "open",
         1,
-        &["tasks.open", "lists.open", "boards.list.open", "settings.boards.open"],
+        &[
+            "tasks.open",
+            "lists.open",
+            "boards.list.open",
+            "settings.boards.open",
+            "kanban.list.open",
+            "settings.kanban.open",
+        ],
     ),
     cmd("done", 2, &["tasks.done"]),
     cmd("start", 3, &["tasks.start"]),
@@ -835,7 +842,7 @@ pub const COMMANDS: [Command; 54] = [
     with(
         "info",
         2,
-        &["tasks.info"],
+        &["tasks.info", "kanban.info"],
         &[
             ("details", "info.details"),
             ("recurrence", "info.recurrence"),
@@ -850,7 +857,7 @@ pub const COMMANDS: [Command; 54] = [
     with(
         "report",
         3,
-        &["tasks.report", "sidebar.open"],
+        &["tasks.report", "sidebar.open", "kanban.report"],
         &[],
         Words::Any("tasks.report"),
     ),
@@ -858,8 +865,8 @@ pub const COMMANDS: [Command; 54] = [
     cmd("sync", 2, &["app.sync"]),
     cmd("review", 3, &["app.review"]),
     with("lock", 4, &["app.lock"], &[], Words::OneOf("app.lock", &["pin", "key"])),
-    cmd("next", 1, &["calendar.next", "boards.next"]),
-    cmd("previous", 4, &["calendar.prev", "boards.prev"]),
+    cmd("next", 1, &["calendar.next", "boards.next", "kanban.next"]),
+    cmd("previous", 4, &["calendar.prev", "boards.prev", "kanban.prev"]),
     cmd("snext", 2, &["move.sectionNext"]),
     cmd("sprevious", 3, &["move.sectionPrev"]),
     cmd("pagedown", 5, &["move.pageDown"]),
@@ -869,7 +876,7 @@ pub const COMMANDS: [Command; 54] = [
     cmd("prompt", 3, &["app.prompt"]),
     cmd("sidebar", 2, &["app.sidebar"]),
     cmd("hidden", 3, &["sidebar.hidden"]),
-    cmd("back", 2, &["app.back", "boards.close"]),
+    cmd("back", 2, &["app.back", "boards.close", "kanban.close"]),
     cmd("stopall", 5, &["app.stopTimer"]),
     cmd("reminders", 3, &["app.reminders"]),
     cmd("export", 2, &["tasks.export", "boards.export"]),
@@ -913,6 +920,31 @@ pub const COMMANDS: [Command; 54] = [
     cmd("syncwhen", 5, &["settings.sync.change"]),
     cmd("theme", 2, &["settings.theme.preset"]),
     cmd("shading", 2, &["settings.theme.shading"]),
+    with(
+        "kanban",
+        2,
+        &["page.kanban"],
+        &[
+            ("since", "kanban.since"),
+            ("other", "kanban.other"),
+            ("new", "settings.kanban.new"),
+            ("column", "settings.kanban.add"),
+            ("edit", "settings.kanban.edit"),
+            ("delete", "settings.kanban.delete"),
+            ("raise", "settings.kanban.raise"),
+            ("lower", "settings.kanban.lower"),
+            ("write", "settings.kanban.write"),
+            ("off", "settings.kanban.off"),
+        ],
+        Words::None,
+    ),
+    with(
+        "move",
+        3,
+        &["kanban.move"],
+        &[("left", "kanban.moveLeft"), ("right", "kanban.moveRight")],
+        Words::None,
+    ),
 ];
 
 /// What a key or a command line asks for: an action, with the words after it and a count (`5j`).
@@ -2283,7 +2315,11 @@ mod tests {
         let next = serde_json::to_value(check_command(&d, "next")).unwrap();
         assert_eq!(
             next["places"],
-            json!([{ "group": "calendar", "action": "calendar.next" }, { "group": "boards", "action": "boards.next" }]),
+            json!([
+                { "group": "calendar", "action": "calendar.next" },
+                { "group": "boards", "action": "boards.next" },
+                { "group": "kanban", "action": "kanban.next" }
+            ]),
             "where it can be bound"
         );
         let bad = serde_json::to_value(check_command(&d, "done 3")).unwrap();

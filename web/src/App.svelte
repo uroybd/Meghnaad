@@ -14,6 +14,7 @@
     ChartColumn,
     Folder,
     LayoutDashboard,
+    SquareKanban,
     Lock,
     Tag,
     ListChecks,
@@ -291,6 +292,11 @@
         <button class:on={store.view === 'boards'} aria-label="Boards" onclick={() => (store.view = 'boards')}
           ><LayoutDashboard size={15} /> <span class="lbl">Boards</span></button
         >
+        {#if store.kanbanSettings.enabled}<button
+            class:on={store.view === 'kanban'}
+            aria-label="Kanban"
+            onclick={() => (store.view = 'kanban')}><SquareKanban size={15} /> <span class="lbl">Kanban</span></button
+          >{/if}
         <button class:on={store.view === 'console'} aria-label="Console" onclick={() => (store.view = 'console')}
           ><Terminal size={15} /> <span class="lbl">Console</span></button
         >

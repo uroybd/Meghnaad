@@ -9,6 +9,7 @@
 | **Calendar** | Months, with what is due or scheduled on each day |
 | **Burndown** | Pending, started and done over time |
 | **Boards** | Pages of your own: numbers, tables and charts, each with its own filter |
+| **Kanban** | Your tasks as columns of cards, moved from one to another; there once it is set up ([Kanban](kanban.md)) |
 | **Console** | Type commands; reports and answers print here |
 
 ## Addresses
@@ -22,11 +23,13 @@ tab, and the browser's back button goes where you were.
 | `/report/<name>` | Tasks, as that report: `/report/next`, `/report/list`, and any report of your own by name |
 | `/projects` `/tags` `/summary` `/calendar` `/burndown` `/console` | those pages |
 | `/boards`, `/board/<slug>` | the list of boards, and one board (see [Boards](boards.md#boards)) |
-| `/settings`, `/settings/<tab>` | Settings, and one tab: `general` `appearance` `keys` `taskrc` `tasksh` `commands` `hooks` `urgency` |
+| `/kanbans`, `/kanban/<slug>`, `/kanban/<slug>/<report>` | the list of kanbans, one kanban, and one shown with another report (see [Kanban](kanban.md#the-page)) |
+| `/settings`, `/settings/<tab>` | Settings, and one tab: `general` `appearance` `keys` `taskrc` `tasksh` `kanban` `commands` `hooks` `urgency` |
 | `/settings/taskrc/<path>` | one file of the taskrc folder (`/settings/taskrc/holidays/en-US.rc`) |
 | `/task/<8 characters>` | a task's detail over the page behind it (the first 8 characters of its uuid) |
 
-An address for a report or board that doesn't exist says so and opens your home page. A filter you typed isn't part of
+An address for a report, board or kanban that doesn't exist says so and opens your home page; a kanban's address while
+Kanban is off opens Settings → Kanban. A filter you typed isn't part of
 the address.
 
 ## Filters and the prompt

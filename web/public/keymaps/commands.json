@@ -127,7 +127,7 @@
       "shortest": 1,
       "summary": "open the task's link, or what is under the cursor",
       "takes": "",
-      "doc": "Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). On a list of projects or tags, of boards, or of the boards in Settings, it opens the one under the cursor.",
+      "doc": "Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). On a list of projects or tags, of boards or kanbans, or of the boards or kanbans in Settings, it opens the one under the cursor.",
       "since": "0.8.11"
     },
     {
@@ -199,7 +199,7 @@
       "shortest": 2,
       "summary": "the task's info",
       "takes": "a tab: details, recurrence, timelog, annotations, unknown or raw",
-      "doc": "The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it.",
+      "doc": "The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it. On a kanban in the terminal, the info of the card under the cursor.",
       "since": "0.8.11"
     },
     {
@@ -215,7 +215,7 @@
       "shortest": 3,
       "summary": "show a report",
       "takes": "a report's name",
-      "doc": "With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from. In the terminal's list of reports down the side, the report under the cursor.",
+      "doc": "With a name, the Tasks page with that report: `:report list`. With none, the list of reports to choose from. In the terminal's list of reports down the side, the report under the cursor. On a kanban, the report it is shown with here, without changing the saved kanban.",
       "since": "0.8.11"
     },
     {
@@ -253,17 +253,17 @@
     {
       "name": "next",
       "shortest": 1,
-      "summary": "the next month, the next board",
+      "summary": "the next month, the next board, the next column",
       "takes": "",
-      "doc": "On the calendar, the month after; on a board, the board after. Like the other commands that act in several places, it does what it means on the page it is used on.",
+      "doc": "On the calendar, the month after; on a board, the board after; on a kanban in the terminal, the column after. Like the other commands that act in several places, it does what it means on the page it is used on.",
       "since": "0.8.22"
     },
     {
       "name": "previous",
       "shortest": 4,
-      "summary": "the month before, the board before",
+      "summary": "the month before, the board before, the column before",
       "takes": "",
-      "doc": "On the calendar, the month before; on a board, the board before.",
+      "doc": "On the calendar, the month before; on a board, the board before; on a kanban in the terminal, the column before.",
       "since": "0.8.22"
     },
     {
@@ -343,7 +343,7 @@
       "shortest": 2,
       "summary": "back",
       "takes": "",
-      "doc": "Back to the page from the reports down the side, or from a board to the list of boards.",
+      "doc": "Back to the page from the reports down the side, from a board to the list of boards, or from a kanban to the list of kanbans.",
       "since": "0.8.22"
     },
     {
@@ -433,6 +433,22 @@
       "takes": "",
       "doc": "In the appearance settings, draw tasks' grey shading, or leave it out.",
       "since": "0.8.22"
+    },
+    {
+      "name": "kanban",
+      "shortest": 2,
+      "summary": "the Kanban page, or a kanban's settings",
+      "takes": "since, other, new, column, edit, delete, raise, lower, write or off",
+      "doc": "With nothing after it, the Kanban page (in the terminal, where Kanban is on). On a kanban, `:kanban since` changes Completed since there and `:kanban other` shows or hides Other, the tasks no column has. In the Kanban section of the terminal's Settings: `:kanban new` adds a kanban, `:kanban column` a column, `:kanban edit` and `:kanban delete` change and delete what is under the cursor (while Kanban is off, `:kanban edit` sets it up the way under the cursor, Automatic or Manual), `:kanban raise` and `:kanban lower` move a column, `:kanban write` writes the `progressState` UDA and `:kanban off` turns Kanban off. See [Kanban](using/kanban.md).",
+      "since": "unreleased"
+    },
+    {
+      "name": "move",
+      "shortest": 3,
+      "summary": "move the card to another column",
+      "takes": "left or right",
+      "doc": "On a kanban in the terminal, the card under the cursor to a column chosen from a list, running that column's On move on the task; `:move left` and `:move right` to the column beside it.",
+      "since": "unreleased"
     }
   ],
   "lines": [

@@ -168,6 +168,7 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::Export(b) => export_box(f, b, main),
         Mode::Reminders(b) => reminders_box(f, app, b, main),
         Mode::ExportPick { options, sel, .. } => picker(f, " export which table ", options, *sel, main),
+        Mode::KanbanMove { options, sel, .. } => picker(f, " move to ", options, *sel, main),
         _ => {}
     }
     // How many tasks are marked, in front of what was last said.
@@ -291,21 +292,21 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
     let width: usize = right.iter().map(|s| s.content.chars().count()).sum();
     // The pages by name when they fit beside the chips, else by number and the first letters, else by number alone.
     let room = usize::from(area.width).saturating_sub(width + 12);
-    let fits = |letters: usize| {
-        Page::ALL
-            .iter()
-            .map(|p| p.title().len().min(letters) + 4)
-            .sum::<usize>()
-            <= room
-    };
+    let pages = app.pages();
+    let fits = |letters: usize| pages.iter().map(|p| p.title().len().min(letters) + 4).sum::<usize>() <= room;
     let letters = [usize::MAX, 3].into_iter().find(|&n| fits(n)).unwrap_or(0);
     let mut left = vec![Span::styled(" ◆ Meghnaad ", theme::accent())];
-    for (i, p) in Page::ALL.iter().enumerate() {
+    for p in &pages {
         let title: String = p.title().chars().take(letters).collect();
+        // A page's number is its place in `Page::ALL` (what g1 to g9 open); Kanban has none.
+        let number = Page::ALL
+            .iter()
+            .position(|q| q == p)
+            .map_or_else(|| "·".to_owned(), |i| (i + 1).to_string());
         let tab = Span::from(if title.is_empty() {
-            format!(" {} ", i + 1)
+            format!(" {number} ")
         } else {
-            format!(" {} {title} ", i + 1)
+            format!(" {number} {title} ")
         });
         left.push(if *p == app.page {
             tab.style(theme::selected().add_modifier(Modifier::BOLD))
@@ -410,6 +411,7 @@ fn page(f: &mut Frame, app: &App, area: Rect) {
             f.render_widget(Paragraph::new(body).block(block), area);
         }
         Page::Boards => crate::boardui::draw(f, app, area),
+        Page::Kanban => crate::kanbanui::draw(f, app, area),
         Page::Settings => settings(f, app, area),
     }
 }
@@ -732,12 +734,14 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             + app.transform_errors.len(),
     )
     .unwrap_or(0);
-    let [general, sync, theme_area, cmds, boards, keys_area] = Layout::vertical([
+    let kanban_lines = crate::kanbanui::settings_lines(app);
+    let [general, sync, theme_area, cmds, boards, kanban_area, keys_area] = Layout::vertical([
         Constraint::Length(6 + problems),
         Constraint::Length(3),
         Constraint::Length(theme_rows),
         Constraint::Length(rows(commands, 10) + 1),
         Constraint::Length(rows(app.boards.len() + app.board_errors.len(), 6)),
+        Constraint::Length(rows(kanban_lines.len(), 12)),
         Constraint::Min(6),
     ])
     .areas(area);
@@ -900,6 +904,20 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             .with_selected((here(S::Boards) && !app.boards.is_empty()).then_some(app.settings_board)),
     );
 
+    f.render_stateful_widget(
+        List::new(kanban_lines)
+            .block(section("Kanban", S::Kanban).title_top(note(if app.kanban.enabled { "on" } else { "off" })))
+            .highlight_style(if here(S::Kanban) {
+                theme::selected()
+            } else {
+                Style::new()
+            })
+            .highlight_symbol(MARK)
+            .highlight_spacing(HighlightSpacing::Always),
+        kanban_area,
+        &mut ListState::default().with_selected(here(S::Kanban).then_some(app.kanban_row)),
+    );
+
     let block = section("Keybindings", S::Keys).title_top(note(&if app.keys_query.is_empty() {
         if app.keys_defaults {
             "yours and the defaults".to_owned()
@@ -918,6 +936,21 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
         keys_area,
         &mut ListState::default().with_selected(here(S::Keys).then_some(app.keys_sel)),
     );
+}
+
+/// `text` in lines of at most `width` characters, broken between words.
+fn wrap(text: &str, width: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match lines.last_mut() {
+            Some(l) if l.chars().count() + 1 + word.chars().count() <= width.max(20) => {
+                l.push(' ');
+                l.push_str(word);
+            }
+            _ => lines.push(word.to_owned()),
+        }
+    }
+    lines
 }
 
 /// What a section of the keys is called, and where it is in `settings.json`.
@@ -1887,6 +1920,13 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         PromptKind::CommandLine(_, name) => (
             format!(" task command: what {name} stands for "),
             vec![Line::from("A command line without task in front; && || ; chain more than one.").quiet()],
+        ),
+        PromptKind::Kanban(e) => (
+            e.title(),
+            wrap(e.help(), usize::from(main.width.saturating_sub(8).min(80)))
+                .into_iter()
+                .map(|l| Line::from(l).quiet())
+                .collect(),
         ),
         _ => (String::new(), Vec::new()),
     };

@@ -96,6 +96,10 @@ In short [below](#deploying-the-web-app); in full in **[Running the web app](doc
   row, resizable there too). Controls above a board (a date range, a date, a number or a range of them, a pick of
   projects, tags or a UDA's values, a switch) feed every filter on it as `$name` ([Controls](docs/using/boards.md#controls)).
   Kept in the app's own `settings.json` ([Boards](docs/using/boards.md#boards)).
+- **Kanban.** Your tasks as columns of cards, each column a filter and a command line run on a card moved into it
+  (`modify`, `done`, a chain or one of your task commands), drawn from a report whose columns the cards show. Set up
+  automatically (a `progressState` UDA and To do, In progress, Review, Done) or by hand, on the web, the phone and the
+  terminal ([Kanban](docs/using/kanban.md)).
 - **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions in a script you edit in Settings,
   kept beside your tasks and run on the Worker, in the page on the static site, or on the phone in the Android app
   ([Hooks](#hooks)).
@@ -372,7 +376,7 @@ the secrets for hooks never are. Everything about it, including building it your
 On the desktop, `meghnaad` is a full-screen terminal app around the real `task` 3.5.0: your own `~/.task` and
 `~/.taskrc`, with no replica or server of its own: it syncs with `task sync`, in the background, by hand or when it
 opens and closes or after every change, as you set it. It is laid out as the web app is: pages along the top (Tasks,
-Projects, Tags, Summary, Calendar, Burndown, Boards, Console, Settings), the reports down the side and a command line at the
+Projects, Tags, Summary, Calendar, Burndown, Boards, Kanban, Console, Settings), the reports down the side and a command line at the
 bottom with Tab completion, `&&` `||` `;` chains and your task commands. It has an add line that shows the task before it
 makes it and opens into the full task form, which modifying always uses, your boards drawn as terminal charts,
 reports in `task`'s own colours, tasksh's review, a timer and reminders.
@@ -390,8 +394,8 @@ in `~/.config/meghnaad`, or in `$MEGHNAAD_CONFIG_DIR`. The keys and the rest are
 
 ## Using it
 
-The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown**, **Boards** and **Console**, and **Settings**
-(the taskrc, tasksh, your own commands, hooks and urgency). Anything you can click
+The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown**, **Boards**, **Kanban** (once it is
+set up) and **Console**, and **Settings** (the taskrc, tasksh, Kanban, your own commands, hooks and urgency). Anything you can click
 you can type:
 
 ```

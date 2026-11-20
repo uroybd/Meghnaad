@@ -134,6 +134,8 @@ pub struct AppSettings {
     pub command_errors: Vec<String>,
     /// The boards, as the web app saves them; read here, changed there (or in the file).
     pub boards: Value,
+    /// The kanbans (spec 0026), read with [`crate::kanban::read`] and saved with [`with_kanban`].
+    pub kanban: Value,
     pub tui: TuiSettings,
     /// Where 0.6.53 kept `tui.sync`: still read, and moved into `tui` when the app next saves.
     sync: Option<String>,
@@ -446,7 +448,7 @@ pub fn lint_errors(raw: &Value) -> Vec<String> {
     let Some(raw) = raw.as_object() else {
         return vec!["The settings must be a JSON object: { \"taskCommands\": [ … ] }".into()];
     };
-    for k in ["homepage", "appearance", "keys", "web", "mobile", "tui"] {
+    for k in ["homepage", "appearance", "keys", "web", "mobile", "tui", "kanban"] {
         if raw.get(k).is_some_and(|v| !v.is_object()) {
             errors.push(if k == "appearance" {
                 "appearance must be an object: { \"progress\": { … } }".to_owned()
@@ -458,6 +460,13 @@ pub fn lint_errors(raw: &Value) -> Vec<String> {
     for k in ["taskCommands", "boards"] {
         if raw.get(k).is_some_and(|v| !v.is_array()) {
             errors.push(format!("{k} must be a list"));
+        }
+    }
+    if let Some(k) = raw.get("kanban").and_then(Value::as_object) {
+        for key in ["kanbans", "columns"] {
+            if k.get(key).is_some_and(|v| !v.is_array()) {
+                errors.push(format!("kanban.{key} must be a list"));
+            }
         }
     }
     if let Some(a) = raw.get("appearance").and_then(Value::as_object) {
@@ -660,6 +669,35 @@ pub fn with_commands(text: &str, commands: &[TaskCommand]) -> Result<String, Set
         raw.insert("taskCommands".into(), merged);
     }
     written(raw)
+}
+
+/// `text` with `kanban` replaced by `kanban`, and every other key as it was: a key this app doesn't know, in `kanban`
+/// or in one of its kanbans, and a kanban it couldn't read, are kept.
+///
+/// # Errors
+///
+/// As [`with_commands`].
+pub fn with_kanban(text: &str, kanban: &crate::kanban::Settings) -> Result<String, SettingsError> {
+    let mut raw = object(text)?;
+    let next = crate::kanban::to_value(kanban);
+    let merged = match raw.remove("kanban") {
+        Some(old @ Value::Object(_)) => {
+            let base = crate::kanban::to_value(&crate::kanban::read(Some(&old)).0);
+            merge(&old, Some(&base), &next)
+        }
+        _ => next,
+    };
+    raw.insert("kanban".into(), merged);
+    written(raw)
+}
+
+/// Save the kanbans to `settings.json`, keeping the rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_kanban(kanban: &crate::kanban::Settings) -> Result<(), SettingsError> {
+    save(|text| with_kanban(text, kanban))
 }
 
 /// `text` with `tui.sync` set to `mode` (and the old top-level `sync` gone), and every other key as it was.
@@ -1207,6 +1245,44 @@ mod tests {
         );
         let entry = &saves[1].1[saves[1].1.find("\"taskCommands\"").unwrap()..];
         assert!(entry.find("\"name\"") < entry.find("\"x-kept\""), "name first: {entry}");
+    }
+
+    #[test]
+    fn saving_kanbans_keeps_what_this_app_does_not_know() {
+        let text = r#"{ "taskCommands": [ { "name": "x", "command": "done" } ], "kanban": { "enabled": true, "later": 1,
+            "report": "all", "kanbans": [ { "id": "work", "name": "Work", "filter": "project:Work", "colour": "red" },
+              { "id": "Bad" } ] } }"#;
+        let raw: Value = serde_json::from_str(text).unwrap();
+        let (mut k, errors) = crate::kanban::read(raw.get("kanban"));
+        assert_eq!(errors.len(), 1);
+        k.kanbans[0].name = "Work 2".into();
+        k.kanbans[0].filter = None;
+        k.kanbans[0].report = Some("next".into());
+        k.report = "list".into();
+        let out: Value = serde_json::from_str(&with_kanban(text, &k).unwrap()).unwrap();
+        assert_eq!(out["taskCommands"][0]["name"], "x");
+        assert_eq!(out["kanban"]["later"], 1);
+        assert_eq!(out["kanban"]["report"], "list");
+        // Its own filter taken away, its own report given.
+        assert_eq!(
+            out["kanban"]["kanbans"][0],
+            serde_json::json!({ "id": "work", "name": "Work 2", "report": "next", "colour": "red" })
+        );
+        assert_eq!(out["kanban"]["kanbans"][1]["id"], "Bad");
+        let fresh: Value = serde_json::from_str(&with_kanban("", &k).unwrap()).unwrap();
+        assert_eq!(fresh["kanban"]["enabled"], true);
+        assert_eq!(
+            lint_errors(&serde_json::json!({ "kanban": { "kanbans": {} } })),
+            ["kanban.kanbans must be a list"]
+        );
+        assert_eq!(
+            lint_errors(&serde_json::json!({ "kanban": [] })),
+            ["kanban must be an object"]
+        );
+        assert_eq!(
+            lint_errors(&serde_json::json!({ "kanban": { "columns": 1 } })),
+            ["kanban.columns must be a list"]
+        );
     }
 
     #[test]

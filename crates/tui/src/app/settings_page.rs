@@ -75,6 +75,7 @@ impl App {
                 let q = self.keys_query.clone();
                 self.prompt(PromptKind::KeysSearch, &q);
             }
+            a if a.starts_with("settings.kanban.") => self.kanban_settings_action(a),
             "settings.boards.open" if self.settings_board < self.boards.len() => {
                 self.board = self.settings_board;
                 self.open(Page::Boards);
@@ -89,6 +90,7 @@ impl App {
         use SettingsSection as S;
         let n = self.settings.task_commands.len();
         let boards = self.boards.len();
+        let rows = self.kanban_rows().len();
         let lines = if self.settings_section == S::Keys {
             self.key_lines().len()
         } else {
@@ -108,15 +110,20 @@ impl App {
             S::Boards if (down && self.settings_board + 1 < boards) || (up && self.settings_board > 0) => {
                 self.settings_board = moved(self.settings_board, boards, step);
             }
+            S::Kanban if (down && self.kanban_row + 1 < rows) || (up && self.kanban_row > 0) => {
+                self.kanban_row = moved(self.kanban_row, rows, step);
+                self.kanban_asking = false;
+            }
             S::Keys if (down && self.keys_sel + 1 < lines) || (up && self.keys_sel > 0) || (!down && !up) => {
                 self.keys_sel = moved(self.keys_sel, lines, step);
             }
             S::Commands if !down && !up => self.settings_sel = moved(self.settings_sel, n, step),
             S::Boards if !down && !up => self.settings_board = moved(self.settings_board, boards, step),
-            S::General | S::Sync | S::Theme | S::Commands | S::Boards if down => {
+            S::Kanban if !down && !up => self.kanban_row = moved(self.kanban_row, rows, step),
+            S::General | S::Sync | S::Theme | S::Commands | S::Boards | S::Kanban if down => {
                 self.settings_section = self.settings_section.step(1);
             }
-            S::Sync | S::Theme | S::Commands | S::Boards | S::Keys if up => {
+            S::Sync | S::Theme | S::Commands | S::Boards | S::Kanban | S::Keys if up => {
                 self.settings_section = self.settings_section.step(-1);
             }
             _ => {}

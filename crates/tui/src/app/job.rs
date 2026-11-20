@@ -88,6 +88,19 @@ impl App {
         self.run_job(JobKind::Quick, vec![(line, args.to_vec())]);
     }
 
+    /// Run statements here as a key's lines (a kanban card's move): each read as `task` reads its words, what they say
+    /// on the status line.
+    pub(super) fn run_steps(&mut self, steps: Vec<Statement>) {
+        let steps = steps
+            .into_iter()
+            .map(|s| {
+                let words = split_words(&s.line);
+                (s, words)
+            })
+            .collect();
+        self.run_job(JobKind::Quick, steps);
+    }
+
     /// Run `words` on many tasks (the marked ones): a line per batch of their uuids ([`super::selection::BATCH`]), each
     /// while the last worked, so a question refused or `quit` stops the rest. The marks are cleared.
     pub(super) fn bulk(&mut self, uuids: &[String], words: &[String]) {

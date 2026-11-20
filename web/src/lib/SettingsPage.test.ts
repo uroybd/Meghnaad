@@ -100,6 +100,7 @@ describe('the Settings page', () => {
       'Keybindings',
       'taskrc',
       'tasksh',
+      'Kanban',
       'Commands',
       'Hooks',
       'Urgency',

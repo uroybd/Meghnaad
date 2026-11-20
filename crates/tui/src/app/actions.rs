@@ -47,6 +47,9 @@ impl App {
             "app.back" if self.page == Page::Boards && self.board_open && self.focus == Focus::Main => {
                 self.close_board();
             }
+            "app.back" if self.page == Page::Kanban && self.kanban_open && self.focus == Focus::Main => {
+                self.close_kanban();
+            }
             // Back clears the marks first, when there are any.
             "app.back" if self.page == Page::Tasks && self.focus == Focus::Main && !self.marks.is_empty() => {
                 self.marks.clear();
@@ -145,11 +148,14 @@ impl App {
             }
             "settings.editFile" => return Action::EditSettings,
             a if a.starts_with("page.") => {
-                if let Some(&p) = Page::ALL.iter().find(|p| p.action() == a) {
+                if a == Page::Kanban.action() {
+                    self.open(Page::Kanban);
+                } else if let Some(&p) = Page::ALL.iter().find(|p| p.action() == a) {
                     self.open(p);
                 }
             }
             a if a.starts_with("tasks.") => return self.task_action(a),
+            a if a.starts_with("kanban.") => self.kanban_action(a),
             a if a.starts_with("settings.") => self.settings_action(a),
             _ => {}
         }
@@ -163,6 +169,8 @@ impl App {
             "tasks" => self.selected = moved(self.selected, self.report.uuids.len(), step),
             "lists" => self.list_sel = moved(self.list_sel, self.items().len(), step),
             "boards.list" => self.board = moved(self.board, self.boards.len(), step),
+            "kanban.list" => self.kanban_sel = moved(self.kanban_sel, self.kanban.kanbans.len(), step),
+            "kanban" => self.kanban_card = moved(self.kanban_card, self.kanban_cards(), step),
             // The console counts back from its end: down is nearer the end.
             "console" => {
                 self.log_back = match step {

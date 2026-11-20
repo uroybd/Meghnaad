@@ -10,6 +10,7 @@
 
 import { normalizeBoards, type Board } from './boards';
 import { ChainError, splitChain } from './compound';
+import { emptyKanbanSettings, kanbanJson, parseKanban, type KanbanSettings } from './kanban';
 
 /** The most the Worker saves (it says so in the same words). */
 export const MAX_SETTINGS_BYTES = 64 * 1024;
@@ -184,6 +185,10 @@ export interface ParsedSettings {
   appearanceErrors: string[];
   /** What is wrong with the boards, one line each; a board or section with a problem is left out. */
   boardErrors: string[];
+  /** The kanbans (spec 0026): whether they are on, and the valid ones. */
+  kanban: KanbanSettings;
+  /** What is wrong with `kanban`, one line each; a kanban with a problem is left out. */
+  kanbanErrors: string[];
   /** What is wrong, one line each; a command with a problem is left out. */
   errors: string[];
 }
@@ -225,6 +230,8 @@ export function parseSettings(text: string): ParsedSettings {
     appearance: emptyAppearance(),
     appearanceErrors: [],
     boardErrors: [],
+    kanban: emptyKanbanSettings(),
+    kanbanErrors: [],
     errors: [],
   };
   if (!text.trim()) return out;
@@ -242,6 +249,7 @@ export function parseSettings(text: string): ParsedSettings {
   out.raw = value as Record<string, unknown>;
   out.homepage = parseHomepage(out.raw.homepage);
   ({ appearance: out.appearance, errors: out.appearanceErrors } = parseAppearance(out.raw.appearance));
+  ({ kanban: out.kanban, errors: out.kanbanErrors } = parseKanban(out.raw.kanban));
   if (out.raw.boards !== undefined) {
     const n = normalizeBoards(out.raw.boards);
     out.boards = n.boards;
@@ -478,6 +486,19 @@ export function serializeAppearance(raw: Record<string, unknown>, appearance: Ap
   );
 }
 
+function withKanban(raw: Record<string, unknown>, kanban: KanbanSettings, read = false): Record<string, unknown> {
+  const { kanban: was, ...rest } = raw;
+  const next: Record<string, unknown> = { ...rest };
+  if (kanban.enabled || kanban.setup || kanban.kanbans.length || (read && isObject(was)))
+    next.kanban = kanbanJson(kanban);
+  return next;
+}
+
+/** The text to save: `kanban` as given, and everything else in the file as it was. */
+export function serializeKanban(raw: Record<string, unknown>, kanban: KanbanSettings): string {
+  return written(mergeSettings(raw, withKanban(raw, reread(raw).kanban, true), withKanban(raw, kanban)));
+}
+
 /** What is wrong with a `settings.json`, as a linter says it: an error stops it being saved, a warning doesn't. */
 export interface Lint {
   errors: string[];
@@ -485,7 +506,7 @@ export interface Lint {
 }
 
 /** The top-level keys that are objects, and those that are lists. */
-const OBJECT_KEYS = ['homepage', 'appearance', 'keys', 'web', 'mobile', 'tui'];
+const OBJECT_KEYS = ['homepage', 'appearance', 'kanban', 'keys', 'web', 'mobile', 'tui'];
 const LIST_KEYS = ['taskCommands', 'boards'];
 
 /**
@@ -529,9 +550,18 @@ export function lintSettings(text: string, more: (raw: Record<string, unknown>) 
     });
   // What can't be used, less what is already an error.
   const said = new Set(errors);
-  const shapes = /^(boards must be a list|board \d+: not an object|taskCommands must be a list)$/;
-  const warnings = [...read.errors, ...read.appearanceErrors, ...read.boardErrors, ...more(raw)].filter(
-    (w) => !said.has(w) && !shapes.test(w),
-  );
+  const shapes =
+    /^(boards must be a list|board \d+: not an object|taskCommands must be a list|kanban must be an object.*|kanban\.(kanbans|columns) must be a list)$/;
+  if (isObject(raw.kanban) && 'kanbans' in raw.kanban && !Array.isArray(raw.kanban.kanbans))
+    errors.push('kanban.kanbans must be a list');
+  if (isObject(raw.kanban) && 'columns' in raw.kanban && !Array.isArray(raw.kanban.columns))
+    errors.push('kanban.columns must be a list');
+  const warnings = [
+    ...read.errors,
+    ...read.appearanceErrors,
+    ...read.boardErrors,
+    ...read.kanbanErrors,
+    ...more(raw),
+  ].filter((w) => !said.has(w) && !shapes.test(w));
   return { errors, warnings };
 }

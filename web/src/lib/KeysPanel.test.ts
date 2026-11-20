@@ -143,7 +143,7 @@ describe('the Keybindings tab', () => {
     expect(runs.value).toBe('');
     type(runs, 'next');
     const where = section('Terminal').querySelector('select[aria-label="Where"]') as HTMLSelectElement;
-    expect([...where.options].map((o) => o.value)).toEqual(['calendar', 'boards']);
+    expect([...where.options].map((o) => o.value)).toEqual(['calendar', 'boards', 'kanban']);
     where.value = 'boards';
     where.dispatchEvent(new Event('change', { bubbles: true }));
     flushSync();
