@@ -151,5 +151,37 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
     let again: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("config/settings.json")).unwrap()).unwrap();
     assert_eq!(again["kanban"]["filter"], "");
+
+    // Swimlanes come from the report's own groups: a `/` in its sort.
+    for args in [
+        &[
+            "rc.confirmation:off",
+            "config",
+            "report.kanban.sort",
+            "project+/,urgency-",
+        ][..],
+        &["description:beta", "modify", "project:Home"],
+    ] {
+        assert!(task.capture(args).unwrap().ok, "{args:?}");
+    }
+    press(&mut app, 'f');
+    match &mut app.mode {
+        Mode::Prompt(p) => p.input = Input::new(""),
+        m => panic!("{m:?}"),
+    }
+    enter(&mut app);
+    app.reload();
+    app.load_kanban();
+    let lane = |title: &str| {
+        let d = app.kanban_data.as_ref().unwrap();
+        d.columns
+            .iter()
+            .flatten()
+            .find(|c| c.title == title)
+            .and_then(|c| c.lane.clone())
+    };
+    let (alpha, beta) = (lane("alpha"), lane("beta"));
+    assert!(beta.as_deref().is_some_and(|l| l.contains("Home")), "{beta:?}");
+    assert!(alpha.is_some() && alpha != beta, "{alpha:?}");
     std::fs::remove_dir_all(&dir).ok(); // left behind in the temp folder is harmless
 }

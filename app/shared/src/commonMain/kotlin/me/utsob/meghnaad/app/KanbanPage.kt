@@ -1,6 +1,12 @@
 package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.geometry.Size
@@ -90,7 +96,7 @@ private fun KanbanList(store: Store) {
     }
 }
 
-private class KanbanData(val placed: Placed, val meta: List<Column>)
+private class KanbanData(val placed: Placed, val meta: List<Column>, val lanes: Lanes)
 
 @Composable
 private fun KanbanScreen(store: Store, kanban: Kanban) {
@@ -102,11 +108,12 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
     var data by remember(kanban.id) { mutableStateOf<KanbanData?>(null) }
     var error by remember(kanban.id) { mutableStateOf<String?>(null) }
     var otherOpen by remember(kanban.id) { mutableStateOf(false) }
+    var controlsOpen by remember(kanban.id) { mutableStateOf(false) }
 
     suspend fun load() {
         try {
-            val (placed, meta) = store.loadKanban(kanban, KanbanView(report, filter, since))
-            data = KanbanData(placed, meta)
+            val (placed, all) = store.loadKanban(kanban, KanbanView(report, filter, since))
+            data = KanbanData(placed, all.columns, lanesOf(all.rows, groupHeads(all, store.cellCtx(report))))
             error = null
         } catch (e: Exception) {
             error = e.message ?: e.toString()
@@ -141,10 +148,18 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
 
     val ctx = store.cellCtx(report)
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The report, filter and Completed since fold under a button (KanbanPage.svelte on a phone), with a dot while they
+        // differ from the kanban's own.
+        val changed = report != kanban.report || filter.trim() != kanban.filter.trim() || since.trim() != kanban.completedSince.trim()
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(kanban.name, Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            TextButton(onClick = { store.openSettings(SettingsTab.Kanban) }) { Text("Edit") }
+            Box {
+                IconAction("sliders-horizontal", if (controlsOpen) "Hide the report, filter and Completed since" else "Report, filter and Completed since", { controlsOpen = !controlsOpen })
+                if (changed) Box(Modifier.align(Alignment.TopEnd).padding(6.dp).size(7.dp).background(colors.primary, CircleShape))
+            }
+            IconAction("settings", "Edit this kanban", { store.openSettings(SettingsTab.Kanban) })
         }
+        if (controlsOpen) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Report", fontSize = 13.sp)
             val names = store.offeredReports.map { it.name }.let { if (report in it) it else listOf(report) + it }
@@ -159,6 +174,7 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
             since, { store.kanbanSince[kanban.id] = it }, Modifier.fillMaxWidth(), singleLine = true, textStyle = mono, keyboardOptions = plain,
             label = { Text("Completed since") }, placeholder = { Text("today-14d", fontSize = 13.sp) },
         )
+        }
         error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
         val d = data
         when {
@@ -169,6 +185,10 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
               val n = kanban.columns.size + if (otherOpen) 1 else 0
               val rest = if (otherOpen) 0.dp else 170.dp
               val columnWidth = ((maxWidth - rest - 10.dp * n) / n.coerceAtLeast(1)).coerceIn(260.dp, 440.dp)
+              if (d.lanes.lanes.isNotEmpty()) {
+                  KanbanLanes(store, kanban, d, ctx, columnWidth, otherOpen, { otherOpen = !otherOpen }, ::move)
+                  return@BoxWithConstraints
+              }
               Row(
                 Modifier.fillMaxSize().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -199,6 +219,79 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
               }
             }
         }
+    }
+}
+
+/**
+ * Swimlanes, from the report's groups (KanbanPage.svelte): the column names once, then for each group a heading that
+ * folds and a row of the same columns, as tall as its longest. The board scrolls as a whole, both ways. A card moves only
+ * within its lane: Move to… offers the columns, and a move doesn't change the task's group.
+ */
+@Composable
+private fun KanbanLanes(
+    store: Store, kanban: Kanban, d: KanbanData, ctx: Ctx, width: Dp, otherOpen: Boolean, toggleOther: () -> Unit,
+    move: (String, Int, Int) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val folded = remember(kanban.id) { mutableStateMapOf<String, Boolean>() }
+    val panel = colors.surfaceVariant.copy(alpha = 0.4f)
+    val otherWidth = if (otherOpen) width else 160.dp
+    fun inLane(rows: List<Row>, l: Int) = rows.filter { d.lanes.laneOf[it.uuid] == l }
+    Column(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            kanban.columns.forEachIndexed { i, col ->
+                Row(Modifier.width(width).background(panel, ControlShape).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(col.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Dim("${d.placed.columns.getOrElse(i) { emptyList() }.size}", size = 12)
+                }
+            }
+            Row(
+                Modifier.width(otherWidth).background(panel, ControlShape).clickable(onClick = toggleOther).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                LucideIcon(if (otherOpen) "chevron-down" else "chevron-right", size = 14.dp)
+                Text("Other", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Dim("${d.placed.other.size}", size = 12)
+            }
+        }
+        d.lanes.lanes.forEachIndexed { l, lane ->
+            val shut = folded[lane] == true
+            val count = d.placed.columns.sumOf { inLane(it, l).size } + inLane(d.placed.other, l).size
+            Row(
+                Modifier.padding(top = 14.dp, bottom = 6.dp).clickable { folded[lane] = !shut },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                LucideIcon(if (shut) "chevron-right" else "chevron-down", size = 14.dp)
+                Text(lane, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                Dim("$count", size = 12)
+            }
+            if (!shut) {
+                // Each cell as tall as the lane's longest.
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    kanban.columns.forEachIndexed { i, _ ->
+                        val rows = inLane(d.placed.columns.getOrElse(i) { emptyList() }, l)
+                        val cells = if (rows.isEmpty()) emptyList() else formatTable(d.meta, rows, ctx).cells
+                        Column(
+                            Modifier.width(width).fillMaxHeight().heightIn(min = 56.dp).background(panel, ControlShape).padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, i, move) }
+                        }
+                    }
+                    Column(
+                        Modifier.width(otherWidth).fillMaxHeight().border(1.dp, colors.outlineVariant, ControlShape).padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (otherOpen) {
+                            val rows = inLane(d.placed.other, l)
+                            val cells = if (rows.isEmpty()) emptyList() else formatTable(d.meta, rows, ctx).cells
+                            rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, -1, move) }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 

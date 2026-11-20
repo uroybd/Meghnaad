@@ -344,6 +344,29 @@ fun columnArgs(v: KanbanView, column: KanbanColumn?): List<String> {
 
 data class Placed(val columns: List<List<Row>>, val other: List<Row>)
 
+/** Swimlanes from the report's groups, and the lane each task is in (kanban.ts `lanesOf`). */
+data class Lanes(val lanes: List<String> = emptyList(), val laneOf: Map<String, Int> = emptyMap())
+
+/**
+ * Swimlanes, from the report's own groups (a `/` in its sort, `project+/`): [heads] is the group heading above each of
+ * [all]'s rows, in the report's order ([groupHeads]), null where a row continues the group above. A lane for each heading,
+ * in the order they first come (a heading met again is the same lane), and the lane each task is in. None without groups.
+ */
+fun lanesOf(all: List<Row>, heads: List<String?>): Lanes {
+    if (heads.isEmpty()) return Lanes()
+    val lanes = mutableListOf<String>()
+    val laneOf = LinkedHashMap<String, Int>()
+    var at = -1
+    all.forEachIndexed { i, r ->
+        heads.getOrNull(i)?.let { h ->
+            at = lanes.indexOf(h)
+            if (at < 0) { lanes += h; at = lanes.size - 1 }
+        }
+        laneOf[r.uuid] = maxOf(at, 0)
+    }
+    return Lanes(lanes, laneOf)
+}
+
 /** Each task in the first column that has it, in the report's order; [all] (every task the kanban picks) less those is Other. */
 fun placeTasks(columns: List<List<Row>>, all: List<Row>): Placed {
     val placed = HashSet<String>()

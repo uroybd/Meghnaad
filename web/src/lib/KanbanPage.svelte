@@ -11,8 +11,9 @@
   import FilterInput from './FilterInput.svelte';
   import { css, look } from './colors';
   import { formatTable, rowClass, type Cell } from './format';
-  import { ChevronDown, ChevronRight, Settings } from './icons';
-  import { columnArgs, columnOf, moveSteps, placeTasks, type Kanban, type KanbanView } from './kanban';
+  import { ChevronDown, ChevronRight, Settings, SlidersHorizontal } from './icons';
+  import { groupHeads } from './groups';
+  import { columnArgs, columnOf, lanesOf, moveSteps, placeTasks, type Kanban, type KanbanView } from './kanban';
   import ReportCell from './ReportCell.svelte';
   import { kanbanPath } from './route';
   import { scheme } from './scheme.svelte';
@@ -53,6 +54,9 @@
     columns: Row[][];
     other: Row[];
     meta: Column[];
+    /** Swimlanes from the report's groups (a `/` in its sort), none without them; and each task's lane. */
+    lanes: string[];
+    laneOf: Map<string, number>;
   }
   let board = $state<Board | null>(null);
   let error = $state<string | null>(null);
@@ -75,7 +79,7 @@
       results.map((r) => r.rows),
       all.rows,
     );
-    return { ...placed, meta: all.columns };
+    return { ...placed, meta: all.columns, ...lanesOf(all.rows, groupHeads(all, ctx)) };
   }
 
   async function load() {
@@ -169,8 +173,22 @@
   });
 
   // Moving a card.
-  let dragging = $state<{ uuid: string; from: number } | null>(null);
-  let over = $state<number | null>(null);
+  // A card is dropped only in its own lane: a move runs the column's On move, which doesn't change the task's group.
+  let dragging = $state<{ uuid: string; from: number; lane: number } | null>(null);
+  let over = $state<{ col: number; lane: number } | null>(null);
+  /** Whether the card being dragged can be dropped on column `i` of lane `lane` (-1: no lanes). */
+  const droppable = (i: number, lane: number) =>
+    !!dragging && dragging.from !== i && dragging.lane === lane && !!kanban?.columns[i]?.move.trim();
+  const isOver = (i: number, lane: number) => over?.col === i && over.lane === lane && droppable(i, lane);
+  /** A lane's cards in a column. */
+  const inLane = (rows: Row[], lane: number) => rows.filter((r) => board?.laneOf.get(r.uuid) === lane);
+  // Lanes folded on this page, by heading.
+  let folded = $state<Set<string>>(new Set());
+  function fold(lane: string) {
+    const next = new Set(folded);
+    if (!next.delete(lane)) next.add(lane);
+    folded = next;
+  }
 
   async function move(uuid: string, from: number, to: number) {
     const k = kanban;
@@ -196,6 +214,15 @@
     store.kanbanReport = kanban && name === kanban.report ? null : name;
   }
 
+  // On a phone the report, filter and Completed since fold under a button, with a dot while they differ from the kanban's.
+  let controlsOpen = $state(false);
+  const changed = $derived(
+    !!kanban &&
+      (report !== kanban.report ||
+        filter.trim() !== kanban.filter.trim() ||
+        since.trim() !== kanban.completedSince.trim()),
+  );
+
   function editKanbans() {
     store.openSettings('kanban');
   }
@@ -209,7 +236,7 @@
     data-pri={row.priority ?? undefined}
     draggable="true"
     ondragstart={(e) => {
-      dragging = { uuid: row.uuid, from };
+      dragging = { uuid: row.uuid, from, lane: board?.lanes.length ? (board.laneOf.get(row.uuid) ?? 0) : -1 };
       e.dataTransfer?.setData('text/plain', row.uuid);
     }}
     ondragend={() => ((dragging = null), (over = null))}
@@ -247,6 +274,84 @@
   </li>
 {/snippet}
 
+{#snippet lanes(board: Board, kanban: Kanban)}
+  <!-- Swimlanes: the column names once, then a row of the same columns for each of the report's groups. The board
+       scrolls as a whole; a card moves only within its lane. -->
+  <div
+    class="board"
+    class:loading
+    aria-busy={loading}
+    bind:this={columnsEl}
+    style:height={height ? `${height}px` : undefined}
+    style:--n={kanban.columns.length}
+    style:--m={kanban.columns.length + 1}
+  >
+    <div class="grid" class:wide={otherOpen}>
+      {#each kanban.columns as col, i (i)}
+        <h2 class="colhead">
+          {col.name} <span class="count dim">{board.columns[i]?.length ?? 0}</span>
+        </h2>
+      {/each}
+      <h2 class="colhead">
+        <button class="ghost fold" aria-expanded={otherOpen} onclick={() => (otherOpen = !otherOpen)}>
+          {#if otherOpen}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if} Other
+        </button>
+        <span class="count dim">{board.other.length}</span>
+      </h2>
+      {#each board.lanes as lane, l (lane)}
+        {@const shut = folded.has(lane)}
+        {@const count =
+          board.columns.reduce((n, rows) => n + inLane(rows, l).length, 0) + inLane(board.other, l).length}
+        <h3 class="lanehead">
+          <button class="ghost fold" aria-expanded={!shut} onclick={() => fold(lane)}>
+            {#if shut}<ChevronRight size={14} />{:else}<ChevronDown size={14} />{/if}
+            {lane}
+          </button>
+          <span class="count dim">{count}</span>
+        </h3>
+        {#if !shut}
+          {#each kanban.columns as col, i (i)}
+            {@const rows = inLane(board.columns[i] ?? [], l)}
+            {@const cs = cells(rows)}
+            <section
+              class="cell"
+              class:over={isOver(i, l)}
+              aria-label="{col.name}, {lane}"
+              ondragover={(e) => {
+                if (!droppable(i, l)) return;
+                e.preventDefault();
+                over = { col: i, lane: l };
+              }}
+              ondragleave={() => (over = isOver(i, l) ? null : over)}
+              ondrop={(e) => {
+                e.preventDefault();
+                const ok = droppable(i, l);
+                const d = dragging;
+                dragging = null;
+                over = null;
+                if (d && ok) void move(d.uuid, d.from, i);
+              }}
+            >
+              <ul class="cards">
+                {#each rows as row, j (row.uuid)}{@render card(row, cs[j] ?? [], i)}{/each}
+              </ul>
+            </section>
+          {/each}
+          <section class="cell other" aria-label="Other, {lane}">
+            {#if otherOpen}
+              {@const rows = inLane(board.other, l)}
+              {@const cs = cells(rows)}
+              <ul class="cards">
+                {#each rows as row, j (row.uuid)}{@render card(row, cs[j] ?? [], -1)}{/each}
+              </ul>
+            {/if}
+          </section>
+        {/if}
+      {/each}
+    </div>
+  </div>
+{/snippet}
+
 <div class="page">
   {#if !store.kanbanSettings.enabled}
     <h1>Kanban</h1>
@@ -279,11 +384,23 @@
     <header class="head">
       <h1>{kanban.name}</h1>
       <span class="grow"></span>
-      <button class="ghost btn" onclick={editKanbans} title="Edit this kanban in Settings → Kanban"
-        ><Settings size={14} /> Edit</button
+      <button
+        class="ghost icon filters"
+        aria-expanded={controlsOpen}
+        aria-controls="kanban-controls"
+        aria-label="Report, filter and Completed since"
+        title="Report, filter and Completed since"
+        onclick={() => (controlsOpen = !controlsOpen)}
+        ><SlidersHorizontal size={17} />{#if changed}<span class="dot" title="Changed here"></span>{/if}</button
+      >
+      <button
+        class="ghost icon"
+        onclick={editKanbans}
+        aria-label="Edit this kanban"
+        title="Edit this kanban in Settings → Kanban"><Settings size={17} /></button
       >
     </header>
-    <div class="controls">
+    <div class="controls" class:shut={!controlsOpen} id="kanban-controls">
       <label class="report"
         >Report
         <select value={report} onchange={(e) => chooseReport((e.currentTarget as HTMLSelectElement).value)}>
@@ -313,6 +430,8 @@
 
     {#if !kanban.columns.length}
       <p class="dim">This kanban has no columns yet: add them under <strong>Edit</strong>.</p>
+    {:else if board && board.lanes.length}
+      {@render lanes(board, kanban)}
     {:else if board}
       <div
         class="columns"
@@ -327,14 +446,14 @@
           {@const takes = !!col.move.trim()}
           <section
             class="column"
-            class:over={over === i && takes && dragging?.from !== i}
+            class:over={isOver(i, -1)}
             aria-label={col.name}
             ondragover={(e) => {
-              if (!takes || !dragging || dragging.from === i) return;
+              if (!droppable(i, -1)) return;
               e.preventDefault();
-              over = i;
+              over = { col: i, lane: -1 };
             }}
-            ondragleave={() => (over = over === i ? null : over)}
+            ondragleave={() => (over = isOver(i, -1) ? null : over)}
             ondrop={(e) => {
               e.preventDefault();
               const d = dragging;
@@ -389,6 +508,24 @@
   .grow {
     flex: 1;
   }
+  .head .icon {
+    position: relative;
+    line-height: 0;
+    padding: 6px;
+  }
+  .head .dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  /* The filter button is for a phone; a wider screen has the controls out. */
+  .head .filters {
+    display: none;
+  }
   .btn {
     display: inline-flex;
     align-items: center;
@@ -435,6 +572,65 @@
     overflow-x: auto;
     padding-bottom: 8px;
   }
+  /* Swimlanes: one grid, the column names at the top and each lane's heading across it. */
+  .board {
+    overflow: auto;
+    padding-bottom: 8px;
+  }
+  .board.loading {
+    opacity: 0.7;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(var(--n), minmax(240px, 1fr)) 130px;
+    max-width: calc(var(--n) * 440px + 130px + var(--n) * 12px);
+    gap: 0 12px;
+    align-items: start;
+  }
+  .grid.wide {
+    grid-template-columns: repeat(var(--m), minmax(240px, 1fr));
+    max-width: calc(var(--m) * 452px);
+  }
+  .colhead {
+    height: 40px;
+    white-space: nowrap;
+    overflow: hidden;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0;
+    padding: 0 10px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px 8px 0 0;
+  }
+  .lanehead {
+    grid-column: 1 / -1;
+    margin: 14px 0 6px;
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cell {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px;
+    min-height: 56px;
+    align-self: stretch;
+  }
+  .cell.other {
+    background: transparent;
+    border-style: dashed;
+  }
+  .cell.over {
+    outline: 2px dashed var(--accent);
+  }
   .columns.loading {
     opacity: 0.7;
   }
@@ -475,6 +671,8 @@
     gap: 6px;
   }
   .fold {
+    white-space: nowrap;
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -575,6 +773,25 @@
     }
   }
   @media (max-width: 760px) {
+    .head .filters {
+      display: inline-block;
+    }
+    .controls.shut {
+      display: none;
+    }
+    .grid,
+    .grid.wide {
+      grid-template-columns: repeat(var(--n), 82vw) 130px;
+      max-width: none;
+    }
+    .grid.wide {
+      grid-template-columns: repeat(var(--m), 82vw);
+    }
+    .lanehead {
+      position: sticky;
+      left: 0;
+      width: calc(100vw - 52px);
+    }
     .column,
     .column.other.open {
       flex: 0 0 82vw;

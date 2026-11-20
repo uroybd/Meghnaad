@@ -129,7 +129,17 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
     f.render_widget(block, area);
     let width = usize::from(inner.width);
     let mut items: Vec<ListItem> = Vec::new();
-    for c in cards {
+    // With swimlanes, a heading above each lane's first card here; the card chosen is found past the headings.
+    let mut shown_sel = sel;
+    for (n, c) in cards.iter().enumerate() {
+        if c.lane.is_some() && (n == 0 || cards[n - 1].lane != c.lane) {
+            items.push(ListItem::new(
+                Line::from(format!("▸ {}", c.lane.as_deref().unwrap_or(""))).bold(),
+            ));
+            if sel.is_some_and(|s| s >= n) {
+                shown_sel = shown_sel.map(|s| s + 1);
+            }
+        }
         let id = c.id.map(|i| format!("{i} ")).unwrap_or_default();
         let mut lines = vec![Line::from(vec![
             Span::from(id).quiet(),
@@ -163,7 +173,7 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
     f.render_stateful_widget(
         List::new(items).highlight_style(if here { theme::selected() } else { Style::new() }),
         inner,
-        &mut ListState::default().with_selected(sel.filter(|_| !cards.is_empty())),
+        &mut ListState::default().with_selected(shown_sel.filter(|_| !cards.is_empty())),
     );
 }
 

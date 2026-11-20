@@ -622,7 +622,8 @@ class Store(
      * What a kanban shows (spec 0026): its report run once per column over the kanban's filters ([columnArgs]), each task in
      * the first column that has it, and once more for Other. Throws what the engine refused.
      */
-    suspend fun loadKanban(k: Kanban, v: KanbanView): Pair<Placed, List<Column>> {
+    /** The tasks placed in the kanban's columns, and the report over the whole kanban (its columns, order and groups). */
+    suspend fun loadKanban(k: Kanban, v: KanbanView): Pair<Placed, ReportResult> {
         suspend fun ask(args: List<String>): ReportResult = when (val r = tw.run(args = args).result) {
             is CliResult.Report -> r.value
             is CliResult.Error -> throw EngineError(r.value.message)
@@ -630,7 +631,7 @@ class Store(
         }
         val results = k.columns.map { ask(columnArgs(v, it)) }
         val all = ask(columnArgs(v, null))
-        return placeTasks(results.map { it.rows }, all.rows) to all.columns
+        return placeTasks(results.map { it.rows }, all.rows) to all
     }
 
     /** Save how the app draws things, the rest of `settings.json` as it was. Throws what the engine refused. */

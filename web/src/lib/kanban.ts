@@ -370,6 +370,28 @@ export function placeTasks(columns: Row[][], all: Row[]): { columns: Row[][]; ot
   return { columns: out, other: all.filter((r) => !placed.has(r.uuid)) };
 }
 
+/**
+ * Swimlanes, from the report's own groups (a `/` in its sort, `project+/`): `heads` is the group heading above each of
+ * `all`'s rows, in the report's order (`groupHeads`), null where a row continues the group above. A lane for each heading,
+ * in the order they first come (a heading met again, when the groups aren't the first sort key, is the same lane), and
+ * the lane each task is in. No lanes when the report has no groups.
+ */
+export function lanesOf(all: Row[], heads: (string | null)[]): { lanes: string[]; laneOf: Map<string, number> } {
+  const lanes: string[] = [];
+  const laneOf = new Map<string, number>();
+  if (!heads.length) return { lanes, laneOf };
+  let at = -1;
+  all.forEach((r, i) => {
+    const h = heads[i];
+    if (h != null) {
+      at = lanes.indexOf(h);
+      if (at < 0) at = lanes.push(h) - 1;
+    }
+    laneOf.set(r.uuid, Math.max(at, 0));
+  });
+  return { lanes, laneOf };
+}
+
 /** Which column has the task (`-1`: Other or none). */
 export function columnOf(columns: Row[][], uuid: string): number {
   return columns.findIndex((rows) => rows.some((r) => r.uuid === uuid));

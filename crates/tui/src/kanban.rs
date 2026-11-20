@@ -7,6 +7,7 @@
 use crate::chain::{split_chain, Statement};
 use crate::commands::{plan_chain, TaskCommand};
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use tc_core::filter::split_words;
 use tc_core::helpers::shell_quote;
@@ -601,6 +602,28 @@ pub fn place(columns: &[Vec<String>], all: &[String]) -> (Vec<Vec<usize>>, Vec<u
 /// # Errors
 ///
 /// The line is not a well-formed chain.
+/// Swimlanes, from the report's own groups (a `/` in its sort, `project+/`): `heads` is the group heading above each of
+/// the report's tasks (`uuids`, in the report's order), `None` where a task continues the group above. The lanes, in the
+/// order their headings first come (a heading met again is the same lane), and the lane of each task. None without groups.
+pub fn lanes_of(uuids: &[String], heads: &[Option<String>]) -> (Vec<String>, BTreeMap<String, usize>) {
+    let mut lanes: Vec<String> = Vec::new();
+    let mut lane_of = BTreeMap::new();
+    if heads.iter().all(Option::is_none) {
+        return (lanes, lane_of);
+    }
+    let mut at = 0;
+    for (i, uuid) in uuids.iter().enumerate() {
+        if let Some(Some(h)) = heads.get(i) {
+            at = lanes.iter().position(|l| l == h).unwrap_or_else(|| {
+                lanes.push(h.clone());
+                lanes.len() - 1
+            });
+        }
+        lane_of.insert(uuid.clone(), at);
+    }
+    (lanes, lane_of)
+}
+
 /// A move changes the card's task only: a recurring task's instance, without asking about the rest of its series.
 pub const ONLY_THIS_TASK: &str = "rc.recurrence.confirmation:no";
 
@@ -772,6 +795,19 @@ mod tests {
         let (kept, other) = place(&[s(&["a", "b"]), s(&["b", "c"]), vec![]], &s(&["a", "b", "c", "d"]));
         assert_eq!(kept, [vec![0, 1], vec![1], vec![]]);
         assert_eq!(other, [3]);
+    }
+
+    #[test]
+    fn a_lane_for_each_group_heading_in_the_reports_order() {
+        let u = |s: &str| s.to_owned();
+        assert!(lanes_of(&[u("a")], &[None]).0.is_empty());
+        let h = |s: &str| Some(s.to_owned());
+        let (lanes, of) = lanes_of(
+            &["a", "b", "c", "d"].map(u),
+            &[h("Project: Home"), None, h("Project: Work"), h("Project: Home")],
+        );
+        assert_eq!(lanes, ["Project: Home", "Project: Work"]);
+        assert_eq!(of.values().copied().collect::<Vec<_>>(), [0, 0, 1, 0]);
     }
 
     #[test]

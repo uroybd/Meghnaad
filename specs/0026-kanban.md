@@ -277,3 +277,14 @@ None left.
   bar a dropdown); the phone's menu lists them under the page.
 - **Settings** in two groups, Meghnaad's and Taskwarrior's, with a group's tabs down the left on the web (a row on a
   phone and on Android); addresses unchanged.
+
+**2026-11-21, later.** Settings groups, the menus and the kanban changes above shipped in 0.8.27. Then, at uroybd's
+asking (not yet committed):
+
+- **Swimlanes from the report's groups.** A `/` in the report's sort (`project+/`) gives a lane for each group, from the
+  run over the whole kanban (the one that finds Other): its group headings (`groupHeads`, the table's), in the report's
+  order (`lanesOf`/`lanes_of`, all three front ends, with tests; the terminal's end-to-end test sets `project+/` on real
+  `task`). Web and Android: the column names once, a foldable row of columns per lane, each as tall as its longest, the
+  board scrolling as a whole. Terminal: a heading per lane inside each column. A card moves only within its lane
+  (uroybd: a task's group is changed by editing the task). No setting of our own: the report says it.
+

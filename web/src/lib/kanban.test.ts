@@ -9,6 +9,7 @@ import {
   emptyKanbanSettings,
   hasReview,
   moveSteps,
+  lanesOf,
   ONLY_THIS_TASK,
   parseKanban,
   newKanban,
@@ -304,5 +305,32 @@ describe('naming a new kanban', () => {
     expect(renamedKanban({ id: 'mine', name: 'Work' }, 'Work 2', false, ['kanban']).id).toBe('mine');
     expect(renamedKanban({ id: 'work', name: 'Work' }, 'Jobs', true, ['kanban']).id).toBe('work');
     expect(renamedKanban(fresh, 'Kanban', false, ['kanban']).id).toBe('kanban-2');
+  });
+});
+
+describe('swimlanes', () => {
+  const row = (uuid: string) => ({ uuid }) as Row;
+
+  it('has none when the report has no groups', () => {
+    expect(lanesOf([row('a'), row('b')], [])).toEqual({ lanes: [], laneOf: new Map() });
+  });
+
+  it('makes a lane of each group heading, in the report’s order, a heading met again being the same lane', () => {
+    const all = ['a', 'b', 'c', 'd', 'e'].map(row);
+    const { lanes, laneOf } = lanesOf(all, [
+      'Project: Home',
+      null,
+      'Project: Work',
+      'Project: Home',
+      'Project: (none)',
+    ]);
+    expect(lanes).toEqual(['Project: Home', 'Project: Work', 'Project: (none)']);
+    expect([...laneOf.entries()]).toEqual([
+      ['a', 0],
+      ['b', 0],
+      ['c', 1],
+      ['d', 0],
+      ['e', 2],
+    ]);
   });
 });

@@ -88,7 +88,9 @@ in the report's order. **Other** is last: the tasks the report and the kanban's 
 folded until you open it, and takes no cards.
 
 Above the columns, the **report**, the **filter** and **Completed since** start as the kanban's, and you can change
-them on the page. The kanban stays as saved. A report you pick is part of the address (`/kanban/work/list`).
+them on the page. The kanban stays as saved. On a phone, and in the Android app, they fold under the filter button
+beside the kanban's name, which has a dot while they differ from the kanban's own. The gear beside it edits the kanban
+in Settings → Kanban. A report you pick is part of the address (`/kanban/work/list`).
 
 The columns share the page's width, each between a comfortable least and most, and take the height left on the
 screen: a long column scrolls its own cards. A card is drawn as the report's table draws the task's row: the colour
@@ -101,6 +103,17 @@ column on either side, and `m` picks a column. A move changes that task only: fo
 moved, without asking about the rest of its series (`rc.recurrence.confirmation:no` goes in front of the On move).
 After a move the columns are read again. If the task didn't land in the column you moved it to (the On move doesn't
 make it match that column's filter, or `task` refused it), you are told where it is.
+
+### Swimlanes
+
+A report whose sort marks a group with `/`, as Taskwarrior's own does (`report.kanban.sort=project+/,urgency-`), gives
+the kanban swimlanes: a lane for each group, headed as the table heads it (`Project: Home`, `Project: (none)`), in the
+report's order. The column names are drawn once at the top, and each lane is a row of the same columns, as tall as its
+longest. The board then scrolls as a whole rather than column by column. A lane folds with the arrow by its heading.
+
+A card moves only within its lane: a move runs the column's On move, which doesn't change the task's group. To move a
+task to another lane, edit the task (`modify project:Work`). In the terminal app a lane is a heading inside each
+column, above that lane's cards.
 
 ## In the terminal app
 

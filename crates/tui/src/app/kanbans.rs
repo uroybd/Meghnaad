@@ -16,6 +16,8 @@ pub struct Card {
     /// The report's other cells that have something, each with its label.
     pub fields: Vec<(String, String)>,
     pub style: Style,
+    /// The swimlane it is in: the heading of its group in the report (a `/` in its sort); none without groups.
+    pub lane: Option<String>,
 }
 
 /// What the open kanban has: each column's cards, then Other's (the tasks the kanban picks that no column has).
@@ -252,9 +254,24 @@ impl App {
         };
         let uuids: Vec<Vec<String>> = reports.iter().map(|r| r.uuids.clone()).collect();
         let (kept, other) = kanban::place(&uuids, &all.uuids);
+        let (lanes, lane_of) = kanban::lanes_of(&all.uuids, &all.heads);
+        // With lanes, each column's cards go lane by lane (in the report's order within one), each knowing its lane.
+        let laned = |mut cs: Vec<Card>| {
+            if !lanes.is_empty() {
+                for c in &mut cs {
+                    c.lane = lane_of.get(&c.uuid).and_then(|&l| lanes.get(l)).cloned();
+                }
+                cs.sort_by_key(|c| lane_of.get(&c.uuid).copied().unwrap_or(0));
+            }
+            cs
+        };
         let data = KanbanData {
-            columns: reports.iter().zip(&kept).map(|(r, keep)| cards(r, keep)).collect(),
-            other: cards(&all, &other),
+            columns: reports
+                .iter()
+                .zip(&kept)
+                .map(|(r, keep)| laned(cards(r, keep)))
+                .collect(),
+            other: laned(cards(&all, &other)),
         };
         self.kanban_data = Some(data);
         self.after_move(&k);
@@ -859,6 +876,7 @@ fn cards(r: &model::Report, keep: &[usize]) -> Vec<Card> {
                 title: title.lines().next().unwrap_or("").to_owned(),
                 fields,
                 style: r.styles.get(i).copied().unwrap_or_default(),
+                lane: None,
             })
         })
         .collect()

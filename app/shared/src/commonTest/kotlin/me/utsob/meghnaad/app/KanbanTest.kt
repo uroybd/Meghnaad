@@ -98,6 +98,14 @@ class KanbanTest {
     }
 
     @Test
+    fun makesALaneOfEachGroupHeadingInTheReportsOrder() {
+        assertEquals(Lanes(), lanesOf(listOf(row("a")), emptyList()))
+        val l = lanesOf(listOf("a", "b", "c", "d", "e").map(::row), listOf("Project: Home", null, "Project: Work", "Project: Home", "Project: (none)"))
+        assertEquals(listOf("Project: Home", "Project: Work", "Project: (none)"), l.lanes)
+        assertEquals(mapOf("a" to 0, "b" to 0, "c" to 1, "d" to 0, "e" to 2), l.laneOf)
+    }
+
+    @Test
     fun bracketsEachFilterThenNamesTheReport() {
         val view = KanbanView("all", "( +PENDING or +COMPLETED )", "today-14d")
         assertEquals(
