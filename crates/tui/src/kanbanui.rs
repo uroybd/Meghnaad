@@ -231,12 +231,14 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
         match card.and_then(|n| cards.get(n).map(|c| (n, c))) {
             None => f.render_widget(Paragraph::new(lines.clone()), at),
             Some((n, c)) => {
-                // The frame takes the task's colour, as the table's row has it; the chosen card's is inverted.
-                let edge = Style::new().fg(c.style.fg.or(theme::border(false).fg).unwrap_or(Color::Reset));
-                let edge = if sel == Some(n) {
-                    edge.add_modifier(Modifier::REVERSED)
-                } else {
-                    edge
+                // The frame takes the task's colour, as the table's row has it; the chosen card's is that colour
+                // inverted: a band of it, on the column's ground.
+                let colour = c.style.fg.or(theme::border(false).fg).unwrap_or(Color::Reset);
+                let ground = theme::column().bg;
+                let edge = match (sel == Some(n), ground) {
+                    (false, _) => Style::new().fg(colour),
+                    (true, Some(g)) => Style::new().fg(g).bg(colour),
+                    (true, None) => Style::new().fg(colour).add_modifier(Modifier::REVERSED),
                 };
                 // A card cut off at the column's foot has no bottom edge.
                 let sides = if h < height(piece) {
@@ -248,7 +250,7 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
                     .borders(sides)
                     .border_type(BorderType::Rounded)
                     .border_style(edge)
-                    .style(Style::new().bg(Color::Reset))
+                    .style(theme::column())
                     .padding(Padding::horizontal(1));
                 f.render_widget(Paragraph::new(lines.clone()).block(frame), at);
             }
