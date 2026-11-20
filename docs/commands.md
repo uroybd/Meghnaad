@@ -543,7 +543,7 @@ Takes since, other, new, column, edit, delete, raise, lower, write or off.
 
 With nothing after it, the Kanban page (in the terminal, where Kanban is on). On a kanban, `:kanban since` changes Completed since there and `:kanban other` shows or hides Other, the tasks no column has. In the Kanban section of the terminal's Settings: `:kanban new` adds a kanban, `:kanban column` a column, `:kanban edit` and `:kanban delete` change and delete what is under the cursor (while Kanban is off, `:kanban edit` sets it up the way under the cursor, Automatic or Manual), `:kanban raise` and `:kanban lower` move a column, `:kanban write` writes the `progressState` UDA and `:kanban off` turns Kanban off. See [Kanban](using/kanban.md).
 
-Since the next release.
+Since 0.8.26.
 
 <a id="move"></a>
 
@@ -553,7 +553,7 @@ Takes left or right.
 
 On a kanban in the terminal, the card under the cursor to a column chosen from a list, running that column's On move on the task; `:move left` and `:move right` to the column beside it.
 
-Since the next release.
+Since 0.8.26.
 
 ## Rows
 
