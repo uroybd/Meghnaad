@@ -188,7 +188,7 @@ fun TaskCard(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Mark(
+internal fun Mark(
     store: Store,
     col: Column,
     c: Cell,

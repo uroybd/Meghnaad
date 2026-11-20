@@ -145,6 +145,24 @@ export function setupLines(config: ConfigResponse | null, name: string): [string
   return lines;
 }
 
+/**
+ * The report the automatic setup can add to the taskrc, so a kanban needs no filter of its own: open tasks and finished
+ * ones (no deleted or waiting tasks, no recurring templates), the most urgent first. Completed since still applies.
+ */
+export const KANBAN_REPORT = 'kanban';
+export const KANBAN_REPORT_LINES: [string, string][] = [
+  [`report.${KANBAN_REPORT}.description`, 'Open tasks and the ones finished lately, for Kanban'],
+  [`report.${KANBAN_REPORT}.columns`, 'id,priority,project,tags,due.relative,scheduled.countdown,description'],
+  [`report.${KANBAN_REPORT}.labels`, 'ID,P,Project,Tags,Due,Sch,Description'],
+  [`report.${KANBAN_REPORT}.filter`, AUTO_FILTER],
+  [`report.${KANBAN_REPORT}.sort`, 'urgency-'],
+];
+
+/** The lines that add the `kanban` report, or none when the taskrc has a report of that name already (it is used as it is). */
+export function reportLines(config: ConfigResponse | null): [string, string][] {
+  return config?.config.reports?.[KANBAN_REPORT] ? [] : KANBAN_REPORT_LINES;
+}
+
 /** Whether tasksh's review is set up enough for a task to go back in its queue: the `reviewed` date UDA is defined. */
 export function hasReview(config: ConfigResponse | null): boolean {
   return config?.config.udas?.reviewed?.type === 'date';
@@ -164,15 +182,18 @@ export function automaticColumns(review: boolean, u = PROGRESS_UDA): KanbanColum
   ];
 }
 
-/** Kanban as the automatic setup leaves it: on, its settings on the UDA `uda`, and a first kanban with none of its own. */
-export function automaticSettings(s: KanbanSettings, review: boolean, uda: string): KanbanSettings {
+/**
+ * Kanban as the automatic setup leaves it: on, its settings on the UDA `uda`, and a first kanban with none of its own. With
+ * `ownReport` it is drawn from the `kanban` report, whose filter is enough; else from `all` with a filter of its own.
+ */
+export function automaticSettings(s: KanbanSettings, review: boolean, uda: string, ownReport = false): KanbanSettings {
   return {
     ...s,
     enabled: true,
     setup: 'automatic',
     uda,
-    report: AUTO_REPORT,
-    filter: AUTO_FILTER,
+    report: ownReport ? KANBAN_REPORT : AUTO_REPORT,
+    filter: ownReport ? '' : AUTO_FILTER,
     completedSince: AUTO_COMPLETED_SINCE,
     columns: automaticColumns(review, uda),
     kanbans: s.kanbans.length ? s.kanbans : [{ id: 'kanban', name: 'Kanban' }],
@@ -358,13 +379,16 @@ export function columnOf(columns: Row[][], uuid: string): number {
  * The statements a move runs on one task: the column's line with the task's uuid in front of each statement, and the
  * task commands in it written out (a task command keeps the uuid in front of each of its own statements).
  */
+/** A move changes the card's task only: a recurring task's instance, without asking about the rest of its series. */
+export const ONLY_THIS_TASK = 'rc.recurrence.confirmation:no';
+
 export function moveSteps(
   move: string,
   uuid: string,
   commands: TaskCommand[],
 ): { args: string[]; join: Joiner | null }[] {
   const line = splitChain(move)
-    .map((s, i) => (i ? ` ${s.join} ` : '') + `${uuid} ${s.line}`)
+    .map((s, i) => (i ? ` ${s.join} ` : '') + `${ONLY_THIS_TASK} ${uuid} ${s.line}`)
     .join('');
   return planChain(line, commands).map((s) => ({ args: splitWords(s.line), join: s.join }));
 }

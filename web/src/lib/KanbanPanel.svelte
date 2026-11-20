@@ -16,6 +16,8 @@
     renamedKanban,
     resolveKanban,
     setupLines,
+    reportLines,
+    KANBAN_REPORT,
     udaNameProblem,
     udaStatus,
     type KanbanColumn,
@@ -59,6 +61,10 @@
   const udaProblem = $derived(udaNameProblem(draft.uda));
   const status = $derived(udaStatus(store.config, draft.uda));
   const lines = $derived(udaProblem ? [] : setupLines(store.config, draft.uda));
+  // The automatic setup can add a `kanban` report to the taskrc, so the kanbans need no filter of their own.
+  let withReport = $state(true);
+  const hasReport = $derived(!!store.config?.config.reports?.[KANBAN_REPORT]);
+  const addLines = $derived(withReport ? reportLines(store.config) : []);
   const review = $derived(hasReview(store.config));
   const label: Record<Part, string> = { ok: 'defined', missing: 'not defined', different: 'defined differently' };
 
@@ -95,10 +101,10 @@
     }
   }
 
-  /** Write the UDA's `config` lines; throws what the engine refused. */
-  async function writeLines() {
+  /** Write the UDA's `config` lines (and the report's, when the setup adds it); throws what the engine refused. */
+  async function writeLines(more: [string, string][] = []) {
     try {
-      for (const line of lines) {
+      for (const line of [...lines, ...more]) {
         const r = (await runCli({ args: configArgs(line) })).result;
         if (r.kind === 'error') throw new Error(r.message);
       }
@@ -112,7 +118,7 @@
     busy = true;
     error = null;
     try {
-      if (automatic) await writeLines();
+      if (automatic) await writeLines(addLines);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       busy = false;
@@ -121,7 +127,7 @@
     busy = false;
     await save(
       automatic
-        ? automaticSettings(draft, review, draft.uda)
+        ? automaticSettings(draft, review, draft.uda, withReport)
         : { ...draft, enabled: true, setup: 'manual', report: store.reports[0]?.name ?? 'next' },
     );
   }
@@ -262,8 +268,8 @@
       <div class="choice">
         <h3>Automatic</h3>
         <p class="dim">
-          Defines a UDA and draws every kanban on <code>all</code> with the columns To do, In progress, Review and Done.
-          Moving a card out of Done reopens it; nothing starts a task.
+          Defines a UDA and gives every kanban the columns To do, In progress, Review and Done. Moving a card out of
+          Done reopens it; nothing starts a task.
           {#if review}
             tasksh's review is set up, so moving a card to Review puts it back in the review queue (it clears
             <code>reviewed</code>).
@@ -286,9 +292,20 @@
               (type <code>{status.type}</code>{#if status.values.length}, values <code>{status.values.join(',')}</code
                 >{/if}){/if}.
           </p>
-          {#if lines.length}
+          <label class="check"
+            ><input type="checkbox" bind:checked={withReport} /> Draw the kanbans on a
+            <code>{KANBAN_REPORT}</code> report{hasReport
+              ? ' (your taskrc has one: it is used as it is)'
+              : ', added to your taskrc'}</label
+          >
+          <p class="dim">
+            {#if withReport}Its filter leaves out deleted and waiting tasks and recurring templates, so a kanban needs
+              no filter of its own.{:else}The kanbans are drawn on <code>all</code>, with the filter
+              <code>( +PENDING or +COMPLETED )</code>.{/if}
+          </p>
+          {#if lines.length || addLines.length}
             <p class="dim">Set up writes these lines to your taskrc, and nothing else:</p>
-            <pre class="lines">{lines.map(([n, v]) => `config ${n} ${v}`).join('\n')}</pre>
+            <pre class="lines">{[...lines, ...addLines].map(([n, v]) => `config ${n} ${v}`).join('\n')}</pre>
           {/if}
         {/if}
         <button class="primary" disabled={busy || !!udaProblem} onclick={() => setUp(true)}>Set up automatically</button
@@ -482,6 +499,12 @@
 </section>
 
 <style>
+  .check {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 8px 0 2px;
+  }
   h2 {
     margin: 0 0 4px;
     font-size: 18px;

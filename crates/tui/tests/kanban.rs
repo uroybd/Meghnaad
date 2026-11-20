@@ -77,10 +77,11 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
     press(&mut app, '9');
     assert_eq!(app.page, Page::Settings);
     app.settings_section = SettingsSection::Kanban;
-    app.kanban_row = 1;
+    // The rows: the UDA, whether to add a kanban report (yes, to begin with), then the two ways.
+    app.kanban_row = 2;
     enter(&mut app);
     assert!(
-        app.status.contains("Enter again writes 3 config lines"),
+        app.status.contains("Enter again writes 8 config lines"),
         "{}",
         app.status
     );
@@ -92,7 +93,10 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
     let saved = std::fs::read_to_string(dir.join("config/settings.json")).unwrap();
     let saved: serde_json::Value = serde_json::from_str(&saved).unwrap();
     assert_eq!(saved["kanban"]["uda"], "progressState");
-    assert_eq!(saved["kanban"]["report"], "all");
+    // The kanbans are drawn on the report it added, whose filter is enough.
+    assert_eq!(task.get("report.kanban.filter").unwrap(), "( +PENDING or +COMPLETED )");
+    assert_eq!(saved["kanban"]["report"], "kanban");
+    assert_eq!(saved["kanban"]["filter"], "");
     assert_eq!(
         saved["kanban"]["kanbans"],
         serde_json::json!([{ "id": "kanban", "name": "Kanban" }])
@@ -132,10 +136,7 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
     press(&mut app, 'f');
     match &mut app.mode {
         Mode::Prompt(p) => {
-            assert_eq!(
-                p.input.line, "( +PENDING or +COMPLETED )",
-                "it starts from the kanban's"
-            );
+            assert_eq!(p.input.line, "", "it starts from the kanban's, none");
             p.input = Input::new("beta");
         }
         m => panic!("{m:?}"),
@@ -149,6 +150,6 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
     );
     let again: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("config/settings.json")).unwrap()).unwrap();
-    assert_eq!(again["kanban"]["filter"], "( +PENDING or +COMPLETED )");
+    assert_eq!(again["kanban"]["filter"], "");
     std::fs::remove_dir_all(&dir).ok(); // left behind in the temp folder is harmless
 }

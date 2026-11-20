@@ -237,11 +237,30 @@ fn row_line(app: &App, row: KanbanRow) -> Line<'static> {
                 spans.push(if part == Part::Ok { said.quiet() } else { said.bad() });
             }
         }
+        KanbanRow::WithReport => {
+            let has = app.cfg.reports.contains_key(kanban::KANBAN_REPORT);
+            spans.push(label("Report"));
+            spans.push(value(if app.kanban_with_report {
+                kanban::KANBAN_REPORT
+            } else {
+                kanban::AUTO_REPORT
+            }));
+            spans.push(
+                Span::from(if !app.kanban_with_report {
+                    "  with the filter ( +PENDING or +COMPLETED ); Enter: a kanban report instead"
+                } else if has {
+                    "  your taskrc's own; Enter: all instead"
+                } else {
+                    "  added to your taskrc, its filter enough; Enter: all instead"
+                })
+                .quiet(),
+            );
+        }
         KanbanRow::Automatic => {
             spans.push(Span::from("Set up automatically").bold());
             spans.push(
                 Span::from(format!(
-                    "  defines {}, every kanban on all: To do, In progress, Review, Done",
+                    "  defines {}; the columns To do, In progress, Review, Done",
                     s.uda
                 ))
                 .quiet(),
@@ -327,7 +346,7 @@ pub fn settings_lines(app: &App) -> Vec<ListItem<'static>> {
         items.push(ListItem::new(Line::from(format!("UDA: {bad}")).bad()));
     }
     let on_setup = rows.get(app.kanban_row) == Some(&KanbanRow::Automatic);
-    let lines = kanban::setup_lines(&app.cfg, &app.kanban.uda);
+    let lines = app.kanban_lines();
     let unwritten = app.kanban.enabled && app.kanban.setup.as_deref() == Some("automatic") && !lines.is_empty();
     if on_setup || unwritten {
         if unwritten {

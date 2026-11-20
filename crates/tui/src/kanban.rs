@@ -208,6 +208,32 @@ pub fn setup_lines(cfg: &Config, name: &str) -> Vec<(String, String)> {
     lines
 }
 
+/// The report the automatic setup can add to the taskrc, so a kanban needs no filter of its own: open tasks and finished
+/// ones (no deleted or waiting tasks, no recurring templates), the most urgent first. Completed since still applies.
+pub const KANBAN_REPORT: &str = "kanban";
+const KANBAN_REPORT_LINES: [(&str, &str); 5] = [
+    ("description", "Open tasks and the ones finished lately, for Kanban"),
+    (
+        "columns",
+        "id,priority,project,tags,due.relative,scheduled.countdown,description",
+    ),
+    ("labels", "ID,P,Project,Tags,Due,Sch,Description"),
+    ("filter", AUTO_FILTER),
+    ("sort", "urgency-"),
+];
+
+/// The lines that add the `kanban` report, or none when the taskrc has a report of that name already (it is used as it
+/// is).
+pub fn report_lines(cfg: &Config) -> Vec<(String, String)> {
+    if cfg.reports.contains_key(KANBAN_REPORT) {
+        return Vec::new();
+    }
+    KANBAN_REPORT_LINES
+        .iter()
+        .map(|(k, v)| (format!("report.{KANBAN_REPORT}.{k}"), (*v).to_owned()))
+        .collect()
+}
+
 /// Whether tasksh's review is set up enough for a task to go back in its queue: the `reviewed` date UDA is defined.
 pub fn has_review(cfg: &Config) -> bool {
     cfg.udas.get("reviewed").is_some_and(|u| u.ty == UdaType::Date)
@@ -244,13 +270,15 @@ pub fn automatic_columns(review: bool, u: &str) -> Vec<Column> {
 }
 
 /// Kanban as the automatic setup leaves it: on, its settings on the UDA `uda`, and a first kanban with none of its own.
-pub fn automatic_settings(s: &Settings, review: bool, uda: &str) -> Settings {
+/// With `own_report` it is drawn from the `kanban` report, whose filter is enough; else from `all` with a filter of its
+/// own.
+pub fn automatic_settings(s: &Settings, review: bool, uda: &str, own_report: bool) -> Settings {
     Settings {
         enabled: true,
         setup: Some("automatic".into()),
         uda: uda.into(),
-        report: AUTO_REPORT.into(),
-        filter: AUTO_FILTER.into(),
+        report: if own_report { KANBAN_REPORT } else { AUTO_REPORT }.into(),
+        filter: if own_report { "" } else { AUTO_FILTER }.into(),
         completed_since: AUTO_COMPLETED_SINCE.into(),
         columns: automatic_columns(review, uda),
         kanbans: if s.kanbans.is_empty() {
@@ -573,12 +601,15 @@ pub fn place(columns: &[Vec<String>], all: &[String]) -> (Vec<Vec<usize>>, Vec<u
 /// # Errors
 ///
 /// The line is not a well-formed chain.
+/// A move changes the card's task only: a recurring task's instance, without asking about the rest of its series.
+pub const ONLY_THIS_TASK: &str = "rc.recurrence.confirmation:no";
+
 pub fn move_steps(on_move: &str, uuid: &str, commands: &[TaskCommand]) -> Result<Vec<Statement>, String> {
     let line: String = split_chain(on_move)?
         .iter()
         .map(|s| match s.join {
-            Some(j) => format!(" {} {uuid} {}", j.as_str(), s.line),
-            None => format!("{uuid} {}", s.line),
+            Some(j) => format!(" {} {ONLY_THIS_TASK} {uuid} {}", j.as_str(), s.line),
+            None => format!("{ONLY_THIS_TASK} {uuid} {}", s.line),
         })
         .collect();
     plan_chain(&line, commands)
@@ -664,7 +695,7 @@ mod tests {
 
     #[test]
     fn the_automatic_setup_turns_kanban_on_with_a_first_kanban() {
-        let s = automatic_settings(&Settings::default(), false, "stage");
+        let s = automatic_settings(&Settings::default(), false, "stage", false);
         assert!(s.enabled);
         assert_eq!(s.setup.as_deref(), Some("automatic"));
         assert_eq!(
@@ -693,7 +724,9 @@ mod tests {
             kanbans: vec![mine.clone()],
             ..Settings::default()
         };
-        assert_eq!(automatic_settings(&kept, false, U).kanbans, [mine]);
+        assert_eq!(automatic_settings(&kept, false, U, false).kanbans, [mine]);
+        let own = automatic_settings(&Settings::default(), false, U, true);
+        assert_eq!((own.report.as_str(), own.filter.as_str()), ("kanban", ""));
     }
 
     #[test]
@@ -745,8 +778,11 @@ mod tests {
     fn a_move_runs_on_that_task_with_task_commands_written_out() {
         let uuid = "1a2b3c4d-0000-4000-8000-000000000000";
         let steps = move_steps("modify progressState:review ; annotate \"in review\"", uuid, &[]).unwrap();
-        assert_eq!(steps[0].line, format!("{uuid} modify progressState:review"));
-        assert_eq!(steps[1].line, format!("{uuid} annotate \"in review\""));
+        assert_eq!(
+            steps[0].line,
+            format!("{ONLY_THIS_TASK} {uuid} modify progressState:review")
+        );
+        assert_eq!(steps[1].line, format!("{ONLY_THIS_TASK} {uuid} annotate \"in review\""));
         assert_eq!(steps[1].join, Some(Joiner::Then));
         let ship = TaskCommand {
             name: "ship".into(),
@@ -755,7 +791,13 @@ mod tests {
         };
         let steps = move_steps("ship", uuid, &[ship]).unwrap();
         let lines: Vec<&str> = steps.iter().map(|s| s.line.as_str()).collect();
-        assert_eq!(lines, [format!("{uuid} modify +shipped"), format!("{uuid} done")]);
+        assert_eq!(
+            lines,
+            [
+                format!("{ONLY_THIS_TASK} {uuid} modify +shipped"),
+                format!("{ONLY_THIS_TASK} {uuid} done")
+            ]
+        );
         assert_eq!(steps[1].join, Some(Joiner::And));
     }
 

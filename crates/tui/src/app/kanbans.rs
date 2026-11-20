@@ -37,6 +37,8 @@ pub struct Typed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KanbanRow {
     Uda,
+    /// Whether the automatic setup adds a `kanban` report to the taskrc and draws the kanbans on it.
+    WithReport,
     Automatic,
     Manual,
     Report(Option<usize>),
@@ -401,7 +403,7 @@ impl App {
         use KanbanRow as R;
         let s = &self.kanban;
         if !s.enabled {
-            return vec![R::Uda, R::Automatic, R::Manual];
+            return vec![R::Uda, R::WithReport, R::Automatic, R::Manual];
         }
         let mut rows = vec![
             R::Uda,
@@ -443,9 +445,18 @@ impl App {
         }
     }
 
+    /// The lines the automatic setup writes: the UDA's, and the `kanban` report's when it adds one.
+    pub fn kanban_lines(&self) -> Vec<(String, String)> {
+        let mut lines = kanban::setup_lines(&self.cfg, &self.kanban.uda);
+        if self.kanban_with_report && !self.kanban.enabled {
+            lines.extend(kanban::report_lines(&self.cfg));
+        }
+        lines
+    }
+
     /// Write the UDA's `config` lines to the taskrc, one at a time, and read the settings again. Whether all were written.
     fn write_kanban_uda(&mut self) -> bool {
-        for line in kanban::setup_lines(&self.cfg, &self.kanban.uda) {
+        for line in self.kanban_lines() {
             let said = match self.task.capture(&config_args(&line)) {
                 Ok(out) if out.ok => continue,
                 Ok(out) => crate::task::first_line(&out.stderr, &out.stdout),
@@ -471,7 +482,7 @@ impl App {
                 if let Some(bad) = kanban::uda_name_problem(&self.kanban.uda) {
                     self.status = bad;
                 } else if !asked {
-                    let lines = kanban::setup_lines(&self.cfg, &self.kanban.uda);
+                    let lines = self.kanban_lines();
                     self.kanban_asking = true;
                     self.status = if lines.is_empty() {
                         "Enter again turns Kanban on with the automatic columns.".into()
@@ -482,11 +493,19 @@ impl App {
                         )
                     };
                 } else if self.write_kanban_uda() {
-                    let s = kanban::automatic_settings(&self.kanban, kanban::has_review(&self.cfg), &self.kanban.uda);
+                    let s = kanban::automatic_settings(
+                        &self.kanban,
+                        kanban::has_review(&self.cfg),
+                        &self.kanban.uda,
+                        self.kanban_with_report,
+                    );
                     if self.save_kanban(&s, "Kanban is on, with the automatic columns.") {
                         self.kanban_row = 0;
                     }
                 }
+            }
+            ("settings.kanban.edit", Some(R::WithReport)) => {
+                self.kanban_with_report = !self.kanban_with_report;
             }
             ("settings.kanban.edit", Some(R::Manual)) => {
                 next.enabled = true;

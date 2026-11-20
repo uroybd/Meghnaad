@@ -9,11 +9,13 @@
   import { formatFor } from './dateformat';
   import { debounce } from './debounce';
   import FilterInput from './FilterInput.svelte';
-  import { formatTable, type Cell } from './format';
+  import { css, look } from './colors';
+  import { formatTable, rowClass, type Cell } from './format';
   import { ChevronDown, ChevronRight, Settings } from './icons';
   import { columnArgs, columnOf, moveSteps, placeTasks, type Kanban, type KanbanView } from './kanban';
   import ReportCell from './ReportCell.svelte';
   import { kanbanPath } from './route';
+  import { scheme } from './scheme.svelte';
   import { store } from './store.svelte';
   import type { Column, ReportResult, Row } from './types';
 
@@ -126,7 +128,45 @@
     (board?.meta ?? [])
       .map((col, i) => ({ col, c: row[i] }))
       .filter(({ col, c }) => col.name !== 'description' && c && c.text.trim() !== '');
+  /** A card's edge takes the colour the table lays on the task's row (color.active, color.overdue, ...). */
+  function edge(row: Row): string {
+    const l = look(row.style, scheme.dark);
+    const c = l?.background ?? l?.color;
+    return c ? `--edge:${c}` : '';
+  }
+  /** A priority is drawn in its own colour, as the table draws it. */
+  const priorityStyle = (name: string, row: Row) =>
+    name === 'priority' && row.priority
+      ? css(look(store.config?.colors?.[`uda.priority.${row.priority}`], scheme.dark))
+      : undefined;
   const descriptionAt = $derived(board?.meta.findIndex((c) => c.name === 'description') ?? -1);
+
+  // The columns take the height left in the page's area, and each scrolls its own cards, so every column is as tall as the
+  // screen allows and a long one doesn't make the page scroll.
+  let columnsEl = $state<HTMLElement>();
+  let height = $state<number | null>(null);
+  $effect(() => {
+    const el = columnsEl;
+    const main = el?.closest('main');
+    if (!el || !main) return;
+    const fit = () => {
+      // The area's bottom padding (room for the + button), and a little for the scrollbar under the columns.
+      const pad = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+      height = Math.max(
+        320,
+        main.getBoundingClientRect().bottom - (el.getBoundingClientRect().top + main.scrollTop) - pad - 16,
+      );
+    };
+    fit();
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+    ro?.observe(main);
+    if (el.parentElement) ro?.observe(el.parentElement);
+    addEventListener('resize', fit);
+    return () => {
+      ro?.disconnect();
+      removeEventListener('resize', fit);
+    };
+  });
 
   // Moving a card.
   let dragging = $state<{ uuid: string; from: number } | null>(null);
@@ -163,7 +203,10 @@
 
 {#snippet card(row: Row, cs: Cell[], from: number)}
   <li
-    class="card"
+    class="card {rowClass(row)}"
+    class:edged={!!edge(row)}
+    style={edge(row)}
+    data-pri={row.priority ?? undefined}
     draggable="true"
     ondragstart={(e) => {
       dragging = { uuid: row.uuid, from };
@@ -178,7 +221,9 @@
       {#each fieldsOf(cs) as f (f.col.spec)}
         <div>
           <dt>{f.col.label}</dt>
-          <dd><ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} /></dd>
+          <dd class="{f.col.kind} {f.c.cls ?? ''}" style={priorityStyle(f.col.name, row)}>
+            <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
+          </dd>
         </div>
       {/each}
     </dl>
@@ -269,7 +314,13 @@
     {#if !kanban.columns.length}
       <p class="dim">This kanban has no columns yet: add them under <strong>Edit</strong>.</p>
     {:else if board}
-      <div class="columns" class:loading aria-busy={loading}>
+      <div
+        class="columns"
+        class:loading
+        aria-busy={loading}
+        bind:this={columnsEl}
+        style:height={height ? `${height}px` : undefined}
+      >
         {#each kanban.columns as col, i (i)}
           {@const rows = board.columns[i] ?? []}
           {@const cs = cells(rows)}
@@ -299,7 +350,7 @@
             </ul>
           </section>
         {/each}
-        <section class="column other" aria-label="Other">
+        <section class="column other" class:open={otherOpen} aria-label="Other">
           <h2>
             <button class="ghost fold" aria-expanded={otherOpen} onclick={() => (otherOpen = !otherOpen)}>
               {#if otherOpen}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if} Other
@@ -380,27 +431,41 @@
   .columns {
     display: flex;
     gap: 12px;
-    align-items: flex-start;
+    align-items: stretch;
     overflow-x: auto;
     padding-bottom: 8px;
   }
   .columns.loading {
     opacity: 0.7;
   }
+  /* Columns share the width, each between a card's least and most comfortable width; past that the row scrolls. */
   .column {
-    flex: 0 0 280px;
+    flex: 1 1 300px;
+    min-width: 240px;
+    max-width: 440px;
     background: var(--panel-2);
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 10px;
     min-height: 120px;
+    display: flex;
+    flex-direction: column;
   }
   .column.over {
     outline: 2px dashed var(--accent);
   }
   .column.other {
-    flex-basis: 220px;
+    flex: 0 0 130px;
+    min-width: 0;
     min-height: 0;
+    align-self: flex-start;
+  }
+  .column.other.open {
+    align-self: stretch;
+  }
+  .column.other.open {
+    flex: 1 1 300px;
+    min-width: 240px;
   }
   .column h2 {
     margin: 0 0 8px;
@@ -424,7 +489,10 @@
   .cards {
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: 0 2px 2px 0;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -445,16 +513,19 @@
     padding: 0;
     overflow-wrap: anywhere;
   }
+  /* The fields side by side, as many as fit on a line. */
   dl {
     margin: 0;
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    flex-wrap: wrap;
+    gap: 3px 14px;
     font-size: 12.5px;
   }
   dl div {
     display: flex;
-    gap: 6px;
+    gap: 5px;
+    min-width: 0;
+    max-width: 100%;
   }
   dt {
     color: var(--dim);
@@ -465,13 +536,49 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  /* As the table draws them: a priority in its colour, a finished task tinted, a waiting one dim. */
+  dd.priority {
+    font-weight: 600;
+  }
+  .card[data-pri='H'] dd.priority {
+    color: var(--pri-h);
+  }
+  .card[data-pri='M'] dd.priority {
+    color: var(--pri-m);
+  }
+  .card[data-pri='L'] dd.priority {
+    color: var(--pri-l);
+  }
+  dd.dim,
+  .card.done,
+  .card.waiting {
+    color: var(--dim);
+  }
+  .card.completed {
+    background: color-mix(in srgb, var(--ok) 9%, var(--panel));
+  }
+  .card.deleted {
+    background: color-mix(in srgb, var(--err) 9%, var(--panel));
+  }
+  .card.edged {
+    border-color: var(--edge);
+    box-shadow: inset 3px 0 0 var(--edge);
+  }
   .moveto {
     font-size: 12px;
     align-self: flex-start;
   }
+  /* Dragging is the way with a mouse; Move to… is for a phone or a touch screen, where dragging is hard. */
+  @media (hover: hover) and (pointer: fine) and (min-width: 761px) {
+    .moveto {
+      display: none;
+    }
+  }
   @media (max-width: 760px) {
-    .column {
-      flex-basis: 82vw;
+    .column,
+    .column.other.open {
+      flex: 0 0 82vw;
+      max-width: none;
     }
   }
 </style>

@@ -108,6 +108,23 @@ fun kanbanSetupLines(config: ConfigResponse?, name: String): List<Pair<String, S
     return lines
 }
 
+/**
+ * The report the automatic setup can add to the taskrc, so a kanban needs no filter of its own: open tasks and finished
+ * ones (no deleted or waiting tasks, no recurring templates), the most urgent first. Completed since still applies (kanban.ts).
+ */
+const val KANBAN_REPORT = "kanban"
+val KANBAN_REPORT_LINES = listOf(
+    "report.$KANBAN_REPORT.description" to "Open tasks and the ones finished lately, for Kanban",
+    "report.$KANBAN_REPORT.columns" to "id,priority,project,tags,due.relative,scheduled.countdown,description",
+    "report.$KANBAN_REPORT.labels" to "ID,P,Project,Tags,Due,Sch,Description",
+    "report.$KANBAN_REPORT.filter" to AUTO_FILTER,
+    "report.$KANBAN_REPORT.sort" to "urgency-",
+)
+
+/** The lines that add the `kanban` report, or none when the taskrc has a report of that name already (it is used as it is). */
+fun kanbanReportLines(config: ConfigResponse?): List<Pair<String, String>> =
+    if (config?.config?.reports?.containsKey(KANBAN_REPORT) == true) emptyList() else KANBAN_REPORT_LINES
+
 /** Whether tasksh's review is set up enough for a task to go back in its queue: the `reviewed` date UDA is defined. */
 fun hasReview(config: ConfigResponse?): Boolean = config?.config?.udas?.get("reviewed")?.type == "date"
 
@@ -119,13 +136,16 @@ fun automaticColumns(review: Boolean, u: String = PROGRESS_UDA): List<KanbanColu
     KanbanColumn("Done", "status:completed", "done"),
 )
 
-/** Kanban as the automatic setup leaves it: on, its settings on the UDA [uda], and a first kanban with none of its own. */
-fun automaticSettings(s: KanbanSettings, review: Boolean, uda: String) = s.copy(
+/**
+ * Kanban as the automatic setup leaves it: on, its settings on the UDA [uda], and a first kanban with none of its own. With
+ * [ownReport] it is drawn from the `kanban` report, whose filter is enough; else from `all` with a filter of its own.
+ */
+fun automaticSettings(s: KanbanSettings, review: Boolean, uda: String, ownReport: Boolean = false) = s.copy(
     enabled = true,
     setup = "automatic",
     uda = uda,
-    report = AUTO_REPORT,
-    filter = AUTO_FILTER,
+    report = if (ownReport) KANBAN_REPORT else AUTO_REPORT,
+    filter = if (ownReport) "" else AUTO_FILTER,
     completedSince = AUTO_COMPLETED_SINCE,
     columns = automaticColumns(review, uda),
     kanbans = s.kanbans.ifEmpty { listOf(KanbanEntry("kanban", "Kanban")) },
@@ -338,7 +358,10 @@ fun columnOf(columns: List<List<Row>>, uuid: String): Int = columns.indexOfFirst
  * The statements a move runs on one task: the column's line with the task's uuid in front of each statement, and the task
  * commands in it written out (a task command keeps the uuid in front of each of its own statements).
  */
+/** A move changes the card's task only: a recurring task's instance, without asking about the rest of its series. */
+const val ONLY_THIS_TASK = "rc.recurrence.confirmation:no"
+
 fun moveSteps(move: String, uuid: String, commands: List<TaskCommand>): List<CommandStep> {
-    val line = splitChain(move).mapIndexed { i, s -> (if (i > 0) " ${s.join?.text} " else "") + "$uuid ${s.line}" }.joinToString("")
+    val line = splitChain(move).mapIndexed { i, s -> (if (i > 0) " ${s.join?.text} " else "") + "$ONLY_THIS_TASK $uuid ${s.line}" }.joinToString("")
     return planChain(line, commands).map { CommandStep(splitWords(it.line), it.join) }
 }

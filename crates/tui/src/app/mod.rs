@@ -410,6 +410,8 @@ pub struct App {
     kanban_moved: Option<(String, Option<usize>, usize)>,
     /// The row of Settings → Kanban, and whether the automatic setup is waiting for a second Enter.
     pub kanban_row: usize,
+    /// The automatic setup adds a `kanban` report to the taskrc (Settings → Kanban, before it is set up).
+    pub kanban_with_report: bool,
     pub kanban_asking: bool,
 
     pub log: Vec<Line<'static>>,
@@ -670,6 +672,7 @@ impl App {
             kanban_other: false,
             kanban_moved: None,
             kanban_row: 0,
+            kanban_with_report: true,
             kanban_asking: false,
             log: Vec::new(),
             log_back: 0,

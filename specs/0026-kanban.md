@@ -256,3 +256,24 @@ None left.
 - **Sizes.** The engine is 907,074 bytes compressed against 906,841 at the last commit (+233, the new `:` commands'
   entries in `keymap`); the Worker is unchanged.
 - **Left.** The What section still describes the report, filter and columns as each kanban's: wording to agree.
+
+**2026-11-21.** Shipped in 0.8.26; then, at uroybd's asking (not yet committed):
+
+- **A `kanban` report.** The automatic setup offers, ticked to begin with, to add `report.kanban.*` to the taskrc
+  (`description`, `columns` id,priority,project,tags,due.relative,scheduled.countdown,description, `labels`,
+  `filter` `( +PENDING or +COMPLETED )`, `sort` urgency-; checked on `task` 3.5.0) and draws the kanbans on it with no
+  filter of Kanban's own; a `kanban` report already there is used as it is; unticked it is `all` with the filter, as
+  before (`reportLines`/`kanbanReportLines`/`report_lines`, `automaticSettings(.., ownReport)`; the terminal app has a
+  row for it while Kanban is off). This departs from criterion 1 as worded (report `all` and that filter): the
+  criterion is left as it is until uroybd agrees new wording.
+- **Recurring tasks.** A move puts `rc.recurrence.confirmation:no` in front of each statement (`ONLY_THIS_TASK`, all
+  three front ends), so a recurring task's instance changes without the series question; checked on the engine and on
+  `task` 3.5.0 (only the instance got `progressState`).
+- **Cards as the table draws rows.** The colour the taskrc gives the row is the card's edge, the priority is in its
+  colour, a finished task tinted (web; Android reuses the report cards' `Mark`). Columns share the width between
+  240 and 440 px (Android 260 and 440 dp) and take the height left on the screen, each scrolling its own cards. On the
+  web, Move to… shows only on a phone or a touch screen; dragging is the way with a mouse.
+- **Menus.** Boards and Kanban in the top bar open a menu of each one and the list (`NavPick.svelte`; Android's wide
+  bar a dropdown); the phone's menu lists them under the page.
+- **Settings** in two groups, Meghnaad's and Taskwarrior's, with a group's tabs down the left on the web (a row on a
+  phone and on Android); addresses unchanged.

@@ -406,10 +406,11 @@ fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     assert_eq!(app.settings_section, SettingsSection::Boards);
     app.key(key(KeyCode::Char('j')));
     assert_eq!(app.settings_section, SettingsSection::Kanban);
-    // While Kanban is off: the UDA, then the two ways to set it up.
-    app.key(key(KeyCode::Char('j')));
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!((app.settings_section, app.kanban_row), (SettingsSection::Kanban, 2));
+    // While Kanban is off: the UDA, whether to add a kanban report, then the two ways to set it up.
+    for _ in 0..3 {
+        app.key(key(KeyCode::Char('j')));
+    }
+    assert_eq!((app.settings_section, app.kanban_row), (SettingsSection::Kanban, 3));
     app.key(key(KeyCode::Char('j')));
     assert_eq!(app.settings_section, SettingsSection::Keys);
     app.key(key(KeyCode::Char('j')));
@@ -421,7 +422,7 @@ fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     app.key(key(KeyCode::Char('k')));
     app.key(key(KeyCode::Char('k')));
     assert_eq!(app.settings_section, SettingsSection::Kanban);
-    for _ in 0..3 {
+    for _ in 0..4 {
         app.key(key(KeyCode::Char('k')));
     }
     assert_eq!(app.settings_section, SettingsSection::Boards);

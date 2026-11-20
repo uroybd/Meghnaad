@@ -1,6 +1,14 @@
 package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.border
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -9,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -155,19 +164,24 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
         when {
             kanban.columns.isEmpty() -> Dim("This kanban has no columns yet: add them under Edit.")
             d == null -> Dim("Loading…")
-            else -> Row(
-                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            else -> BoxWithConstraints(Modifier.weight(1f)) {
+              // The columns share the width, each between a card's least and most comfortable width; past that the row scrolls.
+              val n = kanban.columns.size + if (otherOpen) 1 else 0
+              val rest = if (otherOpen) 0.dp else 170.dp
+              val columnWidth = ((maxWidth - rest - 10.dp * n) / n.coerceAtLeast(1)).coerceIn(260.dp, 440.dp)
+              Row(
+                Modifier.fillMaxSize().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.Top,
             ) {
                 kanban.columns.forEachIndexed { i, col ->
                     val rows = d.placed.columns.getOrElse(i) { emptyList() }
-                    KanbanColumnView(col.name, rows.size, if (col.move.isBlank()) "Takes no cards: it has no On move." else null) {
+                    KanbanColumnView(col.name, rows.size, if (col.move.isBlank()) "Takes no cards: it has no On move." else null, columnWidth) {
                         val cells = if (rows.isEmpty()) emptyList() else formatTable(d.meta, rows, ctx).cells
                         rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, i, ::move) }
                     }
                 }
-                Column(Modifier.width(220.dp).background(colors.surfaceVariant.copy(alpha = 0.4f), ControlShape).padding(10.dp)) {
+                Column(Modifier.width(if (otherOpen) columnWidth else 160.dp).let { if (otherOpen) it.fillMaxHeight() else it }.background(colors.surfaceVariant.copy(alpha = 0.4f), ControlShape).padding(10.dp)) {
                     Row(Modifier.clickable { otherOpen = !otherOpen }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         LucideIcon(if (otherOpen) "chevron-down" else "chevron-right", size = 14.dp)
                         Text("Other", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -176,49 +190,69 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
                     if (otherOpen) {
                         Dim("What the report picks and no column does. Takes no cards.", size = 12)
                         val cells = if (d.placed.other.isEmpty()) emptyList() else formatTable(d.meta, d.placed.other, ctx).cells
-                        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             d.placed.other.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, -1, ::move) }
                         }
                     }
                 }
                 Spacer(Modifier.width(4.dp))
+              }
             }
         }
     }
 }
 
 @Composable
-private fun KanbanColumnView(name: String, count: Int, note: String?, cards: @Composable () -> Unit) {
+private fun KanbanColumnView(name: String, count: Int, note: String?, width: Dp, cards: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.width(280.dp).background(colors.surfaceVariant.copy(alpha = 0.4f), ControlShape).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // As tall as the page allows; the cards scroll inside it.
+    Column(Modifier.width(width).fillMaxHeight().background(colors.surfaceVariant.copy(alpha = 0.4f), ControlShape).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             Dim("$count", size = 12)
         }
         note?.let { Dim(it, size = 12) }
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) { cards() }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) { cards() }
     }
 }
 
+/**
+ * A card, drawn as the report's cards are (TaskCard): a finished task tinted, a priority in its own colour, tags as chips,
+ * and the colour the table lays on the task's row (color.active, color.overdue, ...) as the card's edge.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun KanbanCard(store: Store, kanban: Kanban, meta: List<Column>, row: Row, cells: List<Cell>, from: Int, move: (String, Int, Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
     val targets = kanban.columns.withIndex().filter { (i, c) -> i != from && c.move.isNotBlank() }
+    val open = row.status == "pending"
+    val overdue = open && row.due != null && row.due < store.now
+    val panel = colors.surface
+    val background = when (row.status) {
+        "completed" -> extras.ok.copy(alpha = 0.09f).compositeOver(panel)
+        "deleted" -> colors.error.copy(alpha = 0.09f).compositeOver(panel)
+        else -> panel
+    }
+    val edge = row.style?.tintSource(extras.dark)
     Column(
-        Modifier.fillMaxWidth().background(colors.surface, ControlShape).border(1.dp, colors.outlineVariant, ControlShape)
-            .clickable { store.openDetail(row.uuid) }.padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        Modifier.fillMaxWidth().clip(ControlShape).background(background)
+            .drawBehind { edge?.let { drawRect(it, size = Size(3.dp.toPx(), size.height)) } }
+            .border(1.dp, edge ?: colors.outlineVariant, ControlShape)
+            .clickable { store.openDetail(row.uuid) }.padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         val at = meta.indexOfFirst { it.name == "description" }
-        Text(cells.getOrNull(at)?.text ?: row.description, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        meta.forEachIndexed { i, col ->
-            val c = cells.getOrNull(i)
-            if (col.name != "description" && c != null && c.text.isNotBlank()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(col.label, fontSize = 12.sp, color = colors.onSurfaceVariant)
-                    Text(c.text, fontSize = 12.sp)
-                }
+        Text(
+            cells.getOrNull(at)?.text ?: row.description,
+            fontWeight = if (row.style?.bold == true) FontWeight.Bold else FontWeight.SemiBold,
+            fontSize = 14.sp,
+            color = if (open) colors.onSurface else colors.onSurfaceVariant,
+        )
+        val marks = meta.zip(cells).filter { (col, c) -> col.name != "description" && (c.text.isNotBlank() || !c.chips.isNullOrEmpty()) }
+        if (marks.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                for ((col, c) in marks) Mark(store, col, c, row, overdue, emptyList(), null, !open)
             }
         }
         if (targets.isNotEmpty()) {

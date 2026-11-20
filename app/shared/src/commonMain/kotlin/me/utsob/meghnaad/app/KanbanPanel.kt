@@ -52,6 +52,10 @@ class KanbanState(private val store: Store) {
     val status get() = udaStatus(store.config, draft.uda)
     val lines get() = if (udaProblem != null) emptyList() else kanbanSetupLines(store.config, draft.uda)
     val review get() = hasReview(store.config)
+    /** The automatic setup adds a `kanban` report to the taskrc, so the kanbans need no filter of their own. */
+    var withReport by mutableStateOf(true)
+    val hasReport get() = store.config?.config?.reports?.containsKey(KANBAN_REPORT) == true
+    val addLines get() = if (withReport) kanbanReportLines(store.config) else emptyList()
 
     fun kanbanProblemAt(i: Int): String? =
         kanbanProblem(resolveKanban(draft, draft.kanbans[i]), draft.kanbans.filterIndexed { j, _ -> j != i }.map { it.id })
@@ -83,10 +87,10 @@ class KanbanState(private val store: Store) {
         }
     }
 
-    /** Write the UDA's `config` lines, one at a time (each reads the saved settings and writes them back). */
-    private suspend fun writeLines() {
+    /** Write the UDA's `config` lines (and the report's, when the setup adds it), one at a time (each reads the saved settings and writes them back). */
+    private suspend fun writeLines(more: List<Pair<String, String>> = emptyList()) {
         try {
-            for (line in lines) store.query(configArgs(line))
+            for (line in lines + more) store.query(configArgs(line))
         } finally {
             store.settingsChanged()
         }
@@ -98,7 +102,7 @@ class KanbanState(private val store: Store) {
             busy = true
             error = null
             try {
-                writeLines()
+                writeLines(addLines)
             } catch (e: Exception) {
                 error = e.message ?: e.toString()
                 busy = false
@@ -107,7 +111,7 @@ class KanbanState(private val store: Store) {
             busy = false
         }
         save(
-            if (automatic) automaticSettings(draft, review, draft.uda)
+            if (automatic) automaticSettings(draft, review, draft.uda, withReport)
             else draft.copy(enabled = true, setup = "manual", report = store.reports.firstOrNull()?.name ?: "next"),
         )
     }
@@ -173,16 +177,26 @@ fun KanbanPanel(store: Store, st: KanbanState) {
             Column(Modifier.fillMaxWidth().border(1.dp, colors.outlineVariant, ControlShape).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Automatic", fontWeight = FontWeight.SemiBold)
                 Dim(
-                    "Defines a UDA and draws every kanban on all with the columns To do, In progress, Review and Done. Moving a card out of Done " +
+                    "Defines a UDA and gives every kanban the columns To do, In progress, Review and Done. Moving a card out of Done " +
                         "reopens it; nothing starts a task." +
                         if (st.review) " tasksh's review is set up, so moving a card to Review puts it back in the review queue (it clears reviewed)." else "",
                 )
                 UdaField(st)
                 if (st.udaProblem == null) {
                     Text("The ${d.uda} UDA is ${partText(status.part)}.", fontSize = 13.sp)
-                    if (lines.isNotEmpty()) {
+                    Row(Modifier.clickable { st.withReport = !st.withReport }, verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(st.withReport, { st.withReport = it })
+                        Text("Draw the kanbans on a $KANBAN_REPORT report" + if (st.hasReport) " (your taskrc has one: it is used as it is)" else ", added to your taskrc", fontSize = 13.sp)
+                    }
+                    Dim(
+                        if (st.withReport) "Its filter leaves out deleted and waiting tasks and recurring templates, so a kanban needs no filter of its own."
+                        else "The kanbans are drawn on all, with the filter ( +PENDING or +COMPLETED ).",
+                        size = 12,
+                    )
+                    val all = lines + st.addLines
+                    if (all.isNotEmpty()) {
                         Dim("Set up writes these lines to your taskrc, and nothing else:", size = 12)
-                        lines.forEach { (n, v) -> Text("config $n $v", fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
+                        all.forEach { (n, v) -> Text("config $n $v", fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
                     }
                 }
                 Button(onClick = { store.go { st.setUp(true) } }, enabled = !st.busy && st.udaProblem == null) { Text("Set up automatically") }

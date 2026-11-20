@@ -14,9 +14,22 @@ leave out tasks finished long ago.
 Kanban is off until you set it up in **Settings → Kanban**. There are two ways:
 
 - **Automatic** defines a string UDA (`progressState` unless you name another) with the values `inprogress` and
-  `review`, using the same `config` lines the tasksh tab uses. It shows the lines first and writes nothing else to your
-  taskrc. It also sets Kanban's report to `all`, its filter to `( +PENDING or +COMPLETED )` (this leaves out deleted
-  and waiting tasks and recurring templates, which `all` shows), Completed since to `today-14d`, and these columns:
+  `review`, using the same `config` lines the tasksh tab uses. It also offers, ticked to begin with, to add a report
+  named `kanban` to your taskrc and draw the kanbans on it:
+
+  ```ini
+  report.kanban.description=Open tasks and the ones finished lately, for Kanban
+  report.kanban.columns=id,priority,project,tags,due.relative,scheduled.countdown,description
+  report.kanban.labels=ID,P,Project,Tags,Due,Sch,Description
+  report.kanban.filter=( +PENDING or +COMPLETED )
+  report.kanban.sort=urgency-
+  ```
+
+  Its filter leaves out deleted and waiting tasks and recurring templates, so Kanban's own filter is left empty. If
+  your taskrc already has a `kanban` report, it is used as it is and nothing is added. Untick it and Kanban is drawn
+  on `all` instead, with the filter `( +PENDING or +COMPLETED )` (which `all` needs, having no filter of its own). It
+  shows every line first and writes nothing else to your taskrc. It sets Completed since to `today-14d`, and these
+  columns:
 
   | Column | Filter | On move |
   | --- | --- | --- |
@@ -49,7 +62,7 @@ Everything is kept in the app's own `settings.json`, under `kanban`:
 ```json
 "kanban": {
   "enabled": true, "setup": "automatic", "uda": "progressState",
-  "report": "all", "filter": "( +PENDING or +COMPLETED )", "completedSince": "today-14d",
+  "report": "kanban", "filter": "", "completedSince": "today-14d",
   "columns": [ { "name": "To do", "filter": "status:pending progressState:",
                  "move": "modify status:pending progressState:" } ],
   "kanbans": [ { "id": "kanban", "name": "Kanban" },
@@ -57,12 +70,14 @@ Everything is kept in the app's own `settings.json`, under `kanban`:
 }
 ```
 
-**Turn Kanban off** hides the page. The kanbans stay in `settings.json`, and the UDA stays in your taskrc.
+**Turn Kanban off** hides the page. The kanbans stay in `settings.json`, and the UDA (and the `kanban` report) stay in
+your taskrc.
 
 ## The page
 
-**Kanban** lists your kanbans, and opens one at `/kanban/<address>`. Each column is the report run over the kanban's
-filter, Completed since and the column's filter:
+**Kanban** lists your kanbans, and opens one at `/kanban/<address>`. In the top bar, Kanban (like Boards) opens a
+menu of each one and the list; on a phone, the menu lists them under it. Each column is the report run over the
+kanban's filter, Completed since and the column's filter:
 
 ```text
 ( <filter> ) ( -COMPLETED or end.after:<completed since> ) ( <column's filter> ) <report>
@@ -75,10 +90,17 @@ folded until you open it, and takes no cards.
 Above the columns, the **report**, the **filter** and **Completed since** start as the kanban's, and you can change
 them on the page. The kanban stays as saved. A report you pick is part of the address (`/kanban/work/list`).
 
-Move a card by dragging it to another column, or with its **Move to…** menu. On the phone, use **Move to…**. In the
-terminal app, `H` and `L` move the card to the column on either side, and `m` picks a column. After a move the columns
-are read again. If the task didn't land in the column you moved it to (the On move doesn't make it match that column's
-filter, or `task` refused it), you are told where it is.
+The columns share the page's width, each between a comfortable least and most, and take the height left on the
+screen: a long column scrolls its own cards. A card is drawn as the report's table draws the task's row: the colour
+your taskrc gives the row (`color.overdue`, `color.active`, `color.tag.x`, …) is the card's edge, the priority is in
+its colour, tags are chips, and a finished task is tinted.
+
+Move a card by dragging it to another column. On a phone or a touch screen, where dragging is hard, a card has a
+**Move to…** menu instead; the Android app has it everywhere. In the terminal app, `H` and `L` move the card to the
+column on either side, and `m` picks a column. A move changes that task only: for a recurring task, the instance you
+moved, without asking about the rest of its series (`rc.recurrence.confirmation:no` goes in front of the On move).
+After a move the columns are read again. If the task didn't land in the column you moved it to (the On move doesn't
+make it match that column's filter, or `task` refused it), you are told where it is.
 
 ## In the terminal app
 
@@ -98,7 +120,7 @@ through it. `:kanban` opens it too.
 | `o` | show or hide Other |
 
 **Settings → Kanban** shows Kanban's settings and each kanban's, one row each. While Kanban is off, its rows are the
-UDA and the two ways to set it up: Enter on **Set up automatically** shows the lines it will write, and Enter again
-writes them. Once it is on, `e` or Enter changes the row under the cursor, `a` adds a column, `D` deletes a column or a
+UDA, the report (Enter switches between adding a `kanban` report and using `all`) and the two ways to set it up:
+Enter on **Set up automatically** shows the lines it will write, and Enter again writes them. Once it is on, `e` or Enter changes the row under the cursor, `a` adds a column, `D` deletes a column or a
 kanban (or, on a kanban's own setting, goes back to Kanban's), `K` and `J` move a column, `n` adds a kanban, `o` opens
 one, `w` writes the UDA if your taskrc doesn't have it as needed, and `x` turns Kanban off.

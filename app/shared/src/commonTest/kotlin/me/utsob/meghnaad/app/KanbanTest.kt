@@ -86,6 +86,18 @@ class KanbanTest {
     }
 
     @Test
+    fun canDrawThemOnAKanbanReportOfTheirOwnAddedUnlessThereIsOne() {
+        val s = automaticSettings(KanbanSettings(), false, u, ownReport = true)
+        assertEquals("kanban", s.report)
+        assertEquals("", s.filter)
+        assertEquals("today-14d", s.completedSince)
+        val lines = kanbanReportLines(config())
+        assertEquals(listOf("description", "columns", "labels", "filter", "sort").map { "report.kanban.$it" }, lines.map { it.first })
+        assertEquals("( +PENDING or +COMPLETED )", lines.toMap()["report.kanban.filter"])
+        assertEquals(emptyList(), kanbanReportLines(ConfigResponse(config = ConfigBody(reports = mapOf("kanban" to ReportCfg())))))
+    }
+
+    @Test
     fun bracketsEachFilterThenNamesTheReport() {
         val view = KanbanView("all", "( +PENDING or +COMPLETED )", "today-14d")
         assertEquals(
@@ -113,9 +125,9 @@ class KanbanTest {
 
     @Test
     fun runsTheMoveOnThatTaskTheUuidInFrontOfEachStatement() {
-        assertEquals(listOf(CommandStep(listOf(uuid, "done"), null)), moveSteps("done", uuid, emptyList()))
+        assertEquals(listOf(CommandStep(listOf(ONLY_THIS_TASK, uuid, "done"), null)), moveSteps("done", uuid, emptyList()))
         assertEquals(
-            listOf(CommandStep(listOf(uuid, "modify", "progressState:review"), null), CommandStep(listOf(uuid, "annotate", "in review"), Joiner.Then)),
+            listOf(CommandStep(listOf(ONLY_THIS_TASK, uuid, "modify", "progressState:review"), null), CommandStep(listOf(ONLY_THIS_TASK, uuid, "annotate", "in review"), Joiner.Then)),
             moveSteps("modify progressState:review ; annotate \"in review\"", uuid, emptyList()),
         )
     }
@@ -123,7 +135,7 @@ class KanbanTest {
     @Test
     fun writesOutATaskCommandKeepingTheTaskInFront() {
         assertEquals(
-            listOf(CommandStep(listOf(uuid, "modify", "+shipped"), null), CommandStep(listOf(uuid, "done"), Joiner.And)),
+            listOf(CommandStep(listOf(ONLY_THIS_TASK, uuid, "modify", "+shipped"), null), CommandStep(listOf(ONLY_THIS_TASK, uuid, "done"), Joiner.And)),
             moveSteps("ship", uuid, listOf(TaskCommand("ship", "modify +shipped && done"))),
         )
     }

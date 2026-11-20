@@ -3,11 +3,13 @@ import { lintSettings, parseSettings, serializeKanban } from './appsettings';
 import {
   automaticColumns,
   automaticSettings,
+  reportLines,
   columnArgs,
   columnOf,
   emptyKanbanSettings,
   hasReview,
   moveSteps,
+  ONLY_THIS_TASK,
   parseKanban,
   newKanban,
   placeTasks,
@@ -114,6 +116,23 @@ describe('the automatic setup', () => {
     const mine = { id: 'mine', name: 'Mine', report: 'list' };
     expect(automaticSettings({ ...emptyKanbanSettings(), kanbans: [mine] }, false, U).kanbans).toEqual([mine]);
   });
+
+  it('can draw them on a kanban report of their own, added to the taskrc unless there is one', () => {
+    const s = automaticSettings(emptyKanbanSettings(), false, U, true);
+    expect(s).toMatchObject({ report: 'kanban', filter: '', completedSince: 'today-14d' });
+    const lines = reportLines(configWith({}));
+    expect(lines.map(([n]) => n)).toEqual([
+      'report.kanban.description',
+      'report.kanban.columns',
+      'report.kanban.labels',
+      'report.kanban.filter',
+      'report.kanban.sort',
+    ]);
+    expect(Object.fromEntries(lines)['report.kanban.filter']).toBe('( +PENDING or +COMPLETED )');
+    const withOne = configWith({});
+    withOne.config.reports = { kanban: {} };
+    expect(reportLines(withOne)).toEqual([]);
+  });
 });
 
 describe('reading a kanban', () => {
@@ -163,19 +182,19 @@ describe('reading a kanban', () => {
 describe('moving a card', () => {
   const uuid = '1a2b3c4d-0000-4000-8000-000000000000';
 
-  it('runs the line on that task, the uuid in front of each statement', () => {
-    expect(moveSteps('done', uuid, [])).toEqual([{ args: [uuid, 'done'], join: null }]);
+  it('runs the line on that task alone, the uuid in front of each statement (a recurring one without asking)', () => {
+    expect(moveSteps('done', uuid, [])).toEqual([{ args: [ONLY_THIS_TASK, uuid, 'done'], join: null }]);
     expect(moveSteps('modify progressState:review ; annotate "in review"', uuid, [])).toEqual([
-      { args: [uuid, 'modify', 'progressState:review'], join: null },
-      { args: [uuid, 'annotate', 'in review'], join: ';' },
+      { args: [ONLY_THIS_TASK, uuid, 'modify', 'progressState:review'], join: null },
+      { args: [ONLY_THIS_TASK, uuid, 'annotate', 'in review'], join: ';' },
     ]);
   });
 
   it('writes out a task command, which keeps the task in front of each of its statements', () => {
     const commands = [{ name: 'ship', command: 'modify +shipped && done' }];
     expect(moveSteps('ship', uuid, commands)).toEqual([
-      { args: [uuid, 'modify', '+shipped'], join: null },
-      { args: [uuid, 'done'], join: '&&' },
+      { args: [ONLY_THIS_TASK, uuid, 'modify', '+shipped'], join: null },
+      { args: [ONLY_THIS_TASK, uuid, 'done'], join: '&&' },
     ]);
   });
 });
