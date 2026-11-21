@@ -1,6 +1,6 @@
 # 0027: Settings of one device, over everyone's
 
-- **Status:** in progress <!-- draft | ready | in progress | done | dropped -->
+- **Status:** done <!-- draft | ready | in progress | done | dropped -->
 - **Created:** 2026-11-21
 - **Layer:** 2 (UI)
 - **Front ends:** web, Android (not the terminal app: its `settings.json` is already the desktop's own and never reaches
@@ -116,8 +116,8 @@ Proposed, for uroybd to agree.
       only there
 - [x] Saving the home page or a key under This device makes an override; putting it back removes it, and the field
       shows `settings.json`'s value again
-- [ ] Reminders are set only under This device; under Everyone their fields say they are set on each device; an
-      existing reminders setting carries over into the device's file on its first save
+- [x] Reminders are each device's own; an existing reminders setting carries over into the device's file on its
+      first save
 - [x] Under Everyone, a field this device overrides says so, with a link to it under This device
 - [x] Nothing is stored for a device until its first save; that save shows a generated Device ID in a field the person
       can change before saving; **This device → General** has the **Device ID** field afterwards, and changing it
@@ -135,10 +135,7 @@ Proposed, for uroybd to agree.
 
 ## Open questions
 
-- **Reminders under Everyone.** Neither front end has reminders in Settings: they are the bell's dialog (web) and Menu →
-  Reminders (phone), which were already each device's own. So there is no reminders field under Everyone to say "Set on
-  each device", and that half of the fourth criterion is not met as written. Either the criterion drops it (the dialogs
-  are the device's own by nature), or a Reminders row is added to Settings for it. uroybd to say which.
+None.
 
 ## Implementation notes
 
@@ -164,5 +161,5 @@ what is left. Dated entries, newest last.
     `Reminders.kt` (`adopt`, and saving into the device's file).
   - Sizes: the browser engine is unchanged (907,088 bytes gzipped, as measured here with names); the Worker
     774,591 → 778,743 (+4.1 KB).
-  - Left: the reminders half of the fourth criterion (see Open questions).
-
+- **2026-11-21.** Shipped in 0.8.32. uroybd dropped "under Everyone their fields say they are set on each device" from
+  the fourth criterion: neither front end has reminders in Settings, and their dialogs were already each device's own.
