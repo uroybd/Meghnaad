@@ -319,7 +319,8 @@
     </dl>
     <!-- A string UDA free to hold anything: a paragraph of its own, its checkboxes ticked here. -->
     {#each fieldsOf(cs).filter((f) => f.shape === 'text') as f (f.col.spec)}
-      <div class="para {f.c.cls ?? ''}" title={f.col.label}>
+      <div class="para {f.c.cls ?? ''}">
+        <h4>{f.col.label}</h4>
         <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
       </div>
     {/each}
@@ -816,6 +817,11 @@
   .para {
     font-size: 13px;
     overflow-wrap: anywhere;
+  }
+  .para h4 {
+    margin: 2px 0 2px;
+    font-size: 14px;
+    font-weight: 700;
   }
   .para.multiline {
     white-space: pre-wrap;

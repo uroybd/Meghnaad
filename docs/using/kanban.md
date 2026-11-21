@@ -114,8 +114,9 @@ or format (`due.relative` is still a clock). In the terminal app the icons are s
 Card fields in Settings → Kanban turns them on.
 
 On the web and the phone a UDA is a pill, its label then its value, with icons on or off. A string UDA with no `values`,
-free to hold anything, is the exception: it is a paragraph of its own under the other fields, drawn as Markdown, and a
-checkbox in it (`- [ ] call back`) can be ticked right on the card, which saves the task's text with it ticked.
+free to hold anything, is the exception: it is a paragraph of its own under the other fields, headed by its name in
+bold and drawn as Markdown, and a checkbox in it (`- [ ] call back`) can be ticked right on the card, which saves the
+task's text with it ticked.
 
 ### Swimlanes
 

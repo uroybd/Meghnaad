@@ -352,9 +352,10 @@ private fun KanbanCard(store: Store, kanban: Kanban, meta: List<Column>, row: Ro
                 }
             }
         }
-        // A string UDA free to hold anything: a paragraph of its own, as Markdown, its checkboxes ticked here.
+        // A string UDA free to hold anything: a paragraph of its own under its name, as Markdown, its checkboxes ticked here.
         for ((col, c) in texts) {
             val tint = if (open) colors.onSurface else colors.onSurfaceVariant
+            Text(col.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = tint, modifier = Modifier.padding(top = 2.dp))
             if (c.blocks != null) {
                 MarkdownView(c.blocks, color = tint, size = 13.sp, onToggle = { line -> store.go { tickBox(null, row.uuid, col.name, c.text, line) } })
             } else {

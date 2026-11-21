@@ -227,9 +227,17 @@ internal fun Mark(
             Modifier.clip(RoundedCornerShape(4.dp)).border(1.dp, colors.outlineVariant, RoundedCornerShape(4.dp)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // A UDA as a badge: its label on one half, its value on the other.
+            // A UDA as a badge: its label on one half, its value on the other: a progress bar where Settings → Appearance
+            // shows it as one, and a number without the zeros it ends in, as the web's card has it.
             Text(col.label, Modifier.background(colors.surfaceVariant).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 12.sp, color = dim)
-            Text(c.text, Modifier.background(colors.primary.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val half = Modifier.background(colors.primary.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 1.dp)
+            val bar = store.appearance.progress[col.name]?.let { range -> c.text.trim().toDoubleOrNull()?.let { range to it } }
+            val numeric = store.config?.config?.udas?.get(baseColumn(col.name))?.type == "numeric"
+            if (bar != null) {
+                ProgressBar(bar.second, trimNumber(c.text), bar.first, col.label, colors.onSurface, half.width(120.dp))
+            } else {
+                Text(if (numeric) trimNumber(c.text) else c.text, half, fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
         col.name == "priority" && row.priority != null && icons != false -> {
             // The priority as a small pill of its own colour: the user's `color.uda.priority.*` washes it, the text stays readable.
