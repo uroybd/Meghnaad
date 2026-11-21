@@ -716,6 +716,28 @@ pub fn move_steps(on_move: &str, uuid: &str, commands: &[TaskCommand]) -> Result
     plan_chain(&line, commands)
 }
 
+/// The first word of a move's steps (`rc… <uuid> <command> …`, task commands written out) that `task` has no command
+/// for: not one of `commands` (`task _commands`) nor a unique start of one (as `task` takes `mod`), and not an alias
+/// that `is_alias` knows. `task` would take such a word for a filter and show the task's information, changing
+/// nothing. None while `commands` is empty (`task` not read yet).
+pub fn unknown_command(steps: &[Statement], commands: &[String], is_alias: impl Fn(&str) -> bool) -> Option<String> {
+    if commands.is_empty() {
+        return None;
+    }
+    steps.iter().find_map(|s| {
+        let words = split_words(&s.line);
+        // After the overrides, the task's uuid, then the command.
+        let word = words
+            .iter()
+            .skip_while(|w| w.starts_with("rc.") || w.starts_with("rc:"))
+            .nth(1)?;
+        let known = commands.iter().any(|c| c == word)
+            || (word.chars().count() >= 2 && commands.iter().filter(|c| c.starts_with(word.as_str())).count() == 1)
+            || is_alias(word);
+        (!known).then(|| word.clone())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -725,6 +747,34 @@ mod tests {
 
     fn cfg(rc: &str) -> Config {
         tc_core::taskrc::parse(rc).config
+    }
+
+    #[test]
+    fn a_move_whose_command_task_does_not_have_is_named() {
+        let commands: Vec<String> = ["done", "modify", "delete"].map(str::to_owned).to_vec();
+        let uuid = "c67bfc3a-7578-45bc-ad91-1eec83a26118";
+        let steps = |on_move: &str| move_steps(on_move, uuid, &[]).unwrap();
+        let alias = |w: &str| w == "fin";
+        assert_eq!(
+            unknown_command(&steps("finish"), &commands, alias).as_deref(),
+            Some("finish")
+        );
+        assert_eq!(unknown_command(&steps("done"), &commands, alias), None);
+        assert_eq!(
+            unknown_command(&steps("mod +x && do"), &commands, alias),
+            None,
+            "a start of one"
+        );
+        assert_eq!(unknown_command(&steps("fin"), &commands, alias), None, "an alias");
+        assert_eq!(
+            unknown_command(&steps("modify +x && finish"), &commands, alias).as_deref(),
+            Some("finish")
+        );
+        assert_eq!(
+            unknown_command(&steps("finish"), &[], alias),
+            None,
+            "task's commands not read yet"
+        );
     }
 
     #[test]

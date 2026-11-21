@@ -431,6 +431,14 @@ impl App {
         }
         match kanban::move_steps(&col.on_move, &card.uuid, &self.settings.task_commands) {
             Ok(steps) => {
+                let is_alias = |w: &str| self.cfg.settings.contains_key(&format!("alias.{w}"));
+                if let Some(w) = kanban::unknown_command(&steps, &self.commands, is_alias) {
+                    self.status = format!(
+                        "{}'s On move: ‘{w}’ is not a command of task, a taskrc alias or one of your task commands.",
+                        col.name
+                    );
+                    return;
+                }
                 self.kanban_moved = Some((card.uuid, from, to));
                 self.run_steps(steps);
             }
