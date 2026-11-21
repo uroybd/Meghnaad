@@ -51,14 +51,14 @@ secret and the salt in the branch's `meta`. Later visits ask only for the secret
 others. The device's copy of the tasks is sealed too. **Lock** and an idle time lock every tab; **Settings → General →
 Forget this device** removes the token and the copy. A locked tab keeps reminding (below).
 
-**Trusting a device.** *Trust this device*, on the unlock and connect forms and in **Settings → General → This device**,
+**Trusting a device.** *Trust this device*, on the unlock and connect forms and in **Settings → This device**,
 keeps the device unlocked: a reload, a new tab or a browser restart opens without the password, and the idle lock is off.
 The access and the key are kept sealed with a key the browser makes and page code cannot read out, but the browser may
 keep that key in its profile as it is, so anyone who can use this browser (or a copy of its profile) can open your tasks.
 Only this browser knows of it: nothing is synced. **Lock now** still locks, and a trusted device then stays locked, a
 reload too, until it is unlocked. Turning the switch off, or forgetting the device, removes what was kept.
 
-**A PIN on a trusted device.** **Settings → General → This device → Set a PIN** takes four keys (the arrows, letters and
+**A PIN on a trusted device.** **Settings → This device → Set a PIN** takes four keys (the arrows, letters and
 digits; a capital counts as its lowercase letter), pressed twice; it is saved as the second four match, with no button.
 After the idle minutes you choose there (5 to begin with; 0 for only when asked), or at once with **Lock with PIN now**
 or `:lock` (`:lock pin` to ask for it; `:lock key` and the lock button in the top bar lock fully), every tab shows a frosted screen (a reload opens on it too) over the app, and the four keys take it away again (Backspace takes one
@@ -66,7 +66,7 @@ back; there is no OK). The app runs on underneath: sync, reminders, a half-typed
 it seals nothing, and anyone who can open the browser's developer tools gets past it. **Forgot the PIN?** locks fully,
 as **Lock now** does. Only this browser knows of the PIN; turning trust off removes it.
 
-**Unlocking with a passkey.** **Settings → General → This device → Unlock with a passkey on this device** makes a passkey
+**Unlocking with a passkey.** **Settings → This device → Unlock with a passkey on this device** makes a passkey
 for the site (in the browser, the phone, or a password manager such as Bitwarden), and the unlock form then offers it
 before the password. The password always still works. On a device that is not trusted the passkey must give a secret
 of its own (WebAuthn's PRF extension), which seals the access and the key; a browser or password manager that does not

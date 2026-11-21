@@ -27,8 +27,8 @@ tab, and the browser's back button goes where you were.
 | `/projects` `/tags` `/summary` `/calendar` `/burndown` `/console` | those pages |
 | `/boards`, `/board/<slug>` | the list of boards, and one board (see [Boards](boards.md#boards)) |
 | `/kanbans`, `/kanban/<slug>`, `/kanban/<slug>/<report>` | the list of kanbans, one kanban, and one shown with another report (see [Kanban](kanban.md#the-page)) |
-| `/settings`, `/settings/<tab>` | Settings, and one tab: `general` `appearance` `keys` `taskrc` `tasksh` `kanban` `commands` `hooks` `urgency` |
-| `/settings/device`, `/settings/device/<tab>` | the same, showing [this device's own settings](settings.md#this-device) |
+| `/settings`, `/settings/<tab>` | Settings, and one tab: `general` `device` `appearance` `keys` `taskrc` `tasksh` `kanban` `commands` `hooks` `urgency` |
+| `/settings/device` | [this device's own settings](settings.md#this-device) (an older `/settings/device/<tab>` opens it too) |
 | `/settings/taskrc/<path>` | one file of the taskrc folder (`/settings/taskrc/holidays/en-US.rc`) |
 | `/task/<8 characters>` | a task's detail over the page behind it (the first 8 characters of its uuid) |
 

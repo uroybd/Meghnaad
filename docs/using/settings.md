@@ -11,26 +11,26 @@ Console's `config`, another tab), a tab with no edits of its own follows them.
 
 ## This device
 
-Settings shows **Everyone** at first: `settings.json`, the same on every device. **This device**, beside the title,
-switches to the settings of the device you are on, laid out the same way. A device can have its own:
+Every tab of Settings is `settings.json`, the same on every device, except **This device** (in the Meghnaad group),
+which holds only what the device you are on can have of its own:
 
-- **home page**, and
-- **keys**, one at a time.
+- its **home page**: its own (framed), or **Use everyone's** to give it up;
+- its **reminders**, always its own: **Set reminders** opens them;
+- its **keys**: only the ones it has of its own, each with the undo button to use everyone's for it again, and **Add**
+  in each section to give it one;
+- its file as text, and on the static web app, unlocking and trusting it.
 
-Each shows the value this device uses: its own, else everyone's, else the app's default. One that is this device's own
-is framed, its name and value together, with **Use everyone's** (on a key, the undo button) to give it up. The other tabs
-show as they are under Everyone, read only. Under Everyone, a home page or key this device has its own of says **This
-device uses its own**, with a link to it.
+Elsewhere, a home page or key this device has its own of says **This device uses its own**, with a link to the tab.
 
-A device has nothing of its own until you first save something under This device. That first save asks for a **Device
+A device has nothing of its own until you first save something in This device. That first save asks for a **Device
 ID**: a made-up one is filled in, and you can keep it or type your own (letters, digits, `-` and `_`). It is kept in the
 store as `devices/<id>.json`, a small `settings.json` with only what the device has of its own. Another device given
-the same ID shares it. The first time you switch to This device, if other devices already have some, you can **Use**
+the same ID shares it. The first time you open This device, if other devices already have some, you can **Use**
 one of them, **Delete** one nobody uses any more, or make new ones for this device.
 
-Once it has them, **This device → General** has the **Device ID**: **Change** renames the file, or, for an ID another
-device has, uses that one's; **Delete this device's settings** gives them up. Below it is the device's file as text, to
-edit or paste over, as `settings.json` is under Everyone.
+Once it has them, **This device** has the **Device ID**: **Change** renames the file, or, for an ID another device has,
+uses that one's; **Delete this device's settings** gives them up. At the end is the device's file as text, to edit or
+paste over, as `settings.json` is in General.
 
 The [reminders](time-tracking.md) are always the device's own: once it has settings of its own, they are kept in them
 too (`"reminders"`), so a device on a shared ID reminds as the others do. The terminal app has none of this: its

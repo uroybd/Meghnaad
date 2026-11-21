@@ -58,9 +58,9 @@ fun bindingRows(actions: List<Binding>, showDefaults: Boolean, query: String): L
     actions.filter { (it.keys != null || (showDefaults && it.defaults.isNotEmpty())) && bindingMatches(it, query) }
 
 /** The Keybindings tab (KeysPanel.svelte): the whole of `settings.json` as a draft, changed a key at a time, then applied. */
-class KeysState(private val store: Store) {
-    // Under This device (spec 0027) the keys it uses, everyone's with its own over them; saved as what differs.
-    private val device get() = store.settingsDevice
+class KeysState(private val store: Store, val device: Boolean = false) {
+    // With [device] (Settings → This device, spec 0028) the keys it uses, everyone's with its own over them, and only its
+    // own shown; saved as what differs.
     private val everyones: JsonObject get() = store.appSettings?.raw ?: JsonObject(emptyMap())
     private val saved: JsonObject get() = if (device) store.effectiveSettings?.raw ?: everyones else everyones
 
@@ -253,10 +253,13 @@ fun KeysPanel(store: Store, state: KeysState) {
                 }
             }
         }
+        val device = state.device
         OutlinedTextField(state.query, { state.query = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Search keys") })
-        Row(Modifier.clickable { store.showDefaultKeys(!store.showDefaultKeys) }, verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(store.showDefaultKeys, onCheckedChange = null, modifier = Modifier.padding(end = 8.dp))
-            Text("Show defaults", fontSize = 14.sp)
+        if (!device) {
+            Row(Modifier.clickable { store.showDefaultKeys(!store.showDefaultKeys) }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(store.showDefaultKeys, onCheckedChange = null, modifier = Modifier.padding(end = 8.dp))
+                Text("Show defaults", fontSize = 14.sp)
+            }
         }
         for (section in KEY_SECTIONS) {
             val (title, at) = KEY_SECTION_TITLES.getValue(section)
@@ -266,13 +269,13 @@ fun KeysPanel(store: Store, state: KeysState) {
                 OutlinedButton({ state.openAdd(section) }) { LucideIcon("plus", size = 14.dp); Text(" Add") }
             }
             if (state.adding == section) AddKey(state)
-            val rows = bindings.sections[section].orEmpty().let { bindingRows(it, store.showDefaultKeys, state.query) }
-            if (rows.isEmpty()) Dim(if (state.query.isBlank()) "None of your own." else "Nothing matches.")
+            val all = bindings.sections[section].orEmpty()
+            val rows = if (device) all.filter { state.mine(section, it) && bindingMatches(it, state.query) } else bindingRows(all, store.showDefaultKeys, state.query)
+            if (rows.isEmpty()) Dim(if (state.query.isNotBlank()) "Nothing matches." else if (device) "None of its own: it uses everyone's." else "None of your own.")
             for (b in rows) {
                 val mine = state.mine(section, b)
-                val device = store.settingsDevice
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 40.dp).then(if (device && mine) Modifier.ownField() else Modifier),
+                    Modifier.fillMaxWidth().heightIn(min = 40.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -286,12 +289,12 @@ fun KeysPanel(store: Store, state: KeysState) {
                             if (b.command.isNotEmpty() && b.command != b.action) Dim(b.action, size = 12)
                         }
                         if (b.about.isNotEmpty()) Dim(b.about, size = 12)
-                        if (mine) {
+                        if (mine && !device) {
                             Text(
-                                if (device) "this device's" else "this device uses its own",
+                                "this device uses its own",
                                 color = colors.primary,
                                 fontSize = 12.sp,
-                                modifier = if (device) Modifier else Modifier.clickable { store.settingsDevice = true },
+                                modifier = Modifier.clickable { store.settingsTab = SettingsTab.Device },
                             )
                         }
                         if (b.keys != null && store.showDefaultKeys && b.defaults.isNotEmpty()) {
@@ -303,26 +306,36 @@ fun KeysPanel(store: Store, state: KeysState) {
                 }
             }
         }
-        Text("Commands", Modifier.padding(top = 10.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Dim("A key can run one of these, with its words, in place of an action: \"g h\": \"filter +home\" under tasks runs :filter +home. The part in brackets may be left out, as in vim.", size = 12)
-        val uri = LocalUriHandler.current
-        val commands = commandRows(remember { keyCommands() }, state.query)
-        if (commands.isEmpty()) Dim("Nothing matches.")
-        for (c in commands) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(c.written, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
-                    Dim(c.what, size = 12)
-                }
-                if (c.link.isNotEmpty()) TextButton({ runCatching { uri.openUri(c.link) } }) { Text("More") }
-            }
-        }
+        if (!device) KeyCommands(state.query)
         bindings.problems.forEach { Text(it, color = colors.error, fontSize = 13.sp) }
-        Dim("Kept in settings.json: keys for every front end, the others for one alone, each saved as the command it runs. A key you set replaces the defaults of what it runs, and is taken from any action that had it.")
+        if (device) {
+            Dim("A key added here is this device's alone, kept in its own file; everyone's keys (in Keybindings) still apply to what it doesn't change. Put one back to use everyone's for it again.")
+        } else {
+            Dim("Kept in settings.json: keys for every front end, the others for one alone, each saved as the command it runs. A key you set replaces the defaults of what it runs, and is taken from any action that had it.")
+        }
         state.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Button({ scope.launch { state.apply() } }, enabled = !state.busy && state.edited) { Text("Apply") }
             if (state.done) Dim("Saved")
+        }
+    }
+}
+
+/** The commands a key can run, with their words (spec 0020), for reference under the keys. */
+@Composable
+private fun KeyCommands(query: String) {
+    Text("Commands", Modifier.padding(top = 10.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+    Dim("A key can run one of these, with its words, in place of an action: \"g h\": \"filter +home\" under tasks runs :filter +home. The part in brackets may be left out, as in vim.", size = 12)
+    val uri = LocalUriHandler.current
+    val commands = commandRows(remember { keyCommands() }, query)
+    if (commands.isEmpty()) Dim("Nothing matches.")
+    for (c in commands) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(c.written, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+                Dim(c.what, size = 12)
+            }
+            if (c.link.isNotEmpty()) TextButton({ runCatching { uri.openUri(c.link) } }) { Text("More") }
         }
     }
 }

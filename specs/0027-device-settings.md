@@ -6,7 +6,8 @@
 - **Front ends:** web, Android (not the terminal app: its `settings.json` is already the desktop's own and never reaches
   the store)
 - **Supersedes / related:** 0009 (`settings.json` kept whole), 0020 (`settings.json` versioned, keys per group), 0003
-  and 0017 (reminders), 0018 (trust this device: the static app already tells devices apart)
+  and 0017 (reminders), 0018 (trust this device: the static app already tells devices apart); the switch (What 1, 3, 8)
+  is superseded by 0028, a tab of its own
 
 ## Why
 

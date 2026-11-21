@@ -17,8 +17,11 @@
   import { ensureDeviceId } from './deviceAsk.svelte';
   import { withDeviceKeys } from './deviceSettings';
 
-  /** There are edits not yet applied (the tab shows a dot). */
-  let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
+  /**
+   * There are edits not yet applied (the tab shows a dot). With `device`, this device's own keys only (in This device, spec
+   * 0028): added there, each put back to everyone's.
+   */
+  let { ondirty, device = false }: { ondirty?: (dirty: boolean) => void; device?: boolean } = $props();
 
   const TITLES: Record<KeySection, { label: string; at: string }> = {
     general: { label: 'General', at: 'keys' },
@@ -36,8 +39,7 @@
         : x,
     );
 
-  // Under This device (spec 0027) the keys it uses, everyone's with its own over them; saved as what differs.
-  const device = $derived(store.settingsDevice);
+  // In This device, the keys it uses, everyone's with its own over them; saved as what differs.
   const everyones = $derived<Settings>(store.appSettings?.raw ?? {});
   const saved = $derived<Settings>(device ? (store.effectiveSettings?.raw ?? {}) : everyones);
   let draft = $state<Settings>(untrack(() => $state.snapshot(saved) as Settings));
@@ -110,8 +112,10 @@
       return !t || [c.written.replace(/[[\]]/g, ''), c.what].some((x) => x.toLowerCase().includes(t));
     }),
   );
-  const rowsOf = (actions: Binding[]) =>
-    actions.filter((b) => (b.keys !== null || (showDefaults && b.defaults.length > 0)) && matches(b, query));
+  const rowsOf = (id: KeySection, actions: Binding[]) =>
+    actions.filter(
+      (b) => (device ? mine(id, b) : b.keys !== null || (showDefaults && b.defaults.length > 0)) && matches(b, query),
+    );
 
   /** `next` as the draft, its other keys in the order they were (the engine sorts the ones it writes). */
   function keep(next: Settings) {
@@ -187,14 +191,14 @@
       <Search size={14} />
       <input type="search" placeholder="Search keys" aria-label="Search keys" bind:value={query} />
     </label>
-    <label class="check">
-      <input type="checkbox" checked={showDefaults} onchange={(e) => toggleDefaults(e.currentTarget.checked)} />
-      Show defaults
-    </label>
+    {#if !device}<label class="check">
+        <input type="checkbox" checked={showDefaults} onchange={(e) => toggleDefaults(e.currentTarget.checked)} />
+        Show defaults
+      </label>{/if}
   </div>
 
   {#each bindings.sections as s (s.id)}
-    {@const rows = rowsOf(s.actions)}
+    {@const rows = rowsOf(s.id, s.actions)}
     <section class="group" aria-label={TITLES[s.id].label}>
       <div class="head">
         <h2>{TITLES[s.id].label} <code class="dim">{TITLES[s.id].at}</code></h2>
@@ -218,7 +222,7 @@
         <table class="keys">
           <tbody>
             {#each rows as b (b.action)}
-              <tr class:default={b.keys === null} class:mine={device && mine(s.id, b)}>
+              <tr class:default={b.keys === null}>
                 <td class="k">
                   {#if b.keys === null}{@render keys(b.defaults, true)}
                   {:else if b.keys.length}{@render keys(b.keys, false)}
@@ -229,11 +233,11 @@
                   {#if b.command && b.command !== b.action}<span class="dim">{b.action}</span>{/if}
                   {#if b.about}<span class="dim">· {b.about}</span>{/if}
                   {#if mine(s.id, b)}
-                    {#if device}<span class="own">this device's</span>
-                    {:else}<a
+                    {#if !device}<a
                         class="own"
-                        href="/settings/device/keys"
-                        onclick={(e) => (e.preventDefault(), (store.settingsDevice = true))}>this device uses its own</a
+                        href="/settings/device"
+                        onclick={(e) => (e.preventDefault(), (store.settingsTab = 'device'))}
+                        >this device uses its own</a
                       >{/if}
                   {/if}
                   {#if b.keys !== null && showDefaults && b.defaults.length}
@@ -262,46 +266,52 @@
           </tbody>
         </table>
       {:else}
-        <p class="dim none">{query.trim() ? 'Nothing matches.' : 'None of your own.'}</p>
+        <p class="dim none">
+          {query.trim() ? 'Nothing matches.' : device ? "None of its own: it uses everyone's." : 'None of your own.'}
+        </p>
       {/if}
     </section>
   {/each}
 
-  <section class="group" aria-label="Commands">
-    <h2>Commands</h2>
-    <p class="dim">
-      A key can run one of these, with its words, in place of an action: <code>"g h": "filter +home"</code> under
-      <code>tasks</code> runs <code>:filter +home</code>. The part in brackets may be left out, as in vim.
-    </p>
-    {#if commands.length}
-      <table class="keys">
-        <tbody>
-          {#each commands as c (c.written)}
-            <tr>
-              <td class="k"><kbd>{c.written}</kbd></td>
-              <td>
-                <span class="dim">{c.what}</span>
-                {#if c.link}<a href={c.link} target="_blank" rel="noopener">more</a>{/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {:else}
-      <p class="dim none">Nothing matches.</p>
-    {/if}
-  </section>
+  {#if !device}<section class="group" aria-label="Commands">
+      <h2>Commands</h2>
+      <p class="dim">
+        A key can run one of these, with its words, in place of an action: <code>"g h": "filter +home"</code> under
+        <code>tasks</code> runs <code>:filter +home</code>. The part in brackets may be left out, as in vim.
+      </p>
+      {#if commands.length}
+        <table class="keys">
+          <tbody>
+            {#each commands as c (c.written)}
+              <tr>
+                <td class="k"><kbd>{c.written}</kbd></td>
+                <td>
+                  <span class="dim">{c.what}</span>
+                  {#if c.link}<a href={c.link} target="_blank" rel="noopener">more</a>{/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="dim none">Nothing matches.</p>
+      {/if}
+    </section>{/if}
 
   {#if bindings.problems.length}
     <ul class="err" role="alert">
       {#each bindings.problems as line, i (i)}<li>{line}</li>{/each}
     </ul>
   {/if}
-  <p class="dim">
-    Kept in <code>settings.json</code>: <code>keys</code> for every front end, the others for one alone, each key under its
-    group, saved as the command it runs. A key you set here replaces the defaults of what it runs, and is taken from any action
-    that had it.
-  </p>
+  {#if device}<p class="dim">
+      A key added here is this device's alone, kept in its own file; everyone's keys (in Keybindings) still apply to
+      what it doesn't change. Put one back to use everyone's for it again.
+    </p>
+  {:else}<p class="dim">
+      Kept in <code>settings.json</code>: <code>keys</code> for every front end, the others for one alone, each key under
+      its group, saved as the command it runs. A key you set here replaces the defaults of what it runs, and is taken from
+      any action that had it.
+    </p>{/if}
   {#if error}<p class="err" role="alert">{error}</p>{/if}
   <div class="row">
     <button class="primary" onclick={apply} disabled={busy || !edited}>Apply</button>
@@ -310,12 +320,6 @@
 </section>
 
 <style>
-  /* Keys this device has of its own (spec 0027): the row framed. */
-  tr.mine {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
-    background: color-mix(in srgb, var(--accent) 7%, transparent);
-  }
   .own {
     margin-left: 6px;
     font-size: 11px;

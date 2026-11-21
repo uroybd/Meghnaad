@@ -34,9 +34,8 @@ import kotlinx.serialization.json.JsonObject
  * The page the app opens on, kept in `settings.json` (GeneralPanel.svelte): any report or board, `next` when nothing is
  * chosen. And `settings.json` itself, whole, to read, edit or paste over (spec 0009).
  */
-class GeneralState(private val store: Store) {
-    // Under This device (spec 0027): the home page this device uses, and whether it is its own.
-    private val device get() = store.settingsDevice
+class GeneralState(private val store: Store, val device: Boolean = false) {
+    // With [device] (Settings → This device, spec 0028): the home page this device uses, and whether it is its own.
     val own get() = store.deviceRaw?.containsKey("homepage") == true
     val everyones get() = store.appSettings?.homepage
     private val saved get() = if (device) store.homepage else everyones
@@ -196,7 +195,7 @@ fun GeneralPanel(store: Store, state: GeneralState) {
     state.followFile()
     val scope = rememberCoroutineScope()
     state.followId()
-    val device = store.settingsDevice
+    val device = state.device
     if (device) DeviceIdSection(store, state)
     Column(
         Modifier.padding(vertical = 8.dp).then(if (device && state.own) Modifier.ownField() else Modifier),
@@ -234,10 +233,10 @@ fun GeneralPanel(store: Store, state: GeneralState) {
         if (!device && store.deviceRaw?.containsKey("homepage") == true) {
             val mine = parseHomepage(store.deviceRaw?.get("homepage"))
             Text(
-                "This device uses its own: ${mine?.name ?: "next"} (under This device)",
+                "This device uses its own: ${mine?.name ?: "next"} (in This device)",
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 13.sp,
-                modifier = Modifier.clickable { store.settingsDevice = true },
+                modifier = Modifier.clickable { store.settingsTab = SettingsTab.Device },
             )
         }
         if (state.missing) Text("The saved home page is not there any more, so the app opens on next.", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
@@ -290,9 +289,9 @@ fun SettingsFilePanel(store: Store, state: GeneralState) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (store.settingsDevice && store.deviceId == null) return@Column
+        if (state.device && store.deviceId == null) return@Column
         Text(state.fileName, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
-        if (store.settingsDevice) Dim(
+        if (state.device) Dim(
             "This device's own settings, laid over everyone's: its deviceId, and its home page, keys and reminders where it has them.",
         ) else Dim(
             "This app's own settings: the home page, appearance, task commands, boards and keys, and the web app's and the " +

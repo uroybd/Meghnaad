@@ -15,15 +15,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +42,8 @@ import androidx.compose.ui.unit.sp
 /** What every tab of Settings keeps while another is shown (the web keeps them mounted, hidden). */
 class SettingsState(store: Store) {
     val general = GeneralState(store)
+    val deviceGeneral = GeneralState(store, device = true)
+    val deviceKeys = KeysState(store, device = true)
     val appearance = AppearanceState(store)
     val keys = KeysState(store)
     val taskrc = TaskrcState(store)
@@ -61,20 +54,11 @@ class SettingsState(store: Store) {
     val kanban = KanbanState(store)
 }
 
-/** What a device may have of its own (spec 0027); the rest shows under This device read only. */
-private val DEVICE_OWN = setOf(SettingsTab.General, SettingsTab.Keys)
-
-/** Nothing under it takes a touch or a key: a tab shown for its layout, read only. */
-private fun Modifier.readOnly(): Modifier = this.pointerInput(Unit) {
-    awaitPointerEventScope {
-        while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-    }
-}.focusProperties { canFocus = false }
-
 private class SettingsTabInfo(val tab: SettingsTab, val label: String)
 
 private val TABS = listOf(
     SettingsTabInfo(SettingsTab.General, "General"),
+    SettingsTabInfo(SettingsTab.Device, "This device"),
     SettingsTabInfo(SettingsTab.Appearance, "Appearance"),
     SettingsTabInfo(SettingsTab.Keys, "Keybindings"),
     SettingsTabInfo(SettingsTab.Taskrc, "taskrc"),
@@ -90,7 +74,7 @@ private val TABS = listOf(
 class SettingsGroup(val label: String, val tabs: List<SettingsTab>)
 
 val SETTINGS_GROUPS = listOf(
-    SettingsGroup("Meghnaad", listOf(SettingsTab.General, SettingsTab.Appearance, SettingsTab.Keys, SettingsTab.Kanban, SettingsTab.Commands, SettingsTab.Sync)),
+    SettingsGroup("Meghnaad", listOf(SettingsTab.General, SettingsTab.Device, SettingsTab.Appearance, SettingsTab.Keys, SettingsTab.Kanban, SettingsTab.Commands, SettingsTab.Sync)),
     SettingsGroup("Taskwarrior", listOf(SettingsTab.Taskrc, SettingsTab.Urgency, SettingsTab.Hooks, SettingsTab.Tasksh)),
 )
 
@@ -109,30 +93,40 @@ private fun DirtyLabel(label: String, dirty: Boolean) {
 /** Two groups, Meghnaad's and Taskwarrior's, each with its tabs in a row; each tab has its own Apply (SettingsPage.svelte). */
 @Composable
 fun SettingsPage(store: Store, state: SettingsState) {
-    val dirty = mapOf(SettingsTab.General to state.general.edited, SettingsTab.Appearance to state.appearance.edited, SettingsTab.Keys to state.keys.edited, SettingsTab.Taskrc to state.taskrc.edited, SettingsTab.Commands to state.commands.edited, SettingsTab.Urgency to state.urgency.edited, SettingsTab.Tasksh to state.tasksh.edited, SettingsTab.Hooks to state.hooks.edited, SettingsTab.Kanban to state.kanban.edited)
+    // Every tab's draft follows what is saved, not only the one shown: one not opened yet was made before the settings
+    // were read, and would otherwise look edited (its dot) against them.
+    state.general.follow()
+    state.deviceGeneral.follow()
+    state.keys.follow()
+    state.deviceKeys.follow()
+    state.appearance.follow()
+    state.commands.follow()
+    state.kanban.follow()
+    state.tasksh.follow()
+    state.urgency.follow()
+    val dirty = mapOf(SettingsTab.General to state.general.edited, SettingsTab.Device to (state.deviceGeneral.edited || state.deviceKeys.edited), SettingsTab.Appearance to state.appearance.edited, SettingsTab.Keys to state.keys.edited, SettingsTab.Taskrc to state.taskrc.edited, SettingsTab.Commands to state.commands.edited, SettingsTab.Urgency to state.urgency.edited, SettingsTab.Tasksh to state.tasksh.edited, SettingsTab.Hooks to state.hooks.edited, SettingsTab.Kanban to state.kanban.edited)
     val group = settingsGroupOf(store.settingsTab)
     // The tab last shown in each group, so going back to a group goes back to it.
     val last = remember { mutableStateMapOf<String, SettingsTab>() }
     LaunchedEffect(store.settingsTab) { last[group.label] = store.settingsTab }
+    // The first time This device is opened, other devices' settings are offered (spec 0027).
+    var offered by remember { mutableStateOf(false) }
+    LaunchedEffect(store.settingsTab) {
+        if (store.settingsTab == SettingsTab.Device && !offered) {
+            offered = true
+            offerDevices(store)
+        }
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
     // A phone: one menu of the groups, each folding open to its tabs, in the title's place; the two rows of tabs took
     // the height the taskrc's editor needs.
     val narrow = maxWidth < 600.dp
     Column(Modifier.fillMaxSize()) {
-        val scope = rememberCoroutineScope()
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (narrow) {
                 Box(Modifier.weight(1f)) { SettingsMenu(store, group, dirty) }
             } else {
                 Text("Settings", Modifier.weight(1f), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-            }
-            // Whose settings (spec 0027): everyone's settings.json, or this device's own over them.
-            SingleChoiceSegmentedButtonRow {
-                SegmentedButton(!store.settingsDevice, { store.settingsDevice = false }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Everyone") }
-                SegmentedButton(store.settingsDevice, {
-                    store.settingsDevice = true
-                    scope.launch { offerDevices(store) }
-                }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("This device") }
             }
         }
         DevicePrompt(store)
@@ -154,26 +148,13 @@ fun SettingsPage(store: Store, state: SettingsState) {
         }
         // The taskrc tab is a workspace that takes the height (its editor scrolls inside it, and Apply stays in view); the others scroll.
         if (store.settingsTab == SettingsTab.Taskrc) {
-            if (store.settingsDevice) {
-                Text("Set under Everyone: one for every device.", Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable { store.settingsDevice = false }, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
-            }
             Box(Modifier.weight(1f).widthIn(max = 1100.dp).padding(horizontal = 16.dp).padding(bottom = 72.dp)) { TaskrcPanel(store, state.taskrc) }
             return@Column
         }
-        // What a device can't have of its own shows under This device as it is, read only.
-        val shared = store.settingsDevice && store.settingsTab !in DEVICE_OWN
         Column(Modifier.weight(1f).widthIn(max = 820.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-            if (shared) {
-                Text(
-                    "Set under Everyone: one for every device.",
-                    Modifier.padding(top = 8.dp).clickable { store.settingsDevice = false },
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 13.sp,
-                )
-            }
-            Box(Modifier.then(if (shared) Modifier.alpha(0.6f).readOnly() else Modifier)) { Column {
             when (store.settingsTab) {
                 SettingsTab.General -> GeneralPanel(store, state.general)
+                SettingsTab.Device -> ThisDevicePanel(store, state)
                 SettingsTab.Appearance -> AppearancePanel(store, state.appearance)
                 SettingsTab.Keys -> KeysPanel(store, state.keys)
                 SettingsTab.Taskrc -> TaskrcPanel(store, state.taskrc)
@@ -184,7 +165,6 @@ fun SettingsPage(store: Store, state: SettingsState) {
                 SettingsTab.Urgency -> UrgencyPanel(store, state.urgency)
                 SettingsTab.Sync -> SyncPanel(store)
             }
-            } }
             UpdateRow(store.updates)
             if (store.settingsTab == SettingsTab.General) SettingsFilePanel(store, state.general)
             if (APP_VERSION.isNotEmpty()) Dim("Meghnaad $APP_VERSION", Modifier.padding(vertical = 16.dp), 12)
@@ -246,3 +226,22 @@ private fun SettingsMenu(store: Store, group: SettingsGroup, dirty: Map<Settings
 
 /** The app's version, set by the platform that builds it. */
 var APP_VERSION: String = ""
+
+/**
+ * Settings → This device (spec 0028; ThisDevicePanel.svelte): only what a device can have of its own, over everyone's
+ * settings.json: its ID and home page, its reminders, its keys, and its file as text.
+ */
+@Composable
+private fun ThisDevicePanel(store: Store, state: SettingsState) {
+    Dim("What this device has of its own: where it opens, its reminders and its keys. Everything else in Settings is the same on every device.", Modifier.padding(top = 10.dp))
+    GeneralPanel(store, state.deviceGeneral)
+    Text("Reminders", Modifier.padding(top = 14.dp), fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+    val r = store.notifier.settings
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Dim("Always this device's own. " + if (r.enabled) "On, ${r.leadMinutes} minutes ahead." else "Off on this device.", Modifier.weight(1f))
+        androidx.compose.material3.OutlinedButton({ store.notifyOpen = true }) { Text("Set reminders") }
+    }
+    Text("Keys", Modifier.padding(top = 14.dp), fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+    KeysPanel(store, state.deviceKeys)
+    SettingsFilePanel(store, state.deviceGeneral)
+}

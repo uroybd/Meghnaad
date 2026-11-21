@@ -16,6 +16,7 @@ export const PAGES = {
 
 export const TABS = {
   general: lazy(() => import('./GeneralPanel.svelte')),
+  device: lazy(() => import('./ThisDevicePanel.svelte')),
   appearance: lazy(() => import('./AppearancePanel.svelte')),
   keys: lazy(() => import('./KeysPanel.svelte')),
   taskrc: lazy(() => import('./TaskrcPanel.svelte')),

@@ -7,9 +7,15 @@
   import { TABS as PANELS } from './pages';
   import { store } from './store.svelte';
 
-  type Tab = 'general' | 'appearance' | 'keys' | 'taskrc' | 'tasksh' | 'kanban' | 'commands' | 'hooks' | 'urgency';
+  type Tab =
+    'general' | 'device' | 'appearance' | 'keys' | 'taskrc' | 'tasksh' | 'kanban' | 'commands' | 'hooks' | 'urgency';
   const TABS: { id: Tab; label: string; hint: string }[] = [
     { id: 'general', label: 'General', hint: 'Where the app opens' },
+    {
+      id: 'device',
+      label: 'This device',
+      hint: "What this device has of its own, over everyone's: where it opens, its keys and its reminders",
+    },
     { id: 'appearance', label: 'Appearance', hint: 'How the app draws things: UDAs shown as progress bars' },
     { id: 'keys', label: 'Keybindings', hint: 'The keys of the web app, the phone and the terminal app' },
     {
@@ -36,7 +42,7 @@
       id: 'meghnaad',
       label: 'Meghnaad',
       hint: 'The app itself: where it opens, how it looks, its keys, kanban and commands',
-      tabs: ['general', 'appearance', 'keys', 'kanban', 'commands'],
+      tabs: ['general', 'device', 'appearance', 'keys', 'kanban', 'commands'],
     },
     {
       id: 'taskwarrior',
@@ -45,13 +51,13 @@
       tabs: ['taskrc', 'urgency', 'hooks', 'tasksh'],
     },
   ];
-  // What a device may have of its own (spec 0027): the rest shows under This device read only.
-  const OWN: Tab[] = ['general', 'keys'];
-  const device = $derived(store.settingsDevice);
-  function openView(mine: boolean) {
-    store.settingsDevice = mine;
-    if (mine) void offerDevices();
-  }
+  // The first time This device is opened, other devices' settings are offered (spec 0027).
+  let offered = false;
+  $effect(() => {
+    if (store.settingsTab !== 'device' || offered) return;
+    offered = true;
+    void offerDevices();
+  });
 
   const byId = Object.fromEntries(TABS.map((t) => [t.id, t])) as Record<Tab, (typeof TABS)[number]>;
   const current = $derived((store.settingsTab ?? 'general') as Tab);
@@ -65,6 +71,7 @@
   // Each tab keeps its own edits while another is shown, and says so with a dot; a group has one while any of its do.
   let dirty = $state<Record<Tab, boolean>>({
     general: false,
+    device: false,
     appearance: false,
     keys: false,
     taskrc: false,
@@ -129,24 +136,6 @@
 <div class="page">
   <div class="title">
     <h1>Settings</h1>
-    <div class="views" role="tablist" aria-label="Whose settings">
-      <button
-        role="tab"
-        aria-selected={!device}
-        class:on={!device}
-        title="settings.json: every device's"
-        onclick={() => openView(false)}>Everyone</button
-      >
-      <button
-        role="tab"
-        aria-selected={device}
-        class:on={device}
-        title={store.deviceId
-          ? `This device's own (${store.deviceId}), over everyone's`
-          : "This device's own, over everyone's"}
-        onclick={() => openView(true)}>This device</button
-      >
-    </div>
   </div>
   <div class="groups" role="tablist" aria-label="Settings" tabindex="-1" onkeydown={onGroupKey}>
     {#each GROUPS as g (g.id)}
@@ -201,18 +190,10 @@
     <div class="panels">
       {#each TABS as t (t.id)}
         <div role="tabpanel" id="settings-panel-{t.id}" aria-labelledby="settings-tab-{t.id}" hidden={current !== t.id}>
-          {#if device && !OWN.includes(t.id)}
-            <p class="shared">
-              Set under <a href="/settings/{t.id}" onclick={(e) => (e.preventDefault(), openView(false))}>Everyone</a>:
-              one for every device.
-            </p>
-          {/if}
-          <fieldset class="ro" disabled={device && !OWN.includes(t.id)}>
-            {#if opened.has(t.id)}<LazyView
-                of={PANELS[t.id]}
-                props={{ ondirty: (v: boolean) => (dirty[t.id] = v) }}
-              />{/if}
-          </fieldset>
+          {#if opened.has(t.id)}<LazyView
+              of={PANELS[t.id]}
+              props={{ ondirty: (v: boolean) => (dirty[t.id] = v) }}
+            />{/if}
         </div>
       {/each}
     </div>
@@ -237,38 +218,6 @@
     justify-content: space-between;
     gap: 10px;
     margin: 0 0 14px;
-  }
-  .views {
-    display: inline-flex;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 2px;
-    gap: 2px;
-  }
-  .views button {
-    border-color: transparent;
-    background: transparent;
-    padding: 5px 12px;
-    border-radius: 6px;
-  }
-  .views button.on {
-    background: var(--panel-2);
-    font-weight: 600;
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-  fieldset.ro {
-    border: none;
-    margin: 0;
-    padding: 0;
-    min-width: 0;
-  }
-  fieldset.ro:disabled {
-    opacity: 0.7;
-  }
-  .shared {
-    margin: 0 0 12px;
-    font-size: 13px;
-    color: var(--dim);
   }
   .version {
     margin: 28px 0 0;

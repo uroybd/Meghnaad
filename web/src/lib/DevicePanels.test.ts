@@ -24,8 +24,7 @@ async function open(device: boolean, own: Record<string, unknown> | null) {
   store.keymapDefaults = null;
   store.deviceId = own ? 'phone' : null;
   store.deviceRaw = own;
-  store.settingsDevice = device;
-  app = mount(GeneralPanel, { target: document.body });
+  app = mount(GeneralPanel, { target: document.body, props: { device } });
   await tick();
 }
 
@@ -41,13 +40,12 @@ beforeEach(() => {
 afterEach(() => {
   if (app) unmount(app);
   app = null;
-  store.settingsDevice = false;
   store.deviceRaw = null;
   store.deviceId = null;
   vi.clearAllMocks();
 });
 
-describe('the home page under This device', () => {
+describe('the home page in This device', () => {
   it('is framed when it is the device’s own, and put back to everyone’s', async () => {
     await open(true, { deviceId: 'phone', homepage: { report: 'next' }, reminders: { enabled: true } });
     expect(field().classList.contains('mine')).toBe(true);
@@ -72,25 +70,20 @@ describe('the home page under This device', () => {
     await open(false, { deviceId: 'phone', homepage: { board: 'week' } });
     expect(select().value).toBe('report:list');
     expect(document.body.textContent).toContain('This device uses its own');
-    expect(document.querySelector('a[href="/settings/device/general"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/settings/device"]')).not.toBeNull();
   });
 });
 
-describe('the Settings page under This device', () => {
-  it('shows what a device can’t have of its own read only, and its own tabs as they are', async () => {
+describe('Settings → This device (spec 0028)', () => {
+  it('is a tab of its own, and no other tab is read only', async () => {
     const { default: SettingsPage } = await import('./SettingsPage.svelte');
-    store.settingsTab = 'appearance';
-    store.settingsDevice = true;
+    store.settingsTab = 'device';
     app = mount(SettingsPage, { target: document.body });
-    await tick();
-    const set = (tab: string) => document.querySelector(`#settings-panel-${tab} fieldset`) as HTMLFieldSetElement;
-    expect(set('appearance').disabled).toBe(true);
-    expect(set('general').disabled).toBe(false);
-    expect(set('keys').disabled).toBe(false);
-    expect(document.querySelector('#settings-panel-appearance .shared')?.textContent).toContain('Everyone');
-    // Under Everyone, nothing is read only.
-    store.settingsDevice = false;
-    await tick();
-    expect(set('appearance').disabled).toBe(false);
+    await vi.waitFor(() =>
+      expect(document.querySelector('#settings-panel-device h2')?.textContent).toBe('This device'),
+    );
+    expect(document.querySelector('#settings-tab-device')?.getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('fieldset:disabled')).toBeNull();
+    expect(document.body.textContent).not.toContain('Everyone');
   });
 });

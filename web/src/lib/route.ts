@@ -5,7 +5,7 @@
 //   /projects /tags /summary /calendar /burndown /console
 //   /boards             the list of boards;  /board/<slug>  one of them
 //   /kanbans            the list of kanbans; /kanban/<slug>  one of them, on its report; /kanban/<slug>/<report> on another
-//   /settings           Settings;  /settings/<tab>  one of its tabs;  /settings/device[/<tab>]  this device's own;  /settings/taskrc/<path>  one file of the taskrc folder
+//   /settings           Settings;  /settings/<tab>  one of its tabs (`device`: this device's own);  /settings/taskrc/<path>  one file of the taskrc folder
 //   /task/<8 characters>  a task's detail drawer (the first 8 characters of its uuid; the numbers `task 3` uses differ
 //                       from one replica to the next and change as tasks finish)
 //
@@ -17,6 +17,7 @@ import { toAddress } from './base';
 
 export const SETTINGS_TABS = [
   'general',
+  'device',
   'appearance',
   'keys',
   'taskrc',
@@ -37,7 +38,7 @@ export type Place =
   | { page: PlainPage }
   | { page: 'boards'; board: string | null }
   | { page: 'kanban'; kanban: string | null; report?: string }
-  | { page: 'settings'; tab: SettingsTab | null; file?: string; device?: true }
+  | { page: 'settings'; tab: SettingsTab | null; file?: string }
   | { page: 'task'; prefix: string };
 
 /** The place an address names, or `null` for the front page and for an address that is nothing. */
@@ -64,13 +65,9 @@ export function parsePath(path: string): Place | null {
     const name = rcFileFromPath(file[1]);
     return name ? { page: 'settings', tab: 'taskrc', file: name } : null;
   }
-  // This device's own settings (spec 0027): `/settings/device`, `/settings/device/<tab>`.
-  const mine = /^\/settings\/device(?:\/([a-z]+))?\/?$/.exec(path);
-  if (mine) {
-    const tab = mine[1] as SettingsTab | undefined;
-    if (!tab) return { page: 'settings', tab: null, device: true };
-    return SETTINGS_TABS.includes(tab) ? { page: 'settings', tab, device: true } : null;
-  }
+  // The addresses of the This device view before it was a tab (spec 0027), `/settings/device/<tab>`: the tab (spec 0028).
+  const mine = /^\/settings\/device\/[a-z]+\/?$/.exec(path);
+  if (mine) return { page: 'settings', tab: 'device' };
   const settings = /^\/settings(?:\/([a-z]+))?\/?$/.exec(path);
   if (settings) {
     const tab = settings[1] as SettingsTab | undefined;
@@ -93,7 +90,6 @@ export function placePath(p: Place): string {
     case 'settings':
       if (p.tab === 'taskrc' && p.file)
         return `/settings/taskrc/${p.file.split('/').map(encodeURIComponent).join('/')}`;
-      if (p.device) return p.tab ? `/settings/device/${p.tab}` : '/settings/device';
       return p.tab ? `/settings/${p.tab}` : '/settings';
     case 'task':
       return `/task/${p.prefix}`;

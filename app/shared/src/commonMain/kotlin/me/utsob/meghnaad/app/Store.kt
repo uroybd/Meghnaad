@@ -40,7 +40,7 @@ enum class Setup {
 
 enum class View { Tasks, Projects, Tags, Summary, Calendar, Burndown, Boards, Kanban, Console, Settings }
 
-enum class SettingsTab { General, Appearance, Keys, Taskrc, Tasksh, Kanban, Commands, Hooks, Urgency, Sync }
+enum class SettingsTab { General, Device, Appearance, Keys, Taskrc, Tasksh, Kanban, Commands, Hooks, Urgency, Sync }
 
 /** The pages that show one command's answer with the same component the console uses. */
 enum class Panel { Summary, Calendar, Burndown }
@@ -187,9 +187,6 @@ class Store(
     /** This device's own settings, read (null: none, or not read yet). */
     var deviceRaw by mutableStateOf<JsonObject?>(null)
         private set
-
-    /** Settings shows this device's own, not everyone's. */
-    var settingsDevice by mutableStateOf(false)
 
     /** What is being asked about this device's settings (its ID, or which device's to use). */
     var deviceAsk by mutableStateOf<DeviceAsk?>(null)
@@ -1040,7 +1037,7 @@ class Store(
             View.Tasks -> AppPlace.Report(report)
             View.Boards -> AppPlace.Boards(boardId)
             View.Kanban -> AppPlace.Kanbans(kanbanId, kanbanReport.takeIf { kanbanId != null })
-            View.Settings -> AppPlace.SettingsAt(settingsTab, settingsFile.takeIf { settingsTab == SettingsTab.Taskrc }, settingsDevice)
+            View.Settings -> AppPlace.SettingsAt(settingsTab, settingsFile.takeIf { settingsTab == SettingsTab.Taskrc })
             else -> AppPlace.Page(view)
         }
 
@@ -1081,7 +1078,6 @@ class Store(
             }
             is AppPlace.SettingsAt -> {
                 if (place.tab != null) settingsFile = place.file
-                settingsDevice = place.device
                 openSettings(place.tab ?: settingsTab)
             }
         }

@@ -80,8 +80,6 @@ export abstract class StoreBase {
   kanbanReport = $state<string | null>(null);
   /** The tab the Settings page shows. */
   settingsTab = $state<SettingsTab>('taskrc');
-  /** Settings shows this device's own (spec 0027), not everyone's. */
-  settingsDevice = $state(false);
   /** The file of the taskrc folder the taskrc tab shows (`null`: the main taskrc). */
   settingsFile = $state<string | null>(null);
   /** The task detail drawer. */

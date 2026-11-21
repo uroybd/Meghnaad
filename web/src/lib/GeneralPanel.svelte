@@ -1,8 +1,6 @@
 <script lang="ts">
   import { ask } from './ask.svelte';
-  import { untrack } from 'svelte';
-  import { STATIC } from '../engine/flavour';
-  import DevicePanel from './DevicePanel.svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { putAppSettings } from './api';
   import { lintSettings, parseHomepage, parseSettings, sameHomepage, type Homepage } from './appsettings';
   import { ensureDeviceId } from './deviceAsk.svelte';
@@ -12,8 +10,15 @@
   import { store } from './store.svelte';
   import { strayAliasIcons } from './taskCommands';
 
-  /** There are edits not yet applied (the tab shows a dot). */
-  let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
+  /**
+   * There are edits not yet applied (the tab shows a dot). With `device`, this device's own (in This device, spec 0028):
+   * its ID, its home page and its file, with `children` drawn before the file.
+   */
+  let {
+    ondirty,
+    device = false,
+    children,
+  }: { ondirty?: (dirty: boolean) => void; device?: boolean; children?: Snippet } = $props();
 
   // The choice is one value in the list: `report:next`, `board:week`, `kanban:work`, or nothing for the default (`next`).
   const toValue = (h: Homepage | null) =>
@@ -29,8 +34,7 @@
   // The kanbans are offered while Kanban is on.
   const kanbans = $derived(store.kanbanSettings.enabled ? store.kanbans : []);
 
-  // Under This device (spec 0027): the home page this device uses, and whether it is its own.
-  const device = $derived(store.settingsDevice);
+  // In This device: the home page this device uses, and whether it is its own.
   const own = $derived(!!store.deviceRaw && 'homepage' in store.deviceRaw);
   const everyones = $derived(store.appSettings?.homepage ?? null);
   const saved = $derived(device ? store.homepage : everyones);
@@ -190,8 +194,8 @@
   }
 </script>
 
-<section aria-label="General settings">
-  <h2>General</h2>
+<section aria-label={device ? "This device's settings" : 'General settings'}>
+  {#if !device}<h2>General</h2>{/if}
   {#if device && store.deviceId}
     <div class="device">
       <label class="field">
@@ -248,8 +252,8 @@
     <p class="dim">
       This device uses its own:
       <code>{toValue(parseHomepage(store.deviceRaw.homepage)) || 'next'}</code>
-      (<a href="/settings/device/general" onclick={(e) => (e.preventDefault(), (store.settingsDevice = true))}
-        >under This device</a
+      (<a href="/settings/device" onclick={(e) => (e.preventDefault(), (store.settingsTab = 'device'))}
+        >in This device</a
       >).
     </p>
   {/if}
@@ -270,6 +274,7 @@
     {#if done}<span class="ok"><Check size={14} /> Saved</span>{/if}
   </div>
 
+  {@render children?.()}
   {#if !device || store.deviceId}
     <details class="json" open={textEdited || undefined}>
       <summary>{fileName}</summary>
@@ -320,7 +325,6 @@
       </div>
     </details>
   {/if}
-  {#if STATIC}<DevicePanel />{/if}
 </section>
 
 <style>

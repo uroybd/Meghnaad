@@ -45,9 +45,7 @@ export abstract class NavigationStore extends SettingsStore {
             : this.view === 'settings'
               ? this.settingsTab === 'taskrc' && this.settingsFile
                 ? { page: 'settings', tab: 'taskrc', file: this.settingsFile }
-                : this.settingsDevice
-                  ? { page: 'settings', tab: this.settingsTab, device: true }
-                  : { page: 'settings', tab: this.settingsTab }
+                : { page: 'settings', tab: this.settingsTab }
               : { page: this.view },
   );
 
@@ -218,7 +216,6 @@ export abstract class NavigationStore extends SettingsStore {
           this.settingsTab = place.tab;
           this.settingsFile = place.file ?? null;
         }
-        this.settingsDevice = place.device === true;
         this.view = 'settings';
         return undefined;
       case 'task':

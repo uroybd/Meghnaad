@@ -119,7 +119,14 @@ describe('the Settings page', () => {
     // The other group opens on its first tab, and coming back goes to the tab left there.
     group('meghnaad').click();
     await tick();
-    expect(labels('.tabs [role=tab]')).toEqual(['General', 'Appearance', 'Keybindings', 'Kanban', 'Commands']);
+    expect(labels('.tabs [role=tab]')).toEqual([
+      'General',
+      'This device',
+      'Appearance',
+      'Keybindings',
+      'Kanban',
+      'Commands',
+    ]);
     expect(store.settingsTab).toBe('general');
     group('taskwarrior').click();
     await tick();
