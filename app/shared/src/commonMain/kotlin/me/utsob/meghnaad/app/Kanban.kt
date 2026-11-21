@@ -128,26 +128,54 @@ fun kanbanReportLines(config: ConfigResponse?): List<Pair<String, String>> =
 /** Whether tasksh's review is set up enough for a task to go back in its queue: the `reviewed` date UDA is defined. */
 fun hasReview(config: ConfigResponse?): Boolean = config?.config?.udas?.get("reviewed")?.type == "date"
 
-/** The automatic columns, on the UDA [u]. With tasksh's review set up, a task moved to Review goes back in its queue. */
-fun automaticColumns(review: Boolean, u: String = PROGRESS_UDA): List<KanbanColumn> = listOf(
-    KanbanColumn("To do", "status:pending $u:", "modify status:pending $u:"),
-    KanbanColumn("In progress", "status:pending $u:inprogress", "modify status:pending $u:inprogress"),
-    KanbanColumn("Review", "status:pending $u:review", "modify status:pending $u:review" + if (review) " reviewed:" else ""),
-    KanbanColumn("Done", "status:completed", "done"),
+/**
+ * The task commands the automatic setup adds to `settings.json`, one per column but Done (which is `done`), so that a move
+ * is the same word wherever the app runs a command on a task (kanban.ts `moveCommands`). With tasksh's review set up, a
+ * task moved to Review goes back in its queue.
+ */
+fun moveCommands(review: Boolean, u: String = PROGRESS_UDA): List<TaskCommand> = listOf(
+    TaskCommand("pending", "modify status:pending $u:", "circle-dashed"),
+    TaskCommand("inprogress", "modify status:pending $u:inprogress", "loader-circle"),
+    TaskCommand("review", "modify status:pending $u:review" + if (review) " reviewed:" else "", "eye"),
 )
+
+/**
+ * The move commands the columns can run: the ones [commands] has as the setup writes them (icon aside), and the ones it
+ * doesn't have yet. A command of that name for something else is left alone, and its column moves with the line itself.
+ */
+fun usableMoves(commands: List<TaskCommand>, review: Boolean, u: String = PROGRESS_UDA): List<TaskCommand> =
+    moveCommands(review, u).filter { m -> commands.find { it.name == m.name }.let { it == null || it.command == m.command } }
+
+/** [commands] with the move commands it doesn't have yet added at the end. */
+fun withMoveCommands(commands: List<TaskCommand>, review: Boolean, u: String = PROGRESS_UDA): List<TaskCommand> {
+    val names = commands.map { it.name }.toSet()
+    return commands + moveCommands(review, u).filter { it.name !in names }
+}
+
+/** The automatic columns, on the UDA [u]. A column moves with its task command when it is in [moves], else with the line itself. */
+fun automaticColumns(review: Boolean, u: String = PROGRESS_UDA, moves: List<TaskCommand> = emptyList()): List<KanbanColumn> {
+    val (todo, progress, inReview) = moveCommands(review, u)
+    fun move(m: TaskCommand) = if (moves.any { it.name == m.name }) m.name else m.command
+    return listOf(
+        KanbanColumn("To do", "status:pending $u:", move(todo)),
+        KanbanColumn("In progress", "status:pending $u:inprogress", move(progress)),
+        KanbanColumn("Review", "status:pending $u:review", move(inReview)),
+        KanbanColumn("Done", "status:completed", "done"),
+    )
+}
 
 /**
  * Kanban as the automatic setup leaves it: on, its settings on the UDA [uda], and a first kanban with none of its own. With
  * [ownReport] it is drawn from the `kanban` report, whose filter is enough; else from `all` with a filter of its own.
  */
-fun automaticSettings(s: KanbanSettings, review: Boolean, uda: String, ownReport: Boolean = false) = s.copy(
+fun automaticSettings(s: KanbanSettings, review: Boolean, uda: String, ownReport: Boolean = false, moves: List<TaskCommand> = emptyList()) = s.copy(
     enabled = true,
     setup = "automatic",
     uda = uda,
     report = if (ownReport) KANBAN_REPORT else AUTO_REPORT,
     filter = if (ownReport) "" else AUTO_FILTER,
     completedSince = AUTO_COMPLETED_SINCE,
-    columns = automaticColumns(review, uda),
+    columns = automaticColumns(review, uda, moves),
     kanbans = s.kanbans.ifEmpty { listOf(KanbanEntry("kanban", "Kanban")) },
 )
 

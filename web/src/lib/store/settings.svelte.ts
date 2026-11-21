@@ -22,6 +22,7 @@ import {
   type Homepage,
   type ParsedSettings,
   serializeKanban,
+  serializeSettings,
   type TaskCommand,
 } from '../appsettings';
 import { emptyKanbanSettings, resolveKanban, type Kanban, type KanbanSettings } from '../kanban';
@@ -329,9 +330,14 @@ export abstract class SettingsStore extends StoreBase {
     await this.loadAppSettings();
   }
 
-  /** Save the kanbans (the rest of `settings.json` as it was) and read them back. Throws what the server refused. */
-  async saveKanban(kanban: KanbanSettings) {
-    const text = serializeKanban(this.appSettings?.raw ?? {}, kanban);
+  /**
+   * Save the kanbans (the rest of `settings.json` as it was), and the task commands too when given (the automatic setup's
+   * moves), in one write; then read them back. Throws what the server refused.
+   */
+  async saveKanban(kanban: KanbanSettings, commands?: TaskCommand[]) {
+    const raw = this.appSettings?.raw ?? {};
+    const base = commands ? (JSON.parse(serializeSettings(raw, commands)) as Record<string, unknown>) : raw;
+    const text = serializeKanban(base, kanban);
     fits(text);
     await putAppSettings(text);
     await this.loadAppSettings();

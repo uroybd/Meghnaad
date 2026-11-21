@@ -721,6 +721,19 @@ pub fn save_kanban(kanban: &crate::kanban::Settings) -> Result<(), SettingsError
     save(|text| with_kanban(text, kanban))
 }
 
+/// Save the kanbans and the task commands in one write (the automatic setup adds its moves as commands), keeping the
+/// rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_kanban_and_commands(
+    kanban: &crate::kanban::Settings,
+    commands: &[TaskCommand],
+) -> Result<(), SettingsError> {
+    save(|text| with_kanban(&with_commands(text, commands)?, kanban))
+}
+
 /// `text` with `tui.sync` set to `mode` (and the old top-level `sync` gone), and every other key as it was.
 ///
 /// # Errors

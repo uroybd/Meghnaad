@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -640,9 +641,14 @@ class Store(
         loadAppSettings()
     }
 
-    /** Save the kanbans (the rest of `settings.json` as it was) and read them back. Throws what the engine refused. */
-    suspend fun saveKanban(next: KanbanSettings) {
-        val text = serializeKanban(appSettings?.raw ?: JsonObject(emptyMap()), next)
+    /**
+     * Save the kanbans (the rest of `settings.json` as it was), and the task commands too when given (the automatic setup's
+     * moves), in one write; then read them back. Throws what the engine refused.
+     */
+    suspend fun saveKanban(next: KanbanSettings, commands: List<TaskCommand>? = null) {
+        val raw = appSettings?.raw ?: JsonObject(emptyMap())
+        val base = if (commands == null) raw else Json.parseToJsonElement(serializeSettings(raw, commands)).jsonObject
+        val text = serializeKanban(base, next)
         if (text.encodeToByteArray().size > MAX_SETTINGS_BYTES) error("The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.")
         request("PUT", "/api/settings", text)
         loadAppSettings()

@@ -33,10 +33,26 @@ Kanban is off until you set it up in **Settings → Kanban**. There are two ways
 
   | Column | Filter | On move |
   | --- | --- | --- |
-  | To do | `status:pending progressState:` | `modify status:pending progressState:` |
-  | In progress | `status:pending progressState:inprogress` | `modify status:pending progressState:inprogress` |
-  | Review | `status:pending progressState:review` | `modify status:pending progressState:review` |
+  | To do | `status:pending progressState:` | `pending` |
+  | In progress | `status:pending progressState:inprogress` | `inprogress` |
+  | Review | `status:pending progressState:review` | `review` |
   | Done | `status:completed` | `done` |
+
+  `pending`, `inprogress` and `review` are [task commands](settings.md#commands) it adds to Commands, each with an
+  icon, so a move is the same word everywhere the app runs one on a task: a task's ⋯ menu, a report, the tasks you
+  have selected, and the console (`3 review`):
+
+  | Command | Stands for | Icon |
+  | --- | --- | --- |
+  | `pending` | `modify status:pending progressState:` | circle-dashed |
+  | `inprogress` | `modify status:pending progressState:inprogress` | loader-circle |
+  | `review` | `modify status:pending progressState:review` | eye |
+
+  They are this app's, kept in `settings.json`, so the `task` CLI on the desktop does not know them. (A taskrc alias
+  would be, but `task` writes an alias out wherever its word stands on the line, so `task add review the PR` would
+  move the new task to Review.) A command you already have of the same name is left as it is; if it stands for
+  something else, that column moves with the whole command line instead. Done moves with `done`: a hook can tidy up
+  `progressState` on a finished task if you want it cleared.
 
   It then makes a first kanban, called Kanban, with nothing of its own. A completed task is in Done whatever its
   `progressState` is. Moving a card out of Done reopens the task, because each move sets `status:pending`. No column

@@ -3,6 +3,7 @@
 //! the column's On move on that task, through the task commands as the console runs a line.
 
 use super::{model, moved, now, settings, App, Mode, Page, Prompt, PromptKind, Step};
+use crate::commands::TaskCommand;
 use crate::kanban::{self, Column, Entry, Kanban, Settings, View};
 use crate::review::config_args;
 use ratatui::style::Style;
@@ -445,11 +446,20 @@ impl App {
 
     /// Save Kanban's settings to `settings.json` and read them back; say `said`, or why not.
     fn save_kanban(&mut self, next: &Settings, said: &str) -> bool {
+        self.save_kanban_with(next, None, said)
+    }
+
+    /// Save the kanbans, and the task commands too when given, in one write.
+    fn save_kanban_with(&mut self, next: &Settings, commands: Option<&[TaskCommand]>, said: &str) -> bool {
         if let Some(p) = &self.settings_problem {
             self.status = format!("Not saved: put settings.json right first ({p}).");
             return false;
         }
-        match settings::save_kanban(next) {
+        let saved = match commands {
+            Some(list) => settings::save_kanban_and_commands(next, list),
+            None => settings::save_kanban(next),
+        };
+        match saved {
             Ok(()) => {
                 self.read_settings();
                 said.clone_into(&mut self.status);
@@ -510,13 +520,15 @@ impl App {
                         )
                     };
                 } else if self.write_kanban_uda() {
-                    let s = kanban::automatic_settings(
-                        &self.kanban,
-                        kanban::has_review(&self.cfg),
-                        &self.kanban.uda,
-                        self.kanban_with_report,
-                    );
-                    if self.save_kanban(&s, "Kanban is on, with the automatic columns.") {
+                    // Each column moves with a task command (pending, inprogress, review), added unless one of that
+                    // name stands for something else.
+                    let review = kanban::has_review(&self.cfg);
+                    let uda = self.kanban.uda.clone();
+                    let commands = &self.settings.task_commands;
+                    let moves = kanban::usable_moves(commands, review, &uda);
+                    let list = kanban::with_move_commands(commands, review, &uda);
+                    let s = kanban::automatic_settings(&self.kanban, review, &uda, self.kanban_with_report, &moves);
+                    if self.save_kanban_with(&s, Some(&list), "Kanban is on, with the automatic columns.") {
                         self.kanban_row = 0;
                     }
                 }

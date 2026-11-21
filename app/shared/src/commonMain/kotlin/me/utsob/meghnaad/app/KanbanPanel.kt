@@ -52,6 +52,9 @@ class KanbanState(private val store: Store) {
     val status get() = udaStatus(store.config, draft.uda)
     val lines get() = if (udaProblem != null) emptyList() else kanbanSetupLines(store.config, draft.uda)
     val review get() = hasReview(store.config)
+
+    /** The move commands Set up adds to Commands (the ones not there yet). */
+    val newMoves get() = withMoveCommands(store.taskCommands, review, draft.uda).drop(store.taskCommands.size)
     /** The automatic setup adds a `kanban` report to the taskrc, so the kanbans need no filter of their own. */
     var withReport by mutableStateOf(true)
     val hasReport get() = store.config?.config?.reports?.containsKey(KANBAN_REPORT) == true
@@ -71,12 +74,12 @@ class KanbanState(private val store: Store) {
 
     fun addKanban() = set { s -> s.copy(kanbans = s.kanbans + newKanban("", s.kanbans.map { it.id })) }
 
-    private suspend fun save(next: KanbanSettings) {
+    private suspend fun save(next: KanbanSettings, commands: List<TaskCommand>? = null) {
         busy = true
         error = null
         done = false
         try {
-            store.saveKanban(next)
+            store.saveKanban(next, commands)
             draft = next
             base = next
             done = true
@@ -110,10 +113,13 @@ class KanbanState(private val store: Store) {
             }
             busy = false
         }
-        save(
-            if (automatic) automaticSettings(draft, review, draft.uda, withReport)
-            else draft.copy(enabled = true, setup = "manual", report = store.reports.firstOrNull()?.name ?: "next"),
-        )
+        if (!automatic) {
+            save(draft.copy(enabled = true, setup = "manual", report = store.reports.firstOrNull()?.name ?: "next"))
+            return
+        }
+        // Each column moves with a task command (pending, inprogress, review), added unless one of that name stands for something else.
+        val moves = usableMoves(store.taskCommands, review, draft.uda)
+        save(automaticSettings(draft, review, draft.uda, withReport, moves), withMoveCommands(store.taskCommands, review, draft.uda))
     }
 
     suspend fun applyLines() {
@@ -197,6 +203,11 @@ fun KanbanPanel(store: Store, st: KanbanState) {
                     if (all.isNotEmpty()) {
                         Dim("Set up writes these lines to your taskrc, and nothing else:", size = 12)
                         all.forEach { (n, v) -> Text("config $n $v", fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
+                    }
+                    val moves = st.newMoves
+                    if (moves.isNotEmpty()) {
+                        Dim("The columns move a card with task commands, which you can also run from a task's menu or the console (3 review). Set up adds them to Commands:", size = 12)
+                        moves.forEach { Text("${it.name}  ${it.command}", fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
                     }
                 }
                 Button(onClick = { store.go { st.setUp(true) } }, enabled = !st.busy && st.udaProblem == null) { Text("Set up automatically") }

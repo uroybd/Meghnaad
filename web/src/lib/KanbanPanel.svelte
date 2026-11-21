@@ -5,7 +5,7 @@
   // a report, filter, Completed since or columns; all kept in `settings.json` under `kanban`.
   import { untrack } from 'svelte';
   import { runCli } from './api';
-  import { MAX_SETTINGS_BYTES, serializeKanban } from './appsettings';
+  import { MAX_SETTINGS_BYTES, serializeKanban, type TaskCommand } from './appsettings';
   import { ArrowDown, ArrowUp, Plus, TriangleAlert, X } from './icons';
   import {
     automaticSettings,
@@ -16,6 +16,8 @@
     renamedKanban,
     resolveKanban,
     setupLines,
+    usableMoves,
+    withMoveCommands,
     reportLines,
     KANBAN_REPORT,
     udaNameProblem,
@@ -66,6 +68,8 @@
   const hasReport = $derived(!!store.config?.config.reports?.[KANBAN_REPORT]);
   const addLines = $derived(withReport ? reportLines(store.config) : []);
   const review = $derived(hasReview(store.config));
+  /** The move commands Set up adds to Commands (the ones not there yet). */
+  const newMoves = $derived(withMoveCommands(store.taskCommands, review, draft.uda).slice(store.taskCommands.length));
   const label: Record<Part, string> = { ok: 'defined', missing: 'not defined', different: 'defined differently' };
 
   /** What is wrong with Kanban's columns, and with each kanban and its own columns, by index. */
@@ -86,12 +90,12 @@
   /** Entries in the saved file that were not understood: they stay in the file. */
   const unread = $derived(store.appSettings?.kanbanErrors ?? []);
 
-  async function save(settings: KanbanSettings) {
+  async function save(settings: KanbanSettings, commands?: TaskCommand[]) {
     busy = true;
     error = null;
     done = false;
     try {
-      await store.saveKanban(settings);
+      await store.saveKanban(settings, commands);
       draft = copy(settings);
       done = true;
     } catch (e) {
@@ -125,10 +129,16 @@
       return;
     }
     busy = false;
+    if (!automatic) {
+      await save({ ...draft, enabled: true, setup: 'manual', report: store.reports[0]?.name ?? 'next' });
+      return;
+    }
+    // Each column moves with a task command (pending, inprogress, review), added here unless one of that name stands
+    // for something else.
+    const moves = usableMoves(store.taskCommands, review, draft.uda);
     await save(
-      automatic
-        ? automaticSettings(draft, review, draft.uda, withReport)
-        : { ...draft, enabled: true, setup: 'manual', report: store.reports[0]?.name ?? 'next' },
+      automaticSettings(draft, review, draft.uda, withReport, moves),
+      withMoveCommands(store.taskCommands, review, draft.uda),
     );
   }
 
@@ -306,6 +316,14 @@
           {#if lines.length || addLines.length}
             <p class="dim">Set up writes these lines to your taskrc, and nothing else:</p>
             <pre class="lines">{[...lines, ...addLines].map(([n, v]) => `config ${n} ${v}`).join('\n')}</pre>
+          {/if}
+          {#if newMoves.length}
+            <p class="dim">
+              The columns move a card with task commands, which you can also run from a task's menu or the console (<code
+                >3 review</code
+              >). Set up adds them to Commands:
+            </p>
+            <pre class="lines">{newMoves.map((c) => `${c.name}  ${c.command}`).join('\n')}</pre>
           {/if}
         {/if}
         <button class="primary" disabled={busy || !!udaProblem} onclick={() => setUp(true)}>Set up automatically</button

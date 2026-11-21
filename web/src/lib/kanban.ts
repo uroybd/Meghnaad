@@ -168,16 +168,48 @@ export function hasReview(config: ConfigResponse | null): boolean {
   return config?.config.udas?.reviewed?.type === 'date';
 }
 
-/** The automatic columns, on the UDA `u`. With tasksh's review set up, a task moved to Review goes back in its queue. */
-export function automaticColumns(review: boolean, u = PROGRESS_UDA): KanbanColumn[] {
+/**
+ * The task commands the automatic setup adds to `settings.json`, one per column but Done (which is `done`), so that a
+ * move is the same word wherever the app runs a command on a task: a task's menu, a report, the console (`3 review`) and
+ * the kanban. With tasksh's review set up, a task moved to Review goes back in its queue.
+ */
+export function moveCommands(review: boolean, u = PROGRESS_UDA): TaskCommand[] {
   return [
-    { name: 'To do', filter: `status:pending ${u}:`, move: `modify status:pending ${u}:` },
-    { name: 'In progress', filter: `status:pending ${u}:inprogress`, move: `modify status:pending ${u}:inprogress` },
-    {
-      name: 'Review',
-      filter: `status:pending ${u}:review`,
-      move: `modify status:pending ${u}:review${review ? ' reviewed:' : ''}`,
-    },
+    { name: 'pending', command: `modify status:pending ${u}:`, icon: 'circle-dashed' },
+    { name: 'inprogress', command: `modify status:pending ${u}:inprogress`, icon: 'loader-circle' },
+    { name: 'review', command: `modify status:pending ${u}:review${review ? ' reviewed:' : ''}`, icon: 'eye' },
+  ];
+}
+
+/**
+ * The move commands the columns can run: the ones `commands` has as the setup writes them (icon aside), and the ones it
+ * doesn't have yet (the setup adds them). A command of that name for something else is left alone, and its column moves
+ * with the command line itself.
+ */
+export function usableMoves(commands: TaskCommand[], review: boolean, u = PROGRESS_UDA): TaskCommand[] {
+  return moveCommands(review, u).filter((m) => {
+    const have = commands.find((c) => c.name === m.name);
+    return !have || have.command === m.command;
+  });
+}
+
+/** `commands` with the move commands it doesn't have yet added at the end. */
+export function withMoveCommands(commands: TaskCommand[], review: boolean, u = PROGRESS_UDA): TaskCommand[] {
+  const names = new Set(commands.map((c) => c.name));
+  return [...commands, ...moveCommands(review, u).filter((m) => !names.has(m.name))];
+}
+
+/**
+ * The automatic columns, on the UDA `u`. A column moves with its task command when it is in `moves` (see `usableMoves`),
+ * and with the command line it stands for otherwise.
+ */
+export function automaticColumns(review: boolean, u = PROGRESS_UDA, moves: TaskCommand[] = []): KanbanColumn[] {
+  const [todo, progress, inReview] = moveCommands(review, u);
+  const move = (m: TaskCommand) => (moves.some((x) => x.name === m.name) ? m.name : m.command);
+  return [
+    { name: 'To do', filter: `status:pending ${u}:`, move: move(todo) },
+    { name: 'In progress', filter: `status:pending ${u}:inprogress`, move: move(progress) },
+    { name: 'Review', filter: `status:pending ${u}:review`, move: move(inReview) },
     { name: 'Done', filter: 'status:completed', move: 'done' },
   ];
 }
@@ -186,7 +218,13 @@ export function automaticColumns(review: boolean, u = PROGRESS_UDA): KanbanColum
  * Kanban as the automatic setup leaves it: on, its settings on the UDA `uda`, and a first kanban with none of its own. With
  * `ownReport` it is drawn from the `kanban` report, whose filter is enough; else from `all` with a filter of its own.
  */
-export function automaticSettings(s: KanbanSettings, review: boolean, uda: string, ownReport = false): KanbanSettings {
+export function automaticSettings(
+  s: KanbanSettings,
+  review: boolean,
+  uda: string,
+  ownReport = false,
+  moves: TaskCommand[] = [],
+): KanbanSettings {
   return {
     ...s,
     enabled: true,
@@ -195,7 +233,7 @@ export function automaticSettings(s: KanbanSettings, review: boolean, uda: strin
     report: ownReport ? KANBAN_REPORT : AUTO_REPORT,
     filter: ownReport ? '' : AUTO_FILTER,
     completedSince: AUTO_COMPLETED_SINCE,
-    columns: automaticColumns(review, uda),
+    columns: automaticColumns(review, uda, moves),
     kanbans: s.kanbans.length ? s.kanbans : [{ id: 'kanban', name: 'Kanban' }],
   };
 }

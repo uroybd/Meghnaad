@@ -248,24 +248,75 @@ pub fn column(name: &str, filter: &str, on_move: &str) -> Column {
     }
 }
 
-/// The automatic columns, on the UDA `u`. With tasksh's review set up, a task moved to Review goes back in its queue.
-pub fn automatic_columns(review: bool, u: &str) -> Vec<Column> {
-    let to_review = format!(
-        "modify status:pending {u}:review{}",
-        if review { " reviewed:" } else { "" }
-    );
+/// The task commands the automatic setup adds to `settings.json`, one per column but Done (which is `done`), so that a move
+/// is the same word wherever the app runs a command on a task (kanban.ts `moveCommands`). With tasksh's review set up, a
+/// task moved to Review goes back in its queue.
+pub fn move_commands(review: bool, u: &str) -> Vec<TaskCommand> {
+    let command = |name: &str, command: String, icon: &str| TaskCommand {
+        name: name.into(),
+        command,
+        icon: Some(icon.into()),
+    };
     vec![
-        column(
-            "To do",
-            &format!("status:pending {u}:"),
-            &format!("modify status:pending {u}:"),
+        command("pending", format!("modify status:pending {u}:"), "circle-dashed"),
+        command(
+            "inprogress",
+            format!("modify status:pending {u}:inprogress"),
+            "loader-circle",
         ),
-        column(
-            "In progress",
-            &format!("status:pending {u}:inprogress"),
-            &format!("modify status:pending {u}:inprogress"),
+        command(
+            "review",
+            format!(
+                "modify status:pending {u}:review{}",
+                if review { " reviewed:" } else { "" }
+            ),
+            "eye",
         ),
-        column("Review", &format!("status:pending {u}:review"), &to_review),
+    ]
+}
+
+/// The move commands the columns can run: the ones `commands` has as the setup writes them (icon aside), and the ones it
+/// doesn't have yet. A command of that name for something else is left alone, and its column moves with the line itself.
+pub fn usable_moves(commands: &[TaskCommand], review: bool, u: &str) -> Vec<TaskCommand> {
+    move_commands(review, u)
+        .into_iter()
+        .filter(|m| {
+            commands
+                .iter()
+                .find(|c| c.name == m.name)
+                .is_none_or(|c| c.command == m.command)
+        })
+        .collect()
+}
+
+/// `commands` with the move commands it doesn't have yet added at the end.
+pub fn with_move_commands(commands: &[TaskCommand], review: bool, u: &str) -> Vec<TaskCommand> {
+    let mut out = commands.to_vec();
+    out.extend(
+        move_commands(review, u)
+            .into_iter()
+            .filter(|m| !commands.iter().any(|c| c.name == m.name)),
+    );
+    out
+}
+
+/// The automatic columns, on the UDA `u`. A column moves with its task command when it is in `moves`, else with the line
+/// itself.
+pub fn automatic_columns(review: bool, u: &str, moves: &[TaskCommand]) -> Vec<Column> {
+    let all = move_commands(review, u);
+    let mv = |i: usize| {
+        all.get(i).map_or_else(String::new, |m| {
+            if moves.iter().any(|x| x.name == m.name) {
+                m.name.clone()
+            } else {
+                m.command.clone()
+            }
+        })
+    };
+    vec![
+        column("To do", &format!("status:pending {u}:"), &mv(0)),
+        column("In progress", &format!("status:pending {u}:inprogress"), &mv(1)),
+        column("Review", &format!("status:pending {u}:review"), &mv(2)),
         column("Done", "status:completed", "done"),
     ]
 }
@@ -273,7 +324,7 @@ pub fn automatic_columns(review: bool, u: &str) -> Vec<Column> {
 /// Kanban as the automatic setup leaves it: on, its settings on the UDA `uda`, and a first kanban with none of its own.
 /// With `own_report` it is drawn from the `kanban` report, whose filter is enough; else from `all` with a filter of its
 /// own.
-pub fn automatic_settings(s: &Settings, review: bool, uda: &str, own_report: bool) -> Settings {
+pub fn automatic_settings(s: &Settings, review: bool, uda: &str, own_report: bool, moves: &[TaskCommand]) -> Settings {
     Settings {
         enabled: true,
         setup: Some("automatic".into()),
@@ -281,7 +332,7 @@ pub fn automatic_settings(s: &Settings, review: bool, uda: &str, own_report: boo
         report: if own_report { KANBAN_REPORT } else { AUTO_REPORT }.into(),
         filter: if own_report { "" } else { AUTO_FILTER }.into(),
         completed_since: AUTO_COMPLETED_SINCE.into(),
-        columns: automatic_columns(review, uda),
+        columns: automatic_columns(review, uda, moves),
         kanbans: if s.kanbans.is_empty() {
             vec![Entry {
                 id: "kanban".into(),
@@ -724,7 +775,7 @@ mod tests {
 
     #[test]
     fn makes_the_automatic_columns_and_review_clears_reviewed_with_tasksh() {
-        let cols = automatic_columns(false, U);
+        let cols = automatic_columns(false, U, &[]);
         let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["To do", "In progress", "Review", "Done"]);
         assert_eq!(cols[0].on_move, "modify status:pending progressState:");
@@ -732,11 +783,11 @@ mod tests {
         assert_eq!(cols[3].filter, "status:completed");
         assert_eq!(cols[3].on_move, "done");
         assert_eq!(
-            automatic_columns(true, U)[2].on_move,
+            automatic_columns(true, U, &[])[2].on_move,
             "modify status:pending progressState:review reviewed:"
         );
         assert_eq!(
-            automatic_columns(false, "stage")[1].filter,
+            automatic_columns(false, "stage", &[])[1].filter,
             "status:pending stage:inprogress"
         );
         assert!(has_review(&cfg("uda.reviewed.type=date\n")));
@@ -744,8 +795,42 @@ mod tests {
     }
 
     #[test]
+    fn moves_with_task_commands_added_unless_one_of_that_name_stands_for_something_else() {
+        let moves = move_commands(true, U);
+        let names = |cs: &[TaskCommand]| cs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&moves), ["pending", "inprogress", "review"]);
+        assert_eq!(moves[2].command, "modify status:pending progressState:review reviewed:");
+        assert_eq!(moves[1].icon.as_deref(), Some("loader-circle"));
+        let on_move = |cols: Vec<Column>| cols.into_iter().map(|c| c.on_move).collect::<Vec<_>>();
+        assert_eq!(
+            on_move(automatic_columns(true, U, &moves)),
+            ["pending", "inprogress", "review", "done"]
+        );
+        // Someone's own review (same command, another icon: still usable) and pending (something else: left alone).
+        let own = |name: &str, command: &str| TaskCommand {
+            name: name.into(),
+            command: command.into(),
+            icon: None,
+        };
+        let mine = [
+            own("pending", "modify +later"),
+            own("review", "modify status:pending progressState:review reviewed:"),
+        ];
+        let usable = usable_moves(&mine, true, U);
+        assert_eq!(names(&usable), ["inprogress", "review"]);
+        assert_eq!(
+            on_move(automatic_columns(true, U, &usable)),
+            ["modify status:pending progressState:", "inprogress", "review", "done"]
+        );
+        assert_eq!(
+            names(&with_move_commands(&mine, true, U)),
+            ["pending", "review", "inprogress"]
+        );
+    }
+
+    #[test]
     fn the_automatic_setup_turns_kanban_on_with_a_first_kanban() {
-        let s = automatic_settings(&Settings::default(), false, "stage", false);
+        let s = automatic_settings(&Settings::default(), false, "stage", false, &[]);
         assert!(s.enabled);
         assert_eq!(s.setup.as_deref(), Some("automatic"));
         assert_eq!(
@@ -774,8 +859,8 @@ mod tests {
             kanbans: vec![mine.clone()],
             ..Settings::default()
         };
-        assert_eq!(automatic_settings(&kept, false, U, false).kanbans, [mine]);
-        let own = automatic_settings(&Settings::default(), false, U, true);
+        assert_eq!(automatic_settings(&kept, false, U, false, &[]).kanbans, [mine]);
+        let own = automatic_settings(&Settings::default(), false, U, true, &[]);
         assert_eq!((own.report.as_str(), own.filter.as_str()), ("kanban", ""));
     }
 

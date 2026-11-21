@@ -74,6 +74,29 @@ class KanbanTest {
     }
 
     @Test
+    fun movesWithTaskCommandsAddedUnlessOneOfThatNameStandsForSomethingElse() {
+        val moves = moveCommands(true)
+        assertEquals(
+            listOf(
+                TaskCommand("pending", "modify status:pending progressState:", "circle-dashed"),
+                TaskCommand("inprogress", "modify status:pending progressState:inprogress", "loader-circle"),
+                TaskCommand("review", "modify status:pending progressState:review reviewed:", "eye"),
+            ),
+            moves,
+        )
+        assertEquals(listOf("pending", "inprogress", "review", "done"), automaticColumns(true, PROGRESS_UDA, moves).map { it.move })
+        // Someone's own review (same command, another icon: still usable) and pending (something else: left alone).
+        val mine = listOf(TaskCommand("pending", "modify +later"), TaskCommand("review", "modify status:pending progressState:review reviewed:", "x"))
+        val usable = usableMoves(mine, true)
+        assertEquals(listOf("inprogress", "review"), usable.map { it.name })
+        assertEquals(
+            listOf("modify status:pending progressState:", "inprogress", "review", "done"),
+            automaticColumns(true, PROGRESS_UDA, usable).map { it.move },
+        )
+        assertEquals(listOf("pending", "review", "inprogress"), withMoveCommands(mine, true).map { it.name })
+    }
+
+    @Test
     fun turnsKanbanOnWithItsSettingsOnTheUdaAndAFirstKanban() {
         val s = automaticSettings(KanbanSettings(), false, "stage")
         assertEquals(true, s.enabled)
