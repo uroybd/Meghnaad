@@ -316,6 +316,15 @@ val FIELD_ICONS: Map<String, String> = mapOf(
 
 fun fieldIcon(name: String): String? = FIELD_ICONS[name]
 
+/** How a card shows a field (kanban.ts `cardShape`): one of Taskwarrior's as it is, a UDA as a pill, a free-text one as a paragraph. */
+enum class CardShape { Field, Pill, Text }
+
+/** A string UDA with no `values` is free to hold anything, so a paragraph of its own; any other UDA is a pill. */
+fun cardShape(name: String, udas: Map<String, UdaDef>): CardShape {
+    val def = udas[name] ?: return CardShape.Field
+    return if (def.type == "string" && def.values.isEmpty()) CardShape.Text else CardShape.Pill
+}
+
 /** `kanban` as it is written to `settings.json`. */
 fun kanbanJson(k: KanbanSettings): JsonObject = buildJsonObject {
     put("enabled", JsonPrimitive(k.enabled))

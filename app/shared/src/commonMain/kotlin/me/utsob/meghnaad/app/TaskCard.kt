@@ -202,6 +202,8 @@ internal fun Mark(
      * false, each by its report label. Null, as a task card has it: a few by an icon, the rest by label.
      */
     icons: Boolean? = null,
+    /** A UDA on a kanban's card: a pill of its label and value, whatever [icons] says. */
+    pill: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val dim = colors.onSurfaceVariant
@@ -221,7 +223,7 @@ internal fun Mark(
         }
     }
     when {
-        icons == true && icon == null -> Row(
+        pill || (icons == true && icon == null) -> Row(
             Modifier.clip(RoundedCornerShape(4.dp)).border(1.dp, colors.outlineVariant, RoundedCornerShape(4.dp)),
             verticalAlignment = Alignment.CenterVertically,
         ) {

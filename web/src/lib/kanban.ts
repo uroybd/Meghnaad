@@ -361,6 +361,20 @@ export const FIELD_ICONS: Readonly<Record<string, string>> = {
 
 export const fieldIcon = (name: string): string | null => FIELD_ICONS[name] ?? null;
 
+/**
+ * How a card shows a field: one of Taskwarrior's as it is (`field`); a UDA as a pill of its label and value (`pill`),
+ * unless it is a string free to hold anything, which is a paragraph of its own (`text`), drawn as Markdown with its
+ * checkboxes ticked from the card. A string UDA with `values` is one of a few words, so a pill.
+ */
+export function cardShape(
+  name: string,
+  udas: Record<string, { type: string; values: string[] }>,
+): 'field' | 'pill' | 'text' {
+  const def = udas[name];
+  if (!def) return 'field';
+  return def.type === 'string' && def.values.length === 0 ? 'text' : 'pill';
+}
+
 // Reading a kanban's tasks.
 
 /** What the page shows a kanban with: the saved report, filter and Completed since, or what was typed over them. */

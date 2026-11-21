@@ -7,6 +7,7 @@ import {
   columnArgs,
   columnOf,
   emptyKanbanSettings,
+  cardShape,
   fieldIcon,
   kanbanJson,
   hasReview,
@@ -267,6 +268,20 @@ describe('settings.json', () => {
     expect(fieldIcon('id')).toBe('hash');
     expect(fieldIcon('progressState')).toBeNull();
     expect(fieldIcon('estimate')).toBeNull();
+  });
+
+  it('shows a free-text UDA as a paragraph and any other UDA as a pill', () => {
+    const udas = {
+      notes: { type: 'string', values: [] },
+      size: { type: 'string', values: ['S', 'M', 'L'] },
+      estimate: { type: 'numeric', values: [] },
+      review: { type: 'date', values: [] },
+    };
+    expect(cardShape('notes', udas)).toBe('text');
+    expect(cardShape('size', udas)).toBe('pill');
+    expect(cardShape('estimate', udas)).toBe('pill');
+    expect(cardShape('review', udas)).toBe('pill');
+    expect(cardShape('due', udas)).toBe('field');
   });
 
   it("says what is wrong with the UDA and Kanban's columns, and uses none of the columns then", () => {

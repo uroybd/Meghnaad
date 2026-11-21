@@ -342,10 +342,23 @@ private fun KanbanCard(store: Store, kanban: Kanban, meta: List<Column>, row: Ro
             fontSize = 14.sp,
             color = if (open) colors.onSurface else colors.onSurfaceVariant,
         )
+        val udas = store.config?.config?.udas.orEmpty()
         val marks = meta.zip(cells).filter { (col, c) -> col.name != "description" && (c.text.isNotBlank() || !c.chips.isNullOrEmpty()) }
-        if (marks.isNotEmpty()) {
+        val (texts, rest) = marks.partition { (col, _) -> cardShape(col.name, udas) == CardShape.Text }
+        if (rest.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                for ((col, c) in marks) Mark(store, col, c, row, overdue, emptyList(), null, !open, icons = store.kanbanSettings.icons)
+                for ((col, c) in rest) {
+                    Mark(store, col, c, row, overdue, emptyList(), null, !open, icons = store.kanbanSettings.icons, pill = cardShape(col.name, udas) == CardShape.Pill)
+                }
+            }
+        }
+        // A string UDA free to hold anything: a paragraph of its own, as Markdown, its checkboxes ticked here.
+        for ((col, c) in texts) {
+            val tint = if (open) colors.onSurface else colors.onSurfaceVariant
+            if (c.blocks != null) {
+                MarkdownView(c.blocks, color = tint, size = 13.sp, onToggle = { line -> store.go { tickBox(null, row.uuid, col.name, c.text, line) } })
+            } else {
+                Text(c.text, fontSize = 13.sp, color = tint)
             }
         }
         if (targets.isNotEmpty()) {

@@ -38,6 +38,7 @@
   } from './icons';
   import { groupHeads } from './groups';
   import {
+    cardShape,
     columnArgs,
     columnOf,
     fieldIcon,
@@ -189,7 +190,7 @@
   /** The fields a card shows under its description: the report's other columns with something in them. */
   const fieldsOf = (row: Cell[]) =>
     (board?.meta ?? [])
-      .map((col, i) => ({ col, c: row[i] }))
+      .map((col, i) => ({ col, c: row[i], shape: cardShape(col.name, ctx.udas) }))
       .filter(({ col, c }) => col.name !== 'description' && c && c.text.trim() !== '');
   /** A card's edge takes the colour the table lays on the task's row (color.active, color.overdue, ...). */
   function edge(row: Row): string {
@@ -304,9 +305,9 @@
       {descriptionAt >= 0 && cs[descriptionAt] ? cs[descriptionAt].text : row.description}
     </button>
     <dl>
-      {#each fieldsOf(cs) as f (f.col.spec)}
+      {#each fieldsOf(cs).filter((f) => f.shape !== 'text') as f (f.col.spec)}
         {@const Icon = iconsOn ? iconOf(f.col.name) : undefined}
-        <div class:badge={iconsOn && !Icon}>
+        <div class:badge={f.shape === 'pill'}>
           {#if Icon}<dt class="ic" title={f.col.label}>
               <Icon size={13} /><span class="sr-only">{f.col.label}</span>
             </dt>{:else}<dt>{f.col.label}</dt>{/if}
@@ -316,6 +317,12 @@
         </div>
       {/each}
     </dl>
+    <!-- A string UDA free to hold anything: a paragraph of its own, its checkboxes ticked here. -->
+    {#each fieldsOf(cs).filter((f) => f.shape === 'text') as f (f.col.spec)}
+      <div class="para {f.c.cls ?? ''}" title={f.col.label}>
+        <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
+      </div>
+    {/each}
     {#if kanban && kanban.columns.some((c, i) => i !== from && c.move.trim())}
       <select
         class="moveto"
@@ -805,7 +812,18 @@
     align-items: center;
     opacity: 0.85;
   }
-  /* A UDA with icons on: a badge, its label on one half and its value on the other. */
+  /* A free-text UDA: a paragraph under the fields, as written. */
+  .para {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .para.multiline {
+    white-space: pre-wrap;
+  }
+  .para :global(.md) :global(p) {
+    margin: 0;
+  }
+  /* A UDA: a pill, its label on one half and its value on the other. */
   dl div.badge {
     gap: 0;
     border: 1px solid var(--line);

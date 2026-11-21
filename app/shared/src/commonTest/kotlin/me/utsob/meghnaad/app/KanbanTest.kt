@@ -117,6 +117,21 @@ class KanbanTest {
     }
 
     @Test
+    fun showsAFreeTextUdaAsAParagraphAndAnyOtherUdaAsAPill() {
+        val udas = mapOf(
+            "notes" to UdaDef("notes", "string"),
+            "size" to UdaDef("size", "string", values = listOf("S", "M", "L")),
+            "estimate" to UdaDef("estimate", "numeric"),
+            "review" to UdaDef("review", "date"),
+        )
+        assertEquals(CardShape.Text, cardShape("notes", udas))
+        assertEquals(CardShape.Pill, cardShape("size", udas))
+        assertEquals(CardShape.Pill, cardShape("estimate", udas))
+        assertEquals(CardShape.Pill, cardShape("review", udas))
+        assertEquals(CardShape.Field, cardShape("due", udas))
+    }
+
+    @Test
     fun makesALaneOfEachGroupHeadingInTheReportsOrder() {
         assertEquals(Lanes(), lanesOf(listOf(row("a")), emptyList()))
         val l = lanesOf(listOf("a", "b", "c", "d", "e").map(::row), listOf("Project: Home", null, "Project: Work", "Project: Home", "Project: (none)"))
