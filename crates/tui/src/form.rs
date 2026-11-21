@@ -39,6 +39,8 @@ pub struct Field {
     pub locked: bool,
     /// Typed in since the form opened: for many tasks, only these are sent (an emptied one clears it).
     pub touched: bool,
+    /// A string UDA free to hold anything, or the note: Alt+Enter starts a new line in it.
+    pub multiline: bool,
 }
 
 impl Field {
@@ -51,6 +53,8 @@ impl Field {
             start: start.to_owned(),
             locked: false,
             touched: false,
+            // A note is a few lines when it needs them, as on the web and the phone.
+            multiline: kind == Kind::Note,
         }
     }
 
@@ -114,6 +118,13 @@ fn udas(cfg: &Config) -> Vec<(String, String, UdaType)> {
     out
 }
 
+/// Whether a UDA is a string free to hold anything (no `values`), so its field can hold several lines.
+fn free_text(cfg: &Config, name: &str) -> bool {
+    cfg.udas
+        .get(name)
+        .is_some_and(|u| u.ty == UdaType::String && u.values.is_empty())
+}
+
 fn uda_kind(ty: UdaType) -> Kind {
     if ty == UdaType::Date {
         Kind::Date
@@ -143,7 +154,9 @@ impl Form {
                 (UdaType::Date, Ok(ts)) => date_text(ts),
                 _ => raw,
             };
-            fields.push(blank(&name, &label, uda_kind(ty), &value));
+            let mut field = blank(&name, &label, uda_kind(ty), &value);
+            field.multiline = free_text(cfg, &name);
+            fields.push(field);
         }
         fields.push(blank("depends", "Depends on", Kind::Depends, &p.depends.join(" ")));
         fields.push(blank("start", "Start", Kind::Start, ""));
@@ -206,7 +219,9 @@ impl Form {
                 Some(Value::Number(n)) => n.to_string(),
                 _ => String::new(),
             };
-            fields.push(same(&name, &label, uda_kind(ty), &value));
+            let mut field = same(&name, &label, uda_kind(ty), &value);
+            field.multiline = free_text(cfg, &name);
+            fields.push(field);
         }
         let depends: Vec<String> = t
             .get("depends")
@@ -259,7 +274,9 @@ impl Form {
         fields.push(blank("recur", "Repeat", Kind::Value));
         fields.push(blank("tags", "Tags", Kind::Tags));
         for (name, label, ty) in udas(cfg) {
-            fields.push(blank(&name, &label, uda_kind(ty)));
+            let mut field = blank(&name, &label, uda_kind(ty));
+            field.multiline = free_text(cfg, &name);
+            fields.push(field);
         }
         fields.push(blank("depends", "Depends on", Kind::Depends));
         fields.push(blank("note", "Annotate", Kind::Note));

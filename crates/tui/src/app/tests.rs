@@ -254,6 +254,33 @@ fn the_one_line_add_opens_into_the_form_with_its_fields_filled() {
 }
 
 #[test]
+fn alt_enter_starts_a_new_line_in_a_free_text_uda_and_nowhere_else() {
+    let mut app = app();
+    app.cfg = tc_core::taskrc::parse("uda.notes.type=string\nuda.size.type=string\nuda.size.values=S,M\n").config;
+    app.key(key(KeyCode::Char('a')));
+    app.key(key(KeyCode::Down));
+    let alt_enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
+    let goto = |app: &mut App, name: &str| {
+        let Mode::Form(f) = &mut app.mode else {
+            panic!("expected the form");
+        };
+        f.sel = f.fields.iter().position(|x| x.key == name).unwrap();
+    };
+    goto(&mut app, "notes");
+    typing(&mut app, "one");
+    app.key(alt_enter);
+    typing(&mut app, "- [ ] two");
+    goto(&mut app, "size");
+    typing(&mut app, "S");
+    app.key(alt_enter);
+    let Mode::Form(f) = &app.mode else {
+        panic!("expected the form, still open");
+    };
+    assert_eq!(f.field("notes").map(|x| x.input.line.as_str()), Some("one\n- [ ] two"));
+    assert_eq!(f.field("size").map(crate::form::Field::value), Some("S"));
+}
+
+#[test]
 fn a_form_that_cannot_be_saved_stays_open_and_says_why() {
     let mut app = app();
     app.key(key(KeyCode::Char('a')));

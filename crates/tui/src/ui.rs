@@ -189,13 +189,15 @@ fn screen(f: &mut Frame, app: &App) {
             popup(f, app, p, main);
             let keys = if p.kind == PromptKind::Add {
                 "Tab complete · ↵ save · ↓ the full form · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"
+            } else if matches!(p.kind, PromptKind::Annotate(_) | PromptKind::AnnotateMany(_)) {
+                "↵ save · Alt+↵ a new line · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"
             } else {
                 "Tab complete · ↵ save · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"
             };
             f.render_widget(hints(keys), dock);
         }
         Mode::Form(_) => f.render_widget(
-            hints("↑/↓ field · Tab complete · ↵ save · Esc cancel · Ctrl+W delete a word · Ctrl+U clear"),
+            hints("↑/↓ field · Tab complete · ↵ save · Alt+↵ a new line in a note · Esc cancel · Ctrl+U clear"),
             dock,
         ),
         Mode::Prompt(p) => prompt(f, p, main, dock),
@@ -1818,25 +1820,49 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
                 spans.push(Span::from("  Space").quiet());
             }
         } else {
-            let value = Span::from(field.input.line.clone());
+            // A value of several lines (a free-text UDA): the first beside the label, the others under it.
+            let mut lines = field.input.line.split('\n');
+            let value = Span::from(lines.next().unwrap_or_default().to_owned());
             spans.push(if field.locked { value.quiet() } else { value });
             if chosen {
-                caret = Some((rows.len(), u16::try_from(field.input.caret_chars()).unwrap_or(0)));
+                // The caret's line and column within the value.
+                let before: String = field.input.line.chars().take(field.input.caret_chars()).collect();
+                let down = before.matches('\n').count();
+                let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count());
+                caret = Some((rows.len() + down, u16::try_from(col).unwrap_or(0)));
             }
             if chosen && field.kind == Kind::Date && !field.locked && field.value().is_empty() {
                 spans.push(Span::from(format!("  {}", date_examples(&app.cfg, crate::app::now()))).quiet());
             }
-            spans.extend(field_hint(app, field));
+            let rest: Vec<&str> = lines.collect();
+            if rest.is_empty() {
+                spans.extend(field_hint(app, field));
+                if chosen && field.multiline && !field.locked {
+                    spans.push(Span::from("  Alt+Enter: a new line").quiet());
+                }
+            } else {
+                for l in rest {
+                    rows.push(Line::from(std::mem::take(&mut spans)));
+                    spans = vec![
+                        Span::from(format!("{:>w$} ", "", w = usize::from(LABEL) - 1)),
+                        Span::from(l.to_owned()),
+                    ];
+                }
+            }
         }
         rows.push(Line::from(spans));
     }
     if !form.notes.is_empty() {
         rows.push(Line::default());
         for n in &form.notes {
-            rows.push(Line::from(vec![
-                Span::from(format!("{:>w$} ", "", w = usize::from(LABEL) - 1)),
-                Span::from(format!("· {n}")).quiet(),
-            ]));
+            // A note of several lines: each under the first.
+            for (i, l) in n.split('\n').enumerate() {
+                let lead = if i == 0 { "· " } else { "  " };
+                rows.push(Line::from(vec![
+                    Span::from(format!("{:>w$} ", "", w = usize::from(LABEL) - 1)),
+                    Span::from(format!("{lead}{l}")).quiet(),
+                ]));
+            }
         }
     }
     if let Some(why) = form.problem() {
@@ -1931,7 +1957,12 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         _ => (String::new(), Vec::new()),
     };
     let width = main.width.saturating_sub(4).min(84);
-    let height = u16::try_from(card.len() + 4).unwrap_or(6).min(main.height);
+    // A note of several lines (Alt+Enter) shows them all.
+    let typed: Vec<&str> = p.input.line.split('\n').collect();
+    let tall = u16::try_from(typed.len()).unwrap_or(1);
+    let height = u16::try_from(card.len() + 3 + typed.len())
+        .unwrap_or(6)
+        .min(main.height);
     let area = Rect::new(
         main.x + (main.width - width) / 2,
         main.y + main.height.saturating_sub(height) / 3,
@@ -1943,16 +1974,28 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
     f.render_widget(Clear, area);
     f.render_widget(block, area);
     let [line, _, rest] =
-        Layout::vertical([Constraint::Length(1), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
-    f.render_widget(
-        Line::from(vec![
-            Span::styled("› ", theme::accent()),
-            Span::from(p.input.line.as_str()),
-        ]),
-        line,
-    );
-    let caret = u16::try_from(p.input.caret_chars()).unwrap_or(0);
-    f.set_cursor_position(((line.x + 2 + caret).min(line.x + line.width), line.y));
+        Layout::vertical([Constraint::Length(tall), Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
+    let rows: Vec<Line> = typed
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let lead = if i == 0 {
+                Span::styled("› ", theme::accent())
+            } else {
+                Span::from("  ")
+            };
+            Line::from(vec![lead, Span::from((*l).to_owned())])
+        })
+        .collect();
+    f.render_widget(Paragraph::new(rows), line);
+    let before: String = p.input.line.chars().take(p.input.caret_chars()).collect();
+    let down = u16::try_from(before.matches('\n').count()).unwrap_or(0);
+    let caret = u16::try_from(before.rsplit('\n').next().map_or(0, |l| l.chars().count())).unwrap_or(0);
+    f.set_cursor_position(((line.x + 2 + caret).min(line.x + line.width), line.y + down));
+    let line = Rect {
+        y: line.y + down,
+        ..line
+    };
     f.render_widget(Paragraph::new(card).wrap(Wrap { trim: false }), rest);
     if let Some(m) = &p.completer.menu {
         // A drop-down under the line, from the word being completed.

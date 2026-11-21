@@ -156,6 +156,18 @@ fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
     let mut line: Vec<Span> = Vec::new();
     let mut used = 0;
     for (name, label, text) in &c.fields {
+        // A value of several lines (a free-text UDA's notes): lines of its own, under its label, as written.
+        if text.contains('\n') {
+            if !line.is_empty() {
+                lines.push(Line::from(std::mem::take(&mut line)));
+                used = 0;
+            }
+            if !label.is_empty() {
+                lines.push(Line::from(Span::from(label.clone()).quiet()));
+            }
+            lines.extend(text.lines().map(|l| Line::from(l.to_owned())));
+            continue;
+        }
         // With icons: a symbol before the text, or a UDA as a badge (its label, then its value); else the label.
         let symbol = if icons { kanban::field_icon(name) } else { None };
         let badge = icons && symbol.is_none() && !label.is_empty();

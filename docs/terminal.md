@@ -88,7 +88,7 @@ line.
 | `5` Calendar | `task calendar`, from this month; `h` `l` go a month back or on |
 | `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
 | `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` go to the board before or after, `[` `]` to its next section or the one before, and `Esc` (or `b`) comes back to the list |
-| `8` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards (`g8` or `gk` opens it): the list of kanbans, then one, its columns side by side (each on a deeper shade, its title on a lighter line, every card framed in the task's colour, the chosen one's frame thick, with a ● in its top edge); `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
+| `8` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards (`g8` or `gk` opens it): the list of kanbans, then one, its columns side by side (each on a deeper shade, its title on a lighter line, every card framed in the task's colour, the chosen one's frame thick, with a ● in its top edge; a value of several lines, such as a free-text UDA's, keeps its lines under its label); `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
 | `9` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
 | `0` Settings | A section each for when to sync, the theme, your task commands, your boards, Kanban and your keys ([Settings](#the-settings-page)) |
 
@@ -191,7 +191,7 @@ On the Tasks page:
 | `Enter` | The task's info, in tabs ([Task info](#task-info)); any other key closes it |
 | `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form) |
 | `m` `M` | Modify the selected task, in [the full form](#the-form) |
-| `A` | Annotate the selected task, in a box that shows it as it is |
+| `A` | Annotate the selected task, in a box that shows it as it is; `Alt+Enter` starts a new line |
 | `x` | Take an annotation off the selected task: the command line opens with `<uuid> denotate ` |
 | `o` | Open the first link in the selected task (its description, then its notes) with the desktop's opener |
 | `d` | Mark the selected task done |
@@ -269,7 +269,9 @@ The web app's task form, in a box over the page: a line for each part of a task,
 project, priority, due, wait, scheduled, until, repeat, tags (space separated), each UDA your taskrc defines, and what it
 depends on (task ids); for a new task, whether to start it now and a note, and for one that exists, an annotation to add
 under the ones it has. `↑` `↓` go from line to line, `Tab` completes the line's word as the command line would
-(`project:Ho` → `project:Home`), `Space` ticks Start, `Enter` saves and `Esc` leaves.
+(`project:Ho` → `project:Home`), `Space` ticks Start, `Enter` saves and `Esc` leaves. A string UDA with no `values`
+and the note can hold several lines, as on the web and the phone: `Alt+Enter` starts a new one, and each shows under
+the one before. The `A` box takes `Alt+Enter` too, and a note of several lines is sent whole, its line breaks kept.
 
 A date is typed as `task` takes it (`fri`, `eom`, `2026-11-20`, `2026-11-20T14:30`, `tomorrow+19h`); an empty date
 field, when chosen, lists these examples with today in your `dateformat`. What is typed is shown after it as `task` will

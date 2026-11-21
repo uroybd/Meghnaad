@@ -26,6 +26,13 @@ impl App {
                 }
                 return Action::None;
             }
+            // A note can be several lines, as on the web and the phone.
+            KeyCode::Enter
+                if key.modifiers.contains(KeyModifiers::ALT)
+                    && matches!(p.kind, PromptKind::Annotate(_) | PromptKind::AnnotateMany(_)) =>
+            {
+                p.input.insert('\n');
+            }
             KeyCode::Enter => return self.submit(&p),
             // A command's name after `:` (spec 0020): as far as the commands it may be agree, and which they are.
             KeyCode::Tab
@@ -96,6 +103,13 @@ impl App {
         }
         match key.code {
             KeyCode::Esc => return Action::None,
+            // A new line in a field that can hold several (a free-text string UDA).
+            KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+                if let Some(field) = f.current().filter(|x| x.multiline && !x.locked) {
+                    field.input.insert('\n');
+                    field.touched = true;
+                }
+            }
             KeyCode::Enter => return self.save_form(f),
             KeyCode::Char('s') if ctrl => return self.save_form(f),
             KeyCode::Down => f.next(),
@@ -188,12 +202,12 @@ impl App {
             }
             PromptKind::Annotate(u) => {
                 if !words.is_empty() {
-                    self.quick(&[vec![u.clone(), "annotate".to_owned()], words].concat());
+                    self.quick(&[vec![u.clone(), "annotate".to_owned()], note_words(line, words)].concat());
                 }
             }
             PromptKind::AnnotateMany(uuids) => {
                 if !words.is_empty() {
-                    self.bulk(uuids, &[vec!["annotate".to_owned()], words].concat());
+                    self.bulk(uuids, &[vec!["annotate".to_owned()], note_words(line, words)].concat());
                 }
             }
             PromptKind::KeysSearch => {
@@ -335,5 +349,15 @@ impl App {
         }
         self.run_console(steps);
         Action::None
+    }
+}
+
+/// A note's words for `annotate`: as split on one line, but a note of several lines goes whole, as one word, so its
+/// line breaks stay (`task` would join words with spaces).
+fn note_words(line: &str, words: Vec<String>) -> Vec<String> {
+    if line.contains('\n') {
+        vec![line.to_owned()]
+    } else {
+        words
     }
 }
