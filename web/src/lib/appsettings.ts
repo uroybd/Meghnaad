@@ -589,7 +589,8 @@ export function lintSettings(text: string, more: (raw: Record<string, unknown>) 
   const read = parseSettings(text);
   const raw = read.raw;
   for (const k of OBJECT_KEYS)
-    if (k in raw && !isObject(raw[k]))
+    // A device's own `"homepage": null` is next, over everyone's home page.
+    if (k in raw && !isObject(raw[k]) && !(k === 'homepage' && raw[k] === null))
       errors.push(
         k === 'appearance'
           ? APPEARANCE_NOT_OBJECT

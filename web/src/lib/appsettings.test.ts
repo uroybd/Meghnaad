@@ -370,6 +370,10 @@ describe('saving keeps what this app does not use', () => {
 });
 
 describe('lintSettings', () => {
+  it('takes a device’s "homepage": null (next), and no other plain value', () => {
+    expect(lintSettings('{ "homepage": null }').errors).toEqual([]);
+    expect(lintSettings('{ "homepage": "next" }').errors).toEqual(['homepage must be an object']);
+  });
   it('stops at what is not settings', () => {
     expect(lintSettings('{ nope').errors[0]).toMatch(/Not valid JSON/);
     expect(lintSettings('[1]').errors[0]).toMatch(/must be a JSON object/);

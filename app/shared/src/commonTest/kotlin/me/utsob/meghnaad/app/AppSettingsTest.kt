@@ -251,4 +251,10 @@ class AppSettingsTest {
         val one = Json.parseToJsonElement("""{ "aliasIcons": { "rem": "bell" } }""").jsonObject
         assertEquals(JsonObject(emptyMap()), Json.parseToJsonElement(serializeSettings(one, emptyList(), emptyMap())))
     }
+
+    @Test
+    fun aDevicesNullHomepageIsNextNotAnError() {
+        assertEquals(emptyList(), lintSettings("""{ "homepage": null }""").errors)
+        assertEquals(listOf("homepage must be an object"), lintSettings("""{ "homepage": "next" }""").errors)
+    }
 }

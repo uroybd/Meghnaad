@@ -3,6 +3,7 @@ package me.utsob.meghnaad.app
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -531,6 +532,8 @@ fun lintSettings(text: String, more: (JsonObject) -> List<String> = { emptyList(
     val read = parseSettings(text)
     val raw = read.raw
     for (k in OBJECT_KEYS) {
+        // A device's own `"homepage": null` is next, over everyone's home page.
+        if (k == "homepage" && raw[k] is JsonNull) continue
         if (k in raw && raw[k] !is JsonObject) {
             errors += when (k) {
                 "appearance" -> APPEARANCE_NOT_OBJECT
