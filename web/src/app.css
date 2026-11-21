@@ -1,6 +1,8 @@
 :root {
   --bg: #fbfbfa;
   --panel: #ffffff;
+  /* How much of a Taskwarrior colour a card is washed with: more on a dark page, where the same share shows less. */
+  --wash: 13%;
   --panel-2: #f3f3f1;
   --text: #1c1c1a;
   --dim: #75756f;
@@ -28,6 +30,7 @@
   :root:not([data-theme='light']) {
     --bg: #14150f;
     --panel: #1c1d17;
+    --wash: 18%;
     --panel-2: #24251e;
     --text: #e9e9e2;
     --dim: #9a9a90;
@@ -50,6 +53,7 @@
 :root[data-theme='dark'] {
   --bg: #14150f;
   --panel: #1c1d17;
+  --wash: 18%;
   --panel-2: #24251e;
   --text: #e9e9e2;
   --dim: #9a9a90;

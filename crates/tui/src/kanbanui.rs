@@ -103,15 +103,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             for (i, (c, cards)) in k.columns.iter().zip(&data.columns).enumerate() {
                 let here = focused && app.kanban_col == i;
                 let title = format!("{} {}", c.name, cards.len());
-                lane(
-                    f,
-                    areas[i],
-                    &title,
-                    cards,
-                    here.then_some(app.kanban_card),
-                    here,
-                    app.settings.card_icons(),
-                );
+                lane(f, app, areas[i], &title, cards, here.then_some(app.kanban_card), here);
             }
             let n = k.columns.len();
             let here = focused && app.kanban_col == n;
@@ -119,12 +111,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 let title = format!("Other {}", data.other.len());
                 lane(
                     f,
+                    app,
                     areas[n],
                     &title,
                     &data.other,
                     here.then_some(app.kanban_card),
                     here,
-                    app.settings.card_icons(),
                 );
             } else {
                 let key = app.first_key("kanban.other").unwrap_or_default();
@@ -207,7 +199,8 @@ fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
 
 /// A column: its cards, each in a frame of the task's colour (the one chosen thick, with a dot), scrolled to keep the
 /// one chosen in sight.
-fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usize>, here: bool, icons: bool) {
+fn lane(f: &mut Frame, app: &App, area: Rect, title: &str, cards: &[Card], sel: Option<usize>, here: bool) {
+    let icons = app.settings.card_icons();
     let body = column(f, area, title, here);
     if cards.is_empty() {
         f.render_widget(Paragraph::new(Line::from("none").quiet()), body);
@@ -238,6 +231,7 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
                 lines,
                 sel == Some(n),
                 h < height(lines),
+                ribbon(app, c),
             );
         }
         y = y.saturating_add(h + 1);
@@ -249,10 +243,28 @@ fn framed(lines: usize) -> u16 {
     u16::try_from(lines).unwrap_or(u16::MAX).saturating_add(2)
 }
 
+/// The colour of a card's ribbon: its task's priority as the taskrc colours it (`color.uda.priority.H`, Taskwarrior's
+/// default where the taskrc says nothing), the colour the table gives the priority's word. Where that is no colour,
+/// the app's own, as the web app's and the phone's: red, yellow and green, in the terminal's shades. None for a task
+/// with no priority, or a priority of the taskrc's own other than H, M and L that it leaves uncoloured.
+fn ribbon(app: &App, c: &Card) -> Option<Color> {
+    let p = c.priority.as_deref()?;
+    app.cfg
+        .settings
+        .get(&format!("color.uda.priority.{p}"))
+        .and_then(|spec| theme::style_of(spec).ok()?.fg)
+        .or(match p {
+            "H" => Some(Color::Red),
+            "M" => Some(Color::Yellow),
+            "L" => Some(Color::Green),
+            _ => None,
+        })
+}
+
 /// A card in a frame of the task's colour, as the table's row has it; the chosen card's is drawn thick and bold, as a
-/// pane with the keys is, with a dot in its top edge, so it shows without colour too. A card `cut` off at the foot of
-/// what holds it has no bottom edge.
-fn card(f: &mut Frame, at: Rect, c: &Card, lines: &[Line<'static>], chosen: bool, cut: bool) {
+/// pane with the keys is, with a dot in its top edge, so it shows without colour too. Its left edge is the priority's
+/// ribbon (`ribbon`), drawn heavy. A card `cut` off at the foot of what holds it has no bottom edge.
+fn card(f: &mut Frame, at: Rect, c: &Card, lines: &[Line<'static>], chosen: bool, cut: bool, ribbon: Option<Color>) {
     let colour = c.style.fg.or(theme::border(false).fg).unwrap_or(Color::Reset);
     let edge = if chosen {
         Style::new().fg(colour).add_modifier(Modifier::BOLD)
@@ -274,6 +286,17 @@ fn card(f: &mut Frame, at: Rect, c: &Card, lines: &[Line<'static>], chosen: bool
         frame = frame.title(Span::styled(" ● ", edge));
     }
     f.render_widget(Paragraph::new(lines.to_vec()).block(frame), at);
+    if let Some(r) = ribbon {
+        let buf = f.buffer_mut();
+        for y in at.top()..at.bottom() {
+            if let Some(cell) = buf.cell_mut((at.x, y)) {
+                if y > at.top() && (y + 1 < at.bottom() || cut) {
+                    cell.set_symbol("┃");
+                }
+                cell.set_fg(r);
+            }
+        }
+    }
 }
 
 /// What one swimlane is on the board, from its top: a heading line, then (unless folded) a band of the columns, each
@@ -462,7 +485,7 @@ fn swimlanes(
             let shown = (*h).min(bottom - y);
             let at = Rect::new(area.x + 1, row(y), area.width.saturating_sub(2), shown);
             let chosen = here(*i) && app.kanban_card == *c && on_heading.is_none();
-            card(f, at, cd, l, chosen, shown < *h);
+            card(f, at, cd, l, chosen, shown < *h, ribbon(app, cd));
         }
     }
 }

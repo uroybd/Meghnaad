@@ -110,8 +110,11 @@ in Settings → Kanban. A report you pick is part of the address (`/kanban/work/
 
 The columns share the page's width, each between a comfortable least and most, and take the height left on the
 screen: a long column scrolls its own cards. A card is drawn as the report's table draws the task's row: the colour
-your taskrc gives the row (`color.overdue`, `color.active`, `color.tag.x`, …) is the card's edge, the priority is in
-its colour, tags are chips, and a finished task is tinted. In the Android app a card is the one the report's list
+your taskrc gives the row (`color.overdue`, `color.active`, `color.tag.x`, …, in the order `rule.precedence.color`
+says, as `task` itself colours it) is a faint wash behind the card (in the terminal app, its frame), the priority is a
+ribbon down its left edge in the colour the taskrc gives that priority (`color.uda.priority.H`, the colour of the
+priority's word in a table), tags are chips, and a finished task is tinted. A ribbon is not Taskwarrior's: it is only
+ever the priority, on every front end, and the cards of a task list on a phone have it too. In the Android app a card is the one the report's list
 shows, with its Done button and ⋯ menu, and **Move to…** under its fields. With the phone held upright, a column takes
 the screen's width, and a swipe goes to the next.
 

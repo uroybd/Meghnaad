@@ -49,7 +49,8 @@ import kotlinx.coroutines.launch
 // One task as a card, on a phone: the cells of the report's own columns (the report definition says what is shown, as
 // Taskwarrior's does), the description first on a line of its own and the task's number in the corner, then every other
 // column as a mark, in exactly the order the report defines them. The user's
-// colour rules are only a faint wash behind the card; the priority is a stripe down its left edge.
+// colour rules (rule.precedence.color) are a faint wash behind the card; the priority is a ribbon down its left edge, in
+// the colour the taskrc gives it (color.uda.priority.*), on every front end.
 // Mirrors the phone layout of web/src/lib/ReportTable.svelte.
 
 /** The small picture a mark has instead of a label, by the column it is. */
@@ -124,13 +125,14 @@ fun TaskCard(
         started -> colors.primary.copy(alpha = 0.07f).compositeOver(panel)
         else -> panel
     }
-    // The priority, as a stripe down the left edge (a started task's is the accent).
-    val stripe = when {
-        started -> colors.primary
-        row.priority == "H" -> x.priorityHigh
-        row.priority == "M" -> x.priorityMedium
-        row.priority == "L" -> x.priorityLow
-        else -> null
+    // The priority, as a ribbon down the left edge: in the colour the taskrc gives it, else the app's own.
+    val stripe = row.priority?.let { p ->
+        store.config?.colors?.get("uda.priority.$p")?.tintSource(dark) ?: when (p) {
+            "H" -> x.priorityHigh
+            "M" -> x.priorityMedium
+            "L" -> x.priorityLow
+            else -> null
+        }
     }
     val done = !open
     val textColor = if (done) colors.onSurfaceVariant else colors.onSurface

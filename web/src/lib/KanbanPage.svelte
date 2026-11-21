@@ -200,11 +200,15 @@
     (board?.meta ?? [])
       .map((col, i) => ({ col, c: row[i], shape: shapeOf(col.name, row[i]) }))
       .filter(({ col, c }) => col.name !== 'description' && c && c.text.trim() !== '');
-  /** A card's edge takes the colour the table lays on the task's row (color.active, color.overdue, ...). */
+  /** A card's wash takes the colour the table lays on the task's row (color.active, color.overdue, ..., as
+   *  rule.precedence.color orders them); its ribbon is the priority, in the colour the taskrc gives it
+   *  (color.uda.priority.H), as on every front end. */
   function edge(row: Row): string {
     const l = look(row.style, scheme.dark);
     const c = l?.background ?? l?.color;
-    return c ? `--edge:${c}` : '';
+    const p = row.priority ? look(store.config?.colors?.[`uda.priority.${row.priority}`], scheme.dark) : null;
+    const r = p?.background ?? p?.color;
+    return [c && `--edge:${c}`, r && `--ribbon:${r}`].filter(Boolean).join(';');
   }
   /** A priority is drawn in its own colour, as the table draws it. */
   const priorityStyle = (name: string, row: Row) =>
@@ -299,7 +303,7 @@
 {#snippet card(row: Row, cs: Cell[], from: number)}
   <li
     class="card {rowClass(row)}"
-    class:edged={!!edge(row)}
+    class:edged={edge(row).includes('--edge')}
     style={edge(row)}
     data-pri={row.priority ?? undefined}
     draggable="true"
@@ -779,9 +783,11 @@
   }
   /* Spaced as the phone's task cards are (TaskCard.kt): room inside, a line between the title and the fields. */
   .card {
+    position: relative;
+    overflow: hidden;
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 11px 12px 12px 14px;
     cursor: grab;
     display: flex;
@@ -881,9 +887,27 @@
   .card.deleted {
     background: color-mix(in srgb, var(--err) 9%, var(--panel));
   }
+  /* The colour Taskwarrior's rules give the task: a faint wash, as on the phone. */
   .card.edged {
-    border-color: var(--edge);
-    box-shadow: inset 3px 0 0 var(--edge);
+    background: color-mix(in srgb, var(--edge) var(--wash), var(--panel));
+  }
+  /* The priority: a ribbon down the left edge, which the corners round off, in the colour the taskrc gives it, else
+     the page's own. */
+  .card[data-pri]::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: var(--ribbon);
+  }
+  .card[data-pri='H'] {
+    --ribbon: var(--pri-h);
+  }
+  .card[data-pri='M'] {
+    --ribbon: var(--pri-m);
+  }
+  .card[data-pri='L'] {
+    --ribbon: var(--pri-l);
   }
   .moveto {
     font-size: 12px;

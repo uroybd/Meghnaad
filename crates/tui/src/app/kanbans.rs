@@ -18,6 +18,8 @@ pub struct Card {
     /// The report's other cells that have something: each field's name (`due`), its label and its text.
     pub fields: Vec<(String, String, String)>,
     pub style: Style,
+    /// The task's priority (`H`): the ribbon down the card's left edge, in `color.uda.priority.<it>`.
+    pub priority: Option<String>,
     /// The swimlane it is in: the heading of its group in the report (a `/` in its sort); none without groups.
     pub lane: Option<String>,
 }
@@ -1002,6 +1004,7 @@ fn cards(r: &model::Report, keep: &[usize]) -> Vec<Card> {
                 title: title.lines().next().unwrap_or("").to_owned(),
                 fields,
                 style: r.styles.get(i).copied().unwrap_or_default(),
+                priority: r.priorities.get(i).cloned().flatten(),
                 lane: None,
             })
         })

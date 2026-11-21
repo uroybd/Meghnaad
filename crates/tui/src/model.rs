@@ -226,6 +226,8 @@ pub struct Report {
     pub styles: Vec<ratatui::style::Style>,
     pub uuids: Vec<String>,
     pub ids: Vec<Option<u64>>,
+    /// Each task's priority (`H`), shown or not: a card's ribbon.
+    pub priorities: Vec<Option<String>>,
     pub cells: Vec<Vec<Cell>>,
     /// For a report whose sort has a `/`: the separator above each row that starts a group (`Project: Home`), `None`
     /// inside one. Empty when nothing groups the report.
@@ -309,6 +311,10 @@ pub fn report(
         ids: tasks
             .iter()
             .map(|t| t.get("id").and_then(Value::as_u64).filter(|&i| i > 0))
+            .collect(),
+        priorities: tasks
+            .iter()
+            .map(|t| t.get("priority").and_then(Value::as_str).map(str::to_owned))
             .collect(),
         cells: table.cells.into_iter().map(|row| pick(row, &keep)).collect(),
         heads,

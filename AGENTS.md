@@ -247,7 +247,7 @@ engine's answers change. **Never port Rust to Kotlin:** where `tc-core` already 
 writing a date in `dateformat`, `format_vague`, completion, highlighting, urgency terms, a report's cells, Markdown) call it through `tc_core::helpers` (`crates/android/src/helpers.rs` re-exports it for
 JNI, and the page calls the same functions through `web/src/engine/helpers.ts`), and add a function there when a screen
 needs another; only the web app's own view logic (`web/src/lib`: task commands, bulk, reminders, the screens' state) is ported,
-with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) opens a live preview of the screens. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour. Check it with
+with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) opens a live preview of the screens. Colours the user sets in the taskrc are drawn as a subtle tint, never as full colour; the one exception is a card's ribbon down its left edge, which is only ever the priority, in `color.uda.priority.*`, on every front end. Check it with
 `cd app && ./gradlew :shared:testDebugUnitTest :androidApp:assembleDebug` (build the engine for the host first:
 `cargo build --profile android -p tc-android`); CI runs the same on the `kotlin-app` job. It has no formatter or linter in CI yet.
 

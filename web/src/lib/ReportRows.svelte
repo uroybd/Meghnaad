@@ -62,6 +62,12 @@
   }
 
   const isOpen = (row: Row) => row.status === 'pending';
+  /** A card's ribbon, on a phone: the priority in the colour the taskrc gives it (color.uda.priority.H), if any. */
+  function ribbon(row: Row): string {
+    const p = row.priority ? look(store.config?.colors?.[`uda.priority.${row.priority}`], scheme.dark) : null;
+    const c = p?.background ?? p?.color;
+    return c ? `--ribbon:${c}` : '';
+  }
 </script>
 
 <tbody>
@@ -73,7 +79,7 @@
     <tr
       class={rowClass(row)}
       class:ruled={!!l}
-      style={rowVars(l)}
+      style={[rowVars(l), ribbon(row)].filter(Boolean).join(';')}
       class:gap={result.breaks[i] && heads.length === 0}
       class:selected={store.detail?.uuid === row.uuid}
       class:picked={selectable && selection.has(row.uuid)}
@@ -303,8 +309,8 @@
   /*
    * Phones: each task is a card. The description comes first, with the tick box beside it and the task's number in the
    * corner; what is known of the task follows as a row of small marks (a few with an icon in place of their name); the
-   * buttons share that row when there is room, and take their own when there is not. A stripe down the left edge shows the
-   * priority, and a started task is tinted.
+   * buttons share that row when there is room, and take their own when there is not. A ribbon down the left edge is the
+   * priority, in the colour the taskrc gives it, as on every front end, and a started task is tinted.
    */
   @media (max-width: 760px) {
     tbody {
@@ -331,8 +337,8 @@
       border: 1px solid var(--line);
       border-radius: 14px;
       background: var(--panel);
-      /* The priority, as a stripe down the left edge. */
-      box-shadow: inset 4px 0 0 var(--stripe, transparent);
+      /* The priority, as a ribbon down the left edge: the taskrc's colour for it, else the page's own. */
+      box-shadow: inset 4px 0 0 var(--ribbon, var(--stripe, transparent));
     }
     tbody tr[data-pri='H'] {
       --stripe: var(--pri-h);
@@ -344,7 +350,6 @@
       --stripe: var(--pri-l);
     }
     tbody tr.started {
-      --stripe: var(--accent);
       background: color-mix(in srgb, var(--accent) 7%, var(--panel));
     }
     tr.gap {
