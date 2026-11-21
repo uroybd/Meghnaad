@@ -314,10 +314,18 @@ fun fieldIcon(name: String): String? = FIELD_ICONS[name]
 /** How a card shows a field (kanban.ts `cardShape`): one of Taskwarrior's as it is, a UDA as a pill, a free-text one as a paragraph. */
 enum class CardShape { Field, Pill, Text }
 
-/** A string UDA with no `values` is free to hold anything, so a paragraph of its own; any other UDA is a pill. */
-fun cardShape(name: String, udas: Map<String, UdaDef>): CardShape {
+/** A free-text value up to this long, on one line and plain, is a pill like any other UDA's (kanban.ts `SHORT_TEXT`). */
+const val SHORT_TEXT = 20
+
+/**
+ * A string UDA with no `values` holding more than a few words (several lines, [SHORT_TEXT] characters or more, or
+ * [markdown], so its boxes can be ticked) is a paragraph of its own; any other UDA is a pill.
+ */
+fun cardShape(name: String, udas: Map<String, UdaDef>, text: String = "", markdown: Boolean = false): CardShape {
     val def = udas[name] ?: return CardShape.Field
-    return if (def.type == "string" && def.values.isEmpty()) CardShape.Text else CardShape.Pill
+    if (def.type != "string" || def.values.isNotEmpty()) return CardShape.Pill
+    val long = markdown || '\n' in text || text.trim().length >= SHORT_TEXT
+    return if (long) CardShape.Text else CardShape.Pill
 }
 
 /** `kanban` as it is written to `settings.json`. */

@@ -115,7 +115,11 @@ class KanbanTest {
             "estimate" to UdaDef("estimate", "numeric"),
             "review" to UdaDef("review", "date"),
         )
-        assertEquals(CardShape.Text, cardShape("notes", udas))
+        assertEquals(CardShape.Text, cardShape("notes", udas, "a long note, past twenty"))
+        // A few words on one line, plain, is a pill too; several lines or Markdown (boxes to tick) a paragraph.
+        assertEquals(CardShape.Pill, cardShape("notes", udas, "call back"))
+        assertEquals(CardShape.Text, cardShape("notes", udas, "one\ntwo"))
+        assertEquals(CardShape.Text, cardShape("notes", udas, "- [ ] call", markdown = true))
         assertEquals(CardShape.Pill, cardShape("size", udas))
         assertEquals(CardShape.Pill, cardShape("estimate", udas))
         assertEquals(CardShape.Pill, cardShape("review", udas))

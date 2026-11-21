@@ -140,13 +140,14 @@ fun TaskCard(
     val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.notes.isNullOrEmpty() && c.chips.isNullOrEmpty()) }
     // A field that is a few lines, not a mark: Markdown in a UDA, or on a kanban any free-text UDA.
     val udas = store.config?.config?.udas.orEmpty()
-    fun paragraph(col: Column, c: Cell) = if (kanban) cardShape(col.name, udas) == CardShape.Text else c.blocks != null
+    fun paragraph(col: Column, c: Cell) = if (kanban) cardShape(col.name, udas, c.text, c.blocks != null) == CardShape.Text else c.blocks != null
     // Appearance's `cardIcons`: every field by its icon, a UDA as a pill. Off, a report's card shows a few by an icon and
     // the kanban's each by its label.
     val cardIcons = store.appearance.cardIcons
     val icons = if (cardIcons) true else if (kanban) false else null
-    // A UDA as a pill, but not one drawn as a progress bar: that is the bar after its label.
-    fun pill(col: Column) = (kanban || cardIcons) && cardShape(col.name, udas) == CardShape.Pill && store.appearance.progress[col.name] == null
+    // A UDA as a pill while Icons in cards is on (off, its label then its value), but not one drawn as a progress bar:
+    // that is the bar after its label.
+    fun pill(col: Column, c: Cell) = cardIcons && cardShape(col.name, udas, c.text, c.blocks != null) == CardShape.Pill && store.appearance.progress[col.name] == null
 
     Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = if (kanban) 0.dp else 10.dp)) {
         Box(
@@ -196,7 +197,7 @@ fun TaskCard(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         for ((col, c) in marks) {
-                            if (!paragraph(col, c)) Mark(store, col, c, row, overdue, activeTags, onTag, done, icons, pill = pill(col))
+                            if (!paragraph(col, c)) Mark(store, col, c, row, overdue, activeTags, onTag, done, icons, pill = pill(col, c))
                         }
                     }
                     // A UDA written in Markdown is a few lines, not a mark: it gets the width of the card, in a faint frame of its own so

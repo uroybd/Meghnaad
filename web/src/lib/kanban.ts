@@ -355,18 +355,26 @@ export const FIELD_ICONS: Readonly<Record<string, string>> = {
 
 export const fieldIcon = (name: string): string | null => FIELD_ICONS[name] ?? null;
 
+/** A free-text value up to this long, on one line and plain, is a pill like any other UDA's. */
+export const SHORT_TEXT = 20;
+
 /**
  * How a card shows a field: one of Taskwarrior's as it is (`field`); a UDA as a pill of its label and value (`pill`),
- * unless it is a string free to hold anything, which is a paragraph of its own (`text`), drawn as Markdown with its
- * checkboxes ticked from the card. A string UDA with `values` is one of a few words, so a pill.
+ * unless it is a string free to hold anything holding more than a few words (`text`): several lines, `SHORT_TEXT`
+ * characters or more, or Markdown (`markdown`, so its checkboxes can be ticked), which is a paragraph of its own. A
+ * string UDA with `values` is one of a few words, so a pill.
  */
 export function cardShape(
   name: string,
   udas: Record<string, { type: string; values: string[] }>,
+  text = '',
+  markdown = false,
 ): 'field' | 'pill' | 'text' {
   const def = udas[name];
   if (!def) return 'field';
-  return def.type === 'string' && def.values.length === 0 ? 'text' : 'pill';
+  if (def.type !== 'string' || def.values.length > 0) return 'pill';
+  const long = markdown || text.includes('\n') || [...text.trim()].length >= SHORT_TEXT;
+  return long ? 'text' : 'pill';
 }
 
 // Reading a kanban's tasks.

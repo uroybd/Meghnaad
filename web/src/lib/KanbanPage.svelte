@@ -187,15 +187,18 @@
     const n = fieldIcon(name);
     return n ? ICON[n] : undefined;
   };
-  /** How a field shows: a UDA drawn as a progress bar is the bar after its label, not a pill. */
-  const shapeOf = (name: string) => {
-    const shape = cardShape(name, ctx.udas);
-    return shape === 'pill' && store.appearance.progress[name] ? 'field' : shape;
+  /**
+   * How a field shows. A pill only while Icons in cards is on: off, a UDA is its label then its value, as the rest. A
+   * UDA drawn as a progress bar is the bar after its label, never a pill.
+   */
+  const shapeOf = (name: string, c: Cell | undefined) => {
+    const shape = cardShape(name, ctx.udas, c?.text ?? '', !!c?.blocks);
+    return shape === 'pill' && (!iconsOn || store.appearance.progress[name]) ? 'field' : shape;
   };
   /** The fields a card shows under its description: the report's other columns with something in them. */
   const fieldsOf = (row: Cell[]) =>
     (board?.meta ?? [])
-      .map((col, i) => ({ col, c: row[i], shape: shapeOf(col.name) }))
+      .map((col, i) => ({ col, c: row[i], shape: shapeOf(col.name, row[i]) }))
       .filter(({ col, c }) => col.name !== 'description' && c && c.text.trim() !== '');
   /** A card's edge takes the colour the table lays on the task's row (color.active, color.overdue, ...). */
   function edge(row: Row): string {

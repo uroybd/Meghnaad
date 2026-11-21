@@ -268,7 +268,11 @@ describe('settings.json', () => {
       estimate: { type: 'numeric', values: [] },
       review: { type: 'date', values: [] },
     };
-    expect(cardShape('notes', udas)).toBe('text');
+    expect(cardShape('notes', udas, 'a long note, past twenty')).toBe('text');
+    // A few words on one line, plain, is a pill too; several lines or Markdown (boxes to tick) a paragraph.
+    expect(cardShape('notes', udas, 'call back')).toBe('pill');
+    expect(cardShape('notes', udas, 'one\ntwo')).toBe('text');
+    expect(cardShape('notes', udas, '- [ ] call', true)).toBe('text');
     expect(cardShape('size', udas)).toBe('pill');
     expect(cardShape('estimate', udas)).toBe('pill');
     expect(cardShape('review', udas)).toBe('pill');

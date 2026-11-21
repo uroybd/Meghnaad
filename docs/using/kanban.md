@@ -115,11 +115,12 @@ for `due`, and so on. The icon goes by the field itself, whatever the report's l
 a clock). In the terminal app the icons are symbols (`⚑ H`, `◷ 2d`), turned on by the row Card icons in Settings →
 General.
 
-On the web and the phone a UDA is a pill, its label then its value, with icons on or off, except one drawn as a
-progress bar, which is the bar after its label. A string UDA with no `values`,
-free to hold anything, is the exception: it is a paragraph of its own under the other fields, headed by its name in
-bold and drawn as Markdown, and a checkbox in it (`- [ ] call back`) can be ticked right on the card, which saves the
-task's text with it ticked.
+On the web and the phone, with Icons in cards on, a UDA is a pill, its label then its value; off, it is its label and
+value on one line, as Taskwarrior's fields are. A UDA drawn as a progress bar is always the bar after its label. A string
+UDA with no `values`, free to hold anything, is a pill or on one line too while it holds a few words (one plain line,
+under 20 characters); longer, on several lines or in Markdown, it is a paragraph of its own under the other fields,
+headed by its name in bold and drawn as Markdown, and a checkbox in it (`- [ ] call back`) can be ticked right on the
+card, which saves the task's text with it ticked.
 
 ### Swimlanes
 
