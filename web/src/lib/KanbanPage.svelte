@@ -327,9 +327,10 @@
     </dl>
     <!-- A string UDA free to hold anything: a paragraph of its own, its checkboxes ticked here. -->
     {#each fieldsOf(cs).filter((f) => f.shape === 'text') as f (f.col.spec)}
-      <div class="para {f.c.cls ?? ''}">
+      <div class="para">
         <h4>{f.col.label}</h4>
-        <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
+        <!-- The cell's classes (multiline: kept as written) on a box of its own, so the heading's line end isn't kept too. -->
+        <div class={f.c.cls ?? ''}><ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} /></div>
       </div>
     {/each}
     {#if kanban && kanban.columns.some((c, i) => i !== from && c.move.trim())}
@@ -831,10 +832,10 @@
     font-size: 14px;
     font-weight: 700;
   }
-  .para.multiline {
+  .para .multiline {
     white-space: pre-wrap;
   }
-  .para :global(.md) :global(p) {
+  .para :global(.md) :global(:is(p, ul, ol)) {
     margin: 0;
   }
   /* A UDA: a pill, its label on one half and its value on the other. */
