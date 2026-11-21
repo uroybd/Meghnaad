@@ -140,4 +140,12 @@ class TaskCommandsTest {
         assertEquals("3 done outcome:fail && 3 modify +failed", expandTaskCommands("3 wrap", both))
         assertEquals("1 done ; 2 done", expandTaskCommands("1 done ; 2 done", both))
     }
+
+    @Test
+    fun offersTheTaskrcsOwnAliasesAsTaskCommandsAfterAnyOfTheSameName() {
+        val settings = mapOf("alias.fin" to "done", "alias.gone" to "", "alias.wrap" to "modify +x", "dateformat" to "Y-M-D")
+        val own = listOf(TaskCommand("wrap", "done"))
+        assertEquals(listOf(TaskCommand("fin", "done", ALIAS_ICON)), aliasCommands(settings, own))
+        assertEquals(emptyList(), aliasCommands(emptyMap(), own))
+    }
 }

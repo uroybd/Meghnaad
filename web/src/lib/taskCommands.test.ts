@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskCommand } from './appsettings';
 import { ChainError } from './compound';
-import { commandSteps, expandTaskCommands, isFilterWord, planChain } from './taskCommands';
+import { ALIAS_ICON, aliasCommands, commandSteps, expandTaskCommands, isFilterWord, planChain } from './taskCommands';
 
 const FAIL: TaskCommand = { name: 'fail', command: 'done outcome:fail' };
 const LATE: TaskCommand = { name: 'late', command: '+OVERDUE list' };
@@ -154,5 +154,14 @@ describe('planChain', () => {
   it('writes a chain back as a line', () => {
     expect(expandTaskCommands('3 wrap', both)).toBe('3 done outcome:fail && 3 modify +failed');
     expect(expandTaskCommands('1 done ; 2 done', both)).toBe('1 done ; 2 done');
+  });
+});
+
+describe('taskrc aliases', () => {
+  it('offers the taskrc’s own aliases as task commands, after any of the same name', () => {
+    const settings = { 'alias.fin': 'done', 'alias.gone': '', 'alias.wrap': 'modify +x', dateformat: 'Y-M-D' };
+    const own: TaskCommand[] = [{ name: 'wrap', command: 'done' }];
+    expect(aliasCommands(settings, own)).toEqual([{ name: 'fin', command: 'done', icon: ALIAS_ICON }]);
+    expect(aliasCommands({}, own)).toEqual([]);
   });
 });

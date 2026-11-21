@@ -103,7 +103,7 @@
       ><Terminal size={15} /> CLI</button
     >
     <MoreMenu
-      commands={store.taskCommands}
+      commands={store.menuCommands}
       disabled={busy}
       onrun={runCommand}
       label="More actions for the selected tasks"

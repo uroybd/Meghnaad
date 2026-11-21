@@ -1233,7 +1233,10 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
     let items: Vec<ListItem> = list
         .iter()
         .map(|c| {
+            // A taskrc alias is marked with a prompt sign, as the web and the phone draw it with a terminal.
+            let alias = c.icon.as_deref() == Some(crate::commands::ALIAS_ICON);
             ListItem::new(Line::from(vec![
+                Span::from(if alias { "$ " } else { "  " }).quiet(),
                 Span::from(format!("{:<widest$}  ", c.name)).bold(),
                 Span::from(c.command.clone()).quiet(),
             ]))
@@ -1432,7 +1435,14 @@ fn lines(c: &Cell) -> Vec<Line<'static>> {
                     out.push(Line::from(spans));
                 }
             }
-            None => out.push(Line::from(format!("  {} {}", n.at, n.text)).quiet()),
+            // A note of several lines: each under the first, after its date.
+            None => {
+                let at = format!("  {} ", n.at);
+                let pad = " ".repeat(at.chars().count());
+                for (i, l) in n.text.split('\n').enumerate() {
+                    out.push(Line::from(format!("{}{l}", if i == 0 { &at } else { &pad })).quiet());
+                }
+            }
         }
     }
     out

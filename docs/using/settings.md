@@ -445,6 +445,11 @@ and the bar over selected tasks runs it on all of them, a batch at a time. The m
 commands. Where a table is wider than its box (a narrow board card, say), each row's buttons (Done, Start or Stop, Edit,
 Delete, then the commands) fold into that menu, and open out again when there's room.
 
+**Your taskrc's aliases** are in the same menus, after the commands, with a terminal icon: each `alias.<name>` your
+taskrc defines runs on the task as `task <uuid> <name>` would. Taskwarrior's own (`rm`, `history`, `ghistory`,
+`burndown`) are left out unless you change them, as is one that stands for nothing, and a command of the same name
+takes its place. They are edited in the taskrc, not here. In the terminal app they are in the `c` menu, marked `$`.
+
 **Names** are one word that can't be taken for a filter: no spaces, no `+` `-` `/`, no `:` or `=`, not a number.
 
 ![The Commands tab: fail, later and urgent, each with a name, what it stands for and an icon](../screenshots/settings-commands.png)

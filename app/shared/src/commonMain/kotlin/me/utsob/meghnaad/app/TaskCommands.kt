@@ -95,3 +95,19 @@ data class CommandStep(val words: List<String>, val join: Joiner?)
 
 /** The statements a command stands for, as a tap on one or more tasks runs them. */
 fun commandSteps(c: TaskCommand): List<CommandStep> = splitChain(c.command).map { CommandStep(splitWords(it.line), it.join) }
+
+/** The icon a taskrc alias is drawn with among the task commands. */
+const val ALIAS_ICON = "square-terminal"
+
+/**
+ * The taskrc's own aliases (`alias.<name>=<words>`, not Taskwarrior's built-in ones) as task commands, for the menus that
+ * run one on a task (taskCommands.ts `aliasCommands`): each runs as `<uuid> <words>`. A task command of the same name
+ * wins, and an alias that stands for nothing is left out.
+ */
+fun aliasCommands(settings: Map<String, String>, commands: List<TaskCommand>): List<TaskCommand> {
+    val taken = commands.map { it.name }.toSet()
+    return settings.mapNotNull { (k, v) ->
+        val name = k.removePrefix("alias.").takeIf { k.startsWith("alias.") && it.isNotEmpty() }
+        if (name == null || v.isBlank() || name in taken) null else TaskCommand(name, v.trim(), ALIAS_ICON)
+    }
+}

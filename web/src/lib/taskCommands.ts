@@ -105,3 +105,19 @@ export function expandTaskCommands(line: string, commands: TaskCommand[]): strin
 export function commandSteps(c: TaskCommand): { words: string[]; join: Joiner | null }[] {
   return splitChain(c.command).map((s) => ({ words: splitWords(s.line), join: s.join }));
 }
+
+/** The icon a taskrc alias is drawn with among the task commands. */
+export const ALIAS_ICON = 'square-terminal';
+
+/**
+ * The taskrc's own aliases (`alias.<name>=<words>`, not Taskwarrior's built-in ones) as task commands, for the menus
+ * that run one on a task: each runs as `<uuid> <words>`, which is what `task <uuid> <name>` does. A task command of the
+ * same name wins, and an alias that stands for nothing (it makes its word vanish) is left out.
+ */
+export function aliasCommands(settings: Record<string, string>, commands: TaskCommand[]): TaskCommand[] {
+  const taken = new Set(commands.map((c) => c.name));
+  return Object.entries(settings).flatMap(([k, v]) => {
+    const name = k.startsWith('alias.') ? k.slice('alias.'.length) : '';
+    return name && v.trim() && !taken.has(name) ? [{ name, command: v.trim(), icon: ALIAS_ICON }] : [];
+  });
+}

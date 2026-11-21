@@ -9,6 +9,7 @@ import {
   useConfig,
 } from '../api';
 import { DEVICE_ID_KEY, deviceFile, mergeDevice } from '../deviceSettings';
+import { aliasCommands } from '../taskCommands';
 import { reminderSettings } from '../lockedReminders';
 import {
   emptyAppearance,
@@ -118,6 +119,11 @@ export abstract class SettingsStore extends StoreBase {
 
   /** The task commands in `settings.json`: words that stand for a command line, and buttons that run it. */
   taskCommands = $derived<TaskCommand[]>(this.appSettings?.commands ?? []);
+  /** What a task's menus offer to run on it: the task commands, then the taskrc's own aliases. */
+  menuCommands = $derived<TaskCommand[]>([
+    ...this.taskCommands,
+    ...aliasCommands(this.config?.config.settings ?? {}, this.taskCommands),
+  ]);
   /** The boards in `settings.json`: pages of numbers, tables and charts. */
   boards = $derived<Board[]>(this.appSettings?.boards ?? []);
   reports = $derived<ReportMeta[]>(this.config?.reports ?? []);
@@ -204,7 +210,7 @@ export abstract class SettingsStore extends StoreBase {
 
   /** The icons the task commands use are kept in the browser, and only those. */
   rememberIcons() {
-    lucide.keep(this.taskCommands.flatMap((c) => (c.icon ? [c.icon] : [])));
+    lucide.keep(this.menuCommands.flatMap((c) => (c.icon ? [c.icon] : [])));
   }
 
   /**

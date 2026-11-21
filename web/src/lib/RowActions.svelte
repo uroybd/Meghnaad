@@ -99,7 +99,7 @@
   {/if}
 {/if}
 <MoreMenu
-  commands={store.taskCommands}
+  commands={store.menuCommands}
   actions={card ? menuActions(false) : folded ? menuActions() : []}
   onrun={(c) =>
     store.actSteps(

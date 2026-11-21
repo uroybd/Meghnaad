@@ -258,7 +258,7 @@ impl App {
                 });
             }
             "tasks.command" => {
-                if self.settings.task_commands.is_empty() {
+                if self.menu_commands().is_empty() {
                     let settings = self.keymap.label(Page::Settings.action());
                     self.status = if settings.is_empty() {
                         "No task commands yet: add them on the Settings page.".into()

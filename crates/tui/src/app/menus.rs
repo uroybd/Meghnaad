@@ -3,12 +3,17 @@
 use super::{Action, App, KeyCode, KeyEvent, KeyModifiers, Mode, Outcome, Phase, PromptKind, TaskCommand};
 
 impl App {
-    /// The task commands whose name or command line has `query` in it, in their order.
-    pub fn matching_commands(&self, query: &str) -> Vec<&TaskCommand> {
+    /// The task commands, then the taskrc's own aliases: what the menu offers to run on a task.
+    pub fn menu_commands(&self) -> Vec<TaskCommand> {
+        let own = &self.settings.task_commands;
+        [own.clone(), crate::commands::alias_commands(&self.cfg.settings, own)].concat()
+    }
+
+    /// The task commands and aliases whose name or command line has `query` in it, in their order.
+    pub fn matching_commands(&self, query: &str) -> Vec<TaskCommand> {
         let q = query.to_lowercase();
-        self.settings
-            .task_commands
-            .iter()
+        self.menu_commands()
+            .into_iter()
             .filter(|c| c.name.to_lowercase().contains(&q) || c.command.to_lowercase().contains(&q))
             .collect()
     }

@@ -128,9 +128,60 @@ pub fn plan_chain(line: &str, commands: &[TaskCommand]) -> Result<Vec<Statement>
     Ok(steps)
 }
 
+/// The icon a taskrc alias has among the task commands (the web app's and the phone's).
+pub const ALIAS_ICON: &str = "square-terminal";
+
+/// The taskrc's own aliases as task commands, for the menu that runs one on a task: each runs as `<uuid> <name>`, which
+/// `task` expands. `_show` lists Taskwarrior's built-in ones too (`rm`, `history`, …); those are left out while they
+/// stand for what they always do. A task command of the same name wins, and an alias that stands for nothing is left out.
+pub fn alias_commands(settings: &BTreeMap<String, String>, commands: &[TaskCommand]) -> Vec<TaskCommand> {
+    let built_in = |k: &str, v: &str| {
+        tc_core::taskrc::SETTING_DEFAULTS
+            .iter()
+            .any(|(dk, dv)| *dk == k && *dv == v)
+    };
+    settings
+        .iter()
+        .filter_map(|(k, v)| {
+            let name = k.strip_prefix("alias.")?;
+            let v = v.trim();
+            let free = !name.is_empty() && !v.is_empty() && !built_in(k, v) && !commands.iter().any(|c| c.name == name);
+            free.then(|| TaskCommand {
+                name: name.to_owned(),
+                command: v.to_owned(),
+                icon: Some(ALIAS_ICON.to_owned()),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offers_the_taskrcs_own_aliases_after_task_commands_of_the_same_name() {
+        let settings: BTreeMap<String, String> = [
+            ("alias.fin", "done"),
+            ("alias.gone", ""),
+            ("alias.wrap", "modify +x"),
+            ("alias.rm", "delete"),
+            ("alias.history", "history.annual"),
+            ("dateformat", "Y-M-D"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+        let names: Vec<String> = alias_commands(&settings, &[cmd("wrap", "done")])
+            .into_iter()
+            .map(|c| format!("{} {} {}", c.name, c.command, c.icon.unwrap_or_default()))
+            .collect();
+        // `rm` is Taskwarrior's own, as it always is; `history` changed in the taskrc is the user's.
+        assert_eq!(
+            names,
+            ["fin done square-terminal", "history history.annual square-terminal"]
+        );
+    }
 
     fn cmd(name: &str, command: &str) -> TaskCommand {
         TaskCommand {

@@ -371,7 +371,7 @@ fun Actions(
                 }
             }
         }
-        MoreMenu(store.taskCommands, extra = own, box = box) { c -> store.go { actSteps(from, commandSteps(c).map { it.copy(words = listOf(row.uuid) + it.words) }) } }
+        MoreMenu(store.menuCommands, extra = own, box = box) { c -> store.go { actSteps(from, commandSteps(c).map { it.copy(words = listOf(row.uuid) + it.words) }) } }
     }
 }
 

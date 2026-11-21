@@ -144,7 +144,7 @@
         >
       {/if}
       <MoreMenu
-        commands={store.taskCommands}
+        commands={store.menuCommands}
         onrun={(c) =>
           store.actSteps(
             store.detail?.from ?? null,

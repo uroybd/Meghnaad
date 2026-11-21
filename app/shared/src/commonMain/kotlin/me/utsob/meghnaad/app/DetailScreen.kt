@@ -138,7 +138,7 @@ fun DetailScreen(store: Store, ref: DetailRef) {
                                 }
                             }
                         }
-                        MoreMenu(store.taskCommands) { c -> store.go { actSteps(ref.from, commandSteps(c).map { it.copy(words = listOf(uuid) + it.words) }) } }
+                        MoreMenu(store.menuCommands) { c -> store.go { actSteps(ref.from, commandSteps(c).map { it.copy(words = listOf(uuid) + it.words) }) } }
                     }
                     if (live.start != null && live.activeSeconds != null) {
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
