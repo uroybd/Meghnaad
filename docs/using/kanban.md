@@ -146,8 +146,10 @@ report's order. The column names are drawn once at the top, and each lane is a r
 longest. The board then scrolls as a whole rather than column by column. A lane folds with the arrow by its heading.
 
 A card moves only within its lane: a move runs the column's On move, which doesn't change the task's group. To move a
-task to another lane, edit the task (`modify project:Work`). In the terminal app a lane is a heading inside each
-column, above that lane's cards.
+task to another lane, edit the task (`modify project:Work`). The terminal app draws them the same way: the column
+names on one line at the top, then for each lane its heading across the board and a band of the columns; `z` folds
+the lane of the card under the cursor (the cursor then rests on its heading), and `[` `]` go to the lane before and
+the next.
 
 ## In the terminal app
 
@@ -158,8 +160,10 @@ through it. `:kanban` opens it too.
 | --- | --- |
 | Enter, `l` | open the kanban (in the list) |
 | `b`, Backspace | back to the list |
-| `h` `l` | the column before, the column after |
-| `j` `k` | the card below, the card above |
+| `h` `l` | the column before, the column after (in the same lane, where it has cards there) |
+| `j` `k` | the card below, the card above (a folded lane is one stop, its heading) |
+| `[` `]` | the first card of the lane before, of the next (with [swimlanes](#swimlanes)) |
+| `z` | fold or unfold the card's lane (`:kanban fold`) |
 | `H` `L` | move the card to the column before or after (`:move left`, `:move right`) |
 | `m` | move the card to a column chosen from a list (`:move`) |
 | Enter | the card's task info |

@@ -541,7 +541,7 @@ Since 0.8.22.
 
 Takes since, other, new, column, edit, delete, raise, lower, write or off.
 
-With nothing after it, the Kanban page (in the terminal, where Kanban is on). On a kanban, `:kanban since` changes Completed since there and `:kanban other` shows or hides Other, the tasks no column has. In the Kanban section of the terminal's Settings: `:kanban new` adds a kanban, `:kanban column` a column, `:kanban edit` and `:kanban delete` change and delete what is under the cursor (while Kanban is off, `:kanban edit` sets it up the way under the cursor, Automatic or Manual), `:kanban raise` and `:kanban lower` move a column, `:kanban write` writes the `progressState` UDA and `:kanban off` turns Kanban off. See [Kanban](using/kanban.md).
+With nothing after it, the Kanban page (in the terminal, where Kanban is on). On a kanban, `:kanban since` changes Completed since there and `:kanban other` shows or hides Other, the tasks no column has, and `:kanban fold` folds or unfolds the swimlane of the card under the cursor. In the Kanban section of the terminal's Settings: `:kanban new` adds a kanban, `:kanban column` a column, `:kanban edit` and `:kanban delete` change and delete what is under the cursor (while Kanban is off, `:kanban edit` sets it up the way under the cursor, Automatic or Manual), `:kanban raise` and `:kanban lower` move a column, `:kanban write` writes the `progressState` UDA and `:kanban off` turns Kanban off. See [Kanban](using/kanban.md).
 
 Since 0.8.26.
 

@@ -927,6 +927,7 @@ pub const COMMANDS: [Command; 56] = [
         &[
             ("since", "kanban.since"),
             ("other", "kanban.other"),
+            ("fold", "kanban.fold"),
             ("new", "settings.kanban.new"),
             ("column", "settings.kanban.add"),
             ("edit", "settings.kanban.edit"),

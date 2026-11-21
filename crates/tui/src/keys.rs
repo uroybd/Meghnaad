@@ -194,6 +194,7 @@ pub const WORDS: &[(&str, &str)] = &[
     ("kanban.report", "report"),
     ("kanban.since", "completed since"),
     ("kanban.other", "Other"),
+    ("kanban.fold", "fold lane"),
     ("console.clear", "clear"),
     ("settings.editFile", "edit settings.json"),
     (

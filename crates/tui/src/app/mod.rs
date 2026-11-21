@@ -408,6 +408,8 @@ pub struct App {
     pub kanban_col: usize,
     pub kanban_card: usize,
     pub kanban_other: bool,
+    /// The swimlanes folded, by heading, while the app runs.
+    pub kanban_folded: std::collections::BTreeSet<String>,
     /// A card just moved: its uuid, the column it was in and the one it was moved to, to say where it went.
     kanban_moved: Option<(String, Option<usize>, usize)>,
     /// The row of Settings → Kanban, and whether the automatic setup is waiting for a second Enter.
@@ -672,6 +674,7 @@ impl App {
             kanban_col: 0,
             kanban_card: 0,
             kanban_other: false,
+            kanban_folded: std::collections::BTreeSet::new(),
             kanban_moved: None,
             kanban_row: 0,
             kanban_with_report: true,
@@ -1387,6 +1390,7 @@ impl App {
         match self.context() {
             c if c.starts_with("settings.") => self.settings_section = self.settings_section.step(by),
             "boards" => self.scroll = section_scroll(&self.board_tops.borrow(), self.scroll, by),
+            "kanban" => self.kanban_lane_step(by),
             "tasks" => {
                 if let Some(i) = crate::groups::step(&self.report.heads, self.selected, by) {
                     self.selected = i;

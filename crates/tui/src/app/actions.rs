@@ -168,7 +168,7 @@ impl App {
             "lists" => self.list_sel = moved(self.list_sel, self.items().len(), step),
             "boards.list" => self.board = moved(self.board, self.boards.len(), step),
             "kanban.list" => self.kanban_sel = moved(self.kanban_sel, self.kanban.kanbans.len(), step),
-            "kanban" => self.kanban_card = moved(self.kanban_card, self.kanban_cards(), step),
+            "kanban" => self.kanban_step(step),
             // The console counts back from its end: down is nearer the end.
             "console" => {
                 self.log_back = match step {

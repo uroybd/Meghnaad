@@ -770,3 +770,78 @@ fn tab_completes_a_commands_name() {
     );
     assert_eq!(app.status, "start stop stopall");
 }
+
+/// A kanban of two columns in lanes Home and Work, then Other: `a1 a2 | b1` in Home, `a3 | b2 b3` in Work.
+fn laned_app() -> App {
+    let card = |t: &str, lane: &str| kanbans::Card {
+        uuid: t.to_owned(),
+        title: t.to_owned(),
+        lane: Some(lane.to_owned()),
+        ..Default::default()
+    };
+    let mut a = app();
+    a.kanban_data = Some(KanbanData {
+        columns: vec![
+            vec![card("a1", "Home"), card("a2", "Home"), card("a3", "Work")],
+            vec![card("b1", "Home"), card("b2", "Work"), card("b3", "Work")],
+        ],
+        other: Vec::new(),
+        lanes: vec!["Home".into(), "Work".into()],
+    });
+    a
+}
+
+fn chosen(a: &App) -> Option<String> {
+    a.kanban_card().map(|c| c.title.clone())
+}
+
+#[test]
+fn kanban_lanes_keep_the_lane_across_columns_and_step_by_lane() {
+    let mut a = laned_app();
+    a.kanban_card = 2; // a3, Work
+    a.kanban_action("kanban.next");
+    assert_eq!(chosen(&a).as_deref(), Some("b2"), "the same lane in the next column");
+    a.kanban_action("kanban.prev");
+    assert_eq!(chosen(&a).as_deref(), Some("a3"));
+    a.kanban_lane_step(-1);
+    assert_eq!(
+        chosen(&a).as_deref(),
+        Some("a1"),
+        "[ goes to the first card of the lane before"
+    );
+    a.kanban_lane_step(-1);
+    assert_eq!(chosen(&a).as_deref(), Some("a1"), "and stays at the first lane");
+    a.kanban_lane_step(1);
+    assert_eq!(chosen(&a).as_deref(), Some("a3"));
+    a.kanban_lane_step(1);
+    assert_eq!(chosen(&a).as_deref(), Some("a3"), "and stays at the last lane");
+}
+
+#[test]
+fn a_folded_kanban_lane_is_one_stop_whose_card_is_not_chosen() {
+    let mut a = laned_app();
+    a.kanban_card = 1; // a2, Home
+    a.kanban_action("kanban.fold");
+    assert!(a.kanban_folded.contains("Home"));
+    assert_eq!(a.kanban_card, 0, "on the lane's heading: its first card here");
+    assert_eq!(
+        chosen(&a),
+        None,
+        "a folded lane's card is not chosen: info and moves do nothing"
+    );
+    a.kanban_step(Step::By(1));
+    assert_eq!(
+        chosen(&a).as_deref(),
+        Some("a3"),
+        "down skips the folded lane's other cards"
+    );
+    a.kanban_step(Step::By(-1));
+    assert_eq!(
+        (a.kanban_card, chosen(&a)),
+        (0, None),
+        "up lands on the folded lane's heading"
+    );
+    a.kanban_action("kanban.fold");
+    assert!(a.kanban_folded.is_empty());
+    assert_eq!(chosen(&a).as_deref(), Some("a1"));
+}

@@ -2,7 +2,7 @@
 //! the end until it is shown, and the rows of Settings → Kanban. What is in which column comes from `task`
 //! (`app::kanbans`); this only draws it.
 
-use crate::app::kanbans::{Card, KanbanRow};
+use crate::app::kanbans::{Card, KanbanData, KanbanRow};
 use crate::app::{App, Focus};
 use crate::kanban::{self, Part};
 use crate::theme::{self, Roles};
@@ -11,6 +11,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding, Paragraph};
 use ratatui::Frame;
+use std::collections::BTreeSet;
 
 /// The width of Other while it is folded.
 const FOLDED: u16 = 12;
@@ -95,6 +96,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Constraint::Length(FOLDED)
             });
             let areas = Layout::horizontal(widths).spacing(1).split(body);
+            if !data.lanes.is_empty() {
+                swimlanes(f, app, &k.columns, data, &areas, body, focused);
+                return;
+            }
             for (i, (c, cards)) in k.columns.iter().zip(&data.columns).enumerate() {
                 let here = focused && app.kanban_col == i;
                 let title = format!("{} {}", c.name, cards.len());
@@ -200,9 +205,8 @@ fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
     lines
 }
 
-/// A column: its cards, each in a frame of the task's colour (the one chosen thick, with a dot), with a swimlane's
-/// heading above its first card here, scrolled to keep the one chosen in sight.
-#[allow(clippy::too_many_arguments, reason = "a column's parts, each drawn as given")]
+/// A column: its cards, each in a frame of the task's colour (the one chosen thick, with a dot), scrolled to keep the
+/// one chosen in sight.
 fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usize>, here: bool, icons: bool) {
     let body = column(f, area, title, here);
     if cards.is_empty() {
@@ -211,66 +215,255 @@ fn lane(f: &mut Frame, area: Rect, title: &str, cards: &[Card], sel: Option<usiz
     }
     // Inside a card: its frame, and a space each side.
     let width = usize::from(body.width.saturating_sub(4));
-    // Each piece: a lane's heading (no card) or a card, with its lines; a card is two lines taller for its frame.
-    let mut pieces: Vec<(Option<usize>, Vec<Line>)> = Vec::new();
-    for (n, c) in cards.iter().enumerate() {
-        if c.lane.is_some() && (n == 0 || cards[n - 1].lane != c.lane) {
-            let heading = Line::from(format!("▸ {}", c.lane.as_deref().unwrap_or(""))).bold();
-            pieces.push((None, vec![heading]));
-        }
-        pieces.push((Some(n), card_lines(c, width, icons)));
-    }
-    let height = |(card, lines): &(Option<usize>, Vec<Line>)| {
-        u16::try_from(lines.len()).unwrap_or(u16::MAX) + if card.is_some() { 2 } else { 0 }
-    };
-    // From the first piece that keeps the chosen card's bottom in sight.
-    let chosen = sel
-        .and_then(|s| pieces.iter().position(|(c, _)| *c == Some(s)))
-        .unwrap_or(0);
+    let pieces: Vec<Vec<Line>> = cards.iter().map(|c| card_lines(c, width, icons)).collect();
+    let height = |lines: &Vec<Line>| framed(lines.len());
+    // From the first card that keeps the chosen one's bottom in sight.
+    let chosen = sel.unwrap_or(0).min(pieces.len() - 1);
     let mut first = 0;
     let bottom = |from: usize| pieces[from..=chosen].iter().map(|p| height(p) + 1).sum::<u16>();
     while first < chosen && bottom(first) > body.height {
         first += 1;
     }
     let mut y = body.y;
-    for piece in &pieces[first..] {
+    for (n, lines) in pieces.iter().enumerate().skip(first) {
         if y >= body.bottom() {
             break;
         }
-        let h = height(piece).min(body.bottom() - y);
-        let at = Rect::new(body.x, y, body.width, h);
-        let (card, lines) = piece;
-        match card.and_then(|n| cards.get(n).map(|c| (n, c))) {
-            None => f.render_widget(Paragraph::new(lines.clone()), at),
-            Some((n, c)) => {
-                // The frame takes the task's colour, as the table's row has it; the chosen card's is drawn thick and
-                // bold, as a pane with the keys is, with a dot in its top edge, so it shows without colour too.
-                let colour = c.style.fg.or(theme::border(false).fg).unwrap_or(Color::Reset);
-                let chosen = sel == Some(n);
-                let edge = if chosen {
-                    Style::new().fg(colour).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::new().fg(colour)
-                };
-                // A card cut off at the column's foot has no bottom edge.
-                let sides = if h < height(piece) {
-                    Borders::TOP | Borders::LEFT | Borders::RIGHT
-                } else {
-                    Borders::ALL
-                };
-                let mut frame = Block::new()
-                    .borders(sides)
-                    .border_type(theme::border_type(chosen))
-                    .border_style(edge)
-                    .style(theme::column())
-                    .padding(Padding::horizontal(1));
-                if chosen {
-                    frame = frame.title(Span::styled(" ● ", edge));
-                }
-                f.render_widget(Paragraph::new(lines.clone()).block(frame), at);
-            }
+        let h = height(lines).min(body.bottom() - y);
+        if let Some(c) = cards.get(n) {
+            card(
+                f,
+                Rect::new(body.x, y, body.width, h),
+                c,
+                lines,
+                sel == Some(n),
+                h < height(lines),
+            );
         }
         y = y.saturating_add(h + 1);
+    }
+}
+
+/// The height of a card of `lines` lines: two more for its frame.
+fn framed(lines: usize) -> u16 {
+    u16::try_from(lines).unwrap_or(u16::MAX).saturating_add(2)
+}
+
+/// A card in a frame of the task's colour, as the table's row has it; the chosen card's is drawn thick and bold, as a
+/// pane with the keys is, with a dot in its top edge, so it shows without colour too. A card `cut` off at the foot of
+/// what holds it has no bottom edge.
+fn card(f: &mut Frame, at: Rect, c: &Card, lines: &[Line<'static>], chosen: bool, cut: bool) {
+    let colour = c.style.fg.or(theme::border(false).fg).unwrap_or(Color::Reset);
+    let edge = if chosen {
+        Style::new().fg(colour).add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().fg(colour)
+    };
+    let sides = if cut {
+        Borders::TOP | Borders::LEFT | Borders::RIGHT
+    } else {
+        Borders::ALL
+    };
+    let mut frame = Block::new()
+        .borders(sides)
+        .border_type(theme::border_type(chosen))
+        .border_style(edge)
+        .style(theme::column())
+        .padding(Padding::horizontal(1));
+    if chosen {
+        frame = frame.title(Span::styled(" ● ", edge));
+    }
+    f.render_widget(Paragraph::new(lines.to_vec()).block(frame), at);
+}
+
+/// What one swimlane is on the board, from its top: a heading line, then (unless folded) a band of the columns, each
+/// with its cards stacked (`(column, card, top, height)`, the top from the band's), as tall as its tallest column.
+struct Band {
+    lane: String,
+    count: usize,
+    folded: bool,
+    cards: Vec<(usize, usize, u16, u16)>,
+    height: u16,
+}
+
+/// The swimlanes laid out from the board's top: each band and its top. `heights` gives each column's cards' heights
+/// (the column after the last is Other, `None` while it is folded and draws only a count).
+fn bands(data: &KanbanData, folded: &BTreeSet<String>, heights: &[Option<Vec<u16>>]) -> Vec<(u16, Band)> {
+    let columns: Vec<&Vec<Card>> = data.columns.iter().chain(std::iter::once(&data.other)).collect();
+    let mut y = 0u16;
+    let mut out = Vec::new();
+    for lane in &data.lanes {
+        let shut = folded.contains(lane);
+        let mut cards = Vec::new();
+        let mut count = 0;
+        let mut tallest = 0u16;
+        for (i, cs) in columns.iter().enumerate() {
+            let mut at = 1u16;
+            for (n, _) in cs.iter().enumerate().filter(|(_, c)| c.lane.as_ref() == Some(lane)) {
+                count += 1;
+                let Some(h) = heights.get(i).and_then(Option::as_ref).and_then(|hs| hs.get(n)) else {
+                    continue;
+                };
+                cards.push((i, n, at, *h));
+                at = at.saturating_add(h + 1);
+            }
+            tallest = tallest.max(at);
+        }
+        let height = if shut { 1 } else { 1 + tallest.max(2) };
+        out.push((
+            y,
+            Band {
+                lane: lane.clone(),
+                count,
+                folded: shut,
+                cards,
+                height,
+            },
+        ));
+        y = y.saturating_add(height);
+    }
+    out
+}
+
+/// The board in swimlanes: the column names once at the top, then for each lane a heading across the board and a band
+/// of the same columns, the whole scrolled to keep the card chosen (or a folded lane's heading) in sight.
+fn swimlanes(
+    f: &mut Frame,
+    app: &App,
+    cols: &[kanban::Column],
+    data: &KanbanData,
+    areas: &[Rect],
+    body: Rect,
+    focused: bool,
+) {
+    let icons = app.settings.card_icons();
+    let n = cols.len();
+    let here = |i: usize| focused && app.kanban_col == i;
+    // The column names, with their counts.
+    for (i, area) in areas.iter().enumerate() {
+        let title = match cols.get(i) {
+            Some(c) => format!("{} {}", c.name, data.columns.get(i).map_or(0, Vec::len)),
+            None => format!("Other {}", data.other.len()),
+        };
+        let style = if here(i) {
+            theme::title(true)
+        } else {
+            Style::new().add_modifier(Modifier::BOLD)
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(format!(" {title}"), style))).style(theme::column_head()),
+            Rect::new(area.x, body.y, area.width, 1),
+        );
+    }
+    let view = Rect::new(body.x, body.y + 1, body.width, body.height.saturating_sub(1));
+    if view.height == 0 {
+        return;
+    }
+    // Each card's lines, at the width of its column (inside the column's margin, the card's frame and a space each side).
+    let columns: Vec<&Vec<Card>> = data.columns.iter().chain(std::iter::once(&data.other)).collect();
+    let lines: Vec<Option<Vec<Vec<Line<'static>>>>> = columns
+        .iter()
+        .enumerate()
+        .map(|(i, cs)| {
+            let shown = i < n || app.kanban_other;
+            let width = usize::from(areas.get(i).map_or(0, |a| a.width).saturating_sub(6));
+            shown.then(|| cs.iter().map(|c| card_lines(c, width, icons)).collect())
+        })
+        .collect();
+    let heights: Vec<Option<Vec<u16>>> = lines
+        .iter()
+        .map(|l| l.as_ref().map(|cs| cs.iter().map(|c| framed(c.len())).collect()))
+        .collect();
+    let bands = bands(data, &app.kanban_folded, &heights);
+    // What the cursor is on: a card, or the heading of its folded lane; where it is on the board, top and bottom.
+    let cursor = app.kanban_cursor().filter(|_| focused);
+    let on_heading = cursor
+        .and_then(|c| c.lane.as_ref())
+        .filter(|l| app.kanban_folded.contains(*l));
+    let target = bands.iter().find_map(|(top, b)| {
+        if on_heading == Some(&b.lane) {
+            return Some((*top, top + 1));
+        }
+        b.cards
+            .iter()
+            .find(|(i, c, _, _)| *i == app.kanban_col && *c == app.kanban_card && cursor.is_some())
+            .map(|(_, _, y, h)| (top + 1 + y, top + 1 + y + h))
+    });
+    // The scroll: the highest place a lane or a card starts that still keeps the target's bottom in sight.
+    let offset = target.map_or(0, |(t, b)| {
+        let tops = bands
+            .iter()
+            .flat_map(|(top, band)| std::iter::once(*top).chain(band.cards.iter().map(move |(_, _, y, _)| top + y)));
+        tops.filter(|a| *a <= t && b.saturating_sub(*a) <= view.height)
+            .min()
+            .unwrap_or(t)
+    });
+    let bottom = offset.saturating_add(view.height);
+    let row = |y: u16| view.y + y - offset;
+    for (top, band) in &bands {
+        let (top, end) = (*top, top.saturating_add(band.height));
+        if end <= offset || top >= bottom {
+            continue;
+        }
+        // The heading, across the board.
+        if top >= offset {
+            let mark = if band.folded { "▸" } else { "▾" };
+            let style = if on_heading == Some(&band.lane) {
+                theme::selected()
+            } else {
+                Style::new().add_modifier(Modifier::BOLD)
+            };
+            f.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(format!("{mark} {}", band.lane), style),
+                    Span::from(format!("  {}", band.count)).quiet(),
+                ])),
+                Rect::new(view.x, row(top), view.width, 1),
+            );
+        }
+        if band.folded {
+            continue;
+        }
+        // Each column's ground in the band, cut to what shows.
+        let (from, to) = ((top + 1).max(offset), end.min(bottom));
+        for (i, area) in areas.iter().enumerate() {
+            if from >= to {
+                break;
+            }
+            let ground = Rect::new(area.x, row(from), area.width, to - from);
+            f.render_widget(Block::new().style(theme::column()), ground);
+            // Other folded: how many of the lane's tasks it has.
+            if i == n && !app.kanban_other && from == top + 1 {
+                let k = columns[n]
+                    .iter()
+                    .filter(|c| c.lane.as_ref() == Some(&band.lane))
+                    .count();
+                if k > 0 {
+                    f.render_widget(
+                        Paragraph::new(Line::from(format!(" {k}")).quiet()),
+                        Rect::new(area.x, row(from) + 1, area.width, 1),
+                    );
+                }
+            }
+        }
+        for (i, c, y, h) in &band.cards {
+            let y = top + 1 + y;
+            if y < offset || y >= bottom {
+                continue;
+            }
+            let (Some(area), Some(cs), Some(ls)) =
+                (areas.get(*i), columns.get(*i), lines.get(*i).and_then(Option::as_ref))
+            else {
+                continue;
+            };
+            let (Some(cd), Some(l)) = (cs.get(*c), ls.get(*c)) else {
+                continue;
+            };
+            let shown = (*h).min(bottom - y);
+            let at = Rect::new(area.x + 1, row(y), area.width.saturating_sub(2), shown);
+            let chosen = here(*i) && app.kanban_card == *c && on_heading.is_none();
+            card(f, at, cd, l, chosen, shown < *h);
+        }
     }
 }
 

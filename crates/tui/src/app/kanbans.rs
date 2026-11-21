@@ -7,6 +7,7 @@ use crate::commands::TaskCommand;
 use crate::kanban::{self, Column, Entry, Kanban, Settings, View};
 use crate::review::config_args;
 use ratatui::style::Style;
+use std::collections::BTreeSet;
 
 /// A card: its task, the description it shows first and the report's other cells under it.
 #[derive(Debug, Clone, Default)]
@@ -26,6 +27,59 @@ pub struct Card {
 pub struct KanbanData {
     pub columns: Vec<Vec<Card>>,
     pub other: Vec<Card>,
+    /// The swimlanes, in the report's order: the headings of its groups (none without groups). Each column's cards go
+    /// lane by lane.
+    pub lanes: Vec<String>,
+}
+
+/// The cards the cursor stops on in a column: every card, but of a folded lane only its first, which stands for the
+/// lane's heading.
+pub fn stops(cards: &[Card], folded: &BTreeSet<String>) -> Vec<usize> {
+    (0..cards.len())
+        .filter(|&n| match &cards[n].lane {
+            Some(l) if folded.contains(l) => n == 0 || cards[n - 1].lane != cards[n].lane,
+            _ => true,
+        })
+        .collect()
+}
+
+/// Where the cursor lands in a column of `cards` coming from a card in `lane` (row `at` without lanes): that lane's
+/// first card here, else the first of the nearest lane that has one.
+fn landing(cards: &[Card], lanes: &[String], lane: Option<&String>, at: usize) -> usize {
+    let index = |l: Option<&String>| l.and_then(|l| lanes.iter().position(|x| x == l));
+    let Some(want) = index(lane) else {
+        return at.min(cards.len().saturating_sub(1));
+    };
+    cards
+        .iter()
+        .enumerate()
+        .min_by_key(|(n, c)| (index(c.lane.as_ref()).map_or(usize::MAX, |i| i.abs_diff(want)), *n))
+        .map_or(0, |(n, _)| n)
+}
+
+/// The first card of the next lane (`by` > 0) or of the one before (`by` < 0) that has cards in this column, from the
+/// card at `at`; where there is none that way, it stays.
+fn lane_step(cards: &[Card], at: usize, by: isize) -> usize {
+    let Some(here) = cards.get(at) else {
+        return at;
+    };
+    let first = |n: usize| {
+        (0..=n)
+            .rev()
+            .take_while(|&i| cards[i].lane == cards[n].lane)
+            .last()
+            .unwrap_or(n)
+    };
+    if by > 0 {
+        (at..cards.len()).find(|&n| cards[n].lane != here.lane).unwrap_or(at)
+    } else {
+        let start = first(at);
+        if start == 0 {
+            at
+        } else {
+            first(start - 1)
+        }
+    }
 }
 
 /// What was typed over a kanban's report, filter and Completed since on the page (none: its own).
@@ -204,13 +258,42 @@ impl App {
             .or_else(|| (col == d.columns.len()).then_some(&d.other))
     }
 
-    pub(super) fn kanban_cards(&self) -> usize {
-        self.lane(self.kanban_col).map_or(0, Vec::len)
+    /// The card under the cursor, even where its lane is folded and only the lane's heading shows.
+    pub fn kanban_cursor(&self) -> Option<&Card> {
+        self.lane(self.kanban_col)?.get(self.kanban_card)
     }
 
-    /// The card chosen.
+    /// The card chosen: the one under the cursor, unless its lane is folded.
     pub fn kanban_card(&self) -> Option<&Card> {
-        self.lane(self.kanban_col)?.get(self.kanban_card)
+        self.kanban_cursor()
+            .filter(|c| c.lane.as_ref().is_none_or(|l| !self.kanban_folded.contains(l)))
+    }
+
+    /// Move through the column's cards, a folded lane being one stop.
+    pub(super) fn kanban_step(&mut self, step: super::Step) {
+        let Some(cards) = self.lane(self.kanban_col) else {
+            return;
+        };
+        let stops = stops(cards, &self.kanban_folded);
+        let at = stops.iter().rposition(|&n| n <= self.kanban_card).unwrap_or(0);
+        if let Some(&n) = stops.get(moved(at, stops.len(), step)) {
+            self.kanban_card = n;
+        }
+    }
+
+    /// To the first card of the next lane, or of the one before (`[` `]`).
+    pub(super) fn kanban_lane_step(&mut self, by: isize) {
+        if let Some(cards) = self.lane(self.kanban_col) {
+            self.kanban_card = lane_step(cards, self.kanban_card, by);
+        }
+    }
+
+    /// The cursor in the column now chosen, coming from `lane` (row `at`): in the same lane where it can be.
+    fn land(&mut self, lane: Option<&String>, at: usize) {
+        let lanes = self.kanban_data.as_ref().map(|d| d.lanes.clone()).unwrap_or_default();
+        self.kanban_card = self
+            .lane(self.kanban_col)
+            .map_or(0, |cards| landing(cards, &lanes, lane, at));
     }
 
     /// Read the open kanban's columns from `task`: the report once per column, each task in the first column that has
@@ -273,11 +356,18 @@ impl App {
                 .map(|(r, keep)| laned(cards(r, keep)))
                 .collect(),
             other: laned(cards(&all, &other)),
+            lanes,
         };
+        let before = self.kanban_cursor().map(|c| c.lane.clone());
         self.kanban_data = Some(data);
-        self.after_move(&k);
         self.kanban_col = self.kanban_col.min(self.kanban_lanes().saturating_sub(1));
-        self.kanban_card = self.kanban_card.min(self.kanban_cards().saturating_sub(1));
+        match before {
+            Some(lane) => self.land(lane.as_ref(), self.kanban_card),
+            None => self.kanban_card = 0,
+        }
+        self.after_move(&k);
+        // On a folded lane the cursor rests on its heading: the lane's first card here.
+        self.kanban_step(super::Step::By(0));
     }
 
     /// After a move: the card chosen where it went, and a word when that is not where it was moved to.
@@ -358,8 +448,9 @@ impl App {
                 let n = self.kanban_lanes();
                 if n > 0 {
                     let by = if action == "kanban.prev" { -1 } else { 1 };
+                    let lane = self.kanban_cursor().and_then(|c| c.lane.clone());
                     self.kanban_col = moved(self.kanban_col, n, Step::By(by));
-                    self.kanban_card = self.kanban_card.min(self.kanban_cards().saturating_sub(1));
+                    self.land(lane.as_ref(), self.kanban_card);
                 }
             }
             "kanban.moveLeft" if self.kanban_col > 0 => self.move_card(self.kanban_col.min(columns) - 1),
@@ -403,6 +494,18 @@ impl App {
                     _ => (KanbanEdit::Since, v.completed_since),
                 };
                 self.prompt(PromptKind::Kanban(edit), &now);
+            }
+            "kanban.fold" => {
+                let Some(lane) = self.kanban_cursor().and_then(|c| c.lane.clone()) else {
+                    self.status =
+                        "This kanban has no swimlanes: its report's sort has no group (a / after a field).".into();
+                    return;
+                };
+                if !self.kanban_folded.remove(&lane) {
+                    self.kanban_folded.insert(lane.clone());
+                }
+                // To the lane's first card here: its heading while it is folded.
+                self.land(Some(&lane), self.kanban_card);
             }
             "kanban.other" => {
                 self.kanban_other = !self.kanban_other;
