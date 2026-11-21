@@ -82,6 +82,29 @@ fun TaskCard(
     onTag: ((String) -> Unit)? = null,
     onEdit: ((Row) -> Unit)? = null,
     gapBefore: Boolean = false,
+) = TaskCard(store, row, report.columns, cellsOfRow(report, ctx, row), ctx, from, selectable, activeTags, onTag, onEdit, gapBefore)
+
+/**
+ * The card of a task, from its columns and their cells: the report's list and the kanban's lanes. A kanban passes
+ * [kanban]: its fields drawn as it asks (icons or labels, a UDA as a pill, a free-text one as a paragraph under its
+ * name), and [below] for its own buttons.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TaskCard(
+    store: Store,
+    row: Row,
+    columns: List<Column>,
+    rowCells: List<Cell>,
+    ctx: Ctx,
+    from: Entry?,
+    selectable: Boolean,
+    activeTags: List<String> = emptyList(),
+    onTag: ((String) -> Unit)? = null,
+    onEdit: ((Row) -> Unit)? = null,
+    gapBefore: Boolean = false,
+    kanban: Boolean = false,
+    below: @Composable () -> Unit = {},
 ) {
     val colors = MaterialTheme.colorScheme
     val x = extras
@@ -113,10 +136,14 @@ fun TaskCard(
     val textColor = if (done) colors.onSurfaceVariant else colors.onSurface
     val bold = row.style?.bold == true
 
-    val cells = report.columns.zip(cellsOfRow(report, ctx, row))
-    val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.notes.isNullOrEmpty()) }
+    val cells = columns.zip(rowCells)
+    val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.notes.isNullOrEmpty() && c.chips.isNullOrEmpty()) }
+    // A field that is a few lines, not a mark: Markdown in a UDA, or on a kanban any free-text UDA.
+    val udas = store.config?.config?.udas.orEmpty()
+    fun paragraph(col: Column, c: Cell) = if (kanban) cardShape(col.name, udas) == CardShape.Text else c.blocks != null
+    val icons = if (kanban) store.kanbanSettings.icons else null
 
-    Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = 10.dp)) {
+    Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = if (kanban) 0.dp else 10.dp)) {
         Box(
             Modifier.fillMaxWidth()
                 .clip(PanelShape)
@@ -163,24 +190,32 @@ fun TaskCard(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        for ((col, c) in marks) if (c.blocks == null) Mark(store, col, c, row, overdue, activeTags, onTag, done)
+                        for ((col, c) in marks) {
+                            if (!paragraph(col, c)) Mark(store, col, c, row, overdue, activeTags, onTag, done, icons, pill = kanban && cardShape(col.name, udas) == CardShape.Pill)
+                        }
                     }
                     // A UDA written in Markdown is a few lines, not a mark: it gets the width of the card, in a faint frame of its own so
                     // it reads as a field beneath the task and not as more of the task's line, and its boxes work.
-                    for ((col, c) in marks) if (c.blocks != null) {
+                    for ((col, c) in marks) if (paragraph(col, c)) {
                         Column(
                             Modifier.fillMaxWidth().padding(top = 8.dp)
                                 .border(BorderStroke(1.dp, colors.outline.copy(alpha = 0.35f)), ControlShape)
                                 .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
                         ) {
-                            Dim(col.label, size = 12)
-                            MarkdownView(
-                                c.blocks, color = if (done) colors.onSurfaceVariant else colors.onSurface, size = 13.5.sp,
-                                onToggle = { line -> store.go { tickBox(from, row.uuid, col.name, c.text, line) } },
-                            )
+                            // On a kanban, headed by its name, as the web's card has it.
+                            if (kanban) Text(col.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = textColor) else Dim(col.label, size = 12)
+                            if (c.blocks != null) {
+                                MarkdownView(
+                                    c.blocks, color = if (done) colors.onSurfaceVariant else colors.onSurface, size = 13.5.sp,
+                                    onToggle = { line -> store.go { tickBox(from, row.uuid, col.name, c.text, line) } },
+                                )
+                            } else {
+                                Text(c.text, fontSize = 13.5.sp, color = textColor)
+                            }
                         }
                     }
                 }
+                below()
             }
         }
     }

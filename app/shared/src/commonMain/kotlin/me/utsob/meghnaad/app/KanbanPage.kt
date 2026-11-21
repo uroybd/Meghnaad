@@ -1,5 +1,14 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.gestures.FlingBehavior
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.round
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.size
@@ -8,12 +17,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -182,15 +185,19 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
             d == null -> Dim("Loading…")
             else -> BoxWithConstraints(Modifier.weight(1f)) {
               // The columns share the width, each between a card's least and most comfortable width; past that the row scrolls.
+              // A phone held upright: a column is the screen's width, and a swipe goes to the next one.
               val n = kanban.columns.size + if (otherOpen) 1 else 0
               val rest = if (otherOpen) 0.dp else 170.dp
-              val columnWidth = ((maxWidth - rest - 10.dp * n) / n.coerceAtLeast(1)).coerceIn(260.dp, 440.dp)
+              val portrait = maxHeight > maxWidth
+              val columnWidth = if (portrait) maxWidth else ((maxWidth - rest - 10.dp * n) / n.coerceAtLeast(1)).coerceIn(260.dp, 440.dp)
+              val across = rememberScrollState()
+              val fling = columnFling(if (portrait) columnWidth + 10.dp else null, across)
               if (d.lanes.lanes.isNotEmpty()) {
-                  KanbanLanes(store, kanban, d, ctx, columnWidth, otherOpen, { otherOpen = !otherOpen }, ::move)
+                  KanbanLanes(store, kanban, d, ctx, columnWidth, otherOpen, { otherOpen = !otherOpen }, ::move, across, fling)
                   return@BoxWithConstraints
               }
               Row(
-                Modifier.fillMaxSize().horizontalScroll(rememberScrollState()),
+                Modifier.fillMaxSize().horizontalScroll(across, flingBehavior = fling),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.Top,
             ) {
@@ -198,7 +205,7 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
                     val rows = d.placed.columns.getOrElse(i) { emptyList() }
                     KanbanColumnView(col.name, rows.size, if (col.move.isBlank()) "Takes no cards: it has no On move." else null, columnWidth) {
                         val cells = if (rows.isEmpty()) emptyList() else formatTable(d.meta, rows, ctx).cells
-                        rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, i, ::move) }
+                        rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, ctx, i, ::move) }
                     }
                 }
                 Column(Modifier.width(if (otherOpen) columnWidth else 160.dp).let { if (otherOpen) it.fillMaxHeight() else it }.background(colors.surfaceVariant.copy(alpha = 0.4f), ControlShape).padding(10.dp)) {
@@ -211,7 +218,7 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
                         Dim("What the report picks and no column does. Takes no cards.", size = 12)
                         val cells = if (d.placed.other.isEmpty()) emptyList() else formatTable(d.meta, d.placed.other, ctx).cells
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            d.placed.other.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, -1, ::move) }
+                            d.placed.other.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, ctx, -1, ::move) }
                         }
                     }
                 }
@@ -231,13 +238,15 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
 private fun KanbanLanes(
     store: Store, kanban: Kanban, d: KanbanData, ctx: Ctx, width: Dp, otherOpen: Boolean, toggleOther: () -> Unit,
     move: (String, Int, Int) -> Unit,
+    across: ScrollState,
+    fling: FlingBehavior,
 ) {
     val colors = MaterialTheme.colorScheme
     val folded = remember(kanban.id) { mutableStateMapOf<String, Boolean>() }
     val panel = colors.surfaceVariant.copy(alpha = 0.4f)
     val otherWidth = if (otherOpen) width else 160.dp
     fun inLane(rows: List<Row>, l: Int) = rows.filter { d.lanes.laneOf[it.uuid] == l }
-    Column(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().horizontalScroll(across, flingBehavior = fling).verticalScroll(rememberScrollState())) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             kanban.columns.forEachIndexed { i, col ->
                 Row(Modifier.width(width).background(panel, ControlShape).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -275,7 +284,7 @@ private fun KanbanLanes(
                             Modifier.width(width).fillMaxHeight().heightIn(min = 56.dp).background(panel, ControlShape).padding(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, i, move) }
+                            rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, ctx, i, move) }
                         }
                     }
                     Column(
@@ -285,7 +294,7 @@ private fun KanbanLanes(
                         if (otherOpen) {
                             val rows = inLane(d.placed.other, l)
                             val cells = if (rows.isEmpty()) emptyList() else formatTable(d.meta, rows, ctx).cells
-                            rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, -1, move) }
+                            rows.forEachIndexed { j, row -> KanbanCard(store, kanban, d.meta, row, cells.getOrElse(j) { emptyList() }, ctx, -1, move) }
                         }
                     }
                 }
@@ -309,59 +318,16 @@ private fun KanbanColumnView(name: String, count: Int, note: String?, width: Dp,
     }
 }
 
-/**
- * A card, drawn as the report's cards are (TaskCard): a finished task tinted, a priority in its own colour, tags as chips,
- * and the colour the table lays on the task's row (color.active, color.overdue, ...) as the card's edge.
- */
-@OptIn(ExperimentalLayoutApi::class)
+/** A card: the report's card (TaskCard), its fields as the kanban asks, with Move to… under them where a move is possible. */
 @Composable
-private fun KanbanCard(store: Store, kanban: Kanban, meta: List<Column>, row: Row, cells: List<Cell>, from: Int, move: (String, Int, Int) -> Unit) {
-    val colors = MaterialTheme.colorScheme
+private fun KanbanCard(store: Store, kanban: Kanban, meta: List<Column>, row: Row, cells: List<Cell>, ctx: Ctx, from: Int, move: (String, Int, Int) -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val targets = kanban.columns.withIndex().filter { (i, c) -> i != from && c.move.isNotBlank() }
-    val open = row.status == "pending"
-    val overdue = open && row.due != null && row.due < store.now
-    val panel = colors.surface
-    val background = when (row.status) {
-        "completed" -> extras.ok.copy(alpha = 0.09f).compositeOver(panel)
-        "deleted" -> colors.error.copy(alpha = 0.09f).compositeOver(panel)
-        else -> panel
-    }
-    val edge = row.style?.tintSource(extras.dark)
-    Column(
-        Modifier.fillMaxWidth().clip(ControlShape).background(background)
-            .drawBehind { edge?.let { drawRect(it, size = Size(3.dp.toPx(), size.height)) } }
-            .border(1.dp, edge ?: colors.outlineVariant, ControlShape)
-            .clickable { store.openDetail(row.uuid) }.padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    TaskCard(
+        store, row, meta, cells, ctx, from = null, selectable = false,
+        onEdit = { store.editing = EditRef(it, null) },
+        kanban = true,
     ) {
-        val at = meta.indexOfFirst { it.name == "description" }
-        Text(
-            cells.getOrNull(at)?.text ?: row.description,
-            fontWeight = if (row.style?.bold == true) FontWeight.Bold else FontWeight.SemiBold,
-            fontSize = 14.sp,
-            color = if (open) colors.onSurface else colors.onSurfaceVariant,
-        )
-        val udas = store.config?.config?.udas.orEmpty()
-        val marks = meta.zip(cells).filter { (col, c) -> col.name != "description" && (c.text.isNotBlank() || !c.chips.isNullOrEmpty()) }
-        val (texts, rest) = marks.partition { (col, _) -> cardShape(col.name, udas) == CardShape.Text }
-        if (rest.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                for ((col, c) in rest) {
-                    Mark(store, col, c, row, overdue, emptyList(), null, !open, icons = store.kanbanSettings.icons, pill = cardShape(col.name, udas) == CardShape.Pill)
-                }
-            }
-        }
-        // A string UDA free to hold anything: a paragraph of its own under its name, as Markdown, its checkboxes ticked here.
-        for ((col, c) in texts) {
-            val tint = if (open) colors.onSurface else colors.onSurfaceVariant
-            Text(col.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = tint, modifier = Modifier.padding(top = 2.dp))
-            if (c.blocks != null) {
-                MarkdownView(c.blocks, color = tint, size = 13.sp, onToggle = { line -> store.go { tickBox(null, row.uuid, col.name, c.text, line) } })
-            } else {
-                Text(c.text, fontSize = 13.sp, color = tint)
-            }
-        }
         if (targets.isNotEmpty()) {
             Box {
                 TextButton(onClick = { menu = true }) { Text("Move to…", fontSize = 12.sp) }
@@ -376,4 +342,29 @@ private fun KanbanCard(store: Store, kanban: Kanban, meta: List<Column>, row: Ro
             }
         }
     }
+}
+
+/**
+ * How a swipe across the columns ends: on a column's edge, the next one in the swipe's direction, when [step] (a column
+ * and the gap after it) is given; else where it slows to a stop.
+ */
+@Composable
+private fun columnFling(step: Dp?, scroll: ScrollState): FlingBehavior {
+    val px = with(LocalDensity.current) { step?.toPx() }
+    val free = ScrollableDefaults.flingBehavior()
+    if (px == null || px <= 0f) return free
+    val provider = remember(px, scroll) {
+        object : SnapLayoutInfoProvider {
+            override fun calculateSnapOffset(velocity: Float): Float {
+                val at = scroll.value / px
+                val to = when {
+                    velocity > 0f -> floor(at) + 1
+                    velocity < 0f -> ceil(at) - 1
+                    else -> round(at)
+                }.coerceAtLeast(0f)
+                return to * px - scroll.value
+            }
+        }
+    }
+    return rememberSnapFlingBehavior(provider)
 }
