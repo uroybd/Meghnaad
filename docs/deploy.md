@@ -379,7 +379,8 @@ builds once and publishes:
 
 **Build times.** A tag's run can read the caches saved on `main` but never another tag's, so the Release workflow
 saves none of its own and reads `main`'s: CI's web job builds what the release builds for the web (both Workers and
-the static app too) under the shared Rust cache key `web`, and the APK reads CI's android job's Rust and Gradle caches.
+the static app too) under the shared Rust cache key `web`, and keeps `worker-build` in a cache of its own (keyed on its
+version) that the release and the deploy restore in place of building it; the APK reads CI's android job's Rust and Gradle caches.
 The terminal programs build without a cache. The Deploy workflow that `just ship` starts deploys the release's own
 build once it is on the `release` branch, without building it again.
 

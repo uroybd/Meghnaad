@@ -113,6 +113,14 @@ jobs:
           shared-key: web
           save-if: false
 
+      # worker-build itself, built once and kept on its own (the dependency cache doesn't carry it to a tag): CI's web job
+      # saves it on main, keyed on its version (0.8, as the `worker` crate in crates/worker), and this reads it.
+      - uses: actions/cache/restore@v4
+        if: ${{ steps.build.outputs.from == 'source' }}
+        with:
+          path: ~/.cargo/bin/worker-build
+          key: worker-build-0.8-${{ runner.os }}-${{ runner.arch }}
+
       - name: Install worker-build
         if: ${{ steps.build.outputs.from == 'source' }}
         run: command -v worker-build >/dev/null || cargo install worker-build --version '~0.8' --locked

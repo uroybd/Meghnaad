@@ -102,6 +102,13 @@ jobs:
         with:
           shared-key: web
 
+      # worker-build itself, kept on its own so a release and a deploy read it in seconds rather than build it (the
+      # dependency cache doesn't carry it to a tag), keyed on its version (0.8, as the `worker` crate in crates/worker).
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/worker-build
+          key: worker-build-0.8-${{ runner.os }}-${{ runner.arch }}
+
       # The Workers' build tool, for the release build below (kept in the cache after the first time).
       - name: Install worker-build
         run: command -v worker-build >/dev/null || cargo install worker-build --version '~0.8' --locked
