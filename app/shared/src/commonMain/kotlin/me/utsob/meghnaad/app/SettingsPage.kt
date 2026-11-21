@@ -1,5 +1,16 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
@@ -103,10 +114,18 @@ fun SettingsPage(store: Store, state: SettingsState) {
     // The tab last shown in each group, so going back to a group goes back to it.
     val last = remember { mutableStateMapOf<String, SettingsTab>() }
     LaunchedEffect(store.settingsTab) { last[group.label] = store.settingsTab }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // A phone: one menu of the groups, each folding open to its tabs, in the title's place; the two rows of tabs took
+    // the height the taskrc's editor needs.
+    val narrow = maxWidth < 600.dp
     Column(Modifier.fillMaxSize()) {
         val scope = rememberCoroutineScope()
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Settings", Modifier.weight(1f), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            if (narrow) {
+                Box(Modifier.weight(1f)) { SettingsMenu(store, group, dirty) }
+            } else {
+                Text("Settings", Modifier.weight(1f), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            }
             // Whose settings (spec 0027): everyone's settings.json, or this device's own over them.
             SingleChoiceSegmentedButtonRow {
                 SegmentedButton(!store.settingsDevice, { store.settingsDevice = false }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Everyone") }
@@ -117,6 +136,7 @@ fun SettingsPage(store: Store, state: SettingsState) {
             }
         }
         DevicePrompt(store)
+        if (!narrow) {
         TabRow(selectedTabIndex = SETTINGS_GROUPS.indexOf(group), Modifier.widthIn(max = 420.dp), containerColor = MaterialTheme.colorScheme.background) {
             for (g in SETTINGS_GROUPS) {
                 Tab(selected = g === group, onClick = { store.settingsTab = last[g.label] ?: g.tabs.first() }) {
@@ -130,6 +150,7 @@ fun SettingsPage(store: Store, state: SettingsState) {
                     DirtyLabel(TABS[t]?.label ?: t.name, dirty[t] == true)
                 }
             }
+        }
         }
         // The taskrc tab is a workspace that takes the height (its editor scrolls inside it, and Apply stays in view); the others scroll.
         if (store.settingsTab == SettingsTab.Taskrc) {
@@ -169,6 +190,56 @@ fun SettingsPage(store: Store, state: SettingsState) {
             if (APP_VERSION.isNotEmpty()) Dim("Meghnaad $APP_VERSION", Modifier.padding(vertical = 16.dp), 12)
             // Room under the last control, so the floating + never covers it (the web's 72 px under every page).
             Box(Modifier.height(72.dp))
+        }
+    }
+    }
+}
+
+/**
+ * The settings' place on a phone, as one button: the group over the tab. It opens a menu of the groups, each folding
+ * open to its tabs (the one shown open at first), the tab shown ticked and one not applied yet marked with a dot.
+ */
+@Composable
+private fun SettingsMenu(store: Store, group: SettingsGroup, dirty: Map<SettingsTab, Boolean>) {
+    val colors = MaterialTheme.colorScheme
+    var open by remember { mutableStateOf(false) }
+    val unfolded = remember(open) { mutableStateMapOf(group.label to true) }
+    Row(
+        Modifier.clip(RoundedCornerShape(8.dp)).clickable { open = true }.padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Column {
+            Text(group.label, fontSize = 11.sp, color = colors.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(TABS[store.settingsTab]?.label ?: store.settingsTab.name, fontSize = 17.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                if (dirty.any { it.value }) Box(Modifier.padding(start = 6.dp).size(7.dp).background(colors.primary, CircleShape))
+            }
+        }
+        LucideIcon("chevron-down", size = 16.dp)
+    }
+    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        for (g in SETTINGS_GROUPS) {
+            val shown = unfolded[g.label] == true
+            DropdownMenuItem(
+                text = { DirtyLabel(g.label, g.tabs.any { dirty[it] == true }) },
+                trailingIcon = { LucideIcon(if (shown) "chevron-down" else "chevron-right", size = 16.dp) },
+                onClick = { unfolded[g.label] = !shown },
+            )
+            if (shown) {
+                for (t in g.tabs) {
+                    DropdownMenuItem(
+                        text = { Text(TABS[t]?.label ?: t.name, fontSize = 14.sp, fontWeight = if (t == store.settingsTab) androidx.compose.ui.text.font.FontWeight.SemiBold else null) },
+                        leadingIcon = { Box(Modifier.width(16.dp)) { if (t == store.settingsTab) LucideIcon("check", size = 16.dp) } },
+                        trailingIcon = { if (dirty[t] == true) Box(Modifier.size(7.dp).background(colors.primary, CircleShape)) },
+                        contentPadding = PaddingValues(start = 28.dp, end = 12.dp),
+                        onClick = {
+                            store.settingsTab = t
+                            open = false
+                        },
+                    )
+                }
+            }
         }
     }
 }

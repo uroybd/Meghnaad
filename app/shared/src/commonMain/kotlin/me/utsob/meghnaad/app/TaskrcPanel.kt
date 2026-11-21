@@ -1,5 +1,10 @@
 package me.utsob.meghnaad.app
 
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Spacer
@@ -101,6 +106,9 @@ class TaskrcState(private val store: Store) {
 
     /** The list of files folded away; null until chosen, which is folded on a phone and shown on a wide screen. */
     var folded by mutableStateOf<Boolean?>(null)
+
+    /** The editor over the whole screen: a bar with the file's name, the files as a drawer, and room to type. */
+    var full by mutableStateOf(false)
     var closed by mutableStateOf<Set<String>>(emptySet())
     /** Folders made here with no file in them yet: they live only on the screen, since a folder is kept through its files. */
     var empty by mutableStateOf<List<String>>(emptyList())
@@ -551,11 +559,7 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
     }
     var about by remember { mutableStateOf(false) }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        // A phone: the list of files is folded away, and opens over the editor. A wide screen: it sits beside it.
-        val wide = maxWidth >= 760.dp
-        val folded = st.folded ?: !wide
-        Column(Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("taskrc", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Dim("A copy of your taskrc, saved with your tasks.", Modifier.weight(1f), 13)
@@ -573,18 +577,16 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
             store.config?.configError?.let {
                 Text("The saved settings couldn't be read ($it). Tasks still work with the defaults. Importing replaces them; the unreadable copy is kept aside.", color = colors.error, fontSize = 13.sp)
             }
-            Row(Modifier.weight(1f).fillMaxWidth().border(1.dp, colors.outlineVariant, RoundedCornerShape(8.dp))) {
-                if (wide && !folded) {
-                    RcSidebar(store, st, Modifier.width(240.dp).fillMaxHeight())
-                    VerticalDivider()
-                }
-                EditorPane(store, st, folded, Modifier.weight(1f).fillMaxHeight())
+            if (!st.full) {
+                Box(Modifier.weight(1f).fillMaxWidth().border(1.dp, colors.outlineVariant, RoundedCornerShape(8.dp))) { RcWorkspace(store, st) }
             }
         }
-        if (!wide && !folded) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).clickable { st.folded = true })
-            Surface(Modifier.fillMaxHeight().width(280.dp), shadowElevation = 8.dp, color = colors.surface) {
-                RcSidebar(store, st, Modifier.fillMaxSize())
+    if (st.full) {
+        // Over everything, the console and the keyboard's room included: the file's name in a bar on top, the files in a
+        // drawer from the side, and the rest of the screen for the text.
+        Dialog(onDismissRequest = { st.full = false }, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
+            Surface(Modifier.fillMaxSize(), color = colors.surface) {
+                Box(Modifier.fillMaxSize().safeDrawingPadding()) { RcWorkspace(store, st) }
             }
         }
     }
@@ -626,6 +628,29 @@ fun TaskrcPanel(store: Store, st: TaskrcState) {
             }
         }
         null -> {}
+    }
+}
+
+/** The files and the editor. A phone: the list of files is folded away, and opens over the editor. A wide screen: it sits beside it. */
+@Composable
+private fun RcWorkspace(store: Store, st: TaskrcState) {
+    val colors = MaterialTheme.colorScheme
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 760.dp
+        val folded = st.folded ?: !wide
+        Row(Modifier.fillMaxSize()) {
+            if (wide && !folded) {
+                RcSidebar(store, st, Modifier.width(240.dp).fillMaxHeight())
+                VerticalDivider()
+            }
+            EditorPane(store, st, folded, Modifier.weight(1f).fillMaxHeight())
+        }
+        if (!wide && !folded) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).clickable { st.folded = true })
+            Surface(Modifier.fillMaxHeight().width(280.dp), shadowElevation = 8.dp, color = colors.surface) {
+                RcSidebar(store, st, Modifier.fillMaxSize())
+            }
+        }
     }
 }
 
@@ -739,9 +764,14 @@ private fun EditorPane(store: Store, st: TaskrcState, folded: Boolean, modifier:
     val colors = MaterialTheme.colorScheme
     var more by remember { mutableStateOf(false) }
     Column(modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // The file's bar: the files, its name, the editor over the whole screen or back, and the rest in ⋯.
+        Row(
+            Modifier.then(if (st.full) Modifier.clip(RoundedCornerShape(8.dp)).background(colors.surfaceContainer) else Modifier),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (folded) IconButton(onClick = { st.folded = false }) { LucideIcon("panel-left-open", size = 16.dp) }
-            Text(st.current, Modifier.weight(1f), fontSize = 14.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+            Text(st.current, Modifier.weight(1f).padding(start = if (folded) 0.dp else 8.dp), fontSize = 14.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = { st.full = !st.full }) { LucideIcon(if (st.full) "minimize-2" else "maximize-2", size = 16.dp) }
             Box {
                 IconButton(onClick = { more = true }) { LucideIcon("ellipsis", size = 16.dp) }
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {

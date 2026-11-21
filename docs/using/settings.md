@@ -2,8 +2,9 @@
 
 **Settings** in the header is in two groups. **Meghnaad** is the app's own: **General**, **Appearance**,
 **Keybindings**, **Kanban** and **Commands** (and **Sync** on the phone). **Taskwarrior** is what `task` itself reads:
-the **taskrc**, **Urgency**, **Hooks** and **tasksh**. A group's tabs are listed down the left (in a row on a phone),
-and an address names the tab alone (`/settings/hooks`), so the group follows from it. Every tab has its own **Apply**
+the **taskrc**, **Urgency**, **Hooks** and **tasksh**. A group's tabs are listed down the left (in a row in the
+Android app on a wide screen). On a phone, the Android app has one menu in the title's place instead, showing the group
+over the tab: it lists the groups, each folding open to its tabs. An address names the tab alone (`/settings/hooks`), so the group follows from it. Every tab has its own **Apply**
 (**Save**, on Hooks), and applying one doesn't touch the others. A tab with unapplied edits has a dot, and so does its
 group; the edits stay while you look at another tab, group or page. If the saved settings change elsewhere (the
 Console's `config`, another tab), a tab with no edits of its own follows them.
@@ -227,6 +228,8 @@ allowlist of settings is read; the full list is in [taskrc support](../taskrc-su
 
 The panel icon at the top of the tree folds it away for a wider editor (the web remembers it). On a phone, or a narrow
 window, the tree starts folded: the icon beside the file's name opens it over the editor, and choosing a file closes it.
+In the Android app, the arrows at the end of the file's bar open the editor over the whole screen, the console and
+the tabs out of the way, with the file's name in a bar on top and the tree still a tap away; they close it again.
 
 ### The editor
 
