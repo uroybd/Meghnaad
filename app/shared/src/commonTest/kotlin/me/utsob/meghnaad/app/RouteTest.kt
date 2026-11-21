@@ -61,6 +61,8 @@ class RouteTest {
             AppPlace.SettingsAt(),
             AppPlace.SettingsAt(SettingsTab.Kanban),
             AppPlace.SettingsAt(SettingsTab.Hooks),
+            AppPlace.SettingsAt(device = true),
+            AppPlace.SettingsAt(SettingsTab.Keys, device = true),
             AppPlace.SettingsAt(SettingsTab.Taskrc, "taskrc"),
             AppPlace.SettingsAt(SettingsTab.Taskrc, "holidays/en-US.rc"),
             AppPlace.SettingsAt(SettingsTab.Taskrc, "my notes/a b%.rc"),
@@ -73,6 +75,7 @@ class RouteTest {
         assertEquals("meghnaad://kanbans", placeLink(AppPlace.Kanbans()))
         assertEquals("meghnaad://kanban/work/list", placeLink(AppPlace.Kanbans("work", "list")))
         assertEquals("meghnaad://settings/urgency", placeLink(AppPlace.SettingsAt(SettingsTab.Urgency)))
+        assertEquals("meghnaad://settings/device/keys", placeLink(AppPlace.SettingsAt(SettingsTab.Keys, device = true)))
         assertEquals("meghnaad://settings/taskrc/holidays/en-US.rc", placeLink(AppPlace.SettingsAt(SettingsTab.Taskrc, "holidays/en-US.rc")))
         assertEquals("meghnaad://settings/taskrc/my%20notes.rc", placeLink(AppPlace.SettingsAt(SettingsTab.Taskrc, "my notes.rc")))
         assertEquals(AppPlace.Report("list"), parseLink("meghnaad://report/list/"))

@@ -72,6 +72,7 @@ export { default as Terminal } from '@lucide/svelte/icons/terminal';
 export { default as TextCursorInput } from '@lucide/svelte/icons/text-cursor-input';
 export { default as Timer } from '@lucide/svelte/icons/timer';
 export { default as Trash2 } from '@lucide/svelte/icons/trash-2';
+export { default as Undo2 } from '@lucide/svelte/icons/undo-2';
 export { default as TrendingDown } from '@lucide/svelte/icons/trending-down';
 export { default as TriangleAlert } from '@lucide/svelte/icons/triangle-alert';
 export { default as Upload } from '@lucide/svelte/icons/upload';

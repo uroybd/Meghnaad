@@ -8,9 +8,39 @@ and an address names the tab alone (`/settings/hooks`), so the group follows fro
 group; the edits stay while you look at another tab, group or page. If the saved settings change elsewhere (the
 Console's `config`, another tab), a tab with no edits of its own follows them.
 
+## This device
+
+Settings shows **Everyone** at first: `settings.json`, the same on every device. **This device**, beside the title,
+switches to the settings of the device you are on, laid out the same way. A device can have its own:
+
+- **home page**, and
+- **keys**, one at a time.
+
+Each shows the value this device uses: its own, else everyone's, else the app's default. One that is this device's own
+is framed, its name and value together, with **Use everyone's** (on a key, the undo button) to give it up. The other tabs
+show as they are under Everyone, read only. Under Everyone, a home page or key this device has its own of says **This
+device uses its own**, with a link to it.
+
+A device has nothing of its own until you first save something under This device. That first save asks for a **Device
+ID**: a made-up one is filled in, and you can keep it or type your own (letters, digits, `-` and `_`). It is kept in the
+store as `devices/<id>.json`, a small `settings.json` with only what the device has of its own. Another device given
+the same ID shares it. The first time you switch to This device, if other devices already have some, you can **Use**
+one of them, **Delete** one nobody uses any more, or make new ones for this device.
+
+Once it has them, **This device → General** has the **Device ID**: **Change** renames the file, or, for an ID another
+device has, uses that one's; **Delete this device's settings** gives them up. Below it is the device's file as text, to
+edit or paste over, as `settings.json` is under Everyone.
+
+The [reminders](time-tracking.md) are always the device's own: once it has settings of its own, they are kept in them
+too (`"reminders"`), so a device on a shared ID reminds as the others do. The terminal app has none of this: its
+`settings.json` is the desktop's own already.
+
+## General
+
 **General** sets the **home page**, the page the app opens on: any report (including your own) or any of your boards.
 The default is `next`. It is kept in the app's own `settings.json` (`"homepage": { "report": "list" }` or `{ "board":
-"week" }`), not your taskrc, so it is the same on every device that signs in to the same deployment. A link to a task
+"week" }`), not your taskrc, so it is the same on every device that signs in to the same deployment, unless a device has
+[its own](#this-device). A link to a task
 still opens that task, and a report or board that is gone opens `next`. (The taskrc's `default.command` is different: it
 is the command a line runs when it names none.)
 

@@ -345,6 +345,11 @@ its own. `BACKEND=git` in the deploy settings picks the git one.
 ### Settings routes
 
 - `/api/config` and `/api/config/*` serve the taskrc and urgency, and `GET`/`PUT /api/settings` serve `settings.json`.
+- A device's own settings (spec 0027) are `web/devices/<id>.json`, a partial `settings.json`: `GET
+  /api/settings/devices` lists the IDs, and `GET`/`PUT`/`DELETE /api/settings/devices/<id>` read, write and delete one
+  (`PUT ...?from=<old>` renames, as one change where the store can). An ID is a file name; the file is checked as
+  `settings.json` is. The page lays it over `settings.json` (`deviceSettings.ts`; `DeviceSettings.kt` on the phone),
+  which shares the files under `web/devices/` with the bucket as it does `settings.json`.
 - `PUT /api/config/engine` saves what a `config` command changed. The engine worked it out in the page; the Worker
   refuses anything sync- or credential-like and keeps the previous version for a restore.
 - The taskrc is a folder of files, one object each under `web/rc/` (text as written, less sync and credential lines),
@@ -1003,8 +1008,8 @@ the taskrc (the theme files are static assets).
 ### What the browser stores
 
 The replica (one IndexedDB record, see [The saved copy](#the-saved-copy)) and small conveniences (command history,
-reminder settings). Settings live in the store: `web/config.json` (with one backup) and the app's own
-`web/settings.json` (none).
+reminder settings, the ID of this device's own settings). Settings live in the store: `web/config.json` (with one
+backup), the app's own `web/settings.json` (none) and each device's own, `web/devices/<id>.json`.
 
 ## How correctness is kept
 

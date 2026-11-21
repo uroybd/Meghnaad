@@ -21,6 +21,9 @@ opens the unlock form, and the task once unlocked. A tab opened while every tab 
 unlocked. In the Android app reminders work with the app closed; the digest comes at
 the hour you chose for dates without a time (Menu → Reminders).
 
+Reminders are each device's own. Once a device has [settings of its own](settings.md#this-device), they are kept there,
+so devices that share a Device ID share them.
+
 A reminder goes away once its task is done or deleted, wherever you did it: the app takes it away the next time it
 looks at the tasks. On the phone an alarm syncs first (for a few seconds at most), so a task done on another device isn't
 announced.

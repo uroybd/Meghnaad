@@ -16,7 +16,12 @@ use tc_core::{ObjectStore, Result};
 ///
 /// A key that ends in `/` stands for every file under it (the taskrc folder), on either side. Those go first, and the
 /// settings they add up to are worked out again before `web/config.json` is looked at.
-pub const SETTINGS: &[&str] = &[webapi::RC_PREFIX, webapi::CONFIG_KEY, webapi::APP_SETTINGS_KEY];
+pub const SETTINGS: &[&str] = &[
+    webapi::RC_PREFIX,
+    webapi::CONFIG_KEY,
+    webapi::APP_SETTINGS_KEY,
+    webapi::DEVICES_PREFIX,
+];
 pub const HOOKS: &[&str] = &[webapi::HOOKS_KEY];
 
 /// Where each file's previous version is kept (the web app's own restore points).
@@ -73,6 +78,15 @@ fn acceptable(key: &str, bytes: &[u8]) -> std::result::Result<(), String> {
             return Err("it holds a setting that looks like a credential".into());
         }
         return Ok(());
+    }
+    if let Some(name) = key.strip_prefix(webapi::DEVICES_PREFIX) {
+        let Some(id) = name.strip_suffix(".json") else {
+            return Err("a device's settings are a .json file".into());
+        };
+        if let Some(bad) = webapi::device_id_problem(id) {
+            return Err(bad.into());
+        }
+        return tc_core::appsettings::check(&text);
     }
     match key {
         webapi::CONFIG_KEY => {
@@ -162,10 +176,12 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
             continue;
         }
 
-        // A taskrc file that one side deleted since the two last agreed, and the other left alone, goes on both.
-        if in_folder && base.is_some() {
+        // A taskrc file (or a device's settings: renamed, deleted) that one side deleted since the two last agreed, and
+        // the other left alone, goes on both.
+        let device = key.starts_with(webapi::DEVICES_PREFIX);
+        if (in_folder || device) && base.is_some() {
             if mine.is_none() && th == base {
-                if !kept_there {
+                if in_folder && !kept_there {
                     snapshot(remote).await?;
                     kept_there = true;
                 }
@@ -175,13 +191,13 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
                 continue;
             }
             if their_bytes.is_none() && mh == base {
-                if !kept_here {
+                if in_folder && !kept_here {
                     snapshot(local).await?;
                     kept_here = true;
                 }
                 local.del(key).await?;
                 state.0.remove(key);
-                folder_changed = true;
+                folder_changed |= in_folder;
                 report.pulled.push(key.to_owned());
                 continue;
             }
@@ -407,6 +423,31 @@ mod tests {
     }
 
     const FOLDER: &[&str] = &[webapi::RC_PREFIX, webapi::CONFIG_KEY];
+
+    #[test]
+    fn a_devices_settings_are_shared_and_a_rename_or_delete_goes_across() {
+        pollster::block_on(async {
+            let (phone, bucket) = (MemStore::default(), MemStore::default());
+            let mut state = State::default();
+            let devices = &[webapi::DEVICES_PREFIX];
+            put(&bucket, "web/devices/laptop.json", b"{\"deviceId\":\"laptop\"}").await;
+            put(&bucket, "web/devices/bad id.json", b"{}").await;
+            let r = sync_files(&phone, &bucket, devices, &mut state).await.unwrap();
+            assert_eq!(r.pulled, ["web/devices/laptop.json"], "{r:?}");
+            assert!(r.skipped[0].contains("letters, digits"), "{r:?}");
+            // Renamed here: the new one goes up and the old one goes from the bucket too.
+            phone.del("web/devices/laptop.json").await.unwrap();
+            put(&phone, "web/devices/work.json", b"{\"deviceId\":\"work\"}").await;
+            let r = sync_files(&phone, &bucket, devices, &mut state).await.unwrap();
+            assert_eq!(r.pushed, ["web/devices/laptop.json", "web/devices/work.json"], "{r:?}");
+            assert_eq!(get(&bucket, "web/devices/laptop.json").await, None);
+            // Deleted in the bucket (by another device): gone here too.
+            bucket.del("web/devices/work.json").await.unwrap();
+            let r = sync_files(&phone, &bucket, devices, &mut state).await.unwrap();
+            assert_eq!(r.pulled, ["web/devices/work.json"], "{r:?}");
+            assert_eq!(get(&phone, "web/devices/work.json").await, None);
+        });
+    }
 
     #[test]
     fn the_taskrc_folder_is_shared_file_by_file_and_the_settings_follow() {

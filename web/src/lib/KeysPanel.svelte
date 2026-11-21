@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { Check, Plus, Search, X } from './icons';
+  import { Check, Plus, Search, Undo2, X } from './icons';
   import KeyAddForm from './KeyAddForm.svelte';
   import {
     bindingMatches as matches,
@@ -14,6 +14,8 @@
     type KeySection,
   } from './keymap';
   import { store } from './store.svelte';
+  import { ensureDeviceId } from './deviceAsk.svelte';
+  import { withDeviceKeys } from './deviceSettings';
 
   /** There are edits not yet applied (the tab shows a dot). */
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
@@ -34,7 +36,10 @@
         : x,
     );
 
-  const saved = $derived<Settings>(store.appSettings?.raw ?? {});
+  // Under This device (spec 0027) the keys it uses, everyone's with its own over them; saved as what differs.
+  const device = $derived(store.settingsDevice);
+  const everyones = $derived<Settings>(store.appSettings?.raw ?? {});
+  const saved = $derived<Settings>(device ? (store.effectiveSettings?.raw ?? {}) : everyones);
   let draft = $state<Settings>(untrack(() => $state.snapshot(saved) as Settings));
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -56,6 +61,24 @@
   });
 
   const bindings = $derived(keyBindings(draft, store.keymapDefaults));
+  // Each action's keys in everyone's settings, and in what this device uses: where they differ, the keys are its own.
+  const keysOf = (b: Binding | undefined) => JSON.stringify(b ? (b.keys ?? b.defaults) : null);
+  const index = (settings: Settings) =>
+    new Map(
+      keyBindings(settings, store.keymapDefaults).sections.flatMap((sec) =>
+        sec.actions.map((b) => [`${sec.id} ${b.action}`, b] as const),
+      ),
+    );
+  const base = $derived(index(everyones));
+  const used = $derived(store.deviceRaw ? index(store.effectiveSettings?.raw ?? {}) : base);
+  /** The keys of `b` in section `id` are this device's own: in the draft, under This device; as saved, under Everyone. */
+  const mine = (id: KeySection, b: Binding) =>
+    device ? keysOf(b) !== keysOf(base.get(`${id} ${b.action}`)) : keysOf(used.get(`${id} ${b.action}`)) !== keysOf(b);
+  /** Under This device: an action's keys as everyone has them again. */
+  function putBack(id: KeySection, b: Binding) {
+    const was = base.get(`${id} ${b.action}`);
+    change(id, b.action, was?.keys ?? null);
+  }
 
   // The defaults are shown or not, as this browser last had it.
   const SHOW_KEY = 'tw-web-keys-defaults';
@@ -121,7 +144,14 @@
     error = null;
     done = false;
     try {
-      await store.saveKeys($state.snapshot(draft) as Settings);
+      if (device) {
+        const id = await ensureDeviceId();
+        if (!id) return;
+        await store.saveDevice(
+          withDeviceKeys(store.deviceRaw ?? {}, everyones, $state.snapshot(draft) as Settings),
+          id,
+        );
+      } else await store.saveKeys($state.snapshot(draft) as Settings);
       done = true;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -188,7 +218,7 @@
         <table class="keys">
           <tbody>
             {#each rows as b (b.action)}
-              <tr class:default={b.keys === null}>
+              <tr class:default={b.keys === null} class:mine={device && mine(s.id, b)}>
                 <td class="k">
                   {#if b.keys === null}{@render keys(b.defaults, true)}
                   {:else if b.keys.length}{@render keys(b.keys, false)}
@@ -198,12 +228,27 @@
                   <code>{b.command || b.action}</code>
                   {#if b.command && b.command !== b.action}<span class="dim">{b.action}</span>{/if}
                   {#if b.about}<span class="dim">· {b.about}</span>{/if}
+                  {#if mine(s.id, b)}
+                    {#if device}<span class="own">this device's</span>
+                    {:else}<a
+                        class="own"
+                        href="/settings/device/keys"
+                        onclick={(e) => (e.preventDefault(), (store.settingsDevice = true))}>this device uses its own</a
+                      >{/if}
+                  {/if}
                   {#if b.keys !== null && showDefaults && b.defaults.length}
                     <span class="dim">· default {@render keys(b.defaults, true)}</span>
                   {/if}
                 </td>
                 <td class="x">
-                  {#if b.keys !== null}
+                  {#if device && mine(s.id, b)}
+                    <button
+                      class="icon"
+                      title="Use everyone's keys for it"
+                      aria-label="Use everyone's keys for {b.action}"
+                      onclick={() => putBack(s.id, b)}><Undo2 size={14} /></button
+                    >
+                  {:else if b.keys !== null}
                     <button
                       class="icon"
                       title="Take it out (back to the default)"
@@ -265,6 +310,17 @@
 </section>
 
 <style>
+  /* Keys this device has of its own (spec 0027): the row framed. */
+  tr.mine {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+  }
+  .own {
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--accent);
+  }
   .top {
     display: flex;
     flex-wrap: wrap;

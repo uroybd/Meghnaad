@@ -87,6 +87,8 @@ describe('every page has an address', () => {
     { page: 'settings', tab: null },
     ...SETTINGS_TABS.map((tab) => ({ page: 'settings', tab }) as Place),
     { page: 'settings', tab: 'taskrc', file: 'taskrc' },
+    { page: 'settings', tab: null, device: true },
+    { page: 'settings', tab: 'keys', device: true },
     { page: 'settings', tab: 'taskrc', file: 'holidays/en-US.rc' },
     { page: 'settings', tab: 'taskrc', file: 'my notes/a b%.rc' },
     { page: 'task', prefix: '1a2b3c4d' },
@@ -101,6 +103,8 @@ describe('every page has an address', () => {
     expect(placePath({ page: 'tasks', report: 'a b/c' })).toBe('/report/a%20b%2Fc');
     expect(placePath({ page: 'calendar' })).toBe('/calendar');
     expect(placePath({ page: 'settings', tab: 'hooks' })).toBe('/settings/hooks');
+    expect(placePath({ page: 'settings', tab: 'keys', device: true })).toBe('/settings/device/keys');
+    expect(parsePath('/settings/device/')).toEqual({ page: 'settings', tab: null, device: true });
     expect(parsePath('/report/list/')).toEqual({ page: 'tasks', report: 'list' });
     expect(parsePath('/settings/')).toEqual({ page: 'settings', tab: null });
     expect(placePath({ page: 'settings', tab: 'taskrc', file: 'holidays/en-US.rc' })).toBe(

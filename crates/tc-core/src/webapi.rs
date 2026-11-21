@@ -16,6 +16,25 @@ use std::cell::RefCell;
 pub const CONFIG_KEY: &str = "web/config.json";
 /// The app's own settings (`settings.json`): text the page reads, which the host only stores.
 pub const APP_SETTINGS_KEY: &str = "web/settings.json";
+/// Each device's own settings (spec 0027): `web/devices/<id>.json`, a partial `settings.json` laid over it there.
+pub const DEVICES_PREFIX: &str = "web/devices/";
+
+/// Why `id` can't name a device's settings, or `None`: it is a file name, so letters, digits, `-` and `_`, 1 to 64.
+pub fn device_id_problem(id: &str) -> Option<&'static str> {
+    if id.is_empty() || id.len() > 64 {
+        return Some("a device ID is 1 to 64 characters");
+    }
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Some("a device ID is letters, digits, - and _");
+    }
+    None
+}
+
+/// Where a device's settings are kept.
+pub fn device_key(id: &str) -> String {
+    format!("{DEVICES_PREFIX}{id}.json")
+}
+
 /// The settings as they were before the last import, for one-step restore.
 pub const PREV_KEY: &str = "web/config.prev.json";
 /// Unreadable settings found at `CONFIG_KEY` when saving over them: kept for hand recovery, and never offered as a
@@ -474,6 +493,7 @@ impl<S: ObjectStore> WebSettings<S> {
 
     /// Answer a request for one of the settings routes, or `None` if the route is not one of them.
     pub async fn handle(&self, method: &str, path: &str, body: &[u8]) -> Option<Reply> {
+        let full = path;
         let path = path.split('?').next().unwrap_or(path);
         let reply = match (method, path) {
             ("GET", "/api/health") => Reply::ok(json!({ "ok": true })),
@@ -504,6 +524,12 @@ impl<S: ObjectStore> WebSettings<S> {
                 Err(e) => Reply::error(500, e),
             },
             ("PUT", "/api/settings") => self.put_app_settings(body).await,
+            ("GET", "/api/settings/devices") => self.list_devices().await,
+            (_, p) if p.starts_with("/api/settings/devices/") => {
+                let from = query_value(full, "from");
+                self.device_route(method, &p["/api/settings/devices/".len()..], from.as_deref(), body)
+                    .await
+            }
             ("GET", "/api/hooks") => match self.hooks_source().await {
                 Ok(source) => Reply::ok(json!({ "source": source })),
                 Err(e) => Reply::error(500, e),
@@ -783,6 +809,67 @@ impl<S: ObjectStore> WebSettings<S> {
         }
     }
 
+    /// `GET /api/settings/devices`: the IDs of the devices that have settings of their own, in order.
+    async fn list_devices(&self) -> Reply {
+        match self.store.list(DEVICES_PREFIX).await {
+            Ok(names) => {
+                let mut ids: Vec<&str> = names
+                    .iter()
+                    .filter_map(|n| n.strip_prefix(DEVICES_PREFIX)?.strip_suffix(".json"))
+                    .filter(|id| device_id_problem(id).is_none())
+                    .collect();
+                ids.sort_unstable();
+                Reply::ok(json!({ "devices": ids }))
+            }
+            Err(e) => Reply::error(500, e),
+        }
+    }
+
+    /// `GET`, `PUT` and `DELETE /api/settings/devices/<id>`: one device's settings. A `PUT` with `?from=<old>` renames:
+    /// the new file is written and the old one removed, as one change where the store can.
+    async fn device_route(&self, method: &str, id: &str, from: Option<&str>, body: &[u8]) -> Reply {
+        if let Some(bad) = device_id_problem(id) {
+            return Reply::error(400, bad);
+        }
+        let key = device_key(id);
+        match method {
+            "GET" => match self.store.get(&key).await {
+                Ok(Some(bytes)) => Reply {
+                    status: 200,
+                    content_type: "application/json; charset=utf-8",
+                    body: bytes,
+                },
+                Ok(None) => Reply::error(404, format!("there are no settings for the device {id}")),
+                Err(e) => Reply::error(500, e),
+            },
+            "PUT" => {
+                if body.len() > appsettings::MAX_APP_SETTINGS_BYTES {
+                    return Reply::error(413, "request too large");
+                }
+                let text = String::from_utf8_lossy(body);
+                if let Err(e) = appsettings::check(&text) {
+                    return Reply::error(400, e);
+                }
+                let mut writes = vec![(key, Some(text.as_bytes().to_vec()))];
+                if let Some(old) = from.filter(|old| *old != id) {
+                    if let Some(bad) = device_id_problem(old) {
+                        return Reply::error(400, bad);
+                    }
+                    writes.push((device_key(old), None));
+                }
+                match self.store.write_many(&writes).await {
+                    Ok(()) => Reply::ok(json!({ "ok": true })),
+                    Err(e) => Reply::error(500, e),
+                }
+            }
+            "DELETE" => match self.store.del(&key).await {
+                Ok(()) => Reply::ok(json!({ "ok": true })),
+                Err(e) => Reply::error(500, e),
+            },
+            _ => Reply::error(405, "a device's settings are read, written or deleted"),
+        }
+    }
+
     async fn put_app_settings(&self, body: &[u8]) -> Reply {
         if body.len() > appsettings::MAX_APP_SETTINGS_BYTES {
             return Reply::error(413, "request too large");
@@ -796,4 +883,13 @@ impl<S: ObjectStore> WebSettings<S> {
             Err(e) => Reply::error(500, e),
         }
     }
+}
+
+/// The value of `name` in a path's query (`?from=abc`), if it has one; values are IDs, so nothing is decoded.
+fn query_value(path: &str, name: &str) -> Option<String> {
+    let query = path.split_once('?')?.1;
+    query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
+        .map(str::to_owned)
 }

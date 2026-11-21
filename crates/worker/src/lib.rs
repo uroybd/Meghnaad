@@ -126,6 +126,10 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> worker::Result<Response
         .delete_async("/api/config/files/*path", |req, ctx| wrap(config_route(req, ctx)))
         .get_async("/api/settings", |_, ctx| wrap(get_app_settings(ctx)))
         .put_async("/api/settings", |req, ctx| wrap(put_app_settings(req, ctx)))
+        .get_async("/api/settings/devices", |req, ctx| wrap(config_route(req, ctx)))
+        .get_async("/api/settings/devices/:id", |req, ctx| wrap(config_route(req, ctx)))
+        .put_async("/api/settings/devices/:id", |req, ctx| wrap(config_route(req, ctx)))
+        .delete_async("/api/settings/devices/:id", |req, ctx| wrap(config_route(req, ctx)))
         .get_async("/api/tc/pull", |req, ctx| wrap(tc_pull(req, ctx)))
         .get_async("/api/tc/snapshot", |_, ctx| wrap(tc_snapshot(ctx)))
         .post_async("/api/tc/push", |req, ctx| wrap(tc_push(req, ctx)))
@@ -265,7 +269,11 @@ async fn get_config(ctx: RouteContext<()>) -> RouteResult {
 /// and reported by *name*. The Worker only hosts them; what a route means is the same on the phone.
 async fn config_route(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let method = req.method().to_string();
-    let path = req.path();
+    // With its query: a device's settings are renamed with `?from=<old id>`.
+    let path = match req.url()?.query() {
+        Some(q) => format!("{}?{q}", req.path()),
+        None => req.path(),
+    };
     let body = req.bytes().await?;
     let web = WebSettings::new(backend::open(&ctx.env)?);
     let reply = web

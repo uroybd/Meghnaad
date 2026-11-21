@@ -38,6 +38,7 @@
   import { runCall } from './lib/keyCalls';
   import { getSetup, type SetupStatus } from './lib/api';
   import { notifier } from './lib/notifier.svelte';
+  import { deviceReminders } from './lib/deviceSettings';
   import { takeClicked } from './lib/lockedReminders';
   import TimerChip from './lib/TimerChip.svelte';
   import QuickAddModal from './lib/QuickAddModal.svelte';
@@ -131,6 +132,12 @@
 
   $effect(() => {
     if (!setup && store.live && !store.live.loading) notifier.start();
+  });
+
+  // This device's own settings hold its reminders once it has them (spec 0027): follow them.
+  $effect(() => {
+    const r = deviceReminders(store.deviceRaw);
+    if (r) notifier.adopt(r);
   });
 
   /** This browser's copy of the tasks is thrown away (changes that never reached the server with it) and fetched again. */

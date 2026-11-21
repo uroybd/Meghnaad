@@ -3,7 +3,9 @@
   import { STATIC } from '../engine/flavour';
   import DevicePanel from './DevicePanel.svelte';
   import { putAppSettings } from './api';
-  import { lintSettings, sameHomepage, type Homepage } from './appsettings';
+  import { lintSettings, parseHomepage, sameHomepage, type Homepage } from './appsettings';
+  import { ensureDeviceId } from './deviceAsk.svelte';
+  import { deviceIdProblem, withDeviceHomepage } from './deviceSettings';
   import { Check, Copy, TriangleAlert } from './icons';
   import { resolveKeymap } from './keymap';
   import { store } from './store.svelte';
@@ -16,7 +18,11 @@
   const fromValue = (v: string): Homepage | null =>
     v.startsWith('report:') ? { report: v.slice(7) } : v.startsWith('board:') ? { board: v.slice(6) } : null;
 
-  const saved = $derived(store.homepage);
+  // Under This device (spec 0027): the home page this device uses, and whether it is its own.
+  const device = $derived(store.settingsDevice);
+  const own = $derived(!!store.deviceRaw && 'homepage' in store.deviceRaw);
+  const everyones = $derived(store.appSettings?.homepage ?? null);
+  const saved = $derived(device ? store.homepage : everyones);
   let choice = $state(untrack(() => toValue(saved)));
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -43,8 +49,10 @@
         : false,
   );
 
-  // The whole of settings.json as it is saved, to read, edit or paste over, and to copy to the terminal app or the phone.
-  const file = $derived(JSON.stringify(store.appSettings?.raw ?? {}, null, 2) + '\n');
+  // The whole of settings.json as it is saved (or this device's file, under This device), to read, edit or paste over,
+  // and to copy to the terminal app or the phone.
+  const file = $derived(JSON.stringify((device ? store.deviceRaw : store.appSettings?.raw) ?? {}, null, 2) + '\n');
+  const fileName = $derived(device ? `devices/${store.deviceId ?? ''}.json` : 'settings.json');
   let text = $state(untrack(() => file));
   const textEdited = $derived(text !== file);
   // Saved somewhere else: follow it, unless the text has edits.
@@ -70,14 +78,67 @@
     fileDone = false;
     try {
       // Saved as written: what is pasted is the file.
-      await putAppSettings(text);
-      await store.loadAppSettings();
+      if (device) await store.saveDeviceText(text);
+      else {
+        await putAppSettings(text);
+        await store.loadAppSettings();
+      }
       text = file;
       fileDone = true;
     } catch (e) {
       fileError = e instanceof Error ? e.message : String(e);
     } finally {
       fileBusy = false;
+    }
+  }
+
+  /** Under This device: the home page everyone's again. */
+  async function putBack() {
+    busy = true;
+    error = null;
+    try {
+      await store.saveDevice(withDeviceHomepage(store.deviceRaw ?? {}, undefined));
+      choice = toValue(everyones);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // This device's ID, to change (which renames its file, or, for an ID another device has, uses that one's).
+  // Typed over, and back to the saved ID whenever that changes.
+  let idText = $derived(store.deviceId ?? '');
+  const idProblem = $derived(deviceIdProblem(idText.trim()));
+  let idBusy = $state(false);
+  let idError = $state<string | null>(null);
+  async function rename() {
+    const next = idText.trim();
+    idBusy = true;
+    idError = null;
+    try {
+      const taken = (await store.listDevices()).includes(next);
+      if (taken && !confirm(`The device ${next} has settings already. Use those here, in place of this device's?`))
+        return;
+      if (taken) await store.useDevice(next);
+      else await store.saveDevice(store.deviceRaw ?? {}, next);
+    } catch (e) {
+      idError = e instanceof Error ? e.message : String(e);
+    } finally {
+      idBusy = false;
+    }
+  }
+  async function forget() {
+    const id = store.deviceId;
+    if (
+      !id ||
+      !confirm(`Delete this device's own settings (${id})? It uses everyone's again, as does any device on ${id}.`)
+    )
+      return;
+    try {
+      await store.deleteDevice(id);
+    } catch (e) {
+      idError = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -97,7 +158,11 @@
     error = null;
     done = false;
     try {
-      await store.saveHomepage(fromValue(choice));
+      if (device) {
+        const id = await ensureDeviceId();
+        if (!id) return;
+        await store.saveDevice(withDeviceHomepage(store.deviceRaw ?? {}, fromValue(choice)), id);
+      } else await store.saveHomepage(fromValue(choice));
       done = true;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -109,25 +174,62 @@
 
 <section aria-label="General settings">
   <h2>General</h2>
-  <label class="field">
-    <span>Home page</span>
-    <select bind:value={choice} onchange={() => (done = false)}>
-      <option value="">next (the default)</option>
-      <optgroup label="Reports">
-        {#each store.offeredReports as r (r.name)}
-          {#if r.name !== 'next'}<option value="report:{r.name}">{r.name}</option>{/if}
-        {/each}
-      </optgroup>
-      {#if store.boards.length}
-        <optgroup label="Boards">
-          {#each store.boards as b (b.id)}<option value="board:{b.id}">{b.name}</option>{/each}
+  {#if device && store.deviceId}
+    <div class="device">
+      <label class="field">
+        <span>Device ID</span>
+        <input bind:value={idText} spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Device ID" />
+      </label>
+      <div class="row">
+        <button onclick={rename} disabled={idBusy || !!idProblem || idText.trim() === store.deviceId}>Change</button>
+        <button class="ghost" onclick={forget} disabled={idBusy}>Delete this device's settings</button>
+      </div>
+      {#if idProblem && idText.trim()}<p class="err" role="alert">{idProblem}</p>{/if}
+      {#if idError}<p class="err" role="alert">{idError}</p>{/if}
+    </div>
+  {:else if device}
+    <p class="dim">
+      This device has no settings of its own yet: it uses everyone's. Saving something here makes them, and asks for a
+      name.
+    </p>
+  {/if}
+  <div class="own" class:mine={device && own}>
+    <label class="field">
+      <span
+        >Home page{#if device && own}<span class="tag">this device's</span>{/if}</span
+      >
+      <select bind:value={choice} onchange={() => (done = false)}>
+        <option value="">next (the default)</option>
+        <optgroup label="Reports">
+          {#each store.offeredReports as r (r.name)}
+            {#if r.name !== 'next'}<option value="report:{r.name}">{r.name}</option>{/if}
+          {/each}
         </optgroup>
-      {/if}
-      {#if choice && !store.offeredReports.some((r) => choice === `report:${r.name}`) && !store.boards.some((b) => choice === `board:${b.id}`)}
-        <option value={choice}>{choice.slice(choice.indexOf(':') + 1)} (not found)</option>
-      {/if}
-    </select>
-  </label>
+        {#if store.boards.length}
+          <optgroup label="Boards">
+            {#each store.boards as b (b.id)}<option value="board:{b.id}">{b.name}</option>{/each}
+          </optgroup>
+        {/if}
+        {#if choice && !store.offeredReports.some((r) => choice === `report:${r.name}`) && !store.boards.some((b) => choice === `board:${b.id}`)}
+          <option value={choice}>{choice.slice(choice.indexOf(':') + 1)} (not found)</option>
+        {/if}
+      </select>
+    </label>
+    {#if device && own}
+      <button class="small ghost" onclick={putBack} disabled={busy}
+        >Use everyone's ({toValue(everyones) || 'next'})</button
+      >
+    {/if}
+  </div>
+  {#if !device && store.deviceRaw && 'homepage' in store.deviceRaw}
+    <p class="dim">
+      This device uses its own:
+      <code>{toValue(parseHomepage(store.deviceRaw.homepage)) || 'next'}</code>
+      (<a href="/settings/device/general" onclick={(e) => (e.preventDefault(), (store.settingsDevice = true))}
+        >under This device</a
+      >).
+    </p>
+  {/if}
   <p class="dim">
     The page the app opens on: any report, including your own, or any of your boards. Left alone it is
     <code>next</code>. A link to a task still opens that task. It is kept in this app's own <code>settings.json</code>,
@@ -144,46 +246,56 @@
     {#if done}<span class="ok"><Check size={14} /> Saved</span>{/if}
   </div>
 
-  <details class="json" open={textEdited || undefined}>
-    <summary>settings.json</summary>
-    <p class="dim">
-      This app's own settings: the home page, appearance, task commands, boards and keys, and the terminal app's and the
-      phone's own. Edit it here or paste a whole file over it; what this app doesn't use is kept as it is. The terminal
-      app reads the same file from <code>~/.config/meghnaad</code>.
-    </p>
-    <div class="file">
-      <button type="button" class="ghost copy" onclick={copy} aria-label="Copy settings.json">
-        {#if copied}<Check size={13} /> Copied{:else}<Copy size={13} /> Copy{/if}
-      </button>
-      <textarea
-        class="mono"
-        bind:value={text}
-        oninput={() => (fileDone = false)}
-        aria-label="settings.json"
-        spellcheck="false"
-        autocomplete="off"
-        autocapitalize="off"
-        rows="18"></textarea>
-    </div>
-    {#if lint.errors.length || lint.warnings.length}
-      <ul class="lint" aria-label="Problems in settings.json">
-        {#each lint.errors as e, i (i)}<li class="err"><TriangleAlert size={13} /> {e}</li>{/each}
-        {#each lint.warnings as w, i (i)}<li class="warn"><TriangleAlert size={13} /> {w} (kept)</li>{/each}
-      </ul>
-    {/if}
-    {#if fileError}<p class="err" role="alert">{fileError}</p>{/if}
-    <div class="row">
-      <button
-        class="primary"
-        onclick={applyFile}
-        disabled={fileBusy || !textEdited || lint.errors.length > 0}
-        title={lint.errors.length ? 'Put the errors right first' : undefined}>Apply</button
-      >
-      <button type="button" class="ghost" onclick={() => (text = file)} disabled={fileBusy || !textEdited}>Reset</button
-      >
-      {#if fileDone}<span class="ok"><Check size={14} /> Saved</span>{/if}
-    </div>
-  </details>
+  {#if !device || store.deviceId}
+    <details class="json" open={textEdited || undefined}>
+      <summary>{fileName}</summary>
+      {#if device}
+        <p class="dim">
+          This device's own settings, laid over everyone's: its <code>deviceId</code>, and its home page, keys and
+          reminders where it has them. Edit it here or paste a whole file over it.
+        </p>
+      {:else}
+        <p class="dim">
+          This app's own settings: the home page, appearance, task commands, boards and keys, and the terminal app's and
+          the phone's own. Edit it here or paste a whole file over it; what this app doesn't use is kept as it is. The
+          terminal app reads the same file from <code>~/.config/meghnaad</code>.
+        </p>
+      {/if}
+      <div class="file">
+        <button type="button" class="ghost copy" onclick={copy} aria-label="Copy {fileName}">
+          {#if copied}<Check size={13} /> Copied{:else}<Copy size={13} /> Copy{/if}
+        </button>
+        <textarea
+          class="mono"
+          bind:value={text}
+          oninput={() => (fileDone = false)}
+          aria-label={fileName}
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+          rows="18"></textarea>
+      </div>
+      {#if lint.errors.length || lint.warnings.length}
+        <ul class="lint" aria-label="Problems in {fileName}">
+          {#each lint.errors as e, i (i)}<li class="err"><TriangleAlert size={13} /> {e}</li>{/each}
+          {#each lint.warnings as w, i (i)}<li class="warn"><TriangleAlert size={13} /> {w} (kept)</li>{/each}
+        </ul>
+      {/if}
+      {#if fileError}<p class="err" role="alert">{fileError}</p>{/if}
+      <div class="row">
+        <button
+          class="primary"
+          onclick={applyFile}
+          disabled={fileBusy || !textEdited || lint.errors.length > 0}
+          title={lint.errors.length ? 'Put the errors right first' : undefined}>Apply</button
+        >
+        <button type="button" class="ghost" onclick={() => (text = file)} disabled={fileBusy || !textEdited}
+          >Reset</button
+        >
+        {#if fileDone}<span class="ok"><Check size={14} /> Saved</span>{/if}
+      </div>
+    </details>
+  {/if}
   {#if STATIC}<DevicePanel />{/if}
 </section>
 
@@ -203,6 +315,31 @@
   }
   .json {
     margin-top: 20px;
+  }
+  .own {
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    max-width: 380px;
+  }
+  /* A field this device has its own value for (spec 0027): its name and value framed together. */
+  .own.mine {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+    padding: 8px 10px;
+    margin: 0 0 8px -11px;
+  }
+  .tag {
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--accent);
+  }
+  .device {
+    margin-bottom: 16px;
+  }
+  .device input {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text);
   }
   .json summary {
     cursor: pointer;

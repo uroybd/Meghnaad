@@ -414,6 +414,36 @@ export function putAppSettings(text: string): Promise<{ ok: true }> {
   });
 }
 
+/** The IDs of the devices that have settings of their own (spec 0027). */
+export async function listDevices(): Promise<string[]> {
+  return (await request<{ devices: string[] }>('/api/settings/devices')).devices;
+}
+
+/** One device's own settings, or `null` when there are none by that ID. */
+export async function getDeviceSettings(id: string): Promise<Record<string, unknown> | null> {
+  try {
+    return await request<Record<string, unknown>>(`/api/settings/devices/${encodeURIComponent(id)}`);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/** Save a device's own settings; with `from`, they were another ID's, which is taken away (a rename). */
+export function putDeviceSettings(id: string, text: string, from?: string): Promise<{ ok: true }> {
+  const q = from && from !== id ? `?from=${encodeURIComponent(from)}` : '';
+  return request<{ ok: true }>(`/api/settings/devices/${encodeURIComponent(id)}${q}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+    body: text,
+  });
+}
+
+/** Take a device's own settings away. */
+export function deleteDeviceSettings(id: string): Promise<{ ok: true }> {
+  return request<{ ok: true }>(`/api/settings/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 /** Save the urgency settings: every one that differs from the built-in value, and `urgency.inherit`. */
 /** What saving the urgency settings answers: the settings now in force, and any an included file still overrides. */
 export interface UrgencySaved {

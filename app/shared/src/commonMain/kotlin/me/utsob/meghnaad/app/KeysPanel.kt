@@ -59,7 +59,27 @@ fun bindingRows(actions: List<Binding>, showDefaults: Boolean, query: String): L
 
 /** The Keybindings tab (KeysPanel.svelte): the whole of `settings.json` as a draft, changed a key at a time, then applied. */
 class KeysState(private val store: Store) {
-    private val saved: JsonObject get() = store.appSettings?.raw ?: JsonObject(emptyMap())
+    // Under This device (spec 0027) the keys it uses, everyone's with its own over them; saved as what differs.
+    private val device get() = store.settingsDevice
+    private val everyones: JsonObject get() = store.appSettings?.raw ?: JsonObject(emptyMap())
+    private val saved: JsonObject get() = if (device) store.effectiveSettings?.raw ?: everyones else everyones
+
+    private fun index(settings: JsonObject): Map<String, Binding> =
+        keymapBindings(settings).sections.flatMap { (id, list) -> list.map { "$id ${it.action}" to it } }.toMap()
+
+    private fun keysOf(b: Binding?) = b?.let { it.keys ?: it.defaults }
+
+    /** The keys of [b] in [section] are this device's own: in the draft, under This device; as saved, under Everyone. */
+    fun mine(section: String, b: Binding): Boolean {
+        val base = index(everyones)["$section ${b.action}"]
+        if (device) return keysOf(b) != keysOf(base)
+        val raw = store.deviceRaw ?: return false
+        val used = index(mergeDevice(everyones, raw))["$section ${b.action}"]
+        return keysOf(used) != keysOf(b)
+    }
+
+    /** Under This device: an action's keys as everyone has them again. */
+    fun putBack(section: String, b: Binding) = change(section, b.action, index(everyones)["$section ${b.action}"]?.keys)
     var draft by mutableStateOf(saved)
     private var base = saved
 
@@ -177,7 +197,12 @@ class KeysState(private val store: Store) {
         error = null
         done = false
         try {
-            store.saveKeys(draft)
+            if (device) {
+                val id = ensureDeviceId(store) ?: return
+                store.saveDevice(withDeviceKeys(store.deviceRaw ?: JsonObject(emptyMap()), everyones, draft), id)
+            } else {
+                store.saveKeys(draft)
+            }
             base = saved
             done = true
         } catch (e: Exception) {
@@ -244,7 +269,12 @@ fun KeysPanel(store: Store, state: KeysState) {
             val rows = bindings.sections[section].orEmpty().let { bindingRows(it, store.showDefaultKeys, state.query) }
             if (rows.isEmpty()) Dim(if (state.query.isBlank()) "None of your own." else "Nothing matches.")
             for (b in rows) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                val mine = state.mine(section, b)
+                val device = store.settingsDevice
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 40.dp).then(if (device && mine) Modifier.ownField() else Modifier),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Column(Modifier.weight(1f)) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             when {
@@ -256,11 +286,20 @@ fun KeysPanel(store: Store, state: KeysState) {
                             if (b.command.isNotEmpty() && b.command != b.action) Dim(b.action, size = 12)
                         }
                         if (b.about.isNotEmpty()) Dim(b.about, size = 12)
+                        if (mine) {
+                            Text(
+                                if (device) "this device's" else "this device uses its own",
+                                color = colors.primary,
+                                fontSize = 12.sp,
+                                modifier = if (device) Modifier else Modifier.clickable { store.settingsDevice = true },
+                            )
+                        }
                         if (b.keys != null && store.showDefaultKeys && b.defaults.isNotEmpty()) {
                             Row(verticalAlignment = Alignment.CenterVertically) { Dim("default ", size = 12); Keys(b.defaults, true) }
                         }
                     }
-                    if (b.keys != null) TextButton({ state.change(section, b.action, null) }) { LucideIcon("x", size = 16.dp) }
+                    if (device && mine) TextButton({ state.putBack(section, b) }) { LucideIcon("undo-2", size = 16.dp) }
+                    else if (b.keys != null) TextButton({ state.change(section, b.action, null) }) { LucideIcon("x", size = 16.dp) }
                 }
             }
         }

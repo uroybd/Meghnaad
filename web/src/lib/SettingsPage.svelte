@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { offerDevices } from './deviceAsk.svelte';
+  import DeviceDrawer from './DeviceDrawer.svelte';
   import { loadWhenIdle } from './lazy.svelte';
   import LazyView from './LazyView.svelte';
   import { TABS as PANELS } from './pages';
@@ -43,6 +45,14 @@
       tabs: ['taskrc', 'urgency', 'hooks', 'tasksh'],
     },
   ];
+  // What a device may have of its own (spec 0027): the rest shows under This device read only.
+  const OWN: Tab[] = ['general', 'keys'];
+  const device = $derived(store.settingsDevice);
+  function openView(mine: boolean) {
+    store.settingsDevice = mine;
+    if (mine) void offerDevices();
+  }
+
   const byId = Object.fromEntries(TABS.map((t) => [t.id, t])) as Record<Tab, (typeof TABS)[number]>;
   const current = $derived((store.settingsTab ?? 'general') as Tab);
   const group = $derived(GROUPS.find((g) => g.tabs.includes(current)) ?? GROUPS[0]);
@@ -117,7 +127,27 @@
 </script>
 
 <div class="page">
-  <h1>Settings</h1>
+  <div class="title">
+    <h1>Settings</h1>
+    <div class="views" role="tablist" aria-label="Whose settings">
+      <button
+        role="tab"
+        aria-selected={!device}
+        class:on={!device}
+        title="settings.json: every device's"
+        onclick={() => openView(false)}>Everyone</button
+      >
+      <button
+        role="tab"
+        aria-selected={device}
+        class:on={device}
+        title={store.deviceId
+          ? `This device's own (${store.deviceId}), over everyone's`
+          : "This device's own, over everyone's"}
+        onclick={() => openView(true)}>This device</button
+      >
+    </div>
+  </div>
   <div class="groups" role="tablist" aria-label="Settings" tabindex="-1" onkeydown={onGroupKey}>
     {#each GROUPS as g (g.id)}
       <button
@@ -171,16 +201,25 @@
     <div class="panels">
       {#each TABS as t (t.id)}
         <div role="tabpanel" id="settings-panel-{t.id}" aria-labelledby="settings-tab-{t.id}" hidden={current !== t.id}>
-          {#if opened.has(t.id)}<LazyView
-              of={PANELS[t.id]}
-              props={{ ondirty: (v: boolean) => (dirty[t.id] = v) }}
-            />{/if}
+          {#if device && !OWN.includes(t.id)}
+            <p class="shared">
+              Set under <a href="/settings/{t.id}" onclick={(e) => (e.preventDefault(), openView(false))}>Everyone</a>:
+              one for every device.
+            </p>
+          {/if}
+          <fieldset class="ro" disabled={device && !OWN.includes(t.id)}>
+            {#if opened.has(t.id)}<LazyView
+                of={PANELS[t.id]}
+                props={{ ondirty: (v: boolean) => (dirty[t.id] = v) }}
+              />{/if}
+          </fieldset>
         </div>
       {/each}
     </div>
   </div>
   <p class="version">Meghnaad {__APP_VERSION__}</p>
 </div>
+<DeviceDrawer />
 
 <style>
   .page {
@@ -189,7 +228,47 @@
   }
   h1 {
     font-size: 22px;
+    margin: 0;
+  }
+  .title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
     margin: 0 0 14px;
+  }
+  .views {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .views button {
+    border-color: transparent;
+    background: transparent;
+    padding: 5px 12px;
+    border-radius: 6px;
+  }
+  .views button.on {
+    background: var(--panel-2);
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  fieldset.ro {
+    border: none;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  fieldset.ro:disabled {
+    opacity: 0.7;
+  }
+  .shared {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--dim);
   }
   .version {
     margin: 28px 0 0;

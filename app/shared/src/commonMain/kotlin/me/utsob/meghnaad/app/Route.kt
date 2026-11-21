@@ -7,7 +7,7 @@ package me.utsob.meghnaad.app
 //   meghnaad://projects  tags  summary  calendar  burndown  console
 //   meghnaad://boards               the list of boards;  meghnaad://board/<slug>  one of them
 //   meghnaad://kanbans              the list of kanbans; meghnaad://kanban/<slug>  one, on its report; …/kanban/<slug>/<report> on another
-//   meghnaad://settings             Settings;  meghnaad://settings/<tab>  one of its tabs;  meghnaad://settings/taskrc/<path>  one file
+//   meghnaad://settings             Settings;  meghnaad://settings/<tab>  one of its tabs;  meghnaad://settings/device[/<tab>]  this device's own;  meghnaad://settings/taskrc/<path>  one file
 //                                   of the taskrc folder
 //   meghnaad://task/<8 characters>  a task's detail (the first 8 characters of its uuid; the numbers `task 3` uses differ from one
 //                                   replica to the next, so the uuid is how a task is named everywhere else)
@@ -42,7 +42,7 @@ sealed interface AppPlace {
     data class Kanbans(val slug: String? = null, val report: String? = null) : AppPlace
 
     /** Settings, on a tab; on the taskrc tab, [file] is the file of the folder it shows (null: the main taskrc). */
-    data class SettingsAt(val tab: SettingsTab? = null, val file: String? = null) : AppPlace
+    data class SettingsAt(val tab: SettingsTab? = null, val file: String? = null, val device: Boolean = false) : AppPlace
 
     data class TaskAt(val prefix: String) : AppPlace
 }
@@ -102,6 +102,10 @@ fun parseLink(link: String): AppPlace? {
         head == "kanban" && rest.size == 2 && BOARD_SLUG.matches(rest[0]) ->
             percentDecode(rest[1])?.takeIf { it.isNotEmpty() }?.let { AppPlace.Kanbans(rest[0], it) }
         head == "settings" && rest.isEmpty() -> AppPlace.SettingsAt()
+        // This device's own settings (spec 0027).
+        head == "settings" && rest == listOf("device") -> AppPlace.SettingsAt(device = true)
+        head == "settings" && rest.size == 2 && rest[0] == "device" ->
+            SettingsTab.entries.firstOrNull { it.name.lowercase() == rest[1] }?.let { AppPlace.SettingsAt(it, device = true) }
         head == "settings" && rest.size == 1 -> SettingsTab.entries.firstOrNull { it.name.lowercase() == rest[0] }?.let { AppPlace.SettingsAt(it) }
         head == "settings" && rest.size > 1 && rest[0] == "taskrc" -> rcFileFromLink(rest.drop(1))?.let { AppPlace.SettingsAt(SettingsTab.Taskrc, it) }
         rest.isEmpty() -> PLAIN_PAGES[head]?.let { AppPlace.Page(it) }
@@ -120,6 +124,7 @@ fun placeLink(place: AppPlace): String = LINK_SCHEME + when (place) {
         else -> "kanban/${place.slug}/${percentEncode(place.report)}"
     }
     is AppPlace.SettingsAt -> when {
+        place.device -> if (place.tab == null) "settings/device" else "settings/device/${place.tab.name.lowercase()}"
         place.tab == null -> "settings"
         place.tab == SettingsTab.Taskrc && place.file != null -> "settings/taskrc/" + place.file.split('/').joinToString("/") { percentEncode(it) }
         else -> "settings/${place.tab.name.lowercase()}"

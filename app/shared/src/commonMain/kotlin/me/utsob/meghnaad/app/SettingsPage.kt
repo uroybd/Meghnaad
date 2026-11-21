@@ -3,6 +3,16 @@ package me.utsob.meghnaad.app
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,6 +49,16 @@ class SettingsState(store: Store) {
     val hooks = HooksState(store)
     val kanban = KanbanState(store)
 }
+
+/** What a device may have of its own (spec 0027); the rest shows under This device read only. */
+private val DEVICE_OWN = setOf(SettingsTab.General, SettingsTab.Keys)
+
+/** Nothing under it takes a touch or a key: a tab shown for its layout, read only. */
+private fun Modifier.readOnly(): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+    }
+}.focusProperties { canFocus = false }
 
 private class SettingsTabInfo(val tab: SettingsTab, val label: String)
 
@@ -84,7 +104,19 @@ fun SettingsPage(store: Store, state: SettingsState) {
     val last = remember { mutableStateMapOf<String, SettingsTab>() }
     LaunchedEffect(store.settingsTab) { last[group.label] = store.settingsTab }
     Column(Modifier.fillMaxSize()) {
-        Text("Settings", Modifier.padding(start = 16.dp, top = 10.dp), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+        val scope = rememberCoroutineScope()
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Settings", Modifier.weight(1f), fontSize = 20.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            // Whose settings (spec 0027): everyone's settings.json, or this device's own over them.
+            SingleChoiceSegmentedButtonRow {
+                SegmentedButton(!store.settingsDevice, { store.settingsDevice = false }, SegmentedButtonDefaults.itemShape(0, 2)) { Text("Everyone") }
+                SegmentedButton(store.settingsDevice, {
+                    store.settingsDevice = true
+                    scope.launch { offerDevices(store) }
+                }, SegmentedButtonDefaults.itemShape(1, 2)) { Text("This device") }
+            }
+        }
+        DevicePrompt(store)
         TabRow(selectedTabIndex = SETTINGS_GROUPS.indexOf(group), Modifier.widthIn(max = 420.dp), containerColor = MaterialTheme.colorScheme.background) {
             for (g in SETTINGS_GROUPS) {
                 Tab(selected = g === group, onClick = { store.settingsTab = last[g.label] ?: g.tabs.first() }) {
@@ -101,10 +133,24 @@ fun SettingsPage(store: Store, state: SettingsState) {
         }
         // The taskrc tab is a workspace that takes the height (its editor scrolls inside it, and Apply stays in view); the others scroll.
         if (store.settingsTab == SettingsTab.Taskrc) {
+            if (store.settingsDevice) {
+                Text("Set under Everyone: one for every device.", Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable { store.settingsDevice = false }, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+            }
             Box(Modifier.weight(1f).widthIn(max = 1100.dp).padding(horizontal = 16.dp).padding(bottom = 72.dp)) { TaskrcPanel(store, state.taskrc) }
             return@Column
         }
+        // What a device can't have of its own shows under This device as it is, read only.
+        val shared = store.settingsDevice && store.settingsTab !in DEVICE_OWN
         Column(Modifier.weight(1f).widthIn(max = 820.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            if (shared) {
+                Text(
+                    "Set under Everyone: one for every device.",
+                    Modifier.padding(top = 8.dp).clickable { store.settingsDevice = false },
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                )
+            }
+            Box(Modifier.then(if (shared) Modifier.alpha(0.6f).readOnly() else Modifier)) { Column {
             when (store.settingsTab) {
                 SettingsTab.General -> GeneralPanel(store, state.general)
                 SettingsTab.Appearance -> AppearancePanel(store, state.appearance)
@@ -117,6 +163,7 @@ fun SettingsPage(store: Store, state: SettingsState) {
                 SettingsTab.Urgency -> UrgencyPanel(store, state.urgency)
                 SettingsTab.Sync -> SyncPanel(store)
             }
+            } }
             UpdateRow(store.updates)
             if (store.settingsTab == SettingsTab.General) SettingsFilePanel(store, state.general)
             if (APP_VERSION.isNotEmpty()) Dim("Meghnaad $APP_VERSION", Modifier.padding(vertical = 16.dp), 12)

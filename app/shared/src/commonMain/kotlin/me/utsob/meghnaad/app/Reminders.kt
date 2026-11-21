@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.JsonObject
 
 // Reminders (web/src/lib/notifier.svelte.ts). The web only works while the tab is open; on a phone an alarm keeps them: after every
 // change the next moment something is worth saying is worked out (`nextTrigger`) and the system is asked to wake the app then,
@@ -134,7 +135,26 @@ class Notifier(
     private var started = false
     private var pollJob: Job? = null
 
-    private fun save() = saveSettings(prefs, settings)
+    private fun save() {
+        saveSettings(prefs, settings)
+        // Once this device has settings of its own, the reminders are kept in them too (spec 0027); the phone's copy stays,
+        // for the alarm, which runs with no store.
+        val own = store.deviceRaw
+        if (own != null && store.deviceId != null) {
+            scope.launch {
+                runCatching { store.saveDevice(JsonObject(own + ("reminders" to remindersJson(settings)))) }
+                    .onFailure { store.notify("Reminders not saved: ${it.message}", bad = true) }
+            }
+        }
+    }
+
+    /** The reminders this device's own settings hold, read (another device on the same ID changed them). */
+    fun adopt(s: NotifySettings) {
+        if (s == settings) return
+        settings = s
+        saveSettings(prefs, settings)
+        pollSoon()
+    }
 
     /** Turn reminders on, after asking the phone to allow notifications; refusing still leaves the alerts inside the app. */
     fun enable() {

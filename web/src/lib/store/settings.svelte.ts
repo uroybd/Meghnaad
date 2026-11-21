@@ -1,4 +1,15 @@
-import { getAppSettings, getConfig, putAppSettings, useConfig } from '../api';
+import {
+  deleteDeviceSettings,
+  getAppSettings,
+  getConfig,
+  getDeviceSettings,
+  listDevices,
+  putAppSettings,
+  putDeviceSettings,
+  useConfig,
+} from '../api';
+import { DEVICE_ID_KEY, deviceFile, mergeDevice } from '../deviceSettings';
+import { reminderSettings } from '../lockedReminders';
 import {
   emptyAppearance,
   MAX_SETTINGS_BYTES,
@@ -32,6 +43,23 @@ import { StoreBase } from './base.svelte';
 
 const SHOW_HIDDEN_KEY = 'tw-web-show-hidden-reports';
 
+function readDeviceId(): string | null {
+  try {
+    return localStorage.getItem(DEVICE_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeDeviceId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(DEVICE_ID_KEY, id);
+    else localStorage.removeItem(DEVICE_ID_KEY);
+  } catch {
+    // Not remembered: this tab uses it until it is closed.
+  }
+}
+
 function readFlag(key: string): boolean {
   try {
     return localStorage.getItem(key) === '1';
@@ -52,10 +80,20 @@ export abstract class SettingsStore extends StoreBase {
   configError = $state<string | null>(null);
   /** The app's own `settings.json`, read (null until it has been). */
   appSettings = $state<ParsedSettings | null>(null);
+  /** Which device's own settings this browser uses (spec 0027); null before it has any. */
+  deviceId = $state<string | null>(readDeviceId());
+  /** This device's own settings, read (null: none, or not read yet). */
+  deviceRaw = $state<Record<string, unknown> | null>(null);
+  /** What this device uses: `settings.json` with its own settings laid over it. */
+  effectiveSettings = $derived<ParsedSettings | null>(
+    this.deviceRaw && this.appSettings
+      ? parseSettings(JSON.stringify(mergeDevice(this.appSettings.raw, this.deviceRaw)))
+      : this.appSettings,
+  );
   /** The default keys (`/keymaps/default.json`), once fetched. */
   keymapDefaults = $state<Record<string, unknown> | null>(null);
-  /** The keys: the defaults, then `keys` and `web.keys` of `settings.json`. */
-  keymap = $derived<Keymap>(resolveKeymap(this.appSettings?.raw ?? {}, this.keymapDefaults));
+  /** The keys: the defaults, then `keys` and `web.keys` of `settings.json`, then this device's own. */
+  keymap = $derived<Keymap>(resolveKeymap(this.effectiveSettings?.raw ?? {}, this.keymapDefaults));
   /** The commands of the `:` line as people read them (`/keymaps/commands.json`), once fetched. */
   commandsDoc = $state<CommandsDoc | null>(null);
   /**
@@ -103,7 +141,7 @@ export abstract class SettingsStore extends StoreBase {
     contexts: Object.keys(this.config?.config.contexts ?? {}),
   });
   /** Where the app opens: a report or a board of `settings.json`, or `next` when it says nothing. */
-  homepage = $derived<Homepage | null>(this.appSettings?.homepage ?? null);
+  homepage = $derived<Homepage | null>(this.effectiveSettings?.homepage ?? null);
   /** How the app draws things, from `settings.json`: the numeric UDAs shown as progress bars, by name. */
   appearance = $derived<Appearance>(this.appSettings?.appearance ?? emptyAppearance());
 
@@ -192,6 +230,69 @@ export abstract class SettingsStore extends StoreBase {
     } catch {
       this.appSettings ??= parseSettings('');
     }
+    await this.loadDevice();
+  }
+
+  /** Read this device's own settings again (none: everyone's alone). A failure leaves what was there. */
+  async loadDevice() {
+    const id = this.deviceId;
+    if (!id) {
+      this.deviceRaw = null;
+      return;
+    }
+    try {
+      let raw = await getDeviceSettings(id);
+      const migrated = raw && this.keymapDefaults && migrateSettings(raw, this.keymapDefaults);
+      if (migrated) raw = migrated;
+      if (this.deviceId === id) this.deviceRaw = raw;
+    } catch {
+      // Kept as it was: the next read tries again.
+    }
+  }
+
+  /** The devices that have settings of their own. */
+  listDevices(): Promise<string[]> {
+    return listDevices();
+  }
+
+  /** Use the settings of device `id` from now on (`null`: none, everyone's alone). Nothing is written. */
+  async useDevice(id: string | null) {
+    this.deviceId = id;
+    writeDeviceId(id);
+    this.deviceRaw = null;
+    await this.loadDevice();
+  }
+
+  /**
+   * Save this device's own settings as `device` under `id` (this device's ID when left out). A new ID that was another's
+   * renames it; the first save carries the reminders this browser had into the file. Throws what the server refused.
+   */
+  async saveDevice(device: Record<string, unknown>, id: string | null = this.deviceId) {
+    if (!id) throw new Error('Give this device an ID first.');
+    const first = !this.deviceRaw;
+    const file = deviceFile(device, id, this.appSettings?.raw.version, first ? reminderSettings() : null);
+    const text = JSON.stringify(file, null, 2) + '\n';
+    fits(text);
+    const from = this.deviceRaw && this.deviceId && this.deviceId !== id ? this.deviceId : undefined;
+    await putDeviceSettings(id, text, from);
+    this.deviceId = id;
+    writeDeviceId(id);
+    this.deviceRaw = file;
+  }
+
+  /** Save the device's file as written (the text editor), its ID kept. Throws what the server refused. */
+  async saveDeviceText(text: string) {
+    const id = this.deviceId;
+    if (!id) throw new Error('Give this device an ID first.');
+    fits(text);
+    await putDeviceSettings(id, text);
+    await this.loadDevice();
+  }
+
+  /** Take device `id`'s settings away; this device uses everyone's again when it was this one's. */
+  async deleteDevice(id: string) {
+    await deleteDeviceSettings(id);
+    if (this.deviceId === id) await this.useDevice(null);
   }
 
   /** Save how the app draws things, the rest of `settings.json` as it was. Throws what the server refused. */

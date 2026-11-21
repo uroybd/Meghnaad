@@ -51,6 +51,21 @@ class Notifier {
 
   save() {
     write(SETTINGS_KEY, this.settings);
+    // Once this device has settings of its own, the reminders are kept in them (spec 0027); this browser's copy stays,
+    // for the locked page, which has no store.
+    if (store.deviceRaw && store.deviceId)
+      store
+        .saveDevice({ ...store.deviceRaw, reminders: { ...this.settings } })
+        .catch((e: unknown) =>
+          store.notify(`Reminders not saved: ${e instanceof Error ? e.message : String(e)}`, 'err'),
+        );
+  }
+
+  /** The reminders this device's own settings hold, read (another browser on the same ID changed them). */
+  adopt(s: NotifySettings) {
+    if (JSON.stringify(s) === JSON.stringify(this.settings)) return;
+    this.settings = { ...s };
+    write(SETTINGS_KEY, this.settings);
   }
 
   /** Turn reminders on. Must be called from a click: browsers only ask for permission then. */

@@ -414,7 +414,7 @@ private fun withHome(file: JsonElement, homepage: Homepage?): JsonElement {
 fun serializeHomepage(raw: JsonObject, homepage: Homepage?): String =
     written(withHome(mergeSettings(raw, withHomepage(raw, reread(raw).homepage), withHomepage(raw, homepage)), homepage))
 
-private fun homepageJson(h: Homepage): JsonObject = buildJsonObject {
+internal fun homepageJson(h: Homepage): JsonObject = buildJsonObject {
     h.report?.let { put("report", JsonPrimitive(it)) }
     h.board?.let { put("board", JsonPrimitive(it)) }
 }

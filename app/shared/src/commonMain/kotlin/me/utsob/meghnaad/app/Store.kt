@@ -175,8 +175,29 @@ class Store(
 
     val taskCommands: List<TaskCommand> get() = appSettings?.commands ?: emptyList()
 
-    /** The keys of a hardware keyboard: the defaults, then `keys` and `mobile.keys` of `settings.json`. */
-    val keymap: Keymap by derivedStateOf { resolveKeymap(appSettings?.raw ?: JsonObject(emptyMap())) }
+    /** Which device's own settings this phone uses (spec 0027); null before it has any. */
+    var deviceId by mutableStateOf(prefs.get(DEVICE_ID_KEY))
+        private set
+
+    /** This device's own settings, read (null: none, or not read yet). */
+    var deviceRaw by mutableStateOf<JsonObject?>(null)
+        private set
+
+    /** Settings shows this device's own, not everyone's. */
+    var settingsDevice by mutableStateOf(false)
+
+    /** What is being asked about this device's settings (its ID, or which device's to use). */
+    var deviceAsk by mutableStateOf<DeviceAsk?>(null)
+
+    /** What this device uses: `settings.json` with its own settings laid over it. */
+    val effectiveSettings: ParsedSettings? by derivedStateOf {
+        val d = deviceRaw
+        val a = appSettings
+        if (d != null && a != null) parseSettings(serializeSettings(mergeDevice(a.raw, d))) else a
+    }
+
+    /** The keys of a hardware keyboard: the defaults, then `keys` and `mobile.keys` of `settings.json`, then this device's. */
+    val keymap: Keymap by derivedStateOf { resolveKeymap(effectiveSettings?.raw ?: JsonObject(emptyMap())) }
 
     /** The boards in `settings.json`: pages of numbers, tables and charts. */
     val boards: List<Board> get() = appSettings?.boards ?: emptyList()
@@ -187,7 +208,7 @@ class Store(
     val kanbans: List<Kanban> get() = kanbanSettings.let { s -> s.kanbans.map { resolveKanban(s, it) } }
 
     /** Where the app opens: a report or a board of `settings.json`, or `next` when it says nothing. */
-    val homepage: Homepage? get() = appSettings?.homepage
+    val homepage: Homepage? get() = effectiveSettings?.homepage
 
     /** How the app draws things, from `settings.json`: the numeric UDAs shown as progress bars, by name. */
     val appearance: Appearance get() = appSettings?.appearance ?: Appearance()
@@ -678,6 +699,65 @@ class Store(
         } catch (e: Exception) {
             if (appSettings == null) appSettings = parseSettings("")
         }
+        loadDevice()
+    }
+
+    /** Read this device's own settings again (none: everyone's alone). A failure leaves what was there. */
+    suspend fun loadDevice() {
+        val id = deviceId ?: return run { deviceRaw = null }
+        try {
+            val (status, body) = tw.request("GET", "/api/settings/devices/$id")
+            val raw = if (status in 200..299) engineJson.parseToJsonElement(body) as? JsonObject else null
+            if (deviceId == id) deviceRaw = raw?.let { migrateSettings(it) ?: it }
+            deviceReminders(deviceRaw)?.let { notifier.adopt(it) }
+        } catch (e: Exception) {
+            // Kept as it was: the next read tries again.
+        }
+    }
+
+    /** The devices that have settings of their own. */
+    suspend fun listDevices(): List<String> {
+        val body = request("GET", "/api/settings/devices")
+        val o = engineJson.parseToJsonElement(body) as? JsonObject
+        return (o?.get("devices") as? kotlinx.serialization.json.JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+    }
+
+    /** Use the settings of device [id] from now on (null: none, everyone's alone). Nothing is written. */
+    suspend fun useDevice(id: String?) {
+        deviceId = id
+        prefs.put(DEVICE_ID_KEY, id)
+        deviceRaw = null
+        loadDevice()
+    }
+
+    /**
+     * Save this device's own settings as [device] under [id]; a new ID that was another's renames it, and the first save
+     * carries the phone's reminders into the file. Throws what the engine refused.
+     */
+    suspend fun saveDevice(device: JsonObject, id: String? = deviceId) {
+        id ?: error("Give this device an ID first.")
+        val first = deviceRaw == null
+        val file = deviceFile(device, id, appSettings?.raw?.get("version"), if (first) notifier.settings else null)
+        val text = serializeSettings(file)
+        if (text.encodeToByteArray().size > MAX_SETTINGS_BYTES) error("The settings would be larger than ${MAX_SETTINGS_BYTES / 1024} KB.")
+        val from = deviceId?.takeIf { deviceRaw != null && it != id }
+        request("PUT", "/api/settings/devices/$id" + (from?.let { "?from=$it" } ?: ""), text)
+        deviceId = id
+        prefs.put(DEVICE_ID_KEY, id)
+        deviceRaw = file
+    }
+
+    /** Save the device's file as written (the General tab's box), its ID kept. Throws what the engine refused. */
+    suspend fun saveDeviceText(text: String) {
+        val id = deviceId ?: error("Give this device an ID first.")
+        request("PUT", "/api/settings/devices/$id", text)
+        loadDevice()
+    }
+
+    /** Take device [id]'s settings away; this phone uses everyone's again when it was this one's. */
+    suspend fun deleteDevice(id: String) {
+        request("DELETE", "/api/settings/devices/$id")
+        if (deviceId == id) useDevice(null)
     }
 
     /**
@@ -945,7 +1025,7 @@ class Store(
             View.Tasks -> AppPlace.Report(report)
             View.Boards -> AppPlace.Boards(boardId)
             View.Kanban -> AppPlace.Kanbans(kanbanId, kanbanReport.takeIf { kanbanId != null })
-            View.Settings -> AppPlace.SettingsAt(settingsTab, settingsFile.takeIf { settingsTab == SettingsTab.Taskrc })
+            View.Settings -> AppPlace.SettingsAt(settingsTab, settingsFile.takeIf { settingsTab == SettingsTab.Taskrc }, settingsDevice)
             else -> AppPlace.Page(view)
         }
 
@@ -986,6 +1066,7 @@ class Store(
             }
             is AppPlace.SettingsAt -> {
                 if (place.tab != null) settingsFile = place.file
+                settingsDevice = place.device
                 openSettings(place.tab ?: settingsTab)
             }
         }

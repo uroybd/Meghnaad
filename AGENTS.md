@@ -51,7 +51,8 @@ crates/tui          meghnaad (crate meghnaad-tui), ratatui. Backend = real `task
 
 DATA in the store: a bucket holds salt, latest, v-<parent>-<child>, s-<version> (TaskChampion); a git branch holds
 TaskChampion's git layout (meta, snapshot). Both: web/rc/* (taskrc files), web/config.json (+ rc.prev.json),
-web/settings.json (taskCommands, boards, homepage, keys), web/hooks.lua (+ previous), web/hook-secrets.enc. Secrets:
+web/settings.json (taskCommands, boards, homepage, keys), web/devices/<id>.json (one device's own: homepage, keys,
+reminders), web/hooks.lua (+ previous), web/hook-secrets.enc. Secrets:
 Worker secrets TC_ENCRYPTION_SECRET (+ GIT_TOKEN); phone Keystore; never on a page served by the Worker (the static
 flavour holds them in the browser, sealed at rest).
 
