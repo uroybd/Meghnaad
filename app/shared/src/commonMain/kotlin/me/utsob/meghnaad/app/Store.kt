@@ -612,6 +612,11 @@ class Store(
                 boardId = home.board
                 view = View.Boards
             }
+            home?.kanban != null && kanbanSettings.enabled && kanbans.any { it.id == home.kanban } -> {
+                kanbanId = home.kanban
+                kanbanReport = null
+                view = View.Kanban
+            }
             home?.report != null && reports.any { it.name == home.report } -> {
                 report = home.report
                 view = View.Tasks

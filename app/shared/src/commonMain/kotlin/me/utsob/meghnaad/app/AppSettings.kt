@@ -29,17 +29,24 @@ data class TaskCommand(
     val icon: String? = null,
 )
 
-/** The page the app opens on: a report or a board. Nothing set is `next`. */
-data class Homepage(val report: String? = null, val board: String? = null)
+/** The page the app opens on: a report, a board or a kanban, one of them. Nothing set is `next`. */
+data class Homepage(val report: String? = null, val board: String? = null, val kanban: String? = null) {
+    /** What it names, whichever kind it is. */
+    val name: String get() = report ?: board ?: kanban ?: ""
+}
 
-/** A saved `homepage` that is a report or a board, one of the two; anything else is no choice. */
+/** A saved `homepage` that is a report, a board or a kanban, one of the three; anything else is no choice. */
 fun parseHomepage(v: JsonElement?): Homepage? {
     val o = v as? JsonObject ?: return null
-    if (o.keys.any { it != "report" && it != "board" }) return null
-    val report = o["report"]?.text()?.trim()?.takeIf { it.isNotEmpty() }
-    val board = o["board"]?.text()?.trim()?.takeIf { it.isNotEmpty() }
-    if ((report == null) == (board == null)) return null
-    return Homepage(report, board)
+    if (o.size != 1) return null
+    val (kind, value) = o.entries.first()
+    val name = value.text()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return when (kind) {
+        "report" -> Homepage(report = name)
+        "board" -> Homepage(board = name)
+        "kanban" -> Homepage(kanban = name)
+        else -> null
+    }
 }
 
 /** A UDA shown as a progress bar: the value at which the bar is empty and the value at which it is full. */
@@ -417,6 +424,7 @@ fun serializeHomepage(raw: JsonObject, homepage: Homepage?): String =
 internal fun homepageJson(h: Homepage): JsonObject = buildJsonObject {
     h.report?.let { put("report", JsonPrimitive(it)) }
     h.board?.let { put("board", JsonPrimitive(it)) }
+    h.kanban?.let { put("kanban", JsonPrimitive(it)) }
 }
 
 private fun withAppearance(raw: JsonObject, appearance: Appearance, read: Boolean = false) = buildJsonObject {

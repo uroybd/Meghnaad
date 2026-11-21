@@ -821,6 +821,13 @@ impl App {
                     self.open_board();
                 }
             }
+            Some(Homepage::Kanban(k)) if self.kanban.enabled => {
+                if let Some(i) = self.kanban.kanbans.iter().position(|x| x.id == k) {
+                    self.open(Page::Kanban);
+                    self.kanban_sel = i;
+                    self.open_kanban();
+                }
+            }
             _ => {}
         }
     }
@@ -835,6 +842,11 @@ impl App {
                 |x| format!("the {} board", x.name),
             ),
             Some(Homepage::Report(r)) => format!("the {r} report, which is not there: the app opens on next"),
+            Some(Homepage::Kanban(k)) => match self.kanban.kanbans.iter().find(|x| x.id == k) {
+                Some(x) if self.kanban.enabled => format!("the {} kanban", x.name),
+                Some(x) => format!("the {} kanban, while Kanban is off: the app opens on next", x.name),
+                None => format!("the kanban {k}, which is not there: the app opens on next"),
+            },
         }
     }
 

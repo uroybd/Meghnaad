@@ -166,14 +166,16 @@ pub struct TuiSettings {
 pub enum Homepage {
     Report(String),
     Board(String),
+    Kanban(String),
 }
 
 impl Homepage {
-    /// As `settings.json` keeps it: `{ "report": "next" }` or `{ "board": "week" }`.
+    /// As `settings.json` keeps it: `{ "report": "next" }`, `{ "board": "week" }` or `{ "kanban": "work" }`.
     fn to_value(&self) -> Value {
         match self {
             Homepage::Report(r) => serde_json::json!({ "report": r }),
             Homepage::Board(b) => serde_json::json!({ "board": b }),
+            Homepage::Kanban(k) => serde_json::json!({ "kanban": k }),
         }
     }
 }
@@ -207,11 +209,13 @@ impl AppSettings {
                 .map(str::trim)
                 .filter(|t| !t.is_empty())
         };
-        match (h.len(), text("report"), text("board")) {
-            (1, Some(r), None) => Some(Homepage::Report(r.to_owned())),
-            (1, None, Some(b)) => Some(Homepage::Board(b.to_owned())),
-            _ => None,
+        if h.len() != 1 {
+            return None;
         }
+        text("report")
+            .map(|r| Homepage::Report(r.to_owned()))
+            .or_else(|| text("board").map(|b| Homepage::Board(b.to_owned())))
+            .or_else(|| text("kanban").map(|k| Homepage::Kanban(k.to_owned())))
     }
 
     /// `appearance.idFallback`: a task with no ID shows its short uuid rather than `-` (off when absent, and when it is
@@ -1045,7 +1049,19 @@ mod tests {
                 "appearance.progress.worse: min and max must be numbers"
             ]
         );
-        for odd in [r#"{ "report": "next", "board": "b" }"#, r#"{ "report": "" }"#] {
+        let k = AppSettings::parse(r#"{ "homepage": { "kanban": "work" } }"#).unwrap();
+        assert_eq!(k.homepage(), Some(Homepage::Kanban("work".into())));
+        let out = with_homepage("{}", Some(&Homepage::Kanban("work".into()))).unwrap();
+        assert_eq!(
+            AppSettings::parse(&out).unwrap().homepage(),
+            Some(Homepage::Kanban("work".into()))
+        );
+        for odd in [
+            r#"{ "report": "next", "board": "b" }"#,
+            r#"{ "report": "" }"#,
+            r#"{ "kanban": "a", "board": "b" }"#,
+            r#"{ "elsewhere": "a" }"#,
+        ] {
             let s = AppSettings::parse(&format!(r#"{{ "homepage": {odd} }}"#)).unwrap();
             assert_eq!(s.homepage(), None, "{odd}");
         }

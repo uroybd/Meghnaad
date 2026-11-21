@@ -23,6 +23,15 @@ impl App {
                         .iter()
                         .map(|b| (format!("board   {}", b.name), Some(Homepage::Board(b.id.clone())))),
                 );
+                // The kanbans, while Kanban is on.
+                if self.kanban.enabled {
+                    options.extend(
+                        self.kanban
+                            .kanbans
+                            .iter()
+                            .map(|k| (format!("kanban  {}", k.name), Some(Homepage::Kanban(k.id.clone())))),
+                    );
+                }
                 let now = self.settings.homepage();
                 let sel = options.iter().position(|o| o.1 == now).unwrap_or(0);
                 self.mode = Mode::Home { options, sel };

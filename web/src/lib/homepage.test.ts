@@ -40,6 +40,24 @@ describe('opening on the home page', () => {
     expect([store.view, store.boardId]).toEqual(['boards', 'week']);
   });
 
+  it('opens a kanban, while Kanban is on', () => {
+    const kanban = { enabled: true, kanbans: [{ id: 'work', name: 'Work' }] };
+    store.appSettings = parseSettings(JSON.stringify({ homepage: { kanban: 'work' }, kanban }));
+    store.goHome();
+    expect([store.view, store.kanbanId]).toEqual(['kanban', 'work']);
+    // Off, or gone: next.
+    store.view = 'tasks';
+    store.kanbanId = null;
+    store.appSettings = parseSettings(
+      JSON.stringify({ homepage: { kanban: 'work' }, kanban: { ...kanban, enabled: false } }),
+    );
+    store.goHome();
+    expect(store.view).toBe('tasks');
+    store.appSettings = parseSettings(JSON.stringify({ homepage: { kanban: 'gone' }, kanban }));
+    store.goHome();
+    expect(store.view).toBe('tasks');
+  });
+
   it('stays on next when the report or the board is gone', () => {
     store.appSettings = settings({ report: 'nope' });
     store.goHome();

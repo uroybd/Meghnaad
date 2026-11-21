@@ -24,17 +24,28 @@ export interface TaskCommand {
   icon?: string;
 }
 
-/** The page the app opens on: a report (`{ "report": "next" }`) or a board (`{ "board": "week" }`). Nothing set is `next`. */
-export type Homepage = { report: string } | { board: string };
+/**
+ * The page the app opens on: a report (`{ "report": "next" }`), a board (`{ "board": "week" }`) or a kanban
+ * (`{ "kanban": "work" }`). Nothing set is `next`.
+ */
+export type Homepage = { report: string } | { board: string } | { kanban: string };
 
-/** A saved `homepage` that is one of the two shapes; anything else is no choice (the app opens on `next`). */
+/** A saved `homepage` that is one of the three shapes; anything else is no choice (the app opens on `next`). */
 export function parseHomepage(v: unknown): Homepage | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
-  const { report, board, ...more } = v as Record<string, unknown>;
-  if (Object.keys(more).length || (report === undefined) === (board === undefined)) return null;
-  if (typeof report === 'string' && report.trim()) return { report: report.trim() };
-  if (typeof board === 'string' && board.trim()) return { board: board.trim() };
+  const entries = Object.entries(v as Record<string, unknown>);
+  if (entries.length !== 1) return null;
+  const [[kind, value]] = entries;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  if (kind === 'report') return { report: value.trim() };
+  if (kind === 'board') return { board: value.trim() };
+  if (kind === 'kanban') return { kanban: value.trim() };
   return null;
+}
+
+/** What a home page names, whichever kind it is. */
+export function homepageName(h: Homepage): string {
+  return 'report' in h ? h.report : 'board' in h ? h.board : h.kanban;
 }
 
 export function sameHomepage(a: Homepage | null, b: Homepage | null): boolean {

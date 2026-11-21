@@ -102,9 +102,18 @@ class GeneralState(private val store: Store) {
         }
     }
 
-    /** The saved home page names a report or board that is not there (any more), so the app opens on `next`. */
+    /** The kanbans offered: while Kanban is on. */
+    val kanbans: List<Kanban> get() = if (store.kanbanSettings.enabled) store.kanbans else emptyList()
+
+    /** The saved home page names a report, board or kanban that is not there (any more), so the app opens on `next`. */
     val missing: Boolean
-        get() = saved?.let { h -> if (h.report != null) store.reports.none { it.name == h.report } else store.boards.none { it.id == h.board } } ?: false
+        get() = saved?.let { h ->
+            when {
+                h.report != null -> store.reports.none { it.name == h.report }
+                h.board != null -> store.boards.none { it.id == h.board }
+                else -> kanbans.none { it.id == h.kanban }
+            }
+        } ?: false
 
     suspend fun apply() {
         busy = true
@@ -198,7 +207,7 @@ fun GeneralPanel(store: Store, state: GeneralState) {
             if (device && state.own) Text("  this device's", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
         }
         Dim(
-            "The page the app opens on: any report, including your own, or any of your boards. Left alone it is next. " +
+            "The page the app opens on: any report, including your own, any of your boards, or a kanban while Kanban is on. Left alone it is next. " +
                 "It is kept in this app's own settings.json, not in your taskrc.",
         )
         Choice("next (the default)", state.choice == null) { state.choice = null; state.done = false }
@@ -211,15 +220,21 @@ fun GeneralPanel(store: Store, state: GeneralState) {
                 Choice(b.name, state.choice?.board == b.id) { state.choice = Homepage(board = b.id); state.done = false }
             }
         }
+        if (state.kanbans.isNotEmpty()) {
+            Dim("Kanbans", Modifier.padding(top = 6.dp))
+            state.kanbans.forEach { k ->
+                Choice(k.name, state.choice?.kanban == k.id) { state.choice = Homepage(kanban = k.id); state.done = false }
+            }
+        }
         if (device && state.own) {
             TextButton({ scope.launch { state.putBack() } }, enabled = !state.busy) {
-                Text("Use everyone's (${state.everyones?.let { it.report ?: it.board } ?: "next"})")
+                Text("Use everyone's (${state.everyones?.name ?: "next"})")
             }
         }
         if (!device && store.deviceRaw?.containsKey("homepage") == true) {
             val mine = parseHomepage(store.deviceRaw?.get("homepage"))
             Text(
-                "This device uses its own: ${mine?.let { it.report ?: it.board } ?: "next"} (under This device)",
+                "This device uses its own: ${mine?.name ?: "next"} (under This device)",
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 13.sp,
                 modifier = Modifier.clickable { store.settingsDevice = true },

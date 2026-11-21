@@ -54,7 +54,8 @@ export abstract class NavigationStore extends SettingsStore {
   /**
    * Open the home page the settings choose. Unforced, only from the front page: a person who has already gone somewhere (or
    * came by the address of a task) is left there, and nothing chosen is `next`, which is where the app begins. Forced, it is
-   * where the front-page address (`/`) goes whatever was shown. A report or board that is not there any more is no choice.
+   * where the front-page address (`/`) goes whatever was shown. A report, board or kanban that is not there any more (or a
+   * kanban while Kanban is off) is no choice.
    */
   goHome(force = false) {
     if (!force && (this.view !== 'tasks' || this.detail || !this.homepage)) return;
@@ -64,6 +65,15 @@ export abstract class NavigationStore extends SettingsStore {
     if (home && 'board' in home && this.boards.some((b) => b.id === home.board)) {
       this.boardId = home.board;
       this.view = 'boards';
+    } else if (
+      home &&
+      'kanban' in home &&
+      this.kanbanSettings.enabled &&
+      this.kanbans.some((k) => k.id === home.kanban)
+    ) {
+      this.kanbanId = home.kanban;
+      this.kanbanReport = null;
+      this.view = 'kanban';
     } else if (home && 'report' in home && this.reports.some((r) => r.name === home.report)) {
       this.report = home.report;
       this.view = 'tasks';

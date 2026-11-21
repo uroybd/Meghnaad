@@ -13,10 +13,19 @@
   /** There are edits not yet applied (the tab shows a dot). */
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
 
-  // The choice is one value in the list: `report:next`, `board:week`, or nothing for the default (`next`).
-  const toValue = (h: Homepage | null) => (!h ? '' : 'report' in h ? `report:${h.report}` : `board:${h.board}`);
+  // The choice is one value in the list: `report:next`, `board:week`, `kanban:work`, or nothing for the default (`next`).
+  const toValue = (h: Homepage | null) =>
+    !h ? '' : 'report' in h ? `report:${h.report}` : 'board' in h ? `board:${h.board}` : `kanban:${h.kanban}`;
   const fromValue = (v: string): Homepage | null =>
-    v.startsWith('report:') ? { report: v.slice(7) } : v.startsWith('board:') ? { board: v.slice(6) } : null;
+    v.startsWith('report:')
+      ? { report: v.slice(7) }
+      : v.startsWith('board:')
+        ? { board: v.slice(6) }
+        : v.startsWith('kanban:')
+          ? { kanban: v.slice(7) }
+          : null;
+  // The kanbans are offered while Kanban is on.
+  const kanbans = $derived(store.kanbanSettings.enabled ? store.kanbans : []);
 
   // Under This device (spec 0027): the home page this device uses, and whether it is its own.
   const device = $derived(store.settingsDevice);
@@ -40,13 +49,15 @@
     if (changed && untouched) choice = toValue(now);
   });
 
-  // The saved choice may name a report or board that is not there (any more): say so rather than show a blank list.
+  // The saved choice may name a report, board or kanban that is not there (any more): say so rather than show a blank list.
   const missing = $derived(
-    saved && 'report' in saved
-      ? !store.reports.some((r) => r.name === saved.report)
-      : saved
-        ? !store.boards.some((b) => b.id === saved.board)
-        : false,
+    !saved
+      ? false
+      : 'report' in saved
+        ? !store.reports.some((r) => r.name === saved.report)
+        : 'board' in saved
+          ? !store.boards.some((b) => b.id === saved.board)
+          : !kanbans.some((k) => k.id === saved.kanban),
   );
 
   // The whole of settings.json as it is saved (or this device's file, under This device), to read, edit or paste over,
@@ -210,7 +221,12 @@
             {#each store.boards as b (b.id)}<option value="board:{b.id}">{b.name}</option>{/each}
           </optgroup>
         {/if}
-        {#if choice && !store.offeredReports.some((r) => choice === `report:${r.name}`) && !store.boards.some((b) => choice === `board:${b.id}`)}
+        {#if kanbans.length}
+          <optgroup label="Kanbans">
+            {#each kanbans as k (k.id)}<option value="kanban:{k.id}">{k.name}</option>{/each}
+          </optgroup>
+        {/if}
+        {#if choice && !store.offeredReports.some((r) => choice === `report:${r.name}`) && !store.boards.some((b) => choice === `board:${b.id}`) && !kanbans.some((k) => choice === `kanban:${k.id}`)}
           <option value={choice}>{choice.slice(choice.indexOf(':') + 1)} (not found)</option>
         {/if}
       </select>
@@ -231,7 +247,8 @@
     </p>
   {/if}
   <p class="dim">
-    The page the app opens on: any report, including your own, or any of your boards. Left alone it is
+    The page the app opens on: any report, including your own, any of your boards, or a kanban while Kanban is on. Left
+    alone it is
     <code>next</code>. A link to a task still opens that task. It is kept in this app's own <code>settings.json</code>,
     not in your taskrc.
   </p>

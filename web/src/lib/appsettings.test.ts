@@ -144,9 +144,10 @@ describe('boards in the settings', () => {
 });
 
 describe('the home page in the settings', () => {
-  it('is a report or a board, one of the two', () => {
+  it('is a report, a board or a kanban, one of the three', () => {
     expect(parseHomepage({ report: ' list ' })).toEqual({ report: 'list' });
     expect(parseHomepage({ board: 'week' })).toEqual({ board: 'week' });
+    expect(parseHomepage({ kanban: 'work' })).toEqual({ kanban: 'work' });
     for (const bad of [
       undefined,
       null,
@@ -156,6 +157,8 @@ describe('the home page in the settings', () => {
       { report: '' },
       { report: 3 },
       { report: 'a', board: 'b' },
+      { kanban: 'a', board: 'b' },
+      { kanban: ' ' },
       { report: 'a', x: 1 },
     ])
       expect(parseHomepage(bad)).toBeNull();

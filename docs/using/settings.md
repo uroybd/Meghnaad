@@ -37,11 +37,11 @@ too (`"reminders"`), so a device on a shared ID reminds as the others do. The te
 
 ## General
 
-**General** sets the **home page**, the page the app opens on: any report (including your own) or any of your boards.
-The default is `next`. It is kept in the app's own `settings.json` (`"homepage": { "report": "list" }` or `{ "board":
-"week" }`), not your taskrc, so it is the same on every device that signs in to the same deployment, unless a device has
+**General** sets the **home page**, the page the app opens on: any report (including your own), any of your boards, or
+one of your [kanbans](kanban.md) while Kanban is on. The default is `next`. It is kept in the app's own `settings.json`
+(`"homepage": { "report": "list" }`, `{ "board": "week" }` or `{ "kanban": "work" }`), not your taskrc, so it is the same on every device that signs in to the same deployment, unless a device has
 [its own](#this-device). A link to a task
-still opens that task, and a report or board that is gone opens `next`. (The taskrc's `default.command` is different: it
+still opens that task, and a report, board or kanban that is gone (or a kanban while Kanban is off) opens `next`. (The taskrc's `default.command` is different: it
 is the command a line runs when it names none.)
 
 Below it, **settings.json** unfolds to the whole of the app's own settings file (home page, appearance, task commands,

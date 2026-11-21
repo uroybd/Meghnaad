@@ -108,11 +108,13 @@ class AppSettingsTest {
     }
 
     @Test
-    fun aHomePageIsAReportOrABoardOneOfTheTwo() {
+    fun aHomePageIsAReportABoardOrAKanbanOneOfThem() {
         fun home(json: String) = parseHomepage(Json.parseToJsonElement(json))
         assertEquals(Homepage(report = "list"), home("""{"report":" list "}"""))
         assertEquals(Homepage(board = "week"), home("""{"board":"week"}"""))
-        for (bad in listOf("""{}""", """{"report":""}""", """{"report":3}""", """{"report":"a","board":"b"}""", """{"report":"a","x":1}""", "\"next\"", "null")) {
+        assertEquals(Homepage(kanban = "work"), home("""{"kanban":"work"}"""))
+        assertEquals("""{"kanban":"work"}""", homepageJson(Homepage(kanban = "work")).toString())
+        for (bad in listOf("""{}""", """{"report":""}""", """{"report":3}""", """{"report":"a","board":"b"}""", """{"kanban":"a","board":"b"}""", """{"kanban":" "}""", """{"report":"a","x":1}""", "\"next\"", "null")) {
             assertNull(home(bad), bad)
         }
     }

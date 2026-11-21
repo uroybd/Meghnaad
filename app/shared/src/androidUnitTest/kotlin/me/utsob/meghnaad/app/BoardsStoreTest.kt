@@ -92,6 +92,21 @@ class BoardsStoreTest {
     }
 
     @Test
+    fun theHomePageOpensAKanbanWhileKanbanIsOn() = withStore { store, _ ->
+        val kanban = """{"enabled":true,"kanbans":[{"id":"work","name":"Work"}]}"""
+        store.request("PUT", "/api/settings", """{"kanban":$kanban,"homepage":{"kanban":"work"}}""")
+        store.loadAppSettings()
+        store.view = View.Tasks
+        store.goHome()
+        assertEquals(View.Kanban to "work", store.view to store.kanbanId)
+        // Off: next.
+        store.request("PUT", "/api/settings", """{"kanban":{"enabled":false,"kanbans":[{"id":"work","name":"Work"}]},"homepage":{"kanban":"work"}}""")
+        store.loadAppSettings()
+        store.goHome(force = true)
+        assertEquals(View.Tasks to "next", store.view to store.report)
+    }
+
+    @Test
     fun aBoardWhoseSlugChangesTakesTheHomePageWithIt() = withStore { store, _ ->
         store.request("PUT", "/api/settings", """{"boards":[$week],"homepage":{"board":"week"},"other":1}""")
         store.loadAppSettings()
