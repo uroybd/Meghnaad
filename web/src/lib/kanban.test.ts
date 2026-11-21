@@ -9,7 +9,6 @@ import {
   emptyKanbanSettings,
   cardShape,
   fieldIcon,
-  kanbanJson,
   hasReview,
   moveSteps,
   lanesOf,
@@ -245,21 +244,13 @@ describe('settings.json', () => {
         'nope',
       ],
     });
-    expect(k).toEqual({ ...file, icons: false, kanbans: [work] });
+    expect(k).toEqual({ ...file, kanbans: [work] });
     expect(errors).toHaveLength(7);
     expect(errors[1]).toContain('there is already a kanban at /kanban/work');
     expect(errors[2]).toContain('column 1: a column needs a name');
     expect(errors[4]).toContain("needs a report, its own or Kanban's");
     expect(errors[5]).toBe('kanban.kanbans[6] (five): filter must be text');
     expect(parseKanban(undefined)).toEqual({ kanban: emptyKanbanSettings(), errors: [] });
-  });
-
-  it('reads and writes whether cards show icons, off when unsaid', () => {
-    expect(parseKanban({}).kanban.icons).toBe(false);
-    expect(parseKanban({ icons: true }).kanban.icons).toBe(true);
-    expect(parseKanban({ icons: 'yes' }).errors).toEqual(['kanban.icons must be true or false']);
-    expect(kanbanJson({ ...emptyKanbanSettings(), icons: true }).icons).toBe(true);
-    expect('icons' in kanbanJson(emptyKanbanSettings())).toBe(false);
   });
 
   it("chooses a card's icon by the field's name, and none for a UDA", () => {

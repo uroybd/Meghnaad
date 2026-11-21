@@ -204,6 +204,15 @@ class AppSettingsTest {
     }
 
     @Test
+    fun cardIconsAreReadAndSavedWithTheRestOfTheAppearance() {
+        assertEquals(false, parseSettings("{}").appearance.cardIcons)
+        assertEquals(true, parseSettings("""{"appearance":{"cardIcons":true}}""").appearance.cardIcons)
+        assertEquals(listOf("appearance.cardIcons must be true or false"), parseSettings("""{"appearance":{"cardIcons":"yes"}}""").appearanceErrors)
+        val on = serializeAppearance(parseSettings("{}").raw, Appearance(cardIcons = true))
+        assertEquals(Json.parseToJsonElement("""{"appearance":{"cardIcons":true}}"""), Json.parseToJsonElement(on))
+    }
+
+    @Test
     fun theIdFallbackIsReadAndSavedWithTheRestOfTheAppearance() {
         assertEquals(false, parseSettings("{}").appearance.idFallback)
         assertEquals(true, parseSettings("""{"appearance":{"idFallback":true}}""").appearance.idFallback)

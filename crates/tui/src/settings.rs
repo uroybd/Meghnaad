@@ -235,6 +235,23 @@ impl AppSettings {
             .map(|_| "appearance.idFallback must be true or false".to_owned())
     }
 
+    /// `appearance.cardIcons`: a kanban's card shows Taskwarrior's fields by a symbol rather than their report label, and a
+    /// UDA as a badge (off when absent, and when it is not `true` or `false`).
+    pub fn card_icons(&self) -> bool {
+        self.raw
+            .pointer("/appearance/cardIcons")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    /// What is wrong with `appearance.cardIcons`, if it is there and not `true` or `false`.
+    pub fn card_icons_error(&self) -> Option<String> {
+        self.raw
+            .pointer("/appearance/cardIcons")
+            .filter(|v| !v.is_boolean())
+            .map(|_| "appearance.cardIcons must be true or false".to_owned())
+    }
+
     /// The numeric UDAs drawn as progress bars (`appearance.progress`), and what is wrong with the rest, one line each,
     /// as the web app reads them.
     pub fn progress(&self) -> (BTreeMap<String, Progress>, Vec<String>) {
@@ -853,15 +870,20 @@ pub fn save_tui(key: &str, value: Value) -> Result<(), SettingsError> {
 ///
 /// As [`with_commands`], or `appearance` is not an object.
 pub fn with_id_fallback(text: &str, on: bool) -> Result<String, SettingsError> {
+    with_appearance_flag(text, "idFallback", on)
+}
+
+/// `text` with the yes-or-no `appearance.<key>` on (`true`) or taken out (off, the default), the rest as it was.
+fn with_appearance_flag(text: &str, key: &str, on: bool) -> Result<String, SettingsError> {
     let mut raw = object(text)?;
     let appearance = raw.entry("appearance").or_insert_with(|| Value::Object(Map::new()));
     let Some(a) = appearance.as_object_mut() else {
         return Err(SettingsError::NotSettings("appearance must be an object".into()));
     };
     if on {
-        a.insert("idFallback".into(), Value::Bool(true));
+        a.insert(key.into(), Value::Bool(true));
     } else {
-        a.remove("idFallback");
+        a.remove(key);
     }
     if a.is_empty() {
         raw.remove("appearance");
@@ -876,6 +898,24 @@ pub fn with_id_fallback(text: &str, on: bool) -> Result<String, SettingsError> {
 /// As [`save_commands`].
 pub fn save_id_fallback(on: bool) -> Result<(), SettingsError> {
     save(|text| with_id_fallback(text, on))
+}
+
+/// `text` with `appearance.cardIcons` on (`true`) or taken out (off, the default), and every other key as it was.
+///
+/// # Errors
+///
+/// As [`with_id_fallback`].
+pub fn with_card_icons(text: &str, on: bool) -> Result<String, SettingsError> {
+    with_appearance_flag(text, "cardIcons", on)
+}
+
+/// Save `appearance.cardIcons`, keeping the rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_card_icons(on: bool) -> Result<(), SettingsError> {
+    save(|text| with_card_icons(text, on))
 }
 
 /// Save the theme's preset: `tui.theme` itself when it is a name, its `base` when it sets roles of its own (which are kept).
@@ -1326,6 +1366,24 @@ mod tests {
             ["boards[0] must be an object", "boards[1] (week): needs a sections list"]
         );
         assert!(lint_errors(&kept()["file"]).is_empty());
+    }
+
+    #[test]
+    fn card_icons_are_read_and_saved_with_the_rest_kept() {
+        let text = r#"{ "appearance": { "idFallback": true }, "other": 1 }"#;
+        assert!(!AppSettings::parse(text).unwrap().card_icons());
+        let on = with_card_icons(text, true).unwrap();
+        let s = AppSettings::parse(&on).unwrap();
+        assert!(s.card_icons() && s.id_fallback());
+        assert_eq!(s.raw["other"], 1);
+        assert!(!AppSettings::parse(&with_card_icons(&on, false).unwrap())
+            .unwrap()
+            .card_icons());
+        let bad = AppSettings::parse(r#"{ "appearance": { "cardIcons": "yes" } }"#).unwrap();
+        assert_eq!(
+            bad.card_icons_error().as_deref(),
+            Some("appearance.cardIcons must be true or false")
+        );
     }
 
     #[test]

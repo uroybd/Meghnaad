@@ -141,7 +141,12 @@ fun TaskCard(
     // A field that is a few lines, not a mark: Markdown in a UDA, or on a kanban any free-text UDA.
     val udas = store.config?.config?.udas.orEmpty()
     fun paragraph(col: Column, c: Cell) = if (kanban) cardShape(col.name, udas) == CardShape.Text else c.blocks != null
-    val icons = if (kanban) store.kanbanSettings.icons else null
+    // Appearance's `cardIcons`: every field by its icon, a UDA as a pill. Off, a report's card shows a few by an icon and
+    // the kanban's each by its label.
+    val cardIcons = store.appearance.cardIcons
+    val icons = if (cardIcons) true else if (kanban) false else null
+    // A UDA as a pill, but not one drawn as a progress bar: that is the bar after its label.
+    fun pill(col: Column) = (kanban || cardIcons) && cardShape(col.name, udas) == CardShape.Pill && store.appearance.progress[col.name] == null
 
     Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = if (kanban) 0.dp else 10.dp)) {
         Box(
@@ -191,7 +196,7 @@ fun TaskCard(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         for ((col, c) in marks) {
-                            if (!paragraph(col, c)) Mark(store, col, c, row, overdue, activeTags, onTag, done, icons, pill = kanban && cardShape(col.name, udas) == CardShape.Pill)
+                            if (!paragraph(col, c)) Mark(store, col, c, row, overdue, activeTags, onTag, done, icons, pill = pill(col))
                         }
                     }
                     // A UDA written in Markdown is a few lines, not a mark: it gets the width of the card, in a faint frame of its own so
@@ -233,11 +238,11 @@ internal fun Mark(
     onTag: ((String) -> Unit)?,
     done: Boolean,
     /**
-     * The kanban's cards (Kanban's `icons`): true, every one of Taskwarrior's fields by its icon and a UDA as a badge;
-     * false, each by its report label. Null, as a task card has it: a few by an icon, the rest by label.
+     * Appearance's `cardIcons`: true, every one of Taskwarrior's fields by its icon; false (a kanban's card with it off),
+     * each by its report label. Null, as a report's card has it off: a few by an icon, the rest by label.
      */
     icons: Boolean? = null,
-    /** A UDA on a kanban's card: a pill of its label and value, whatever [icons] says. */
+    /** A UDA as a pill of its label and value (a kanban's card, or any with `cardIcons`). */
     pill: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -258,21 +263,16 @@ internal fun Mark(
         }
     }
     when {
-        pill || (icons == true && icon == null) -> Row(
+        pill -> Row(
             Modifier.clip(RoundedCornerShape(4.dp)).border(1.dp, colors.outlineVariant, RoundedCornerShape(4.dp)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // A UDA as a badge: its label on one half, its value on the other: a progress bar where Settings → Appearance
-            // shows it as one, and a number without the zeros it ends in, as the web's card has it.
+            // A UDA as a badge: its label on one half, its value on the other, a number without the zeros it ends in. One
+            // drawn as a progress bar is never a pill: it is the bar after its label.
             Text(col.label, Modifier.background(colors.surfaceVariant).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 12.sp, color = dim)
             val half = Modifier.background(colors.primary.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 1.dp)
-            val bar = store.appearance.progress[col.name]?.let { range -> c.text.trim().toDoubleOrNull()?.let { range to it } }
             val numeric = store.config?.config?.udas?.get(baseColumn(col.name))?.type == "numeric"
-            if (bar != null) {
-                ProgressBar(bar.second, trimNumber(c.text), bar.first, col.label, colors.onSurface, half.width(120.dp))
-            } else {
-                Text(if (numeric) trimNumber(c.text) else c.text, half, fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
+            Text(if (numeric) trimNumber(c.text) else c.text, half, fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         col.name == "priority" && row.priority != null && icons != false -> {
             // The priority as a small pill of its own colour: the user's `color.uda.priority.*` washes it, the text stays readable.

@@ -211,6 +211,11 @@ describe('appearance', () => {
     expect(parseAppearance(undefined)).toEqual({ appearance: emptyAppearance(), errors: [] });
     expect(parseAppearance({ idFallback: true }).appearance.idFallback).toBe(true);
     expect(parseAppearance({ idFallback: 'yes' }).errors).toEqual(['appearance.idFallback must be true or false']);
+    expect(parseAppearance({}).appearance.cardIcons).toBe(false);
+    expect(parseAppearance({ cardIcons: true }).appearance.cardIcons).toBe(true);
+    expect(parseAppearance({ cardIcons: 'yes' }).errors).toEqual(['appearance.cardIcons must be true or false']);
+    const on = serializeAppearance({}, { ...parseAppearance({}).appearance, cardIcons: true });
+    expect(JSON.parse(on)).toEqual({ appearance: { cardIcons: true } });
   });
 
   it('is kept when the rest of the settings are saved, and saved without touching them', () => {
@@ -219,6 +224,7 @@ describe('appearance', () => {
       progress: { progress: { min: 0, max: 100 } },
       transformations: [],
       idFallback: false,
+      cardIcons: false,
     });
     expect(JSON.parse(text)).toEqual({ ...raw, appearance: { progress: { progress: { min: 0, max: 100 } } } });
     // None left leaves the key out.
@@ -239,7 +245,10 @@ describe('appearance', () => {
       'appearance.transformations[4]: must be { "match": "…", "replace": "…", "fields": [ … ] }',
     ]);
     expect(parseAppearance({ transformations: {} }).errors).toHaveLength(1);
-    const text = serializeAppearance({}, { progress: {}, transformations: [jira], idFallback: false });
+    const text = serializeAppearance(
+      {},
+      { progress: {}, transformations: [jira], idFallback: false, cardIcons: false },
+    );
     expect(JSON.parse(text)).toEqual({ appearance: { transformations: [jira] } });
     expect(parseSettings(text).appearance.transformations).toEqual([jira]);
     expect(sameAppearance(appearance, { ...appearance, transformations: [jira] })).toBe(false);

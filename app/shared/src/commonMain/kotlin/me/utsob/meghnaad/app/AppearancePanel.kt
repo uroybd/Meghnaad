@@ -51,6 +51,7 @@ class AppearanceState(private val store: Store) {
 
     /** A task with no ID shows its short uuid rather than `-`. */
     var idFallback by mutableStateOf(saved.idFallback)
+    var cardIcons by mutableStateOf(saved.cardIcons)
 
     var busy by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
@@ -89,6 +90,7 @@ class AppearanceState(private val store: Store) {
             draft.keys.mapNotNull { n -> range(n)?.let { n to it } }.toMap(),
             rules.map { Transformation(it.match, it.replace, it.fields) },
             idFallback,
+            cardIcons,
         )
 
     /** What the engine says is wrong with the rules (a pattern that does not compile, no fields, a field that is not text). */
@@ -108,6 +110,7 @@ class AppearanceState(private val store: Store) {
             rules.clear()
             rules.addAll(toRules(now))
             idFallback = now.idFallback
+            cardIcons = now.cardIcons
         }
     }
 
@@ -160,6 +163,16 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         TaskColours(store)
+
+        Text("Cards", Modifier.padding(top = 16.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { state.cardIcons = !state.cardIcons; state.done = false },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(state.cardIcons, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
+            Text("Icons in cards", fontSize = 15.sp)
+        }
+        Dim("A card (a report's, a kanban's) shows Taskwarrior's fields by an icon, not their report label, and a UDA as a pill of its label and value.")
 
         Text("IDs", Modifier.padding(top = 16.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Row(

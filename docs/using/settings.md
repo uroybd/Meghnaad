@@ -177,6 +177,14 @@ its uuid there instead, dimmed. Either way, hovering the cell shows the whole uu
 tapping the cell copies it). It is `"appearance": { "idFallback": true }` in `settings.json`, so the terminal app
 follows it too.
 
+### Cards
+
+Tick **Icons in cards** and a card shows Taskwarrior's own fields by an icon rather than the report's label: `#` for the
+ID, a flag for the priority, a clock for `due`, and so on, and a UDA as a pill of its label and value. It applies to every
+card: a kanban's on the web, the phone and in the terminal app (as symbols there, under Settings → General), and a
+report's cards on the phone. It is `"appearance": { "cardIcons": true }` in `settings.json`; before 0.8.38 it was
+Kanban's `icons`, and a file that still has it is moved over when it is read.
+
 ### Progress bars
 
 Mark a numeric UDA as a progress bar and every report shows it as a bar, with the number beside it (in a table, and on the phone's task cards). Tick the UDA on the

@@ -76,9 +76,19 @@ export interface Appearance {
   transformations: Transformation[];
   /** `idFallback`: a task with no ID (done, deleted) shows its short uuid, dimmed, rather than `task`'s `-`. */
   idFallback: boolean;
+  /**
+   * `cardIcons`: a card (a kanban's, a report's on the phone) shows Taskwarrior's fields by an icon rather than their
+   * report label, and a UDA as a pill of its label and value.
+   */
+  cardIcons: boolean;
 }
 
-export const emptyAppearance = (): Appearance => ({ progress: {}, transformations: [], idFallback: false });
+export const emptyAppearance = (): Appearance => ({
+  progress: {},
+  transformations: [],
+  idFallback: false,
+  cardIcons: false,
+});
 
 export const DEFAULT_PROGRESS: Progress = { min: 0, max: 100 };
 
@@ -100,6 +110,7 @@ export function sameAppearance(a: Appearance, b: Appearance): boolean {
   const other = Object.keys(b.progress).sort();
   return (
     a.idFallback === b.idFallback &&
+    a.cardIcons === b.cardIcons &&
     JSON.stringify(a.transformations) === JSON.stringify(b.transformations) &&
     names.join('\n') === other.join('\n') &&
     names.every((n) => a.progress[n].min === b.progress[n].min && a.progress[n].max === b.progress[n].max)
@@ -126,6 +137,9 @@ export function parseAppearance(v: unknown): { appearance: Appearance; errors: s
   const fallback = (v as Record<string, unknown>).idFallback;
   if (typeof fallback === 'boolean') appearance.idFallback = fallback;
   else if (fallback !== undefined) errors.push('appearance.idFallback must be true or false');
+  const icons = (v as Record<string, unknown>).cardIcons;
+  if (typeof icons === 'boolean') appearance.cardIcons = icons;
+  else if (icons !== undefined) errors.push('appearance.cardIcons must be true or false');
   const list = (v as Record<string, unknown>).progress;
   if (list === undefined) return { appearance, errors };
   if (!list || typeof list !== 'object' || Array.isArray(list)) {
@@ -486,6 +500,7 @@ function withAppearance(raw: Record<string, unknown>, appearance: Appearance, re
   if (appearance.transformations.length || (there && Array.isArray(was.transformations)))
     out.transformations = appearance.transformations;
   if (appearance.idFallback || (there && typeof was.idFallback === 'boolean')) out.idFallback = appearance.idFallback;
+  if (appearance.cardIcons || (there && typeof was.cardIcons === 'boolean')) out.cardIcons = appearance.cardIcons;
   if (Object.keys(out).length || there) next.appearance = out;
   return next;
 }

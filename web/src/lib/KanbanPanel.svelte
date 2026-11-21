@@ -379,10 +379,6 @@
           )}</label
         >
       </div>
-      <label class="check"
-        ><input type="checkbox" bind:checked={draft.icons} /> Show the fields on cards as icons, not their report labels (a
-        UDA as a badge: its label, then its value)</label
-      >
       {#if draft.uda !== saved.uda}
         <p class="dim">The columns name the UDA in their own filters and moves: change them to match.</p>
       {/if}

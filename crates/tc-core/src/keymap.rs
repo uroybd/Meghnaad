@@ -1734,7 +1734,7 @@ mod tests {
     #[test]
     fn shared_keys_then_the_front_ends_own() {
         let s = json!({
-            "version": 2,
+            "version": 3,
             "keys": { "app": { "ctrl+k": "app.prompt", "U": "app.stopTimer" } },
             "tui": { "keys": { "app": { ":": "app.prompt", "ctrl+k": null, "/": null } } },
             "web": { "keys": { "app": { "/": null, "ctrl+k": null } } }
@@ -1764,7 +1764,7 @@ mod tests {
     fn a_key_given_to_one_action_leaves_the_default_that_had_it() {
         // `d` was done's; given to delete, done is left with none rather than a clash.
         let m = km(
-            &json!({ "version": 2, "tui": { "keys": { "tasks": { "d": "tasks.delete" } } } }),
+            &json!({ "version": 3, "tui": { "keys": { "tasks": { "d": "tasks.delete" } } } }),
             Platform::Tui,
         );
         assert_eq!(m.action("tasks", "d"), Some("tasks.delete"));
@@ -1774,7 +1774,7 @@ mod tests {
         assert_eq!(m.problems, Vec::<String>::new());
         // A key of `app` comes before a page's own `d` and takes it; a page's key leaves `app`'s alone elsewhere.
         let m = km(
-            &json!({ "version": 2, "keys": { "app": { "d": "app.undo" }, "tasks": { "q": "tasks.start" } } }),
+            &json!({ "version": 3, "keys": { "app": { "d": "app.undo" }, "tasks": { "q": "tasks.start" } } }),
             Platform::Tui,
         );
         assert_eq!(m.action("tasks", "d"), Some("app.undo"));
@@ -1787,7 +1787,7 @@ mod tests {
     #[test]
     fn what_is_wrong_is_said_and_the_rest_applies() {
         let s = json!({
-            "version": 2,
+            "version": 3,
             "keys": {
                 "tasks": { "z": "tasks.nope", "hyper+d": "tasks.done", "x": 3 },
                 "nowhere": { "a": "app.help" }
@@ -1830,7 +1830,7 @@ mod tests {
     #[test]
     fn a_keybindings_page_has_the_users_keys_then_the_rest() {
         let s = json!({
-            "version": 2,
+            "version": 3,
             "keys": {
                 "app": { "ctrl+k": "app.prompt", "Ctrl-J": "app.prompt", "/": null },
                 "tasks": { "hyper+d": "tasks.done" }
@@ -1881,7 +1881,7 @@ mod tests {
         assert_eq!(tui[0].command, "done", "the command it runs");
         let bound = bindings(
             &defaults(),
-            &json!({ "version": 2, "keys": { "tasks": { "g h": "filter +home" } } }),
+            &json!({ "version": 3, "keys": { "tasks": { "g h": "filter +home" } } }),
         );
         let cmd = &bound.sections[0].actions[0];
         assert_eq!(
@@ -1910,12 +1910,12 @@ mod tests {
     #[test]
     fn a_key_is_set_and_taken_out_and_nothing_else_moves() {
         let d = defaults();
-        let s = json!({ "version": 2, "taskCommands": [1], "web": { "theme": "dark" } });
+        let s = json!({ "version": 3, "taskCommands": [1], "web": { "theme": "dark" } });
         let one = with_binding(&s, &d, "web", "app.prompt", None, Some(&["ctrl+k".into()]));
         // The key runs the action, in its group; the default key it no longer has is unbound.
         assert_eq!(
             one,
-            json!({ "version": 2, "taskCommands": [1],
+            json!({ "version": 3, "taskCommands": [1],
                     "web": { "theme": "dark", "keys": { "app": { "ctrl+k": "app.prompt", "/": null } } } })
         );
         assert_eq!(km(&one, Platform::Web).keys_of("app.prompt"), ["ctrl+k"]);
@@ -1944,7 +1944,7 @@ mod tests {
                 None,
                 None
             ),
-            json!({ "version": 2, "keys": { "app": { "U": "app.undo", "u": null } } })
+            json!({ "version": 3, "keys": { "app": { "U": "app.undo", "u": null } } })
         );
     }
 
@@ -1952,7 +1952,7 @@ mod tests {
     fn no_defaults_is_no_keys() {
         let m = resolve(
             &Value::Null,
-            &json!({ "version": 2, "keys": { "app": { "/": "app.prompt" } } }),
+            &json!({ "version": 3, "keys": { "app": { "/": "app.prompt" } } }),
             Platform::Web,
         );
         assert!(m.keys.is_empty() && m.contexts.is_empty());
@@ -2086,7 +2086,7 @@ mod tests {
 
     #[test]
     fn a_key_can_run_an_expression() {
-        let s = json!({ "version": 2, "tui": { "keys": {
+        let s = json!({ "version": 3, "tui": { "keys": {
             "tasks": { "g h": "filter +home", "z": "frobnicate 3" },
             "page": { "T": "tabn Tasks" }
         } } });
@@ -2113,7 +2113,7 @@ mod tests {
     #[test]
     fn a_key_that_starts_a_longer_one_is_said() {
         let m = km(
-            &json!({ "version": 2, "tui": { "keys": { "move": { "g": "move.first" } } } }),
+            &json!({ "version": 3, "tui": { "keys": { "move": { "g": "move.first" } } } }),
             Platform::Tui,
         );
         assert!(
@@ -2201,7 +2201,7 @@ mod tests {
         assert_eq!(a("open", &["lists", "app"]).as_deref(), Some("lists.open"));
         assert_eq!(a("report", &["sidebar", "app"]).as_deref(), Some("sidebar.open"));
         // A binding acts in its group; a `:` line where its context's groups do.
-        let s = json!({ "version": 2, "tui": { "keys": { "calendar": { "n": "next" }, "boards": { "n": "next" } } } });
+        let s = json!({ "version": 3, "tui": { "keys": { "calendar": { "n": "next" }, "boards": { "n": "next" } } } });
         let m = km(&s, Platform::Tui);
         assert_eq!(m.action("calendar", "n"), Some("calendar.next"));
         assert_eq!(m.action("boards", "n"), Some("boards.next"));
@@ -2261,7 +2261,7 @@ mod tests {
     #[test]
     fn a_key_is_saved_as_its_command_and_old_names_still_read() {
         let d = defaults();
-        let s = json!({ "version": 2, "tui": { "keys": { "tasks": { "x": "tasks.done" } } } });
+        let s = json!({ "version": 3, "tui": { "keys": { "tasks": { "x": "tasks.done" } } } });
         assert_eq!(
             km(&s, Platform::Tui).action("tasks", "x"),
             Some("tasks.done"),
@@ -2293,7 +2293,7 @@ mod tests {
     #[test]
     fn a_skipped_key_can_be_taken_out() {
         let d = defaults();
-        let s = json!({ "version": 2, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
+        let s = json!({ "version": 3, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
         let b = bindings(&d, &s);
         assert_eq!(b.bad.len(), 1, "{:?}", b.bad);
         assert_eq!(
@@ -2301,7 +2301,7 @@ mod tests {
             ("z", "done takes no words")
         );
         let out = without_key(&s, &d, "general", "tasks", "z");
-        assert_eq!(out, json!({ "version": 2, "keys": { "tasks": { "x": "done" } } }));
+        assert_eq!(out, json!({ "version": 3, "keys": { "tasks": { "x": "done" } } }));
         assert!(bindings(&d, &out).bad.is_empty());
     }
 

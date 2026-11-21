@@ -29,6 +29,7 @@
     a.transformations.map((r) => ({ ...r, fields: [...r.fields], key: nextKey++ }));
   let rules = $state<RuleDraft[]>(untrack(() => toRules(saved)));
   let idFallback = $state(untrack(() => saved.idFallback));
+  let cardIcons = $state(untrack(() => saved.cardIcons));
   let busy = $state(false);
   let error = $state<string | null>(null);
   let done = $state(false);
@@ -62,6 +63,7 @@
     progress: Object.fromEntries(Object.keys(draft).map((n) => [n, range(n)])),
     transformations: rules.map(({ match, replace, fields }) => ({ match, replace, fields })),
     idFallback,
+    cardIcons,
   });
   // What the engine says is wrong with the rules (a pattern that does not compile, no fields, a field that is not text).
   const ruleProblems = $derived(transformProblems(current.transformations, stringUdas));
@@ -85,6 +87,7 @@
       draft = toDraft(now);
       rules = toRules(now);
       idFallback = now.idFallback;
+      cardIcons = now.cardIcons;
     }
   });
 
@@ -127,6 +130,16 @@
 
 <section aria-label="Appearance settings">
   <TaskColours />
+
+  <h2>Cards</h2>
+  <label class="pick">
+    <input type="checkbox" bind:checked={cardIcons} onchange={() => (done = false)} />
+    <span>Icons in cards</span>
+  </label>
+  <p class="dim">
+    A card (a kanban's, and a report's on the phone) shows Taskwarrior's fields by an icon, not their report label: a
+    flag for the priority, a clock for <code>due</code>, and so on.
+  </p>
 
   <h2>IDs</h2>
   <label class="pick">

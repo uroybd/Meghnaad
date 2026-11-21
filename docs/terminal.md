@@ -480,7 +480,7 @@ and on into the next one, and `[` `]` jump between sections. `E`, in any section
 
 | Section | Keys |
 | --- | --- |
-| General | Where `settings.json` is and what is wrong with it, as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept); the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board, each kanban while Kanban is on) and saves; on the row below, what a task with no ID shows in the ID column, `-` as `task` shows it or its short uuid, which `Space` or `Enter` switches and saves (`appearance.idFallback`, [as on the web](using/settings.md#ids)); and the [progress bars](#settings) |
+| General | Where `settings.json` is and what is wrong with it, as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept); the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board, each kanban while Kanban is on) and saves; on the row below, what a task with no ID shows in the ID column, `-` as `task` shows it or its short uuid, which `Space` or `Enter` switches and saves (`appearance.idFallback`, [as on the web](using/settings.md#ids)); on the next, Card icons, whether a kanban's cards show their fields as symbols, a UDA as a badge (`appearance.cardIcons`, [as on the web](using/settings.md#cards)); and the [progress bars](#settings) |
 | Sync | `y`, `Space` or `Enter` goes through when to sync, and saves it ([Sync](#sync)) |
 | Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
 | Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
@@ -510,7 +510,8 @@ The file is optional; without it there are no task commands or boards, syncing i
 default. The terminal app uses what it shares with the web app and the phone: `taskCommands` (words that stand for a
 command line, which you can also add, change and delete on the Settings page), `boards` ([Boards](#boards)),
 `homepage` (the report or board it opens on, chosen in the General section), `appearance.idFallback` (a task with no ID
-shown by its short uuid rather than `-`, also chosen there), `appearance.progress` (numeric UDAs drawn
+shown by its short uuid rather than `-`, also chosen there), `appearance.cardIcons` (a kanban's cards with their
+fields as symbols, chosen there too), `appearance.progress` (numeric UDAs drawn
 in a report as a bar with the number beside it, as on the web: [Progress bars](using/settings.md#progress-bars)),
 `appearance.transformations` (find and replace in a description, a note or a string UDA, drawn as Markdown in report
 rows: [Transformations](using/settings.md#transformations); a link is an OSC 8 hyperlink, which most terminals open with

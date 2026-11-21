@@ -405,12 +405,15 @@ fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     let mut app = app();
     typing(&mut app, "g0");
     assert_eq!(app.settings_section, SettingsSection::General);
-    // General has two rows, the home page and what a task with no ID shows; `j` goes through them, then on.
+    // General has three rows, the home page, what a task with no ID shows and the card icons; `j` goes through them,
+    // then on.
     app.key(key(KeyCode::Char('j')));
     assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 1));
     app.key(key(KeyCode::Char('k')));
     assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 0));
     app.key(key(KeyCode::Char('j')));
+    app.key(key(KeyCode::Char('j')));
+    assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 2));
     app.key(key(KeyCode::Char('j')));
     assert_eq!(app.settings_section, SettingsSection::Sync);
     app.key(key(KeyCode::Char('a')));

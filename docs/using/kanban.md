@@ -109,13 +109,14 @@ make it match that column's filter, or `task` refused it), you are told where it
 ### Icons on the cards
 
 A card shows the report's columns under the task's description, each with its label from the report (`Due 2d`). Tick
-**Show the fields on cards as icons** under Every kanban (in `settings.json`, `"icons": true` in `kanban`) and every
-kanban shows Taskwarrior's own fields by an icon instead: `#` for the ID, a flag for the priority, a folder for the
-project, a tag for the tags, a clock for `due`, and so on. The icon goes by the field itself, whatever the report's label
-or format (`due.relative` is still a clock). In the terminal app the icons are symbols (`⚑ H`, `◷ 2d`), and the row
-Card fields in Settings → Kanban turns them on.
+**Icons in cards** under Settings → Appearance (see [Cards](settings.md#cards)) and every card shows Taskwarrior's own
+fields by an icon instead: `#` for the ID, a flag for the priority, a folder for the project, a tag for the tags, a clock
+for `due`, and so on. The icon goes by the field itself, whatever the report's label or format (`due.relative` is still
+a clock). In the terminal app the icons are symbols (`⚑ H`, `◷ 2d`), turned on by the row Card icons in Settings →
+General.
 
-On the web and the phone a UDA is a pill, its label then its value, with icons on or off. A string UDA with no `values`,
+On the web and the phone a UDA is a pill, its label then its value, with icons on or off, except one drawn as a
+progress bar, which is the bar after its label. A string UDA with no `values`,
 free to hold anything, is the exception: it is a paragraph of its own under the other fields, headed by its name in
 bold and drawn as Markdown, and a checkbox in it (`- [ ] call back`) can be ticked right on the card, which saves the
 task's text with it ticked.

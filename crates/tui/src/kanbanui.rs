@@ -105,7 +105,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     cards,
                     here.then_some(app.kanban_card),
                     here,
-                    app.kanban.icons,
+                    app.settings.card_icons(),
                 );
             }
             let n = k.columns.len();
@@ -119,7 +119,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     &data.other,
                     here.then_some(app.kanban_card),
                     here,
-                    app.kanban.icons,
+                    app.settings.card_icons(),
                 );
             } else {
                 let key = app.first_key("kanban.other").unwrap_or_default();
@@ -359,18 +359,6 @@ fn row_line(app: &App, row: KanbanRow) -> Line<'static> {
                     "  your taskrc's own; Enter: all instead"
                 } else {
                     "  added to your taskrc, its filter enough; Enter: all instead"
-                })
-                .quiet(),
-            );
-        }
-        KanbanRow::Icons => {
-            spans.push(label("Card fields"));
-            spans.push(value(if s.icons { "icons" } else { "labels" }));
-            spans.push(
-                Span::from(if s.icons {
-                    "  a symbol each, a UDA as a badge; Enter: the report's labels"
-                } else {
-                    "  the report's labels; Enter: a symbol each, a UDA as a badge"
                 })
                 .quiet(),
             );

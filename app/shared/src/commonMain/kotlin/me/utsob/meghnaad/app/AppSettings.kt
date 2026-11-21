@@ -76,6 +76,8 @@ data class Appearance(
     val transformations: List<Transformation> = emptyList(),
     /** `idFallback`: a task with no ID (done, deleted) shows its short uuid, dimmed, rather than `task`'s `-`. */
     val idFallback: Boolean = false,
+    /** `cardIcons`: a card (the report's, a kanban's) shows Taskwarrior's fields by an icon, and a UDA as a pill. */
+    val cardIcons: Boolean = false,
 )
 
 val DEFAULT_PROGRESS = Progress(0.0, 100.0)
@@ -89,11 +91,15 @@ fun parseAppearance(v: JsonElement?): Pair<Appearance, List<String>> {
     val fallback = (fallbackValue as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
     val fallbackErrors = if (fallbackValue != null && fallback == null) listOf("appearance.idFallback must be true or false") else emptyList()
     val idFallback = fallback ?: false
-    val list = o["progress"] ?: return Appearance(transformations = rules, idFallback = idFallback) to ruleErrors + fallbackErrors
+    val iconsValue = o["cardIcons"]
+    val icons = (iconsValue as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
+    val flagErrors = fallbackErrors + if (iconsValue != null && icons == null) listOf("appearance.cardIcons must be true or false") else emptyList()
+    val cardIcons = icons ?: false
+    val list = o["progress"] ?: return Appearance(transformations = rules, idFallback = idFallback, cardIcons = cardIcons) to ruleErrors + flagErrors
     val bars = list as? JsonObject
-        ?: return Appearance(transformations = rules, idFallback = idFallback) to
-            ruleErrors + fallbackErrors + PROGRESS_NOT_OBJECT
-    val errors = (ruleErrors + fallbackErrors).toMutableList()
+        ?: return Appearance(transformations = rules, idFallback = idFallback, cardIcons = cardIcons) to
+            ruleErrors + flagErrors + PROGRESS_NOT_OBJECT
+    val errors = (ruleErrors + flagErrors).toMutableList()
     val out = LinkedHashMap<String, Progress>()
     for ((name, r) in bars) {
         val at = "appearance.progress.$name"
@@ -108,7 +114,7 @@ fun parseAppearance(v: JsonElement?): Pair<Appearance, List<String>> {
         val bad = p.problem()
         if (bad != null) errors += "$at: $bad" else out[name] = p
     }
-    return Appearance(out, rules, idFallback) to errors
+    return Appearance(out, rules, idFallback, cardIcons) to errors
 }
 
 /**
@@ -434,7 +440,8 @@ private fun withAppearance(raw: JsonObject, appearance: Appearance, read: Boolea
     val bars = appearance.progress.isNotEmpty() || (there && was?.get("progress") is JsonObject)
     val rules = appearance.transformations.isNotEmpty() || (there && was?.get("transformations") is JsonArray)
     val fallback = appearance.idFallback || (there && (was?.get("idFallback") as? JsonPrimitive)?.content?.toBooleanStrictOrNull() != null)
-    if (bars || rules || fallback || there) {
+    val icons = appearance.cardIcons || (there && (was?.get("cardIcons") as? JsonPrimitive)?.content?.toBooleanStrictOrNull() != null)
+    if (bars || rules || fallback || icons || there) {
         put(
             "appearance",
             buildJsonObject {
@@ -450,6 +457,7 @@ private fun withAppearance(raw: JsonObject, appearance: Appearance, read: Boolea
                 }
                 if (rules) put("transformations", transformationsJson(appearance.transformations))
                 if (fallback) put("idFallback", JsonPrimitive(appearance.idFallback))
+                if (icons) put("cardIcons", JsonPrimitive(appearance.cardIcons))
             },
         )
     }

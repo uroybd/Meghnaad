@@ -878,6 +878,7 @@ impl App {
         self.sync_mode = mode;
         (self.progress, self.progress_errors) = self.settings.progress();
         self.progress_errors.extend(self.settings.id_fallback_error());
+        self.progress_errors.extend(self.settings.card_icons_error());
         let (rules, mut errors) = self.settings.transformations();
         let string_udas: Vec<String> = self
             .cfg

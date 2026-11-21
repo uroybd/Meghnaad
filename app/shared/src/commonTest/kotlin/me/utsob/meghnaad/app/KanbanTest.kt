@@ -101,15 +101,6 @@ class KanbanTest {
     }
 
     @Test
-    fun readsAndWritesWhetherCardsShowIconsOffWhenUnsaid() {
-        assertEquals(false, parseKanban(buildJsonObject {}).first.icons)
-        assertEquals(true, parseKanban(buildJsonObject { put("icons", JsonPrimitive(true)) }).first.icons)
-        assertEquals(listOf("kanban.icons must be true or false"), parseKanban(buildJsonObject { put("icons", JsonPrimitive("yes")) }).second)
-        assertEquals(JsonPrimitive(true), kanbanJson(KanbanSettings(icons = true))["icons"])
-        assertEquals(null, kanbanJson(KanbanSettings())["icons"])
-    }
-
-    @Test
     fun choosesACardsIconByTheFieldsNameAndNoneForAUda() {
         assertEquals("clock", fieldIcon("due"))
         assertEquals("flag", fieldIcon("priority"))

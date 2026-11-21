@@ -41,8 +41,6 @@ pub enum KanbanRow {
     Uda,
     /// Whether the automatic setup adds a `kanban` report to the taskrc and draws the kanbans on it.
     WithReport,
-    /// Whether cards show their fields as symbols (Kanban's `icons`).
-    Icons,
     Automatic,
     Manual,
     Report(Option<usize>),
@@ -429,7 +427,6 @@ impl App {
             R::Report(None),
             R::Filter(None),
             R::Since(None),
-            R::Icons,
             R::Columns(None),
         ];
         rows.extend((0..s.columns.len()).map(|j| R::Column(None, j)));
@@ -526,15 +523,6 @@ impl App {
             }
             ("settings.kanban.edit", Some(R::WithReport)) => {
                 self.kanban_with_report = !self.kanban_with_report;
-            }
-            ("settings.kanban.edit", Some(R::Icons)) => {
-                next.icons = !next.icons;
-                let said = if next.icons {
-                    "Cards show their fields as symbols, a UDA as a badge."
-                } else {
-                    "Cards show their fields by their report labels."
-                };
-                self.save_kanban(&next, said);
             }
             ("settings.kanban.edit", Some(R::Manual)) => {
                 next.enabled = true;

@@ -228,9 +228,6 @@ fun KanbanPanel(store: Store, st: KanbanState) {
                 ReportField(store, d.report) { v -> st.set { it.copy(report = v) } }
                 TextField("Filter", d.filter) { v -> st.set { it.copy(filter = v) } }
                 TextField("Completed since", d.completedSince, "today-14d (empty: all)") { v -> st.set { it.copy(completedSince = v) } }
-                Own("Show the fields on cards as icons, not their report labels (a UDA as a badge: its label, then its value)", d.icons) {
-                    st.set { it.copy(icons = !it.icons) }
-                }
                 Text("Columns", fontWeight = FontWeight.Medium, fontSize = 13.sp)
                 ColumnsEditor(d.columns) { cols -> st.set { it.copy(columns = cols) } }
             }

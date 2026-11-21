@@ -55,8 +55,6 @@ pub struct Settings {
     pub setup: Option<String>,
     /// The UDA the automatic setup defines and its columns use.
     pub uda: String,
-    /// Cards show each field by a symbol (a badge for a UDA) rather than its report label.
-    pub icons: bool,
     pub report: String,
     pub filter: String,
     pub completed_since: String,
@@ -70,7 +68,6 @@ impl Default for Settings {
             enabled: false,
             setup: None,
             uda: PROGRESS_UDA.into(),
-            icons: false,
             report: "next".into(),
             filter: String::new(),
             completed_since: String::new(),
@@ -281,7 +278,6 @@ pub fn automatic_settings(s: &Settings, review: bool, uda: &str, own_report: boo
         enabled: true,
         setup: Some("automatic".into()),
         uda: uda.into(),
-        icons: s.icons,
         report: if own_report { KANBAN_REPORT } else { AUTO_REPORT }.into(),
         filter: if own_report { "" } else { AUTO_FILTER }.into(),
         completed_since: AUTO_COMPLETED_SINCE.into(),
@@ -414,11 +410,6 @@ pub fn read(v: Option<&Value>) -> (Settings, Vec<String>) {
         Some(_) => errors.push("kanban.enabled must be true or false".into()),
         None => {}
     }
-    match o.get("icons") {
-        Some(Value::Bool(b)) => out.icons = *b,
-        Some(_) => errors.push("kanban.icons must be true or false".into()),
-        None => {}
-    }
     match o.get("setup").map(|s| s.as_str()) {
         Some(Some(s @ ("automatic" | "manual"))) => out.setup = Some(s.to_owned()),
         Some(_) => errors.push("kanban.setup must be \"automatic\" or \"manual\"".into()),
@@ -523,9 +514,6 @@ pub fn to_value(s: &Settings) -> Value {
         o.insert("setup".into(), Value::String(setup.clone()));
     }
     o.insert("uda".into(), Value::String(s.uda.clone()));
-    if s.icons {
-        o.insert("icons".into(), Value::Bool(true));
-    }
     o.insert("report".into(), Value::String(s.report.clone()));
     o.insert("filter".into(), Value::String(s.filter.clone()));
     o.insert("completedSince".into(), Value::String(s.completed_since.clone()));
@@ -615,7 +603,7 @@ pub fn place(columns: &[Vec<String>], all: &[String]) -> (Vec<Vec<usize>>, Vec<u
 ///
 /// The line is not a well-formed chain.
 /// The symbol a card shows for one of Taskwarrior's own fields, by the field's name (`due`, whatever the report's format
-/// or label), when Kanban's `icons` is on: the web's and the phone's icons (kanban.ts `FIELD_ICONS`) as a terminal can
+/// or label), when Appearance's `cardIcons` is on: the web's and the phone's icons (kanban.ts `FIELD_ICONS`) as a terminal can
 /// draw them, one column wide each. None for a UDA or a field without one: that is a badge, its label then its value.
 pub fn field_icon(name: &str) -> Option<&'static str> {
     Some(match name {
@@ -837,19 +825,7 @@ mod tests {
     }
 
     #[test]
-    fn icons_are_read_and_written_off_when_unsaid_and_chosen_by_the_fields_name() {
-        assert!(!read(Some(&json!({}))).0.icons);
-        assert!(read(Some(&json!({ "icons": true }))).0.icons);
-        assert_eq!(
-            read(Some(&json!({ "icons": "yes" }))).1,
-            ["kanban.icons must be true or false"]
-        );
-        let on = Settings {
-            icons: true,
-            ..Settings::default()
-        };
-        assert_eq!(to_value(&on)["icons"], json!(true));
-        assert!(to_value(&Settings::default()).get("icons").is_none());
+    fn a_fields_symbol_is_chosen_by_its_name() {
         assert_eq!(field_icon("due"), Some("◷"));
         assert_eq!(field_icon("progressState"), None);
     }

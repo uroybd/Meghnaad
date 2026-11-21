@@ -5,11 +5,15 @@ use super::{
     TaskCommand, Value,
 };
 
+/// The rows of General: the home page, what a task with no ID shows, and the card icons.
+const GENERAL_ROWS: usize = 3;
+
 impl App {
     pub(super) fn settings_action(&mut self, action: &str) {
         let n = self.settings.task_commands.len();
         match action {
             "settings.general.home" if self.general_sel == 1 => self.toggle_id_fallback(),
+            "settings.general.home" if self.general_sel == 2 => self.toggle_card_icons(),
             "settings.general.home" => {
                 let mut options = vec![("next (the default)".to_owned(), None)];
                 options.extend(
@@ -110,8 +114,8 @@ impl App {
             matches!(step, Step::By(k) if k < 0),
         );
         match self.settings_section {
-            S::General if (down && self.general_sel == 0) || (up && self.general_sel == 1) => {
-                self.general_sel = usize::from(down);
+            S::General if (down && self.general_sel < GENERAL_ROWS - 1) || (up && self.general_sel > 0) => {
+                self.general_sel = moved(self.general_sel, GENERAL_ROWS, step);
             }
             S::Commands if (down && self.settings_sel + 1 < n) || (up && self.settings_sel > 0) => {
                 self.settings_sel = moved(self.settings_sel, n, step);
@@ -184,6 +188,27 @@ impl App {
                     "A task with no ID shows its short uuid.".into()
                 } else {
                     "A task with no ID shows -.".into()
+                };
+                self.reload();
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// Show a card's fields by a symbol, a UDA as a badge, or by their report labels, and save which in `settings.json`
+    /// (`appearance.cardIcons`, shared with the web app and the phone).
+    pub(super) fn toggle_card_icons(&mut self) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        let on = !self.settings.card_icons();
+        match settings::save_card_icons(on) {
+            Ok(()) => {
+                self.status = if on {
+                    "Cards show their fields as symbols, a UDA as a badge.".into()
+                } else {
+                    "Cards show their fields by their report labels.".into()
                 };
                 self.reload();
             }

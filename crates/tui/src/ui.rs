@@ -787,6 +787,21 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
                 },
             ),
         ]),
+        Line::from(vec![
+            Span::from("Card icons     ").quiet(),
+            Span::styled(
+                if app.settings.card_icons() {
+                    "on: a symbol each, a UDA as a badge (appearance.cardIcons)"
+                } else {
+                    "off: the report's labels"
+                },
+                if here(S::General) && app.general_sel == 2 {
+                    theme::selected()
+                } else {
+                    Style::new()
+                },
+            ),
+        ]),
         Line::from(vec![Span::from("Progress bars  ").quiet(), Span::from(bars)]),
         Line::from(vec![
             Span::from("Transforms     ").quiet(),
