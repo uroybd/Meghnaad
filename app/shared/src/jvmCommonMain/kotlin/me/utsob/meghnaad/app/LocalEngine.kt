@@ -1,6 +1,8 @@
 package me.utsob.meghnaad.app
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
@@ -25,7 +27,16 @@ object SystemClock : Clock {
 class LocalEngine(dir: File, private val vault: Vault) : EnginePort {
     private val folder = File(dir, "engine").apply { mkdirs() }
     private val replica = File(folder, "replica.bin")
+
+    /** The key of the last sync, kept by the engine between launches (sealed with [Vault.engineKey]). */
+    private val keyFile = File(folder, "sync-key.enc")
     private var handle = NativeEngine.nativeNew(folder.path, vault.engineKey())
+
+    /**
+     * One sync at a time (the app's and the background worker's share this engine): the second finds the key the first
+     * kept, and the engine is never freed while a sync runs with it but not holding it.
+     */
+    private val syncing = Mutex()
 
     /** The engine's change counter when it was last saved. */
     private var saved = -1L
@@ -70,31 +81,53 @@ class LocalEngine(dir: File, private val vault: Vault) : EnginePort {
     }
 
     override suspend fun call(op: String, arg: String): String = withContext(Dispatchers.Default) {
+        val asked = Timings.mark()
         synchronized(this@LocalEngine) {
+            Timings.since(asked, "engine $op: waited")
+            val held = Timings.mark()
             val answer = NativeEngine.nativeCall(handle, op, arg)
             if (op == "run" || op == "import") save()
+            Timings.since(held, "engine $op: ran")
             answer
         }
     }
 
     override suspend fun sync(switch: String?): SyncResult = withContext(Dispatchers.Default) {
         // Read before the engine is taken: the Keystore can be slow, and nothing else should wait on it.
-        val connection = vault.connection() ?: return@withContext SyncResult(false)
+        val connection = vault.connection() ?: run {
+            // Not connected (or no longer): the key the syncs kept goes too.
+            keyFile.delete()
+            return@withContext SyncResult(false)
+        }
         val files = vault.syncOptions.files()
         val settings = connection.toSyncJson(files, switch)
-        // What is new in the store is asked for first, with the engine taken only for a moment: a tap meanwhile is answered.
-        // The engine is then taken to apply it and push what is waiting, the one part that must hold it.
-        val source = synchronized(this@LocalEngine) { handleOf(NativeEngine.nativeSource(handle, settings), "source") }
-        val fetched = if (source == 0L) 0L else handleOf(NativeEngine.nativeFetch(source), "fetched")
-        synchronized(this@LocalEngine) {
-            val before = changes()
-            val answer = engineJson.parseToJsonElement(NativeEngine.nativeSyncFetched(handle, settings, fetched)).jsonObject
+        syncing.withLock {
+            // The engine is taken only for a moment to say where the sync starts from. The key (derived, or the kept one
+            // checked against the store) and what is new are then found with it free, so a tap meanwhile is answered; it
+            // is taken again to apply that and push what is waiting, the one part that must hold it; and the settings
+            // files are kept in step with it free, taken only for each file written.
+            var at = Timings.mark()
+            val source = synchronized(this@LocalEngine) { handleOf(NativeEngine.nativeSource(handle, settings), "source") }
+            Timings.since(at, "sync: source (engine held)")
+            at = Timings.mark()
+            val fetched = if (source == 0L) 0L else handleOf(NativeEngine.nativeFetch(source), "fetched")
+            Timings.since(at, "sync: key and fetch (engine free)")
+            at = Timings.mark()
+            val changed = synchronized(this@LocalEngine) {
+                val before = changes()
+                engineJson.parseToJsonElement(NativeEngine.nativeSyncFetched(handle, settings, fetched)).jsonObject["error"]
+                    ?.let { throw SyncFailed(it.jsonPrimitive.content) }
+                // A switch put another replica in place of this one: it is the one to keep, and the screen is drawn again.
+                if (switch != null) saved = -1
+                save()
+                switch != null || changes() != before
+            }
+            Timings.since(at, "sync: apply and push (engine held)")
+            at = Timings.mark()
+            val answer = engineJson.parseToJsonElement(NativeEngine.nativeSyncFiles(handle, settings)).jsonObject
             answer["error"]?.let { throw SyncFailed(it.jsonPrimitive.content) }
-            val pulled = (answer["settings"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList()
-            // A switch put another replica in place of this one: it is the one to keep, and the screen is drawn again.
-            if (switch != null) saved = -1
-            save()
-            SyncResult(switch != null || changes() != before, pulled)
+            Timings.since(at, "sync: settings files (engine free)")
+            SyncResult(changed, (answer["settings"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList())
         }
     }
 
@@ -106,6 +139,11 @@ class LocalEngine(dir: File, private val vault: Vault) : EnginePort {
     }
 
     override suspend fun forget() = withContext(Dispatchers.Default) {
+        syncing.withLock { forgetNow() }
+    }
+
+    private fun forgetNow() {
+        // The kept key stays: it is checked against the store before it is used again.
         synchronized(this@LocalEngine) {
             replica.delete()
             NativeEngine.nativeFree(handle)

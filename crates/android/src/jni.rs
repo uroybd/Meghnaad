@@ -2,6 +2,7 @@
 //! in JSON, so a failure is an `error` in the answer and never an exception thrown across the boundary.
 
 use crate::engine::{self, Engine, Fetch, Source};
+use crate::files::Guarded;
 use jni::objects::{JByteArray, JClass, JPrimitiveArray, JString};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
@@ -24,13 +25,21 @@ fn answer(env: &JNIEnv, value: impl ToString) -> jstring {
         .map_or(std::ptr::null_mut(), JString::into_raw)
 }
 
+/// The engine behind a handle, not taken; `None` for no engine.
+fn engine_of<'a>(handle: jlong) -> Option<&'a Handle> {
+    if handle == 0 {
+        return None;
+    }
+    // SAFETY: the handle came from `nativeNew` and has not been freed; Kotlin frees it once, after its last call (and
+    // never while a sync of it is under way).
+    Some(unsafe { &*(handle as *const Handle) })
+}
+
 /// The engine behind a handle, locked for the length of one call.
 fn with_engine<T>(handle: jlong, f: impl FnOnce(&mut Engine) -> T) -> Result<T, String> {
-    if handle == 0 {
+    let Some(engine) = engine_of(handle) else {
         return Err("the engine is not running".into());
-    }
-    // SAFETY: the handle came from `nativeNew` and has not been freed; Kotlin frees it once, after its last call.
-    let engine: &Handle = unsafe { &*(handle as *const Handle) };
+    };
     let mut guard = engine.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     catch_unwind(AssertUnwindSafe(|| f(&mut guard))).map_err(|_| "the engine failed unexpectedly".to_owned())
 }
@@ -167,10 +176,43 @@ pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeSyncFetched(
         *unsafe { Box::from_raw(fetched as *mut Fetch) }
     });
     let reply = with_engine(handle, |e| {
-        e.sync_fetched(&settings, fetched)
-            .map_or_else(error, |pulled| json!({ "settings": pulled }).to_string())
+        e.sync_fetched(&settings, fetched).map_or_else(error, |()| "{}".into())
     })
     .unwrap_or_else(error);
+    answer(&env, reply)
+}
+
+/// The settings files' half of a sync, after `nativeSyncFetched`, with the engine free: it is taken only for each file
+/// written. The answer is `{ settings }`, which files came from the store, or `{ error }`.
+#[no_mangle]
+pub extern "system" fn Java_me_utsob_meghnaad_NativeEngine_nativeSyncFiles(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    settings: JString,
+) -> jstring {
+    let settings = text(&mut env, &settings);
+    let Some(engine) = engine_of(handle) else {
+        return answer(&env, error("the engine is not running"));
+    };
+    let taken = || engine.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let reply = catch_unwind(AssertUnwindSafe(|| {
+        let (files, folder) = {
+            let e = taken();
+            (e.files(&settings)?, e.folder())
+        };
+        let Some(files) = files else {
+            return Ok(Vec::new());
+        };
+        let pulled = engine::sync_files(&Guarded::new(folder, engine), &files)?;
+        taken().pulled(&pulled);
+        Ok::<_, String>(pulled)
+    }));
+    let reply = match reply {
+        Ok(Ok(pulled)) => json!({ "settings": pulled }).to_string(),
+        Ok(Err(e)) => error(e),
+        Err(_) => error("the engine failed unexpectedly"),
+    };
     answer(&env, reply)
 }
 

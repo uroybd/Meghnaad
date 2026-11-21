@@ -9,8 +9,8 @@ use crate::net::PhoneNet;
 use crate::s3::{Bucket, S3Store};
 use crate::secrets::{valid_name, Secrets};
 use crate::sigv4::sha256_hex;
-use crate::syncserver::{self, SyncServer};
-use serde::Deserialize;
+use crate::syncserver::SyncServer;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use taskchampion::chrono::Utc;
 use taskchampion::server::Server;
 use taskchampion::Replica;
 use tc_core::cli::UndoStack;
-use tc_core::crypto::{Cryptor, KEY_LEN};
+use tc_core::crypto::{derive_key, Cryptor, KEY_LEN, PBKDF2_ITERATIONS};
 use tc_core::forge::ForgeRepo;
 use tc_core::gitsync::{self, GitObjects, GitServer};
 use tc_core::hooks::HookHost;
@@ -29,7 +29,7 @@ use tc_core::request;
 use tc_core::taskrc::Config;
 use tc_core::warm::Warm;
 use tc_core::webapi::WebSettings;
-use tc_core::{load_cryptor, save_replica, CloudServer, LiveStorage, Saver};
+use tc_core::{load_salt, save_replica, CloudServer, LiveStorage, ObjectStore, Saver};
 
 /// What a sync fails with, at the start of its message, when the phone's tasks were last synced somewhere else than
 /// where the settings now point: the app asks what to do and syncs again with a [`Switch`].
@@ -171,6 +171,21 @@ fn describe_origin(origin: &str) -> String {
 /// Where the engine remembers what the tasks were last synced with.
 const ORIGIN_KEY: &str = "web/.sync-origin";
 
+/// Where the key of the last sync is kept between launches, sealed with the phone's key (which lives in the Keystore).
+/// Outside `web/`, so no files sync ever sends it.
+const KEY_FILE: &str = "sync-key.enc";
+
+/// Binds the sealed key file to its purpose.
+const KEY_SEAL: uuid::Uuid = uuid::Uuid::from_u128(0x4d65_6768_6e61_6164_7379_6e63_6b65_7973);
+
+/// A key derived for one place and secret (`fingerprint`), and the salt it was derived with.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Kept {
+    fingerprint: String,
+    salt: Vec<u8>,
+    key: [u8; KEY_LEN],
+}
+
 pub struct Engine {
     replica: Replica<LiveStorage>,
     saver: Saver,
@@ -186,9 +201,13 @@ pub struct Engine {
     secrets: Rc<Secrets>,
     /// The hooks script, read when first needed and again when it is saved.
     script: Option<String>,
-    /// The key derived from the bucket's salt and the secret (600,000 rounds of PBKDF2, slow on a phone), kept for the
-    /// next sync as long as the bucket and the secret are the same ones.
-    key: Option<(String, Cryptor)>,
+    /// The key derived from the store's salt and the secret (600,000 rounds of PBKDF2, slow on a phone), kept for the
+    /// next sync as long as the place and the secret are the same ones. Taken by a sync and given back when it works.
+    key: Option<Kept>,
+    /// What [`KEY_FILE`] holds, so that it is written only when the key changes.
+    key_on_file: Option<Kept>,
+    /// Seals [`KEY_FILE`].
+    sealer: Cryptor,
 }
 
 fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm, BaseVersion) {
@@ -201,24 +220,122 @@ fn fresh(storage: LiveStorage) -> (Replica<LiveStorage>, Saver, Warm, BaseVersio
 /// Where a sync goes and the version it starts from, taken from the engine in a moment so that [`fetch`] can run with
 /// the engine free (see `tc_core::prefetch`).
 pub struct Source {
-    server: Box<dyn Server>,
+    settings: SyncSettings,
+    fingerprint: String,
     base: uuid::Uuid,
-    /// The key, and what it was made for: kept by the engine once a sync with it has worked.
-    key: (String, Cryptor),
+    /// The key of the last sync, if it was made for this place and secret, and whether it must be checked against the
+    /// store's salt first (one read from the store; a key read from the phone's storage, not one this run has used).
+    kept: Option<Kept>,
+    check: bool,
 }
 
 /// What [`fetch`] found, for [`Engine::sync`] to apply.
 pub struct Fetch {
     server: Box<dyn Server>,
     fetched: Fetched,
-    key: (String, Cryptor),
+    /// The key, kept by the engine once a sync with it has worked.
+    key: Kept,
 }
 
-/// Ask the store what is new since the source's version, with no engine held.
+/// Reach the store, derive the key if there is none to reuse, and ask what is new since the source's version: all of it
+/// with no engine held, so the screens are answered meanwhile.
 pub fn fetch(source: Source) -> Result<Fetch, String> {
-    let Source { mut server, base, key } = source;
+    let Source {
+        settings,
+        fingerprint,
+        base,
+        kept,
+        check,
+    } = source;
+    let (mut server, key) = connect(&settings, &fingerprint, kept, check)?;
     let fetched = pollster::block_on(prefetch::fetch(server.as_mut(), base)).map_err(|e| request::root_cause(&e))?;
     Ok(Fetch { server, fetched, key })
+}
+
+/// The key for `salt`: the kept one when it was made with that salt, else derived (slow).
+fn key_for(fingerprint: &str, salt: Vec<u8>, secret: &str, kept: Option<Kept>) -> Kept {
+    match kept {
+        Some(k) if k.salt == salt => k,
+        _ => Kept {
+            fingerprint: fingerprint.to_owned(),
+            key: derive_key(&salt, secret.as_bytes(), PBKDF2_ITERATIONS),
+            salt,
+        },
+    }
+}
+
+/// The place the tasks sync to as a TaskChampion server, with the key that opens it: `kept` when it was made for this
+/// place and secret (its salt read from the store again first when `check` says), else one derived from the store's
+/// salt. Runs no engine, so a sync calls it with the engine free.
+fn connect(
+    s: &SyncSettings,
+    fingerprint: &str,
+    kept: Option<Kept>,
+    check: bool,
+) -> Result<(Box<dyn Server>, Kept), String> {
+    let kept = kept.filter(|k| k.fingerprint == fingerprint);
+    // A key in hand that needs no check is used as it is, with no request for the salt.
+    let trusted = |k: &Option<Kept>| k.as_ref().filter(|_| !check).map(|k| k.salt.clone());
+    let secret = &s.encryption_secret;
+    match &s.tasks {
+        TasksAt::Bucket(b) => {
+            let store = S3Store::new(b.clone()).map_err(|e| e.to_string())?;
+            let salt = match trusted(&kept) {
+                Some(salt) => salt,
+                None => pollster::block_on(load_salt(&store)).map_err(|e| e.to_string())?,
+            };
+            let key = key_for(fingerprint, salt, secret, kept);
+            let server = CloudServer::with_cryptor(store, Cryptor::from_key(&key.key)).with_cleanup(now_secs);
+            Ok((Box::new(server), key))
+        }
+        TasksAt::Server { url, client_id } => {
+            let id = SyncSettings::client_id(client_id)?;
+            // The salt is the client id: nothing to ask the server.
+            let key = key_for(fingerprint, id.as_bytes().to_vec(), secret, kept);
+            let server = SyncServer::new(url, id, Cryptor::from_key(&key.key)).map_err(|e| e.to_string())?;
+            Ok((Box::new(server), key))
+        }
+        TasksAt::Git {
+            api,
+            repo,
+            branch,
+            token,
+        } => {
+            let repo = TasksAt::git(api, repo, branch, token)?;
+            let salt = match trusted(&kept) {
+                Some(salt) => salt,
+                None => pollster::block_on(gitsync::load_salt(&repo)).map_err(|e| e.to_string())?,
+            };
+            let key = key_for(fingerprint, salt, secret, kept);
+            let server = GitServer::with_cryptor(repo, Cryptor::from_key(&key.key)).with_cleanup(now_secs);
+            Ok((Box::new(server), key))
+        }
+    }
+}
+
+/// The settings files to keep in step with the store, and where: what [`Engine::files`] answers, for [`sync_files`].
+pub struct Files {
+    keys: Vec<&'static str>,
+    at: FilesAt,
+}
+
+/// Keep the settings files in `local` (the engine's folder) in step with the store. Runs no engine: the app runs it with
+/// the engine free, on a folder whose writes wait for it ([`crate::files::Guarded`]). Answers which files came from the
+/// store.
+pub fn sync_files<L: ObjectStore>(local: &L, files: &Files) -> Result<Vec<String>, String> {
+    let state_key = "web/.sync-state.json";
+    let mut state = State::load(
+        pollster::block_on(local.get(state_key))
+            .map_err(|e| e.to_string())?
+            .as_deref(),
+    );
+    let report = match &files.at {
+        FilesAt::Bucket(b) => pollster::block_on(filesync::sync_files(local, b, &files.keys, &mut state)),
+        FilesAt::Git(g) => pollster::block_on(filesync::sync_files(local, g, &files.keys, &mut state)),
+    }
+    .map_err(|e| e.to_string())?;
+    pollster::block_on(local.put(state_key, &state.to_bytes())).map_err(|e| e.to_string())?;
+    Ok(report.pulled)
 }
 
 fn now_secs() -> i64 {
@@ -244,6 +361,8 @@ impl Engine {
             secrets,
             script: None,
             key: None,
+            key_on_file: None,
+            sealer: Cryptor::from_key(key),
         }
     }
 
@@ -283,52 +402,29 @@ impl Engine {
     /// [`CHANGED`] and changes nothing. Asking again with `switch` goes: `replace` starts from what the new place holds,
     /// `merge` keeps the phone's tasks and adds them to it. Nothing on the phone changes until the new place has answered.
     pub fn sync(&mut self, settings: &str) -> Result<Vec<String>, String> {
-        self.sync_fetched(settings, None)
+        self.sync_fetched(settings, None)?;
+        let Some(files) = self.files(settings)? else {
+            return Ok(Vec::new());
+        };
+        let pulled = sync_files(&self.folder, &files)?;
+        self.pulled(&pulled);
+        Ok(pulled)
     }
 
-    /// [`sync`](Self::sync), with what [`fetch`] found (from [`Engine::source`], for these same settings): the store is
-    /// then asked only for what that could not answer, a push above all.
-    pub fn sync_fetched(&mut self, settings: &str, fetched: Option<Fetch>) -> Result<Vec<String>, String> {
+    /// The tasks' half of [`sync`](Self::sync), with what [`fetch`] found (from [`Engine::source`], for these same
+    /// settings): the store is then asked only for what that could not answer, a push above all. The settings files are
+    /// [`sync_files`]' to keep in step, with the engine free.
+    pub fn sync_fetched(&mut self, settings: &str, fetched: Option<Fetch>) -> Result<(), String> {
         let s = SyncSettings::parse(settings)?;
         let origin = s.origin()?;
-        // The files come from a bucket of their own, or the one the tasks are in.
-        let files: Vec<&str> = filesync::SETTINGS
-            .iter()
-            .chain(filesync::HOOKS)
-            .copied()
-            // The taskrc files go with the settings they add up to.
-            .filter(|k| {
-                let k = if *k == tc_core::webapi::RC_PREFIX {
-                    tc_core::webapi::CONFIG_KEY
-                } else {
-                    k
-                };
-                s.files.iter().any(|f| f == k)
-            })
-            .collect();
-        let for_files = match (&s.files_bucket, &s.tasks) {
-            _ if files.is_empty() => None,
-            (Some(b), _) | (None, TasksAt::Bucket(b)) => {
-                Some(FilesAt::Bucket(S3Store::new(b.clone()).map_err(|e| e.to_string())?))
-            }
-            // On the branch the tasks are on, beside them, where the git flavour of the web app keeps them too.
-            (
-                None,
-                TasksAt::Git {
-                    api,
-                    repo,
-                    branch,
-                    token,
-                },
-            ) => Some(FilesAt::Git(GitObjects(TasksAt::git(api, repo, branch, token)?))),
-            (None, TasksAt::Server { .. }) => {
-                return Err("sharing settings needs a bucket to keep them in: add one, or turn sharing off".into())
-            }
-        };
         let fingerprint = sha256_hex(format!("{origin}\n{}", s.encryption_secret).as_bytes());
-        let (mut server, cryptor) = match fetched {
-            Some(f) if f.key.0 == fingerprint => (Prefetched::boxed(f.server, f.fetched), f.key.1),
-            _ => self.connect(&s, &fingerprint)?,
+        let (mut server, key) = match fetched {
+            Some(f) if f.key.fingerprint == fingerprint => (Prefetched::boxed(f.server, f.fetched), f.key),
+            // Nothing fetched ahead (a change of place): reached here, with the engine taken.
+            _ => {
+                let (kept, check) = self.kept(&fingerprint);
+                connect(&s, &fingerprint, kept, check)?
+            }
         };
 
         let recorded = pollster::block_on(tc_core::ObjectStore::get(&self.folder, ORIGIN_KEY))
@@ -346,39 +442,103 @@ impl Engine {
             }
             (Some(_), Some(how)) => self.sync_elsewhere(&mut server, how),
         };
-        // A wrong secret or a replaced bucket makes the key useless: derive it again next time.
+        // A wrong secret or a replaced store makes the key useless: it is checked against the salt next time.
         synced?;
-        self.key = Some((fingerprint, cryptor));
+        self.keep(key);
         pollster::block_on(tc_core::ObjectStore::put(&self.folder, ORIGIN_KEY, origin.as_bytes()))
-            .map_err(|e| e.to_string())?;
-        let Some(for_files) = for_files else {
-            return Ok(Vec::new());
-        };
-        let state_key = "web/.sync-state.json";
-        let mut state = State::load(
-            pollster::block_on(tc_core::ObjectStore::get(&self.folder, state_key))
-                .map_err(|e| e.to_string())?
-                .as_deref(),
-        );
-        let report = match &for_files {
-            FilesAt::Bucket(b) => pollster::block_on(filesync::sync_files(&self.folder, b, &files, &mut state)),
-            FilesAt::Git(g) => pollster::block_on(filesync::sync_files(&self.folder, g, &files, &mut state)),
+            .map_err(|e| e.to_string())
+    }
+
+    /// The settings files these sync settings keep in step, and where, for [`sync_files`]; `None` when there are none.
+    pub fn files(&self, settings: &str) -> Result<Option<Files>, String> {
+        let s = SyncSettings::parse(settings)?;
+        // The files come from a bucket of their own, or the one the tasks are in.
+        let keys: Vec<&'static str> = filesync::SETTINGS
+            .iter()
+            .chain(filesync::HOOKS)
+            .copied()
+            // The taskrc files go with the settings they add up to.
+            .filter(|k| {
+                let k = if *k == tc_core::webapi::RC_PREFIX {
+                    tc_core::webapi::CONFIG_KEY
+                } else {
+                    k
+                };
+                s.files.iter().any(|f| f == k)
+            })
+            .collect();
+        if keys.is_empty() {
+            return Ok(None);
         }
-        .map_err(|e| e.to_string())?;
-        pollster::block_on(tc_core::ObjectStore::put(&self.folder, state_key, &state.to_bytes()))
-            .map_err(|e| e.to_string())?;
-        if report.pulled.iter().any(|k| k == tc_core::webapi::HOOKS_KEY) {
+        let at = match (&s.files_bucket, &s.tasks) {
+            (Some(b), _) | (None, TasksAt::Bucket(b)) => {
+                FilesAt::Bucket(S3Store::new(b.clone()).map_err(|e| e.to_string())?)
+            }
+            // On the branch the tasks are on, beside them, where the git flavour of the web app keeps them too.
+            (
+                None,
+                TasksAt::Git {
+                    api,
+                    repo,
+                    branch,
+                    token,
+                },
+            ) => FilesAt::Git(GitObjects(TasksAt::git(api, repo, branch, token)?)),
+            (None, TasksAt::Server { .. }) => {
+                return Err("sharing settings needs a bucket to keep them in: add one, or turn sharing off".into())
+            }
+        };
+        Ok(Some(Files { keys, at }))
+    }
+
+    /// The folder the settings files are kept in, for [`sync_files`].
+    pub fn folder(&self) -> FileStore {
+        self.folder.clone()
+    }
+
+    /// Take note of the files [`sync_files`] brought in.
+    pub fn pulled(&mut self, pulled: &[String]) {
+        if pulled.iter().any(|k| k == tc_core::webapi::HOOKS_KEY) {
             // The next command runs the script that came.
             self.script = None;
         }
-        Ok(report.pulled)
     }
 
-    /// The place the tasks sync to as a TaskChampion server, with the key that opens it (kept from the last sync when it is
-    /// the same place and secret: deriving it is slow on a phone).
+    /// The key of the last sync for this place and secret, and whether to check it against the store's salt: the one this
+    /// run used (taken, and given back by [`keep`](Self::keep) when the sync works), else the one kept on the phone.
+    fn kept(&mut self, fingerprint: &str) -> (Option<Kept>, bool) {
+        if let Some(k) = self.key.take().filter(|k| k.fingerprint == fingerprint) {
+            return (Some(k), false);
+        }
+        let on_file = pollster::block_on(self.folder.get(KEY_FILE))
+            .ok()
+            .flatten()
+            .and_then(|sealed| self.sealer.unseal(KEY_SEAL, &sealed).ok())
+            .and_then(|plain| serde_json::from_slice::<Kept>(&plain).ok());
+        self.key_on_file.clone_from(&on_file);
+        (on_file.filter(|k| k.fingerprint == fingerprint), true)
+    }
+
+    /// Keep the key a sync worked with, for the next one and the next launch.
+    fn keep(&mut self, key: Kept) {
+        // Written again when the app deleted it (not connected for a while), though this run still knew it.
+        let gone = || matches!(pollster::block_on(self.folder.get(KEY_FILE)), Ok(None));
+        if self.key_on_file.as_ref() != Some(&key) || gone() {
+            let sealed = serde_json::to_vec(&key)
+                .ok()
+                .and_then(|plain| self.sealer.seal(KEY_SEAL, &plain).ok());
+            // Not kept on the phone, it is derived again next launch: slower, but it works.
+            if let Some(sealed) = sealed {
+                if pollster::block_on(self.folder.put(KEY_FILE, &sealed)).is_ok() {
+                    self.key_on_file = Some(key.clone());
+                }
+            }
+        }
+        self.key = Some(key);
+    }
+
     /// Where a sync with these settings goes and what it starts from, for [`fetch`]; `None` when there is nothing to
-    /// fetch ahead (a change of place, which [`Engine::sync`] does on its own). Quick, but for the first sync, which
-    /// derives the key.
+    /// fetch ahead (a change of place, which [`Engine::sync`] does on its own). Quick: no request, no key derived.
     pub fn source(&mut self, settings: &str) -> Result<Option<Source>, String> {
         let s = SyncSettings::parse(settings)?;
         if s.switch.is_some() {
@@ -392,57 +552,14 @@ impl Engine {
             return Ok(None);
         }
         let fingerprint = sha256_hex(format!("{origin}\n{}", s.encryption_secret).as_bytes());
-        // The key goes with the fetch, and is kept again once the sync with it has worked, as without a fetch.
-        let (server, cryptor) = self.connect(&s, &fingerprint)?;
+        let (kept, check) = self.kept(&fingerprint);
         Ok(Some(Source {
-            server,
+            settings: s,
+            fingerprint,
             base: self.synced.get(),
-            key: (fingerprint, cryptor),
+            kept,
+            check,
         }))
-    }
-
-    fn connect(&mut self, s: &SyncSettings, fingerprint: &str) -> Result<(Box<dyn Server>, Cryptor), String> {
-        let kept = match self.key.take() {
-            Some((f, c)) if f == fingerprint => Some(c),
-            _ => None,
-        };
-        match &s.tasks {
-            TasksAt::Bucket(b) => {
-                let store = S3Store::new(b.clone()).map_err(|e| e.to_string())?;
-                let cryptor = match kept {
-                    Some(c) => c,
-                    None => pollster::block_on(load_cryptor(&store, s.encryption_secret.as_bytes()))
-                        .map_err(|e| e.to_string())?,
-                };
-                Ok((
-                    Box::new(CloudServer::with_cryptor(store, cryptor.clone()).with_cleanup(now_secs)),
-                    cryptor,
-                ))
-            }
-            TasksAt::Server { url, client_id } => {
-                let id = SyncSettings::client_id(client_id)?;
-                let cryptor = kept.unwrap_or_else(|| syncserver::cryptor(id, &s.encryption_secret));
-                let server = SyncServer::new(url, id, cryptor.clone()).map_err(|e| e.to_string())?;
-                Ok((Box::new(server), cryptor))
-            }
-            TasksAt::Git {
-                api,
-                repo,
-                branch,
-                token,
-            } => {
-                let repo = TasksAt::git(api, repo, branch, token)?;
-                let cryptor = match kept {
-                    Some(c) => c,
-                    None => pollster::block_on(gitsync::load_cryptor(&repo, s.encryption_secret.as_bytes()))
-                        .map_err(|e| e.to_string())?,
-                };
-                Ok((
-                    Box::new(GitServer::with_cryptor(repo, cryptor.clone()).with_cleanup(now_secs)),
-                    cryptor,
-                ))
-            }
-        }
     }
 
     /// Whether the replica holds no tasks at all.
@@ -580,6 +697,59 @@ impl Engine {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn scratch() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("tc-android-key-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn kept(fingerprint: &str, salt: &[u8], key: u8) -> Kept {
+        Kept {
+            fingerprint: fingerprint.into(),
+            salt: salt.to_vec(),
+            key: [key; KEY_LEN],
+        }
+    }
+
+    #[test]
+    fn a_kept_key_is_used_only_with_the_salt_it_was_made_with() {
+        // The same salt: the kept key, not derived again (a made-up key shows it was not).
+        let k = key_for("fp", b"salt".to_vec(), "pw", Some(kept("fp", b"salt", 7)));
+        assert_eq!(k.key, [7; KEY_LEN]);
+        // The store was made again with another salt: derived from that one.
+        let k = key_for("fp", b"other".to_vec(), "pw", Some(kept("fp", b"salt", 7)));
+        assert_eq!(k.key, derive_key(b"other", b"pw", PBKDF2_ITERATIONS));
+        assert_eq!((k.fingerprint.as_str(), k.salt.as_slice()), ("fp", &b"other"[..]));
+    }
+
+    #[test]
+    fn the_key_is_kept_for_the_next_launch_sealed_with_the_phones_key() {
+        let dir = scratch();
+        let mut first = Engine::new(&dir, &[1; 32]);
+        first.keep(kept("fp", b"salt", 7));
+        // This run's key needs no check; it is taken by the sync that uses it.
+        assert!(matches!(first.kept("fp"), (Some(k), false) if k.key == [7; KEY_LEN]));
+
+        // The next launch reads it from the phone, to be checked against the store's salt before use.
+        let mut next = Engine::new(&dir, &[1; 32]);
+        assert!(matches!(next.kept("fp"), (Some(k), true) if k.key == [7; KEY_LEN]));
+        // Not for another place or secret.
+        assert!(matches!(next.kept("elsewhere"), (None, true)));
+        // Nor with another phone key (the Keystore's was replaced): derived again.
+        assert!(matches!(Engine::new(&dir, &[2; 32]).kept("fp"), (None, true)));
+        let sealed = std::fs::read(dir.join(KEY_FILE)).unwrap();
+        assert!(
+            !sealed.windows(KEY_LEN).any(|w| w == [7; KEY_LEN]),
+            "the key is never written in the clear"
+        );
+
+        // Deleted by the app (it was disconnected): written again by the next sync that works.
+        std::fs::remove_file(dir.join(KEY_FILE)).unwrap();
+        first.keep(kept("fp", b"salt", 7));
+        assert!(dir.join(KEY_FILE).exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     const ID: &str = "3f2b8d1e-9c4a-4b7e-8f21-5a6d0c9e1b34";
     fn bucket() -> Value {

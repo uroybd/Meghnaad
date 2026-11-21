@@ -27,8 +27,14 @@ object NativeEngine {
     /** What is new in the store since [source] (which this takes), asked with no engine: `{ fetched: "<handle>" }` or `{ error }`. */
     @JvmStatic external fun nativeFetch(source: Long): String
 
-    /** The sync with what [nativeFetch] found ([fetched], which this takes; 0 for none). Answers as `sync` does. */
+    /** The tasks' half of a sync, with what [nativeFetch] found ([fetched], which this takes; 0 for none): `{}` or `{ error }`. */
     @JvmStatic external fun nativeSyncFetched(handle: Long, settings: String, fetched: Long): String
+
+    /**
+     * The settings files' half of a sync, after [nativeSyncFetched], with the engine free (taken for each file written):
+     * `{ settings }`, the files that came from the store, or `{ error }`. Never while the engine may be freed.
+     */
+    @JvmStatic external fun nativeSyncFiles(handle: Long, settings: String): String
 
     /** Everything the replica holds, to keep and give to [nativeRestore] next time; null if it could not be saved. */
     @JvmStatic external fun nativeSave(handle: Long): ByteArray?

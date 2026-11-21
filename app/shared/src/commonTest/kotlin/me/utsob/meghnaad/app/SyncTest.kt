@@ -203,6 +203,10 @@ class SyncTest {
         assertNotNull(Connection.typedGit("", "a/b", "", "", "pw").problem())
         assertNotNull(Connection.typedGit("", "a/b", "", "tok", "").problem())
         assertTrue("https://" in Connection.typedGit("http://x.example", "a/b", "", "tok", "pw").problem()!!)
+        // A forge on the device itself, as the engine takes it.
+        assertNull(Connection.typedGit("http://localhost:3000/api/v1", "a/b", "", "tok", "pw").problem())
+        assertNull(Connection.typedGit("http://127.0.0.1/api/v1", "a/b", "", "tok", "pw").problem())
+        assertNotNull(Connection.typedGit("http://localhost.example.com", "a/b", "", "tok", "pw").problem())
         assertNotNull(Connection.typedGit("", "a/b", "a..b", "tok", "pw").problem())
         assertNull(Connection.typedGit("", "a/b", "work/tasks", "tok", "pw").problem())
     }

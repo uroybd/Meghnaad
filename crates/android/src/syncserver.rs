@@ -21,11 +21,6 @@ type TcResult<T> = std::result::Result<T, taskchampion::Error>;
 const HISTORY_SEGMENT: &str = "application/vnd.taskchampion.history-segment";
 const SNAPSHOT: &str = "application/vnd.taskchampion.snapshot";
 
-/// The key for a client id and encryption secret (600,000 rounds of PBKDF2: slow on a phone, so the engine keeps it).
-pub fn cryptor(client_id: Uuid, secret: &str) -> Cryptor {
-    Cryptor::new(client_id.as_bytes(), secret.as_bytes())
-}
-
 pub struct SyncServer {
     /// The server's address with a slash at the end, so that a path joins onto it.
     base: String,

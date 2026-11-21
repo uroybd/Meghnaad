@@ -37,6 +37,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // How long the engine and the syncs take, in the log of a debug build only.
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            Timings.log = { android.util.Log.d("MeghnaadTimings", it) }
+        }
         // Draw under the system bars (the app pads for them), as a phone's apps do.
         enableEdgeToEdge()
         APP_VERSION = packageManager.getPackageInfo(packageName, 0).versionName ?: ""

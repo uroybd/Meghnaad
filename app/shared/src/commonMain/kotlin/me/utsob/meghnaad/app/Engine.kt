@@ -97,7 +97,9 @@ class Tw(private val port: EnginePort, private val clock: Clock) {
             answers.approved?.let { put("approved", buildJsonArray { it.forEach { k -> add(JsonPrimitive(k)) } }) }
             answers.extras?.let { put("extras", buildJsonArray { it.forEach { k -> add(JsonPrimitive(k)) } }) }
         }
+        val asked = Timings.mark()
         val got = parseResponse(port.call("run", request.toString()))
+        Timings.since(asked, "command ${args?.lastOrNull() ?: line?.substringAfterLast(' ')}: answered")
         // `config` changed the settings: they are kept (where the device keeps them), and the engine takes them up.
         val config = got.config?.takeIf { it !is kotlinx.serialization.json.JsonNull } ?: return got
         return try {

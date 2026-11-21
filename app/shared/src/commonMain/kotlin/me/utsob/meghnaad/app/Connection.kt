@@ -78,7 +78,7 @@ data class Connection(
                 listOf(git.repo, git.token, encryptionSecret).any { it.isBlank() } ->
                     "The repository, a token and the encryption secret are all needed."
                 !REPO_SHAPE.matches(git.repo) -> "The repository is written owner/name, such as alice/tasks."
-                !git.api.startsWith("https://") -> "The API address starts with https://."
+                !git.api.startsWith("https://") && !LOCAL_HTTP.containsMatchIn(git.api) -> "The API address starts with https://."
                 !BRANCH_SHAPE.matches(git.branch) || ".." in git.branch -> "That is not a branch name; taskchampion is the usual one."
                 else -> null
             }
@@ -99,6 +99,9 @@ data class Connection(
     companion object {
         private val REPO_SHAPE = Regex("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
         private val BRANCH_SHAPE = Regex("^[A-Za-z0-9_][A-Za-z0-9._/-]*[A-Za-z0-9_-]$|^[A-Za-z0-9_]$")
+
+        /** A forge on this device itself, which the engine also takes over plain http. */
+        private val LOCAL_HTTP = Regex("^http://(localhost|127\\.0\\.0\\.1)([:/]|$)")
 
         /** GitHub's API, the default forge. */
         const val GITHUB_API = "https://api.github.com"
