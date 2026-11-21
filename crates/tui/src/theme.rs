@@ -428,7 +428,7 @@ pub fn title(focused: bool) -> Style {
     }
 }
 
-/// A Kanban column's ground: a shade deeper than the page's; nothing without colour.
+/// A Kanban column's ground: a shade deeper than the page's.
 pub fn column() -> Style {
     shade("#e8e8e4", "#18191c")
 }
@@ -438,12 +438,28 @@ pub fn column_head() -> Style {
     shade("#d8d8d2", "#34363b")
 }
 
+/// A UDA's value beside its label on a card: a shade of its own, a step from the column's.
+pub fn badge_value() -> Style {
+    shade("#d8d8d2", "#34363b")
+}
+
+/// A background a shade away from the page's, for the terminal's light or dark ground; grey in `mono`.
 fn shade(light: &str, dark: &str) -> Style {
     let t = current();
-    if t.mono {
-        return Style::new();
-    }
-    style_of(&format!("on {}", if t.mode == Mode::Light { light } else { dark })).unwrap_or_default()
+    let hex = if t.mode == Mode::Light { light } else { dark };
+    let colour = if t.mono { grey(hex) } else { hex.to_owned() };
+    style_of(&format!("on {colour}")).unwrap_or_default()
+}
+
+/// `#rrggbb` as the grey of the same lightness.
+fn grey(hex: &str) -> String {
+    let part = |i: usize| {
+        hex.get(i..i + 2)
+            .and_then(|p| u8::from_str_radix(p, 16).ok())
+            .map_or(0, u32::from)
+    };
+    let avg = (part(1) + part(3) + part(5)) / 3;
+    format!("#{avg:02x}{avg:02x}{avg:02x}")
 }
 
 /// Notes, help, what matters less.
@@ -574,5 +590,11 @@ mod tests {
         assert_eq!(off.label_sort.fg, None);
         assert!(off.label_sort.add_modifier.contains(Modifier::UNDERLINED));
         assert_eq!(off.accent.fg, None);
+    }
+
+    #[test]
+    fn mono_shades_are_greys_as_light_as_the_colours() {
+        assert_eq!(grey("#34363b"), "#373737");
+        assert_eq!(grey("#d8d8d2"), "#d6d6d6");
     }
 }

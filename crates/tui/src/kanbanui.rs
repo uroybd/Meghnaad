@@ -174,7 +174,7 @@ fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
         let piece: Vec<Span> = if badge {
             vec![
                 Span::styled(format!(" {label} "), Style::new().add_modifier(Modifier::REVERSED)).quiet(),
-                Span::styled(format!(" {text} "), Style::new().add_modifier(Modifier::UNDERLINED)),
+                Span::styled(format!(" {text} "), theme::badge_value()),
             ]
         } else {
             let head = symbol.map_or_else(|| label.clone(), str::to_owned);
