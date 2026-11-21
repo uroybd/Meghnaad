@@ -3,6 +3,7 @@
 // whole command line.
 //
 //   { "taskCommands": [ { "name": "fail", "command": "done outcome:fail", "icon": "circle-x" } ],
+//     "aliasIcons": { "rem": "bell" },   (an icon for a taskrc alias in the menus: taskCommands.ts aliasCommands)
 //     "boards": [ … ],             (what a board is: boards.ts and tc_core::board)
 //     "appearance": { "progress": { "progress": { "min": 0, "max": 100 } },
 //                     "transformations": [ { "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://…/$1)",
@@ -117,6 +118,7 @@ export function sameAppearance(a: Appearance, b: Appearance): boolean {
   );
 }
 
+const ALIAS_ICONS_NOT_OBJECT = 'aliasIcons must be an object: { "<alias>": "<icon>" }';
 const NOT_SETTINGS = 'The settings must be a JSON object: { "taskCommands": [ … ] }';
 const APPEARANCE_NOT_OBJECT = 'appearance must be an object: { "progress": { … } }';
 const PROGRESS_NOT_OBJECT = 'appearance.progress must be an object: { "<uda>": { "min": 0, "max": 100 } }';
@@ -200,6 +202,8 @@ export interface ParsedSettings {
   raw: Record<string, unknown>;
   /** The valid task commands, in order. */
   commands: TaskCommand[];
+  /** The icon chosen for each taskrc alias, by its name (one whose alias is not in the taskrc is kept, and unused). */
+  aliasIcons: Record<string, string>;
   /** The valid boards, in order, as the engine tidied them. */
   boards: Board[];
   /** Where the app opens, if the settings say. */
@@ -250,6 +254,7 @@ export function parseSettings(text: string): ParsedSettings {
   const out: ParsedSettings = {
     raw: {},
     commands: [],
+    aliasIcons: {},
     boards: [],
     homepage: null,
     appearance: emptyAppearance(),
@@ -280,6 +285,13 @@ export function parseSettings(text: string): ParsedSettings {
     out.boards = n.boards;
     out.boardErrors = n.errors;
   }
+  const icons = out.raw.aliasIcons;
+  if (icons !== undefined && !isObject(icons)) out.errors.push(ALIAS_ICONS_NOT_OBJECT);
+  else if (icons)
+    for (const [name, icon] of Object.entries(icons)) {
+      if (typeof icon === 'string' && ICON_NAME.test(icon)) out.aliasIcons[name] = icon;
+      else out.errors.push(`aliasIcons.${name}: must be a Lucide icon name such as "bell"`);
+    }
   const list = out.raw.taskCommands;
   if (list === undefined) return out;
   if (!Array.isArray(list)) {
@@ -413,9 +425,26 @@ function withCommands(raw: Record<string, unknown>, commands: TaskCommand[], rea
   return next;
 }
 
-/** The text to save: `taskCommands` as given, and everything else in the file as it was. */
-export function serializeSettings(raw: Record<string, unknown>, commands: TaskCommand[]): string {
-  return written(mergeSettings(raw, withCommands(raw, reread(raw).commands, true), withCommands(raw, commands)));
+function withAliasIcons(
+  raw: Record<string, unknown>,
+  icons: Record<string, string>,
+  read = false,
+): Record<string, unknown> {
+  const { aliasIcons: _old, ...rest } = raw;
+  const next: Record<string, unknown> = { ...rest };
+  if (Object.keys(icons).length || (read && isObject(raw.aliasIcons))) next.aliasIcons = { ...icons };
+  return next;
+}
+
+/** The text to save: `taskCommands` and `aliasIcons` as given, and everything else in the file as it was. */
+export function serializeSettings(
+  raw: Record<string, unknown>,
+  commands: TaskCommand[],
+  aliasIcons: Record<string, string> = reread(raw).aliasIcons,
+): string {
+  const was = reread(raw);
+  const base = withAliasIcons(withCommands(raw, was.commands, true), was.aliasIcons, true);
+  return written(mergeSettings(raw, base, withAliasIcons(withCommands(raw, commands), aliasIcons)));
 }
 
 function withBoards(
@@ -532,7 +561,7 @@ export interface Lint {
 }
 
 /** The top-level keys that are objects, and those that are lists. */
-const OBJECT_KEYS = ['homepage', 'appearance', 'kanban', 'keys', 'web', 'mobile', 'tui'];
+const OBJECT_KEYS = ['homepage', 'appearance', 'kanban', 'keys', 'web', 'mobile', 'tui', 'aliasIcons'];
 const LIST_KEYS = ['taskCommands', 'boards'];
 
 /**
@@ -561,7 +590,13 @@ export function lintSettings(text: string, more: (raw: Record<string, unknown>) 
   const raw = read.raw;
   for (const k of OBJECT_KEYS)
     if (k in raw && !isObject(raw[k]))
-      errors.push(k === 'appearance' ? APPEARANCE_NOT_OBJECT : `${k} must be an object`);
+      errors.push(
+        k === 'appearance'
+          ? APPEARANCE_NOT_OBJECT
+          : k === 'aliasIcons'
+            ? ALIAS_ICONS_NOT_OBJECT
+            : `${k} must be an object`,
+      );
   for (const k of LIST_KEYS) if (k in raw && !Array.isArray(raw[k])) errors.push(`${k} must be a list`);
   if (isObject(raw.appearance)) {
     const a = raw.appearance;

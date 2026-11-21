@@ -176,7 +176,8 @@ class Store(
     val taskCommands: List<TaskCommand> get() = appSettings?.commands ?: emptyList()
 
     /** What a task's menus offer to run on it: the task commands, then the taskrc's own aliases. */
-    val menuCommands: List<TaskCommand> get() = taskCommands + aliasCommands(config?.config?.settings.orEmpty(), taskCommands)
+    val menuCommands: List<TaskCommand> get() =
+        taskCommands + aliasCommands(config?.config?.settings.orEmpty(), taskCommands, appSettings?.aliasIcons.orEmpty())
 
     /** Which device's own settings this phone uses (spec 0027); null before it has any. */
     var deviceId by mutableStateOf(prefs.get(DEVICE_ID_KEY))

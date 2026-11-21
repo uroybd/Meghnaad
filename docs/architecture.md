@@ -971,8 +971,8 @@ settings tab. Android ports them (`Kanban.kt`, `KanbanPage.kt`, `KanbanPanel.kt`
 
 ### Task commands
 
-The browser's own. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name, command, icon? }] }`,
-other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s `appsettings` checks that it is
+The browser's own. `appsettings.ts` reads and writes `settings.json` (`{ "taskCommands": [{ name, command, icon? }],
+"aliasIcons": { alias: icon } }`, other keys kept), which the Worker only stores (`GET`/`PUT /api/settings`; `tc-core`'s `appsettings` checks that it is
 a JSON object under 64 KB and nothing more).
 
 `taskCommands.ts` writes a command out on the line you typed: the first word that is not part of the filter, as the

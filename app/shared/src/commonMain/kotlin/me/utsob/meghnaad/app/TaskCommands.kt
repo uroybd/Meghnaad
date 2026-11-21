@@ -104,10 +104,25 @@ const val ALIAS_ICON = "square-terminal"
  * run one on a task (taskCommands.ts `aliasCommands`): each runs as `<uuid> <words>`. A task command of the same name
  * wins, and an alias that stands for nothing is left out.
  */
-fun aliasCommands(settings: Map<String, String>, commands: List<TaskCommand>): List<TaskCommand> {
+fun aliasCommands(settings: Map<String, String>, commands: List<TaskCommand>, icons: Map<String, String> = emptyMap()): List<TaskCommand> {
     val taken = commands.map { it.name }.toSet()
-    return settings.mapNotNull { (k, v) ->
-        val name = k.removePrefix("alias.").takeIf { k.startsWith("alias.") && it.isNotEmpty() }
-        if (name == null || v.isBlank() || name in taken) null else TaskCommand(name, v.trim(), ALIAS_ICON)
-    }
+    return taskrcAliases(settings).filter { it.name !in taken }.map { TaskCommand(it.name, it.command, icons[it.name] ?: ALIAS_ICON) }
+}
+
+/** One of the taskrc's own aliases: its name and the words it stands for. */
+data class Alias(val name: String, val command: String)
+
+/** The taskrc's own aliases, in the order the settings have them (left out: ones that stand for nothing). */
+fun taskrcAliases(settings: Map<String, String>): List<Alias> = settings.mapNotNull { (k, v) ->
+    val name = k.removePrefix("alias.").takeIf { k.startsWith("alias.") && it.isNotEmpty() }
+    if (name == null || v.isBlank()) null else Alias(name, v.trim())
+}
+
+/**
+ * The icons in `settings.json` for an alias the taskrc does not have, one line each (taskCommands.ts `strayAliasIcons`):
+ * they are kept in the file (the alias may come back, or be in another device's taskrc) and not used.
+ */
+fun strayAliasIcons(icons: Map<String, String>, settings: Map<String, String>): List<String> {
+    val have = taskrcAliases(settings).map { it.name }.toSet()
+    return icons.keys.filter { it !in have }.map { "aliasIcons.$it: there is no alias.$it in the taskrc, so its icon is not used" }
 }

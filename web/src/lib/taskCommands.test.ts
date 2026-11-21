@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskCommand } from './appsettings';
 import { ChainError } from './compound';
-import { ALIAS_ICON, aliasCommands, commandSteps, expandTaskCommands, isFilterWord, planChain } from './taskCommands';
+import {
+  ALIAS_ICON,
+  aliasCommands,
+  commandSteps,
+  expandTaskCommands,
+  isFilterWord,
+  planChain,
+  strayAliasIcons,
+} from './taskCommands';
 
 const FAIL: TaskCommand = { name: 'fail', command: 'done outcome:fail' };
 const LATE: TaskCommand = { name: 'late', command: '+OVERDUE list' };
@@ -163,5 +171,20 @@ describe('taskrc aliases', () => {
     const own: TaskCommand[] = [{ name: 'wrap', command: 'done' }];
     expect(aliasCommands(settings, own)).toEqual([{ name: 'fin', command: 'done', icon: ALIAS_ICON }]);
     expect(aliasCommands({}, own)).toEqual([]);
+  });
+
+  it('shows the icon chosen for an alias, and the generic one otherwise', () => {
+    const settings = { 'alias.fin': 'done', 'alias.rem': 'modify +remind' };
+    expect(aliasCommands(settings, [], { rem: 'bell', gone: 'x' })).toEqual([
+      { name: 'fin', command: 'done', icon: ALIAS_ICON },
+      { name: 'rem', command: 'modify +remind', icon: 'bell' },
+    ]);
+  });
+
+  it('warns of an icon for an alias the taskrc does not have, which is kept', () => {
+    expect(strayAliasIcons({ rem: 'bell', gone: 'x' }, { 'alias.rem': 'modify +remind' })).toEqual([
+      'aliasIcons.gone: there is no alias.gone in the taskrc, so its icon is not used',
+    ]);
+    expect(strayAliasIcons({}, {})).toEqual([]);
   });
 });

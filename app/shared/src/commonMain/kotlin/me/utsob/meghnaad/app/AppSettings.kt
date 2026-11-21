@@ -163,6 +163,8 @@ class ParsedSettings(
     val kanban: KanbanSettings = KanbanSettings(),
     /** What is wrong with `kanban`, one line each; a kanban with a problem is left out. */
     val kanbanErrors: List<String> = emptyList(),
+    /** The icon chosen for each taskrc alias, by its name (one whose alias is not in the taskrc is kept, and unused). */
+    val aliasIcons: Map<String, String> = emptyMap(),
 )
 
 /** A Lucide icon's name: lower case words joined by dashes (`circle-x`, `arrow-up-0-1`). */
@@ -213,12 +215,23 @@ fun parseSettings(text: String): ParsedSettings {
     val normalized = value["boards"]?.let { normalizeBoards(it) }
     val boards = normalized?.boards ?: emptyList()
     val boardErrors = normalized?.errors ?: emptyList()
-    val list = value["taskCommands"]
-        ?: return ParsedSettings(value, emptyList(), emptyList(), boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors)
-    if (list !is JsonArray) {
-        return ParsedSettings(value, emptyList(), listOf("taskCommands must be a list"), boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors)
+    val aliasIcons = LinkedHashMap<String, String>()
+    val aliasErrors = mutableListOf<String>()
+    when (val icons = value["aliasIcons"]) {
+        null -> {}
+        !is JsonObject -> aliasErrors += ALIAS_ICONS_NOT_OBJECT
+        else -> for ((name, icon) in icons) {
+            val t = icon.text()
+            if (t != null && ICON_NAME.matches(t)) aliasIcons[name] = t
+            else aliasErrors += "aliasIcons.$name: must be a Lucide icon name such as \"bell\""
+        }
     }
-    val errors = mutableListOf<String>()
+    val list = value["taskCommands"]
+        ?: return ParsedSettings(value, emptyList(), aliasErrors, boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors, aliasIcons)
+    if (list !is JsonArray) {
+        return ParsedSettings(value, emptyList(), aliasErrors + "taskCommands must be a list", boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors, aliasIcons)
+    }
+    val errors = aliasErrors
     val commands = mutableListOf<TaskCommand>()
     val seen = HashSet<String>()
     list.forEachIndexed { i, c ->
@@ -254,7 +267,7 @@ fun parseSettings(text: String): ParsedSettings {
         }
         commands += TaskCommand(name, command.trim(), icon)
     }
-    return ParsedSettings(value, commands, errors, boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors)
+    return ParsedSettings(value, commands, errors, boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors, aliasIcons)
 }
 
 private val pretty = Json { prettyPrint = true; prettyPrintIndent = "  " }
@@ -374,9 +387,19 @@ private fun withCommands(raw: JsonObject, commands: List<TaskCommand>, read: Boo
     }
 }
 
-/** The text to save: `taskCommands` as given, and everything else in the file as it was. */
-fun serializeSettings(raw: JsonObject, commands: List<TaskCommand>): String =
-    written(mergeSettings(raw, withCommands(raw, reread(raw).commands, read = true), withCommands(raw, commands)))
+private fun withAliasIcons(raw: JsonObject, icons: Map<String, String>, read: Boolean = false) = buildJsonObject {
+    for ((k, v) in raw) if (k != "aliasIcons") put(k, v)
+    if (icons.isNotEmpty() || (read && raw["aliasIcons"] is JsonObject)) {
+        put("aliasIcons", JsonObject(icons.mapValues { JsonPrimitive(it.value) }))
+    }
+}
+
+/** The text to save: `taskCommands` and `aliasIcons` as given, and everything else in the file as it was. */
+fun serializeSettings(raw: JsonObject, commands: List<TaskCommand>, aliasIcons: Map<String, String> = reread(raw).aliasIcons): String {
+    val was = reread(raw)
+    val base = withAliasIcons(withCommands(raw, was.commands, read = true), was.aliasIcons, read = true)
+    return written(mergeSettings(raw, base, withAliasIcons(withCommands(raw, commands), aliasIcons)))
+}
 
 private fun withBoards(raw: JsonObject, boards: List<Board>, homepage: Homepage?, setHomepage: Boolean, read: Boolean = false) = buildJsonObject {
     for ((k, v) in raw) if (k != "boards" && k != "boardsVersion" && !(setHomepage && k == "homepage")) put(k, v)
@@ -479,8 +502,9 @@ fun serializeKanban(raw: JsonObject, kanban: KanbanSettings): String =
 /** What is wrong with a `settings.json`, as a linter says it: an error stops it being saved, a warning doesn't. */
 data class Lint(val errors: List<String>, val warnings: List<String>)
 
-private val OBJECT_KEYS = listOf("homepage", "appearance", "kanban", "keys", "web", "mobile", "tui")
+private val OBJECT_KEYS = listOf("homepage", "appearance", "kanban", "keys", "web", "mobile", "tui", "aliasIcons")
 private val LIST_KEYS = listOf("taskCommands", "boards")
+private const val ALIAS_ICONS_NOT_OBJECT = "aliasIcons must be an object: { \"<alias>\": \"<icon>\" }"
 private const val NOT_SETTINGS = "The settings must be a JSON object: { \"taskCommands\": [ … ] }"
 private const val APPEARANCE_NOT_OBJECT = "appearance must be an object: { \"progress\": { … } }"
 private const val PROGRESS_NOT_OBJECT = "appearance.progress must be an object: { \"<uda>\": { \"min\": 0, \"max\": 100 } }"
@@ -506,7 +530,15 @@ fun lintSettings(text: String, more: (JsonObject) -> List<String> = { emptyList(
     }
     val read = parseSettings(text)
     val raw = read.raw
-    for (k in OBJECT_KEYS) if (k in raw && raw[k] !is JsonObject) errors += if (k == "appearance") APPEARANCE_NOT_OBJECT else "$k must be an object"
+    for (k in OBJECT_KEYS) {
+        if (k in raw && raw[k] !is JsonObject) {
+            errors += when (k) {
+                "appearance" -> APPEARANCE_NOT_OBJECT
+                "aliasIcons" -> ALIAS_ICONS_NOT_OBJECT
+                else -> "$k must be an object"
+            }
+        }
+    }
     for (k in LIST_KEYS) if (k in raw && raw[k] !is JsonArray) errors += "$k must be a list"
     (raw["appearance"] as? JsonObject)?.let { a ->
         if ("progress" in a && a["progress"] !is JsonObject) errors += PROGRESS_NOT_OBJECT

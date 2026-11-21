@@ -148,4 +148,22 @@ class TaskCommandsTest {
         assertEquals(listOf(TaskCommand("fin", "done", ALIAS_ICON)), aliasCommands(settings, own))
         assertEquals(emptyList(), aliasCommands(emptyMap(), own))
     }
+
+    @Test
+    fun showsTheIconChosenForAnAliasAndTheGenericOneOtherwise() {
+        val settings = mapOf("alias.fin" to "done", "alias.rem" to "modify +remind")
+        assertEquals(
+            listOf(TaskCommand("fin", "done", ALIAS_ICON), TaskCommand("rem", "modify +remind", "bell")),
+            aliasCommands(settings, emptyList(), mapOf("rem" to "bell", "gone" to "x")),
+        )
+    }
+
+    @Test
+    fun warnsOfAnIconForAnAliasTheTaskrcDoesNotHaveWhichIsKept() {
+        assertEquals(
+            listOf("aliasIcons.gone: there is no alias.gone in the taskrc, so its icon is not used"),
+            strayAliasIcons(mapOf("rem" to "bell", "gone" to "x"), mapOf("alias.rem" to "modify +remind")),
+        )
+        assertEquals(emptyList(), strayAliasIcons(emptyMap(), emptyMap()))
+    }
 }

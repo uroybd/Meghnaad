@@ -65,6 +65,36 @@ describe('parseSettings', () => {
   });
 });
 
+describe('aliasIcons', () => {
+  it('reads an icon for each alias, and says what it cannot use', () => {
+    const p = parseSettings(JSON.stringify({ aliasIcons: { rem: 'bell', bad: 'Not An Icon', n: 3 } }));
+    expect(p.aliasIcons).toEqual({ rem: 'bell' });
+    expect(p.errors).toEqual([
+      'aliasIcons.bad: must be a Lucide icon name such as "bell"',
+      'aliasIcons.n: must be a Lucide icon name such as "bell"',
+    ]);
+    expect(parseSettings('{ "aliasIcons": [] }').errors).toEqual([
+      'aliasIcons must be an object: { "<alias>": "<icon>" }',
+    ]);
+    expect(lintSettings('{ "aliasIcons": [] }').errors).toEqual([
+      'aliasIcons must be an object: { "<alias>": "<icon>" }',
+    ]);
+  });
+
+  it('saves the icons as given, keeping one it could not read and everything else', () => {
+    const raw = { aliasIcons: { rem: 'bell', bad: 7, gone: 'x' }, taskCommands: [{ name: 'a', command: 'b' }] };
+    const cmds = [{ name: 'a', command: 'b' }];
+    expect(JSON.parse(serializeSettings(raw, cmds, { rem: 'alarm-clock', gone: 'x' }))).toEqual({
+      aliasIcons: { rem: 'alarm-clock', bad: 7, gone: 'x' },
+      taskCommands: [{ name: 'a', command: 'b' }],
+    });
+    // Without icons given, the saved ones stay as they are.
+    expect(JSON.parse(serializeSettings(raw, [])).aliasIcons).toEqual(raw.aliasIcons);
+    // The last one taken out: the section goes (all but what it could not read).
+    expect(JSON.parse(serializeSettings({ aliasIcons: { rem: 'bell' } }, [], {}))).toEqual({});
+  });
+});
+
 describe('serializeSettings', () => {
   it('writes the commands and keeps every other key', () => {
     const p = parseSettings('{ "future": { "a": 1 }, "taskCommands": [ { "name": "x", "command": "done" } ] }');

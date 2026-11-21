@@ -53,11 +53,12 @@ saves it as written. The phone has the same box under General.
 The file is linted as you type, and each problem is listed with where it is:
 
 - An **error** stops **Apply**: text that is not JSON or not an object, a file over 64 KB, or a known key in the wrong
-  shape (`homepage`, `appearance`, `keys`, `web`, `mobile`, `tui` or `kanban` that is not an object, `taskCommands`,
+  shape (`homepage`, `appearance`, `keys`, `web`, `mobile`, `tui`, `kanban` or `aliasIcons` that is not an object,
+  `taskCommands`,
   `boards`, `kanban.kanbans` or `kanban.columns` that is not a list, `appearance.progress` that is not an object, `appearance.transformations` that is not a list, a
   board that is not an object or has no `sections` list).
-- A **warning** is something this app can't use, such as a task command with a bad name, a board with a bad id or a
-  progress bar with no range. It is saved with the rest and kept in the file until you take it out.
+- A **warning** is something this app can't use, such as a task command with a bad name, a board with a bad id, a
+  progress bar with no range or an icon for an alias your taskrc doesn't have. It is saved with the rest and kept in the file until you take it out.
 
 Every front end saves only what you changed. A key it doesn't know, at any depth (another front end's section, a field
 added to a board or a task command by a later version), and an entry it can't use are left as they are by every save:
@@ -460,6 +461,11 @@ Delete, then the commands) fold into that menu, and open out again when there's 
 taskrc defines runs on the task as `task <uuid> <name>` would. Taskwarrior's own (`rm`, `history`, `ghistory`,
 `burndown`) are left out unless you change them, as is one that stands for nothing, and a command of the same name
 takes its place. They are edited in the taskrc, not here. In the terminal app they are in the `c` menu, marked `$`.
+
+The **Aliases** part of the Commands tab lists them, each with what it stands for and an icon picker: the icon it shows
+in the menus, kept in `settings.json` as `"aliasIcons": { "<alias>": "<icon>" }` (no icon: the terminal one). An icon for
+an alias your taskrc no longer has is listed there as a warning and kept in the file, unused, in case the alias comes
+back. The terminal app draws no icons, so it has no picker, and keeps the icons when it saves.
 
 **Names** are one word that can't be taken for a filter: no spaces, no `+` `-` `/`, no `:` or `=`, not a number.
 

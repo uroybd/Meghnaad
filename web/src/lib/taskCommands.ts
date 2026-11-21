@@ -114,10 +114,32 @@ export const ALIAS_ICON = 'square-terminal';
  * that run one on a task: each runs as `<uuid> <words>`, which is what `task <uuid> <name>` does. A task command of the
  * same name wins, and an alias that stands for nothing (it makes its word vanish) is left out.
  */
-export function aliasCommands(settings: Record<string, string>, commands: TaskCommand[]): TaskCommand[] {
+export function aliasCommands(
+  settings: Record<string, string>,
+  commands: TaskCommand[],
+  icons: Record<string, string> = {},
+): TaskCommand[] {
   const taken = new Set(commands.map((c) => c.name));
+  return taskrcAliases(settings).flatMap(({ name, command }) =>
+    taken.has(name) ? [] : [{ name, command, icon: icons[name] ?? ALIAS_ICON }],
+  );
+}
+
+/** The taskrc's own aliases, as `{ name, command }`, in the order the settings have them (left out: ones that stand for nothing). */
+export function taskrcAliases(settings: Record<string, string>): { name: string; command: string }[] {
   return Object.entries(settings).flatMap(([k, v]) => {
     const name = k.startsWith('alias.') ? k.slice('alias.'.length) : '';
-    return name && v.trim() && !taken.has(name) ? [{ name, command: v.trim(), icon: ALIAS_ICON }] : [];
+    return name && v.trim() ? [{ name, command: v.trim() }] : [];
   });
+}
+
+/**
+ * The icons in `settings.json` for an alias the taskrc does not have, one line each: they are kept in the file (the alias
+ * may come back, or be in another device's taskrc) and not used.
+ */
+export function strayAliasIcons(icons: Record<string, string>, settings: Record<string, string>): string[] {
+  const have = new Set(taskrcAliases(settings).map((a) => a.name));
+  return Object.keys(icons)
+    .filter((name) => !have.has(name))
+    .map((name) => `aliasIcons.${name}: there is no alias.${name} in the taskrc, so its icon is not used`);
 }

@@ -6,6 +6,7 @@
   import { lucide } from './lucideLib.svelte';
   import { Plus, TriangleAlert, X } from './icons';
   import { store } from './store.svelte';
+  import { strayAliasIcons, taskrcAliases } from './taskCommands';
 
   /** There are edits not yet applied (the tab shows a dot). */
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
@@ -34,7 +35,41 @@
   let done = $state(false);
 
   const commands = $derived(toCommands(rows));
-  const edited = $derived(!same(commands, saved));
+
+  // The taskrc's aliases, each with the icon it shows in the menus (kept in settings.json as `aliasIcons`).
+  interface AliasRow {
+    name: string;
+    command: string;
+    icon: string;
+  }
+  const aliases = $derived(taskrcAliases(store.config?.config.settings ?? {}));
+  const savedIcons = $derived(store.appSettings?.aliasIcons ?? {});
+  const toAliasRows = (as: typeof aliases, icons: Record<string, string>): AliasRow[] =>
+    as.map((a) => ({ ...a, icon: icons[a.name] ?? '' }));
+  let aliasRows = $state<AliasRow[]>(untrack(() => toAliasRows(aliases, savedIcons)));
+  /** The icons to save: the saved ones (an alias the taskrc does not have keeps its icon), with the edits here. */
+  const icons = $derived.by(() => {
+    const out: Record<string, string> = { ...savedIcons };
+    for (const a of aliasRows) {
+      if (a.icon) out[a.name] = a.icon;
+      else delete out[a.name];
+    }
+    return out;
+  });
+  const sameIcons = (a: Record<string, string>, b: Record<string, string>) =>
+    JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+  const iconsEdited = $derived(!sameIcons(icons, savedIcons));
+  // The aliases or their saved icons changed (the taskrc was applied, settings.json read late): follow them, unless an
+  // icon was picked here.
+  $effect(() => {
+    const next = toAliasRows(aliases, savedIcons);
+    if (!untrack(() => iconsEdited)) aliasRows = next;
+  });
+  /** Icons for an alias the taskrc does not have: kept in the file, and not used. */
+  const stray = $derived(strayAliasIcons(savedIcons, store.config?.config.settings ?? {}));
+  const commandNames = $derived(new Set(commands.map((c) => c.name)));
+
+  const edited = $derived(!same(commands, saved) || iconsEdited);
   $effect(() => {
     ondirty?.(edited);
   });
@@ -67,9 +102,17 @@
     }
     return out;
   });
-  const text = $derived(serializeSettings(store.appSettings?.raw ?? {}, commands));
+  /** An icon picked for an alias that Lucide does not have, by alias. */
+  const aliasProblems = $derived(
+    new Map(
+      aliasRows.flatMap((a) =>
+        a.icon && lucide.missing[a.icon] ? [[a.name, `no Lucide icon is called “${a.icon}”`] as const] : [],
+      ),
+    ),
+  );
+  const text = $derived(serializeSettings(store.appSettings?.raw ?? {}, commands, icons));
   const tooLarge = $derived(new Blob([text]).size > MAX_SETTINGS_BYTES);
-  const valid = $derived(problems.size === 0 && !tooLarge);
+  const valid = $derived(problems.size === 0 && aliasProblems.size === 0 && !tooLarge);
   /** Entries in the saved file that were not understood: they stay in the file. */
   const unread = $derived(store.appSettings?.errors ?? []);
 
@@ -160,6 +203,43 @@
 
   <button type="button" class="btn" onclick={add}><Plus size={14} /> Add a command</button>
 
+  <h3>Aliases</h3>
+  <p class="dim">
+    The aliases in your taskrc (<code>alias.&lt;name&gt;=…</code>) are in the same menus. Pick the icon each shows
+    there; it is kept in <code>settings.json</code>, and the alias itself stays in the taskrc.
+  </p>
+  {#if stray.length}
+    <div class="warn" role="status">
+      <TriangleAlert size={15} />
+      <div>
+        <strong
+          >{stray.length === 1 ? 'One icon is' : `${stray.length} icons are`} for an alias your taskrc doesn't have</strong
+        >, and are kept in settings.json, unused:
+        <ul>
+          {#each stray as why (why)}<li>{why}</li>{/each}
+        </ul>
+      </div>
+    </div>
+  {/if}
+  {#if aliasRows.length}
+    <ul class="rows" aria-label="Aliases">
+      {#each aliasRows as a (a.name)}
+        {@const why = aliasProblems.get(a.name)}
+        <li class="row-item alias" class:invalid={!!why}>
+          <span class="name mono">{a.name}</span>
+          <span class="cmd mono dim" title={a.command}>{a.command}</span>
+          <IconPicker bind:value={a.icon} label="Icon for the alias {a.name}" />
+          {#if why}<span class="why" role="alert">{why}</span>
+          {:else if commandNames.has(a.name)}<span class="note dim"
+              >The command {a.name} has this name and wins in the menus.</span
+            >{/if}
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    <p class="dim">Your taskrc has no aliases.</p>
+  {/if}
+
   {#if tooLarge}<p class="err" role="alert">
       That is more than {MAX_SETTINGS_BYTES / 1024} KB, which is the most that can be saved.
     </p>{/if}
@@ -167,7 +247,10 @@
   {#if done && !edited}<p class="ok" role="status">Applied.</p>{/if}
 
   <footer class="row">
-    {#if edited}<button class="ghost" onclick={() => ((rows = toRows(saved)), (done = false))}>Revert edits</button
+    {#if edited}<button
+        class="ghost"
+        onclick={() => ((rows = toRows(saved)), (aliasRows = toAliasRows(aliases, savedIcons)), (done = false))}
+        >Revert edits</button
       >{/if}
     <span class="grow"></span>
     <button class="primary" onclick={apply} disabled={busy || !edited || !valid}>Apply</button>
@@ -194,6 +277,32 @@
   .bad ul {
     margin: 4px 0 0;
     padding-left: 18px;
+  }
+  h3 {
+    margin: 22px 0 4px;
+    font-size: 15px;
+  }
+  .warn {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    color: var(--warn);
+  }
+  .warn ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+  .alias {
+    grid-template-columns: minmax(90px, 160px) 1fr auto;
+  }
+  .alias .cmd {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .note {
+    grid-column: 1 / -1;
+    font-size: 12.5px;
   }
   .rows {
     list-style: none;

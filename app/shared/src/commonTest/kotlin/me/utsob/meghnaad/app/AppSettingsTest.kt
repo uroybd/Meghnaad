@@ -223,4 +223,32 @@ class AppSettingsTest {
         val off = Json.parseToJsonElement(serializeAppearance(on, parseSettings(on.toString()).appearance.copy(idFallback = false)))
         assertEquals(raw, off)
     }
+
+    @Test
+    fun readsAnIconForEachAliasAndSaysWhatItCannotUse() {
+        val p = parseSettings("""{ "aliasIcons": { "rem": "bell", "bad": "Not An Icon", "n": 3 } }""")
+        assertEquals(mapOf("rem" to "bell"), p.aliasIcons)
+        assertEquals(
+            listOf("aliasIcons.bad: must be a Lucide icon name such as \"bell\"", "aliasIcons.n: must be a Lucide icon name such as \"bell\""),
+            p.errors,
+        )
+        val notObject = "aliasIcons must be an object: { \"<alias>\": \"<icon>\" }"
+        assertEquals(listOf(notObject), parseSettings("""{ "aliasIcons": [] }""").errors)
+        assertEquals(listOf(notObject), lintSettings("""{ "aliasIcons": [] }""").errors)
+    }
+
+    @Test
+    fun savesAliasIconsAsGivenKeepingOneItCouldNotReadAndEverythingElse() {
+        val raw = Json.parseToJsonElement("""{ "aliasIcons": { "rem": "bell", "bad": 7, "gone": "x" }, "taskCommands": [ { "name": "a", "command": "b" } ] }""").jsonObject
+        val cmds = listOf(TaskCommand("a", "b"))
+        assertEquals(
+            Json.parseToJsonElement("""{ "aliasIcons": { "rem": "alarm-clock", "bad": 7, "gone": "x" }, "taskCommands": [ { "name": "a", "command": "b" } ] }"""),
+            Json.parseToJsonElement(serializeSettings(raw, cmds, mapOf("rem" to "alarm-clock", "gone" to "x"))),
+        )
+        // Without icons given, the saved ones stay as they are.
+        assertEquals(raw["aliasIcons"], Json.parseToJsonElement(serializeSettings(raw, emptyList())).jsonObject["aliasIcons"])
+        // The last one taken out: the section goes.
+        val one = Json.parseToJsonElement("""{ "aliasIcons": { "rem": "bell" } }""").jsonObject
+        assertEquals(JsonObject(emptyMap()), Json.parseToJsonElement(serializeSettings(one, emptyList(), emptyMap())))
+    }
 }

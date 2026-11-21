@@ -122,7 +122,7 @@ export abstract class SettingsStore extends StoreBase {
   /** What a task's menus offer to run on it: the task commands, then the taskrc's own aliases. */
   menuCommands = $derived<TaskCommand[]>([
     ...this.taskCommands,
-    ...aliasCommands(this.config?.config.settings ?? {}, this.taskCommands),
+    ...aliasCommands(this.config?.config.settings ?? {}, this.taskCommands, this.appSettings?.aliasIcons),
   ]);
   /** The boards in `settings.json`: pages of numbers, tables and charts. */
   boards = $derived<Board[]>(this.appSettings?.boards ?? []);

@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,7 +58,35 @@ class CommandsState(private val store: Store) {
         base = now
         if (untouched) reset()
     }
-    val edited get() = commands != saved
+
+    /** The icons picked here for the taskrc's aliases, by alias ("" takes one off). */
+    val aliasEdits = mutableStateMapOf<String, String>()
+
+    /** The taskrc's own aliases, for the Aliases list. */
+    val aliases: List<Alias> get() = taskrcAliases(store.config?.config?.settings.orEmpty())
+
+    val savedIcons: Map<String, String> get() = store.appSettings?.aliasIcons.orEmpty()
+
+    /** The icons to save: the saved ones (an alias the taskrc does not have keeps its icon), with the edits here. */
+    val icons: Map<String, String>
+        get() = LinkedHashMap(savedIcons).apply {
+            for ((name, icon) in aliasEdits) if (icon.isEmpty()) remove(name) else put(name, icon)
+        }
+
+    /** The icon an alias shows: the one picked here, else the saved one, else none ("" for the generic one). */
+    fun iconOf(alias: String): String = aliasEdits[alias] ?: savedIcons[alias] ?: ""
+
+    /** Icons for an alias the taskrc does not have: kept in the file, and not used. */
+    val stray: List<String> get() = strayAliasIcons(savedIcons, store.config?.config?.settings.orEmpty())
+
+    /** An icon picked for an alias that Lucide does not have, by alias. */
+    val aliasProblems: Map<String, String>
+        get() = aliases.mapNotNull { a ->
+            val icon = iconOf(a.name)
+            if (icon.isNotEmpty() && LucideLib.loaded && !LucideLib.has(icon)) a.name to "no Lucide icon is called “$icon”" else null
+        }.toMap()
+
+    val edited get() = commands != saved || icons != savedIcons
 
     /** What is wrong with each row, by key. */
     val problems: Map<Int, String>
@@ -75,9 +104,9 @@ class CommandsState(private val store: Store) {
             return out
         }
 
-    val text: String get() = serializeSettings(store.appSettings?.raw ?: JsonObject(emptyMap()), commands)
+    val text: String get() = serializeSettings(store.appSettings?.raw ?: JsonObject(emptyMap()), commands, icons)
     val tooLarge get() = text.encodeToByteArray().size > MAX_SETTINGS_BYTES
-    val valid get() = problems.isEmpty() && !tooLarge
+    val valid get() = problems.isEmpty() && aliasProblems.isEmpty() && !tooLarge
 
     /** Entries in the saved file that were not understood: applying drops them. */
     val unread get() = store.appSettings?.errors ?: emptyList()
@@ -91,6 +120,7 @@ class CommandsState(private val store: Store) {
         rows.clear()
         rows.addAll(toRows(saved))
         base = saved
+        aliasEdits.clear()
         done = false
     }
 
@@ -155,6 +185,41 @@ fun CommandsPanel(store: Store, st: CommandsState) {
             }
         }
         OutlinedButton(onClick = st::add) { LucideIcon("plus", size = 14.dp); Text("  Add a command") }
+
+        Text("Aliases", fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+        Dim(
+            "The aliases in your taskrc (alias.<name>=…) are in the same menus. Pick the icon each shows there; it is kept in " +
+                "settings.json, and the alias itself stays in the taskrc.",
+            size = 13,
+        )
+        val stray = st.stray
+        if (stray.isNotEmpty()) {
+            Column {
+                Text(
+                    "${if (stray.size == 1) "One icon is" else "${stray.size} icons are"} for an alias your taskrc doesn't have, and are kept in settings.json, unused:",
+                    color = extras.warn, fontSize = 13.sp,
+                )
+                stray.forEach { Text("• $it", color = extras.warn, fontSize = 13.sp) }
+            }
+        }
+        val aliases = st.aliases
+        if (aliases.isEmpty()) Dim("Your taskrc has no aliases.", size = 14)
+        val names = st.commands.map { it.name }.toSet()
+        val aliasProblems = st.aliasProblems
+        for (a in aliases) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(a.name, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+                        Text(a.command, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                    IconPicker(st.iconOf(a.name), { st.aliasEdits[a.name] = it; st.done = false }, "Icon for the alias ${a.name}")
+                }
+                val why = aliasProblems[a.name]
+                if (why != null) Text(why, color = colors.error, fontSize = 12.sp)
+                else if (a.name in names) Dim("The command ${a.name} has this name and wins in the menus.", size = 12)
+            }
+        }
 
         var showJson by remember { mutableStateOf(false) }
         TextButton(onClick = { showJson = !showJson }) { Text("settings.json", fontSize = 13.sp, color = colors.onSurfaceVariant) }

@@ -3,12 +3,13 @@
   import { STATIC } from '../engine/flavour';
   import DevicePanel from './DevicePanel.svelte';
   import { putAppSettings } from './api';
-  import { lintSettings, parseHomepage, sameHomepage, type Homepage } from './appsettings';
+  import { lintSettings, parseHomepage, parseSettings, sameHomepage, type Homepage } from './appsettings';
   import { ensureDeviceId } from './deviceAsk.svelte';
   import { deviceIdProblem, withDeviceHomepage } from './deviceSettings';
   import { Check, Copy, TriangleAlert } from './icons';
   import { resolveKeymap } from './keymap';
   import { store } from './store.svelte';
+  import { strayAliasIcons } from './taskCommands';
 
   /** There are edits not yet applied (the tab shows a dot). */
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
@@ -74,7 +75,12 @@
     fileBefore = now;
     if (untouched) text = now;
   });
-  const lint = $derived(lintSettings(text, (raw) => resolveKeymap(raw, store.keymapDefaults).problems));
+  const lint = $derived(
+    lintSettings(text, (raw) => [
+      ...resolveKeymap(raw, store.keymapDefaults).problems,
+      ...strayAliasIcons(parseSettings(JSON.stringify(raw)).aliasIcons, store.config?.config.settings ?? {}),
+    ]),
+  );
   let fileBusy = $state(false);
   let fileError = $state<string | null>(null);
   let fileDone = $state(false);
