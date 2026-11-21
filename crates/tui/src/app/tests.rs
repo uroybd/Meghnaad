@@ -418,9 +418,10 @@ fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     assert_eq!(app.settings_section, SettingsSection::Sync);
     app.key(key(KeyCode::Char('a')));
     assert!(
-        matches!(app.mode, Mode::Normal),
-        "a adds a task command only in its section"
+        matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Add),
+        "a adds a task command only in its section; elsewhere it adds a task"
     );
+    app.key(key(KeyCode::Esc));
     app.key(key(KeyCode::Char('j')));
     assert_eq!(app.settings_section, SettingsSection::Theme);
     app.key(key(KeyCode::Char('j')));
@@ -570,7 +571,7 @@ fn the_keybindings_show_yours_then_the_defaults_and_search() {
     );
     app.key(key(KeyCode::Char('t')));
     assert!(app.keys_defaults);
-    assert!(actions(&app).contains(&"tasks.add".to_owned()));
+    assert!(actions(&app).contains(&"app.add".to_owned()));
     app.key(key(KeyCode::Char('t')));
     app.key(key(KeyCode::Char('f')));
     assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::KeysSearch));
@@ -844,4 +845,23 @@ fn a_folded_kanban_lane_is_one_stop_whose_card_is_not_chosen() {
     a.kanban_action("kanban.fold");
     assert!(a.kanban_folded.is_empty());
     assert_eq!(chosen(&a).as_deref(), Some("a1"));
+}
+
+#[test]
+fn a_adds_a_task_from_any_page_and_the_bottom_line_says_so_where_it_does() {
+    for keys in ["g4", "g5", "g9", "g7"] {
+        let mut app = app();
+        typing(&mut app, keys);
+        assert!(app.global_keys().contains("a add"), "{keys}: {}", app.global_keys());
+        app.key(key(KeyCode::Char('a')));
+        assert!(
+            matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Add),
+            "{keys}"
+        );
+    }
+    // Where a page gives `a` a meaning of its own, the bottom line doesn't say it adds a task.
+    let mut app = app();
+    typing(&mut app, "g0");
+    app.settings_section = SettingsSection::Commands;
+    assert!(!app.global_keys().contains("a add"), "{}", app.global_keys());
 }

@@ -65,6 +65,7 @@ impl App {
             // Taskwarrior's own sync, with its own settings.
             "app.sync" => self.sync(),
             "app.undo" => self.quick(&["undo".into()]),
+            "app.add" => self.prompt(PromptKind::Add, ""),
             "app.review" => self.start_review(0),
             "app.context" => {
                 let mut options = vec!["none".to_owned()];

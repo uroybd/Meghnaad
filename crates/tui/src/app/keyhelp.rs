@@ -79,7 +79,7 @@ impl App {
         const FIRST: [&str; 3] = ["tasks.info", "tasks.filter", "tasks.sort"];
         let mut words: Vec<&(&str, &str)> = keys::WORDS
             .iter()
-            .filter(|w| groups.contains(&keymap::section_of(w.0)) && w.0 != "tasks.add")
+            .filter(|w| groups.contains(&keymap::section_of(w.0)))
             .collect();
         words.sort_by_key(|w| FIRST.iter().position(|f| *f == w.0).unwrap_or(FIRST.len()));
         words
@@ -114,12 +114,20 @@ impl App {
         if let Some(k) = self.first_key("app.prompt") {
             parts.push(format!("{k} command"));
         }
-        // Adding a task is said with the keys every page has, not in the table's border.
-        let mut also = vec!["app.context"];
-        if self.context() == "tasks" {
-            also.insert(0, "tasks.add");
+        // Adding a task is said with the keys every page has, by the keys that add one here: a page may give the same
+        // key a meaning of its own (`a` adds a column in Settings → Kanban).
+        let context = self.context();
+        let add: Vec<String> = self
+            .keymap
+            .keys_of("app.add")
+            .iter()
+            .filter(|k| self.keymap.action(context, k) == Some("app.add"))
+            .map(|k| keymap::display(k))
+            .collect();
+        if !add.is_empty() {
+            parts.push(format!("{} add", add.join("/")));
         }
-        let more = self.hints_of(&also);
+        let more = self.hints_of(&["app.context"]);
         if !more.is_empty() {
             parts.push(more);
         }

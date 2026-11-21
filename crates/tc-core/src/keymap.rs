@@ -1705,11 +1705,20 @@ mod tests {
             assert_eq!(m.problems, Vec::<String>::new(), "{}", p.key());
             for (context, groups) in d[p.key()]["contexts"].as_object().unwrap() {
                 let groups: Vec<&str> = groups.as_array().unwrap().iter().filter_map(Value::as_str).collect();
+                // One shadow is meant: a section's own add (a task command, a kanban column, a key) wins over adding
+                // a task, which every other page of the terminal gives `a`.
+                let own: Vec<&String> = m
+                    .keys
+                    .iter()
+                    .filter(|(n, _)| groups.first() == Some(&section_of(n)))
+                    .flat_map(|(_, k)| k)
+                    .collect();
+                let own = &own;
                 let mut all: Vec<&String> = m
                     .keys
                     .iter()
                     .filter(|(n, _)| groups.contains(&section_of(n)))
-                    .flat_map(|(_, k)| k)
+                    .flat_map(|(n, k)| k.iter().filter(move |k| *n != "app.add" || !own.contains(k)))
                     .collect();
                 let n = all.len();
                 all.sort_unstable();

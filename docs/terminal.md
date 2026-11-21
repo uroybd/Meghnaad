@@ -167,6 +167,7 @@ On every page:
 | `Ctrl+F` `Ctrl+B` (or PgDn PgUp) | A page down and up |
 | `gg` `G` (or Home End) | The first and the last; with a number before it, that row (`5G`) |
 | `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_` |
+| `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form). Where a page has an `a` of its own (adding a task command or a kanban column in Settings, a sort field, the Annotations tab of a task's info), that one wins, and the bottom line says `a add` only where `a` adds a task |
 | `/` | The command line |
 | `:` | The command line with `:` typed, for a [command](#commands) (`:tabn Tasks`, `:5`, `:done`) |
 | `v` | Review the tasks that need it |
@@ -189,7 +190,6 @@ On the Tasks page:
 | `j` `k` and the moves above | Move through the report's rows (a group's separator is not a row) |
 | `[` `]` | On a grouped report, the first row of the group before, or of the next |
 | `Enter` | The task's info, in tabs ([Task info](#task-info)); any other key closes it |
-| `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form) |
 | `m` `M` | Modify the selected task, in [the full form](#the-form) |
 | `A` | Annotate the selected task, in a box that shows it as it is; `Alt+Enter` starts a new line |
 | `x` | Take an annotation off the selected task: the command line opens with `<uuid> denotate ` |
