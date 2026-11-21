@@ -329,8 +329,11 @@
     {#each fieldsOf(cs).filter((f) => f.shape === 'text') as f (f.col.spec)}
       <div class="para">
         <h4>{f.col.label}</h4>
-        <!-- The cell's classes (multiline: kept as written) on a box of its own, so the heading's line end isn't kept too. -->
-        <div class={f.c.cls ?? ''}><ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} /></div>
+        <!-- The cell's classes (multiline: kept as written) on a box of its own, so the heading's line end isn't kept too.
+             Markdown keeps its own lines: kept as written, the space after its list would be a blank line too. -->
+        <div class={f.c.blocks ? '' : (f.c.cls ?? '')}>
+          <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
+        </div>
       </div>
     {/each}
     {#if kanban && kanban.columns.some((c, i) => i !== from && c.move.trim())}
