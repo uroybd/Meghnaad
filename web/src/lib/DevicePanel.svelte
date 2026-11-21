@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from './ask.svelte';
   // The static flavour's device settings (in General): where it syncs, trusting it (spec 0018), a passkey to unlock it
   // (spec 0019), locking, and forgetting it. All of it is this browser's alone: nothing here is synced.
   import { onMount } from 'svelte';
@@ -63,9 +64,9 @@
 
   async function forgetIt() {
     if (
-      !confirm(
+      !(await ask(
         'Forget this device? Its sealed token and its copy of the tasks are removed, and every tab locks. What was synced stays on the branch.',
-      )
+      ))
     )
       return;
     await forget();

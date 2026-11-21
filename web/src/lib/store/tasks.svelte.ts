@@ -6,6 +6,7 @@ import { confirmText } from '../said';
 import type { CliResponse } from '../types';
 import { hookKind, hookText, newEntry, titleOf, type Entry } from './base.svelte';
 import { ConsoleStore } from './console.svelte';
+import { ask } from '../ask.svelte';
 
 type Panel = 'summary' | 'calendar' | 'burndown';
 
@@ -97,14 +98,14 @@ export abstract class TasksStore extends ConsoleStore {
         if (typeof window !== 'undefined') {
           const retry = (more: Answers) => this.act(from, args, { ...answers, ...more }, true);
           if (r.ask === 'plain') {
-            if (!answers.confirmed && window.confirm(r.message)) return retry({ confirmed: true });
+            if (!answers.confirmed && (await ask(r.message))) return retry({ confirmed: true });
           } else {
             const keys = r.items.map((i) => i.key);
             // With what `task` prints before it (the dependency reminder).
             const question = confirmText(r);
-            if (window.confirm(question)) return retry(r.ask === 'permission' ? { approved: keys } : { extras: keys });
+            if (await ask(question)) return retry(r.ask === 'permission' ? { approved: keys } : { extras: keys });
             // A follow-up can be declined while the change itself still goes ahead.
-            if (r.ask === 'extras' && window.confirm('Go ahead with the change without that?'))
+            if (r.ask === 'extras' && (await ask('Go ahead with the change without that?')))
               return retry({ extras: [] });
           }
         }

@@ -17,6 +17,7 @@ const session = vi.hoisted(() => ({
 vi.mock('../engine/session', () => session);
 
 import StaticGate from './StaticGate.svelte';
+import { asker } from './ask.svelte';
 
 let app: ReturnType<typeof mount> | null = null;
 let unlocked = 0;
@@ -206,14 +207,16 @@ describe('a connected device', () => {
   it('forgets the device only when that is confirmed', async () => {
     session.openDevice.mockResolvedValue('unlock');
     await open();
-    const ask = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    // The page's own question, answered no and then yes.
     button('Forget this device').click();
+    await vi.waitFor(() => expect(asker.current?.message).toMatch(/^Forget this device\?/));
+    asker.answer(false);
     await tick();
     expect(session.forget).not.toHaveBeenCalled();
     button('Forget this device').click();
-    await tick();
-    expect(session.forget).toHaveBeenCalledTimes(1);
-    ask.mockRestore();
+    await vi.waitFor(() => expect(asker.current).not.toBeNull());
+    asker.answer(true);
+    await vi.waitFor(() => expect(session.forget).toHaveBeenCalledTimes(1));
   });
 });
 

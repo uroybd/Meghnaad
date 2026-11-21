@@ -10,6 +10,7 @@ import { selection } from './selection.svelte';
 import { store } from './store.svelte';
 import type { Call } from './keymap';
 import type { Row } from './types';
+import { ask } from './ask.svelte';
 
 export const PAGES = ['tasks', 'projects', 'tags', 'summary', 'calendar', 'burndown', 'boards', 'console'] as const;
 /** The pages in the order of the top bar, Settings last, as the terminal app numbers them. */
@@ -212,8 +213,12 @@ export function runCall(call: Call): boolean {
       return true;
     case 'tasks.delete': {
       const uuids = targets();
-      if (uuids.length && confirm(uuids.length > 1 ? `Delete ${uuids.length} tasks?` : `Delete ‘${row?.description}’?`))
-        void onTasks(['delete'], uuids);
+      if (uuids.length)
+        void ask(uuids.length > 1 ? `Delete ${uuids.length} tasks?` : `Delete ‘${row?.description}’?`).then(
+          async (yes) => {
+            if (yes) await onTasks(['delete'], uuids);
+          },
+        );
       return true;
     }
     case 'tasks.duplicate':
@@ -248,8 +253,10 @@ export function runCall(call: Call): boolean {
       if (row) openLink(row);
       return true;
     case 'tasks.clearCompleted':
-      if (confirm('Delete the completed tasks of this report?'))
-        void store.act(store.live, [...splitWords(store.filter), 'status:completed', 'delete'], { confirmed: true });
+      void ask('Delete the completed tasks of this report?').then(async (yes) => {
+        if (yes)
+          await store.act(store.live, [...splitWords(store.filter), 'status:completed', 'delete'], { confirmed: true });
+      });
       return true;
   }
   say(`${call.action} is the terminal app's.`);

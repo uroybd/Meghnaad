@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from './ask.svelte';
   // The static flavour's front door: Connect (the first visit on a device) or Unlock (every later one). Nothing of the
   // app is loaded until it is passed. See src/engine/session.ts and vault.ts. A tab that locked keeps reminding here from
   // the list it kept (spec 0017, lockedReminders.ts).
@@ -118,9 +119,9 @@
 
   async function doForget() {
     if (
-      !confirm(
+      !(await ask(
         'Forget this device? Its sealed token and its copy of the tasks are removed; what was synced stays on the branch.',
-      )
+      ))
     )
       return;
     await forget();

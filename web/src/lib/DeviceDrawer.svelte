@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from './ask.svelte';
   import { deviceAsk } from './deviceAsk.svelte';
   import { deviceIdProblem } from './deviceSettings';
   import Drawer from './Drawer.svelte';
@@ -42,7 +43,8 @@
   }
 
   async function remove(gone: string) {
-    if (!confirm(`Delete the settings of the device ${gone}? Any device using them goes back to everyone's.`)) return;
+    if (!(await ask(`Delete the settings of the device ${gone}? Any device using them goes back to everyone's.`)))
+      return;
     busy = true;
     error = null;
     try {

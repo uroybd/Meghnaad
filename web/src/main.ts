@@ -4,11 +4,15 @@ import { engine } from './engine/client.svelte';
 import { STATIC } from './engine/flavour';
 import { initHelpers } from './engine/helpers';
 import { prefetch } from './lib/api';
+import AskDialog from './lib/AskDialog.svelte';
 
 // The engine's helpers (dates in the user's format, quoting and sorting a filter) are used while the page is built, so they
 // load first: it is the engine's WebAssembly, which the engine needs a moment later and finds in the browser's cache. The
 // app is imported after, because its modules use them as they are made.
 const target = document.getElementById('app')!;
+
+// The page's own yes-or-no questions (lib/ask.svelte.ts), for the gate and the app alike: never the browser's `confirm`.
+mount(AskDialog, { target: document.body.appendChild(document.createElement('div')) });
 
 function failed(e: unknown) {
   target.textContent = `The app could not start in this browser: ${e instanceof Error ? e.message : String(e)}`;

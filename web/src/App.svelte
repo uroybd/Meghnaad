@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from './lib/ask.svelte';
   import { BASE, fromAddress, toAddress } from './lib/base';
   import { STATIC } from './engine/flavour';
   import { lock } from './engine/session';
@@ -142,7 +143,7 @@
 
   /** This browser's copy of the tasks is thrown away (changes that never reached the server with it) and fetched again. */
   async function discardLocalCopy() {
-    const sure = confirm(
+    const sure = await ask(
       "This throws away this browser's copy of your tasks, including any change that has not reached the server yet, and loads them again from the server. Continue?",
     );
     if (!sure) return;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from './ask.svelte';
   import { untrack } from 'svelte';
   import { STATIC } from '../engine/flavour';
   import DevicePanel from './DevicePanel.svelte';
@@ -135,7 +136,7 @@
     idError = null;
     try {
       const taken = (await store.listDevices()).includes(next);
-      if (taken && !confirm(`The device ${next} has settings already. Use those here, in place of this device's?`))
+      if (taken && !(await ask(`The device ${next} has settings already. Use those here, in place of this device's?`)))
         return;
       if (taken) await store.useDevice(next);
       else await store.saveDevice(store.deviceRaw ?? {}, next);
@@ -149,7 +150,7 @@
     const id = store.deviceId;
     if (
       !id ||
-      !confirm(`Delete this device's own settings (${id})? It uses everyone's again, as does any device on ${id}.`)
+      !(await ask(`Delete this device's own settings (${id})? It uses everyone's again, as does any device on ${id}.`))
     )
       return;
     try {
