@@ -213,7 +213,7 @@ fn lane(f: &mut Frame, app: &App, area: Rect, title: &str, cards: &[Card], sel: 
     // From the first card that keeps the chosen one's bottom in sight.
     let chosen = sel.unwrap_or(0).min(pieces.len() - 1);
     let mut first = 0;
-    let bottom = |from: usize| pieces[from..=chosen].iter().map(|p| height(p) + 1).sum::<u16>();
+    let bottom = |from: usize| pieces[from..=chosen].iter().map(height).sum::<u16>();
     while first < chosen && bottom(first) > body.height {
         first += 1;
     }
@@ -234,7 +234,8 @@ fn lane(f: &mut Frame, app: &App, area: Rect, title: &str, cards: &[Card], sel: 
                 ribbon(app, c),
             );
         }
-        y = y.saturating_add(h + 1);
+        // The frames are the space between cards: the next one starts on the row after this one's border.
+        y = y.saturating_add(h);
     }
 }
 
@@ -328,7 +329,7 @@ fn bands(data: &KanbanData, folded: &BTreeSet<String>, heights: &[Option<Vec<u16
                     continue;
                 };
                 cards.push((i, n, at, *h));
-                at = at.saturating_add(h + 1);
+                at = at.saturating_add(*h);
             }
             tallest = tallest.max(at);
         }
@@ -689,4 +690,38 @@ pub fn settings_lines(app: &App) -> Vec<ListItem<'static>> {
     }
     items.extend(errors(app).into_iter().map(ListItem::new));
     items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::kanbans::Card;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    /// One column of `cards` drawn `w` by `h`, as text, a row each.
+    fn column_rows(cards: &[Card], w: u16, h: u16) -> Vec<String> {
+        let app = App::new(crate::task::Task::new("/nonexistent/task"));
+        let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+        t.draw(|f| lane(f, &app, f.area(), "To do", cards, Some(0), true))
+            .unwrap();
+        let b = t.backend().buffer().clone();
+        (0..h)
+            .map(|y| (0..w).map(|x| b[(x, y)].symbol().to_owned()).collect::<String>())
+            .collect()
+    }
+
+    #[test]
+    fn cards_stack_with_no_blank_row_between_them() {
+        let card = |t: &str| Card {
+            uuid: t.to_owned(),
+            title: t.to_owned(),
+            ..Default::default()
+        };
+        let rows = column_rows(&[card("first"), card("second")], 30, 14);
+        let at = |word: &str| rows.iter().position(|r| r.contains(word)).unwrap();
+        let (first, second) = (at("first"), at("second"));
+        // A card of one line is three rows (its frame above and below): the second's top border is right under the
+        // first's bottom one.
+        assert_eq!(second - first, 3, "{}", rows.join("\n"));
+    }
 }
