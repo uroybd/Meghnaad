@@ -204,12 +204,12 @@ impl Reply {
         }
     }
 
-    #[allow(clippy::needless_pass_by_value, reason = "every caller builds the value in the call")]
+    #[expect(clippy::needless_pass_by_value, reason = "every caller builds the value in the call")]
     pub fn ok(value: Value) -> Reply {
         Reply::json(200, &value)
     }
 
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
         reason = "callers hand over a message of any type: a string, an error"
     )]

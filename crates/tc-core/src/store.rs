@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-#[allow(async_fn_in_trait)] // Workers futures are !Send, so no Send bound is wanted.
+#[expect(async_fn_in_trait, reason = "Workers futures are !Send, so no Send bound is wanted")]
 pub trait ObjectStore {
     /// The object's value, or `None` if it does not exist.
     async fn get(&self, name: &str) -> Result<Option<Vec<u8>>>;

@@ -5,7 +5,7 @@ use worker::{Bucket, Conditional};
 
 pub struct R2Store(pub Bucket);
 
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "used as a `map_err` function, which hands the error over"
 )]

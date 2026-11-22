@@ -105,7 +105,8 @@ pub enum Kind {
 
 #[allow(
     clippy::enum_glob_use,
-    reason = "the command table and the matches on it name every kind, so they use the bare names"
+    reason = "the command table and the matches on it name every kind, so they use the bare names (an allow: the \
+              lint fires in the library build and not in its test build, where an expect would fail)"
 )]
 use Kind::*;
 
@@ -1324,7 +1325,7 @@ fn modify_plan(
 
 /// The tags of a task: every `tag_<name>` key, whatever the name (the library's `get_tags` drops `URGENT` and `a:b`).
 pub(crate) fn tag_names(task: &Task) -> Vec<String> {
-    #[allow(
+    #[expect(
         deprecated,
         reason = "TaskData::properties would need a clone of the task; the map is what it reads"
     )]

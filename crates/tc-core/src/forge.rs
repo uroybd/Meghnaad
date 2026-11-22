@@ -34,7 +34,7 @@ pub struct HttpResponse {
 }
 
 /// How a host sends a request.
-#[allow(async_fn_in_trait)] // Workers futures are !Send, so no Send bound is wanted.
+#[expect(async_fn_in_trait, reason = "Workers futures are !Send, so no Send bound is wanted")]
 pub trait Http {
     async fn send(&self, request: HttpRequest) -> Result<HttpResponse>;
 }

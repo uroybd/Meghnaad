@@ -160,7 +160,7 @@ fn install(args: &[&str]) -> Result<Vec<String>, String> {
     let mut lines = Vec::new();
     let place = data.join("hooks.lua");
     let script = match options.rest.first() {
-        None => std::env::var_os("MEGHNAAD_HOOKS").map_or(place.clone(), PathBuf::from),
+        None => std::env::var_os("MEGHNAAD_HOOKS").map_or(place, PathBuf::from),
         Some(given) => {
             let given = std::fs::canonicalize(given).map_err(|e| format!("{given}: {e}"))?;
             if std::fs::canonicalize(&place).ok().as_ref() != Some(&given) {

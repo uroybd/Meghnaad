@@ -148,7 +148,7 @@ fn problem_of(text: &str) -> Problem {
     }
 }
 
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "used as a `map_err` function, which hands the error over"
 )]

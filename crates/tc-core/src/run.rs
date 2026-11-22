@@ -16,7 +16,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-#[allow(
+#[expect(
     clippy::trivially_copy_pass_by_ref,
     reason = "serde's `skip_serializing_if` hands over a reference"
 )]
@@ -24,7 +24,7 @@ fn is_zero(n: &u32) -> bool {
     *n == 0
 }
 
-#[allow(
+#[expect(
     clippy::trivially_copy_pass_by_ref,
     reason = "serde's `skip_serializing_if` hands over a reference"
 )]
@@ -326,7 +326,7 @@ fn str_of<'a>(f: &'a Facts, field: &str) -> Option<Cow<'a, str>> {
     })
 }
 
-#[allow(
+#[expect(
     clippy::option_option,
     reason = "outer: not a date field; inner: the task has no such date"
 )]

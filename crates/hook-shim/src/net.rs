@@ -30,7 +30,7 @@ impl Net for HostNet {
             request = request.header(k.as_str(), v.as_str());
         }
         let request = request
-            .body(r.body.clone().unwrap_or_default().into_bytes())
+            .body(r.body.unwrap_or_default().into_bytes())
             .map_err(|e| format!("the request could not be made: {e}"))?;
         let mut response = agent.run(request).map_err(|e| {
             let text = e.to_string();

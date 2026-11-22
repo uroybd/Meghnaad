@@ -33,7 +33,7 @@ struct Request {
 }
 
 /// An answer that says the request was not one, or could not be carried out.
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "callers hand over a message of any type: a string, an error"
 )]

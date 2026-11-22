@@ -33,7 +33,7 @@ use tc_core::prefetch::{self, Fetched, Prefetched};
 use tc_core::{save_replica, LiveStorage, Saver};
 use wasm_bindgen::prelude::*;
 
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "used as a `map_err` function, which hands the error over"
 )]

@@ -6,7 +6,7 @@ use taskchampion::Server;
 use tc_core::crypto::Cryptor;
 use worker::Env;
 
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "used as a `map_err` function, which hands the error over"
 )]

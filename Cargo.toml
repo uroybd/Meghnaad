@@ -20,6 +20,9 @@ trivial_casts = "warn"
 trivial_numeric_casts = "warn"
 
 [workspace.lints.clippy]
+# A lint is silenced with `#[expect(.., reason = "..")]`, which says when it is no longer needed; `#[allow]` only where
+# it fires on some targets and not others, and either way with its reason.
+allow_attributes_without_reason = "warn"
 # Code that can panic or write where it should not. A failure is returned (or, where it truly cannot happen, handled by
 # a pattern that shows why), never unwrapped.
 unwrap_used = "warn"

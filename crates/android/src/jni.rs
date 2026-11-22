@@ -16,7 +16,7 @@ fn text(env: &mut JNIEnv, s: &JString) -> String {
     env.get_string(s).map(Into::into).unwrap_or_default()
 }
 
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "callers hand over a message of any type: a string, an error"
 )]
@@ -44,7 +44,7 @@ fn with_engine<T>(handle: jlong, f: impl FnOnce(&mut Engine) -> T) -> Result<T, 
     catch_unwind(AssertUnwindSafe(|| f(&mut guard))).map_err(|_| "the engine failed unexpectedly".to_owned())
 }
 
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "callers hand over a message of any type: a string, an error"
 )]

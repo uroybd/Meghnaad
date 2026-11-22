@@ -669,7 +669,10 @@ impl Engine {
             secrets: secrets.clone(),
         });
         let hooks = LuaHooks::load_with(&source, clock, Some(net)).ok()?;
-        #[allow(clippy::arc_with_non_send_sync)] // the engine is entered by one thread at a time (see `jni`)
+        #[expect(
+            clippy::arc_with_non_send_sync,
+            reason = "the engine is entered by one thread at a time (see `jni`)"
+        )]
         Some(Arc::new(hooks))
     }
 

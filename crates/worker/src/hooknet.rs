@@ -17,7 +17,7 @@ pub struct WorkerNet {
 }
 
 /// What went wrong, as the words of the JavaScript error and not its debug form.
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "used as a `map_err` function, which hands the error over"
 )]

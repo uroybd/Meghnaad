@@ -21,7 +21,7 @@ use wasm_bindgen_futures::JsFuture;
 const MAX_RESPONSE: usize = 1024 * 1024;
 
 /// What went wrong, as the words of the JavaScript error.
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "used as a `map_err` function, which hands the error over"
 )]

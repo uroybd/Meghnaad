@@ -53,7 +53,7 @@ fn now_secs() -> i64 {
     (js_sys::Date::now() / 1000.0) as i64
 }
 
-#[allow(
+#[expect(
     clippy::needless_pass_by_value,
     reason = "used as a `map_err` function, which hands the error over"
 )]

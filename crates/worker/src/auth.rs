@@ -78,10 +78,6 @@ thread_local! {
     static KEYS: RefCell<KeyCache> = RefCell::new(KeyCache::default());
 }
 
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "used as a `map_err` function, which hands the error over"
-)]
 fn js_err(_: JsValue) -> AuthError {
     // What the runtime said is left out of the answer: it could say more than a caller should hear.
     AuthError::Rejected("crypto operation failed")

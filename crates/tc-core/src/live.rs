@@ -67,6 +67,8 @@ impl Generation {
             for (_, tasks) in log.iter().filter(|(n, _)| *n > since) {
                 touched.extend_from_slice(tasks.as_deref()?);
             }
+            // Read; the rest is this caller's own work, which a transaction need not wait for.
+            drop(log);
             touched.sort_unstable();
             touched.dedup();
         }

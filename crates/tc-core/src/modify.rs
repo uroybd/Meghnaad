@@ -267,7 +267,7 @@ fn substitute(text: &str, from: &str, to: &str, global: bool, ctx: &EvalCtx) -> 
 /// `scheduled`. It reads what that date is at this point of the command line, as Taskwarrior does: what an earlier word
 /// of the command set, or else what the task has already. `None` when `v` is not one of these; `Some(None)` when it is
 /// but the task has no such date yet.
-#[allow(
+#[expect(
     clippy::option_option,
     reason = "outer: not a date of this kind; inner: the task has none yet"
 )]

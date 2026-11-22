@@ -90,7 +90,7 @@ pub enum Committed {
 
 /// A branch of a git repository, as far as this module needs one. `head` is the commit the branch points at, `None`
 /// when there is no such branch yet; a commit is based on the head its changes were worked out from.
-#[allow(async_fn_in_trait)] // Workers futures are !Send, so no Send bound is wanted.
+#[expect(async_fn_in_trait, reason = "Workers futures are !Send, so no Send bound is wanted")]
 pub trait GitRepo {
     /// The head and the file at `path`, read from the same commit.
     async fn read(&self, path: &str) -> Result<(Option<String>, Option<Blob>)>;
