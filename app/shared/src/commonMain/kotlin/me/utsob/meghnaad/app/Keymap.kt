@@ -59,7 +59,7 @@ class KeyBindings(
 
 private fun strings(v: JsonElement?): List<String> = (v as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList()
 
-/** Every section's actions, the user's first (keymap.ts `keyBindings`); none when the engine cannot be asked. */
+/** Every section's actions, the user's first (keymap.ts `keyBindings`); none, with why, when the engine cannot be asked. */
 fun keymapBindings(settings: JsonObject, defaults: JsonObject = KEYMAP_DEFAULTS): KeyBindings = runCatching {
     val o = callHelper("keymap_bindings", settings, defaults).jsonObject
     KeyBindings(
@@ -83,7 +83,10 @@ fun keymapBindings(settings: JsonObject, defaults: JsonObject = KEYMAP_DEFAULTS)
             BadKey(f("section"), f("group"), f("key"), f("runs"), f("why"))
         },
     )
-}.getOrElse { KeyBindings() }
+}.getOrElse { KeyBindings(problems = listOf(keysUnread(it))) }
+
+/** Why there are no keys: the engine's helpers failed (its library did not load, or answered something unexpected). */
+private fun keysUnread(e: Throwable): String = "The keys could not be read: ${e.message ?: e.toString()}"
 
 /** [next] with the keys [settings] had first in their order, then the new ones. */
 private fun inOrder(settings: JsonObject, next: JsonObject): JsonObject =
@@ -197,7 +200,7 @@ val KEYMAP_DEFAULTS: JsonObject by lazy {
     runCatching { engineJson.parseToJsonElement(readResource("/keymaps/default.json") ?: "{}").jsonObject }.getOrElse { JsonObject(emptyMap()) }
 }
 
-/** The phone's keys from the defaults and the whole of `settings.json`; none when the engine cannot be asked. */
+/** The phone's keys from the defaults and the whole of `settings.json`; none, with why, when the engine cannot be asked. */
 fun resolveKeymap(settings: JsonObject, defaults: JsonObject = KEYMAP_DEFAULTS): Keymap = runCatching {
     val o = callHelper("keymap", JsonPrimitive("mobile"), settings, defaults).jsonObject
     Keymap(
@@ -205,7 +208,7 @@ fun resolveKeymap(settings: JsonObject, defaults: JsonObject = KEYMAP_DEFAULTS):
         contexts = o["contexts"]?.jsonObject?.mapValues { (_, v) -> v.jsonObject.mapValues { it.value.jsonPrimitive.content } } ?: emptyMap(),
         problems = o["problems"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
     )
-}.getOrElse { Keymap() }
+}.getOrElse { Keymap(problems = listOf(keysUnread(it))) }
 
 /** A key the keyboard gave (a character, or a name: `enter`, `down`) with the modifiers held, as the keymap writes it. */
 fun keyChord(key: String, mods: List<String>): String? = runCatching {
