@@ -648,7 +648,8 @@ impl Engine {
             .unwrap_or_else(|| Reply::error(404, format!("there is no {method} {path} in the app")))
     }
 
-    /// The hooks for a command run at `clock`, from the saved script (none if there is none, or it does not load).
+    /// The hooks for a command run at `clock`, from the saved script: none if there is none, and a refusal of every
+    /// command if it does not load ([`tc_core::hooks::Broken`]).
     fn hooks(
         (web, secrets, script): (&WebSettings<FileStore>, &Rc<Secrets>, &mut Option<String>),
         clock: tc_core::dates::Clock,
@@ -668,12 +669,15 @@ impl Engine {
         let net: Rc<dyn Net> = Rc::new(PhoneNet {
             secrets: secrets.clone(),
         });
-        let hooks = LuaHooks::load_with(&source, clock, Some(net)).ok()?;
-        #[expect(
-            clippy::arc_with_non_send_sync,
-            reason = "the engine is entered by one thread at a time (see `jni`)"
-        )]
-        Some(Arc::new(hooks))
+        let hooks: Arc<dyn HookHost> = match LuaHooks::load_with(&source, clock, Some(net)) {
+            #[expect(
+                clippy::arc_with_non_send_sync,
+                reason = "the engine is entered by one thread at a time (see `jni`)"
+            )]
+            Ok(hooks) => Arc::new(hooks),
+            Err(p) => Arc::new(tc_core::hooks::Broken(p.refusal())),
+        };
+        Some(hooks)
     }
 
     /// One command: the answer as JSON text (`{ error }` if the request is not one).

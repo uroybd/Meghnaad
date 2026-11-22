@@ -157,13 +157,7 @@ fn load(source: &str, secrets: &Secrets) -> Result<Rc<LuaRunner>, String> {
     });
     LuaRunner::load_with(source, Clock::utc(0), Some(net))
         .map(Rc::new)
-        .map_err(|p| {
-            let at = p.line.map(|l| format!(" (line {l})")).unwrap_or_default();
-            format!(
-                "Your hooks script could not be loaded{at}: {}. Fix it in Settings, or run the command with rc.hooks:off.",
-                p.message
-            )
-        })
+        .map_err(|p| p.refusal())
 }
 
 #[wasm_bindgen]

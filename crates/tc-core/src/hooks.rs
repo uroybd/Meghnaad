@@ -94,6 +94,18 @@ pub trait Hooks: std::fmt::Debug {
     fn on_exit(&self, _h: &mut Hooked, _changed: &[Facts]) {}
 }
 
+/// A hooks script that does not load: every command is refused with why (`on_launch` fails, as a failing on-launch
+/// hook stops `task`), until the script is fixed or hooks are off (`rc.hooks:off`, which runs no hook at all). Running
+/// the command without the hooks instead would quietly skip what they were written to do.
+#[derive(Debug)]
+pub struct Broken(pub String);
+
+impl Hooks for Broken {
+    fn on_launch(&self, _h: &mut Hooked, _command: &str) -> Result<(), Reject> {
+        Err(self.0.clone())
+    }
+}
+
 /// No hooks: every hook point lets everything through.
 #[derive(Debug, Default)]
 pub struct NoHooks;

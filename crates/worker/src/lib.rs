@@ -412,13 +412,7 @@ async fn run_hook(mut req: Request, ctx: RouteContext<()>) -> RouteResult {
     let refused = |error: String| json(&serde_json::json!({ "ok": false, "error": error, "say": [] }));
     let runner = match session::hook_runner(&ctx.env).await? {
         None => return json(&serde_json::json!({ "ok": true, "value": null, "say": [] })),
-        Some(Err(p)) => {
-            let at = p.line.map(|l| format!(" (line {l})")).unwrap_or_default();
-            return refused(format!(
-                "Your hooks script could not be loaded{at}: {}. Fix it in Settings, or run the command with rc.hooks:off.",
-                p.message
-            ));
-        }
+        Some(Err(p)) => return refused(p.refusal()),
         Some(Ok(r)) => r,
     };
     let mut clock = tc_core::dates::Clock {
@@ -495,9 +489,11 @@ async fn hooks_defined(ctx: RouteContext<()>) -> RouteResult {
     match session::hook_runner(&ctx.env).await? {
         None => json(&serde_json::json!({ "defined": [] })),
         Some(Ok(r)) => json(&serde_json::json!({ "defined": r.defined() })),
-        Some(Err(p)) => {
-            json(&serde_json::json!({ "defined": [], "problem": { "line": p.line, "message": p.message } }))
-        }
+        // Every hook, so the engine asks and `POST /api/run` refuses the command with why (as the page does in the
+        // static flavour): a script that does not load must not quietly run nothing.
+        Some(Err(p)) => json(
+            &serde_json::json!({ "defined": tc_core::lua_hooks::HOOKS, "problem": { "line": p.line, "message": p.message } }),
+        ),
     }
 }
 

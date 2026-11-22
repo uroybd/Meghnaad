@@ -104,6 +104,17 @@ pub struct Problem {
     pub message: String,
 }
 
+impl Problem {
+    /// What a command is refused with while the saved script does not load, on every host.
+    pub fn refusal(&self) -> String {
+        let at = self.line.map(|l| format!(" (line {l})")).unwrap_or_default();
+        format!(
+            "Your hooks script could not be loaded{at}: {}. Fix it in Settings, or run the command with rc.hooks:off.",
+            self.message
+        )
+    }
+}
+
 /// The four hook points, by the name a script defines them under.
 pub const HOOKS: [&str; 4] = ["on_launch", "on_add", "on_modify", "on_exit"];
 

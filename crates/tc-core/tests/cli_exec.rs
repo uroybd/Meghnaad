@@ -6761,3 +6761,21 @@ async fn kanban_progress_state_behaves_as_task_does() {
     let three = facts.iter().find(|f| f.description == "three").unwrap();
     assert!(three.end.is_none(), "end cleared on reopening");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_hooks_script_that_does_not_load_refuses_every_command_until_hooks_are_off() {
+    let mut r = replica();
+    let broken: std::sync::Arc<dyn tc_core::hooks::HookHost> =
+        std::sync::Arc::new(tc_core::hooks::Broken("Your hooks script could not be loaded".into()));
+    let with = |o: Options| Options {
+        hooks: Some(broken.clone()),
+        ..o
+    };
+    let (res, wrote) = run_opts(&mut r, &parse("").config, "add milk", with(Options::default())).await;
+    assert!(message(&res).contains("could not be loaded"), "{res:?}");
+    assert!(!wrote);
+    assert!(descs(&mut r).await.is_empty(), "nothing is added past a refusal");
+    let (res, wrote) = run_opts(&mut r, &parse("hooks=off").config, "add milk", with(Options::default())).await;
+    assert!(wrote, "with hooks off the script is not asked: {res:?}");
+    assert_eq!(descs(&mut r).await, ["milk"]);
+}

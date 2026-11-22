@@ -132,7 +132,10 @@ which may hold a token. A missing secret fails the hook with a message that says
 ## The editor and the sandbox
 
 The editor highlights Lua and marks a mistake with its line as you type, using the same Lua that runs the script. A
-script that doesn't load can't be saved, so a saved script always runs, and the one before it is kept. The language is
+script that doesn't load can't be saved, and the one before it is kept. One that stops loading all the same (copied into
+the store by hand, or saved by an older version) refuses every command with what is wrong and its line, on the web, the
+phone and with `meghnaad-hook`, rather than running without the hooks; fix it, or run the command with `rc.hooks:off`.
+The language is
 Lua 5.4 with `string`, `table` and `math` only: no files, no clock but the command's. A script that runs too long (a few
 million steps) or uses too much memory is stopped with a message.
 
