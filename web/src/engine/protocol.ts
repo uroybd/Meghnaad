@@ -1,8 +1,8 @@
 // What the page and the engine's Web Worker say to each other.
 
 export type EngineRequest =
-  /** Start up: load the engine, and whether to keep the replica in IndexedDB. Answers whether a saved replica was found.
-   * The settings come after, as `config`: they are not needed to load the engine or the saved copy. */
+  /** Start up: load the engine, and whether to keep the replica in IndexedDB. Answers a `Started`. The settings come
+   * after, as `config`: they are not needed to load the engine or the saved copy. */
   | { op: 'start'; persist: boolean; vault?: Vault }
   | { op: 'config'; config: string }
   /** Which hooks the Worker's script defines, as JSON (`["on_add"]`): only these are ever called. */
@@ -46,6 +46,13 @@ export interface ApiAnswer {
   body: string;
   /** Answered from what this device kept, not from the branch. */
   kept?: boolean;
+}
+
+/** What the engine started from: the copy this browser kept (`restored`), or nothing, in which case the tasks come from
+ * the bucket; and whether a copy was there but could not be read (`damaged`: it is set aside, not thrown away). */
+export interface Started {
+  restored: boolean;
+  damaged: boolean;
 }
 
 /** A sync's answer: whether anything of the tasks changed, and why the copy in this browser could not be saved

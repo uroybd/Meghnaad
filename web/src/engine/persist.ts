@@ -109,18 +109,39 @@ export async function openBytes(bytes: Uint8Array, key: CryptoKey): Promise<Uint
   );
 }
 
-export async function loadReplica(): Promise<Uint8Array | undefined> {
-  // Unreadable is the same as no copy at all: the bucket has everything that was pushed.
+/** The copy of the tasks this browser kept: its bytes, `'damaged'` when there is one that can't be read (it is then set
+ * aside, see `setAside`), or nothing. */
+export async function loadReplica(): Promise<Uint8Array | 'damaged' | undefined> {
+  // A store that can't be read at all is no copy: the bucket has everything that was pushed.
   const found = await tx<unknown>('readonly', (s) => s.get(KEY)).catch(() => undefined);
   if (!(found instanceof Uint8Array)) return undefined;
-  try {
-    // Sealing on, a copy that isn't sealed is not this device's to trust; sealing off, a sealed one can't be opened.
-    if (sealKey ? !isSealed(found) : isSealed(found)) return undefined;
-    return await unpack(sealKey ? await openBytes(found, sealKey) : found);
-  } catch {
-    // Damaged: the same as no copy at all, and the next visit starts from the bucket.
-    return undefined;
+  // Sealing on, a copy that isn't sealed is not this device's to trust; sealing off, a sealed one can't be opened. Either
+  // is a setting that changed, not damage.
+  if (sealKey ? !isSealed(found) : isSealed(found)) return undefined;
+  let opened = found;
+  if (sealKey) {
+    try {
+      opened = await openBytes(found, sealKey);
+    } catch {
+      // Sealed with another key (the secret changed): not this key's to read, like a change of sealing.
+      return undefined;
+    }
   }
+  try {
+    return await unpack(opened);
+  } catch {
+    await setAside(found);
+    return 'damaged';
+  }
+}
+
+// Where a copy that could not be read is kept, the latest one only: it may hold changes that never reached the bucket,
+// so it is not thrown away when the next save writes over `KEY`.
+const SET_ASIDE = 'replica.unreadable';
+
+/** Keep `bytes` (a copy that could not be used) under its own name. Best effort: a store that can't is no worse off. */
+export async function setAside(bytes: Uint8Array): Promise<void> {
+  await tx('readwrite', (s) => s.put(bytes, SET_ASIDE)).catch(() => undefined);
 }
 
 export async function saveReplica(bytes: Uint8Array): Promise<void> {

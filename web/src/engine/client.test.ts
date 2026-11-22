@@ -68,7 +68,14 @@ beforeEach(() => {
   FakeChannel.last = undefined;
   delay = false;
   hold = undefined;
-  replies = (c) => (c.op === 'start' ? false : c.op === 'sync' ? synced(false) : c.op === 'run' ? '{}' : null);
+  replies = (c) =>
+    c.op === 'start'
+      ? { restored: false, damaged: false }
+      : c.op === 'sync'
+        ? synced(false)
+        : c.op === 'run'
+          ? '{}'
+          : null;
   vi.stubGlobal('Worker', FakeWorker);
   vi.stubGlobal('BroadcastChannel', FakeChannel);
 });
@@ -89,8 +96,19 @@ describe('starting', () => {
     e.stop();
   });
 
+  it('says when the copy this browser kept could not be read, and starts from the bucket', async () => {
+    replies = (c) => (c.op === 'start' ? { restored: false, damaged: true } : c.op === 'sync' ? synced(false) : null);
+    const Engine = await fresh();
+    const e = new Engine();
+    await e.start('{}');
+    expect(e.damaged).toBe(true);
+    // Nothing to answer from: the first command waits for the bucket.
+    expect(sent.map((c) => c.op)).toEqual(['start', 'config', 'sync']);
+    e.stop();
+  });
+
   it('answers at once from the saved copy, and syncs behind it', async () => {
-    replies = (c) => (c.op === 'start' ? true : c.op === 'sync' ? synced(false) : null);
+    replies = (c) => (c.op === 'start' ? { restored: true, damaged: false } : c.op === 'sync' ? synced(false) : null);
     const Engine = await fresh();
     const e = new Engine();
     delay = true;
@@ -150,7 +168,7 @@ describe('starting', () => {
   it('does not start if the first pull fails, and says why', async () => {
     replies = (c) => {
       if (c.op === 'sync') throw new Error('could not reach the server');
-      return c.op === 'start' ? false : null;
+      return c.op === 'start' ? { restored: false, damaged: false } : null;
     };
     const Engine = await fresh();
     const e = new Engine();
@@ -416,7 +434,7 @@ describe('the settings the static site kept', () => {
   it('never asks for a kept answer for a write or a route that is not kept', async () => {
     const Engine = await fresh();
     const e = new Engine();
-    replies = (c) => (c.op === 'start' ? true : c.op === 'api' ? answer({}) : null);
+    replies = (c) => (c.op === 'start' ? { restored: true, damaged: false } : c.op === 'api' ? answer({}) : null);
     await e.api('PUT', '/api/settings', '{}');
     await e.api('GET', '/api/config/taskrc', '');
     expect(sent.flatMap((c) => (c.op === 'api' ? [c.kept] : []))).toEqual([false, false]);

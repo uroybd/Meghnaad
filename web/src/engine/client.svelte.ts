@@ -18,6 +18,7 @@ import {
   type Refreshed,
   type Synced,
   type Vault,
+  type Started,
 } from './protocol';
 
 /** How often a visible tab pulls what other devices have done. */
@@ -42,6 +43,9 @@ export class EngineClient {
   /** Why this browser could not keep its copy of the tasks, until it can again (changes then live only in memory
    * until they are pushed). */
   unkept = $state<string | null>(null);
+  /** The copy this browser kept could not be read when the engine started: the tasks came from the bucket, and changes
+   * made here that had not reached it may be missing. Until dismissed. */
+  damaged = $state(false);
   /** When the last sync succeeded (ms since the epoch). */
   lastSync = $state<number | null>(null);
 
@@ -49,8 +53,8 @@ export class EngineClient {
   private next = 1;
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private starting: Promise<void> | undefined;
-  /** The Worker, started: whether it found a saved replica. */
-  private spawned: Promise<boolean> | undefined;
+  /** The Worker, started: what it started from. */
+  private spawned: Promise<Started> | undefined;
   private syncing: Promise<void> | undefined;
   private again = false;
   /** The next sync follows a write here, so the other tabs are told when it is done. */
@@ -104,7 +108,7 @@ export class EngineClient {
     return this.starting;
   }
 
-  private spawn(): Promise<boolean> {
+  private spawn(): Promise<Started> {
     this.spawned ??= (() => {
       performance.mark('engine-boot');
       const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' }) as Port;
@@ -121,13 +125,14 @@ export class EngineClient {
         for (const p of this.pending.values()) p.reject(err);
         this.pending.clear();
       };
-      return this.send({ op: 'start', persist: true, vault: this.vault }) as Promise<boolean>;
+      return this.send({ op: 'start', persist: true, vault: this.vault }) as Promise<Started>;
     })();
     return this.spawned;
   }
 
   private async boot(config: string): Promise<void> {
-    const restored = await this.spawn();
+    const { restored, damaged } = await this.spawn();
+    this.damaged = damaged;
     await this.send({ op: 'config', config });
     // With nothing saved the tasks have to come from the bucket before the first command is answered.
     if (restored) void this.sync();

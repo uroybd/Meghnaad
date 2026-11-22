@@ -380,6 +380,16 @@
             <button class="ghost" onclick={() => store.openSettings('taskrc')}>Fix it</button>
           </div>
         {/if}
+        {#if engine.damaged}
+          <div class="banner" role="alert">
+            <TriangleAlert size={15} />
+            <span
+              >The copy of your tasks kept in this browser couldn't be read, so they were fetched again from the server.
+              Changes made here that hadn't reached it yet may be missing; the unreadable copy is kept in this browser.</span
+            >
+            <button class="ghost" onclick={() => (engine.damaged = false)}>Dismiss</button>
+          </div>
+        {/if}
         {#if engine.unkept}
           <div class="banner" role="alert">
             <TriangleAlert size={15} />

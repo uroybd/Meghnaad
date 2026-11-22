@@ -10,8 +10,25 @@
 import init, { Engine, fetchNew } from 'tc-engine';
 import wasmUrl from 'tc-engine-wasm?url';
 import { STATIC } from './flavour';
-import { forgetKept, forgetReplica, keepAnswer, loadKept, loadReplica, saveReplica, sealWith } from './persist';
-import { KEPT_ROUTES, type ApiAnswer, type Call, type EngineReply, type Refreshed, type Synced } from './protocol';
+import {
+  forgetKept,
+  forgetReplica,
+  keepAnswer,
+  loadKept,
+  loadReplica,
+  saveReplica,
+  sealWith,
+  setAside,
+} from './persist';
+import {
+  KEPT_ROUTES,
+  type ApiAnswer,
+  type Call,
+  type EngineReply,
+  type Refreshed,
+  type Started,
+  type Synced,
+} from './protocol';
 import * as hooks from './pageHooks';
 import { serial, splitSync } from './queue';
 
@@ -57,22 +74,24 @@ async function handle(m: Call): Promise<unknown> {
       engine.connect_git(v.api, v.repo, v.branch, v.token, v.key);
       hooks.attach(engine);
     }
-    let restored = false;
+    const started: Started = { restored: false, damaged: false };
     if (persist) {
       const bytes = await loadReplica();
-      if (bytes) {
+      if (bytes === 'damaged') started.damaged = true;
+      else if (bytes) {
         try {
           engine.restore(bytes);
           saved = engine.changes();
-          restored = true;
+          started.restored = true;
         } catch {
-          // An unusable copy (another version of the engine wrote it): start from the bucket. If it cannot be thrown
-          // away either, the next start finds it unusable again and does the same.
+          // An unusable copy (another version of the engine wrote it): set aside, and start from the bucket.
+          await setAside(bytes);
           await forgetReplica().catch(() => undefined);
+          started.damaged = true;
         }
       }
     }
-    return restored;
+    return started;
   }
   if (!engine) throw new Error('the engine has not started');
   switch (m.op) {

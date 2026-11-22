@@ -74,6 +74,22 @@ describe('when the browser will not keep it (a full disk, a blocked database)', 
   });
 });
 
+describe('a copy that can not be read', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is said, and set aside rather than written over by the next save', async () => {
+    const mem = memoryDb();
+    vi.stubGlobal('indexedDB', mem.indexedDB);
+    const saved = new TextEncoder().encode('{"format":1,"tasks":"Buy milk"}');
+    const kept = await pack(saved);
+    const cut = kept.slice(0, kept.length - 20);
+    mem.data.set('replica', cut);
+    expect(await loadReplica()).toBe('damaged');
+    await saveReplica(saved);
+    expect(mem.data.get('replica.unreadable')).toEqual(cut);
+  });
+});
+
 describe('the static flavour seals the copy', () => {
   afterEach(() => vi.unstubAllGlobals());
   const replica = new TextEncoder().encode('{"format":1,"tasks":"Buy milk for the party"}');

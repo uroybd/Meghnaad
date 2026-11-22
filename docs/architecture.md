@@ -762,7 +762,9 @@ JSON, in one IndexedDB record, soon after a change and after every sync. The bro
 (`CompressionStream`; about 17 times smaller, because most of it is the log of changes made on this device, which
 TaskChampion keeps for a task's history), and an older uncompressed record is still read. It is only the browser's own
 copy: nothing in the bucket or the sync format depends on it. A copy that can't be read (another format, damaged) is
-dropped and fetched again. A save that fails (a full disk, a blocked database) is not hidden: the next sync's answer
+set aside under its own record (`replica.unreadable`, the latest only), the tasks are fetched again, and the page says
+that changes made here that hadn't been pushed may be missing (`Started.damaged`). A copy sealed with another key, or
+sealed where sealing is now off (and the other way round), is a setting that changed, not damage: it reads as none. A save that fails (a full disk, a blocked database) is not hidden: the next sync's answer
 carries why (`Synced.unkept`), and the page says that changes not yet pushed live only in memory until it can save
 again. "Start over from the server" reloads only once the copy is really gone.
 
