@@ -2,6 +2,7 @@ package me.utsob.meghnaad.app
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.ScrollState
@@ -295,7 +296,9 @@ fun ProgressBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.outlineVariant)) {
+        Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(colors.outlineVariant)
+            // An outline in the text's colour, so the track shows on a card or a theme whose line colour matches it.
+            .border(1.dp, colors.onSurface.copy(alpha = 0.28f), RoundedCornerShape(4.dp))) {
             Box(Modifier.fillMaxWidth(fraction).height(8.dp).background(if (fraction >= 1f) extras.ok else colors.primary))
         }
         Text(text, color = tone, fontSize = 12.sp)

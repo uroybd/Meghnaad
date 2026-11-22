@@ -35,6 +35,8 @@
     height: 8px;
     border-radius: 4px;
     background: var(--line);
+    /* An outline in the text's colour, so the track shows on a card or a theme whose line colour matches it. */
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 28%, transparent);
     overflow: hidden;
   }
   .fill {
