@@ -384,6 +384,7 @@ reports in `task`'s own colours, tasksh's review, a timer and reminders.
 ```bash
 brew install uroybd/tap/meghnaad   # or a prebuilt from the release, or cargo install (see the guide)
 meghnaad
+meghnaad 3 fail                    # a line as the app's command line runs it: task commands, chains
 meghnaad export -f tsv -F id,due,description -r next   # task export for scripts: JSON, CSV or TSV
 ```
 

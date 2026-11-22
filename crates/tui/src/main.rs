@@ -4,6 +4,8 @@ use std::process::ExitCode;
 const HELP: &str = "meghnaad: Meghnaad in the terminal, around the real task (Taskwarrior 3.5.0).
 
 Usage: meghnaad                open it on the tasks task reads (TASKRC and TASKDATA are honoured)
+       meghnaad <line>         run a command line as the app's command line does: task commands written out,
+                               '&&' '||' ';' (quoted) between statements, everything else straight to task
        meghnaad export ...     task export, with the Export dialog's choices (meghnaad export --help)
        meghnaad --help         this
        meghnaad --version      the release it is from
@@ -33,11 +35,16 @@ fn main() -> ExitCode {
             Err(e) => status(Err(e)),
         };
     }
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        return status(io::stdout().write_all(HELP.as_bytes()));
+    match args.first().map(String::as_str) {
+        None => status(meghnaad_tui::run()),
+        Some("--help" | "-h") => status(io::stdout().write_all(HELP.as_bytes())),
+        Some("--version" | "-V") => status(writeln!(io::stdout(), "meghnaad {}", env!("CARGO_PKG_VERSION"))),
+        Some(_) => {
+            let task = meghnaad_tui::task::Task::from_env();
+            match meghnaad_tui::run::run(&task, &args) {
+                Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+                Err(e) => status(Err(e)),
+            }
+        }
     }
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        return status(writeln!(io::stdout(), "meghnaad {}", env!("CARGO_PKG_VERSION")));
-    }
-    status(meghnaad_tui::run())
 }

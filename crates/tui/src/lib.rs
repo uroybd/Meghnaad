@@ -23,6 +23,7 @@ pub mod md;
 pub mod model;
 pub mod remind;
 pub mod review;
+pub mod run;
 pub mod settings;
 pub mod sync;
 pub mod task;

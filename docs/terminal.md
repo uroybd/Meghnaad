@@ -337,6 +337,23 @@ A key runs a command when [settings.json](using/settings.md#keys) binds the comm
 `"tui": { "keys": { "tasks": { "g h": "filter +home" }, "page": { "T": "tabn Tasks" } } }`. The key acts where its
 group does (`tasks` on the Tasks page, `page` everywhere).
 
+### `meghnaad <line>`, from a shell
+
+`meghnaad` followed by a command line runs it as the command line above does, on the terminal: the task commands in
+`settings.json` are written out, with the filter before the name and the words after it, and each statement runs on
+`task` with this terminal's input and output. A line with neither is `task` with the same words, so `meghnaad` can stand
+in for `task` (`alias t=meghnaad`).
+
+```bash
+meghnaad 3 fail                       # 3 done outcome:fail, if fail stands for that
+meghnaad +work late                   # +work +OVERDUE list
+meghnaad 1 done '&&' 2 start ';' next # a chain: quote the operators so the shell hands them on
+```
+
+The exit status is the last statement run's, as in a shell (2 for a line that is not a well-formed chain). `export`,
+`--help` and `--version` as the first word are the app's own, so `task export` itself is reached as `task export`, and a
+task command named `export` only from the app's command line.
+
 ## Review
 
 Review is tasksh's: it walks the tasks the `_reviewed` report lists (by default, pending or waiting tasks not reviewed

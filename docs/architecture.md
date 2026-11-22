@@ -489,7 +489,8 @@ of the task and the tasks around it. Turning `export` into rows, chains, task co
 reminders and the boards' glue are its own, ported from the web app and Android with their tests. Syncing is `task sync`
 run in the background, when the `sync` key of its `settings.json` says. It keeps that file in its config folder and never
 reaches the store itself. Its Export dialog (`app/export.rs`) and `meghnaad export` (`export.rs`, `task export` for scripts)
-shape what `task export` wrote with `tc_core::table_export`, as the web app and the phone do. See
+shape what `task export` wrote with `tc_core::table_export`, as the web app and the phone do. `meghnaad <line>` (`run.rs`)
+runs a line from a shell as its command line does, task commands written out and chains run one statement at a time. See
 [the terminal app](terminal.md).
 
 **`meghnaad-hook`** (`crates/hook-shim`) runs your Lua hooks script for `task` (see [Hooks](#hooks)). `task` runs an
