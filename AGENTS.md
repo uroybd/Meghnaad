@@ -208,6 +208,18 @@ run `npm run format` after editing any code, not just at the end.
 
 ## Releases
 
+**Smell reviews.** A commit that fixes what a holistic code-smell review found takes the scope `smells`, with its
+honest type: `fix(smells): …` for a bug the review turned up, `refactor(smells): …` for the rest (so the release notes
+still group it by what it is). Nothing else uses that scope. The last such commit is the last review:
+
+```bash
+last=$(git log -1 --format=%H -E --grep='^[a-z]+\(smells\)!?:')
+git diff --shortstat "$last"..HEAD -- crates web/src app
+```
+
+When you cut a release (`just release`, `just ship`), run that; at 10,000 lines added or more, remind uroybd in your
+reply that a smell review is due. Don't start one unasked.
+
 The Release workflow builds once and publishes a prebuilt package (`scripts/package-release.mjs`) to the `release`
 branch and, for a tag, a GitHub release: that is what the Deploy to Cloudflare button and `npm run setup` in a release
 clone use, with no Rust. Nothing user-specific may be compiled into the build (hooks, secrets and config live in the
