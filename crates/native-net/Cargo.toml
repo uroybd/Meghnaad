@@ -1,0 +1,15 @@
+[package]
+name = "tc-native-net"
+version.workspace = true
+description = "A hooks script's requests on a native host (the phone, meghnaad-hook): the timeout, no automatic redirect and the cap on an answer, in one place"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+tc-core = { path = "../tc-core", default-features = false, features = ["lua"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }

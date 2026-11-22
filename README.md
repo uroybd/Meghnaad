@@ -479,6 +479,7 @@ crates/worker/    the Cloudflare Worker: Access check, R2 or git store, opens an
 crates/android/   the engine for the Android app: tc-core natively, S3, git and sync-server sync, JNI
 crates/tui/       the terminal app, meghnaad, around the real `task`
 crates/hook-shim/ meghnaad-hook: the Lua hooks script as hooks for the real `task`
+crates/native-net/ a hooks script's requests on a native host (the phone, meghnaad-hook): one timeout, redirect and size rule
 app/              the Android app (Kotlin and Compose, home-screen widgets); crates/android is its engine
 web/              the Svelte 5 app (Vite)
 scripts/          setup / deploy / build / dev server · seed-dev.sh (demo data) · interop-local.sh (real-CLI regression)

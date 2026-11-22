@@ -34,6 +34,8 @@ crates/android      tc-core native + JNI (jni.rs, JSON in/out, handles). engine.
                     folder kept in step with bucket, never secrets), secrets.rs, net.rs, helpers.rs (re-exports).
 crates/hook-shim    meghnaad-hook: the Lua script as `task` hooks (run.rs protocol, convert.rs JSON↔engine task,
                     net.rs; secrets = env vars by exact name).
+crates/native-net   tc-native-net: a hooks script's request sent with ureq (timeout, no redirect, 1 MB cap), shared by
+                    crates/android and crates/hook-shim. Each keeps its own secrets.
 
 LAYER 2: front ends (send command lines, draw results; never touch the replica)
 web/                Svelte 5. src/engine/ (engine.worker.ts, client.svelte.ts, persist.ts → IndexedDB, protocol.ts,

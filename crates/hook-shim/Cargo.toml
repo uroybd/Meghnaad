@@ -18,6 +18,6 @@ async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 pollster = "0.4"
 serde_json = "1"
+tc-native-net = { path = "../native-net" }
 tc-core = { path = "../tc-core", default-features = false, features = ["lua"] }
-ureq = { version = "3", default-features = false, features = ["rustls"] }
 uuid = { version = "1", default-features = false }

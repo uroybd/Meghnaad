@@ -1692,6 +1692,7 @@ dependencies = [
  "sha2",
  "taskchampion",
  "tc-core",
+ "tc-native-net",
  "ureq",
  "uuid",
 ]
@@ -1754,8 +1755,16 @@ dependencies = [
  "pollster",
  "serde_json",
  "tc-core",
- "ureq",
+ "tc-native-net",
  "uuid",
+]
+
+[[package]]
+name = "tc-native-net"
+version = "0.8.49"
+dependencies = [
+ "tc-core",
+ "ureq",
 ]
 
 [[package]]

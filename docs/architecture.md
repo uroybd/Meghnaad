@@ -493,7 +493,8 @@ shape what `task export` wrote with `tc_core::table_export`, as the web app and 
 runs a line from a shell as its command line does, task commands written out and chains run one statement at a time. See
 [the terminal app](terminal.md).
 
-**`meghnaad-hook`** (`crates/hook-shim`) runs your Lua hooks script for `task` (see [Hooks](#hooks)). `task` runs an
+**`meghnaad-hook`** (`crates/hook-shim`) runs your Lua hooks script for `task` (see [Hooks](#hooks)). Its requests,
+like the phone's, go through `crates/native-net` (one timeout, redirect and answer-size rule for both). `task` runs an
 executable per hook from `<data>/hooks/`; `install` links this one program there as `on-add.meghnaad` and so on, for the
 hooks the script defines, and it picks the hook to run from the name it was called by.
 

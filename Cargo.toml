@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tc-core", "crates/worker", "crates/browser", "crates/browser-hooks", "crates/android", "crates/hook-shim", "crates/tui"]
+members = ["crates/tc-core", "crates/worker", "crates/browser", "crates/browser-hooks", "crates/android", "crates/hook-shim", "crates/native-net", "crates/tui"]
 
 [workspace.package]
 # The root package.json's version, kept in step by `npm version` (scripts/version.mjs `sync`); a test checks they agree.
@@ -10,8 +10,9 @@ license = "MIT"
 rust-version = "1.91"
 
 # The lints every crate inherits (`[lints] workspace = true`). CI runs clippy with `-D warnings`, so each one is an error
-# there. `clippy.toml` keeps tests out of the panic-family lints. A lint that is wrong for one place is allowed there
-# with `#[allow(..)]` and a reason, not removed from this list.
+# there. `clippy.toml` keeps tests out of the panic-family lints. A lint that is wrong for one place is silenced there
+# with `#[expect(.., reason = "..")]` (`#[allow]` only where it fires in some builds and not others), not removed from
+# this list.
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
 unused_lifetimes = "warn"
