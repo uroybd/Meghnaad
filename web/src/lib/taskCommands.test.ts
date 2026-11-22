@@ -91,8 +91,10 @@ describe('isFilterWord', () => {
       'OR',
     ])
       expect(isFilterWord(w), w).toBe(true);
-    expect(isFilterWord('2c2b9cb2-0f55-4a5c-9b7a-2f5b3c0e1d11')).toBe(true);
-    for (const w of ['done', 'fail', 'next', 'add', 'deadbeef']) expect(isFilterWord(w), w).toBe(false);
+    // A uuid, or its first eight characters or more, as `task` reads them (it takes `deadbeef` for one too).
+    for (const w of ['2c2b9cb2-0f55-4a5c-9b7a-2f5b3c0e1d11', '2c2b9cb2', 'deadbeef', '2c2b9cb2-0f'])
+      expect(isFilterWord(w), w).toBe(true);
+    for (const w of ['done', 'fail', 'next', 'add', 'abcdef']) expect(isFilterWord(w), w).toBe(false);
   });
 });
 

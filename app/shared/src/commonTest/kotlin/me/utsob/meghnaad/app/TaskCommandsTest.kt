@@ -76,8 +76,9 @@ class TaskCommandsTest {
         for (w in listOf("+tag", "-tag", "project:Home", "rc.confirmation=no", "12", "1,3-5", "/re/", "(", ")", "and", "OR")) {
             assertEquals(true, isFilterWord(w), w)
         }
-        assertEquals(true, isFilterWord("2c2b9cb2-0f55-4a5c-9b7a-2f5b3c0e1d11"))
-        for (w in listOf("done", "fail", "next", "add", "deadbeef")) assertEquals(false, isFilterWord(w), w)
+        // A uuid, or its first eight characters or more, as `task` reads them (it takes `deadbeef` for one too).
+        for (w in listOf("2c2b9cb2-0f55-4a5c-9b7a-2f5b3c0e1d11", "2c2b9cb2", "deadbeef", "2c2b9cb2-0f")) assertEquals(true, isFilterWord(w), w)
+        for (w in listOf("done", "fail", "next", "add", "abcdef")) assertEquals(false, isFilterWord(w), w)
     }
 
     @Test

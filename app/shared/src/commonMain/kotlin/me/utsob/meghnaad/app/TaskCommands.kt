@@ -12,12 +12,11 @@ package me.utsob.meghnaad.app
 /** Taskwarrior's limit for aliases that use aliases. */
 private const val ROUNDS = 10
 
-private val UUID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
 private val LOGIC = setOf("(", ")", "and", "or", "xor", "not", "!")
 
 /**
  * Is this word part of a filter, so the command (if there is one) comes later? The same shapes the engine takes for a filter:
- * `+tag` and `-tag`, anything with `:` or `=` (attributes, `rc.` settings), task numbers and ranges, `/pattern/`, a uuid, and
+ * `+tag` and `-tag`, anything with `:` or `=` (attributes, `rc.` settings), task numbers and ranges, `/pattern/`, a uuid or its first eight characters (the engine's rule), and
  * the words that join them.
  */
 fun isFilterWord(w: String): Boolean =
@@ -25,7 +24,7 @@ fun isFilterWord(w: String): Boolean =
         Regex("[:=]").containsMatchIn(w) ||
         Regex("^[\\d,.-]+$").matches(w) ||
         w.startsWith("/") ||
-        UUID.matches(w) ||
+        (callHelper("is_uuid", kotlinx.serialization.json.JsonPrimitive(w)) as? kotlinx.serialization.json.JsonPrimitive)?.content == "true" ||
         w.lowercase() in LOGIC
 
 /** One statement of a line, as the words to run and how it follows the one before. */

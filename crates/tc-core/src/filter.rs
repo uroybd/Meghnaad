@@ -622,7 +622,10 @@ fn peel(args: &[String]) -> Vec<String> {
     out
 }
 
-fn is_uuidish(s: &str) -> bool {
+/// A uuid as a filter takes it: whole, or its first eight or more characters (hex with at least one letter, so a plain
+/// number stays a task number). The one rule for every front end that has to tell a uuid from a command word
+/// (`helpers::call("is_uuid")`).
+pub fn is_uuid_word(s: &str) -> bool {
     let lower = s.to_ascii_lowercase();
     if Uuid::try_parse(&lower).is_ok() {
         return true;
@@ -1078,7 +1081,7 @@ impl Parser<'_, '_> {
             }
             return self.text(pattern).map(|m| Some(Term::Text(m)));
         }
-        if is_uuidish(tok) {
+        if is_uuid_word(tok) {
             return Ok(Some(Term::Uuid(tok.to_ascii_lowercase())));
         }
         if let Some(ids) = parse_ids(tok) {

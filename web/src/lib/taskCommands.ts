@@ -8,19 +8,19 @@
 // command or report with the same name.
 
 import { shellQuote, splitWords } from './cmdline';
+import { callHelper } from '../engine/helpers';
 import { splitChain, type Joiner, type Statement } from './compound';
 import type { TaskCommand } from './appsettings';
 
 /** Taskwarrior's limit for aliases that use aliases. */
 const ROUNDS = 10;
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOGIC = new Set(['(', ')', 'and', 'or', 'xor', 'not', '!']);
 
 /**
  * Is this word part of a filter, so the command (if there is one) comes later? The same shapes the engine takes
  * for a filter: `+tag` and `-tag`, anything with `:` or `=` (attributes, `rc.` settings), task numbers and ranges,
- * `/pattern/`, a uuid, and the words that join them.
+ * `/pattern/`, a uuid or its first eight characters (the engine's rule), and the words that join them.
  */
 export function isFilterWord(w: string): boolean {
   return (
@@ -28,7 +28,7 @@ export function isFilterWord(w: string): boolean {
     /[:=]/.test(w) ||
     /^[\d,.-]+$/.test(w) ||
     w.startsWith('/') ||
-    UUID.test(w) ||
+    callHelper<boolean>('is_uuid', w) ||
     LOGIC.has(w.toLowerCase())
   );
 }

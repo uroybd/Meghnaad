@@ -254,6 +254,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             a.req::<i64>(2)?
         )),
         "shell_quote" => json!(shell_quote(&a.req::<String>(0)?)),
+        "is_uuid" => json!(crate::filter::is_uuid_word(&a.req::<String>(0)?)),
         "describe_recur" => json!(describe_recur(&a.req::<String>(0)?)),
         "remind_offsets" => json!(remind_offsets(&a.req::<String>(0)?)),
         "set_vocab" => {

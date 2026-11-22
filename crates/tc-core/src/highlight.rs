@@ -86,21 +86,6 @@ fn is_numbers(w: &str) -> bool {
         && !w.ends_with([',', '-'])
 }
 
-/// A uuid, or its first eight characters.
-fn is_uuid(w: &str) -> bool {
-    let hex = |s: &str, n: usize| s.len() == n && s.bytes().all(|b| b.is_ascii_hexdigit());
-    if w.len() == 8 {
-        return hex(w, 8);
-    }
-    let parts: Vec<&str> = w.split('-').collect();
-    parts.len() == 5
-        && hex(parts[0], 8)
-        && hex(parts[1], 4)
-        && hex(parts[2], 4)
-        && hex(parts[3], 4)
-        && hex(parts[4], 12)
-}
-
 /// `name:value` or `name=value`: the length of the name, when the word is one.
 pub(crate) fn attribute_name(w: &str) -> Option<usize> {
     let mut it = w.char_indices();
@@ -165,7 +150,7 @@ pub fn highlight(line: &str, commands: &HashSet<String>) -> Vec<Token> {
                 out.push(tok(s, e, Hl::Str));
             } else if is_tag(&w) {
                 out.push(tok(s, e, Hl::Tag));
-            } else if is_numbers(&w) || (is_uuid(&w) && w.bytes().any(|b| b.is_ascii_digit())) {
+            } else if is_numbers(&w) || (crate::filter::is_uuid_word(&w) && w.bytes().any(|b| b.is_ascii_digit())) {
                 out.push(tok(s, e, Hl::Id));
             } else if let Some(name_bytes) = attribute_name(&w) {
                 let name_len = w[..name_bytes].chars().count();

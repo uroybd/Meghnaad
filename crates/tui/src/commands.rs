@@ -35,15 +35,6 @@ impl TaskCommand {
     }
 }
 
-fn is_uuid(w: &str) -> bool {
-    let parts: Vec<&str> = w.split('-').collect();
-    parts.len() == 5
-        && parts
-            .iter()
-            .zip([8, 4, 4, 4, 12])
-            .all(|(p, n)| p.len() == n && p.chars().all(|c| c.is_ascii_hexdigit()))
-}
-
 /// Whether this word is part of a filter, so the command (if there is one) comes later: `+tag` and `-tag`, anything
 /// with `:` or `=`, task numbers and ranges, `/pattern/`, a uuid, and the words that join them.
 pub fn is_filter_word(w: &str) -> bool {
@@ -53,7 +44,7 @@ pub fn is_filter_word(w: &str) -> bool {
         || w.contains([':', '='])
         || (!w.is_empty() && w.chars().all(|c| c.is_ascii_digit() || ",.-".contains(c)))
         || w.starts_with('/')
-        || is_uuid(w)
+        || tc_core::filter::is_uuid_word(w)
         || ["(", ")", "and", "or", "xor", "not", "!"].contains(&w.to_lowercase().as_str())
 }
 
@@ -294,8 +285,16 @@ mod tests {
         ] {
             assert!(is_filter_word(w), "{w}");
         }
-        assert!(is_filter_word("2c2b9cb2-0f55-4a5c-9b7a-2f5b3c0e1d11"));
-        for w in ["done", "fail", "next", "add", "deadbeef"] {
+        // A uuid, or its first eight characters or more, as `task` reads them (it takes `deadbeef` for one too).
+        for w in [
+            "2c2b9cb2-0f55-4a5c-9b7a-2f5b3c0e1d11",
+            "2c2b9cb2",
+            "deadbeef",
+            "2c2b9cb2-0f",
+        ] {
+            assert!(is_filter_word(w), "{w}");
+        }
+        for w in ["done", "fail", "next", "add", "abcdef"] {
             assert!(!is_filter_word(w), "{w}");
         }
     }
