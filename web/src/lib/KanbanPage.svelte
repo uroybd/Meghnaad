@@ -784,7 +784,10 @@
   /* Spaced as the phone's task cards are (TaskCard.kt): room inside, a line between the title and the fields. */
   .card {
     position: relative;
+    /* Hidden overflow rounds the ribbon off with the corners; it also lets a flex item shrink below its content, so a
+       card would squeeze into the column instead of the column scrolling. */
     overflow: hidden;
+    flex-shrink: 0;
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 12px;
