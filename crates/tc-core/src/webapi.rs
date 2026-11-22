@@ -218,9 +218,52 @@ impl Reply {
     }
 }
 
+/// Why a settings route failed, which is also the status it answers with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WebError {
+    /// What was sent is not something that can be saved (400).
+    Invalid(String),
+    /// What was sent is more than is kept (413).
+    TooLarge(String),
+    /// What is kept stands in the way: damaged, or unreadable and not to be saved over (409).
+    Conflict(String),
+    /// The store could not be read or written, or a value not encoded (500).
+    Store(String),
+}
+
+impl WebError {
+    /// A failure of the store (or of anything else that is not the request's fault).
+    pub fn store(e: impl std::fmt::Display) -> WebError {
+        WebError::Store(e.to_string())
+    }
+
+    pub fn status(&self) -> u16 {
+        match self {
+            WebError::Invalid(_) => 400,
+            WebError::TooLarge(_) => 413,
+            WebError::Conflict(_) => 409,
+            WebError::Store(_) => 500,
+        }
+    }
+}
+
+impl std::fmt::Display for WebError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (WebError::Invalid(m) | WebError::TooLarge(m) | WebError::Conflict(m) | WebError::Store(m)) = self;
+        f.write_str(m)
+    }
+}
+
+/// For the hosts, which pass a failure on as its message.
+impl From<WebError> for String {
+    fn from(e: WebError) -> String {
+        e.to_string()
+    }
+}
+
 /// The files saved in `store` (none before the first is saved).
-pub async fn read_tree<S: ObjectStore>(store: &S) -> Result<Tree, String> {
-    let s = |e: crate::Error| e.to_string();
+pub async fn read_tree<S: ObjectStore>(store: &S) -> Result<Tree, WebError> {
+    let s = WebError::store;
     let mut tree = Tree::new();
     for (name, bytes) in store.get_all(RC_PREFIX).await.map_err(s)? {
         if let Some(path) = name.strip_prefix(RC_PREFIX) {
@@ -232,16 +275,16 @@ pub async fn read_tree<S: ObjectStore>(store: &S) -> Result<Tree, String> {
 
 /// Save the settings the files in `store` add up to, for when the files were changed behind the routes' backs (a
 /// sync). With no files saved, the settings stay as they are.
-pub async fn rebuild_config<S: ObjectStore>(store: &S) -> Result<(), String> {
+pub async fn rebuild_config<S: ObjectStore>(store: &S) -> Result<(), WebError> {
     let tree = read_tree(store).await?;
     if tree.is_empty() {
         return Ok(());
     }
     let config = rcfiles::resolve(&tree).parsed.config;
     store
-        .put(CONFIG_KEY, &encode(&config)?)
+        .put(CONFIG_KEY, &encode(&config).map_err(WebError::Store)?)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(WebError::store)
 }
 
 /// The settings kept in `store`. It remembers whether the saved settings were unreadable, so the page can say so.
@@ -265,8 +308,8 @@ impl<S: ObjectStore> WebSettings<S> {
     /// The saved settings (the defaults before any). A storage failure is an error, never "no settings saved"; settings
     /// that exist but cannot be read give the defaults, are reported by [`config_error`](Self::config_error), and are
     /// left untouched.
-    pub async fn config(&self) -> Result<Config, String> {
-        match self.store.get(CONFIG_KEY).await.map_err(|e| e.to_string())? {
+    pub async fn config(&self) -> Result<Config, WebError> {
+        match self.store.get(CONFIG_KEY).await.map_err(WebError::store)? {
             None => {
                 *self.error.borrow_mut() = None;
                 Ok(Config::default())
@@ -285,18 +328,20 @@ impl<S: ObjectStore> WebSettings<S> {
     }
 
     /// Whether there are earlier (readable) settings to restore.
-    pub async fn has_previous(&self) -> Result<bool, String> {
-        if self.previous_tree().await?.is_some() {
-            return Ok(true);
+    pub async fn has_previous(&self) -> Result<bool, WebError> {
+        let files = self.store.get(RC_PREV_KEY).await.map_err(WebError::store)?;
+        // As [`restore_files`](Self::restore_files) decides: the files kept, when there are any, else the older one step.
+        if let Some(b) = files {
+            return Ok(serde_json::from_slice::<Tree>(&b).is_ok());
         }
-        let prev = self.store.get(PREV_KEY).await.map_err(|e| e.to_string())?;
+        let prev = self.store.get(PREV_KEY).await.map_err(WebError::store)?;
         Ok(prev.is_some_and(|b| decode(&b).is_ok()))
     }
 
     /// Save new settings, keeping what was there as the "previous" version.
-    pub async fn save_config(&self, cfg: &Config) -> Result<(), String> {
+    pub async fn save_config(&self, cfg: &Config) -> Result<(), WebError> {
         let writes = self.config_writes(cfg).await?;
-        self.store.write_many(&writes).await.map_err(|e| e.to_string())?;
+        self.store.write_many(&writes).await.map_err(WebError::store)?;
         *self.error.borrow_mut() = None;
         Ok(())
     }
@@ -304,10 +349,10 @@ impl<S: ObjectStore> WebSettings<S> {
     /// The writes that save `cfg`, none when it is what is saved already. The backup comes first: a store that writes
     /// them one by one and is interrupted between them leaves the backup equal to the current settings at worst,
     /// never settings lost.
-    async fn config_writes(&self, cfg: &Config) -> Result<Vec<(String, Option<Vec<u8>>)>, String> {
-        let bytes = encode(cfg)?;
+    async fn config_writes(&self, cfg: &Config) -> Result<Vec<(String, Option<Vec<u8>>)>, WebError> {
+        let bytes = encode(cfg).map_err(WebError::Store)?;
         let mut out = Vec::new();
-        if let Some(old) = self.store.get(CONFIG_KEY).await.map_err(|e| e.to_string())? {
+        if let Some(old) = self.store.get(CONFIG_KEY).await.map_err(WebError::store)? {
             if old == bytes {
                 return Ok(out);
             }
@@ -320,8 +365,8 @@ impl<S: ObjectStore> WebSettings<S> {
     }
 
     /// Swap the current and previous settings; `None` if there is nothing to restore.
-    pub async fn restore_config(&self) -> Result<Option<Config>, String> {
-        let s = |e: crate::Error| e.to_string();
+    pub async fn restore_config(&self) -> Result<Option<Config>, WebError> {
+        let s = WebError::store;
         let Some(prev) = self.store.get(PREV_KEY).await.map_err(s)? else {
             return Ok(None);
         };
@@ -334,14 +379,17 @@ impl<S: ObjectStore> WebSettings<S> {
                 self.store.put(PREV_KEY, &cur).await.map_err(s)?;
             }
         }
-        self.store.put(CONFIG_KEY, &encode(&cfg)?).await.map_err(s)?;
+        self.store
+            .put(CONFIG_KEY, &encode(&cfg).map_err(WebError::Store)?)
+            .await
+            .map_err(s)?;
         *self.error.borrow_mut() = None;
         Ok(Some(cfg))
     }
 
     /// The files of the taskrc folder. Before the first one is saved there are none, so settings an earlier version
     /// saved are shown as the one file they would be written as.
-    pub async fn tree(&self) -> Result<Tree, String> {
+    pub async fn tree(&self) -> Result<Tree, WebError> {
         let mut tree = read_tree(&self.store).await?;
         if tree.is_empty() {
             let cfg = self.config().await?;
@@ -360,7 +408,7 @@ impl<S: ObjectStore> WebSettings<S> {
         old: &Tree,
         new: &Tree,
         mut writes: Vec<(String, Option<Vec<u8>>)>,
-    ) -> Result<Resolved, String> {
+    ) -> Result<Resolved, WebError> {
         for (path, text) in new {
             if old.get(path) != Some(text) {
                 writes.push((format!("{RC_PREFIX}{path}"), Some(text.as_bytes().to_vec())));
@@ -371,44 +419,58 @@ impl<S: ObjectStore> WebSettings<S> {
         }
         let resolved = rcfiles::resolve(new);
         writes.extend(self.config_writes(&resolved.parsed.config).await?);
-        self.store.write_many(&writes).await.map_err(|e| e.to_string())?;
+        self.store.write_many(&writes).await.map_err(WebError::store)?;
         *self.error.borrow_mut() = None;
         Ok(resolved)
     }
 
     /// Replace the files `old` with `new`, keeping `old` as the version to go back to. Everything in `new` has been
     /// through [`rcfiles::sanitize`].
-    async fn save_tree(&self, old: &Tree, new: &Tree) -> Result<Resolved, String> {
+    async fn save_tree(&self, old: &Tree, new: &Tree) -> Result<Resolved, WebError> {
         if new.len() > rcfiles::MAX_FILES {
-            return Err(format!("a folder may hold at most {} files", rcfiles::MAX_FILES));
+            return Err(WebError::TooLarge(format!(
+                "a folder may hold at most {} files",
+                rcfiles::MAX_FILES
+            )));
         }
         if new.values().map(String::len).sum::<usize>() > rcfiles::MAX_TOTAL_BYTES {
-            return Err("the files are too large together".to_owned());
+            return Err(WebError::TooLarge("the files are too large together".to_owned()));
         }
         // With nothing before, there is nothing to go back to.
         let mut writes = Vec::new();
         if old != new && !old.is_empty() {
-            let bytes = serde_json::to_vec(old).map_err(|e| e.to_string())?;
+            let bytes = serde_json::to_vec(old).map_err(WebError::store)?;
             writes.push((RC_PREV_KEY.to_owned(), Some(bytes)));
         }
         self.write_tree(old, new, writes).await
     }
 
-    async fn previous_tree(&self) -> Result<Option<Tree>, String> {
-        let bytes = self.store.get(RC_PREV_KEY).await.map_err(|e| e.to_string())?;
-        Ok(bytes.and_then(|b| serde_json::from_slice(&b).ok()))
+    /// The files from before the last change; `None` when none were kept.
+    ///
+    /// # Errors
+    ///
+    /// The store could not be read, or what it keeps there is damaged (said, rather than read as nothing to go back to).
+    async fn previous_tree(&self) -> Result<Option<Tree>, WebError> {
+        let Some(bytes) = self.store.get(RC_PREV_KEY).await.map_err(WebError::store)? else {
+            return Ok(None);
+        };
+        serde_json::from_slice(&bytes).map(Some).map_err(|e| {
+            WebError::Conflict(format!(
+                "the earlier settings files ({RC_PREV_KEY}) are damaged, so they can't be restored ({e})"
+            ))
+        })
     }
 
     /// Put each file through [`rcfiles::sanitize`] and into `tree`, reporting what was removed and commented out.
     fn take_files(
         tree: &mut Tree,
         files: impl IntoIterator<Item = (String, String)>,
-    ) -> Result<(Vec<String>, Commented), String> {
+    ) -> Result<(Vec<String>, Commented), WebError> {
         let (mut blocked, mut commented) = (Vec::new(), Vec::new());
         for (path, text) in files {
-            let path = rcfiles::clean_path(&path)?;
+            let path = rcfiles::clean_path(&path).map_err(WebError::Invalid)?;
             if text.len() > MAX_TASKRC_BYTES {
-                return Err(format!("{path} is too large for a taskrc"));
+                return Err(WebError::TooLarge(format!("{path} is too large for a taskrc")));
             }
             let kept = rcfiles::sanitize(&text);
             blocked.extend(kept.blocked);
@@ -419,20 +481,25 @@ impl<S: ObjectStore> WebSettings<S> {
     }
 
     /// Save one file. The answer is what [`files_summary`] says.
-    pub async fn put_file(&self, path: &str, text: &str) -> Result<Value, String> {
+    pub async fn put_file(&self, path: &str, text: &str) -> Result<Value, WebError> {
         let old = self.editable_tree().await?;
         let mut new = old.clone();
         let (blocked, commented) = Self::take_files(&mut new, [(path.to_owned(), text.to_owned())])?;
-        let kept = new.get(&rcfiles::clean_path(path)?).cloned().unwrap_or_default();
+        let kept = new
+            .get(&rcfiles::clean_path(path).map_err(WebError::Invalid)?)
+            .cloned()
+            .unwrap_or_default();
         let resolved = self.save_tree(&old, &new).await?;
         Ok(files_summary(&resolved, &blocked, &commented, &kept))
     }
 
     /// The files, unless the saved settings cannot be read: saving over those would bury them.
-    async fn editable_tree(&self) -> Result<Tree, String> {
+    async fn editable_tree(&self) -> Result<Tree, WebError> {
         let tree = self.tree().await?;
         if self.config_error().is_some() {
-            return Err("the saved settings can't be read; fix them in the taskrc dialog first".to_owned());
+            return Err(WebError::Conflict(
+                "the saved settings can't be read; fix them in the taskrc dialog first".to_owned(),
+            ));
         }
         Ok(tree)
     }
@@ -440,7 +507,7 @@ impl<S: ObjectStore> WebSettings<S> {
     /// Change the settings from `old` to `new` the way `task config` would: in the main taskrc, and nowhere else.
     /// What comes back is the settings now in force, which differ from `new` where an included file still says
     /// otherwise.
-    pub async fn save_settings_change(&self, new: &Config) -> Result<Config, String> {
+    pub async fn save_settings_change(&self, new: &Config) -> Result<Config, WebError> {
         let old = self.editable_tree().await?;
         let before = rcfiles::resolve(&old).parsed.config;
         let mut tree = old.clone();
@@ -455,7 +522,7 @@ impl<S: ObjectStore> WebSettings<S> {
 
     /// Go back to the files from before the last change (and again, to undo that). `None` if there is nothing to go
     /// back to.
-    pub async fn restore_files(&self) -> Result<Option<Tree>, String> {
+    pub async fn restore_files(&self) -> Result<Option<Tree>, WebError> {
         let current = self.tree().await?;
         let Some(prev) = self.previous_tree().await? else {
             // Settings saved before the files were kept: the old one-step restore.
@@ -468,23 +535,23 @@ impl<S: ObjectStore> WebSettings<S> {
             return Ok(None);
         };
         // Swap rather than overwrite, so restoring twice gets you back where you were.
-        let bytes = serde_json::to_vec(&current).map_err(|e| e.to_string())?;
+        let bytes = serde_json::to_vec(&current).map_err(WebError::store)?;
         self.write_tree(&current, &prev, vec![(RC_PREV_KEY.to_owned(), Some(bytes))])
             .await?;
         Ok(Some(prev))
     }
 
     /// The hooks script as saved (empty before anything was saved).
-    pub async fn hooks_source(&self) -> Result<String, String> {
-        let bytes = self.store.get(HOOKS_KEY).await.map_err(|e| e.to_string())?;
+    pub async fn hooks_source(&self) -> Result<String, WebError> {
+        let bytes = self.store.get(HOOKS_KEY).await.map_err(WebError::store)?;
         Ok(bytes
             .map(|b| String::from_utf8_lossy(&b).into_owned())
             .unwrap_or_default())
     }
 
     /// Save the script, keeping what was there as the previous version. It has to have been checked.
-    pub async fn save_hooks(&self, text: &str) -> Result<(), String> {
-        let s = |e: crate::Error| e.to_string();
+    pub async fn save_hooks(&self, text: &str) -> Result<(), WebError> {
+        let s = WebError::store;
         if let Some(old) = self.store.get(HOOKS_KEY).await.map_err(s)? {
             self.store.put(HOOKS_PREV_KEY, &old).await.map_err(s)?;
         }
@@ -506,7 +573,7 @@ impl<S: ObjectStore> WebSettings<S> {
                     let text = tree.get(rcfiles::ROOT).map_or("", String::as_str);
                     Reply::ok(files_summary(&rcfiles::resolve(&tree), &[], &[], text))
                 }
-                Err(e) => Reply::error(500, e),
+                Err(e) => Reply::error(e.status(), e),
             },
             ("GET", "/api/config/files") => self.list_files().await,
             ("POST", "/api/config/files/import") => self.import_files(body).await,
@@ -532,7 +599,7 @@ impl<S: ObjectStore> WebSettings<S> {
             }
             ("GET", "/api/hooks") => match self.hooks_source().await {
                 Ok(source) => Reply::ok(json!({ "source": source })),
-                Err(e) => Reply::error(500, e),
+                Err(e) => Reply::error(e.status(), e),
             },
             #[cfg(feature = "lua")]
             ("PUT", "/api/hooks") => self.put_hooks(body).await,
@@ -543,7 +610,7 @@ impl<S: ObjectStore> WebSettings<S> {
                     Ok(defined) => Reply::ok(json!({ "defined": defined })),
                     Err(p) => Reply::ok(json!({ "defined": [], "problem": { "line": p.line, "message": p.message } })),
                 },
-                Err(e) => Reply::error(500, e),
+                Err(e) => Reply::error(e.status(), e),
             },
             #[cfg(feature = "lua")]
             ("POST", "/api/hooks/check") => {
@@ -563,11 +630,11 @@ impl<S: ObjectStore> WebSettings<S> {
     async fn get_config(&self) -> Reply {
         let cfg = match self.config().await {
             Ok(c) => c,
-            Err(e) => return Reply::error(500, e),
+            Err(e) => return Reply::error(e.status(), e),
         };
         let previous = match self.has_previous().await {
             Ok(p) => p,
-            Err(e) => return Reply::error(500, e),
+            Err(e) => return Reply::error(e.status(), e),
         };
         Reply::ok(config_response(&cfg, previous, self.config_error().as_deref()))
     }
@@ -595,7 +662,7 @@ impl<S: ObjectStore> WebSettings<S> {
                 None if path == rcfiles::ROOT => Reply::text(String::new()),
                 None => Reply::error(404, "there is no such file"),
             },
-            Err(e) => Reply::error(500, e),
+            Err(e) => Reply::error(e.status(), e),
         }
     }
 
@@ -621,7 +688,7 @@ impl<S: ObjectStore> WebSettings<S> {
                 }
                 match self.save_tree(&old, &new).await {
                     Ok(resolved) => Reply::ok(files_summary(&resolved, &[], &[], "")),
-                    Err(e) => Reply::error(500, e),
+                    Err(e) => Reply::error(e.status(), e),
                 }
             }
             _ => Reply::error(405, "that method is not allowed here"),
@@ -632,7 +699,7 @@ impl<S: ObjectStore> WebSettings<S> {
     async fn list_files(&self) -> Reply {
         let tree = match self.tree().await {
             Ok(t) => t,
-            Err(e) => return Reply::error(500, e),
+            Err(e) => return Reply::error(e.status(), e),
         };
         let resolved = rcfiles::resolve(&tree);
         let unreached = rcfiles::unreached(&tree, &resolved);
@@ -704,13 +771,13 @@ impl<S: ObjectStore> WebSettings<S> {
                 let text = new.get(rcfiles::ROOT).map_or("", String::as_str);
                 Reply::ok(files_summary(&resolved, &blocked, &commented, text))
             }
-            Err(e) => Reply::error(500, e),
+            Err(e) => Reply::error(e.status(), e),
         }
     }
 
     /// The saved settings, unless they cannot be read: saving over those would bury them.
     async fn editable_config(&self) -> Result<Config, Reply> {
-        let cfg = self.config().await.map_err(|e| Reply::error(500, e))?;
+        let cfg = self.config().await.map_err(|e| Reply::error(e.status(), e))?;
         if self.config_error().is_some() {
             return Err(Reply::error(
                 400,
@@ -743,7 +810,7 @@ impl<S: ObjectStore> WebSettings<S> {
         }
         let saved = match self.save_settings_change(&cfg).await {
             Ok(c) => c,
-            Err(e) => return Reply::error(500, e),
+            Err(e) => return Reply::error(e.status(), e),
         };
         // An included file that sets one of them still has the last word, as with `task config`: say which.
         let overridden: std::collections::BTreeSet<&String> = req
@@ -780,7 +847,7 @@ impl<S: ObjectStore> WebSettings<S> {
         }
         match self.save_settings_change(&cfg).await {
             Ok(config) => Reply::ok(json!({ "ok": true, "config": config })),
-            Err(e) => Reply::error(500, e),
+            Err(e) => Reply::error(e.status(), e),
         }
     }
 
@@ -805,7 +872,7 @@ impl<S: ObjectStore> WebSettings<S> {
         };
         match self.save_hooks(&text).await {
             Ok(()) => Reply::ok(json!({ "ok": true, "defined": defined })),
-            Err(e) => Reply::error(500, e),
+            Err(e) => Reply::error(e.status(), e),
         }
     }
 

@@ -335,3 +335,20 @@ async fn urgency_on_a_branch_is_one_commit_and_says_what_an_include_overrides() 
         json!(5.0)
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn damaged_earlier_files_are_said_rather_than_read_as_none() {
+    let api = Api::new();
+    api.put("/api/config/taskrc", "bulk=3\n").await;
+    api.put("/api/config/taskrc", "bulk=4\n").await;
+    api.store.put(tc_core::webapi::RC_PREV_KEY, b"not json").await.unwrap();
+    let config: Value = serde_json::from_str(&api.ok("GET", "/api/config", "").await).unwrap();
+    assert_eq!(config["has_previous"], false, "nothing readable to go back to");
+    let (status, text) = api.call("POST", "/api/config/taskrc/restore", b"").await;
+    assert_eq!(status, 409, "{text}");
+    assert!(text.contains("damaged"), "{text}");
+    assert!(
+        api.ok("GET", "/api/config/taskrc", "").await.contains("bulk=4"),
+        "the files are left as they are"
+    );
+}

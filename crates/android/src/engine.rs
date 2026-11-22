@@ -653,9 +653,15 @@ impl Engine {
         (web, secrets, script): (&WebSettings<FileStore>, &Rc<Secrets>, &mut Option<String>),
         clock: tc_core::dates::Clock,
     ) -> Option<Arc<dyn HookHost>> {
-        let source = script
-            .get_or_insert_with(|| pollster::block_on(web.hooks_source()).unwrap_or_default())
-            .clone();
+        let source = match script {
+            Some(s) => s.clone(),
+            // A script that could not be read is not remembered as none: this command runs without hooks, and the next
+            // one reads it again.
+            None => {
+                let s = pollster::block_on(web.hooks_source()).ok()?;
+                script.insert(s).clone()
+            }
+        };
         if source.trim().is_empty() {
             return None;
         }

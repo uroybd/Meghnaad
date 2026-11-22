@@ -205,7 +205,9 @@ pub fn settings_of(text: &str) -> Option<Settings> {
                 .filter(|r| !r.is_empty())
                 .collect();
         } else if let Some(v) = line.strip_prefix("# skip: ") {
-            s.skip = serde_json::from_str(v).unwrap_or_default();
+            // A list that is not ours (edited by hand) makes the file not one we can start from, rather than one that
+            // skips nothing: adding again would bring back every holiday it left out.
+            s.skip = serde_json::from_str(v).ok()?;
         } else if let Some(v) = line.strip_prefix("# link: ") {
             s.link = Some(v.trim().to_owned());
         }
@@ -260,6 +262,9 @@ mod tests {
         assert_eq!((s.source.as_str(), s.key.as_str()), ("ics", "bd"));
         assert_eq!(s.skip, skip);
         assert_eq!(s.link.as_deref(), Some("https://example.org/bd.ics"));
+        // A skip list edited into something else is not a file to start from (it would skip nothing).
+        let edited = b.text.replace("# skip: [", "# skip: Valentine's Day [");
+        assert!(settings_of(&edited).is_none());
         // A link with a query could hold a secret, so it is not written down.
         let secret = Meta {
             link: Some("https://example.org/bd.ics?token=abc"),

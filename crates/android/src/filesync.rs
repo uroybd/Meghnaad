@@ -156,7 +156,9 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
         let key = key.as_str();
         let in_folder = key.starts_with(webapi::RC_PREFIX);
         if folder_changed && !in_folder {
-            webapi::rebuild_config(local).await.map_err(tc_core::Error::Store)?;
+            webapi::rebuild_config(local)
+                .await
+                .map_err(|e| tc_core::Error::Store(e.into()))?;
             folder_changed = false;
         }
         let mine = local.get(key).await?;
@@ -261,7 +263,9 @@ pub async fn sync_files<L: ObjectStore, R: ObjectStore>(
         }
     }
     if folder_changed {
-        webapi::rebuild_config(local).await.map_err(tc_core::Error::Store)?;
+        webapi::rebuild_config(local)
+            .await
+            .map_err(|e| tc_core::Error::Store(e.into()))?;
     }
     Ok(report)
 }
