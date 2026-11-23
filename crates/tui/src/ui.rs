@@ -1466,24 +1466,32 @@ fn lines(c: &Cell) -> Vec<Line<'static>> {
 /// How many columns a progress bar takes, its number aside.
 const BAR: u32 = 10;
 
-/// A cell of a UDA drawn as a progress bar (`appearance.progress`): the bar between the range's ends, in eighths of a
-/// column, then the number, as the web app draws it; `None` when the cell holds no number.
-fn progress_line(text: &str, p: Progress) -> Option<Line<'static>> {
-    const PARTS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+/// A cell of a UDA drawn as a progress bar (`appearance.progress`): the bar between the range's ends, in halves of a
+/// column, then the number, as the web app draws it; `None` when the cell holds no number. The bar is a line through
+/// the middle of the row (`━` done, `╸` a half, `─` to go), thinner than a block and readable without colour.
+pub fn progress_line(text: &str, p: Progress) -> Option<Line<'static>> {
+    Some(Line::from(progress_spans(text, p)?))
+}
+
+/// [`progress_line`] as spans, for a line that has more on it (a card's fields).
+pub fn progress_spans(text: &str, p: Progress) -> Option<Vec<Span<'static>>> {
     let value: f64 = text.trim().parse().ok()?;
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        reason = "a fraction in 0..=1 of BAR × 8"
+        reason = "a fraction in 0..=1 of BAR × 2"
     )]
-    let eighths = (p.fraction(value) * f64::from(BAR * 8)).round() as usize;
-    let (full, part) = (eighths / 8, eighths % 8);
-    let empty = (BAR as usize).saturating_sub(full + usize::from(part > 0));
-    Some(Line::from(vec![
-        Span::styled(format!("{}{}", "█".repeat(full), PARTS[part]), theme::accent()),
-        Span::styled("░".repeat(empty), theme::dim()),
+    let halves = (p.fraction(value) * f64::from(BAR * 2)).round() as usize;
+    let (full, half) = (halves / 2, halves % 2 == 1);
+    let empty = (BAR as usize).saturating_sub(full + usize::from(half));
+    Some(vec![
+        Span::styled(
+            format!("{}{}", "━".repeat(full), if half { "╸" } else { "" }),
+            theme::accent(),
+        ),
+        Span::styled("─".repeat(empty), theme::dim()),
         Span::from(format!(" {}", text.trim())),
-    ]))
+    ])
 }
 
 fn table(f: &mut Frame, app: &App, area: Rect) {
@@ -2079,10 +2087,10 @@ mod tests {
     fn a_progress_cell_is_a_bar_then_its_number() {
         let p = crate::settings::Progress { min: 0.0, max: 100.0 };
         let text = |t: &str| super::progress_line(t, p).map(|l| l.to_string());
-        assert_eq!(text("45").as_deref(), Some("████▌░░░░░ 45"));
-        assert_eq!(text("100").as_deref(), Some("██████████ 100"));
-        assert_eq!(text("250").as_deref(), Some("██████████ 250"));
-        assert_eq!(text("0").as_deref(), Some("░░░░░░░░░░ 0"));
+        assert_eq!(text("45").as_deref(), Some("━━━━╸───── 45"));
+        assert_eq!(text("100").as_deref(), Some("━━━━━━━━━━ 100"));
+        assert_eq!(text("250").as_deref(), Some("━━━━━━━━━━ 250"));
+        assert_eq!(text("0").as_deref(), Some("────────── 0"));
         assert_eq!(text(""), None);
     }
 }

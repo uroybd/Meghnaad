@@ -5,13 +5,14 @@
 use crate::app::kanbans::{Card, KanbanData, KanbanRow};
 use crate::app::{App, Focus};
 use crate::kanban::{self, Part};
+use crate::settings::Progress;
 use crate::theme::{self, Roles};
 use ratatui::layout::{Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding, Paragraph};
 use ratatui::Frame;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The width of Other while it is folded.
 const FOLDED: u16 = 12;
@@ -144,7 +145,7 @@ fn column(f: &mut Frame, area: Rect, title: &str, here: bool) -> Rect {
 }
 
 /// What a card says: its number and title, then its fields as many to a line as fit in `width`.
-fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
+fn card_lines(c: &Card, width: usize, icons: bool, bars: &BTreeMap<String, Progress>) -> Vec<Line<'static>> {
     let id = c.id.map(|i| format!("{i} ")).unwrap_or_default();
     let mut lines = vec![Line::from(vec![
         Span::from(id).quiet(),
@@ -168,7 +169,16 @@ fn card_lines(c: &Card, width: usize, icons: bool) -> Vec<Line<'static>> {
         // With icons: a symbol before the text, or a UDA as a badge (its label, then its value); else the label.
         let symbol = if icons { kanban::field_icon(name) } else { None };
         let badge = icons && symbol.is_none() && !label.is_empty();
-        let piece: Vec<Span> = if badge {
+        // A UDA with a progress range (`appearance.progress`): its label, then the bar, as in the table.
+        let bar = bars.get(name).and_then(|p| crate::ui::progress_spans(text, *p));
+        let piece: Vec<Span> = if let Some(bar) = bar {
+            let mut p = Vec::new();
+            if !label.is_empty() {
+                p.push(Span::from(format!("{label} ")).quiet());
+            }
+            p.extend(bar);
+            p
+        } else if badge {
             vec![
                 Span::styled(format!(" {label} "), Style::new().add_modifier(Modifier::REVERSED)).quiet(),
                 Span::styled(format!(" {text} "), theme::badge_value()),
@@ -208,7 +218,10 @@ fn lane(f: &mut Frame, app: &App, area: Rect, title: &str, cards: &[Card], sel: 
     }
     // Inside a card: its frame, and a space each side.
     let width = usize::from(body.width.saturating_sub(4));
-    let pieces: Vec<Vec<Line>> = cards.iter().map(|c| card_lines(c, width, icons)).collect();
+    let pieces: Vec<Vec<Line>> = cards
+        .iter()
+        .map(|c| card_lines(c, width, icons, &app.progress))
+        .collect();
     let height = |lines: &Vec<Line>| framed(lines.len());
     // From the first card that keeps the chosen one's bottom in sight.
     let chosen = sel.unwrap_or(0).min(pieces.len() - 1);
@@ -391,7 +404,7 @@ fn swimlanes(
         .map(|(i, cs)| {
             let shown = i < n || app.kanban_other;
             let width = usize::from(areas.get(i).map_or(0, |a| a.width).saturating_sub(6));
-            shown.then(|| cs.iter().map(|c| card_lines(c, width, icons)).collect())
+            shown.then(|| cs.iter().map(|c| card_lines(c, width, icons, &app.progress)).collect())
         })
         .collect();
     let heights: Vec<Option<Vec<u16>>> = lines
@@ -708,6 +721,28 @@ mod tests {
         (0..h)
             .map(|y| (0..w).map(|x| b[(x, y)].symbol().to_owned()).collect::<String>())
             .collect()
+    }
+
+    #[test]
+    fn a_field_with_a_progress_range_is_a_bar_on_the_card() {
+        let c = Card {
+            uuid: "u".into(),
+            title: "t".into(),
+            fields: vec![("progress".into(), "Progress".into(), "50".into())],
+            ..Default::default()
+        };
+        let bars = BTreeMap::from([("progress".to_owned(), Progress { min: 0.0, max: 100.0 })]);
+        let lines: Vec<String> = card_lines(&c, 40, true, &bars)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(lines[1].trim_end(), "Progress ━━━━━───── 50");
+        // Without a range it is the badge it was.
+        let plain: Vec<String> = card_lines(&c, 40, true, &BTreeMap::new())
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert!(!plain[1].contains('━'), "{plain:?}");
     }
 
     #[test]

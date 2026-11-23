@@ -529,7 +529,8 @@ command line, which you can also add, change and delete on the Settings page), `
 `homepage` (the report or board it opens on, chosen in the General section), `appearance.idFallback` (a task with no ID
 shown by its short uuid rather than `-`, also chosen there), `appearance.cardIcons` (a kanban's cards with their
 fields as symbols, chosen there too), `appearance.progress` (numeric UDAs drawn
-in a report as a bar with the number beside it, as on the web: [Progress bars](using/settings.md#progress-bars)),
+in a report and on a kanban's cards as a bar with the number beside it, a line through the middle of the row, as on
+the web: [Progress bars](using/settings.md#progress-bars)),
 `appearance.transformations` (find and replace in a description, a note or a string UDA, drawn as Markdown in report
 rows: [Transformations](using/settings.md#transformations); a link is an OSC 8 hyperlink, which most terminals open with
 a click or Cmd/Ctrl+click and the rest show as its words; `task info` is shown as `task` prints it) and
