@@ -419,8 +419,32 @@ fun ContextPicker(store: Store, scope: String, modifier: Modifier = Modifier, fi
 private fun contextOptions(store: Store, names: List<String>) =
     listOf("Context: ${store.activeContext ?: "none"} (same as console)", "Context: none") + names.map { "Context: $it" }
 
+private val CONTEXT_WORDS = Regex("[_\\-. ]+")
+
 /**
- * The context picker as a small button, for beside a field: an icon and the first two letters of the context the page is in
+ * The context button's label: the initials of the name's words (`this_month` → `TM`), or the first two letters of a name of
+ * one word (`work` → `WO`). Where another of [all] gets the same, the shortest longer prefix of the name, up to four
+ * letters, that tells them apart (`this_week` and `two_weeks` → `THI`, `TWO`). No context ([name] null) is `NA`.
+ */
+fun contextLabel(name: String?, all: Collection<String>): String {
+    if (name == null) return "NA"
+    fun initials(n: String): String {
+        val words = n.split(CONTEXT_WORDS).filter { it.isNotEmpty() }
+        return (if (words.size > 1) words.joinToString("") { it.take(1) } else n.take(2)).uppercase()
+    }
+    fun letters(n: String) = n.replace(CONTEXT_WORDS, "").uppercase()
+    val mine = initials(name)
+    val rivals = all.filter { it != name && initials(it) == mine }
+    if (rivals.isEmpty()) return mine
+    for (length in 3..4) {
+        val prefix = letters(name).take(length)
+        if (rivals.none { letters(it).take(length) == prefix }) return prefix
+    }
+    return mine
+}
+
+/**
+ * The context picker as a small button, for beside a field: an icon and the context the page is in, as [contextLabel] shortens it
  * (`NA` for none); its menu is [ContextPicker]'s.
  */
 @Composable
@@ -435,7 +459,7 @@ fun ContextButton(store: Store, scope: String, modifier: Modifier = Modifier, fi
         NO_CONTEXT -> null
         else -> choice
     }
-    val short = shown?.take(2)?.uppercase() ?: "NA"
+    val short = contextLabel(shown, names)
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         OutlinedButton(
