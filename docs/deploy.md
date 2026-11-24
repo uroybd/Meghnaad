@@ -172,6 +172,10 @@ This is the one part that needs the dashboard, because the AUD tag only exists o
 3. Add an **Allow** policy with the selector **Emails** and your address. *One-time PIN* login works without setup.
 4. Copy the application's **Application Audience (AUD) tag**. Your team domain, `https://<team>.cloudflareaccess.com`, is
    under Access controls → **Settings**.
+5. So AI agents can read what the app is, add one more application: **Self-hosted**, Destination your hostname with the
+   path `/llms.txt`, and a **Bypass** policy with the selector **Everyone**. Access prefers it over the whole
+   hostname's for that one path. The file is the same in every deployment and holds nothing of yours
+   ([AI agents](using/console.md#ai-agents)); without the rule, an agent asking for it gets the sign-in page.
 
 Access signs people in; the Worker then **re-verifies the signed token on every API call** (signature, issuer, audience,
 expiry), so your data stays protected even if someone finds a way around Access. Make the Access application cover the

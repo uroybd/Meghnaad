@@ -246,3 +246,22 @@ Taskwarrior asks yes / no / all / quit about each task in turn. Here the questio
 tick for each task the command would change**: tick all, none, or the ones you want, then go ahead. Only tasks the
 command would actually change are listed. A single task is a plain yes/no. The delete buttons ask by turning into
 "sure?" on the first click.
+
+## AI agents
+
+An AI agent working in the browser tab where you are signed in can use the app too. The tools below are off until
+you turn them on, per device: **Settings → This device → AI agents**. Off, the app loads nothing for them.
+
+- **Tools.** Turned on, the app loads MCP-B's WebMCP runtime and gives agents five tools: `export` (tasks matching a filter, as JSON), `places` (your reports, boards and
+  kanbans, with their addresses), `dry_run` (what a line with your task commands would run), `run` (a command line,
+  run here in the console) and `open` (show a page). Chrome's own WebMCP (its origin trial, or the *WebMCP for testing*
+  flag) sees them; in any browser, an agent that can run JavaScript in the tab (as browser-automation tools can) calls
+  them through `document.modelContext`; and with the [MCP-B](https://docs.mcp-b.ai) browser extension, desktop agents
+  such as Claude Desktop reach them too.
+- **The console.** In any other browser, an agent that drives the page types command lines here, as you would.
+
+Either way, a question Taskwarrior asks (a change to several tasks, `delete`, `undo`) is shown here for **you** to
+answer: no tool answers it. The app describes all this to agents at `/llms.txt` (and the page links to it), a public file that is the same for
+every deployment and names nothing of yours (on Cloudflare it needs the Access rule in
+[Deploy](../deploy.md#connecting-access)). Your tasks, reports and boards are only reachable from your signed-in tab.
+For an agent with a shell, use the [terminal app's skill](../terminal.md#with-an-ai-agent) instead.

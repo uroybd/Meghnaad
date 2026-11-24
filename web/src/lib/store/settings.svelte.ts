@@ -89,6 +89,20 @@ export abstract class SettingsStore extends StoreBase {
   deviceId = $state<string | null>(readDeviceId());
   /** This device's own settings, read (null: none, or not read yet). */
   deviceRaw = $state<Record<string, unknown> | null>(null);
+  /** This device lets AI agents in its tab use the app's tools (`web.agents` in its own file; spec 0031). */
+  agentsOn = $derived.by(() => {
+    const web = this.deviceRaw?.web;
+    return !!web && typeof web === 'object' && (web as Record<string, unknown>).agents === true;
+  });
+
+  /** Turn the AI agents' tools on or off for this device, in its own file. Throws what the server refused. */
+  async setAgents(on: boolean) {
+    const raw = this.deviceRaw ?? {};
+    const web = raw.web && typeof raw.web === 'object' ? { ...(raw.web as Record<string, unknown>) } : {};
+    if (on) web.agents = true;
+    else delete web.agents;
+    await this.saveDevice({ ...raw, web });
+  }
   /** What this device uses: `settings.json` with its own settings laid over it. */
   effectiveSettings = $derived<ParsedSettings | null>(
     this.deviceRaw && this.appSettings

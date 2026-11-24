@@ -5,6 +5,7 @@
   import { lock } from './engine/session';
   import PinLock from './lib/PinLock.svelte';
   import { onMount } from 'svelte';
+  import { disableAgents, enableAgents } from './lib/webmcp';
   import ConsoleInput from './lib/ConsoleInput.svelte';
   import { engine } from './engine/client.svelte';
   import {
@@ -164,6 +165,12 @@
     const s = await getSetup();
     if (s && !s.configured) setup = s;
     else start();
+  });
+
+  // AI agents get the app's tools only where this device turned them on (Settings, This device; spec 0031).
+  $effect(() => {
+    if (store.agentsOn) void enableAgents();
+    else disableAgents();
   });
 
   // The colours the charts use (`color.calendar.*`, `color.burndown.*`, ...), as custom properties on the page.

@@ -13,6 +13,19 @@
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
   let home = $state(false);
   let keys = $state(false);
+  let agentsBusy = $state(false);
+  let agentsError = $state<string | null>(null);
+  async function toggleAgents(on: boolean) {
+    agentsBusy = true;
+    agentsError = null;
+    try {
+      await store.setAgents(on);
+    } catch (e) {
+      agentsError = e instanceof Error ? e.message : String(e);
+    } finally {
+      agentsBusy = false;
+    }
+  }
   $effect(() => {
     ondirty?.(home || keys);
   });
@@ -34,6 +47,22 @@
       Always this device's own. {reminders}.
       <button class="small" onclick={() => (store.notifyOpen = true)}>Set reminders</button>
     </p>
+    <h3>AI agents</h3>
+    <label class="pick">
+      <input
+        type="checkbox"
+        checked={store.agentsOn}
+        disabled={agentsBusy}
+        onchange={(e) => toggleAgents(e.currentTarget.checked)}
+      />
+      Let AI agents in this browser use the app's tools
+    </label>
+    <p class="dim">
+      Off unless you turn it on, here and on each device. On, the app loads a WebMCP runtime so an agent in a tab where
+      you are signed in can read your tasks and run commands, and a desktop agent can too through the MCP-B browser
+      extension. Questions such as a delete still wait for you in the console.
+    </p>
+    {#if agentsError}<p class="err" role="alert">{agentsError}</p>{/if}
     <h3>Keys</h3>
     <KeysPanel device ondirty={(v: boolean) => (keys = v)} />
   </GeneralPanel>
