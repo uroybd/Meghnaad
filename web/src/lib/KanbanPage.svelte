@@ -155,7 +155,7 @@
       tag: settings?.['tag.indicator'],
       dependency: settings?.['dependency.indicator'],
     },
-    transformations: store.appearance.transformations,
+    transformations: store.rules,
     idFallback: store.appearance.idFallback,
   });
   function cells(rows: Row[]): Cell[][] {

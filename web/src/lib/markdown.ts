@@ -24,12 +24,18 @@ export interface MdNode {
 /**
  * The trees of some texts, in order; null for one that is only words (it is drawn as it is). With the field each text is
  * in (`description`, `annotations` or a UDA's name) and the user's transformations, each is transformed first; a
- * description gets a tree only when a transformation changed it.
+ * description gets a tree only when a transformation changed it. `tasks`: the UUID of the task each text is of, for a
+ * rule with a condition (`store.rules` carries the tasks it matches).
  */
-export function trees(texts: string[], fields?: string[], rules?: Transformation[]): (MdNode[] | null)[] {
+export function trees(
+  texts: string[],
+  fields?: string[],
+  rules?: Transformation[],
+  tasks?: (string | null)[],
+): (MdNode[] | null)[] {
   if (!texts.length) return [];
   return rules?.length && fields
-    ? callHelper<(MdNode[] | null)[]>('markdown', texts, fields, rules)
+    ? callHelper<(MdNode[] | null)[]>('markdown', texts, fields, rules, tasks ?? [])
     : callHelper<(MdNode[] | null)[]>('markdown', texts);
 }
 

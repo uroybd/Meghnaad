@@ -62,3 +62,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0027 | [Settings of one device, over everyone's](0027-device-settings.md)                                                     | done        | 2 (UI)                | web, Android                                 | Shipped in 0.8.32                                                                                 |
 | 0028 | [This device as one tab of Settings](0028-this-device-tab.md) | done | 2 (UI) | web, Android | Replaces 0027's switch |
 | 0029 | [Meghnaad for AI agents: a skill, `meghnaad skill`, `--dry-run`](0029-ai-skill.md) | done | 2 (UI) | terminal | Done 2026-11-24; plugin install from GitHub to check after a push |
+| 0030 | [Conditional transformations](0030-conditional-transformations.md) | done | 2 (UI), shared transform helper | all | Built |

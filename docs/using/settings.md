@@ -220,6 +220,17 @@ the arrows move a rule up and down. Patterns match as Taskwarrior's do, on the b
 ASCII, and `(?i)` at the start makes a rule ignore case. A rule whose pattern does not compile, or that names a field that
 is not text, is reported under it and skipped; the others still run, and **Apply** waits until it is fixed.
 
+A rule may also have a **Condition**, a Taskwarrior filter: it then runs only on the tasks the filter matches, so a key
+like `FUL-123` becomes a Jira link in `project:FUL` and stays text everywhere else. The filter means what it means to
+`task` (`( <condition> ) _uuids`): every status counts, completed tasks included, and the context makes no difference.
+An empty condition is none. A condition `task` refuses runs the rule on nothing, and the problem is shown under the
+rules (in the terminal app, with its other settings problems).
+
+```json
+{ "match": "\\b(FUL-\\d+)\\b", "replace": "[$1](https://jira.example.com/browse/$1)",
+  "fields": ["description", "jira"], "condition": "project:FUL" }
+```
+
 Only how a field is shown changes: the task, filters, `export`, editing and sync all see the text as you typed it. A
 description is drawn as Markdown only when a rule changed it. Where a rule changes how many lines a field has, its
 checkboxes are shown but can't be clicked. They apply to tables, the phone's cards, the task's details and, in the

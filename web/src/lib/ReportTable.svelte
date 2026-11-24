@@ -62,7 +62,7 @@
       tag: settings?.['tag.indicator'],
       dependency: settings?.['dependency.indicator'],
     },
-    transformations: store.appearance.transformations,
+    transformations: store.rules,
     idFallback: store.appearance.idFallback,
   });
   // What every cell shows, worked out by the engine for the whole table at once.

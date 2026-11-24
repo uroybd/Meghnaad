@@ -50,6 +50,20 @@ class MarkdownTest {
     }
 
     @Test
+    fun aRuleWithAConditionRunsOnlyOnTheTasksItMatched() {
+        val rule = Transformation("\\b(BOR-\\d+)\\b", "[\$1](https://j.example/\$1)", listOf("description"), "project:BOR", listOf("a"))
+        val (matched, other, unknown) = markdownTrees(
+            listOf("fix BOR-1", "fix BOR-2", "fix BOR-3"),
+            listOf("description", "description", "description"),
+            listOf(rule),
+            listOf("a", "b", null),
+        )
+        assertEquals("https://j.example/BOR-1", matched!!.single().c.single { it.t == "a" }.href)
+        assertNull(other)
+        assertNull(unknown)
+    }
+
+    @Test
     fun aCellOfAStringUdaCarriesItsTree() {
         val udas = mapOf("plan" to UdaDef(name = "plan", type = "string"))
         val ctx = Ctx(now = 1_791_376_200L, tz = 0, udas = udas)

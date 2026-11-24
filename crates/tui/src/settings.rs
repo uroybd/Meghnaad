@@ -321,6 +321,8 @@ impl AppSettings {
                     pattern: pattern.to_owned(),
                     replace: replace.to_owned(),
                     fields,
+                    condition: r.get("condition").and_then(Value::as_str).map(str::to_owned),
+                    tasks: None,
                 }),
                 (Some(_), Some(_), None) => errors.push(format!("{at}: fields must be a list of field names")),
                 _ => errors.push(format!(

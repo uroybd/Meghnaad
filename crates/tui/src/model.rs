@@ -191,10 +191,37 @@ pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64, look: Loo
             "dependency": cfg.indicator("dependency.indicator"),
         },
         "journal": journal,
-        "transformations": look.rules.iter().map(|r| json!({ "match": r.pattern, "replace": r.replace, "fields": r.fields })).collect::<Vec<_>>(),
+        "transformations": look.rules.iter().map(|r| json!({
+            "match": r.pattern, "replace": r.replace, "fields": r.fields, "condition": r.condition, "tasks": r.tasks,
+        })).collect::<Vec<_>>(),
         "id_fallback": look.id_fallback,
     }))
     .ok()
+}
+
+/// Each rule with a condition given the tasks it matches (spec 0030): `task ( <condition> ) _uuids`, once per rule,
+/// which counts every status and no context, as a condition should. What `task` refused, one line each; such a rule
+/// matches nothing.
+pub fn resolve_conditions(task: &Task, rules: &mut [Rule]) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (i, r) in rules.iter_mut().enumerate() {
+        let Some(condition) = r.condition().map(str::to_owned) else {
+            r.tasks = None;
+            continue;
+        };
+        let mut args = vec!["("];
+        let words = tc_core::filter::split_words(&condition);
+        args.extend(words.iter().map(String::as_str));
+        args.extend([")", "_uuids"]);
+        r.tasks = Some(match task.lines(&args) {
+            Ok(uuids) => uuids,
+            Err(e) => {
+                errors.push(format!("transformation {}: condition {condition}: {e}", i + 1));
+                Vec::new()
+            }
+        });
+    }
+    errors
 }
 
 /// The moments a task of `export` holds, for [`ctx`].
@@ -511,6 +538,7 @@ mod tests {
             pattern: r"\b(BOR-\d+)\b".into(),
             replace: "[$1](https://j.example/$1)".into(),
             fields: vec!["description".into()],
+            ..Rule::default()
         }];
         let table = cells::format(
             &cols,

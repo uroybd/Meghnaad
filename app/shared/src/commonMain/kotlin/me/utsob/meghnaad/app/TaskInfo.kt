@@ -95,11 +95,13 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
     val notes = visibleNotes(task.annotations, store.config?.journal)
     // A string UDA and a note may hold Markdown: its tree, or null for text that is only words.
     val stringUdas = udaKeys.filter { defs.getValue(it).type == "string" }
-    val rules = store.appearance.transformations
+    val rules = store.rules
     val udaTrees = remember(task.uuid, task.modified, rules) {
-        stringUdas.zip(markdownTrees(stringUdas.map { task.extra.getValue(it) }, stringUdas, rules)).toMap()
+        stringUdas.zip(markdownTrees(stringUdas.map { task.extra.getValue(it) }, stringUdas, rules, stringUdas.map { task.uuid })).toMap()
     }
-    val noteTrees = remember(task.uuid, task.modified, rules) { markdownTrees(notes.map { it.text }, notes.map { "annotations" }, rules) }
+    val noteTrees = remember(task.uuid, task.modified, rules) {
+        markdownTrees(notes.map { it.text }, notes.map { "annotations" }, rules, notes.map { task.uuid })
+    }
     // The sessions, from the journal's notes by the engine's own helper (as the web and the terminal app read them).
     val log = timeLog(task.annotations, task.start, store.config?.journal, store.clockNow())
     val totalTracked = task.activeSeconds ?: log.total

@@ -195,6 +195,22 @@ class AppSettingsTest {
     }
 
     @Test
+    fun aTransformationsConditionIsReadTrimmedAndSavedAndAnEmptyOneIsNone() {
+        val p = parseSettings(
+            """{ "appearance": { "transformations": [
+                { "match": "x", "replace": "y", "fields": ["description"], "condition": " project:FUL " },
+                { "match": "x", "replace": "y", "fields": ["description"], "condition": "  " },
+                { "match": "x", "replace": "y", "fields": ["description"], "condition": 3 } ] } }""",
+        )
+        val rule = Transformation("x", "y", listOf("description"))
+        assertEquals(listOf(rule.copy(condition = "project:FUL"), rule), p.appearance.transformations)
+        assertEquals(listOf("appearance.transformations[2]: condition must be a Taskwarrior filter, as text"), p.appearanceErrors)
+        val text = serializeAppearance(JsonObject(emptyMap()), p.appearance)
+        assertTrue("\"condition\": \"project:FUL\"" in text || "\"condition\":\"project:FUL\"" in text, text)
+        assertEquals(p.appearance.transformations, parseSettings(text).appearance.transformations)
+    }
+
+    @Test
     fun aBarFillsFromEmptyAtTheMinToFullAtTheMax() {
         val r = Progress(0.0, 50.0)
         assertEquals(0.5f, r.fraction(25.0))

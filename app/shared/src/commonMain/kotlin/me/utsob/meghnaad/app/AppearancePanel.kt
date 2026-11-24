@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
 /** A transformation as typed, with a key of its own for the list. */
-data class RuleDraft(val key: Int, val match: String, val replace: String, val fields: List<String>)
+data class RuleDraft(val key: Int, val match: String, val replace: String, val fields: List<String>, val condition: String = "")
 
 /**
  * How the app draws things, kept in `settings.json` (AppearancePanel.svelte): the numeric UDAs shown as progress bars, and
@@ -44,7 +44,7 @@ class AppearanceState(private val store: Store) {
     val draft = mutableStateMapOf<String, Pair<String, String>>().also { it.putAll(toDraft(saved)) }
 
     private var nextKey = 0
-    private fun toRules(a: Appearance) = a.transformations.map { RuleDraft(nextKey++, it.match, it.replace, it.fields) }
+    private fun toRules(a: Appearance) = a.transformations.map { RuleDraft(nextKey++, it.match, it.replace, it.fields, it.condition ?: "") }
 
     /** The transformations, in the order they run. */
     val rules = mutableStateListOf<RuleDraft>().also { it.addAll(toRules(saved)) }
@@ -88,7 +88,7 @@ class AppearanceState(private val store: Store) {
     private val current
         get() = Appearance(
             draft.keys.mapNotNull { n -> range(n)?.let { n to it } }.toMap(),
-            rules.map { Transformation(it.match, it.replace, it.fields) },
+            rules.map { Transformation(it.match, it.replace, it.fields, it.condition.trim().ifEmpty { null }) },
             idFallback,
             cardIcons,
         )
@@ -217,8 +217,9 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
         Text("Transformations", Modifier.padding(top = 16.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Dim(
             "Find and replace in a text field before it is drawn, so BOR-23434 can become a link: the result is shown as Markdown. " +
-                "Match is a regular expression, Replace may use \$1 or \${name}, and each runs only on the fields ticked. They run in " +
-                "order, on what the one before left. Only how a field is shown changes: the task, filters and exports keep what you typed.",
+                "Match is a regular expression, Replace may use \$1 or \${name}, and each runs only on the fields ticked, and with a " +
+                "Condition (a Taskwarrior filter, such as project:FUL) only on the tasks it matches. They run in order, on what the one before " +
+                "left. Only how a field is shown changes: the task, filters and exports keep what you typed.",
         )
         if (state.rules.isEmpty()) Dim("No transformations yet.")
         state.rules.forEachIndexed { i, r ->
@@ -239,6 +240,11 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
                     label = { Text("Replace") }, placeholder = { Text("[\$1](https://jira.example.com/browse/\$1)") },
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                 )
+                OutlinedTextField(
+                    r.condition, { v -> state.edit(i) { it.copy(condition = v) } }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("Condition") }, placeholder = { Text("a filter, such as project:FUL (empty: every task)") },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                )
                 FlowRow {
                     for (f in state.fieldsOf(r)) {
                         val on = f in r.fields
@@ -250,7 +256,7 @@ fun AppearancePanel(store: Store, state: AppearanceState) {
                 }
             }
         }
-        state.ruleProblems.forEach { Text(it, color = colors.error, fontSize = 13.sp) }
+        (state.ruleProblems + store.conditionErrors).forEach { Text(it, color = colors.error, fontSize = 13.sp) }
         OutlinedButton(onClick = state::addRule, modifier = Modifier.padding(bottom = 10.dp)) { LucideIcon("plus", size = 14.dp); Text("  Add a transformation") }
 
         state.error?.let { Text(it, color = colors.error, fontSize = 13.sp) }

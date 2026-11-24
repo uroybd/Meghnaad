@@ -77,14 +77,22 @@ data class Md(
 /**
  * The trees of some texts, in order; null for one that is only words (it is drawn as it is). With the field each text is
  * in (`description`, `annotations` or a UDA's name) and the user's transformations, each is transformed first; a
- * description gets a tree only when a transformation changed it.
+ * description gets a tree only when a transformation changed it. [tasks]: the UUID of the task each text is of, for a
+ * rule with a condition ([Store.rules] carries the tasks it matches).
  */
-fun markdownTrees(texts: List<String>, fields: List<String>? = null, rules: List<Transformation> = emptyList()): List<List<Md>?> {
+fun markdownTrees(
+    texts: List<String>,
+    fields: List<String>? = null,
+    rules: List<Transformation> = emptyList(),
+    tasks: List<String?> = emptyList(),
+): List<List<Md>?> {
     if (texts.isEmpty()) return emptyList()
     val args = mutableListOf<JsonElement>(JsonArray(texts.map(::JsonPrimitive)))
     if (fields != null && rules.isNotEmpty()) {
         args.add(JsonArray(fields.map(::JsonPrimitive)))
         args.add(transformationsJson(rules))
+        // The task each text is of, for a rule with a condition.
+        args.add(JsonArray(tasks.map { JsonPrimitive(it) }))
     }
     val out = callHelper("markdown", *args.toTypedArray())
     return engineJson.decodeFromJsonElement(ListSerializer(ListSerializer(Md.serializer()).nullable), out)

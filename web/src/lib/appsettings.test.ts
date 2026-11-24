@@ -285,6 +285,21 @@ describe('appearance', () => {
     expect(sameAppearance(appearance, structuredClone(appearance))).toBe(true);
   });
 
+  it("reads a transformation's condition, trimmed, and saves it; an empty one is none", () => {
+    const rule = { match: 'x', replace: 'y', fields: ['description'] };
+    const { appearance, errors } = parseAppearance({
+      transformations: [
+        { ...rule, condition: ' project:FUL ' },
+        { ...rule, condition: '  ' },
+        { ...rule, condition: 3 },
+      ],
+    });
+    expect(appearance.transformations).toEqual([{ ...rule, condition: 'project:FUL' }, rule]);
+    expect(errors).toEqual(['appearance.transformations[2]: condition must be a Taskwarrior filter, as text']);
+    const text = serializeAppearance({}, { ...appearance, idFallback: false, cardIcons: false });
+    expect(JSON.parse(text).appearance.transformations[0]).toEqual({ ...rule, condition: 'project:FUL' });
+  });
+
   it('fills a bar from empty at the min to full at the max', () => {
     const r = { min: 0, max: 50 };
     expect(progressFraction(25, r)).toBe(0.5);

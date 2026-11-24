@@ -43,9 +43,10 @@ pub fn first_link(task: &serde_json::Value, rules: &tc_core::transform::Rules, u
     let texts = std::iter::once(("description", task["description"].as_str().unwrap_or_default()))
         .chain(notes)
         .chain(udas.iter().filter_map(|u| task[*u].as_str().map(|t| (*u, t))));
+    let uuid = task["uuid"].as_str();
     texts
         .into_iter()
-        .find_map(|(field, text)| find(&tc_core::markdown::parse(&rules.apply(field, text))))
+        .find_map(|(field, text)| find(&tc_core::markdown::parse(&rules.apply(field, uuid, text))))
 }
 
 fn link_style() -> Style {
@@ -223,6 +224,7 @@ mod tests {
             pattern: r"\b(FUL-\d+)\b".into(),
             replace: "[$1](https://jira.example/browse/$1)".into(),
             fields: vec!["jira".into()],
+            ..Rule::default()
         }]);
         let task = serde_json::json!({ "description": "Answer how-to questions", "jira": "FUL-3586" });
         // The UDA's link, made by a rule: what `o` said "no link" to before.
@@ -259,8 +261,9 @@ mod tests {
             pattern: r"\b(BOR-\d+)\b".into(),
             replace: "[$1](https://j.example/$1)".into(),
             fields: vec!["description".into()],
+            ..Rule::default()
         }]);
-        rules.tree(Some("description"), text).unwrap()
+        rules.tree(Some("description"), None, text).unwrap()
     }
 
     fn text(lines: &[Line<'_>]) -> Vec<String> {

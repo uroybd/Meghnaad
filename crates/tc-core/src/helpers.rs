@@ -344,16 +344,21 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             Ok(link) => json!({ "link": link }),
             Err(problem) => json!({ "problem": problem }),
         },
-        // The trees of some texts; with the field each is in and the user's transformations, each transformed first
-        // (`tc_core::transform`: a description gets a tree only when a rule changed it).
+        // The trees of some texts; with the field each is in, the task each is of (its UUID, for a rule with a
+        // condition) and the user's transformations, each transformed first (`tc_core::transform`: a description gets a
+        // tree only when a rule changed it).
         "markdown" => {
             let texts = a.req::<Vec<String>>(0)?;
             let fields = a.opt::<Vec<Option<String>>>(1)?.unwrap_or_default();
             let rules = crate::transform::Rules::new(&a.opt::<Vec<crate::transform::Rule>>(2)?.unwrap_or_default());
+            let tasks = a.opt::<Vec<Option<String>>>(3)?.unwrap_or_default();
             json!(texts
                 .iter()
                 .enumerate()
-                .map(|(i, t)| rules.tree(fields.get(i).and_then(|f| f.as_deref()), t))
+                .map(|(i, t)| {
+                    let task = tasks.get(i).and_then(|u| u.as_deref());
+                    rules.tree(fields.get(i).and_then(|f| f.as_deref()), task, t)
+                })
                 .collect::<Vec<_>>())
         }
         // What is wrong with the transformations, one line each; the second argument names the string UDAs.

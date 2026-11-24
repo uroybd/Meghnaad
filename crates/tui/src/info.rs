@@ -153,8 +153,8 @@ impl Ctx<'_> {
     }
 
     /// A text of `field` as it is drawn: Markdown when it uses any or a transformation changed it, else as it is.
-    fn text(&self, field: &str, text: &str) -> Shown {
-        match Rules::new(self.rules).tree(Some(field), text) {
+    fn text(&self, t: &Value, field: &str, text: &str) -> Shown {
+        match Rules::new(self.rules).tree(Some(field), str_of(t, "uuid"), text) {
             Some(tree) => Shown::Tree(tree),
             None => Shown::Text(text.to_owned()),
         }
@@ -281,7 +281,7 @@ pub fn build(t: &Value, around: &Around, ctx: &Ctx) -> Info {
 fn details(t: &Value, around: &Around, ctx: &Ctx) -> Vec<Entry> {
     let mut out = vec![entry(
         "Description",
-        ctx.text("description", str_of(t, "description").unwrap_or("")),
+        ctx.text(t, "description", str_of(t, "description").unwrap_or("")),
     )];
     let id = t.get("id").and_then(Value::as_u64).filter(|id| *id > 0);
     out.push(entry(
@@ -346,7 +346,7 @@ fn details(t: &Value, around: &Around, ctx: &Ctx) -> Vec<Entry> {
             (UdaType::Date, Value::String(s)) => {
                 Shown::Text(parse_date(s).map_or_else(|| s.clone(), |ts| ctx.date(ts)))
             }
-            (UdaType::String, Value::String(s)) => ctx.text(name, s),
+            (UdaType::String, Value::String(s)) => ctx.text(t, name, s),
             (_, Value::Number(n)) => Shown::Text(trim_number(&n.to_string())),
             (_, Value::String(s)) => Shown::Text(s.clone()),
             (_, other) => Shown::Text(other.to_string()),
@@ -413,7 +413,7 @@ fn annotations(t: &Value, ctx: &Ctx) -> Vec<Entry> {
                 .as_ref()
                 .is_none_or(|(start, stop)| text != start && text != stop)
         })
-        .map(|(at, text)| entry(&ctx.date(at), ctx.text("annotations", &text)))
+        .map(|(at, text)| entry(&ctx.date(at), ctx.text(t, "annotations", &text)))
         .collect()
 }
 
@@ -498,6 +498,7 @@ mod tests {
             pattern: r"\b(BOR-\d+)\b".into(),
             replace: "[$1](https://x.test/$1)".into(),
             fields: vec!["description".into()],
+            ..Rule::default()
         }];
         let ctx = Ctx {
             cfg: &c,

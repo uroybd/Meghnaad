@@ -94,8 +94,8 @@ fun DetailScreen(store: Store, ref: DetailRef) {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 val title = live?.description ?: "Task"
-                val rules = store.appearance.transformations
-                val tree = remember(title, rules) { if (live == null) null else markdownTrees(listOf(title), listOf("description"), rules).firstOrNull() }
+                val rules = store.rules
+                val tree = remember(title, rules) { if (live == null) null else markdownTrees(listOf(title), listOf("description"), rules, listOf(uuid)).firstOrNull() }
                 DescriptionText(title, tree, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, maxLines = 3)
                 live?.let { ShareMenu(store, it) }
                 IconAction("link", "Copy a link to this task", { clipboard.setText(AnnotatedString(taskLink(uuid))); store.notify("Link copied.") }, size = 20.dp)

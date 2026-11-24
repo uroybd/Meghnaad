@@ -5,9 +5,10 @@
   import { trees } from './markdown';
   import { store } from './store.svelte';
 
-  let { text }: { text: string } = $props();
+  // `uuid`: the task's, for a transformation with a condition.
+  let { text, uuid }: { text: string; uuid?: string } = $props();
 
-  const tree = $derived(trees([text], ['description'], store.appearance.transformations)[0]);
+  const tree = $derived(trees([text], ['description'], store.rules, [uuid ?? null])[0]);
   const nodes = $derived(tree?.length === 1 && tree[0].t === 'p' ? (tree[0].c ?? []) : tree);
 </script>
 

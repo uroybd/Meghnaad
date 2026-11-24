@@ -78,7 +78,8 @@
         return trees(
           names.map((k) => task.extra[k]),
           names,
-          store.appearance.transformations,
+          store.rules,
+          names.map(() => task.uuid),
         ).map((t, i) => [names[i], t]);
       })(),
     ),
@@ -87,7 +88,8 @@
     trees(
       notes.map((a) => a.text),
       notes.map(() => 'annotations'),
-      store.appearance.transformations,
+      store.rules,
+      notes.map(() => task.uuid),
     ),
   );
   // The sessions, from the journal's notes by the engine's own helper (as the phone and the terminal app read them).
@@ -143,7 +145,7 @@
 <article class:card={!embedded}>
   {#if !embedded}
     <header class="row">
-      <strong class="grow"><Description text={task.description} /></strong>
+      <strong class="grow"><Description text={task.description} uuid={task.uuid} /></strong>
       {#if onedit}<button class="ghost btn" onclick={() => onedit(task)}><Pencil size={14} /> Edit</button>{/if}
     </header>
   {/if}

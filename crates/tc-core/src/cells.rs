@@ -245,7 +245,7 @@ fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx, rules: &Rules) -
     };
     match format {
         Some("desc") => Cell {
-            blocks: rules.tree(Some(transform::DESCRIPTION), &row.description),
+            blocks: rules.tree(Some(transform::DESCRIPTION), Some(&row.uuid), &row.description),
             ..Cell::text(&row.description)
         },
         // Like Taskwarrior: each annotation follows the description with its date.
@@ -267,11 +267,11 @@ fn description_cell(row: &Row, format: Option<&str>, ctx: &Ctx, rules: &Rules) -
                         at: at(n),
                         text: n.text.clone(),
                         entry: n.entry,
-                        blocks: rules.tree(Some(transform::ANNOTATIONS), &n.text),
+                        blocks: rules.tree(Some(transform::ANNOTATIONS), Some(&row.uuid), &n.text),
                     })
                     .collect(),
             ),
-            blocks: rules.tree(Some(transform::DESCRIPTION), &row.description),
+            blocks: rules.tree(Some(transform::DESCRIPTION), Some(&row.uuid), &row.description),
             ..Cell::text(&row.description)
         },
     }
@@ -315,7 +315,7 @@ fn uda_cell(row: &Row, col: &Col, ctx: &Ctx, rules: &Rules) -> Cell {
     let cell = Cell {
         blocks: def
             .filter(|d| d.kind == "string")
-            .and_then(|_| rules.tree(Some(&col.name), raw)),
+            .and_then(|_| rules.tree(Some(&col.name), Some(&row.uuid), raw)),
         ..Cell::text(raw)
     };
     if raw.contains('\n') {
@@ -585,6 +585,31 @@ mod tests {
         assert_eq!(one("other", row.clone(), ctx.clone()).blocks, None);
         assert_eq!(one("description.truncated", row.clone(), ctx).blocks, None);
         assert_eq!(one("description", row, json!({})).blocks, None);
+    }
+
+    #[test]
+    fn a_rule_with_a_condition_runs_only_on_the_rows_it_matched() {
+        let ctx = |tasks: serde_json::Value| {
+            json!({
+                "udas": { "jira": { "type": "string" } },
+                "transformations": [{ "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://j.example/$1)",
+                                      "fields": ["description", "annotations", "jira"], "condition": "project:BOR",
+                                      "tasks": tasks }]
+            })
+        };
+        let row = |uuid: &str| {
+            json!({ "uuid": uuid, "description": "fix BOR-7", "annotations": [{ "entry": NOW, "text": "see BOR-8" }],
+                    "extra": { "jira": "BOR-9" } })
+        };
+        let matched = ctx(json!(["u1"]));
+        let d = one("description", row("u1"), matched.clone());
+        assert!(d.blocks.is_some());
+        assert!(d.notes.unwrap()[0].blocks.is_some());
+        assert!(one("jira", row("u1"), matched.clone()).blocks.is_some());
+        // Another task, or a condition not asked yet: nothing changes.
+        assert_eq!(one("description", row("u2"), matched.clone()).blocks, None);
+        assert_eq!(one("jira", row("u2"), matched).blocks, None);
+        assert_eq!(one("description", row("u1"), ctx(serde_json::Value::Null)).blocks, None);
     }
 
     #[test]

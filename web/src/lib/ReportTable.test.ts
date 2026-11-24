@@ -448,6 +448,45 @@ describe('field transformations', () => {
   });
 });
 
+describe('a transformation with a condition', () => {
+  it('changes only the tasks the condition matched', () => {
+    store.appSettings = parseSettings(
+      JSON.stringify({
+        appearance: {
+          transformations: [
+            {
+              match: '\\b(BOR-\\d+)\\b',
+              replace: '[$1](https://j.example/$1)',
+              fields: ['description'],
+              condition: 'project:BOR',
+            },
+          ],
+        },
+      }),
+    );
+    store.config = { colors: {}, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
+    // What `( project:BOR ) _uuids` answered: only the first task (a row's uuid is its description here).
+    store.conditionTasks = { 'project:BOR': ['fix BOR-1'] };
+    const result: ReportResult = {
+      kind: 'report',
+      report: 'next',
+      description: null,
+      columns: [{ spec: 'description', name: 'description', format: null, label: 'Description', kind: 'description' }],
+      rows: [row('fix BOR-1', null), row('and BOR-2', null)],
+      breaks: [false, false],
+      matched: 2,
+      sort: null,
+    };
+    app = mount(ReportTable, { target: document.body, props: { result } });
+    flushSync();
+    const links = [...document.querySelectorAll('td.col-description a[href^="https://j.example"]')].map((a) =>
+      a.getAttribute('href'),
+    );
+    expect(links).toEqual(['https://j.example/BOR-1']);
+    store.conditionTasks = {};
+  });
+});
+
 describe('the Export button', () => {
   const result = (): ReportResult => ({
     kind: 'report',

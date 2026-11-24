@@ -67,7 +67,15 @@ data class Progress(val min: Double, val max: Double) {
  * A find-and-replace run on a text field before it is drawn as Markdown (`tc_core::transform`): [match] is a regex,
  * [replace] may use `$1` and `${name}`, and [fields] names where it runs (`description`, `annotations` or a string UDA).
  */
-data class Transformation(val match: String, val replace: String, val fields: List<String>)
+data class Transformation(
+    val match: String,
+    val replace: String,
+    val fields: List<String>,
+    /** A Taskwarrior filter: the rule runs only on the tasks it matches (spec 0030). */
+    val condition: String? = null,
+    /** With a condition: the UUIDs of the tasks it matches, filled in by the store ([Store.rules]). Never saved. */
+    val tasks: List<String>? = null,
+)
 
 /** How the app draws things, kept in `settings.json` under `appearance`. */
 data class Appearance(
@@ -134,10 +142,13 @@ fun parseTransformations(v: JsonElement?): Pair<List<Transformation>, List<Strin
         val match = o?.get("match")?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
         val replace = o?.get("replace").let { if (it == null) "" else (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
         val fields = (o?.get("fields") as? JsonArray)?.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        val condition = o?.get("condition")
+        val trimmed = (condition as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()?.ifEmpty { null }
         when {
             match == null || replace == null -> errors += "$at: must be { \"match\": \"…\", \"replace\": \"…\", \"fields\": [ … ] }"
             fields == null || fields.any { it == null } -> errors += "$at: fields must be a list of field names"
-            else -> out += Transformation(match, replace, fields.filterNotNull())
+            condition != null && (condition as? JsonPrimitive)?.isString != true -> errors += "$at: condition must be a Taskwarrior filter, as text"
+            else -> out += Transformation(match, replace, fields.filterNotNull(), trimmed)
         }
     }
     return out to errors
@@ -560,7 +571,7 @@ fun lintSettings(text: String, more: (JsonObject) -> List<String> = { emptyList(
     return Lint(errors, warnings)
 }
 
-/** The rules as `settings.json` and the engine take them. */
+/** The rules as `settings.json` and the engine take them (`tasks` only for the engine: a saved rule never has them). */
 fun transformationsJson(rules: List<Transformation>): JsonArray = buildJsonArray {
     for (r in rules) {
         add(
@@ -568,6 +579,8 @@ fun transformationsJson(rules: List<Transformation>): JsonArray = buildJsonArray
                 put("match", r.match)
                 put("replace", r.replace)
                 put("fields", JsonArray(r.fields.map(::JsonPrimitive)))
+                r.condition?.let { put("condition", it) }
+                r.tasks?.let { put("tasks", JsonArray(it.map(::JsonPrimitive))) }
             },
         )
     }

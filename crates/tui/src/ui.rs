@@ -733,7 +733,8 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             + app.settings.command_errors.len()
             + app.keymap.problems.len()
             + app.progress_errors.len()
-            + app.transform_errors.len(),
+            + app.transform_errors.len()
+            + app.condition_errors.len(),
     )
     .unwrap_or(0);
     let kanban_lines = crate::kanbanui::settings_lines(app);
@@ -823,6 +824,7 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             .chain(&app.keymap.problems)
             .chain(&app.progress_errors)
             .chain(&app.transform_errors)
+            .chain(&app.condition_errors)
             .map(|p| Line::from(p.clone()).bad()),
     );
     f.render_widget(

@@ -61,7 +61,12 @@
   const fieldsOf = (r: RuleDraft) => [...new Set(['description', 'annotations', ...stringUdas, ...r.fields])];
   const current = $derived<Appearance>({
     progress: Object.fromEntries(Object.keys(draft).map((n) => [n, range(n)])),
-    transformations: rules.map(({ match, replace, fields }) => ({ match, replace, fields })),
+    transformations: rules.map(({ match, replace, fields, condition }) => ({
+      match,
+      replace,
+      fields,
+      ...(condition?.trim() ? { condition: condition.trim() } : {}),
+    })),
     idFallback,
     cardIcons,
   });
@@ -190,8 +195,9 @@
   <p class="dim">
     Find and replace in a text field before it is drawn, so <code>BOR-23434</code> can become a link: the result is
     shown as Markdown. <em>Match</em> is a regular expression, <em>Replace</em> may use <code>$1</code> or
-    <code>{'${name}'}</code>, and each runs only on the fields ticked. They run in order, on what the one before left.
-    Only how a field is shown changes: the task, filters and exports keep what you typed.
+    <code>{'${name}'}</code>, and each runs only on the fields ticked, and with a <em>Condition</em> (a Taskwarrior
+    filter, such as <code>project:FUL</code>) only on the tasks it matches. They run in order, on what the one before
+    left. Only how a field is shown changes: the task, filters and exports keep what you typed.
   </p>
   {#if rules.length}
     <ol class="rules" aria-label="Transformations">
@@ -254,15 +260,25 @@
               </label>
             {/each}
           </div>
+          <input
+            class="mono condition"
+            bind:value={r.condition}
+            oninput={() => (done = false)}
+            aria-label="Condition for transformation {i + 1}"
+            placeholder="Condition: a filter, such as project:FUL (empty: every task)"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+          />
         </li>
       {/each}
     </ol>
   {:else}
     <p class="dim">No transformations yet.</p>
   {/if}
-  {#if ruleProblems.length}
+  {#if ruleProblems.length || store.conditionErrors.length}
     <ul class="err" role="alert">
-      {#each ruleProblems as p, i (i)}<li>{p}</li>{/each}
+      {#each [...ruleProblems, ...store.conditionErrors] as p, i (i)}<li>{p}</li>{/each}
     </ul>
   {/if}
   <button type="button" class="btn add" onclick={addRule}><Plus size={14} /> Add a transformation</button>
@@ -307,6 +323,10 @@
   }
   .fields .pick {
     min-width: 0;
+  }
+  .condition {
+    width: 100%;
+    margin-top: 6px;
   }
   .add {
     margin-bottom: 16px;

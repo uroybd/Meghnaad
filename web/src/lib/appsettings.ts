@@ -67,6 +67,10 @@ export interface Transformation {
   match: string;
   replace: string;
   fields: string[];
+  /** A Taskwarrior filter: the rule runs only on the tasks it matches (spec 0030). */
+  condition?: string;
+  /** With a condition: the UUIDs of the tasks it matches, filled in by the store (`store.rules`). Never saved. */
+  tasks?: string[];
 }
 
 /** How the app draws things, kept in `settings.json` under `appearance`. */
@@ -185,13 +189,17 @@ export function parseTransformations(v: unknown): { transformations: Transformat
       match,
       replace = '',
       fields,
+      condition,
     } = (r && typeof r === 'object' && !Array.isArray(r) ? r : {}) as Record<string, unknown>;
     if (typeof match !== 'string' || typeof replace !== 'string') {
       errors.push(`${at}: must be { "match": "…", "replace": "…", "fields": [ … ] }`);
     } else if (!Array.isArray(fields) || !fields.every((f) => typeof f === 'string')) {
       errors.push(`${at}: fields must be a list of field names`);
+    } else if (condition !== undefined && typeof condition !== 'string') {
+      errors.push(`${at}: condition must be a Taskwarrior filter, as text`);
     } else {
-      transformations.push({ match, replace, fields: fields as string[] });
+      const when = condition?.trim();
+      transformations.push({ match, replace, fields: fields as string[], ...(when ? { condition: when } : {}) });
     }
   });
   return { transformations, errors };

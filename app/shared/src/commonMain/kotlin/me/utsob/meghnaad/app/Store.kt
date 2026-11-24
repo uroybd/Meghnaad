@@ -214,6 +214,43 @@ class Store(
 
     /** How the app draws things, from `settings.json`: the numeric UDAs shown as progress bars, by name. */
     val appearance: Appearance get() = appSettings?.appearance ?: Appearance()
+
+    /** For each transformation's condition, the UUIDs of the tasks it matches, as last asked ([resolveConditions]). */
+    var conditionTasks by mutableStateOf<Map<String, List<String>>>(emptyMap())
+
+    /** What the engine said no to in a condition, one line each. */
+    var conditionErrors by mutableStateOf<List<String>>(emptyList())
+
+    /**
+     * The transformations as the cells and Markdown helpers take them (spec 0030): each with a condition carries the tasks
+     * it matches, so it runs only on those; one not asked yet runs on none.
+     */
+    val rules: List<Transformation>
+        get() = appearance.transformations.map { r -> r.condition?.let { r.copy(tasks = conditionTasks[it] ?: emptyList()) } ?: r }
+
+    /**
+     * Ask which tasks each transformation's condition matches: `( <condition> ) _uuids`, once per condition, which counts
+     * every status and no context, as `task` does. After the settings are read and after every change.
+     */
+    suspend fun resolveConditions() {
+        val tasks = LinkedHashMap<String, List<String>>()
+        val errors = mutableListOf<String>()
+        for (c in appearance.transformations.mapNotNull { it.condition }.distinct()) {
+            tasks[c] = emptyList()
+            try {
+                val args = listOf("rc.verbose=nothing", "(") + rustHelpers().splitWords(c) + listOf(")", "_uuids")
+                when (val r = tw.run(args = args).result) {
+                    is CliResult.Text -> tasks[c] = r.value.lines.map { it.trim() }.filter { it.isNotEmpty() }
+                    is CliResult.Error -> errors += "condition $c: ${r.value.message}"
+                    else -> {}
+                }
+            } catch (e: Exception) {
+                errors += "condition $c: ${e.message ?: e.toString()}"
+            }
+        }
+        conditionTasks = tasks
+        conditionErrors = errors
+    }
     val reports: List<ReportMeta> get() = config?.reports ?: emptyList()
 
     /** Reports named `_something` are hidden helpers: left out of the lists to pick from unless this is on. */
@@ -712,6 +749,7 @@ class Store(
             if (appSettings == null) appSettings = parseSettings("")
         }
         loadDevice()
+        resolveConditions()
     }
 
     /** Read this device's own settings again (none: everyone's alone). A failure leaves what was there. */
@@ -1334,6 +1372,8 @@ class Store(
         onWritten?.invoke()
         rev++
         scope.launch { refreshNames() }
+        // A task may have moved in or out of a transformation's condition.
+        scope.launch { resolveConditions() }
         if (setup == Setup.Ready) notifier.pollSoon()
     }
 

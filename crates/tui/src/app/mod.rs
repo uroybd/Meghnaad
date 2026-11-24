@@ -434,6 +434,8 @@ pub struct App {
     /// `appearance.idFallback`: a task with no ID shows its short uuid, dimmed, rather than `-`.
     pub id_fallback: bool,
     pub transform_errors: Vec<String>,
+    /// What `task` said no to in a transformation's condition, as the rules were last given their tasks.
+    pub condition_errors: Vec<String>,
     /// Whether the terminal is light or dark (what the theme's `auto` draws), the system's appearance when last looked
     /// at, when that was, and when `settings.json` was last changed, to follow either when it changes.
     pub appearance: crate::appearance::Mode,
@@ -688,6 +690,7 @@ impl App {
             transformations: Vec::new(),
             id_fallback: false,
             transform_errors: Vec::new(),
+            condition_errors: Vec::new(),
             appearance: crate::appearance::Mode::default(),
             system_mode: None,
             last_look: 0,
@@ -716,6 +719,8 @@ impl App {
 
     /// Read everything again: the settings, the pending tasks, the report, the page and what completion offers.
     pub fn reload(&mut self) {
+        // The tasks each rule's condition matches now: a change may have moved a task in or out.
+        self.condition_errors = model::resolve_conditions(&self.task, &mut self.transformations);
         let rules = self.transformations.clone();
         let look = model::Look {
             rules: &rules,
@@ -894,8 +899,18 @@ impl App {
         self.transform_errors = errors;
         // The report's cells were drawn with the rules there were: draw them again with these.
         let fallback = self.settings.id_fallback();
-        if rules != self.transformations || fallback != self.id_fallback {
+        // The rules here have no tasks yet (`reload` gives them theirs): compare them without.
+        let unresolved: Vec<tc_core::transform::Rule> = self
+            .transformations
+            .iter()
+            .map(|r| tc_core::transform::Rule {
+                tasks: None,
+                ..r.clone()
+            })
+            .collect();
+        if rules != unresolved || fallback != self.id_fallback {
             self.transformations = rules;
+            self.condition_errors = model::resolve_conditions(&self.task, &mut self.transformations);
             self.id_fallback = fallback;
             self.refresh_report();
         }

@@ -6,8 +6,10 @@ import {
   listDevices,
   putAppSettings,
   putDeviceSettings,
+  runCli,
   useConfig,
 } from '../api';
+import { splitWords } from '../cmdline';
 import { DEVICE_ID_KEY, deviceFile, mergeDevice } from '../deviceSettings';
 import { aliasCommands } from '../taskCommands';
 import { reminderSettings } from '../lockedReminders';
@@ -24,6 +26,7 @@ import {
   serializeKanban,
   serializeSettings,
   type TaskCommand,
+  type Transformation,
 } from '../appsettings';
 import { emptyKanbanSettings, resolveKanban, type Kanban, type KanbanSettings } from '../kanban';
 import type { Board, ControlValue } from '../boards';
@@ -151,6 +154,47 @@ export abstract class SettingsStore extends StoreBase {
   homepage = $derived<Homepage | null>(this.effectiveSettings?.homepage ?? null);
   /** How the app draws things, from `settings.json`: the numeric UDAs shown as progress bars, by name. */
   appearance = $derived<Appearance>(this.appSettings?.appearance ?? emptyAppearance());
+  /** For each transformation's condition, the UUIDs of the tasks it matches, as last asked (`resolveConditions`). */
+  conditionTasks = $state<Record<string, string[]>>({});
+  /** What the engine said no to in a condition, one line each. */
+  conditionErrors = $state<string[]>([]);
+  /**
+   * The transformations as the cells and Markdown helpers take them (spec 0030): each with a condition carries the tasks
+   * it matches, so it runs only on those; one not asked yet runs on none.
+   */
+  rules = $derived<Transformation[]>(
+    this.appearance.transformations.map((r) =>
+      r.condition ? { ...r, tasks: this.conditionTasks[r.condition] ?? [] } : r,
+    ),
+  );
+
+  /**
+   * Ask which tasks each transformation's condition matches: `( <condition> ) _uuids`, once per condition, which counts
+   * every status and no context, as `task` does. After the settings are read and after every change.
+   */
+  async resolveConditions() {
+    const conditions = [...new Set(this.appearance.transformations.flatMap((r) => (r.condition ? [r.condition] : [])))];
+    const tasks: Record<string, string[]> = {};
+    const errors: string[] = [];
+    for (const c of conditions) {
+      tasks[c] = [];
+      try {
+        const r = (await runCli({ args: ['rc.verbose=nothing', '(', ...splitWords(c), ')', '_uuids'] })).result;
+        if (r.kind === 'text') tasks[c] = r.lines.map((l) => l.trim()).filter(Boolean);
+        else if (r.kind === 'error') errors.push(`condition ${c}: ${r.message}`);
+      } catch (e) {
+        errors.push(`condition ${c}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    this.conditionTasks = tasks;
+    this.conditionErrors = errors;
+  }
+
+  /** Something was written: a task may have moved in or out of a condition. */
+  override written() {
+    super.written();
+    void this.resolveConditions();
+  }
 
   /** Fetch the default keys and the commands. Without them the page has no keys, only its buttons, so a failure is not said. */
   async loadKeymapDefaults() {
@@ -238,6 +282,7 @@ export abstract class SettingsStore extends StoreBase {
       this.appSettings ??= parseSettings('');
     }
     await this.loadDevice();
+    await this.resolveConditions();
   }
 
   /** Read this device's own settings again (none: everyone's alone). A failure leaves what was there. */
