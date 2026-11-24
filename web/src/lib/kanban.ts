@@ -149,7 +149,7 @@ export function setupLines(config: ConfigResponse | null, name: string): [string
  * The report the automatic setup can add to the taskrc, so a kanban needs no filter of its own: open tasks and finished
  * ones (no deleted or waiting tasks, no recurring templates), the most urgent first. Completed since still applies.
  */
-export const KANBAN_REPORT = 'kanban';
+export const KANBAN_REPORT = '_kanban';
 export const KANBAN_REPORT_LINES: [string, string][] = [
   [`report.${KANBAN_REPORT}.description`, 'Open tasks and the ones finished lately, for Kanban'],
   [`report.${KANBAN_REPORT}.columns`, 'id,priority,project,tags,due.relative,scheduled.countdown,description'],

@@ -150,18 +150,18 @@ describe('the automatic setup', () => {
 
   it('can draw them on a kanban report of their own, added to the taskrc unless there is one', () => {
     const s = automaticSettings(emptyKanbanSettings(), false, U, true);
-    expect(s).toMatchObject({ report: 'kanban', filter: '', completedSince: 'today-14d' });
+    expect(s).toMatchObject({ report: '_kanban', filter: '', completedSince: 'today-14d' });
     const lines = reportLines(configWith({}));
     expect(lines.map(([n]) => n)).toEqual([
-      'report.kanban.description',
-      'report.kanban.columns',
-      'report.kanban.labels',
-      'report.kanban.filter',
-      'report.kanban.sort',
+      'report._kanban.description',
+      'report._kanban.columns',
+      'report._kanban.labels',
+      'report._kanban.filter',
+      'report._kanban.sort',
     ]);
-    expect(Object.fromEntries(lines)['report.kanban.filter']).toBe('( +PENDING or +COMPLETED )');
+    expect(Object.fromEntries(lines)['report._kanban.filter']).toBe('( +PENDING or +COMPLETED )');
     const withOne = configWith({});
-    withOne.config.reports = { kanban: {} };
+    withOne.config.reports = { _kanban: {} };
     expect(reportLines(withOne)).toEqual([]);
   });
 });

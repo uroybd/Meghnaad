@@ -211,7 +211,7 @@ pub fn setup_lines(cfg: &Config, name: &str) -> Vec<(String, String)> {
 
 /// The report the automatic setup can add to the taskrc, so a kanban needs no filter of its own: open tasks and finished
 /// ones (no deleted or waiting tasks, no recurring templates), the most urgent first. Completed since still applies.
-pub const KANBAN_REPORT: &str = "kanban";
+pub const KANBAN_REPORT: &str = "_kanban";
 const KANBAN_REPORT_LINES: [(&str, &str); 5] = [
     ("description", "Open tasks and the ones finished lately, for Kanban"),
     (
@@ -223,7 +223,7 @@ const KANBAN_REPORT_LINES: [(&str, &str); 5] = [
     ("sort", "urgency-"),
 ];
 
-/// The lines that add the `kanban` report, or none when the taskrc has a report of that name already (it is used as it
+/// The lines that add the `_kanban` report (hidden from the report lists, as `task`'s own `_` names are), or none when the taskrc has a report of that name already (it is used as it
 /// is).
 pub fn report_lines(cfg: &Config) -> Vec<(String, String)> {
     if cfg.reports.contains_key(KANBAN_REPORT) {
@@ -911,7 +911,7 @@ mod tests {
         };
         assert_eq!(automatic_settings(&kept, false, U, false, &[]).kanbans, [mine]);
         let own = automatic_settings(&Settings::default(), false, U, true, &[]);
-        assert_eq!((own.report.as_str(), own.filter.as_str()), ("kanban", ""));
+        assert_eq!((own.report.as_str(), own.filter.as_str()), ("_kanban", ""));
     }
 
     #[test]

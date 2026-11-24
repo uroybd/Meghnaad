@@ -15,18 +15,20 @@ Kanban is off until you set it up in **Settings → Kanban**. There are two ways
 
 - **Automatic** defines a string UDA (`progressState` unless you name another) with the values `inprogress` and
   `review`, using the same `config` lines the tasksh tab uses. It also offers, ticked to begin with, to add a report
-  named `kanban` to your taskrc and draw the kanbans on it:
+  named `_kanban` to your taskrc and draw the kanbans on it (the `_` keeps it out of the report lists, as `task`'s own
+  helper names are):
 
   ```ini
-  report.kanban.description=Open tasks and the ones finished lately, for Kanban
-  report.kanban.columns=id,priority,project,tags,due.relative,scheduled.countdown,description
-  report.kanban.labels=ID,P,Project,Tags,Due,Sch,Description
-  report.kanban.filter=( +PENDING or +COMPLETED )
-  report.kanban.sort=urgency-
+  report._kanban.description=Open tasks and the ones finished lately, for Kanban
+  report._kanban.columns=id,priority,project,tags,due.relative,scheduled.countdown,description
+  report._kanban.labels=ID,P,Project,Tags,Due,Sch,Description
+  report._kanban.filter=( +PENDING or +COMPLETED )
+  report._kanban.sort=urgency-
   ```
 
   Its filter leaves out deleted and waiting tasks and recurring templates, so Kanban's own filter is left empty. If
-  your taskrc already has a `kanban` report, it is used as it is and nothing is added. Untick it and Kanban is drawn
+  your taskrc already has a `_kanban` report, it is used as it is and nothing is added. A setup made before 0.8.54
+  named it `kanban`, and keeps drawing on that one. Untick it and Kanban is drawn
   on `all` instead, with the filter `( +PENDING or +COMPLETED )` (which `all` needs, having no filter of its own). It
   shows every line first and writes nothing else to your taskrc. It sets Completed since to `today-14d`, and these
   columns:
@@ -86,7 +88,7 @@ Everything is kept in the app's own `settings.json`, under `kanban`:
 }
 ```
 
-**Turn Kanban off** hides the page. The kanbans stay in `settings.json`, and the UDA (and the `kanban` report) stay in
+**Turn Kanban off** hides the page. The kanbans stay in `settings.json`, and the UDA (and the `_kanban` report) stay in
 your taskrc.
 
 ## The page
@@ -143,7 +145,7 @@ card, which saves the task's text with it ticked.
 
 ### Swimlanes
 
-A report whose sort marks a group with `/`, as Taskwarrior's own does (`report.kanban.sort=project+/,urgency-`), gives
+A report whose sort marks a group with `/`, as Taskwarrior's own does (`report._kanban.sort=project+/,urgency-`), gives
 the kanban swimlanes: a lane for each group, headed as the table heads it (`Project: Home`, `Project: (none)`), in the
 report's order. The column names are drawn once at the top, and each lane is a row of the same columns, as tall as its
 longest. The board then scrolls as a whole rather than column by column. A lane folds with the arrow by its heading.
@@ -174,7 +176,7 @@ through it. `:kanban` opens it too.
 | `o` | show or hide Other |
 
 **Settings → Kanban** shows Kanban's settings and each kanban's, one row each. While Kanban is off, its rows are the
-UDA, the report (Enter switches between adding a `kanban` report and using `all`) and the two ways to set it up:
+UDA, the report (Enter switches between adding a `_kanban` report and using `all`) and the two ways to set it up:
 Enter on **Set up automatically** shows the lines it will write, and Enter again writes them. Once it is on, `e` or Enter changes the row under the cursor, `a` adds a column, `D` deletes a column or a
 kanban (or, on a kanban's own setting, goes back to Kanban's), `K` and `J` move a column, `n` adds a kanban, `o` opens
 one, `w` writes the UDA if your taskrc doesn't have it as needed, and `x` turns Kanban off.

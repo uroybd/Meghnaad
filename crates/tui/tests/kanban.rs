@@ -94,8 +94,8 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
     let saved: serde_json::Value = serde_json::from_str(&saved).unwrap();
     assert_eq!(saved["kanban"]["uda"], "progressState");
     // The kanbans are drawn on the report it added, whose filter is enough.
-    assert_eq!(task.get("report.kanban.filter").unwrap(), "( +PENDING or +COMPLETED )");
-    assert_eq!(saved["kanban"]["report"], "kanban");
+    assert_eq!(task.get("report._kanban.filter").unwrap(), "( +PENDING or +COMPLETED )");
+    assert_eq!(saved["kanban"]["report"], "_kanban");
     assert_eq!(saved["kanban"]["filter"], "");
     assert_eq!(
         saved["kanban"]["kanbans"],
@@ -157,7 +157,7 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
         &[
             "rc.confirmation:off",
             "config",
-            "report.kanban.sort",
+            "report._kanban.sort",
             "project+/,urgency-",
         ][..],
         &["description:beta", "modify", "project:Home"],

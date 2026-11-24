@@ -114,13 +114,13 @@ class KanbanTest {
     @Test
     fun canDrawThemOnAKanbanReportOfTheirOwnAddedUnlessThereIsOne() {
         val s = automaticSettings(KanbanSettings(), false, u, ownReport = true)
-        assertEquals("kanban", s.report)
+        assertEquals("_kanban", s.report)
         assertEquals("", s.filter)
         assertEquals("today-14d", s.completedSince)
         val lines = kanbanReportLines(config())
-        assertEquals(listOf("description", "columns", "labels", "filter", "sort").map { "report.kanban.$it" }, lines.map { it.first })
-        assertEquals("( +PENDING or +COMPLETED )", lines.toMap()["report.kanban.filter"])
-        assertEquals(emptyList(), kanbanReportLines(ConfigResponse(config = ConfigBody(reports = mapOf("kanban" to ReportCfg())))))
+        assertEquals(listOf("description", "columns", "labels", "filter", "sort").map { "report._kanban.$it" }, lines.map { it.first })
+        assertEquals("( +PENDING or +COMPLETED )", lines.toMap()["report._kanban.filter"])
+        assertEquals(emptyList(), kanbanReportLines(ConfigResponse(config = ConfigBody(reports = mapOf("_kanban" to ReportCfg())))))
     }
 
     @Test
