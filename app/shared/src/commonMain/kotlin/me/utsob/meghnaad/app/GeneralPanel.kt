@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -182,14 +181,6 @@ class GeneralState(private val store: Store, val device: Boolean = false) {
 }
 
 @Composable
-private fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected, onClick = null, modifier = Modifier.padding(horizontal = 8.dp))
-        Text(label, fontSize = 15.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-    }
-}
-
-@Composable
 fun GeneralPanel(store: Store, state: GeneralState) {
     state.follow()
     state.followFile()
@@ -209,21 +200,22 @@ fun GeneralPanel(store: Store, state: GeneralState) {
             "The page the app opens on: any report, including your own, any of your boards, or a kanban while Kanban is on. Left alone it is next. " +
                 "It is kept in this app's own settings.json, not in your taskrc.",
         )
-        Choice("next (the default)", state.choice == null) { state.choice = null; state.done = false }
-        store.offeredReports.filter { it.name != "next" }.forEach { r ->
-            Choice(r.name, state.choice?.report == r.name) { state.choice = Homepage(report = r.name); state.done = false }
+        // One dropdown, in sections: the reports (next first, the default), then the boards, then the kanbans.
+        val reports = listOf("next (the default)" to null as Homepage?) +
+            store.offeredReports.filter { it.name != "next" }.map { it.name to Homepage(report = it.name) }
+        val boards = store.boards.map { it.name to Homepage(board = it.id) }
+        val kanbans = state.kanbans.map { it.name to Homepage(kanban = it.id) }
+        val pages = reports + boards + kanbans
+        val headings = buildMap {
+            put(0, "Reports")
+            if (boards.isNotEmpty()) put(reports.size, "Boards")
+            if (kanbans.isNotEmpty()) put(reports.size + boards.size, "Kanbans")
         }
-        if (store.boards.isNotEmpty()) {
-            Dim("Boards", Modifier.padding(top = 6.dp))
-            store.boards.forEach { b ->
-                Choice(b.name, state.choice?.board == b.id) { state.choice = Homepage(board = b.id); state.done = false }
-            }
-        }
-        if (state.kanbans.isNotEmpty()) {
-            Dim("Kanbans", Modifier.padding(top = 6.dp))
-            state.kanbans.forEach { k ->
-                Choice(k.name, state.choice?.kanban == k.id) { state.choice = Homepage(kanban = k.id); state.done = false }
-            }
+        // A saved page the list doesn't offer (a hidden `_` report, say) still shows its name on the button.
+        val current = pages.firstOrNull { it.second == state.choice }?.first ?: state.choice?.name ?: pages[0].first
+        Choice(current, pages.map { it.first }, headings = headings) { i ->
+            state.choice = pages[i].second
+            state.done = false
         }
         if (device && state.own) {
             TextButton({ scope.launch { state.putBack() } }, enabled = !state.busy) {

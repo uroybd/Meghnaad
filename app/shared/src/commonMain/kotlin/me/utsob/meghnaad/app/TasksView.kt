@@ -234,10 +234,18 @@ private fun SortControls(store: Store, result: ReportResult, columns: List<Colum
 
 /**
  * A small button that opens a menu of choices, answering with the index chosen. [fillHeight]: as tall as what it stands beside
- * (a field), not just as tall as its text.
+ * (a field), not just as tall as its text. [headings]: a section's title, shown above the option at that index.
  */
 @Composable
-fun Choice(current: String, options: List<String>, modifier: Modifier = Modifier, hints: List<String?> = emptyList(), fillHeight: Boolean = false, onPick: (Int) -> Unit) {
+fun Choice(
+    current: String,
+    options: List<String>,
+    modifier: Modifier = Modifier,
+    hints: List<String?> = emptyList(),
+    fillHeight: Boolean = false,
+    headings: Map<Int, String> = emptyMap(),
+    onPick: (Int) -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         OutlinedButton(
@@ -250,6 +258,15 @@ fun Choice(current: String, options: List<String>, modifier: Modifier = Modifier
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             options.forEachIndexed { i, o ->
+                headings[i]?.let {
+                    Text(
+                        it,
+                        Modifier.padding(start = 12.dp, end = 12.dp, top = if (i == 0) 4.dp else 10.dp, bottom = 2.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 DropdownMenuItem(
                     text = {
                         Column {
