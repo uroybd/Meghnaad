@@ -193,7 +193,7 @@ On the Tasks page:
 | `m` `M` | Modify the selected task, in [the full form](#the-form) |
 | `A` | Annotate the selected task, in a box that shows it as it is; `Alt+Enter` starts a new line |
 | `x` | Take an annotation off the selected task: the command line opens with `<uuid> denotate ` |
-| `o` | Open the first link in the selected task as it is drawn (its description, then its notes, then its string UDAs, with your [transformations](using/settings.md#transformations) applied: a `FUL-3586` a rule turns into a link opens it) with the desktop's opener |
+| `o` | Open a link in the selected task as it is drawn (its description, then its notes, then its string UDAs, with your [transformations](using/settings.md#transformations) applied: a `FUL-3586` a rule turns into a link opens it) with the desktop's opener: the only one, or, when it has several, the one you choose from a list of them, numbered in that order; with a count, that one at once (`2o` opens the second) |
 | `d` | Mark the selected task done |
 | `+` | Start the selected task, or stop it when it is started; with tasks marked, `:start` and `:stop` start or stop them, passing over those already so |
 | `D` | Delete the selected task; its question opens in a box |

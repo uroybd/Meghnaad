@@ -865,3 +865,26 @@ fn a_adds_a_task_from_any_page_and_the_bottom_line_says_so_where_it_does() {
     app.settings_section = SettingsSection::Commands;
     assert!(!app.global_keys().contains("a add"), "{}", app.global_keys());
 }
+
+#[test]
+fn o_lists_a_tasks_links_to_choose_from_and_a_count_names_one() {
+    let mut a = app();
+    a.report.uuids = vec!["u1".into()];
+    a.pending = vec![serde_json::json!({
+        "uuid": "u1",
+        "description": "See [the doc](https://a.example/doc) and https://b.example",
+    })];
+    a.selected = 0;
+    typing(&mut a, "o");
+    let Mode::Links { options, targets, sel } = &a.mode else {
+        panic!("no list of links: {:?}", a.status);
+    };
+    assert_eq!(options, &["1 the doc  https://a.example/doc", "2 https://b.example"]);
+    assert_eq!(targets, &["https://a.example/doc", "https://b.example"]);
+    assert_eq!(*sel, 0);
+    a.key(key(KeyCode::Esc));
+    assert!(matches!(a.mode, Mode::Normal));
+    // A count past the last link says how many there are (and opens nothing).
+    typing(&mut a, "9o");
+    assert_eq!(a.status, "This task has 2 links.");
+}

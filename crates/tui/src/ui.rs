@@ -169,6 +169,7 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::Reminders(b) => reminders_box(f, app, b, main),
         Mode::ExportPick { options, sel, .. } => picker(f, " export which table ", options, *sel, main),
         Mode::KanbanMove { options, sel, .. } => picker(f, " move to ", options, *sel, main),
+        Mode::Links { options, sel, .. } => picker(f, " open link ", options, *sel, main),
         _ => {}
     }
     // How many tasks are marked, in front of what was last said.

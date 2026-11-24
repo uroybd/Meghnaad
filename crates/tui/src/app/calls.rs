@@ -1,7 +1,7 @@
 //! What a command does (spec 0020): a key bound to one, or a `:` line, asks for an action with words after it and a
 //! count (`tc_core::keymap::Call`). An action without words or a count is the key's action as it always was.
 
-use super::{split_words, Action, App, Focus, Page, PromptKind, Step};
+use super::{split_words, Action, App, Focus, Mode, Page, PromptKind, Step};
 use tc_core::helpers::shell_quote;
 use tc_core::keymap::Call;
 
@@ -87,7 +87,7 @@ impl App {
                 line.extend(["status:completed".to_owned(), "delete".to_owned()]);
                 self.quick(&line);
             }
-            "tasks.open" => self.open_link(),
+            "tasks.open" => self.open_link(call.count.and_then(|n| usize::try_from(n).ok())),
             a if a.starts_with("tasks.") && self.page != Page::Tasks => {
                 self.status = format!("{} works on the Tasks page.", call.action);
             }
@@ -152,9 +152,10 @@ impl App {
         self.bulk(&uuids, &[if start { "start" } else { "stop" }.to_owned()]);
     }
 
-    /// Open the first link in the chosen task as it is drawn (its description, then its notes, then its string UDAs, with
-    /// the transformations applied) with the desktop's opener.
-    fn open_link(&mut self) {
+    /// Open a link of the chosen task as it is drawn (its description, then its notes, then its string UDAs, with the
+    /// transformations applied) with the desktop's opener: the only one, the `n`th with a count (`2o`), or the one chosen
+    /// from a list of them.
+    fn open_link(&mut self, count: Option<usize>) {
         let Some(u) = self.current() else { return };
         let task = self.pending.iter().find(|t| t["uuid"].as_str() == Some(u));
         let rules = tc_core::transform::Rules::new(&self.transformations);
@@ -165,14 +166,41 @@ impl App {
             .filter(|(_, d)| d.ty == tc_core::taskrc::UdaType::String)
             .map(|(name, _)| name.as_str())
             .collect();
-        let link = task.and_then(|t| crate::md::first_link(t, &rules, &udas));
-        let Some(link) = link else {
-            self.status = "This task has no link.".into();
-            return;
-        };
+        let links = task.map(|t| crate::md::links(t, &rules, &udas)).unwrap_or_default();
+        match (links.len(), count) {
+            (0, _) => self.status = "This task has no link.".into(),
+            (n, Some(i)) if i == 0 || i > n => {
+                self.status = format!("This task has {n} link{}.", if n == 1 { "" } else { "s" });
+            }
+            (_, Some(i)) => self.open_url(&links[i - 1].1),
+            (1, None) => self.open_url(&links[0].1),
+            (_, None) => {
+                let options = links
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (words, href))| {
+                        if words == href {
+                            format!("{} {href}", i + 1)
+                        } else {
+                            format!("{} {words}  {href}", i + 1)
+                        }
+                    })
+                    .collect();
+                let targets = links.into_iter().map(|(_, href)| href).collect();
+                self.mode = Mode::Links {
+                    options,
+                    targets,
+                    sel: 0,
+                };
+            }
+        }
+    }
+
+    /// Open `link` with the desktop's opener, and say so.
+    pub(super) fn open_url(&mut self, link: &str) {
         let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
         self.status = match std::process::Command::new(opener)
-            .arg(&link)
+            .arg(link)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

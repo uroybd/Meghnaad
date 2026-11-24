@@ -249,6 +249,12 @@ pub enum Mode {
         targets: Vec<usize>,
         sel: usize,
     },
+    /// Choosing which of a task's links `o` opens: each as it is shown, and its address.
+    Links {
+        options: Vec<String>,
+        targets: Vec<String>,
+        sel: usize,
+    },
 }
 
 /// A key being added: the section of the keys, the search for the action and the action chosen, then the key pressed.
@@ -1273,6 +1279,22 @@ impl App {
                 Action::None
             }
             Mode::Commands { uuid, query, sel } => self.in_commands(uuid, query, sel, key),
+            Mode::Links { options, targets, sel } => {
+                if let Some(step) = self.step_of(key) {
+                    self.mode = Mode::Links {
+                        sel: moved(sel, options.len(), step),
+                        options,
+                        targets,
+                    };
+                    return Action::None;
+                }
+                if key.code == KeyCode::Enter {
+                    if let Some(link) = targets.get(sel) {
+                        self.open_url(link);
+                    }
+                }
+                Action::None
+            }
             Mode::Context { options, sel } => {
                 if let Some(step) = self.step_of(key) {
                     self.mode = Mode::Context {

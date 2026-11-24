@@ -147,7 +147,7 @@ pub const WORDS: &[(&str, &str)] = &[
     ("tasks.modify", "modify"),
     ("tasks.annotate", "annotate"),
     ("tasks.denotate", "denotate"),
-    ("tasks.open", "open link"),
+    ("tasks.open", "open a link (a count: that one, 2o)"),
     ("tasks.done", "done"),
     ("tasks.start", "start"),
     ("tasks.stop", "stop"),

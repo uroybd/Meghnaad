@@ -24,15 +24,32 @@ pub fn begin() {
     LINKS.with(|l| l.borrow_mut().clear());
 }
 
-/// The first link in `task` as it is drawn, with `rules` (the user's transformations) applied: in its description, then
-/// its notes, then the string UDAs named in `udas`, in that order. A rule's Markdown link counts, as does an address
-/// written out (`https://…`), so `o` opens what the screen shows as a link.
+/// The first link in `task` as it is drawn ([`links`]).
 pub fn first_link(task: &serde_json::Value, rules: &tc_core::transform::Rules, udas: &[&str]) -> Option<String> {
-    fn find(nodes: &[Node]) -> Option<String> {
-        nodes.iter().find_map(|n| match (n.t, &n.href) {
-            ("a", Some(href)) => Some(href.clone()),
-            _ => find(&n.c),
-        })
+    links(task, rules, udas).into_iter().next().map(|(_, href)| href)
+}
+
+/// The links in `task` as it is drawn, with `rules` (the user's transformations) applied: in its description, then its
+/// notes, then the string UDAs named in `udas`, in that order, each address once, with the words it is shown as. A rule's
+/// Markdown link counts, as does an address written out (`https://…`), so `o` opens what the screen shows as a link.
+pub fn links(task: &serde_json::Value, rules: &tc_core::transform::Rules, udas: &[&str]) -> Vec<(String, String)> {
+    fn words(nodes: &[Node]) -> String {
+        nodes
+            .iter()
+            .map(|n| n.s.clone().unwrap_or_else(|| words(&n.c)))
+            .collect()
+    }
+    fn find(nodes: &[Node], out: &mut Vec<(String, String)>) {
+        for n in nodes {
+            match (n.t, &n.href) {
+                ("a", Some(href)) => {
+                    if !out.iter().any(|(_, h)| h == href) {
+                        out.push((words(&n.c), href.clone()));
+                    }
+                }
+                _ => find(&n.c, out),
+            }
+        }
     }
     let notes = task["annotations"]
         .as_array()
@@ -44,9 +61,11 @@ pub fn first_link(task: &serde_json::Value, rules: &tc_core::transform::Rules, u
         .chain(notes)
         .chain(udas.iter().filter_map(|u| task[*u].as_str().map(|t| (*u, t))));
     let uuid = task["uuid"].as_str();
-    texts
-        .into_iter()
-        .find_map(|(field, text)| find(&tc_core::markdown::parse(&rules.apply(field, uuid, text))))
+    let mut out = Vec::new();
+    for (field, text) in texts {
+        find(&tc_core::markdown::parse(&rules.apply(field, uuid, text)), &mut out);
+    }
+    out
 }
 
 fn link_style() -> Style {
@@ -254,6 +273,29 @@ mod tests {
         // Nothing that is not a web address is opened.
         let odd = serde_json::json!({ "description": "[x](javascript:alert(1)) and [y](file:///etc/passwd)" });
         assert_eq!(first_link(&odd, &Rules::new(&[]), &[]), None);
+    }
+
+    #[test]
+    fn every_link_in_order_each_address_once_with_its_words() {
+        let rules = Rules::new(&[Rule {
+            pattern: r"\b(FUL-\d+)\b".into(),
+            replace: "[$1](https://jira.example/browse/$1)".into(),
+            fields: vec!["jira".into()],
+            ..Rule::default()
+        }]);
+        let task = serde_json::json!({
+            "description": "See [the doc](https://a.example/doc) and https://b.example",
+            "annotations": [{ "description": "again https://b.example" }],
+            "jira": "FUL-2",
+        });
+        assert_eq!(
+            links(&task, &rules, &["jira"]),
+            [
+                ("the doc".to_owned(), "https://a.example/doc".to_owned()),
+                ("https://b.example".to_owned(), "https://b.example".to_owned()),
+                ("FUL-2".to_owned(), "https://jira.example/browse/FUL-2".to_owned()),
+            ]
+        );
     }
 
     fn tree(text: &str) -> Vec<Node> {
