@@ -7,6 +7,7 @@
 import { createInterface } from 'node:readline/promises';
 import {
   accessReady,
+  llmsBypass,
   capture,
   DEPLOY_CONFIG,
   deploy,
@@ -148,10 +149,12 @@ if (isGit(s)) {
 
 // ---- 6
 step(6, 'Cloudflare Access (who may open the app)');
-if (accessReady(s) && !(await yes('Access settings are already saved. Change them?', false)))
+const accessHost = url ? new URL(url).host : '<your-worker>.workers.dev';
+if (accessReady(s) && !(await yes('Access settings are already saved. Change them?', false))) {
   done('keeping the saved settings');
-else {
-  const host = url ? new URL(url).host : '<your-worker>.workers.dev';
+  console.log(llmsBypass(accessHost));
+} else {
+  const host = accessHost;
   console.log(`
    In the Cloudflare dashboard:
      Access controls -> Applications -> Add an application -> Self-hosted
@@ -159,6 +162,7 @@ else {
        Policy: Allow, selector "Emails", your email address
        (Login methods: One-time PIN works out of the box.)
      Then copy the Application Audience (AUD) tag from the application's page.
+${llmsBypass(host)}
      Your team domain (https://<team>.cloudflareaccess.com) is under Access controls -> Settings.
    Press Enter at a prompt to skip and finish later with \`npm run setup\`.`);
   const team = await askValid('TEAM_DOMAIN', '   Team domain:', s.TEAM_DOMAIN);

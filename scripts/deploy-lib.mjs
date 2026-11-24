@@ -103,6 +103,17 @@ export const problems = (s) => [
   ...(isGit(s) && !s.GIT_REPO ? ['GIT_REPO is needed when BACKEND=git'] : []),
 ];
 
+/**
+ * The Access rule that lets anyone read `/llms.txt` (the app's description for AI agents, the same in every deployment
+ * and holding nothing of yours; spec 0031) without signing in: a second application on that one path, which Access
+ * prefers over the whole site's.
+ */
+export const llmsBypass = (host) => `
+   So AI agents can read what the app is (/llms.txt, which holds nothing of yours), add one more application:
+     Access controls -> Applications -> Add an application -> Self-hosted
+       Destination: ${host}/llms.txt
+       Policy: Bypass, selector "Everyone"`;
+
 /** Both Access settings present and valid: the deployed Worker can check sign-ins. */
 export const accessReady = (s) =>
   !!s.TEAM_DOMAIN && !!s.POLICY_AUD && !problem('TEAM_DOMAIN', s.TEAM_DOMAIN) && !problem('POLICY_AUD', s.POLICY_AUD);
