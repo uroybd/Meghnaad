@@ -205,7 +205,7 @@ Since 0.8.11.
 
 ## :o[pen]
 
-Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). On a list of projects or tags, of boards or kanbans, or of the boards or kanbans in Settings, it opens the one under the cursor.
+Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). The terminal app looks at the task as it draws it, with your transformations applied, and in its string UDAs after the annotations, so a `FUL-3586` a rule makes a link opens it. On a list of projects or tags, of boards or kanbans, or of the boards or kanbans in Settings, it opens the one under the cursor.
 
 Since 0.8.11.
 

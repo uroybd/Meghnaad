@@ -24,6 +24,30 @@ pub fn begin() {
     LINKS.with(|l| l.borrow_mut().clear());
 }
 
+/// The first link in `task` as it is drawn, with `rules` (the user's transformations) applied: in its description, then
+/// its notes, then the string UDAs named in `udas`, in that order. A rule's Markdown link counts, as does an address
+/// written out (`https://…`), so `o` opens what the screen shows as a link.
+pub fn first_link(task: &serde_json::Value, rules: &tc_core::transform::Rules, udas: &[&str]) -> Option<String> {
+    fn find(nodes: &[Node]) -> Option<String> {
+        nodes.iter().find_map(|n| match (n.t, &n.href) {
+            ("a", Some(href)) => Some(href.clone()),
+            _ => find(&n.c),
+        })
+    }
+    let notes = task["annotations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| a["description"].as_str())
+        .map(|t| ("annotations", t));
+    let texts = std::iter::once(("description", task["description"].as_str().unwrap_or_default()))
+        .chain(notes)
+        .chain(udas.iter().filter_map(|u| task[*u].as_str().map(|t| (*u, t))));
+    texts
+        .into_iter()
+        .find_map(|(field, text)| find(&tc_core::markdown::parse(&rules.apply(field, text))))
+}
+
 fn link_style() -> Style {
     theme::current().accent.add_modifier(Modifier::UNDERLINED)
 }
@@ -192,6 +216,43 @@ mod tests {
     use ratatui::layout::Rect;
     use ratatui::widgets::{Paragraph, Widget};
     use tc_core::transform::{Rule, Rules};
+
+    #[test]
+    fn the_first_link_is_the_one_drawn_with_the_transformations_applied() {
+        let rules = Rules::new(&[Rule {
+            pattern: r"\b(FUL-\d+)\b".into(),
+            replace: "[$1](https://jira.example/browse/$1)".into(),
+            fields: vec!["jira".into()],
+        }]);
+        let task = serde_json::json!({ "description": "Answer how-to questions", "jira": "FUL-3586" });
+        // The UDA's link, made by a rule: what `o` said "no link" to before.
+        assert_eq!(
+            first_link(&task, &rules, &["jira"]).as_deref(),
+            Some("https://jira.example/browse/FUL-3586")
+        );
+        // A rule only runs on its own fields, and a UDA counts only when it is a string UDA named here.
+        assert_eq!(first_link(&task, &rules, &[]), None);
+        let elsewhere = serde_json::json!({ "description": "FUL-1 again" });
+        assert_eq!(first_link(&elsewhere, &rules, &["jira"]), None);
+        // An address written out still counts, and the description comes before its notes and the UDAs.
+        let written = serde_json::json!({
+            "description": "See https://a.example/x.",
+            "annotations": [{ "description": "or https://b.example" }],
+            "jira": "FUL-2",
+        });
+        assert_eq!(
+            first_link(&written, &rules, &["jira"]).as_deref(),
+            Some("https://a.example/x")
+        );
+        let noted = serde_json::json!({ "description": "plain", "annotations": [{ "description": "https://b.example" }], "jira": "FUL-2" });
+        assert_eq!(
+            first_link(&noted, &rules, &["jira"]).as_deref(),
+            Some("https://b.example")
+        );
+        // Nothing that is not a web address is opened.
+        let odd = serde_json::json!({ "description": "[x](javascript:alert(1)) and [y](file:///etc/passwd)" });
+        assert_eq!(first_link(&odd, &Rules::new(&[]), &[]), None);
+    }
 
     fn tree(text: &str) -> Vec<Node> {
         let rules = Rules::new(&[Rule {

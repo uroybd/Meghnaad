@@ -152,23 +152,20 @@ impl App {
         self.bulk(&uuids, &[if start { "start" } else { "stop" }.to_owned()]);
     }
 
-    /// Open the first link in the chosen task (its description, then its annotations) with the desktop's opener.
+    /// Open the first link in the chosen task as it is drawn (its description, then its notes, then its string UDAs, with
+    /// the transformations applied) with the desktop's opener.
     fn open_link(&mut self) {
         let Some(u) = self.current() else { return };
         let task = self.pending.iter().find(|t| t["uuid"].as_str() == Some(u));
-        let texts = task.into_iter().flat_map(|t| {
-            std::iter::once(t["description"].as_str().unwrap_or_default()).chain(
-                t["annotations"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|a| a["description"].as_str()),
-            )
-        });
-        let link = texts
-            .flat_map(str::split_whitespace)
-            .find(|w| w.starts_with("https://") || w.starts_with("http://"))
-            .map(|w| w.trim_end_matches(['.', ',', ')', ']', '>']).to_owned());
+        let rules = tc_core::transform::Rules::new(&self.transformations);
+        let udas: Vec<&str> = self
+            .cfg
+            .udas
+            .iter()
+            .filter(|(_, d)| d.ty == tc_core::taskrc::UdaType::String)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let link = task.and_then(|t| crate::md::first_link(t, &rules, &udas));
         let Some(link) = link else {
             self.status = "This task has no link.".into();
             return;
