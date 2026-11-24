@@ -1495,7 +1495,20 @@ pub fn progress_spans(text: &str, p: Progress) -> Option<Vec<Span<'static>>> {
 }
 
 fn table(f: &mut Frame, app: &App, area: Rect) {
-    let r = &app.report;
+    let sel = (app.focus == Focus::Main).then_some(app.selected);
+    report_table(f.buffer_mut(), app, &app.report, sel, true, area);
+}
+
+/// A report as a table: the Tasks page's, and a board's table section (`sel` none, `marks` off). Its cells' Markdown (the
+/// transformations, string UDAs, notes) is drawn with its links, and a column with a progress range as a bar.
+pub fn report_table(
+    buf: &mut ratatui::buffer::Buffer,
+    app: &App,
+    r: &crate::model::Report,
+    sel: Option<usize>,
+    marks: bool,
+    area: Rect,
+) {
     let bars: Vec<Option<Progress>> = r.names.iter().map(|n| app.progress.get(n).copied()).collect();
     let bar_of = |j: usize| bars.get(j).copied().flatten();
     // A sorted column's label has its way, and its place when the table sorts by more than one.
@@ -1514,7 +1527,7 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
     // With tasks marked, a one-cell gutter in front shows which (`●`).
-    let gutter = !app.marks.is_empty();
+    let gutter = marks && !app.marks.is_empty();
     let widths: Vec<Constraint> = gutter
         .then_some(Constraint::Length(1))
         .into_iter()
@@ -1557,7 +1570,7 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
             Style::new()
         };
         let mut style = shade.patch(r.styles.get(i).copied().unwrap_or_default());
-        let marked = r.uuids.get(i).is_some_and(|u| app.marks.has(u));
+        let marked = marks && r.uuids.get(i).is_some_and(|u| app.marks.has(u));
         if marked {
             style = style.patch(t.marked);
         }
@@ -1589,15 +1602,14 @@ fn table(f: &mut Frame, app: &App, area: Rect) {
         .row_highlight_style(theme::selected())
         .highlight_symbol(MARK)
         .highlight_spacing(HighlightSpacing::Always);
-    let sel = (app.focus == Focus::Main).then_some(app.selected);
     let mut state = TableState::default().with_selected(sel);
-    f.render_stateful_widget(t, area, &mut state);
-    separators(f, &r.heads, &heights, state.offset(), area);
+    ratatui::widgets::StatefulWidget::render(t, area, buf, &mut state);
+    separators(buf, &r.heads, &heights, state.offset(), area);
 }
 
 /// The group separators of a grouped report, `── Project: Home ───…` in `color.label`, each on the line left above the
 /// first row of its group. The rows start under the labels and their rule; `offset` is the first row shown.
-fn separators(f: &mut Frame, heads: &[Option<String>], heights: &[u16], offset: usize, area: Rect) {
+fn separators(buf: &mut ratatui::buffer::Buffer, heads: &[Option<String>], heights: &[u16], offset: usize, area: Rect) {
     if heads.is_empty() {
         return;
     }
@@ -1610,9 +1622,10 @@ fn separators(f: &mut Frame, heads: &[Option<String>], heights: &[u16], offset: 
         if let Some(Some(head)) = heads.get(i) {
             let text = format!("── {head} ");
             let rest = usize::from(area.width).saturating_sub(text.chars().count());
-            f.render_widget(
+            ratatui::widgets::Widget::render(
                 Line::from(Span::styled(format!("{text}{}", "─".repeat(rest)), style)),
                 Rect::new(area.x, y, area.width, 1),
+                buf,
             );
             y = y.saturating_add(1);
         }

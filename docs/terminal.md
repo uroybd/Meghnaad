@@ -447,8 +447,9 @@ two ways to make one:
 What each section shows is worked out as on the web: one `task <filter> export` for each filter the board uses (the
 board's, the section's and a series', with the board's controls written in, as each was saved), measured by the same code. Numbers are
 a figure; bars run down the page for values and across for dates; lines and areas, pies, donuts, polar charts and
-radars are drawn in braille dots; a heatmap is a grid of shaded cells; a table is the report as `task` prints it, at
-the section's width. A series' colour is the one it names, else blue, red, green, yellow, magenta and cyan in turn; a chart
+radars are drawn in braille dots; a heatmap is a grid of shaded cells; a table is the report drawn as the Tasks page draws it, in
+`task`'s colours, with your [transformations](using/settings.md#transformations) and their links, Markdown and progress
+bars. A series' colour is the one it names, else blue, red, green, yellow, magenta and cyan in turn; a chart
 stacked by a field (`stackBy`) has a series for each value, in those colours, named in its legend. A stacked chart
 (`stacked`, on unless it is turned off for one stacked by a field) piles its series up, the first at the bottom: bars are
 drawn as one bar of coloured parts with the total beside it, named by its group (a date, a project) or, in a chart

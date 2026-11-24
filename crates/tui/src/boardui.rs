@@ -2,7 +2,6 @@
 //! `Canvas`), stacked bars and a heatmap cell by cell. What the numbers are comes from `boards` (and `tc_core::board`); this only
 //! draws them. The board is drawn whole into a buffer of its own and the part that fits is shown, so it scrolls.
 
-use crate::ansi;
 use crate::app::{App, Focus};
 use crate::boards::{self, Data};
 use crate::theme::{self, Roles};
@@ -155,7 +154,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         )
         .intersection(buf.area);
         let data = app.board_data.iter().find(|(id, _)| *id == cell.id).map(|(_, d)| d);
-        draw_section(&mut buf, section, data, rect);
+        draw_section(&mut buf, app, section, data, rect);
     }
     // The part of the board that is scrolled to.
     let scroll = app.scroll.min(height.saturating_sub(body.height));
@@ -287,7 +286,7 @@ fn drawn_series(section: &Section, data: Option<&Data>) -> (Vec<String>, Vec<Col
         .unzip()
 }
 
-fn draw_section(buf: &mut Buffer, section: &Section, data: Option<&Data>, area: Rect) {
+fn draw_section(buf: &mut Buffer, app: &App, section: &Section, data: Option<&Data>, area: Rect) {
     let (names, colors) = drawn_series(section, data);
     let legend = (names.len() > 1 && !matches!(section.kind, Kind::Heatmap)).then(|| {
         let mut spans = vec![Span::from(" ")];
@@ -309,7 +308,8 @@ fn draw_section(buf: &mut Buffer, section: &Section, data: Option<&Data>, area: 
             .bad()
             .wrap(Wrap { trim: true })
             .render(inner, buf),
-        Data::Table(text, _) => Paragraph::new(ansi::lines(text)).render(inner, buf),
+        // The Tasks page's table, with nothing chosen or marked: links, Markdown and progress bars as it draws them.
+        Data::Table(report, _) => crate::ui::report_table(buf, app, report, None, false, inner),
         Data::Number(answer) => {
             let value = boards::format_value(answer.total, answer.unit);
             let lines = vec![

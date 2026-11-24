@@ -1010,16 +1010,11 @@ impl App {
             return;
         };
         let ctx = boards::ctx(&self.cfg, now());
-        let page = u32::from(self.width);
-        let width = |s: &tc_core::board::Section| {
-            let cols = if page >= crate::boardui::BOARD_WIDE.into() {
-                s.w
-            } else {
-                12
-            };
-            u16::try_from(page * cols / 12).unwrap_or(u16::MAX).saturating_sub(4)
+        let look = crate::model::Look {
+            rules: &self.transformations,
+            id_fallback: self.id_fallback,
         };
-        self.board_data = boards::load(&self.task, board, &ctx, width);
+        self.board_data = boards::load(&self.task, &self.cfg, board, &ctx, look);
     }
 
     /// Once a second: the reminders due now, the pending tasks read again each minute, and every few seconds whether the

@@ -14,7 +14,7 @@ use tc_core::board::{Board, Kind, Limit, Section, Series};
 use tc_core::filter::split_words;
 
 /// What one section got.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Data {
     Number(Answer),
     /// A chart, its labels in the order the section asks for. A heatmap has its grids, one per series (or one, stacked).
@@ -22,9 +22,9 @@ pub enum Data {
         chart: Chart,
         grids: Vec<Grid>,
     },
-    /// The report as `task` printed it, in its colours, and the words it ran (its filter, then its report), which its
-    /// Export exports.
-    Table(String, Vec<String>),
+    /// The report as the Tasks page has it (its cells with the transformations applied, in `task`'s colours), and the
+    /// words it ran (its filter, then its report), which its Export exports.
+    Table(crate::model::Report, Vec<String>),
     Failed(String),
 }
 
@@ -230,8 +230,14 @@ pub fn ctx(cfg: &tc_core::taskrc::Config, now: i64) -> Ctx {
 }
 
 /// Every section's data. Sections and series that run the same filter share one `export`. A table runs its report with
-/// the section's filter, coloured at `width` (its share of the page).
-pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u16) -> Vec<(String, Data)> {
+/// the section's filter, read as the Tasks page reads one (`model::report`, with `look`'s transformations).
+pub fn load(
+    task: &Task,
+    cfg: &tc_core::taskrc::Config,
+    board: &Board,
+    ctx: &Ctx,
+    look: crate::model::Look<'_>,
+) -> Vec<(String, Data)> {
     let mut exports: HashMap<String, Result<String, String>> = HashMap::new();
     let mut tasks_of = |filter: &str| -> Result<String, String> {
         exports
@@ -252,16 +258,12 @@ pub fn load(task: &Task, board: &Board, ctx: &Ctx, width: impl Fn(&Section) -> u
             };
             match s.kind {
                 Kind::Table => {
-                    let mut words = split_words(&filter_of(None, None)?);
-                    words.push(s.report.clone().unwrap_or_else(|| "next".into()));
-                    let mut args = crate::app::colored(width(s), 200);
-                    args.extend(words.iter().cloned());
-                    let out = task.capture(&args)?;
-                    if out.ok {
-                        Ok(Data::Table(out.stdout, words))
-                    } else {
-                        Err(out.summary())
-                    }
+                    let filter = split_words(&filter_of(None, None)?);
+                    let name = s.report.clone().unwrap_or_else(|| "next".into());
+                    let report = crate::model::report(task, cfg, &name, &filter, ctx.now, look)?;
+                    let mut words = filter;
+                    words.push(name);
+                    Ok(Data::Table(report, words))
                 }
                 Kind::Number => {
                     let text = tasks_of(&filter_of(None, None)?)?;
