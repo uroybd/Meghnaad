@@ -48,6 +48,9 @@ test('assembling copies the built Worker and app, the scripts and the configurat
     mkdirSync(join(root, 'crates', 'worker', 'build-git', 'worker'), { recursive: true });
     mkdirSync(join(root, 'web', 'dist', 'assets'), { recursive: true });
     mkdirSync(join(root, 'scripts'));
+    // The skill ships only inside the terminal app's binary (`meghnaad skill`), never in this package.
+    mkdirSync(join(root, 'skills', 'meghnaad'), { recursive: true });
+    mkdirSync(join(root, '.claude-plugin'));
     for (const [f, text] of [
       ['crates/worker/build/index.js', 'js'],
       ['crates/worker/build/index_bg.wasm', 'wasm'],
@@ -67,6 +70,8 @@ test('assembling copies the built Worker and app, the scripts and the configurat
       ['scripts/deploy.mjs', 'd'],
       ['scripts/deploy-lib.mjs', 'l'],
       ['scripts/dev.mjs', 'not packaged'],
+      ['skills/meghnaad/SKILL.md', 'not packaged'],
+      ['.claude-plugin/plugin.json', 'not packaged'],
     ])
       writeFileSync(join(root, f), text);
 

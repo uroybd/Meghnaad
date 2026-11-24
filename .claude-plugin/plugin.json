@@ -1,0 +1,8 @@
+{
+  "name": "meghnaad",
+  "description": "Use Taskwarrior safely through the meghnaad command line: compact exports, UUIDs, and asking before bulk or destructive changes.",
+  "author": { "name": "uroybd" },
+  "homepage": "https://github.com/uroybd/Meghnaad",
+  "repository": "https://github.com/uroybd/Meghnaad",
+  "license": "MIT"
+}

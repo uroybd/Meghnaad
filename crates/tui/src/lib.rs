@@ -30,6 +30,10 @@ pub mod task;
 pub mod theme;
 pub mod ui;
 
+/// The skill that teaches an AI agent to use `meghnaad` and `task` safely (`meghnaad skill`): the same file the Claude
+/// Code plugin at the repository's root serves.
+pub const SKILL: &str = include_str!("../../../skills/meghnaad/SKILL.md");
+
 use app::{Action, App};
 use chain::runs;
 use ratatui::crossterm::event::{self, DisableFocusChange, EnableFocusChange, Event, KeyEventKind};
@@ -161,4 +165,12 @@ pub fn run() -> io::Result<()> {
         writeln!(io::stderr(), "meghnaad: {why}")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod skill_tests {
+    #[test]
+    fn the_skill_is_the_plugins_file_with_its_name() {
+        assert!(super::SKILL.starts_with("---\nname: meghnaad\n"));
+    }
 }

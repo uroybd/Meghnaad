@@ -1,0 +1,14 @@
+{
+  "name": "meghnaad",
+  "owner": {
+    "name": "uroybd"
+  },
+  "description": "Meghnaad's skill for using Taskwarrior through the meghnaad command line.",
+  "plugins": [
+    {
+      "name": "meghnaad",
+      "source": "./",
+      "description": "Use Taskwarrior safely through the meghnaad command line."
+    }
+  ]
+}

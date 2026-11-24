@@ -30,6 +30,41 @@ pub fn plan(args: &[String], commands: &[TaskCommand]) -> Result<Vec<Statement>,
     plan_chain(&line_of(args), commands)
 }
 
+/// What `meghnaad --dry-run` prints for `steps`: a statement to a line, each after the operator that joins it to the one
+/// before.
+pub fn dry_run_text(steps: &[Statement]) -> String {
+    steps
+        .iter()
+        .map(|s| match s.join {
+            Some(j) => format!("{} {}\n", j.as_str(), s.line),
+            None => format!("{}\n", s.line),
+        })
+        .collect()
+}
+
+/// `meghnaad --dry-run <line>`: the statements `args` stands for, printed, and nothing run; the exit status for the
+/// shell: 0, or 2 for a line that is not a well-formed chain, as [`run`] gives it.
+///
+/// # Errors
+///
+/// Writing to standard output or standard error failed.
+pub fn dry_run(args: &[String]) -> io::Result<i32> {
+    let (settings, problem) = crate::settings::AppSettings::load();
+    if let Some(p) = problem {
+        writeln!(io::stderr(), "meghnaad: {p}")?;
+    }
+    match plan(args, &settings.task_commands) {
+        Ok(steps) => {
+            io::stdout().write_all(dry_run_text(&steps).as_bytes())?;
+            Ok(0)
+        }
+        Err(e) => {
+            writeln!(io::stderr(), "meghnaad: {e}")?;
+            Ok(2)
+        }
+    }
+}
+
 /// Run `args` on `task`; the exit status for the shell: the last statement run's, as in a shell.
 ///
 /// # Errors
@@ -124,6 +159,16 @@ mod tests {
         assert_eq!(
             lines(&steps),
             vec![(None, "1 done"), (Some(";"), "+work +OVERDUE list")]
+        );
+    }
+
+    #[test]
+    fn a_dry_run_prints_each_statement_after_its_operator() {
+        let c = [cmd("fail", "done outcome:fail && annotate failed")];
+        let steps = plan(&args(&["3", "fail", ";", "next"]), &c).unwrap();
+        assert_eq!(
+            dry_run_text(&steps),
+            "3 done outcome:fail\n&& 3 annotate failed\n; next\n"
         );
     }
 

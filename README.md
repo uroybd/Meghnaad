@@ -183,7 +183,7 @@ The same pages are a searchable site at **[meghnaad.utsob.me](https://meghnaad.u
 | **[Where your tasks live](docs/stores.md)** | A git repository, an S3 or R2 bucket or a sync server: which app reaches which, pointing `task` at it |
 | **[Running the web app](docs/deploy.md)** | The static site, the Worker with R2 or with git, Access, GitHub Actions, troubleshooting |
 | **[The Android app](docs/android.md)** | Install, connect (a git repository, a bucket or a sync server, or none), the four widgets, sharing settings and hooks, building it |
-| **[The terminal app](docs/terminal.md)** | Install, the pages and keys, the command line, review, where its settings are kept |
+| **[The terminal app](docs/terminal.md)** | Install, the pages and keys, the command line, review, where its settings are kept, [AI agents](docs/terminal.md#with-an-ai-agent) |
 | **[Architecture](docs/architecture.md)** | A diagram per platform, the engine, sync, hooks, platform limits, how correctness is kept |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
 
@@ -392,6 +392,15 @@ meghnaad export -f tsv -F id,due,description -r next   # task export for scripts
 
 Its `settings.json` (task commands, boards, keys, and its own settings under `tui`: when to sync and its theme) is kept
 in `~/.config/meghnaad`, or in `$MEGHNAAD_CONFIG_DIR`. The keys and the rest are in **[the terminal app](docs/terminal.md)**.
+
+An AI agent with a shell can use your tasks through it too, with a skill that keeps it to UUIDs and compact exports and
+has it ask before bulk or destructive changes ([With an AI agent](docs/terminal.md#with-an-ai-agent)). In Claude Code:
+
+```text
+/plugin install meghnaad --marketplace uroybd/Meghnaad
+```
+
+For any other agent, `meghnaad skill` prints the same skill.
 
 ## Using it
 

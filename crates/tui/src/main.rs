@@ -7,6 +7,9 @@ Usage: meghnaad                open it on the tasks task reads (TASKRC and TASKD
        meghnaad <line>         run a command line as the app's command line does: task commands written out,
                                '&&' '||' ';' (quoted) between statements, everything else straight to task
        meghnaad export ...     task export, with the Export dialog's choices (meghnaad export --help)
+       meghnaad --dry-run <line>
+                               print the statements <line> would run (task commands written out); run nothing
+       meghnaad skill          print the skill that teaches an AI agent to use meghnaad and task safely
        meghnaad --help         this
        meghnaad --version      the release it is from
 
@@ -38,6 +41,11 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         None => status(meghnaad_tui::run()),
         Some("--help" | "-h") => status(io::stdout().write_all(HELP.as_bytes())),
+        Some("skill") => status(io::stdout().write_all(meghnaad_tui::SKILL.as_bytes())),
+        Some("--dry-run" | "-n") => match meghnaad_tui::run::dry_run(args.get(1..).unwrap_or_default()) {
+            Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+            Err(e) => status(Err(e)),
+        },
         Some("--version" | "-V") => status(writeln!(io::stdout(), "meghnaad {}", env!("CARGO_PKG_VERSION"))),
         Some(_) => {
             let task = meghnaad_tui::task::Task::from_env();

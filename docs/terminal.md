@@ -351,8 +351,34 @@ meghnaad 1 done '&&' 2 start ';' next # a chain: quote the operators so the shel
 ```
 
 The exit status is the last statement run's, as in a shell (2 for a line that is not a well-formed chain). `export`,
-`--help` and `--version` as the first word are the app's own, so `task export` itself is reached as `task export`, and a
-task command named `export` only from the app's command line.
+`skill`, `--dry-run` (`-n`), `--help` and `--version` as the first word are the app's own, so `task export` itself is
+reached as `task export`, and a task command named `export` or `skill` only from the app's command line.
+
+`meghnaad --dry-run <line>` prints the statements the line stands for, a statement to a line after the operator that
+joins it, and runs nothing:
+
+```bash
+meghnaad --dry-run 3 fail '&&' next   # 3 done outcome:fail, then && next
+```
+
+### With an AI agent
+
+An AI agent with a shell can use your tasks through `meghnaad`. A skill teaches it how: compact reads with
+`meghnaad export -f tsv -F …`, tasks named by UUID rather than by ID, `--dry-run` before your task commands, and asking
+you first before it changes more than one task, deletes, purges, undoes, syncs or touches the taskrc or the context. It
+never opens an editor or the full-screen app, and tries things on scratch data, not yours. Get it either way:
+
+- In Claude Code, as a plugin from this repository: `/plugin install meghnaad --marketplace uroybd/Meghnaad` (Claude
+  Code 2.1.275 or later; before that, `/plugin marketplace add uroybd/Meghnaad`, then `/plugin install meghnaad@meghnaad`).
+- From the program, for any agent that reads skills or an `AGENTS.md`: `meghnaad skill` prints it, matching the
+  release you have.
+
+  ```bash
+  mkdir -p ~/.claude/skills/meghnaad && meghnaad skill > ~/.claude/skills/meghnaad/SKILL.md
+  ```
+
+Without a terminal to answer it, `task` answers "no" to its own questions, so an agent's command that needs a yes
+changes nothing.
 
 ## Review
 
