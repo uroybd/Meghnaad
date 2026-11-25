@@ -48,7 +48,8 @@ app/                Kotlin + Compose. shared/commonMain (Store.kt, Sync.kt, scre
                     jvmCommonMain/NativeEngine.kt (JNI names: keep package me.utsob.meghnaad), androidMain (AndroidVault
                     = Keystore), androidApp (MainActivity, ReminderReceiver, widgets/, SyncWorker). desktopApp = preview.
 crates/tui          meghnaad (crate meghnaad-tui), ratatui. Backend = real `task` 3.5.0 (task.rs); tc-core for helpers only.
-                    app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,taskinfo,tests}.rs, info.rs; settings.json in
+                    app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,settings_form,taskinfo,tests}.rs,
+                    settingsui.rs (Settings' pages, drawn as the map's controls), info.rs; settings.json in
                     $MEGHNAAD_CONFIG_DIR or ~/.config/meghnaad; sync = background `task sync`. Never reaches the bucket.
 
 DATA in the store: a bucket holds salt, latest, v-<parent>-<child>, s-<version> (TaskChampion); a git branch holds
@@ -179,6 +180,11 @@ run `npm run format` after editing any code, not just at the end.
 
 - **Follow Taskwarrior 3.5.0, not a lookalike.** For behaviour (filters, dates, reports, confirmations, `calc`, settings)
   read the C++ first and check against the real `task` run on a scratch `TASKRC` and data directory. Don't guess.
+- **Settings follow the map.** `docs/settings-map.md` lists every setting: its page, its part, its control (switch,
+  choice, input, rows, form, picker, action) and its key, for the web, the phone and the terminal at once, with what a
+  front end leaves out and why. A new, moved or removed setting changes the map in the same change, and each front end
+  draws it as the map says; a front end that leaves one out says why there. Don't add a settings page or a control kind
+  that isn't in it.
 - **Every page has an address** (`web/src/lib/route.ts`, `Place`): a new page or view adds its place, a round-trip test and a
   row in the address table of `docs/using/pages.md`, so it can be linked and the back button works.
 - **Docs move with the code.** A new or changed feature updates the guide in `docs/using/`, and `docs/taskrc-support.md` for a

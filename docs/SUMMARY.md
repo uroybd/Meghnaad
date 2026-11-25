@@ -25,4 +25,5 @@
 
 - [Commands](./commands.md)
 - [taskrc support](./taskrc-support.md)
+- [The settings map](./settings-map.md)
 - [Architecture](./architecture.md)
