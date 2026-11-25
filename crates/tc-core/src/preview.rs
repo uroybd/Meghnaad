@@ -153,6 +153,14 @@ mod tests {
     }
 
     #[test]
+    fn shortened_names_and_dates_are_read_as_add_reads_them() {
+        let p = of("Buy milk pro:Home pri:H due:tom", "");
+        assert_eq!((p.project.as_deref(), p.priority.as_deref()), (Some("Home"), Some("H")));
+        assert!(p.dates["due"] > NOW);
+        assert!(p.errors.is_empty(), "{:?}", p.errors);
+    }
+
+    #[test]
     fn quotes_keep_a_word_in_the_description() {
         let p = of("'read project:notes' later", "");
         assert_eq!(p.description, "read project:notes later");

@@ -854,11 +854,13 @@ pub fn parse_date_in(input: &str, clock: &Clock, by_weekstart: bool) -> Option<P
     let day = |ts: i64| Some(ParsedDate { ts, day: true });
     let exact = |ts: i64| Some(ParsedDate { ts, day: false });
 
+    // `today`, `yesterday` and `tomorrow` from their first three letters (`tom`, `yest`), as Taskwarrior reads them.
     match s.as_str() {
         "now" => return exact(now),
-        "today" | "sod" => return day(sod),
-        "yesterday" => return day(sod - DAY),
-        "tomorrow" => return day(sod + DAY),
+        "sod" => return day(sod),
+        w if abbreviates(w, "today", 3) => return day(sod),
+        w if abbreviates(w, "yesterday", 3) => return day(sod - DAY),
+        w if abbreviates(w, "tomorrow", 3) => return day(sod + DAY),
         _ => {}
     }
     if let Some(d) = named_period(&s, clock, by_weekstart) {
@@ -989,6 +991,15 @@ mod tests {
             }
         );
         assert_eq!(parse_date("tomorrow", &c).unwrap().ts, ts(2026, 10, 8, 0, 0, 0));
+        // Three letters or more of it, as `task calc tom` reads them; two are not enough.
+        for w in ["tom", "tomor", "TOMO"] {
+            assert_eq!(parse_date(w, &c).unwrap().ts, ts(2026, 10, 8, 0, 0, 0), "{w}");
+        }
+        assert_eq!(parse_date("yest", &c).unwrap().ts, ts(2026, 10, 6, 0, 0, 0));
+        assert_eq!(parse_date("tod", &c).unwrap().ts, ts(2026, 10, 7, 0, 0, 0));
+        for w in ["to", "ye", "tomorrowx"] {
+            assert!(parse_date(w, &c).is_none(), "{w}");
+        }
         assert_eq!(parse_date("yesterday", &c).unwrap().ts, ts(2026, 10, 6, 0, 0, 0));
         assert_eq!(parse_date("eod", &c).unwrap().ts, ts(2026, 10, 7, 23, 59, 59));
         assert_eq!(parse_date("sow", &c).unwrap().ts, ts(2026, 10, 5, 0, 0, 0));
