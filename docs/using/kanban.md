@@ -136,8 +136,8 @@ A card shows the report's columns under the task's description, each with its la
 **Icons in cards** under Settings → Appearance (see [Cards](settings.md#cards)) and every card shows Taskwarrior's own
 fields by an icon instead: `#` for the ID, a flag for the priority, a folder for the project, a tag for the tags, a clock
 for `due`, and so on. The icon goes by the field itself, whatever the report's label or format (`due.relative` is still
-a clock). In the terminal app the icons are symbols (`⚑ H`, `◷ 2d`), turned on by the row Card icons in Settings →
-General; with the row Nerd Font on as well, they are your Nerd Font's glyphs of the web's icons.
+a clock). In the terminal app the icons are symbols (`⚑ H`, `◷ 2d`), turned on by Icons in cards in Settings →
+Appearance; with Nerd Font on as well, they are your Nerd Font's glyphs of the web's icons.
 
 On every front end a card draws its description and fields as the report's table does, with your
 [transformations](settings.md#transformations) applied: a ticket key a rule turns into a link is a link on the card.
@@ -181,7 +181,9 @@ through it. `:kanban` opens it too.
 | `f` `r` `s` | change the filter, the report or Completed since here, without saving them |
 | `o` | show or hide Other |
 
-**Settings → Kanban** shows Kanban's settings and each kanban's, one row each. While Kanban is off, its rows are the
+**Settings → Kanban** is a page of its own, with Kanban's settings and each kanban's, one row each, and waits for
+`Ctrl+S` like every page of Settings (an action, such as setting it up or turning it off, happens at once). A column is
+added or changed in a box with its name, filter and On move together. While Kanban is off, its rows are the
 UDA, the report (Enter switches between adding a `_kanban` report and using `all`) and the two ways to set it up:
 Enter on **Set up automatically** shows the lines it will write, and Enter again writes them. Once it is on, `e` or Enter changes the row under the cursor, `a` adds a column, `D` deletes a column or a
 kanban (or, on a kanban's own setting, goes back to Kanban's), `K` and `J` move a column, `n` adds a kanban, `o` opens

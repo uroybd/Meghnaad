@@ -28,6 +28,8 @@ impl App {
     /// Do what the keymap's `action` says, where the app is.
     pub(super) fn act(&mut self, action: &str) -> Action {
         match action {
+            // Settings edits not applied are asked about first (spec 0033).
+            "app.quit" if !self.edited_pages().is_empty() => self.mode = Mode::QuitAsk,
             "app.quit" => return Action::Quit,
             // With tasks marked, the line starts with them, as the web's CLI button does.
             "app.prompt" if self.page == Page::Tasks && !self.marks.is_empty() => {
@@ -103,6 +105,8 @@ impl App {
             "move.first" => self.step(Step::First),
             "move.last" => self.step(Step::Last),
             "sidebar.hidden" => self.hidden_reports = !self.hidden_reports,
+            // On Settings the side lists its pages: Enter goes into the one chosen.
+            "sidebar.open" if self.page == Page::Settings => self.focus = Focus::Main,
             "sidebar.open" => {
                 let name = self.report_names().get(self.sidebar).map(|n| (*n).to_owned());
                 if let Some(name) = name {
@@ -148,6 +152,9 @@ impl App {
                 self.log_back = 0;
             }
             "settings.editFile" => return Action::EditSettings,
+            "settings.activate" if self.settings_act() == Some(crate::settingsui::Act::EditFile) => {
+                return Action::EditSettings;
+            }
             a if a.starts_with("page.") => {
                 if let Some(&p) = Page::ALL.iter().find(|p| p.action() == a) {
                     self.open(p);
@@ -164,6 +171,11 @@ impl App {
     /// Move through what the page has: its rows, or its scroll.
     pub(super) fn step(&mut self, step: Step) {
         match self.context() {
+            "sidebar" if self.page == Page::Settings => {
+                let n = super::SettingsPage::ALL.len();
+                let at = moved(self.settings_page.index(), n, step);
+                self.settings_go(super::SettingsPage::ALL[at]);
+            }
             "sidebar" => self.sidebar = moved(self.sidebar, self.report_names().len(), step),
             "tasks" => self.selected = moved(self.selected, self.report.uuids.len(), step),
             "lists" => self.list_sel = moved(self.list_sel, self.items().len(), step),

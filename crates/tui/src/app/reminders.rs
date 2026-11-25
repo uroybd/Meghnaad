@@ -133,8 +133,9 @@ impl App {
     fn keep_reminders(&mut self, s: remind::Settings) {
         self.remind = s;
         self.settings.tui.reminders = s.to_value();
-        if let Err(e) = settings::save_tui("reminders", s.to_value()) {
-            self.status = format!("Couldn't save the reminder options: {e}");
+        // On Settings → This device it waits for Ctrl+S, as the page's other edits do (spec 0033).
+        if !self.write_settings(|t| settings::with_tui(t, "reminders", s.to_value())) {
+            self.status = format!("Couldn't save the reminder options: {}", self.status);
         }
     }
 

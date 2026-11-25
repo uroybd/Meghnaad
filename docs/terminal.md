@@ -90,7 +90,7 @@ line.
 | `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` go to the board before or after, `[` `]` to its next section or the one before, and `Esc` (or `b`) comes back to the list |
 | `8` Kanban | There while [Kanban](using/kanban.md#in-the-terminal-app) is on, after Boards (`g8` or `gk` opens it): the list of kanbans, then one, its columns side by side (each on a deeper shade, its title on a lighter line, every card framed in the task's colour, the chosen one's frame thick, with a ● in its top edge; a value of several lines, such as a free-text UDA's, keeps its lines under its label); `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
 | `9` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
-| `0` Settings | A section each for when to sync, the theme, your task commands, your boards, Kanban and your keys ([Settings](#the-settings-page)) |
+| `0` Settings | Its pages down the side, as on the web: General, This device, Appearance, Keybindings, Kanban, Commands, Sync ([Settings](#the-settings-page)) |
 
 `Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Colours
 follow `task` ([Colours](#colours)).
@@ -125,7 +125,7 @@ use, so the three look alike.
 | `bad` | what failed, overdue counts | `#cf222e` | `#ff7b72` |
 | `marked` | a task marked on the Tasks page, to act on with others | `on #ddf4ff` | `on #0c2d6b` |
 
-Which preset is drawn is `tui.theme` in `settings.json`, which the Theme section of the Settings page goes through:
+Which preset is drawn is `tui.theme` in `settings.json`, chosen under Theme on the Settings page's Appearance:
 
 | `"theme"` | Draws |
 | --- | --- |
@@ -162,11 +162,11 @@ On every page:
 | --- | --- |
 | `g1` to `g9`, `g0` | Open a page by its number in the top bar: Kanban is `g8`, Console `g9`, Settings `g0`; `gt` `gT` the next and the one before |
 | `j` `k` (or the arrows) | Down and up a row, a field, or a line |
-| `[` `]` | The section before and the next: of the settings, of a board, of `?` and a task's info |
+| `[` `]` | The section before and the next: the page of Settings, of a board, of `?` and a task's info |
 | `Ctrl+D` `Ctrl+U` | Half a page down and up |
 | `Ctrl+F` `Ctrl+B` (or PgDn PgUp) | A page down and up |
 | `gg` `G` (or Home End) | The first and the last; with a number before it, that row (`5G`) |
-| `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_` |
+| `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_`. On Settings the side lists its pages instead |
 | `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form). Where a page has an `a` of its own (adding a task command or a kanban column in Settings, a sort field, the Annotations tab of a task's info), that one wins, and the bottom line says `a add` only where `a` adds a task |
 | `/` | The command line |
 | `:` | The command line with `:` typed, for a [command](#commands) (`:tabn Tasks`, `:5`, `:done`) |
@@ -244,7 +244,7 @@ The add box is Meghnaad's reading of the line, by the same rules as `task add`, 
 is what `task add` makes. A line it finds a problem in stays open with the reason. The card shows the description
 and string UDAs with your [transformations](using/settings.md#transformations) applied (those with a condition wait
 for the task to exist), then wrapped to the box; a long line wraps too, and past six rows it scrolls with the caret. Adding and
-changing task commands on the Settings page use the same box.
+changing task commands on the Settings page use a box of their own, a field each.
 
 ### Bulk actions
 
@@ -421,7 +421,7 @@ worked or `⟳ failed`, and how it went is said in the status line and kept on t
 when it failed. The pages are read again when it ends. While it runs, a command you give waits for it, so the two never
 use the data at once.
 
-When it runs is the `tui.sync` setting, which `y` in the Sync section of the Settings page goes through and saves:
+When it runs is the `tui.sync` setting, chosen on the Settings page's Sync (`y`):
 
 | `"sync"` | Syncs |
 | --- | --- |
@@ -524,26 +524,48 @@ meghnaad export -f csv -r _x rc.report._x.columns=id rc.report._x.filter= rc.rep
 
 ## The Settings page
 
-The page has a section each for General, Sync, Theme, Task commands, Boards, Kanban and Keybindings, one under the other. A key acts on the
-section that has the focus, whose border is in the accent and names its keys: `j` `k` move through a section's rows
-and on into the next one, and `[` `]` jump between sections. `E`, in any section, opens `settings.json` in your editor
-(`$VISUAL`, else `$EDITOR`, else `vi`) on the terminal, and reads it again when the editor closes.
+The Settings page has its own pages, as on the web and the phone, in the same order and laid out the same way; the
+[settings map](settings-map.md) says what is on each, with what the terminal leaves out and why. On this page the side
+pane lists them in place of the reports: General, This device, Appearance, Keybindings, Kanban, Commands and Sync. With
+[Nerd Font](#settings) on, each has its icon before its name. `Tab` gives the list the focus, `j` `k` choose a page, which
+shows at once, and `Enter` (or `Tab`) goes into it; from the page, `[` `]` go to the page before and the next.
 
-| Section | Keys |
+A page fills the pane top to bottom and scrolls to keep the row chosen in view. Each part has its heading, then its
+settings a row each, each with a faint line on what it does and its problems in the error colour:
+
+| Control | How it looks | Keys |
+| --- | --- | --- |
+| switch | `[x] Icons in cards` | `Space` or `Enter` switches it |
+| choice | `Home page  next ▾` | `Enter` opens its list; `Enter` there picks one |
+| input | `min  [0]` | `Enter` edits it on the bottom line |
+| a list's rows | a row each, its fields in columns | `a` adds one, `Enter` or `e` changes it, `D` deletes it, `K` `J` move a column |
+| a row of several fields | a box over the page with every field | `↑` `↓` between fields, `Tab` completes (a command line, a filter) or goes to the next, `Enter` or `Ctrl+S` keeps the row, `Esc` drops it; each field's problem shows under it as you type |
+| an action | `› Edit it in $VISUAL or $EDITOR` | `Enter` runs it |
+
+**Edits wait until applied**, as on the web and the phone. An edit shows at once on its page, and the page's name gets a
+dot in the list and its border says so; `Ctrl+S` (`:apply`) applies the page, laying what it changed over
+`settings.json` as the file is then (a change made meanwhile by another page, an editor or a sync is kept), and `u`
+(`:revert`) drops its edits. Each page keeps its edits while another is shown, and the other pages show the file as it
+is. Quitting with edits asks: `a` applies them and quits, `d` drops them and quits, any other key stays. An action
+(Set up automatically, Turn on, Turn Kanban off, Write them) happens at once, as on the web. `E`, on any page, opens
+`settings.json` in your editor (`$VISUAL`, else `$EDITOR`, else `vi`) on the terminal, and reads it again when the editor
+closes.
+
+| Page | What it has |
 | --- | --- |
-| General | Where `settings.json` is and what is wrong with it, as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept); the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board, each kanban while Kanban is on) and saves; on the row below, what a task with no ID shows in the ID column, `-` as `task` shows it or its short uuid, which `Space` or `Enter` switches and saves (`appearance.idFallback`, [as on the web](using/settings.md#ids)); on the next, Card icons, whether a kanban's cards show their fields as symbols, a UDA as a badge (`appearance.cardIcons`, [as on the web](using/settings.md#cards)); on the next, Nerd Font, whether the icons are drawn from your terminal's [Nerd Font](https://www.nerdfonts.com) (`tui.nerdFont`: the cards' field icons, and an icon before each page in the top bar, the web app's); and the [progress bars](#settings) |
-| Sync | `y`, `Space` or `Enter` goes through when to sync, and saves it ([Sync](#sync)) |
-| Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
-| Task commands | `a` adds one, `e` or `Enter` changes the one chosen (its name, then its line, then its label: left empty, the menus show the name as words), `D` deletes it |
-| Boards | `Enter` opens the board chosen |
-| Kanban | While it is off, the UDA and the two ways to set it up (`Enter` twice on the automatic one writes its lines); then Kanban's settings and each kanban's, a row each: `e` or `Enter` changes the row, `a` adds a column, `D` deletes a column or kanban or takes away a kanban's own setting, `K` `J` move a column, `n` adds a kanban, `o` opens one, `w` writes the UDA, `x` turns Kanban off ([Kanban](using/kanban.md#in-the-terminal-app)) |
-| Keybindings | Your keys, under a heading for each place they go: General (`keys`, every front end), Web, Mobile and Terminal (`tui.keys`). `t` shows the default keys too, faint; `f` searches the actions, what they do and their keys; `a` adds a key to the section of the line chosen; `D` takes out what you set, back to the defaults; `n` leaves the action without a key |
+| General | The home page, a choice of `next`, each report, each board, each kanban while Kanban is on; then `settings.json`: where it is, what is wrong with it as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept), and `E` |
+| This device | Reminders (the reminder options, as `N` opens them: [The timer and reminders](#the-timer-and-reminders)). The terminal's `settings.json` is the machine's own already, so it has no device ID or home page of its own |
+| Appearance | Theme: the preset (`auto`, `light`, `dark`, `mono`; the `base` of a theme with roles of its own), each role in its colours and Taskwarrior's own, and `[x] Shading` (`s`) ([Colours](#colours)); Cards: Icons in cards (`appearance.cardIcons`, [as on the web](using/settings.md#cards)) and Nerd Font (`tui.nerdFont`); IDs: the short uuid when a task has no ID (`appearance.idFallback`, [as on the web](using/settings.md#ids)); Progress bars: a switch per numeric UDA, then its min and max ([as on the web](using/settings.md#progress-bars)); Transformations: a row each, `a` adds one in its box (match, replace, the fields it applies to, condition), `Enter` changes it, `D` deletes it ([as on the web](using/settings.md#transformations)) |
+| Keybindings | Search keys (`f`) and `[x] Show default keys` (`t`), then your keys under a heading for each place they go: General (`keys`, every front end), Web, Mobile and Terminal (`tui.keys`). `a` adds a key to the heading of the line chosen; `D` takes out what you set, back to the defaults; `n` leaves the action without a key. Then the `:` commands |
+| Kanban | While it is off: the UDA, Automatic (whether to draw the kanbans on a `kanban` report, then Set up automatically: `Enter` twice writes its lines) and Manual (Turn on). While it is on: Every kanban's report, filter, Completed since and columns, then each kanban's name, address and settings. `Enter` or `e` changes the row (a column in its box: name, filter, on move), `a` adds a column, `D` deletes a column or kanban or takes away a kanban's own setting, `K` `J` move a column, `n` adds a kanban, `o` opens one, `w` writes the UDA, `x` turns Kanban off ([Kanban](using/kanban.md#in-the-terminal-app)) |
+| Commands | Your task commands, a row each (name, label, command): `a` adds one and `Enter` or `e` changes one in its box (name, label, command, icon; a label left empty is the name made words, and a name may not be a command's, spec 0032), `D` deletes it. Then your taskrc's aliases; their icons are chosen on the web or the phone |
+| Sync | When to sync, a choice (`y`) ([Sync](#sync)) |
 
-![The Keybindings section: your keys, under General, Web, Mobile and Terminal](screenshots/terminal-keybindings.png)
+![The Keybindings page: your keys, under General, Web, Mobile and Terminal](screenshots/terminal-keybindings.png)
 
 `a` opens a box of the section's actions, each with the keys it has now; typing narrows it and `Enter` picks one. Then
 the next key you press is the one to add (any key but `Esc`, so one the app already uses can be given too), and `Enter`
-saves it to `settings.json` at once, beside any you set before; `Backspace` lets you press another. A key you give an
+keeps it in the page's edits, beside any you set before, for `Ctrl+S` to apply; `Backspace` lets you press another. A key you give an
 action replaces its defaults and is taken from any action that had it, as [Keys](using/settings.md#keys) explains. The
 web app and the phone have the same in **Settings → Keybindings**.
 
@@ -560,8 +582,8 @@ The app's own `settings.json` is kept on this machine only, in the first of:
 The file is optional; without it there are no task commands or boards, syncing is by hand and the theme is the
 default. The terminal app uses what it shares with the web app and the phone: `taskCommands` (words that stand for a
 command line, which you can also add, change and delete on the Settings page), `boards` ([Boards](#boards)),
-`homepage` (the report or board it opens on, chosen in the General section), `appearance.idFallback` (a task with no ID
-shown by its short uuid rather than `-`, also chosen there), `appearance.cardIcons` (a kanban's cards with their
+`homepage` (the report or board it opens on, chosen on General), `appearance.idFallback` (a task with no ID
+shown by its short uuid rather than `-`, chosen on Appearance), `appearance.cardIcons` (a kanban's cards with their
 fields as symbols, chosen there too), `appearance.progress` (numeric UDAs drawn
 in a report and on a kanban's cards as a bar with the number beside it, a line through the middle of the row, as on
 the web: [Progress bars](using/settings.md#progress-bars)),
@@ -569,8 +591,8 @@ the web: [Progress bars](using/settings.md#progress-bars)),
 rows: [Transformations](using/settings.md#transformations); a link is an OSC 8 hyperlink, which most terminals open with
 a click or Cmd/Ctrl+click and the rest show as its words; `task info` is shown as `task` prints it) and
 `keys` ([Keys](using/settings.md#keys)). Its own settings are all under `tui`: `sync` ([Sync](#sync)), `theme` and
-`shading` ([Colours](#colours)), `nerdFont` (`true` when the terminal's font is a Nerd Font: icons from it, chosen in
-the General section), and `keys`, which apply here only.
+`shading` ([Colours](#colours)), `nerdFont` (`true` when the terminal's font is a Nerd Font: icons from it for the cards' fields, the pages in the top
+bar and the pages of Settings, chosen on Appearance), and `keys`, which apply here only.
 
 ```json
 {
@@ -587,9 +609,9 @@ It is the same JSON as the web app's (**Settings → Commands**, or `web/setting
 file here gives you the same task commands and boards; the web app and the phone keep `tui` as it is and have no use
 for it. What the terminal app has no use for is kept as it is when it saves, at any depth: a key it doesn't know inside
 a task command stays when you change that command, and a task command it can't use (a bad name, no command) is listed
-in General and stays in the file. A `sync` at the top of the file, where 0.6.53 kept it, is still read, and moved into
+on General and stays in the file. A `sync` at the top of the file, where 0.6.53 kept it, is still read, and moved into
 `tui` the next time the app saves. A file that is not a JSON object, or has a known key in the wrong shape (the errors
-the web app's [settings.json box](using/settings.md) lists), is reported in General and the status line and read as
+the web app's [settings.json box](using/settings.md) lists), is reported on General and the status line and read as
 none, and the app will not save over it until it is put right.
 
 The app reads and writes `settings.json` in that folder and touches nothing else there. Its one other file, `close-sync.json`, is in its state

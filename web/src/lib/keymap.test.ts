@@ -27,7 +27,7 @@ describe('the keymap', () => {
 
   it('takes keys for every front end, then the web app’s own', () => {
     const km = resolveKeymap({
-      version: 4,
+      version: 5,
       keys: { app: { 'ctrl+k': 'app.prompt' } },
       web: { keys: { app: { 'Ctrl-P': 'app.prompt', 'ctrl+k': null, '/': null } } },
     });
@@ -38,7 +38,7 @@ describe('the keymap', () => {
 
   it('says what is wrong and ignores the terminal app’s own keys', () => {
     const km = resolveKeymap({
-      version: 4,
+      version: 5,
       keys: { app: { x: 'app.nope' } },
       tui: { keys: { tasks: { z: 'tasks.done' } } },
     });
@@ -46,7 +46,7 @@ describe('the keymap', () => {
   });
 
   it('has no keys until the defaults are there', () => {
-    expect(resolve({ version: 4, keys: { app: { '/': 'app.prompt' } } }, null).keys).toEqual({});
+    expect(resolve({ version: 5, keys: { app: { '/': 'app.prompt' } } }, null).keys).toEqual({});
   });
 
   it('lists the commands of this build, and leaves out those of a later one', () => {
@@ -64,7 +64,7 @@ describe('the keymap', () => {
 
   it('brings settings of version 1 up to date, once', () => {
     const next = migrateSettings({ web: { keys: { 'app.help': 'h' }, theme: 'dark' } }, defaults);
-    expect(next).toEqual({ version: 4, web: { keys: { app: { h: 'app.help', '?': null } }, theme: 'dark' } });
+    expect(next).toEqual({ version: 5, web: { keys: { app: { h: 'app.help', '?': null } }, theme: 'dark' } });
     expect(migrateSettings(next!, defaults)).toBeNull();
   });
 

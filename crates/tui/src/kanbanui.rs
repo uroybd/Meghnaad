@@ -604,7 +604,7 @@ fn list(f: &mut Frame, app: &App, area: Rect, focused: bool) {
 }
 
 /// What a row of Settings → Kanban says: its name, then what it has (dim where a kanban has Kanban's).
-fn row_line(app: &App, row: KanbanRow) -> Line<'static> {
+pub(crate) fn row_line(app: &App, row: KanbanRow) -> Line<'static> {
     let s = &app.kanban;
     let label = |t: &str| Span::from(format!("{t:<17}")).quiet();
     let value = |t: &str| Span::from(t.to_owned());
@@ -731,35 +731,33 @@ fn row_line(app: &App, row: KanbanRow) -> Line<'static> {
     Line::from(spans)
 }
 
-/// The rows of Settings → Kanban, one item each, then what is wrong with the file and, on the automatic setup, the
-/// lines it would write.
-pub fn settings_lines(app: &App) -> Vec<ListItem<'static>> {
-    let rows = app.kanban_rows();
-    let mut items: Vec<ListItem> = rows.iter().map(|r| ListItem::new(row_line(app, *r))).collect();
+/// What Settings → Kanban says under its rows: a UDA's problem, the lines the setup writes, the kanbans' problems.
+pub fn settings_extra(app: &App) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
     if let Some(bad) = kanban::uda_name_problem(&app.kanban.uda) {
-        items.push(ListItem::new(Line::from(format!("UDA: {bad}")).bad()));
+        lines.push(Line::from(format!("UDA: {bad}")).bad());
     }
-    let on_setup = rows.get(app.kanban_row) == Some(&KanbanRow::Automatic);
-    let lines = app.kanban_lines();
-    let unwritten = app.kanban.enabled && app.kanban.setup.as_deref() == Some("automatic") && !lines.is_empty();
+    let on_setup = app.kanban_rows().get(app.kanban_row) == Some(&KanbanRow::Automatic);
+    let setup = app.kanban_lines();
+    let unwritten = app.kanban.enabled && app.kanban.setup.as_deref() == Some("automatic") && !setup.is_empty();
     if on_setup || unwritten {
         if unwritten {
-            items.push(ListItem::new(
+            lines.push(
                 Line::from(format!(
                     "The {} UDA isn't as the kanban needs it: w writes these lines.",
                     app.kanban.uda
                 ))
                 .bad(),
-            ));
+            );
         }
-        items.extend(
-            lines
+        lines.extend(
+            setup
                 .iter()
-                .map(|(n, v)| ListItem::new(Line::from(format!("  config {n} {v}")).quiet())),
+                .map(|(n, v)| Line::from(format!("  config {n} {v}")).quiet()),
         );
     }
-    items.extend(errors(app).into_iter().map(ListItem::new));
-    items
+    lines.extend(errors(app));
+    lines
 }
 
 #[cfg(test)]

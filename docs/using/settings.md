@@ -100,8 +100,8 @@ group's keys act where the group does: `tasks` on the Tasks page, `page` and `ap
 before the keys of every group around it, on that page only (a `tasks` key before an `app` key), so the same key can
 mean something on one page and something else elsewhere. The groups are `app`, `page`, `move`, `tasks`, `sort`,
 `sidebar`, `lists`, `info`, `calendar`, `burndown`, `boards`, `boards.list`, `kanban`, `kanban.list`, `console` and the
-Settings tabs' (`settings`, `settings.general`, `settings.commands`, `settings.boards`, `settings.kanban`,
-`settings.keys`, `settings.sync`, `settings.theme`). A key whose command is malformed (no such command or action, not enough of a name to say which,
+Settings pages' (`settings`, `settings.general`, `settings.appearance`, `settings.theme`, `settings.keys`,
+`settings.kanban`, `settings.commands`, `settings.sync`). A key whose command is malformed (no such command or action, not enough of a name to say which,
 words it does not take, or none where it needs one: `done 3`, `burndown`, `lock now`) is skipped, so it does nothing,
 and **Keybindings** warns of it at the top, with **Take out**. A group that is none, a key that can't be read, a key
 that starts a longer one (`g` beside `gg`, which could then never be pressed) and two of your keys for one key where both

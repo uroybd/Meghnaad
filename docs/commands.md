@@ -61,8 +61,11 @@ the marked tasks when there are any, and else on the chosen one.
 | [`:com[mand]`](#command) | run one of your task commands on the task |
 | [`:key`](#key) | add, take out or search keys |
 | [`:ho[me]`](#home) | choose the page the app opens on |
+| [`:ap[ply]`](#apply) | apply this page's edits |
+| [`:reve[rt]`](#revert) | drop this page's edits |
+| [`:ru[le]`](#rule) | add or delete a field transformation |
 | [`:syncw[hen]`](#syncwhen) | choose when to sync |
-| [`:th[eme]`](#theme) | the next theme preset |
+| [`:th[eme]`](#theme) | choose the theme preset |
 | [`:sh[ading]`](#shading) | the grey shading of tasks, or none |
 | [`:ka[nban]`](#kanban) | the Kanban page, or a kanban's settings |
 | [`:mov[e]`](#move) | move the card to another column |
@@ -205,7 +208,7 @@ Since 0.8.11.
 
 ## :o[pen]
 
-Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). The terminal app looks at the task as it draws it, with your transformations applied, and in its string UDAs after the annotations, so a `FUL-3586` a rule makes a link opens it. On a list of projects or tags, of boards or kanbans, or of the boards or kanbans in Settings, it opens the one under the cursor.
+Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). The terminal app looks at the task as it draws it, with your transformations applied, and in its string UDAs after the annotations, so a `FUL-3586` a rule makes a link opens it. On a list of projects or tags, of boards or kanbans, or of the kanbans in Settings, it opens the one under the cursor; on another row of Settings it uses it, as `Enter` does.
 
 Since 0.8.11.
 
@@ -507,15 +510,41 @@ Since 0.8.22.
 
 ## :ho[me]
 
-In the general settings, choose the page the app opens on: a report or a board.
+In the general settings, choose the page the app opens on: a report, a board or a kanban.
 
 Since 0.8.22.
+
+<a id="apply"></a>
+
+## :ap[ply]
+
+In Settings, apply the edits made on the page shown: what it changed is written into settings.json as the file is now. The terminal app's `Ctrl+S`; the web and the phone have an Apply button.
+
+Since the next release.
+
+<a id="revert"></a>
+
+## :reve[rt]
+
+In Settings, drop the edits made on the page shown, back to what settings.json has.
+
+Since the next release.
+
+<a id="rule"></a>
+
+## :ru[le]
+
+Takes add or delete.
+
+In the appearance settings: `:rule add` adds a field transformation in a form, `:rule delete` deletes the one chosen.
+
+Since the next release.
 
 <a id="syncwhen"></a>
 
 ## :syncw[hen]
 
-In the sync settings, go through when to sync, and save it.
+In the sync settings, choose when to sync.
 
 Since 0.8.22.
 
@@ -523,7 +552,7 @@ Since 0.8.22.
 
 ## :th[eme]
 
-In the appearance settings, go through the presets: auto, light, dark or mono.
+In the appearance settings, choose the preset: auto, light, dark or mono.
 
 Since 0.8.22.
 

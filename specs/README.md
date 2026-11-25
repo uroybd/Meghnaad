@@ -65,3 +65,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0030 | [Conditional transformations](0030-conditional-transformations.md) | done | 2 (UI), shared transform helper | all | Built |
 | 0031 | [Agents in the web app (WebMCP tools and llms.txt)](0031-agents-in-the-web-app.md) | done | 2 (UI) | web | Built; not tried in a browser with WebMCP on |
 | 0032 | [A label for each task command](0032-task-command-labels.md) | done | 2 (UI) | web, Android, terminal | Task 06efbdfc; also: a name can't be a command |
+| 0033 | [The terminal app's Settings as pages](0033-terminal-settings-pages.md) | in progress | 2 (UI) | terminal, web | Built; three control details to decide |

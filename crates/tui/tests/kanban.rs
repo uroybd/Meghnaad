@@ -8,7 +8,7 @@
 //! `~/.task`), in its own process for the environment it sets: the automatic setup, then a card moved through the
 //! columns and back out of Done. Where `task` 3.5.0 is not installed the test returns without checking anything.
 
-use meghnaad_tui::app::{App, Mode, Page, SettingsSection};
+use meghnaad_tui::app::{App, Mode, Page, SettingsPage};
 use meghnaad_tui::completer::Input;
 use meghnaad_tui::task::{Task, VERSION};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -76,7 +76,7 @@ fn the_automatic_setup_then_a_card_moved_through_the_columns() {
     press(&mut app, 'g');
     press(&mut app, '0');
     assert_eq!(app.page, Page::Settings);
-    app.settings_section = SettingsSection::Kanban;
+    app.settings_page = SettingsPage::Kanban;
     // The rows: the UDA, whether to add a kanban report (yes, to begin with), then the two ways.
     app.kanban_row = 2;
     enter(&mut app);

@@ -116,7 +116,7 @@ pub enum KanbanRow {
 }
 
 /// What a kanban prompt is for: what the page shows a kanban with, or a setting.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KanbanEdit {
     Filter,
     Report,
@@ -125,38 +125,17 @@ pub enum KanbanEdit {
     /// The report, filter, Completed since, name or address of the row.
     Text(KanbanRow),
     NewKanban,
-    /// A column of `scope` (as [`KanbanRow`]): its name, then its filter, then its On move. `at` is the column changed,
-    /// `None` for one added at `ins`.
-    ColumnName {
-        scope: Option<usize>,
-        at: Option<usize>,
-        ins: usize,
-    },
-    ColumnFilter {
-        scope: Option<usize>,
-        at: Option<usize>,
-        ins: usize,
-        name: String,
-    },
-    ColumnMove {
-        scope: Option<usize>,
-        at: Option<usize>,
-        ins: usize,
-        name: String,
-        filter: String,
-    },
 }
 
 impl KanbanEdit {
     pub fn label(&self) -> &'static str {
         match self {
-            KanbanEdit::Filter | KanbanEdit::Text(KanbanRow::Filter(_)) | KanbanEdit::ColumnFilter { .. } => "filter",
+            KanbanEdit::Filter | KanbanEdit::Text(KanbanRow::Filter(_)) => "filter",
             KanbanEdit::Report | KanbanEdit::Text(KanbanRow::Report(_)) => "report",
             KanbanEdit::Since | KanbanEdit::Text(KanbanRow::Since(_)) => "completed since",
             KanbanEdit::Uda => "UDA",
             KanbanEdit::Text(KanbanRow::Address(_)) => "address",
-            KanbanEdit::NewKanban | KanbanEdit::Text(_) | KanbanEdit::ColumnName { .. } => "name",
-            KanbanEdit::ColumnMove { .. } => "on move",
+            KanbanEdit::NewKanban | KanbanEdit::Text(_) => "name",
         }
     }
 
@@ -166,9 +145,6 @@ impl KanbanEdit {
             KanbanEdit::Uda => " Kanban: the UDA ".into(),
             KanbanEdit::NewKanban => " a new kanban: its name ".into(),
             KanbanEdit::Text(row) => format!(" Kanban: {} ", row_word(*row)),
-            KanbanEdit::ColumnName { .. } => " a column: its name ".into(),
-            KanbanEdit::ColumnFilter { name, .. } => format!(" {name}: the filter that picks its tasks "),
-            KanbanEdit::ColumnMove { name, .. } => format!(" {name}: what runs on a task moved into it "),
             KanbanEdit::Filter | KanbanEdit::Report | KanbanEdit::Since => String::new(),
         }
     }
@@ -186,11 +162,6 @@ impl KanbanEdit {
                 "Completed tasks that ended before this are left out: today-14d, eow. Empty: all of them."
             }
             KanbanEdit::Text(KanbanRow::Address(_)) => "Lower case letters, digits, - and _: /kanban/<address>.",
-            KanbanEdit::ColumnFilter { .. } => "A task is in the first column whose filter matches it: +doing.",
-            KanbanEdit::ColumnMove { .. } => {
-                "A command line run on the task, without task or a filter in front: modify +doing, done, one of \
-                 your task commands; && || ; chain more than one. Empty: the column takes no cards."
-            }
             _ => "",
         }
     }
@@ -563,32 +534,30 @@ impl App {
         self.kanban_rows().get(self.kanban_row).copied()
     }
 
-    /// Save Kanban's settings to `settings.json` and read them back; say `said`, or why not.
+    /// Kanban's settings as edited, kept in the Kanban page's draft (in the file, from elsewhere); say `said`, or why
+    /// not.
     fn save_kanban(&mut self, next: &Settings, said: &str) -> bool {
-        self.save_kanban_with(next, None, said)
+        let done = self.write_settings(|t| settings::with_kanban(t, next));
+        if done {
+            said.clone_into(&mut self.status);
+        }
+        done
     }
 
-    /// Save the kanbans, and the task commands too when given, in one write.
-    fn save_kanban_with(&mut self, next: &Settings, commands: Option<&[TaskCommand]>, said: &str) -> bool {
-        if let Some(p) = &self.settings_problem {
-            self.status = format!("Not saved: put settings.json right first ({p}).");
-            return false;
-        }
-        let saved = match commands {
-            Some(list) => settings::save_kanban_and_commands(next, list),
-            None => settings::save_kanban(next),
-        };
-        match saved {
-            Ok(()) => {
-                self.read_settings();
-                said.clone_into(&mut self.status);
-                true
+    /// An action on Kanban (set it up, turn it on or off): saved at once, as on the web, with the task commands too
+    /// when given.
+    fn act_on_kanban(&mut self, next: &Settings, commands: Option<&[TaskCommand]>, said: &str) -> bool {
+        let done = self.act_on_settings(|t| {
+            let t = settings::with_kanban(t, next)?;
+            match commands {
+                Some(list) => settings::with_commands(&t, list),
+                None => Ok(t),
             }
-            Err(e) => {
-                self.status = e.to_string();
-                false
-            }
+        });
+        if done {
+            said.clone_into(&mut self.status);
         }
+        done
     }
 
     /// The lines the automatic setup writes: the UDA's, and the `kanban` report's when it adds one.
@@ -647,7 +616,7 @@ impl App {
                     let moves = kanban::usable_moves(commands, review, &uda);
                     let list = kanban::with_move_commands(commands, review, &uda);
                     let s = kanban::automatic_settings(&self.kanban, review, &uda, self.kanban_with_report, &moves);
-                    if self.save_kanban_with(&s, Some(&list), "Kanban is on, with the automatic columns.") {
+                    if self.act_on_kanban(&s, Some(&list), "Kanban is on, with the automatic columns.") {
                         self.kanban_row = 0;
                     }
                 }
@@ -658,7 +627,7 @@ impl App {
             ("settings.kanban.edit", Some(R::Manual)) => {
                 next.enabled = true;
                 next.setup = Some("manual".into());
-                self.save_kanban(&next, "Kanban is on. Its columns are yours to write.");
+                self.act_on_kanban(&next, None, "Kanban is on. Its columns are yours to write.");
             }
             ("settings.kanban.edit", Some(R::Uda)) => {
                 let uda = self.kanban.uda.clone();
@@ -682,17 +651,7 @@ impl App {
             ("settings.kanban.edit" | "settings.kanban.add", Some(R::Columns(scope))) => self.add_column(scope, None),
             ("settings.kanban.add", Some(R::Column(scope, j))) => self.add_column(scope, Some(j + 1)),
             ("settings.kanban.add", _) => self.add_column(None, None),
-            ("settings.kanban.edit", Some(R::Column(scope, j))) => {
-                let name = self.column_at(scope, j).map(|c| c.name).unwrap_or_default();
-                self.prompt(
-                    PromptKind::Kanban(KanbanEdit::ColumnName {
-                        scope,
-                        at: Some(j),
-                        ins: j,
-                    }),
-                    &name,
-                );
-            }
+            ("settings.kanban.edit", Some(R::Column(scope, j))) => self.column_form(scope, Some(j), j),
             ("settings.kanban.delete", Some(R::Column(scope, j))) => {
                 if let Some(cols) = columns_mut(&mut next, scope) {
                     if j < cols.len() {
@@ -762,7 +721,7 @@ impl App {
             }
             ("settings.kanban.off", _) if self.kanban.enabled => {
                 next.enabled = false;
-                if self.save_kanban(&next, "Kanban is off; the kanbans stay in settings.json.") {
+                if self.act_on_kanban(&next, None, "Kanban is off; the kanbans stay in settings.json.") {
                     self.kanban_row = 0;
                 }
             }
@@ -787,7 +746,7 @@ impl App {
         }
     }
 
-    fn column_at(&self, scope: Option<usize>, j: usize) -> Option<Column> {
+    pub(super) fn column_at(&self, scope: Option<usize>, j: usize) -> Option<Column> {
         let mut s = self.kanban.clone();
         columns_mut(&mut s, scope)?.get(j).cloned()
     }
@@ -803,7 +762,37 @@ impl App {
             return;
         };
         let ins = ins.unwrap_or(cols.len()).min(cols.len());
-        self.prompt(PromptKind::Kanban(KanbanEdit::ColumnName { scope, at: None, ins }), "");
+        self.column_form(scope, None, ins);
+    }
+
+    /// A column from its form: put in `scope`'s at `at` (a new one at `ins`), in the page's draft.
+    pub(super) fn save_column(&mut self, scope: Option<usize>, at: Option<usize>, ins: usize, col: Column) -> bool {
+        let mut next = self.kanban.clone();
+        let Some(cols) = columns_mut(&mut next, scope) else {
+            return false;
+        };
+        let name = col.name.clone();
+        let j = match at.filter(|&j| j < cols.len()) {
+            Some(j) => {
+                cols[j] = col;
+                j
+            }
+            None => {
+                let j = ins.min(cols.len());
+                cols.insert(j, col);
+                j
+            }
+        };
+        let done = self.save_kanban(&next, &format!("Saved the column ‘{name}’."));
+        if done {
+            self.choose_act(&crate::settingsui::Act::Kanban(
+                self.kanban_rows()
+                    .iter()
+                    .position(|r| *r == KanbanRow::Column(scope, j))
+                    .unwrap_or(self.kanban_row),
+            ));
+        }
+        done
     }
 
     /// What was typed in a kanban prompt: kept, or the prompt kept open with why not.
@@ -896,66 +885,6 @@ impl App {
                         .kanban_rows()
                         .iter()
                         .position(|r| *r == R::Name(at))
-                        .unwrap_or(self.kanban_row);
-                }
-            }
-            KanbanEdit::ColumnName { scope, at, ins } => {
-                if line.is_empty() {
-                    return refuse(self, "a column needs a name".into());
-                }
-                let filter = at
-                    .and_then(|j| self.column_at(scope, j))
-                    .map(|c| c.filter)
-                    .unwrap_or_default();
-                let name = line.to_owned();
-                self.prompt(
-                    PromptKind::Kanban(KanbanEdit::ColumnFilter { scope, at, ins, name }),
-                    &filter,
-                );
-            }
-            KanbanEdit::ColumnFilter { scope, at, ins, name } => {
-                if line.is_empty() {
-                    return refuse(self, "a column needs a filter".into());
-                }
-                let on_move = at
-                    .and_then(|j| self.column_at(scope, j))
-                    .map(|c| c.on_move)
-                    .unwrap_or_default();
-                self.prompt(
-                    PromptKind::Kanban(KanbanEdit::ColumnMove {
-                        scope,
-                        at,
-                        ins,
-                        name,
-                        filter: line.to_owned(),
-                    }),
-                    &on_move,
-                );
-            }
-            KanbanEdit::ColumnMove {
-                scope,
-                at,
-                ins,
-                name,
-                filter,
-            } => {
-                let col = kanban::column(&name, &filter, line);
-                if let Some(bad) = kanban::column_problem(&col) {
-                    return refuse(self, bad);
-                }
-                let Some(cols) = columns_mut(&mut next, scope) else {
-                    return super::Action::None;
-                };
-                match at.filter(|&j| j < cols.len()) {
-                    Some(j) => cols[j] = col,
-                    None => cols.insert(ins.min(cols.len()), col),
-                }
-                if self.save_kanban(&next, &format!("Saved the column ‘{name}’.")) {
-                    let j = at.unwrap_or(ins);
-                    self.kanban_row = self
-                        .kanban_rows()
-                        .iter()
-                        .position(|r| *r == R::Column(scope, j))
                         .unwrap_or(self.kanban_row);
                 }
             }

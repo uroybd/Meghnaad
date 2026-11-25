@@ -38,6 +38,7 @@ mod menus;
 mod prompt;
 pub mod reminders;
 pub mod selection;
+mod settings_form;
 mod settings_page;
 mod sort;
 mod taskinfo;
@@ -45,6 +46,8 @@ mod taskinfo;
 pub use export::{format_name as export_format_name, ExportBox, Row as ExportRow};
 pub use kanbans::{KanbanData, KanbanEdit, KanbanRow};
 pub use reminders::{RemindBox, RemindRow};
+pub use settings_form::{FormTarget, SettingsForm};
+pub use settings_page::{Draft, SettingsPage};
 
 /// The pages, in the order of the top bar; each is opened by its number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,14 +152,10 @@ pub enum PromptKind {
     Report,
     /// What comes after `modify` for the task under review.
     ReviewModify,
-    /// A task command's name (`Some` when changing the one at that place).
-    CommandName(Option<usize>),
-    /// What the Keybindings section shows: actions and keys with this in them.
+    /// What the Keybindings page shows: actions and keys with this in them.
     KeysSearch,
-    /// What the task command named stands for.
-    CommandLine(Option<usize>, String),
-    /// What the menus call the task command named, standing for the line (empty: its name as words).
-    CommandLabel(Option<usize>, String, String),
+    /// A progress bar's min (`true`) or max, for the UDA named (Settings → Appearance).
+    Progress(String, bool),
     /// A kanban's setting, or what the Kanban page shows a kanban with.
     Kanban(KanbanEdit),
 }
@@ -170,9 +169,8 @@ impl PromptKind {
             PromptKind::Annotate(_) | PromptKind::AnnotateMany(_) => "annotate",
             PromptKind::Filter => "filter",
             PromptKind::Report => "report",
-            PromptKind::CommandName(_) => "name",
-            PromptKind::CommandLine(..) => "command",
-            PromptKind::CommandLabel(..) => "label",
+            PromptKind::Progress(_, true) => "min",
+            PromptKind::Progress(_, false) => "max",
             PromptKind::KeysSearch => "search keys",
             PromptKind::Kanban(e) => e.label(),
         }
@@ -187,6 +185,7 @@ impl PromptKind {
                 | PromptKind::Filter
                 | PromptKind::Report
                 | PromptKind::KeysSearch
+                | PromptKind::Progress(..)
                 | PromptKind::Kanban(KanbanEdit::Filter | KanbanEdit::Report | KanbanEdit::Since)
         )
     }
@@ -199,14 +198,8 @@ impl PromptKind {
             PromptKind::AnnotateMany(_) => Some("1 annotate ".into()),
             PromptKind::ReviewModify => Some("1 modify ".into()),
             PromptKind::Console | PromptKind::Filter | PromptKind::Report => Some(String::new()),
-            PromptKind::CommandLine(..) => Some("1 ".into()),
             PromptKind::Kanban(KanbanEdit::Filter | KanbanEdit::Text(KanbanRow::Filter(_))) => Some(String::new()),
-            PromptKind::Kanban(KanbanEdit::ColumnFilter { .. }) => Some(String::new()),
-            PromptKind::Kanban(KanbanEdit::ColumnMove { .. }) => Some("1 ".into()),
-            PromptKind::CommandName(_)
-            | PromptKind::CommandLabel(..)
-            | PromptKind::KeysSearch
-            | PromptKind::Kanban(_) => None,
+            PromptKind::Progress(..) | PromptKind::KeysSearch | PromptKind::Kanban(_) => None,
         }
     }
 }
@@ -279,6 +272,17 @@ pub enum Mode {
         sel: usize,
         info: Option<Box<crate::info::Info>>,
     },
+    /// Choosing one of a setting's values (the theme, when to sync), for the row that does it.
+    Choose {
+        act: crate::settingsui::Act,
+        title: String,
+        options: Vec<(String, String)>,
+        sel: usize,
+    },
+    /// A row of a Settings list in a box, its fields together (spec 0033).
+    SettingsForm(SettingsForm),
+    /// Leaving with Settings edits not applied: apply them, drop them, or stay.
+    QuitAsk,
 }
 
 /// A key being added: the section of the keys, the search for the action and the action chosen, then the key pressed.
@@ -339,48 +343,6 @@ pub enum Action {
 }
 
 /// The sections of the Settings page, top to bottom. The keys act on the one that has the focus.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsSection {
-    General,
-    Sync,
-    Theme,
-    Commands,
-    Boards,
-    Kanban,
-    Keys,
-}
-
-impl SettingsSection {
-    pub const ALL: [SettingsSection; 7] = [
-        SettingsSection::General,
-        SettingsSection::Sync,
-        SettingsSection::Theme,
-        SettingsSection::Commands,
-        SettingsSection::Boards,
-        SettingsSection::Kanban,
-        SettingsSection::Keys,
-    ];
-
-    /// Its group of keys in the keymap, and its context there.
-    pub fn group(self) -> &'static str {
-        match self {
-            SettingsSection::General => "settings.general",
-            SettingsSection::Sync => "settings.sync",
-            SettingsSection::Theme => "settings.theme",
-            SettingsSection::Commands => "settings.commands",
-            SettingsSection::Boards => "settings.boards",
-            SettingsSection::Kanban => "settings.kanban",
-            SettingsSection::Keys => "settings.keys",
-        }
-    }
-
-    fn step(self, by: isize) -> SettingsSection {
-        let i = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
-        let n = Self::ALL.len();
-        Self::ALL[(i + n).saturating_add_signed(by) % n]
-    }
-}
-
 pub struct App {
     pub task: Task,
     pub cfg: Config,
@@ -452,7 +414,10 @@ pub struct App {
     /// How far the console is scrolled back from its end.
     pub log_back: u16,
 
-    pub settings_section: SettingsSection,
+    /// The page of Settings shown, the row chosen on each, and each page's edits not yet applied (spec 0033).
+    pub settings_page: SettingsPage,
+    pub settings_rows: [usize; SettingsPage::ALL.len()],
+    pub drafts: std::collections::BTreeMap<SettingsPage, Draft>,
     /// What is wrong with `tui.theme` or `tui.shading`, one line each.
     pub theme_errors: Vec<String>,
     /// The numeric UDAs drawn as progress bars (`appearance.progress`), and what was wrong with the rest.
@@ -472,13 +437,10 @@ pub struct App {
     pub system_mode: Option<crate::appearance::Mode>,
     last_look: i64,
     settings_stamp: Option<std::time::SystemTime>,
-    /// The task command, and the board, chosen in their sections.
+    /// The task command chosen on Commands.
     pub settings_sel: usize,
-    /// The row of General: the home page (0) or the ID fallback (1).
-    pub general_sel: usize,
     /// The tasks whose info was left for a card's (`Enter` on a dependency), latest last: `Esc` goes back to them.
     pub info_trail: Vec<String>,
-    pub settings_board: usize,
     /// The line chosen in the Keybindings section, whether it shows the default keys too, and what it is narrowed to.
     pub keys_sel: usize,
     pub keys_defaults: bool,
@@ -715,7 +677,9 @@ impl App {
             kanban_asking: false,
             log: Vec::new(),
             log_back: 0,
-            settings_section: SettingsSection::General,
+            settings_page: SettingsPage::General,
+            settings_rows: [0; SettingsPage::ALL.len()],
+            drafts: std::collections::BTreeMap::new(),
             theme_errors: Vec::new(),
             progress: std::collections::BTreeMap::new(),
             progress_errors: Vec::new(),
@@ -728,9 +692,7 @@ impl App {
             last_look: 0,
             settings_stamp: None,
             settings_sel: 0,
-            general_sel: 0,
             info_trail: Vec::new(),
-            settings_board: 0,
             keys_sel: 0,
             keys_defaults: false,
             keys_query: String::new(),
@@ -891,28 +853,14 @@ impl App {
         }
     }
 
-    /// Save where the app opens; say why not when it cannot.
-    fn save_homepage(&mut self, home: Option<&Homepage>, label: &str) {
-        if let Some(p) = &self.settings_problem {
-            self.status = format!("Not saved: put settings.json right first ({p}).");
-            return;
-        }
-        match settings::save_homepage(home) {
-            Ok(()) => {
-                self.read_settings();
-                self.status = format!(
-                    "The app opens on {}.",
-                    label.split_whitespace().collect::<Vec<_>>().join(" ")
-                );
-            }
-            Err(e) => self.status = e.to_string(),
-        }
-    }
-
     /// Read `settings.json` again: the task commands, the boards, when to sync and the theme.
     fn read_settings(&mut self) {
         self.settings_stamp = Self::settings_stamp();
-        let (settings, problem) = AppSettings::load();
+        // On Settings, the page's draft (spec 0033); else the file.
+        let (settings, problem) = match self.shown_draft() {
+            Some(d) => AppSettings::from_text(&d.text),
+            None => AppSettings::load(),
+        };
         self.settings = settings;
         self.remind = remind::Settings::from_value(&self.settings.tui.reminders);
         let (mode, odd) = self.settings.sync_mode();
@@ -1245,7 +1193,8 @@ impl App {
         // Kanban is off until it is set up: its section of Settings says how.
         if page == Page::Kanban && !self.kanban.enabled {
             self.status = "Kanban is off: set it up in Settings, Kanban.".into();
-            self.settings_section = SettingsSection::Kanban;
+            self.settings_page = SettingsPage::Kanban;
+            self.settings_rows[SettingsPage::Kanban.index()] = 0;
             self.kanban_row = 0;
             return self.open(Page::Settings);
         }
@@ -1253,7 +1202,12 @@ impl App {
             self.marks.clear();
         }
         if self.page != page {
+            // Settings shows its page's draft, every other page the file (spec 0033).
+            let drafted = !self.drafts.is_empty() && (self.page == Page::Settings || page == Page::Settings);
             self.page = page;
+            if drafted {
+                self.read_settings();
+            }
             self.scroll = 0;
             // The boards open on their list.
             self.board_open = false;
@@ -1392,6 +1346,38 @@ impl App {
                 }
                 Action::None
             }
+            Mode::Choose {
+                act,
+                title,
+                options,
+                sel,
+            } => {
+                if let Some(step) = self.step_of(key) {
+                    self.mode = Mode::Choose {
+                        sel: moved(sel, options.len(), step),
+                        act,
+                        title,
+                        options,
+                    };
+                } else if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
+                    if let Some((_, value)) = options.get(sel) {
+                        self.chose(&act, value);
+                    }
+                }
+                Action::None
+            }
+            Mode::SettingsForm(form) => self.in_settings_form(form, key),
+            Mode::QuitAsk => match key.code {
+                KeyCode::Char('a') => {
+                    if self.apply_all() {
+                        Action::Quit
+                    } else {
+                        Action::None
+                    }
+                }
+                KeyCode::Char('d') => Action::Quit,
+                _ => Action::None,
+            },
             Mode::Normal if self.review.is_some() => self.in_review(key),
             Mode::Normal => self.normal(key),
         }
@@ -1434,7 +1420,7 @@ impl App {
             Page::Kanban if self.kanban_open => "kanban",
             Page::Kanban => "kanban.list",
             Page::Console => "console",
-            Page::Settings => self.settings_section.group(),
+            Page::Settings => self.settings_page.group(),
         }
     }
 
@@ -1453,7 +1439,7 @@ impl App {
     /// To the next section (`by` 1) or the one before (-1) of what the page has: the settings' sections, a board's.
     pub(super) fn section_step(&mut self, by: isize) {
         match self.context() {
-            c if c.starts_with("settings.") => self.settings_section = self.settings_section.step(by),
+            c if c.starts_with("settings.") => self.settings_go(self.settings_page.step(by)),
             "boards" => self.scroll = section_scroll(&self.board_tops.borrow(), self.scroll, by),
             "kanban" => self.kanban_lane_step(by),
             "tasks" => {

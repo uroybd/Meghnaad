@@ -25,6 +25,7 @@ pub mod remind;
 pub mod review;
 pub mod run;
 pub mod settings;
+pub mod settingsui;
 pub mod sync;
 pub mod task;
 pub mod theme;

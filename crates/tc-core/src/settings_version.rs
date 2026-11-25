@@ -7,7 +7,7 @@
 use serde_json::{Map, Value};
 
 /// The version this build writes.
-pub const VERSION: u64 = 4;
+pub const VERSION: u64 = 5;
 
 /// The version `settings` says it is: `"version"`, or 1 for none.
 pub fn version_of(settings: &Value) -> u64 {
@@ -22,6 +22,7 @@ pub fn version_of(settings: &Value) -> u64 {
 ///   Kanban's (`kanban.icons`).
 /// - 3 → 4 (spec 0032): a task command may not be named like a command (`review` is tasksh's), so the kanban's move
 ///   command `review` is `inreview`, and the move lines that ran it run that.
+/// - 4 → 5 (spec 0033): Settings has no Boards section, so the keys of its group (`settings.boards`) go.
 pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     let root = settings.as_object()?;
     let from = version_of(settings);
@@ -37,6 +38,9 @@ pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     }
     if from < 4 {
         review_command_v3_to_v4(&mut root);
+    }
+    if from < 5 {
+        boards_section_v4_to_v5(&mut root);
     }
     root.insert("version".into(), Value::from(VERSION));
     Some(Value::Object(root))
@@ -98,6 +102,24 @@ fn review_command_v3_to_v4(root: &mut Map<String, Value>) {
     }
 }
 
+/// The terminal's Settings lost its Boards section and its one action (`settings.boards.open`): the keys bound in its
+/// group are taken out of every section of keys (`keys`, `web.keys`, `mobile.keys`, `tui.keys`).
+fn boards_section_v4_to_v5(root: &mut Map<String, Value>) {
+    const GROUP: &str = "settings.boards";
+    if let Some(keys) = root.get_mut("keys").and_then(Value::as_object_mut) {
+        keys.remove(GROUP);
+    }
+    for front in ["web", "mobile", "tui"] {
+        if let Some(keys) = root
+            .get_mut(front)
+            .and_then(|f| f.get_mut("keys"))
+            .and_then(Value::as_object_mut)
+        {
+            keys.remove(GROUP);
+        }
+    }
+}
+
 /// `kanban.columns` and `kanban.kanbans`, borrowed apart.
 fn split_kanban(kanban: &mut Map<String, Value>) -> (Option<&mut Value>, Option<&mut Vec<Value>>) {
     let mut columns = None;
@@ -151,7 +173,7 @@ mod tests {
         assert_eq!(
             new,
             json!({
-                "version": 4,
+                "version": 5,
                 "sync": "manual",
                 "keys": { "app": { "ctrl+k": "app.prompt", "/": "app.prompt" } },
                 // The old keys replaced an action's own: the default keys they left out are unbound.
@@ -167,11 +189,11 @@ mod tests {
     #[test]
     fn a_later_version_or_no_object_is_left() {
         assert_eq!(
-            migrate(&json!({ "version": 5, "keys": { "a.b": "x" } }), &defaults()),
+            migrate(&json!({ "version": 6, "keys": { "a.b": "x" } }), &defaults()),
             None
         );
         assert_eq!(migrate(&Value::Null, &defaults()), None);
-        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 4 })));
+        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 5 })));
     }
 
     #[test]
@@ -180,18 +202,18 @@ mod tests {
             json!({ "version": 2, "kanban": { "enabled": true, "icons": true }, "appearance": { "idFallback": true } });
         assert_eq!(
             migrate(&old, &defaults()).unwrap(),
-            json!({ "version": 4, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
+            json!({ "version": 5, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
         );
         let bare = json!({ "version": 2, "kanban": { "icons": false } });
         assert_eq!(
             migrate(&bare, &defaults()).unwrap(),
-            json!({ "version": 4, "kanban": {}, "appearance": { "cardIcons": false } })
+            json!({ "version": 5, "kanban": {}, "appearance": { "cardIcons": false } })
         );
         // Not a yes or no: left for the reader to report.
         let odd = json!({ "version": 2, "kanban": { "icons": "yes" } });
         assert_eq!(
             migrate(&odd, &defaults()).unwrap(),
-            json!({ "version": 4, "kanban": { "icons": "yes" } })
+            json!({ "version": 5, "kanban": { "icons": "yes" } })
         );
     }
 
@@ -209,7 +231,7 @@ mod tests {
             }
         });
         let new = migrate(&old, &defaults()).unwrap();
-        assert_eq!(new["version"], 4);
+        assert_eq!(new["version"], 5);
         assert_eq!(new["taskCommands"][1]["name"], "inreview");
         assert_eq!(new["taskCommands"][1]["icon"], "eye");
         assert_eq!(new["kanban"]["columns"][0]["move"], "inreview");
@@ -223,5 +245,18 @@ mod tests {
             migrate(&taken, &defaults()).unwrap()["taskCommands"],
             taken["taskCommands"]
         );
+    }
+
+    #[test]
+    fn version_4_keys_of_the_boards_section_go() {
+        let old = json!({
+            "version": 4,
+            "keys": { "settings.boards": { "o": "settings.boards.open" }, "app": { "Q": "app.quit" } },
+            "tui": { "keys": { "settings.boards": { "enter": null }, "tasks": { "F": "tasks.filter" } } }
+        });
+        let new = migrate(&old, &defaults()).unwrap();
+        assert_eq!(new["version"], 5);
+        assert_eq!(new["keys"], json!({ "app": { "Q": "app.quit" } }));
+        assert_eq!(new["tui"]["keys"], json!({ "tasks": { "F": "tasks.filter" } }));
     }
 }

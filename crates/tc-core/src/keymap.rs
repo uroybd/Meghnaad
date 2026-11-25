@@ -763,7 +763,7 @@ pub const PAGES: [&str; 9] = [
 
 /// Every command, vim's first (with vim's shortest forms), then the ones vim has none of. A row number (`:5`), `:$`,
 /// `:+3` and `:-3` move as in vim and are not in the table.
-pub const COMMANDS: [Command; 56] = [
+pub const COMMANDS: [Command; 59] = [
     with("tabnext", 4, &["page.next"], &[], Words::Page),
     cmd("tabprevious", 4, &["page.prev"]),
     cmd("tabNext", 4, &["page.prev"]),
@@ -826,7 +826,7 @@ pub const COMMANDS: [Command; 56] = [
             "tasks.open",
             "lists.open",
             "boards.list.open",
-            "settings.boards.open",
+            "settings.activate",
             "kanban.list.open",
             "settings.kanban.open",
         ],
@@ -919,6 +919,18 @@ pub const COMMANDS: [Command; 56] = [
         Words::None,
     ),
     cmd("home", 2, &["settings.general.home"]),
+    cmd("apply", 2, &["settings.apply"]),
+    cmd("revert", 4, &["settings.revert"]),
+    with(
+        "rule",
+        2,
+        &[],
+        &[
+            ("add", "settings.appearance.add"),
+            ("delete", "settings.appearance.delete"),
+        ],
+        Words::None,
+    ),
     cmd("syncwhen", 5, &["settings.sync.change"]),
     cmd("theme", 2, &["settings.theme.preset"]),
     cmd("shading", 2, &["settings.theme.shading"]),
@@ -1707,8 +1719,9 @@ mod tests {
             assert_eq!(m.problems, Vec::<String>::new(), "{}", p.key());
             for (context, groups) in d[p.key()]["contexts"].as_object().unwrap() {
                 let groups: Vec<&str> = groups.as_array().unwrap().iter().filter_map(Value::as_str).collect();
-                // One shadow is meant: a section's own add (a task command, a kanban column, a key) wins over adding
-                // a task, which every other page of the terminal gives `a`.
+                // Two shadows are meant: a section's own add (a task command, a kanban column, a key) wins over adding
+                // a task, which every other page of the terminal gives `a`; and on Settings, `u` reverts the page's
+                // edits rather than undoing a task's change (spec 0033).
                 let own: Vec<&String> = m
                     .keys
                     .iter()
@@ -1721,6 +1734,11 @@ mod tests {
                     .iter()
                     .filter(|(n, _)| groups.contains(&section_of(n)))
                     .flat_map(|(n, k)| k.iter().filter(move |k| *n != "app.add" || !own.contains(k)))
+                    .filter(|k| {
+                        !(groups.contains(&"settings")
+                            && k.as_str() == "u"
+                            && m.keys.get("settings.revert").is_some_and(|r| r.contains(k)))
+                    })
                     .collect();
                 let n = all.len();
                 all.sort_unstable();
@@ -1922,12 +1940,12 @@ mod tests {
     #[test]
     fn a_key_is_set_and_taken_out_and_nothing_else_moves() {
         let d = defaults();
-        let s = json!({ "version": 4, "taskCommands": [1], "web": { "theme": "dark" } });
+        let s = json!({ "version": 5, "taskCommands": [1], "web": { "theme": "dark" } });
         let one = with_binding(&s, &d, "web", "app.prompt", None, Some(&["ctrl+k".into()]));
         // The key runs the action, in its group; the default key it no longer has is unbound.
         assert_eq!(
             one,
-            json!({ "version": 4, "taskCommands": [1],
+            json!({ "version": 5, "taskCommands": [1],
                     "web": { "theme": "dark", "keys": { "app": { "ctrl+k": "app.prompt", "/": null } } } })
         );
         assert_eq!(km(&one, Platform::Web).keys_of("app.prompt"), ["ctrl+k"]);
@@ -1956,7 +1974,7 @@ mod tests {
                 None,
                 None
             ),
-            json!({ "version": 4, "keys": { "app": { "U": "app.undo", "u": null } } })
+            json!({ "version": 5, "keys": { "app": { "U": "app.undo", "u": null } } })
         );
     }
 
@@ -2305,7 +2323,7 @@ mod tests {
     #[test]
     fn a_skipped_key_can_be_taken_out() {
         let d = defaults();
-        let s = json!({ "version": 4, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
+        let s = json!({ "version": 5, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
         let b = bindings(&d, &s);
         assert_eq!(b.bad.len(), 1, "{:?}", b.bad);
         assert_eq!(
@@ -2313,7 +2331,7 @@ mod tests {
             ("z", "done takes no words")
         );
         let out = without_key(&s, &d, "general", "tasks", "z");
-        assert_eq!(out, json!({ "version": 4, "keys": { "tasks": { "x": "done" } } }));
+        assert_eq!(out, json!({ "version": 5, "keys": { "tasks": { "x": "done" } } }));
         assert!(bindings(&d, &out).bad.is_empty());
     }
 

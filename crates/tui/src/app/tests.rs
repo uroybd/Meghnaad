@@ -183,7 +183,7 @@ fn e_on_the_settings_page_opens_settings_json_in_the_editor() {
     let mut app = app();
     app.open(Page::Settings);
     assert_eq!(app.key(key(KeyCode::Char('E'))), Action::EditSettings);
-    app.settings_section = SettingsSection::Commands;
+    app.settings_page = SettingsPage::Commands;
     assert_eq!(app.key(key(KeyCode::Char('E'))), Action::EditSettings);
 }
 
@@ -386,85 +386,154 @@ fn g_and_a_number_open_pages_tab_moves_to_the_side_and_q_quits() {
     assert_eq!(app.key(key(KeyCode::Char('q'))), Action::Quit);
 }
 
-#[test]
-fn a_task_command_name_is_checked_before_its_command_is_asked() {
-    let mut app = app();
-    typing(&mut app, "g0");
-    app.key(key(KeyCode::Char(']')));
-    app.key(key(KeyCode::Char(']')));
-    app.key(key(KeyCode::Char(']')));
-    app.key(key(KeyCode::Char('a')));
-    typing(&mut app, "two words");
-    app.key(key(KeyCode::Enter));
-    assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::CommandName(None)));
-    assert_eq!(app.status, "a name is one word (no spaces)");
+/// Settings, on `page`: `]` until it is there.
+fn on_page(app: &mut App, page: SettingsPage) {
+    typing(app, "g0");
+    for _ in 0..SettingsPage::ALL.len() {
+        if app.settings_page == page {
+            return;
+        }
+        app.key(key(KeyCode::Char(']')));
+    }
+    assert_eq!(app.settings_page, page);
 }
 
 #[test]
-fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
+fn a_task_command_is_made_in_a_form_each_field_checked_as_typed() {
+    let mut app = app();
+    on_page(&mut app, SettingsPage::Commands);
+    app.key(key(KeyCode::Char('a')));
+    let Mode::SettingsForm(f) = &app.mode else {
+        panic!("a opens the form: {:?}", app.mode);
+    };
+    assert_eq!(
+        f.fields.iter().map(|x| x.label).collect::<Vec<_>>(),
+        ["Name", "Label", "Command", "Icon"]
+    );
+    typing(&mut app, "two words");
+    let Mode::SettingsForm(f) = &app.mode else {
+        panic!("still the form");
+    };
+    assert_eq!(
+        app.form_problems(f)[0].as_deref(),
+        Some("a name is one word (no spaces)"),
+        "checked as typed"
+    );
+    // Enter keeps the form open on the field that is wrong, and says why.
+    app.key(key(KeyCode::Down));
+    app.key(key(KeyCode::Enter));
+    assert!(matches!(&app.mode, Mode::SettingsForm(f) if f.at == 0));
+    assert_eq!(app.status, "a name is one word (no spaces)");
+    // A command's name is refused (spec 0032); its label can still say it.
+    let Mode::SettingsForm(mut f) = std::mem::replace(&mut app.mode, Mode::Normal) else {
+        panic!("still the form");
+    };
+    f.fields[0].input = Input::new("review");
+    f.fields[1].input = Input::new("Review");
+    assert!(app.form_problems(&f)[0]
+        .as_deref()
+        .is_some_and(|p| p.contains("is a command already")));
+    assert_eq!(app.form_problems(&f)[1], None);
+    app.mode = Mode::SettingsForm(f);
+    // Esc drops it.
+    app.key(key(KeyCode::Esc));
+    assert!(matches!(app.mode, Mode::Normal));
+}
+
+#[test]
+fn a_column_and_a_transformation_are_made_in_their_forms() {
+    let mut app = app();
+    app.column_form(None, None, 0);
+    let Mode::SettingsForm(f) = &app.mode else {
+        panic!("the column's form");
+    };
+    assert_eq!(
+        f.fields.iter().map(|x| x.label).collect::<Vec<_>>(),
+        ["Name", "Filter", "On move"]
+    );
+    let problems = app.form_problems(f);
+    assert_eq!(problems[0].as_deref(), Some("a column needs a name"));
+    assert_eq!(problems[1].as_deref(), Some("a column needs a filter"));
+    app.key(key(KeyCode::Esc));
+    app.rule_form(None);
+    let Mode::SettingsForm(mut f) = std::mem::replace(&mut app.mode, Mode::Normal) else {
+        panic!("the transformation's form");
+    };
+    assert_eq!(
+        f.fields.iter().map(|x| x.label).collect::<Vec<_>>(),
+        ["Match", "Replace", "Fields", "Condition"]
+    );
+    assert_eq!(f.fields[2].text(), "description", "it starts on the description");
+    f.fields[0].input = Input::new("(unclosed");
+    assert!(app.form_problems(&f)[0].is_some(), "the pattern is checked");
+    f.fields[0].input = Input::new(r"\b(BOR-\d+)\b");
+    assert_eq!(app.form_problems(&f), vec![None, None, None, None]);
+}
+
+#[test]
+fn settings_lists_its_pages_down_the_side_and_moves_between_them() {
     let mut app = app();
     typing(&mut app, "g0");
-    assert_eq!(app.settings_section, SettingsSection::General);
-    // General has four rows, the home page, what a task with no ID shows, the card icons and the Nerd Font; `j` goes
-    // through them, then on.
+    assert_eq!(app.settings_page, SettingsPage::General);
+    // `j` moves through the page's rows and stays on it.
     app.key(key(KeyCode::Char('j')));
-    assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 1));
-    app.key(key(KeyCode::Char('k')));
-    assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 0));
+    assert_eq!(app.settings_page, SettingsPage::General);
+    assert_eq!(app.settings_act(), Some(crate::settingsui::Act::EditFile));
+    // `]` and `[` go to the next page and the one before, round.
+    app.key(key(KeyCode::Char('[')));
+    assert_eq!(app.settings_page, SettingsPage::Sync);
+    app.key(key(KeyCode::Char(']')));
+    assert_eq!(app.settings_page, SettingsPage::General);
+    // In the side list, `j` `k` choose the page, shown at once; Enter goes into it.
+    app.key(key(KeyCode::Tab));
+    assert_eq!(app.focus, Focus::Sidebar);
     app.key(key(KeyCode::Char('j')));
     app.key(key(KeyCode::Char('j')));
-    assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 2));
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 3));
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!(app.settings_section, SettingsSection::Sync);
+    assert_eq!(app.settings_page, SettingsPage::Appearance);
+    app.key(key(KeyCode::Enter));
+    assert_eq!(app.focus, Focus::Main);
+    assert_eq!(app.context(), "settings.appearance");
+    // A page's own keys act on it only: `a` on Sync adds a task; on Commands, a command.
+    on_page(&mut app, SettingsPage::Sync);
     app.key(key(KeyCode::Char('a')));
-    assert!(
-        matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Add),
-        "a adds a task command only in its section; elsewhere it adds a task"
-    );
+    assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::Add));
     app.key(key(KeyCode::Esc));
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!(app.settings_section, SettingsSection::Theme);
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!(app.settings_section, SettingsSection::Commands);
+    on_page(&mut app, SettingsPage::Commands);
     let before = app.sync_mode;
     app.key(key(KeyCode::Char('y')));
-    assert_eq!(app.sync_mode, before, "y changes syncing only in its section");
+    assert_eq!(app.sync_mode, before, "y chooses when to sync only on Sync");
     app.key(key(KeyCode::Char('a')));
-    assert!(matches!(&app.mode, Mode::Prompt(p) if p.kind == PromptKind::CommandName(None)));
-    app.key(key(KeyCode::Esc));
-    // Moving runs through each section's rows, then on; [ and ] jump.
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!(app.settings_section, SettingsSection::Boards);
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!(app.settings_section, SettingsSection::Kanban);
-    // While Kanban is off: the UDA, whether to add a kanban report, then the two ways to set it up.
-    for _ in 0..3 {
+    assert!(matches!(app.mode, Mode::SettingsForm(_)));
+}
+
+#[test]
+fn the_page_is_drawn_full_height_and_keeps_the_row_chosen_in_view() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let mut app = app();
+    let many: Vec<String> = (0..40)
+        .map(|i| format!(r#"{{ "name": "c{i}", "command": "modify +t{i}" }}"#))
+        .collect();
+    app.settings = AppSettings::parse(&format!(r#"{{ "taskCommands": [{}] }}"#, many.join(","))).unwrap();
+    on_page(&mut app, SettingsPage::Commands);
+    let draw = |app: &App| {
+        let mut t = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        t.draw(|f| crate::ui::draw(f, app)).unwrap();
+        let b = t.backend().buffer().clone();
+        (0..30)
+            .map(|y| (0..100).map(|x| b[(x, y)].symbol().to_owned()).collect::<String>())
+            .collect::<Vec<_>>()
+    };
+    let screen = draw(&app);
+    assert!(screen.iter().any(|l| l.contains("Settings")), "the side list");
+    assert!(screen.iter().any(|l| l.contains("Keybindings")), "lists the pages");
+    assert!(!screen.iter().any(|l| l.contains("Reports")), "not the reports");
+    assert!(screen.iter().any(|l| l.contains("c0 ")));
+    for _ in 0..35 {
         app.key(key(KeyCode::Char('j')));
     }
-    assert_eq!((app.settings_section, app.kanban_row), (SettingsSection::Kanban, 3));
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!(app.settings_section, SettingsSection::Keys);
-    app.key(key(KeyCode::Char('j')));
-    assert_eq!(
-        (app.settings_section, app.keys_sel),
-        (SettingsSection::Keys, 1),
-        "the last section moves through its lines"
-    );
-    app.key(key(KeyCode::Char('k')));
-    app.key(key(KeyCode::Char('k')));
-    assert_eq!(app.settings_section, SettingsSection::Kanban);
-    for _ in 0..4 {
-        app.key(key(KeyCode::Char('k')));
-    }
-    assert_eq!(app.settings_section, SettingsSection::Boards);
-    app.key(key(KeyCode::Char('k')));
-    assert_eq!(app.settings_section, SettingsSection::Commands);
-    for _ in 0..4 {
-        app.key(key(KeyCode::Char('[')));
-    }
-    assert_eq!(app.settings_section, SettingsSection::Keys, "[ goes round");
+    let screen = draw(&app);
+    assert!(screen.iter().any(|l| l.contains("c35 ")), "scrolled to the row chosen");
+    assert!(!screen.iter().any(|l| l.contains("c0 ")), "the top scrolled away");
 }
 
 #[test]
@@ -522,9 +591,7 @@ fn ctrl_d_and_ctrl_u_move_half_a_page_and_ctrl_f_and_ctrl_b_a_page_as_in_vim() {
 fn on_keys(settings: &str) -> App {
     let mut app = app();
     app.settings = AppSettings::parse(settings).unwrap();
-    typing(&mut app, "g0");
-    app.key(key(KeyCode::Char('[')));
-    assert_eq!(app.settings_section, SettingsSection::Keys);
+    on_page(&mut app, SettingsPage::Keys);
     app
 }
 
@@ -585,8 +652,8 @@ fn the_keybindings_show_yours_then_the_defaults_and_search() {
 #[test]
 fn a_key_is_added_by_choosing_the_action_and_pressing_it() {
     let mut app = on_keys("{}");
-    // On the Terminal heading, a adds there.
-    for _ in 0..3 {
+    // On the Terminal heading (after the search and the defaults' switch), a adds there.
+    for _ in 0..5 {
         app.key(key(KeyCode::Char('j')));
     }
     assert_eq!(app.key_lines()[app.keys_sel], KeyLine::Head("tui"));
@@ -864,7 +931,7 @@ fn a_adds_a_task_from_any_page_and_the_bottom_line_says_so_where_it_does() {
     // Where a page gives `a` a meaning of its own, the bottom line doesn't say it adds a task.
     let mut app = app();
     typing(&mut app, "g0");
-    app.settings_section = SettingsSection::Commands;
+    app.settings_page = SettingsPage::Commands;
     assert!(!app.global_keys().contains("a add"), "{}", app.global_keys());
 }
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Check } from './icons';
+  import { untrack } from 'svelte';
   import { STATIC } from '../engine/flavour';
   import DevicePanel from './DevicePanel.svelte';
   import GeneralPanel from './GeneralPanel.svelte';
@@ -13,13 +15,27 @@
   let { ondirty }: { ondirty?: (dirty: boolean) => void } = $props();
   let home = $state(false);
   let keys = $state(false);
+  // AI agents waits for its Apply, as the page's other settings do (spec 0033).
+  let agents = $state(untrack(() => store.agentsOn));
+  const agentsEdited = $derived(agents !== store.agentsOn);
+  // Saved somewhere else: follow it, unless the switch has an edit.
+  let agentsBefore = untrack(() => store.agentsOn);
+  $effect(() => {
+    const now = store.agentsOn;
+    const untouched = untrack(() => agents) === agentsBefore;
+    agentsBefore = now;
+    if (untouched) agents = now;
+  });
   let agentsBusy = $state(false);
   let agentsError = $state<string | null>(null);
-  async function toggleAgents(on: boolean) {
+  let agentsDone = $state(false);
+  async function applyAgents() {
     agentsBusy = true;
     agentsError = null;
+    agentsDone = false;
     try {
-      await store.setAgents(on);
+      await store.setAgents(agents);
+      agentsDone = true;
     } catch (e) {
       agentsError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -27,7 +43,7 @@
     }
   }
   $effect(() => {
-    ondirty?.(home || keys);
+    ondirty?.(home || keys || agentsEdited);
   });
 
   const reminders = $derived(
@@ -49,12 +65,7 @@
     </p>
     <h3>AI agents</h3>
     <label class="pick">
-      <input
-        type="checkbox"
-        checked={store.agentsOn}
-        disabled={agentsBusy}
-        onchange={(e) => toggleAgents(e.currentTarget.checked)}
-      />
+      <input type="checkbox" bind:checked={agents} disabled={agentsBusy} onchange={() => (agentsDone = false)} />
       Let AI agents in this browser use the app's tools
     </label>
     <p class="dim">
@@ -63,6 +74,10 @@
       extension. Questions such as a delete still wait for you in the console.
     </p>
     {#if agentsError}<p class="err" role="alert">{agentsError}</p>{/if}
+    <div class="row">
+      <button class="primary" onclick={applyAgents} disabled={agentsBusy || !agentsEdited}>Apply</button>
+      {#if agentsDone}<span class="ok"><Check size={14} /> Saved</span>{/if}
+    </div>
     <h3>Keys</h3>
     <KeysPanel device ondirty={(v: boolean) => (keys = v)} />
   </GeneralPanel>

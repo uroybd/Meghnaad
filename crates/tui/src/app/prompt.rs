@@ -1,8 +1,8 @@
 //! The prompt and the task form: completing, checking and running what is typed.
 
 use super::{
-    edit_field, plan_chain, review, settings, split_words, Action, App, Completer, Form, Input, KeyCode, KeyEvent,
-    KeyModifiers, Mode, Phase, Prompt, PromptKind, TaskCommand, CHANGES, TERMINAL,
+    edit_field, plan_chain, review, split_words, Action, App, Completer, Form, Input, KeyCode, KeyEvent, KeyModifiers,
+    Mode, Phase, Prompt, PromptKind, CHANGES, TERMINAL,
 };
 
 impl App {
@@ -232,57 +232,12 @@ impl App {
                     r.modify(&self.task, line, self.width);
                 }
             }
-            PromptKind::CommandName(at) => {
-                let taken = self
-                    .settings
-                    .task_commands
-                    .iter()
-                    .enumerate()
-                    .any(|(i, c)| c.name == line && Some(i) != *at);
-                let problem = settings::name_problem(line)
-                    .or_else(|| taken.then(|| format!("there is already a command named {line}")));
-                if let Some(e) = problem {
+            PromptKind::Kanban(edit) => return self.submit_kanban(p, *edit, line),
+            PromptKind::Progress(name, low) => {
+                if let Err(e) = self.set_progress(name, *low, line) {
                     self.status = e;
                     self.reopen(p);
                     return Action::None;
-                }
-                let command = at
-                    .and_then(|i| self.settings.task_commands.get(i))
-                    .map(|c| c.command.clone())
-                    .unwrap_or_default();
-                self.prompt(PromptKind::CommandLine(*at, line.to_owned()), &command);
-            }
-            PromptKind::Kanban(edit) => return self.submit_kanban(p, edit.clone(), line),
-            PromptKind::CommandLine(at, name) => {
-                if let Some(e) = settings::command_problem(line) {
-                    self.status = e;
-                    self.reopen(p);
-                    return Action::None;
-                }
-                let label = at
-                    .and_then(|i| self.settings.task_commands.get(i))
-                    .and_then(|c| c.label.clone())
-                    .unwrap_or_default();
-                self.prompt(PromptKind::CommandLabel(*at, name.clone(), line.to_owned()), &label);
-            }
-            PromptKind::CommandLabel(at, name, command) => {
-                let mut list = self.settings.task_commands.clone();
-                let icon = at.and_then(|i| list.get(i)).and_then(|c| c.icon.clone());
-                let c = TaskCommand {
-                    name: name.clone(),
-                    command: command.clone(),
-                    icon,
-                    label: (!line.is_empty()).then(|| line.to_owned()),
-                };
-                match at.filter(|&i| i < list.len()) {
-                    Some(i) => list[i] = c,
-                    None => {
-                        list.push(c);
-                        self.settings_sel = list.len() - 1;
-                    }
-                }
-                if self.save_commands(list) {
-                    self.status = format!("Saved the task command ‘{name}’.");
                 }
             }
         }

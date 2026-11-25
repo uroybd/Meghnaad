@@ -386,6 +386,14 @@ impl AppSettings {
 
     /// The settings kept on this machine; none when there is no file. A file that is not settings is said, and read
     /// as none.
+    /// The settings in `text`, a page's draft of the file (spec 0033), and what is wrong with it.
+    pub fn from_text(text: &str) -> (AppSettings, Option<String>) {
+        match AppSettings::parse(text) {
+            Ok(s) => (s, None),
+            Err(e) => (AppSettings::default(), Some(format!("settings.json: {e}"))),
+        }
+    }
+
     pub fn load() -> (AppSettings, Option<String>) {
         let Some(path) = path() else {
             return (AppSettings::default(), None);
@@ -420,7 +428,7 @@ fn migrated(path: &std::path::Path, text: String) -> String {
 }
 
 /// A Lucide icon's name: lower case words joined by dashes (`circle-x`, `arrow-up-0-1`).
-fn icon_name(s: &str) -> bool {
+pub fn icon_name(s: &str) -> bool {
     !s.is_empty()
         && s.split('-')
             .all(|w| !w.is_empty() && w.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()))
@@ -753,28 +761,6 @@ pub fn with_kanban(text: &str, kanban: &crate::kanban::Settings) -> Result<Strin
     written(raw)
 }
 
-/// Save the kanbans to `settings.json`, keeping the rest of the file.
-///
-/// # Errors
-///
-/// As [`save_commands`].
-pub fn save_kanban(kanban: &crate::kanban::Settings) -> Result<(), SettingsError> {
-    save(|text| with_kanban(text, kanban))
-}
-
-/// Save the kanbans and the task commands in one write (the automatic setup adds its moves as commands), keeping the
-/// rest of the file.
-///
-/// # Errors
-///
-/// As [`save_commands`].
-pub fn save_kanban_and_commands(
-    kanban: &crate::kanban::Settings,
-    commands: &[TaskCommand],
-) -> Result<(), SettingsError> {
-    save(|text| with_kanban(&with_commands(text, commands)?, kanban))
-}
-
 /// `text` with `tui.sync` set to `mode` (and the old top-level `sync` gone), and every other key as it was.
 ///
 /// # Errors
@@ -808,15 +794,6 @@ pub fn with_homepage(text: &str, home: Option<&Homepage>) -> Result<String, Sett
         None => raw.remove("homepage"),
     };
     written(raw)
-}
-
-/// Save where the app opens to `settings.json` (none: `next`, the default), keeping the rest of the file.
-///
-/// # Errors
-///
-/// As [`save_commands`].
-pub fn save_homepage(home: Option<&Homepage>) -> Result<(), SettingsError> {
-    save(|text| with_homepage(text, home))
 }
 
 /// `text` with `tui` changed by `edit`, and every other key as it was (the old top-level `sync` moved into `tui`).
@@ -891,29 +868,11 @@ fn written(mut raw: Map<String, Value>) -> Result<String, SettingsError> {
     Ok(out)
 }
 
-/// Save the task commands to `settings.json`, keeping the rest of the file.
-///
-/// # Errors
-///
-/// There is no config folder, the file is not settings, or it could not be written.
-pub fn save_commands(commands: &[TaskCommand]) -> Result<(), SettingsError> {
-    save(|text| with_commands(text, commands))
-}
-
-/// Save when to sync to `settings.json`, keeping the rest of the file.
-///
-/// # Errors
-///
-/// As [`save_commands`].
-pub fn save_sync(mode: SyncMode) -> Result<(), SettingsError> {
-    save_tui("sync", Value::String(mode.key().into()))
-}
-
 /// Save `tui.<key>` to `settings.json`, keeping the rest of the file.
 ///
 /// # Errors
 ///
-/// As [`save_commands`].
+/// When there is no config folder, the file can't be read or written, or is not settings.
 pub fn save_tui(key: &str, value: Value) -> Result<(), SettingsError> {
     save(|text| with_tui(text, key, value))
 }
@@ -929,29 +888,7 @@ pub fn with_id_fallback(text: &str, on: bool) -> Result<String, SettingsError> {
 
 /// `text` with the yes-or-no `appearance.<key>` on (`true`) or taken out (off, the default), the rest as it was.
 fn with_appearance_flag(text: &str, key: &str, on: bool) -> Result<String, SettingsError> {
-    let mut raw = object(text)?;
-    let appearance = raw.entry("appearance").or_insert_with(|| Value::Object(Map::new()));
-    let Some(a) = appearance.as_object_mut() else {
-        return Err(SettingsError::NotSettings("appearance must be an object".into()));
-    };
-    if on {
-        a.insert(key.into(), Value::Bool(true));
-    } else {
-        a.remove(key);
-    }
-    if a.is_empty() {
-        raw.remove("appearance");
-    }
-    written(raw)
-}
-
-/// Save `appearance.idFallback`, keeping the rest of the file.
-///
-/// # Errors
-///
-/// As [`save_commands`].
-pub fn save_id_fallback(on: bool) -> Result<(), SettingsError> {
-    save(|text| with_id_fallback(text, on))
+    with_appearance(text, key, on.then_some(Value::Bool(true)))
 }
 
 /// `text` with `appearance.cardIcons` on (`true`) or taken out (off, the default), and every other key as it was.
@@ -961,15 +898,6 @@ pub fn save_id_fallback(on: bool) -> Result<(), SettingsError> {
 /// As [`with_id_fallback`].
 pub fn with_card_icons(text: &str, on: bool) -> Result<String, SettingsError> {
     with_appearance_flag(text, "cardIcons", on)
-}
-
-/// Save `appearance.cardIcons`, keeping the rest of the file.
-///
-/// # Errors
-///
-/// As [`save_commands`].
-pub fn save_card_icons(on: bool) -> Result<(), SettingsError> {
-    save(|text| with_card_icons(text, on))
 }
 
 /// `text` with `tui.nerdFont` on (`true`) or taken out (off, the default), and every other key as it was.
@@ -987,31 +915,136 @@ pub fn with_nerd_font(text: &str, on: bool) -> Result<String, SettingsError> {
     })
 }
 
-/// Save `tui.nerdFont`, keeping the rest of the file.
+/// `text` with the theme's preset `word` (`auto`, `light`, `dark`, `mono`): the `base` of a theme with roles of its own,
+/// else the theme itself.
 ///
 /// # Errors
 ///
-/// As [`save_commands`].
-pub fn save_nerd_font(on: bool) -> Result<(), SettingsError> {
-    save(|text| with_nerd_font(text, on))
+/// As [`with_commands`].
+pub fn with_theme_preset(text: &str, word: &str) -> Result<String, SettingsError> {
+    with_tui_edit(text, |tui| match tui.get_mut("theme") {
+        Some(Value::Object(roles)) => {
+            roles.insert("base".into(), Value::String(word.into()));
+        }
+        _ => {
+            tui.insert("theme".into(), Value::String(word.into()));
+        }
+    })
 }
 
-/// Save the theme's preset: `tui.theme` itself when it is a name, its `base` when it sets roles of its own (which are kept).
+/// `text` with `appearance.<key>` set to `value`, or taken out (`None`), the rest as it was; an `appearance` left empty
+/// goes.
+fn with_appearance(text: &str, key: &str, value: Option<Value>) -> Result<String, SettingsError> {
+    let mut raw = object(text)?;
+    let appearance = raw.entry("appearance").or_insert_with(|| Value::Object(Map::new()));
+    let Some(a) = appearance.as_object_mut() else {
+        return Err(SettingsError::NotSettings("appearance must be an object".into()));
+    };
+    match value {
+        Some(v) => {
+            a.insert(key.into(), v);
+        }
+        None => {
+            a.remove(key);
+        }
+    }
+    if a.is_empty() {
+        raw.remove("appearance");
+    }
+    written(raw)
+}
+
+/// `text` with the progress bars (`appearance.progress`): a numeric UDA's range each.
 ///
 /// # Errors
 ///
-/// As [`save_commands`].
-pub fn save_theme_preset(word: &str) -> Result<(), SettingsError> {
-    save(|text| {
-        with_tui_edit(text, |tui| match tui.get_mut("theme") {
-            Some(Value::Object(roles)) => {
-                roles.insert("base".into(), Value::String(word.into()));
+/// As [`with_commands`].
+pub fn with_progress(text: &str, bars: &BTreeMap<String, Progress>) -> Result<String, SettingsError> {
+    let map: Map<String, Value> = bars
+        .iter()
+        .map(|(name, p)| (name.clone(), serde_json::json!({ "min": p.min, "max": p.max })))
+        .collect();
+    with_appearance(text, "progress", (!map.is_empty()).then_some(Value::Object(map)))
+}
+
+/// `text` with the field transformations (`appearance.transformations`), in order.
+///
+/// # Errors
+///
+/// As [`with_commands`].
+pub fn with_transformations(text: &str, rules: &[Rule]) -> Result<String, SettingsError> {
+    let list: Vec<Value> = rules
+        .iter()
+        .map(|r| {
+            let mut o = Map::new();
+            o.insert("match".into(), r.pattern.clone().into());
+            o.insert("replace".into(), r.replace.clone().into());
+            o.insert("fields".into(), r.fields.clone().into());
+            if let Some(c) = r.condition() {
+                o.insert("condition".into(), c.into());
             }
-            _ => {
-                tui.insert("theme".into(), Value::String(word.into()));
-            }
+            Value::Object(o)
         })
+        .collect();
+    with_appearance(
+        text,
+        "transformations",
+        (!list.is_empty()).then_some(Value::Array(list)),
+    )
+}
+
+/// The file's text as it is now, empty when there is none.
+///
+/// # Errors
+///
+/// When there is no config folder, or the file is there and can't be read.
+pub fn read_text() -> Result<String, SettingsError> {
+    let path = path().ok_or(SettingsError::NoConfigFolder)?;
+    match std::fs::read_to_string(&path) {
+        Ok(t) => Ok(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(io_at(&path)(e)),
+    }
+}
+
+/// Apply a page's edits (spec 0033): `edited` is the file as the page left it, `base` as it was when the page began.
+/// What the page changed is laid over the file as it is now; everything it didn't change stays as the file has it now,
+/// so another page's apply, a sync or an editor in between is kept.
+///
+/// # Errors
+///
+/// When there is no config folder, the file can't be read or written, or is not settings.
+pub fn apply(base: &str, edited: &str) -> Result<(), SettingsError> {
+    let (base, edited) = (Value::Object(object(base)?), Value::Object(object(edited)?));
+    save(|now| {
+        let now = Value::Object(object(now)?);
+        match changed(Some(&now), Some(&base), Some(&edited)) {
+            Some(Value::Object(out)) => written(out),
+            _ => written(Map::new()),
+        }
     })
+}
+
+/// `edited` where it differs from `base`, else `now` (`None`: not there). Objects are gone through key by key; a list
+/// that changed is merged entry by entry ([`merge`]), so an entry keeps what this app doesn't know of it.
+fn changed(now: Option<&Value>, base: Option<&Value>, edited: Option<&Value>) -> Option<Value> {
+    if edited == base {
+        return now.cloned();
+    }
+    match (now, base, edited) {
+        (Some(Value::Object(n)), Some(Value::Object(b)), Some(Value::Object(e))) => {
+            let mut out = Map::new();
+            let keys: Vec<&String> = n.keys().chain(e.keys().filter(|k| !n.contains_key(*k))).collect();
+            for k in keys {
+                if let Some(v) = changed(n.get(k), b.get(k), e.get(k)) {
+                    out.insert(k.clone(), v);
+                }
+            }
+            Some(Value::Object(out))
+        }
+        (Some(n @ Value::Array(_)), b, Some(e @ Value::Array(_))) => Some(merge(n, b, e)),
+        _ => edited.cloned(),
+    }
 }
 
 /// `text` with an action's keys in a section of the keys (`general`, `web`, `mobile` or `tui`) set (`[]` for none), or
@@ -1033,16 +1066,15 @@ pub fn with_binding(text: &str, section: &str, action: &str, keys: Option<&[Stri
     written(raw)
 }
 
-/// Save an action's keys in a section of the keys to `settings.json`, keeping the rest of the file.
+/// Edit the file: `edit` (a `with_*`) on its text as it is now, written back.
 ///
 /// # Errors
 ///
-/// As [`save_commands`].
-pub fn save_binding(section: &str, action: &str, keys: Option<&[String]>) -> Result<(), SettingsError> {
-    save(|text| with_binding(text, section, action, keys))
+/// When there is no config folder, the file can't be read or written, or `edit` refuses it.
+pub fn save_edit(edit: impl FnOnce(&str) -> Result<String, SettingsError>) -> Result<(), SettingsError> {
+    save(edit)
 }
 
-/// Write `settings.json` in place as `edit` makes it from what is there.
 fn save(edit: impl FnOnce(&str) -> Result<String, SettingsError>) -> Result<(), SettingsError> {
     let path = path().ok_or(SettingsError::NoConfigFolder)?;
     let text = match std::fs::read_to_string(&path) {

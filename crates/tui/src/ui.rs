@@ -6,7 +6,7 @@
 use crate::ansi;
 use crate::app::{
     now, App, ExportBox, ExportRow, Focus, KeyAdd, KeyLine, Mode, Page, Prompt, PromptKind, RemindBox, RemindRow,
-    SettingsSection, SortEdit,
+    SettingsForm, SettingsPage, SortEdit,
 };
 use crate::form::{self, Form, Kind};
 use crate::md;
@@ -176,6 +176,22 @@ fn screen(f: &mut Frame, app: &App) {
             }
             picker(f, " open link ", options, *sel, main);
         }
+        Mode::Choose {
+            title, options, sel, ..
+        } => {
+            let names: Vec<String> = options.iter().map(|o| o.0.clone()).collect();
+            picker(f, title, &names, *sel, main);
+        }
+        Mode::SettingsForm(form) => settings_form_box(f, app, form, main),
+        Mode::QuitAsk => {
+            let pages: Vec<&str> = app.edited_pages().into_iter().map(SettingsPage::title).collect();
+            let lines = vec![
+                format!("Edits not applied on {}.", pages.join(", ")),
+                String::new(),
+                "a apply them and quit · d drop them and quit · any other key stays".to_owned(),
+            ];
+            titled_box(f, " Quit? ", &lines, main);
+        }
         _ => {}
     }
     // How many tasks are marked, in front of what was last said.
@@ -224,6 +240,12 @@ fn screen(f: &mut Frame, app: &App) {
             f.render_widget(hints(keys), dock);
         }
         Mode::ExportPick { .. } => f.render_widget(hints("↑/↓ choose · ↵ export it · Esc cancel"), dock),
+        Mode::Choose { .. } => f.render_widget(hints("↑/↓ choose · ↵ keep it · Esc cancel"), dock),
+        Mode::QuitAsk => f.render_widget(hints("a apply and quit · d drop and quit · any other key stays"), dock),
+        Mode::SettingsForm(_) => f.render_widget(
+            hints("↑/↓ field · Tab complete or next · ↵ keep · Esc cancel · Ctrl+U clear"),
+            dock,
+        ),
         Mode::Reminders(b) => {
             let keys = if b.asking {
                 "↵ add it to your taskrc · any other key back"
@@ -365,6 +387,14 @@ fn ago(secs: i64) -> String {
 }
 
 fn sidebar(f: &mut Frame, app: &App, area: Rect) {
+    if app.page == Page::Settings {
+        let focused = app.focus == Focus::Sidebar;
+        let mut block = pane("Settings", focused);
+        if focused {
+            block = block.title_bottom(border_hints(&app.view_keys("sidebar"), room(area, 0)));
+        }
+        return crate::settingsui::sidebar(f, app, area, block);
+    }
     let names = app.report_names();
     let items: Vec<ListItem> = names
         .iter()
@@ -728,270 +758,22 @@ fn items(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-/// The Settings page: a pane for each section, the focused one in the accent with its keys in its border.
+/// The Settings page: the page chosen in the side list, at full height (spec 0033).
 fn settings(f: &mut Frame, app: &App, area: Rect) {
-    use SettingsSection as S;
-    let here = |s: S| app.focus == Focus::Main && app.settings_section == s;
-    let section = |title: &str, s: S| {
-        let b = pane(title, here(s)).padding(Padding::horizontal(1));
-        if here(s) {
-            b.title_bottom(border_hints(&app.view_keys(s.group()), area.width.saturating_sub(4)).right_aligned())
-        } else {
-            b
-        }
-    };
-    let rows = |n: usize, most: u16| u16::try_from(n).unwrap_or(most).clamp(1, most) + 2;
-    let commands = app.settings.task_commands.len();
-    let t = theme::current();
-    let swatches = theme_lines(&t);
-    let theme_rows = u16::try_from(swatches.len() + app.theme_errors.len()).unwrap_or(4) + 2;
-    let problems = u16::try_from(
-        app.settings_problem.as_deref().map_or(0, |p| p.lines().count())
-            + app.settings.command_errors.len()
-            + app.keymap.problems.len()
-            + app.progress_errors.len()
-            + app.transform_errors.len()
-            + app.condition_errors.len(),
-    )
-    .unwrap_or(0);
-    let kanban_lines = crate::kanbanui::settings_lines(app);
-    let [general, sync, theme_area, cmds, boards, kanban_area, keys_area] = Layout::vertical([
-        Constraint::Length(6 + problems),
-        Constraint::Length(3),
-        Constraint::Length(theme_rows),
-        Constraint::Length(rows(commands, 10) + 1),
-        Constraint::Length(rows(app.boards.len() + app.board_errors.len(), 6)),
-        Constraint::Length(rows(kanban_lines.len(), 12)),
-        Constraint::Min(6),
-    ])
-    .areas(area);
-
-    // The file itself, where it is and what is wrong with it; the home page and the progress bars, shared with the web
-    // app and the phone.
-    let path = crate::settings::path().map_or_else(|| "no config folder".to_owned(), |p| p.display().to_string());
-    let bars = if app.progress.is_empty() {
-        "none (appearance.progress in settings.json)".to_owned()
-    } else {
-        app.progress
-            .iter()
-            .map(|(name, p)| format!("{name} {}–{}", p.min, p.max))
-            .collect::<Vec<_>>()
-            .join(" · ")
-    };
-    let mut lines = vec![
-        Line::from(vec![
-            Span::from("Home page      ").quiet(),
-            Span::styled(
-                app.homepage_label(),
-                if here(S::General) && app.general_sel == 0 {
-                    theme::selected()
-                } else {
-                    Style::new().bold()
-                },
-            ),
-        ]),
-        Line::from(vec![
-            Span::from("No ID          ").quiet(),
-            Span::styled(
-                if app.id_fallback {
-                    "the short uuid (appearance.idFallback)"
-                } else {
-                    "- as task shows it"
-                },
-                if here(S::General) && app.general_sel == 1 {
-                    theme::selected()
-                } else {
-                    Style::new()
-                },
-            ),
-        ]),
-        Line::from(vec![
-            Span::from("Card icons     ").quiet(),
-            Span::styled(
-                if app.settings.card_icons() {
-                    "on: a symbol each, a UDA as a badge (appearance.cardIcons)"
-                } else {
-                    "off: the report's labels"
-                },
-                if here(S::General) && app.general_sel == 2 {
-                    theme::selected()
-                } else {
-                    Style::new()
-                },
-            ),
-        ]),
-        Line::from(vec![
-            Span::from("Nerd Font      ").quiet(),
-            Span::styled(
-                if app.settings.nerd_font() {
-                    "on: icons from the terminal's Nerd Font (tui.nerdFont)"
-                } else {
-                    "off: plain symbols"
-                },
-                if here(S::General) && app.general_sel == 3 {
-                    theme::selected()
-                } else {
-                    Style::new()
-                },
-            ),
-        ]),
-        Line::from(vec![Span::from("Progress bars  ").quiet(), Span::from(bars)]),
-        Line::from(vec![
-            Span::from("Transforms     ").quiet(),
-            Span::from(match app.transformations.len() {
-                0 => "none (appearance.transformations in settings.json)".to_owned(),
-                1 => "1 rule".to_owned(),
-                n => format!("{n} rules"),
-            }),
-        ]),
-    ];
-    // Errors, which stop the file being used or saved over, then what can't be used, which is kept in it.
-    if let Some(p) = &app.settings_problem {
-        lines.extend(p.lines().map(|l| Line::from(l.to_owned()).bad()));
+    let focused = app.focus == Focus::Main;
+    let p = app.settings_page;
+    let mut block = pane(p.title(), focused);
+    if app.page_edited(p) {
+        block = block.title_top(note("edited · Ctrl+S applies · u reverts"));
     }
-    lines.extend(
-        app.settings
-            .command_errors
-            .iter()
-            .chain(&app.keymap.problems)
-            .chain(&app.progress_errors)
-            .chain(&app.transform_errors)
-            .chain(&app.condition_errors)
-            .map(|p| Line::from(p.clone()).bad()),
-    );
-    f.render_widget(
-        Paragraph::new(lines).block(section("General", S::General).title_top(note(&path))),
-        general,
-    );
-
-    let lines = vec![Line::from(vec![
-        Span::from("When to sync  ").quiet(),
-        Span::styled(
-            app.sync_mode.label().to_owned(),
-            if here(S::Sync) {
-                theme::selected()
-            } else {
-                Style::new().bold()
-            },
-        ),
-    ])];
-    f.render_widget(Paragraph::new(lines).block(section("Sync", S::Sync)), sync);
-
-    let mut lines = swatches;
-    lines.extend(app.theme_errors.iter().map(|e| Line::from(e.clone()).bad()));
-    f.render_widget(
-        Paragraph::new(lines).block(section("Theme", S::Theme).title_top(note("tui.theme in settings.json"))),
-        theme_area,
-    );
-
-    let block = section("Task commands", S::Commands);
-    let inner = block.inner(cmds);
-    f.render_widget(block, cmds);
-    let [head, body] = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
-    f.render_widget(
-        Line::from("A name typed at the command line runs what it stands for (`3 fail`).").quiet(),
-        head,
-    );
-    if commands == 0 {
-        f.render_widget(Paragraph::new("None yet: a adds one.").quiet(), body);
-    } else {
-        let items: Vec<ListItem> = app
-            .settings
-            .task_commands
-            .iter()
-            .map(|c| {
-                ListItem::new(Line::from(vec![
-                    Span::from(format!("{:<14}", c.name)).bold(),
-                    Span::from(format!("{:<20}", c.label())).quiet(),
-                    Span::from(c.command.clone()),
-                ]))
-            })
-            .collect();
-        f.render_stateful_widget(
-            List::new(items)
-                .highlight_style(if here(S::Commands) {
-                    theme::selected()
-                } else {
-                    Style::new()
-                })
-                .highlight_symbol(MARK)
-                .highlight_spacing(HighlightSpacing::Always),
-            body,
-            &mut ListState::default().with_selected(here(S::Commands).then_some(app.settings_sel)),
-        );
+    if focused {
+        block = block.title_bottom(border_hints(&app.view_keys(p.group()), room(area, 0)));
     }
-
-    let mut items: Vec<ListItem> = app
-        .boards
-        .iter()
-        .map(|b| {
-            ListItem::new(Line::from(vec![
-                Span::from(format!("{:<20}", b.name)).bold(),
-                Span::from(format!("{} sections", b.sections.len())).quiet(),
-            ]))
-        })
-        .collect();
-    items.extend(
-        app.board_errors
-            .iter()
-            .map(|e| ListItem::new(Line::from(e.clone()).bad())),
-    );
-    if items.is_empty() {
-        items.push(ListItem::new(
-            Line::from("None: make them on the web app and copy its settings.json here.").quiet(),
-        ));
-    }
-    f.render_stateful_widget(
-        List::new(items)
-            .block(section("Boards", S::Boards))
-            .highlight_style(if here(S::Boards) {
-                theme::selected()
-            } else {
-                Style::new()
-            })
-            .highlight_symbol(MARK)
-            .highlight_spacing(HighlightSpacing::Always),
-        boards,
-        &mut ListState::default()
-            .with_selected((here(S::Boards) && !app.boards.is_empty()).then_some(app.settings_board)),
-    );
-
-    f.render_stateful_widget(
-        List::new(kanban_lines)
-            .block(section("Kanban", S::Kanban).title_top(note(if app.kanban.enabled { "on" } else { "off" })))
-            .highlight_style(if here(S::Kanban) {
-                theme::selected()
-            } else {
-                Style::new()
-            })
-            .highlight_symbol(MARK)
-            .highlight_spacing(HighlightSpacing::Always),
-        kanban_area,
-        &mut ListState::default().with_selected(here(S::Kanban).then_some(app.kanban_row)),
-    );
-
-    let block = section("Keybindings", S::Keys).title_top(note(&if app.keys_query.is_empty() {
-        if app.keys_defaults {
-            "yours and the defaults".to_owned()
-        } else {
-            "yours".to_owned()
-        }
-    } else {
-        format!("search: {}", app.keys_query)
-    }));
-    f.render_stateful_widget(
-        List::new(key_items(app))
-            .block(block)
-            .highlight_style(if here(S::Keys) { theme::selected() } else { Style::new() })
-            .highlight_symbol(MARK)
-            .highlight_spacing(HighlightSpacing::Always),
-        keys_area,
-        &mut ListState::default().with_selected(here(S::Keys).then_some(app.keys_sel)),
-    );
+    crate::settingsui::page(f, app, area, block);
 }
 
 /// `text` in lines of at most `width` characters, broken between words.
-fn wrap(text: &str, width: usize) -> Vec<String> {
+pub(crate) fn wrap(text: &str, width: usize) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for word in text.split_whitespace() {
         match lines.last_mut() {
@@ -1030,16 +812,16 @@ fn key_spans(keys: &[String], muted: bool) -> Vec<Span<'static>> {
 }
 
 /// The lines of the Keybindings section: each section's heading, then its actions.
-fn key_items(app: &App) -> Vec<ListItem<'static>> {
+pub(crate) fn key_items(app: &App) -> Vec<Line<'static>> {
     app.key_lines()
         .into_iter()
         .map(|line| match line {
             KeyLine::Head(id) => {
                 let (title, at) = key_section_title(id);
-                ListItem::new(Line::from(vec![
+                Line::from(vec![
                     Span::from(title).bold(),
                     Span::from(format!("  {at}  · a adds")).quiet(),
-                ]))
+                ])
             }
             KeyLine::Row(_, b) => {
                 let mut spans = vec![Span::from("  ")];
@@ -1059,20 +841,20 @@ fn key_items(app: &App) -> Vec<ListItem<'static>> {
                     spans.push(Span::from("  · default ").quiet());
                     spans.extend(key_spans(&b.defaults, true));
                 }
-                ListItem::new(Line::from(spans))
+                Line::from(spans)
             }
-            KeyLine::CommandsHead => ListItem::new(Line::from(vec![
+            KeyLine::CommandsHead => Line::from(vec![
                 Span::from("Commands").bold(),
                 Span::from(format!(
                     "  a key runs one with its words (\"g h\": \"filter +home\")  · more: {}",
                     crate::keys::commands_docs()
                 ))
                 .quiet(),
-            ])),
-            KeyLine::Command(name, what) => ListItem::new(Line::from(vec![
+            ]),
+            KeyLine::Command(name, what) => Line::from(vec![
                 Span::from(format!("  {name}  ")).style(theme::accent()),
                 Span::from(what).quiet(),
-            ])),
+            ]),
         })
         .collect()
 }
@@ -1156,7 +938,7 @@ fn key_add_box(f: &mut Frame, app: &App, add: &KeyAdd, main: Rect) {
 }
 
 /// The theme as it is drawn: each role of the app's in its style, then Taskwarrior's own, then the shading.
-fn theme_lines(t: &theme::Theme) -> Vec<Line<'static>> {
+pub(crate) fn theme_lines(t: &theme::Theme) -> Vec<Line<'static>> {
     let chip = |name: &str, style: Style| vec![Span::styled(format!(" {name} "), style), Span::from("  ")];
     let selected = match t.selected {
         theme::Selected::Reverse => "reverse",
@@ -1333,6 +1115,11 @@ fn question_box(f: &mut Frame, q: &crate::task::Question, main: Rect) {
 /// A warning `task` printed besides its first line (`dependency.reminder`), as the web app's toast says it: a box with a
 /// border in `color.warning` (the `bad` role when the taskrc has none), over the page until a key is pressed.
 fn notice_box(f: &mut Frame, lines: &[String], main: Rect) {
+    titled_box(f, " task warns ", lines, main);
+}
+
+/// A box of `lines` over the page, titled, in the warning colour.
+fn titled_box(f: &mut Frame, title: &str, lines: &[String], main: Rect) {
     let w = main.width.min(72);
     let h = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX).min(main.height);
     let area = Rect::new(
@@ -1343,7 +1130,7 @@ fn notice_box(f: &mut Frame, lines: &[String], main: Rect) {
     );
     let t = theme::current();
     let colour = if t.warning.fg.is_some() { t.warning } else { t.bad };
-    let block = boxed(" task warns ".into()).border_style(colour);
+    let block = boxed(title.to_owned()).border_style(colour);
     f.render_widget(Clear, area);
     f.render_widget(
         Paragraph::new(lines.iter().map(|l| Line::from(l.clone())).collect::<Vec<_>>()).block(block),
@@ -2118,14 +1905,6 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
             format!(" annotate {} tasks ", uuids.len()),
             vec![Line::from("The same note is added to each.").quiet()],
         ),
-        PromptKind::CommandName(_) => (
-            " task command: its name ".to_owned(),
-            vec![Line::from("One word, typed at the command line in place of what it stands for.").quiet()],
-        ),
-        PromptKind::CommandLine(_, name) => (
-            format!(" task command: what {name} stands for "),
-            vec![Line::from("A command line without task in front; && || ; chain more than one.").quiet()],
-        ),
         PromptKind::Kanban(e) => (
             e.title(),
             wrap(e.help(), usize::from(main.width.saturating_sub(8).min(80)))
@@ -2189,6 +1968,75 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         let below = main.y + main.height - (line.y + 1);
         let h = menu_height(m).min(below);
         menu(f, m, Rect::new(x, line.y + 1, MENU_WIDTH.min(main.width), h));
+    }
+}
+
+/// What the reminder options come to, in a few words (Settings → This device).
+pub(crate) fn remind_summary(app: &App) -> String {
+    if app.remind.on {
+        format!("on, {} before", format_seconds(app.remind.lead_minutes * 60))
+    } else {
+        "off".to_owned()
+    }
+}
+
+/// A row of a Settings list in a box (spec 0033): each field's label, what is typed in it, then what it takes or what
+/// is wrong with it.
+fn settings_form_box(f: &mut Frame, app: &App, form: &SettingsForm, main: Rect) {
+    let width = main.width.saturating_sub(4).min(90);
+    let problems = app.form_problems(form);
+    let room = usize::from(width.saturating_sub(4));
+    let mut lines: Vec<Line> = Vec::new();
+    let mut caret = None;
+    for (i, (field, problem)) in form.fields.iter().zip(&problems).enumerate() {
+        let here = i == form.at;
+        lines.push(Line::from(Span::styled(
+            field.label,
+            if here { theme::accent() } else { Style::new().bold() },
+        )));
+        if here {
+            let before: String = field.input.line.chars().take(field.input.caret_chars()).collect();
+            caret = Some((lines.len(), 2 + before.chars().count()));
+        }
+        lines.push(Line::from(vec![
+            Span::styled("› ", if here { theme::accent() } else { Style::new() }),
+            Span::from(field.input.line.clone()),
+        ]));
+        let under = match problem {
+            Some(p) => vec![Line::from(p.clone()).bad()],
+            None => wrap(field.hint, room)
+                .into_iter()
+                .map(|l| Line::from(l).quiet())
+                .collect(),
+        };
+        lines.extend(under);
+        if i + 1 < form.fields.len() {
+            lines.push(Line::from(""));
+        }
+    }
+    let height = u16::try_from(lines.len() + 2).unwrap_or(10).min(main.height);
+    let area = Rect::new(
+        main.x + (main.width - width) / 2,
+        main.y + main.height.saturating_sub(height) / 3,
+        width,
+        height,
+    );
+    let block = boxed(form.title.clone());
+    let inner = block.inner(area);
+    f.render_widget(Clear, area);
+    f.render_widget(Paragraph::new(lines).block(block), area);
+    if let Some((row, col)) = caret {
+        let x = (inner.x + u16::try_from(col).unwrap_or(0)).min(inner.x + inner.width.saturating_sub(1));
+        let y = inner.y + u16::try_from(row).unwrap_or(0);
+        if y < inner.y + inner.height {
+            f.set_cursor_position((x, y));
+            if let Some(m) = &form.completer.menu {
+                let below = main.y + main.height - (y + 1);
+                let h = menu_height(m).min(below);
+                let mx = (inner.x + 2).min(main.x + main.width.saturating_sub(MENU_WIDTH));
+                menu(f, m, Rect::new(mx, y + 1, MENU_WIDTH.min(main.width), h));
+            }
+        }
     }
 }
 

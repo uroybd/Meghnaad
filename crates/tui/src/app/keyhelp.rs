@@ -275,24 +275,16 @@ impl App {
 
     /// Save an action's keys in a section of the keys (`None`: back to the defaults), and read the keys again.
     pub(super) fn save_binding(&mut self, section: &str, action: &str, keys: Option<&[String]>) {
-        if let Some(p) = &self.settings_problem {
-            self.status = format!("Not saved: put settings.json right first ({p}).");
-            return;
-        }
-        match settings::save_binding(section, action, keys) {
-            Ok(()) => {
-                self.read_settings();
-                self.status = match keys {
-                    None => format!("{action}: back to its default keys."),
-                    Some([]) => format!("{action}: no key."),
-                    Some(list) => format!(
-                        "{action}: {}.",
-                        list.iter().map(|k| keymap::display(k)).collect::<Vec<_>>().join(" ")
-                    ),
-                };
-                self.keys_sel = self.keys_sel.min(self.key_lines().len().saturating_sub(1));
-            }
-            Err(e) => self.status = e.to_string(),
+        if self.write_settings(|t| settings::with_binding(t, section, action, keys)) {
+            self.status = match keys {
+                None => format!("{action}: back to its default keys."),
+                Some([]) => format!("{action}: no key."),
+                Some(list) => format!(
+                    "{action}: {}.",
+                    list.iter().map(|k| keymap::display(k)).collect::<Vec<_>>().join(" ")
+                ),
+            };
+            self.keys_sel = self.keys_sel.min(self.key_lines().len().saturating_sub(1));
         }
     }
 }
