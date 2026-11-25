@@ -127,7 +127,7 @@
       "shortest": 1,
       "summary": "open the task's link, or what is under the cursor",
       "takes": "",
-      "doc": "Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). The terminal app looks at the task as it draws it, with your transformations applied, and in its string UDAs after the annotations, so a `FUL-3586` a rule makes a link opens it. On a list of projects or tags, of boards or kanbans, or of the boards or kanbans in Settings, it opens the one under the cursor.",
+      "doc": "Open the first link in the chosen task, in its description and then its annotations: on the web in a new tab, on the terminal with the desktop's opener (`open`, or `xdg-open`). The terminal app looks at the task as it draws it, with your transformations applied, and in its string UDAs after the annotations, so a `FUL-3586` a rule makes a link opens it. On a list of projects or tags, of boards or kanbans, or of the kanbans in Settings, it opens the one under the cursor; on another row of Settings it uses it, as `Enter` does.",
       "since": "0.8.11"
     },
     {
@@ -407,23 +407,47 @@
       "shortest": 2,
       "summary": "choose the page the app opens on",
       "takes": "",
-      "doc": "In the general settings, choose the page the app opens on: a report or a board.",
+      "doc": "In the general settings, choose the page the app opens on: a report, a board or a kanban.",
       "since": "0.8.22"
+    },
+    {
+      "name": "apply",
+      "shortest": 2,
+      "summary": "apply this page's edits",
+      "takes": "",
+      "doc": "In Settings, apply the edits made on the page shown: what it changed is written into settings.json as the file is now. The terminal app's `Ctrl+S`; the web and the phone have an Apply button.",
+      "since": "0.8.63"
+    },
+    {
+      "name": "revert",
+      "shortest": 4,
+      "summary": "drop this page's edits",
+      "takes": "",
+      "doc": "In Settings, drop the edits made on the page shown, back to what settings.json has.",
+      "since": "0.8.63"
+    },
+    {
+      "name": "rule",
+      "shortest": 2,
+      "summary": "add or delete a field transformation",
+      "takes": "add or delete",
+      "doc": "In the appearance settings: `:rule add` adds a field transformation in a form, `:rule delete` deletes the one chosen.",
+      "since": "0.8.63"
     },
     {
       "name": "syncwhen",
       "shortest": 5,
       "summary": "choose when to sync",
       "takes": "",
-      "doc": "In the sync settings, go through when to sync, and save it.",
+      "doc": "In the sync settings, choose when to sync.",
       "since": "0.8.22"
     },
     {
       "name": "theme",
       "shortest": 2,
-      "summary": "the next theme preset",
+      "summary": "choose the theme preset",
       "takes": "",
-      "doc": "In the appearance settings, go through the presets: auto, light, dark or mono.",
+      "doc": "In the appearance settings, choose the preset: auto, light, dark or mono.",
       "since": "0.8.22"
     },
     {
