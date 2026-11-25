@@ -350,6 +350,20 @@
         title="Go through the tasks that need review: mark each reviewed, skip it, edit it, change it, finish it or delete it"
         ><ClipboardCheck size={15} /> <span class="lbl">Review</span></button
       >
+      <!-- Sync now, as `sync` in the console and pulling the page down do; it turns while any sync is under way. -->
+      <button
+        class="ghost sync"
+        class:spin={engine.status === 'syncing'}
+        class:failed={engine.status === 'failed'}
+        disabled={refreshing}
+        onclick={() => void refreshPage()}
+        aria-label="Sync"
+        title={engine.status === 'failed'
+          ? `Couldn't sync (${engine.error}). Sync now`
+          : engine.status === 'syncing'
+            ? 'Syncing…'
+            : 'Sync now'}><RefreshCw size={17} /></button
+      >
       <button
         class="ghost bell"
         onclick={() => (store.notifyOpen = true)}
@@ -665,8 +679,12 @@
   .ptr.ready {
     color: var(--accent);
   }
-  .ptr.spin :global(svg) {
+  .ptr.spin :global(svg),
+  .sync.spin :global(svg) {
     animation: ptr-spin 0.8s linear infinite;
+  }
+  .sync.failed {
+    color: var(--err);
   }
   @keyframes ptr-spin {
     to {
@@ -674,7 +692,8 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .ptr.spin :global(svg) {
+    .ptr.spin :global(svg),
+    .sync.spin :global(svg) {
       animation: none;
     }
   }

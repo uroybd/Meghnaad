@@ -11,6 +11,7 @@ const engine = {
   setConfig: vi.fn(),
   setHooks: vi.fn(),
   pushSoon: vi.fn(),
+  sync: vi.fn(),
 };
 let available = true;
 vi.mock('../engine/client.svelte', () => ({ engine, engineAvailable: () => available }));
@@ -70,6 +71,36 @@ describe('the engine in the page', () => {
     );
     await runCli({ args: ['add', 'x'] });
     expect(engine.pushSoon).toHaveBeenCalledTimes(1);
+  });
+
+  it('syncs now for `sync`, and says how it went', async () => {
+    const { runCli } = await api();
+    const synced = (lines: string[]) =>
+      JSON.stringify({
+        wrote: false,
+        result: { kind: 'text', lines },
+        command: { name: 'synchronize', report: false, filter: [] },
+      });
+    engine.run.mockResolvedValue(synced(['Syncing is automatic in the web UI; there is nothing to do.']));
+    engine.sync.mockResolvedValue(undefined);
+    expect((await runCli({ line: 'sync' })).result).toEqual({ kind: 'text', lines: ['Sync successful.'] });
+    expect(engine.sync).toHaveBeenCalledWith(true);
+    engine.sync.mockRejectedValue(new Error('could not reach the server'));
+    expect((await runCli({ line: 'sync' })).result).toEqual({
+      kind: 'error',
+      message: 'Sync failed: could not reach the server',
+    });
+    // A refused `sync` (a word it doesn't take) is answered as the engine answered it, with no sync.
+    engine.sync.mockClear();
+    engine.run.mockResolvedValue(
+      JSON.stringify({
+        wrote: false,
+        result: { kind: 'error', message: 'nope' },
+        command: { name: 'synchronize', report: false, filter: [] },
+      }),
+    );
+    expect((await runCli({ line: 'sync x' })).result).toEqual({ kind: 'error', message: 'nope' });
+    expect(engine.sync).not.toHaveBeenCalled();
   });
 
   it('turns a refused request into the same error the server gave', async () => {

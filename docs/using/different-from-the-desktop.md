@@ -60,6 +60,10 @@ tab and every 30 seconds while you look at it, so a change from your laptop can 
 same browser tell each other. Commands are answered while a sync runs. On the static site, unlocking starts from the
 settings this browser kept, and picks up a change made elsewhere a moment later.
 
+To sync now, press the sync button in the top bar (its arrows turn while any sync runs, and it is red after one
+failed, its tooltip saying why), pull the page down on a phone, or run `sync` in the console, which answers
+`Sync successful.` or why it failed.
+
 ### Offline
 
 If the store can't be reached, a banner says so. Changes keep working, are kept in the browser, and go up

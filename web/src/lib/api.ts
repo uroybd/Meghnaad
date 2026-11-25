@@ -206,6 +206,19 @@ export async function runCli(input: CliInput): Promise<CliResponse> {
     }
   }
   if (response.wrote) engine.pushSoon();
+  // `task sync` syncs: the engine can't from inside a command (the page syncs around it), so the page does it now
+  // and says how it went, in place of the engine's word that syncing is automatic.
+  if (response.command?.name === 'synchronize' && response.result.kind === 'text') {
+    try {
+      await engine.sync(true);
+      return { ...response, result: { kind: 'text', lines: ['Sync successful.'] } };
+    } catch (e) {
+      return {
+        ...response,
+        result: { kind: 'error', message: `Sync failed: ${e instanceof Error ? e.message : String(e)}` },
+      };
+    }
+  }
   return response;
 }
 
