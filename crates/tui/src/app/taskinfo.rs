@@ -73,12 +73,18 @@ impl App {
         };
     }
 
-    /// A key in the info view: `[` `]` and a tab's own key go to a tab, the moves scroll the tab, `i` is `task info`;
-    /// any other key closes it.
+    /// A key in the info view: `[` `]` and a tab's own key go to a tab, the moves scroll the tab, `i` is `task info`,
+    /// `e` changes the task in the full form; any other key closes it.
     pub(super) fn in_task_info(&mut self, mut info: Info, key: KeyEvent) -> Action {
         let action = keys::chord(key).and_then(|c| self.keymap.action("info", &c));
         match action {
             Some(a) if section_named(a).is_some() => info.step(section_named(a).unwrap_or(0)),
+            Some("info.edit") => {
+                let uuid = info.uuid.clone();
+                self.mode = Mode::Normal;
+                self.modify_form(&uuid);
+                return Action::None;
+            }
             Some("info.raw") => {
                 let uuid = info.uuid.clone();
                 self.raw_info(&uuid);

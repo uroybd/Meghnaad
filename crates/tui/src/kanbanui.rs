@@ -144,18 +144,46 @@ fn column(f: &mut Frame, area: Rect, title: &str, here: bool) -> Rect {
     body.inner(Margin::new(1, 1))
 }
 
+/// How a card shows Taskwarrior's fields: by symbols (`appearance.cardIcons`), and those a Nerd Font's (`tui.nerdFont`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Icons {
+    on: bool,
+    nerd: bool,
+}
+
+impl Icons {
+    fn of(app: &App) -> Icons {
+        Icons {
+            on: app.settings.card_icons(),
+            nerd: app.settings.nerd_font(),
+        }
+    }
+}
+
+/// The spans of the first of `lines`.
+fn first_line(lines: Vec<Line<'static>>) -> Vec<Span<'static>> {
+    lines.into_iter().next().map(|l| l.spans).unwrap_or_default()
+}
+
 /// What a card says: its number and title, then its fields as many to a line as fit in `width`.
-fn card_lines(c: &Card, width: usize, icons: bool, bars: &BTreeMap<String, Progress>) -> Vec<Line<'static>> {
+fn card_lines(c: &Card, width: usize, icons: Icons, bars: &BTreeMap<String, Progress>) -> Vec<Line<'static>> {
     let id = c.id.map(|i| format!("{i} ")).unwrap_or_default();
-    let mut lines = vec![Line::from(vec![
-        Span::from(id).quiet(),
-        Span::styled(c.title.clone(), c.style.add_modifier(Modifier::BOLD)),
-    ])];
+    let bold = c.style.add_modifier(Modifier::BOLD);
+    // The title as the table draws its cell: from its Markdown where it has some (a transformation's link), first line.
+    let title = match c.md.get(&c.title_field) {
+        Some(tree) => first_line(crate::md::lines(tree, bold)),
+        None => vec![Span::styled(c.title.clone(), bold)],
+    };
+    let mut lines = vec![Line::from(
+        std::iter::once(Span::from(id).quiet()).chain(title).collect::<Vec<_>>(),
+    )];
     let mut line: Vec<Span> = Vec::new();
     let mut used = 0;
     for (name, label, text) in &c.fields {
-        // A value of several lines (a free-text UDA's notes): lines of its own, under its label, as written.
-        if text.contains('\n') {
+        let tree = c.md.get(name).map(|t| crate::md::lines(t, theme::dim()));
+        // A value of several lines (a free-text UDA's notes, Markdown of more than one line): lines of its own, under
+        // its label.
+        if text.contains('\n') || tree.as_ref().is_some_and(|t| t.len() > 1) {
             if !line.is_empty() {
                 lines.push(Line::from(std::mem::take(&mut line)));
                 used = 0;
@@ -163,12 +191,36 @@ fn card_lines(c: &Card, width: usize, icons: bool, bars: &BTreeMap<String, Progr
             if !label.is_empty() {
                 lines.push(Line::from(Span::from(label.clone()).quiet()));
             }
-            lines.extend(text.lines().map(|l| Line::from(l.to_owned())));
+            match tree {
+                Some(t) => lines.extend(t),
+                None => lines.extend(text.lines().map(|l| Line::from(l.to_owned()))),
+            }
+            continue;
+        }
+        // One line of Markdown (a ticket key a transformation made a link): its label, then the line as drawn.
+        if let Some(t) = tree {
+            let mut p = Vec::new();
+            if !label.is_empty() {
+                p.push(Span::from(format!("{label} ")).quiet());
+            }
+            p.extend(first_line(t));
+            let w = p.iter().map(|s| s.content.chars().count()).sum::<usize>() + 2;
+            if used > 0 && used + w > width {
+                lines.push(Line::from(std::mem::take(&mut line)));
+                used = 0;
+            }
+            used += w;
+            line.extend(p);
+            line.push(Span::from("  "));
             continue;
         }
         // With icons: a symbol before the text, or a UDA as a badge (its label, then its value); else the label.
-        let symbol = if icons { kanban::field_icon(name) } else { None };
-        let badge = icons && symbol.is_none() && !label.is_empty();
+        let symbol = if icons.on {
+            kanban::field_icon(name, icons.nerd)
+        } else {
+            None
+        };
+        let badge = icons.on && symbol.is_none() && !label.is_empty();
         // A UDA with a progress range (`appearance.progress`): its label, then the bar, as in the table.
         let bar = bars.get(name).and_then(|p| crate::ui::progress_spans(text, *p));
         let piece: Vec<Span> = if let Some(bar) = bar {
@@ -210,7 +262,7 @@ fn card_lines(c: &Card, width: usize, icons: bool, bars: &BTreeMap<String, Progr
 /// A column: its cards, each in a frame of the task's colour (the one chosen thick, with a dot), scrolled to keep the
 /// one chosen in sight.
 fn lane(f: &mut Frame, app: &App, area: Rect, title: &str, cards: &[Card], sel: Option<usize>, here: bool) {
-    let icons = app.settings.card_icons();
+    let icons = Icons::of(app);
     let body = column(f, area, title, here);
     if cards.is_empty() {
         f.render_widget(Paragraph::new(Line::from("none").quiet()), body);
@@ -262,7 +314,12 @@ fn framed(lines: usize) -> u16 {
 /// the app's own, as the web app's and the phone's: red, yellow and green, in the terminal's shades. None for a task
 /// with no priority, or a priority of the taskrc's own other than H, M and L that it leaves uncoloured.
 fn ribbon(app: &App, c: &Card) -> Option<Color> {
-    let p = c.priority.as_deref()?;
+    priority_colour(app, c.priority.as_deref())
+}
+
+/// The colour of priority `p`'s ribbon (see [`ribbon`]), for every card of a task: a kanban's, and the info's.
+pub fn priority_colour(app: &App, p: Option<&str>) -> Option<Color> {
+    let p = p?;
     app.cfg
         .settings
         .get(&format!("color.uda.priority.{p}"))
@@ -373,7 +430,7 @@ fn swimlanes(
     body: Rect,
     focused: bool,
 ) {
-    let icons = app.settings.card_icons();
+    let icons = Icons::of(app);
     let n = cols.len();
     let here = |i: usize| focused && app.kanban_col == i;
     // The column names, with their counts.
@@ -711,6 +768,8 @@ mod tests {
     use crate::app::kanbans::Card;
     use ratatui::{backend::TestBackend, Terminal};
 
+    const ON: Icons = Icons { on: true, nerd: false };
+
     /// One column of `cards` drawn `w` by `h`, as text, a row each.
     fn column_rows(cards: &[Card], w: u16, h: u16) -> Vec<String> {
         let app = App::new(crate::task::Task::new("/nonexistent/task"));
@@ -732,17 +791,56 @@ mod tests {
             ..Default::default()
         };
         let bars = BTreeMap::from([("progress".to_owned(), Progress { min: 0.0, max: 100.0 })]);
-        let lines: Vec<String> = card_lines(&c, 40, true, &bars)
-            .iter()
-            .map(ToString::to_string)
-            .collect();
+        let lines: Vec<String> = card_lines(&c, 40, ON, &bars).iter().map(ToString::to_string).collect();
         assert_eq!(lines[1].trim_end(), "Progress ━━━━━───── 50");
         // Without a range it is the badge it was.
-        let plain: Vec<String> = card_lines(&c, 40, true, &BTreeMap::new())
+        let plain: Vec<String> = card_lines(&c, 40, ON, &BTreeMap::new())
             .iter()
             .map(ToString::to_string)
             .collect();
         assert!(!plain[1].contains('━'), "{plain:?}");
+    }
+
+    #[test]
+    fn a_card_draws_what_the_transformations_made_of_its_title_and_fields() {
+        let tree = |s: &str| tc_core::markdown::parse(s);
+        let c = Card {
+            uuid: "u".into(),
+            title: "Fix FUL-7".into(),
+            title_field: "description".into(),
+            fields: vec![("jira".into(), "Jira".into(), "FUL-7".into())],
+            md: BTreeMap::from([
+                ("description".to_owned(), tree("Fix [FUL-7](https://j.example/FUL-7)")),
+                ("jira".to_owned(), tree("[FUL-7](https://j.example/FUL-7)")),
+            ]),
+            ..Default::default()
+        };
+        let lines = card_lines(&c, 40, Icons::default(), &BTreeMap::new());
+        let text: Vec<String> = lines.iter().map(ToString::to_string).collect();
+        assert_eq!(text[0], "Fix FUL-7");
+        assert_eq!(text[1].trim_end(), "Jira FUL-7");
+        // The link is drawn as one, so the frame makes it clickable.
+        let linked = |l: &Line| {
+            l.spans
+                .iter()
+                .any(|s| s.style.add_modifier.contains(Modifier::UNDERLINED))
+        };
+        assert!(linked(&lines[0]) && linked(&lines[1]), "{lines:?}");
+    }
+
+    #[test]
+    fn with_a_nerd_font_a_card_shows_its_glyphs() {
+        let c = Card {
+            uuid: "u".into(),
+            title: "t".into(),
+            fields: vec![("due".into(), "Due".into(), "2d".into())],
+            ..Default::default()
+        };
+        let line = |icons| card_lines(&c, 40, icons, &BTreeMap::new())[1].to_string();
+        assert_eq!(line(ON).trim_end(), "◷ 2d");
+        assert_eq!(line(Icons { on: true, nerd: true }).trim_end(), "\u{f0150} 2d");
+        // The labels, with icons off, whatever the font.
+        assert_eq!(line(Icons { on: false, nerd: true }).trim_end(), "Due 2d");
     }
 
     #[test]

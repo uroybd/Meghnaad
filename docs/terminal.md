@@ -241,7 +241,9 @@ the pages and what completion offers are read again.
 ![a opens the add box over the report; it shows the task the line will make](screenshots/terminal-add.png)
 
 The add box is Meghnaad's reading of the line, by the same rules as `task add`, ported from Taskwarrior. What is made
-is what `task add` makes. A line it finds a problem in stays open with the reason. Adding and
+is what `task add` makes. A line it finds a problem in stays open with the reason. The card shows the description
+and string UDAs with your [transformations](using/settings.md#transformations) applied (those with a condition wait
+for the task to exist), then wrapped to the box; a long line wraps too, and past six rows it scrolls with the caret. Adding and
 changing task commands on the Settings page use the same box.
 
 ### Bulk actions
@@ -295,14 +297,15 @@ nothing in it is left out.
 
 | Tab | Key | Shows |
 | --- | --- | --- |
-| Details | `d` | The description (with your [transformations](using/settings.md#transformations), its links clickable), ID, UUID, status, project, priority, tags, the dates, how long it has been active, urgency, what it depends on and what waits on it, and the UDAs by their labels |
+| Details | `d` | The description (with your [transformations](using/settings.md#transformations), its links clickable), ID, UUID, status, project, priority, tags, the dates, how long it has been active, urgency, what it depends on (each a small card) and what waits on it, and the UDAs by their labels |
 | Recurrence | `r` | Its recurrence, its template (for an instance) or its instances, newest first (for a template) |
 | Time log | `t` | With `journal.time` on: each session from its Started and Stopped notes, the running one last, and the total |
 | Annotations | `a` | Each note with its date, drawn as Markdown; the journal's own notes are in the Time log instead |
 | Unknown properties | `u` | What the task holds that no UDA in your taskrc defines |
 
 `[` `]` go to the tab before and the next, and the moves scroll the tab, each keeping its place. `i` shows `task info`
-as `task` prints it, for what the tabs leave out (its history of changes, among others). Any other key closes it.
+as `task` prints it, for what the tabs leave out (its history of changes, among others). `e` opens the task in the full
+form to change it, as `m` does from the report (`:info edit` too). Any other key closes it.
 
 ## The command line
 
@@ -524,7 +527,7 @@ and on into the next one, and `[` `]` jump between sections. `E`, in any section
 
 | Section | Keys |
 | --- | --- |
-| General | Where `settings.json` is and what is wrong with it, as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept); the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board, each kanban while Kanban is on) and saves; on the row below, what a task with no ID shows in the ID column, `-` as `task` shows it or its short uuid, which `Space` or `Enter` switches and saves (`appearance.idFallback`, [as on the web](using/settings.md#ids)); on the next, Card icons, whether a kanban's cards show their fields as symbols, a UDA as a badge (`appearance.cardIcons`, [as on the web](using/settings.md#cards)); and the [progress bars](#settings) |
+| General | Where `settings.json` is and what is wrong with it, as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept); the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board, each kanban while Kanban is on) and saves; on the row below, what a task with no ID shows in the ID column, `-` as `task` shows it or its short uuid, which `Space` or `Enter` switches and saves (`appearance.idFallback`, [as on the web](using/settings.md#ids)); on the next, Card icons, whether a kanban's cards show their fields as symbols, a UDA as a badge (`appearance.cardIcons`, [as on the web](using/settings.md#cards)); on the next, Nerd Font, whether the icons are drawn from your terminal's [Nerd Font](https://www.nerdfonts.com) (`tui.nerdFont`: the cards' field icons, and an icon before each page in the top bar, the web app's); and the [progress bars](#settings) |
 | Sync | `y`, `Space` or `Enter` goes through when to sync, and saves it ([Sync](#sync)) |
 | Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
 | Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
@@ -562,7 +565,8 @@ the web: [Progress bars](using/settings.md#progress-bars)),
 rows: [Transformations](using/settings.md#transformations); a link is an OSC 8 hyperlink, which most terminals open with
 a click or Cmd/Ctrl+click and the rest show as its words; `task info` is shown as `task` prints it) and
 `keys` ([Keys](using/settings.md#keys)). Its own settings are all under `tui`: `sync` ([Sync](#sync)), `theme` and
-`shading` ([Colours](#colours)), and `keys`, which apply here only.
+`shading` ([Colours](#colours)), `nerdFont` (`true` when the terminal's font is a Nerd Font: icons from it, chosen in
+the General section), and `keys`, which apply here only.
 
 ```json
 {

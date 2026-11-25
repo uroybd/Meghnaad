@@ -405,8 +405,8 @@ fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     let mut app = app();
     typing(&mut app, "g0");
     assert_eq!(app.settings_section, SettingsSection::General);
-    // General has three rows, the home page, what a task with no ID shows and the card icons; `j` goes through them,
-    // then on.
+    // General has four rows, the home page, what a task with no ID shows, the card icons and the Nerd Font; `j` goes
+    // through them, then on.
     app.key(key(KeyCode::Char('j')));
     assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 1));
     app.key(key(KeyCode::Char('k')));
@@ -414,6 +414,8 @@ fn a_settings_key_acts_only_in_the_section_that_has_the_focus() {
     app.key(key(KeyCode::Char('j')));
     app.key(key(KeyCode::Char('j')));
     assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 2));
+    app.key(key(KeyCode::Char('j')));
+    assert_eq!((app.settings_section, app.general_sel), (SettingsSection::General, 3));
     app.key(key(KeyCode::Char('j')));
     assert_eq!(app.settings_section, SettingsSection::Sync);
     app.key(key(KeyCode::Char('a')));
@@ -887,4 +889,22 @@ fn o_lists_a_tasks_links_to_choose_from_and_a_count_names_one() {
     // A count past the last link says how many there are (and opens nothing).
     typing(&mut a, "9o");
     assert_eq!(a.status, "This task has 2 links.");
+}
+
+#[test]
+fn e_in_the_info_view_changes_the_task_in_the_full_form() {
+    let mut a = app();
+    let task = serde_json::json!({ "uuid": "u-1", "id": 1, "description": "Fix the tap", "status": "pending" });
+    a.pending = vec![task.clone()];
+    let ctx = crate::info::Ctx {
+        cfg: &a.cfg,
+        rules: &[],
+        now: 0,
+    };
+    a.mode = Mode::TaskInfo(crate::info::build(&task, &crate::info::Around::default(), &ctx));
+    a.key(key(KeyCode::Char('e')));
+    let Mode::Form(f) = &a.mode else {
+        panic!("the form is open: {:?}", a.mode);
+    };
+    assert!(f.fields.iter().any(|x| x.key == "description"), "{f:?}");
 }

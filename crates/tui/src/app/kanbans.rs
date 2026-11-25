@@ -7,7 +7,8 @@ use crate::commands::TaskCommand;
 use crate::kanban::{self, Column, Entry, Kanban, Settings, View};
 use crate::review::config_args;
 use ratatui::style::Style;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use tc_core::markdown::Node;
 
 /// A card: its task, the description it shows first and the report's other cells under it.
 #[derive(Debug, Clone, Default)]
@@ -17,6 +18,11 @@ pub struct Card {
     pub title: String,
     /// The report's other cells that have something: each field's name (`due`), its label and its text.
     pub fields: Vec<(String, String, String)>,
+    /// The title and the fields as Markdown, by field name, where the report's cell has a tree (a transformation
+    /// changed it, or a string UDA uses Markdown): drawn from it, with its links, as the table draws the cell.
+    pub md: BTreeMap<String, Vec<Node>>,
+    /// Which field the title is (`description`, else the first cell with something), to find its Markdown in `md`.
+    pub title_field: String,
     pub style: Style,
     /// The task's priority (`H`): the ribbon down the card's left edge, in `color.uda.priority.<it>`.
     pub priority: Option<String>,
@@ -979,30 +985,37 @@ fn kanbans_problem(s: &Settings) -> Option<String> {
 fn cards(r: &model::Report, keep: &[usize]) -> Vec<Card> {
     let desc = r.names.iter().position(|n| n == "description");
     let id = r.names.iter().position(|n| n == "id");
+    let name = |j: usize| r.names.get(j).cloned().unwrap_or_default();
     keep.iter()
         .filter_map(|&i| {
             let cells = r.cells.get(i)?;
             let text = |j: usize| cells.get(j).map_or("", |c| c.text.as_str()).trim().to_owned();
-            let title = desc.map(text).filter(|t| !t.is_empty()).unwrap_or_else(|| {
+            let at = desc.filter(|&j| !text(j).is_empty()).or_else(|| {
                 cells
                     .iter()
                     .enumerate()
                     .find(|(j, c)| Some(*j) != id && !c.text.trim().is_empty())
-                    .map_or_else(String::new, |(_, c)| c.text.trim().to_owned())
+                    .map(|(j, _)| j)
             });
+            let title = at.map(text).unwrap_or_default();
             let fields = (0..cells.len())
                 .filter(|j| Some(*j) != desc && Some(*j) != id)
-                .map(|j| {
-                    let name = r.names.get(j).cloned().unwrap_or_default();
-                    (name, r.labels.get(j).cloned().unwrap_or_default(), text(j))
-                })
+                .map(|j| (name(j), r.labels.get(j).cloned().unwrap_or_default(), text(j)))
                 .filter(|(_, _, t)| !t.is_empty() && *t != title)
+                .collect();
+            let md = r
+                .names
+                .iter()
+                .zip(cells)
+                .filter_map(|(n, c)| Some((n.clone(), c.blocks.clone()?)))
                 .collect();
             Some(Card {
                 uuid: r.uuids.get(i)?.clone(),
                 id: r.ids.get(i).copied().flatten(),
                 title: title.lines().next().unwrap_or("").to_owned(),
                 fields,
+                md,
+                title_field: at.map(name).unwrap_or_default(),
                 style: r.styles.get(i).copied().unwrap_or_default(),
                 priority: r.priorities.get(i).cloned().flatten(),
                 lane: None,

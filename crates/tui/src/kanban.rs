@@ -655,29 +655,31 @@ pub fn place(columns: &[Vec<String>], all: &[String]) -> (Vec<Vec<usize>>, Vec<u
 /// The line is not a well-formed chain.
 /// The symbol a card shows for one of Taskwarrior's own fields, by the field's name (`due`, whatever the report's format
 /// or label), when Appearance's `cardIcons` is on: the web's and the phone's icons (kanban.ts `FIELD_ICONS`) as a terminal can
-/// draw them, one column wide each. None for a UDA or a field without one: that is a badge, its label then its value.
-pub fn field_icon(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "id" => "#",
-        "uuid" => "≡",
-        "status" => "◉",
-        "priority" => "⚑",
-        "project" => "▤",
-        "tags" => "+",
-        "due" => "◷",
-        "scheduled" => "▦",
-        "wait" => "⧗",
-        "until" => "⊠",
-        "entry" => "⊕",
-        "modified" => "✎",
-        "start" => "▶",
-        "end" => "✓",
-        "recur" => "↻",
-        "depends" => "⇠",
-        "urgency" => "↑",
-        "parent" => "⤴",
+/// draw them, one column wide each; with `nerd` (`tui.nerdFont`) the Nerd Font glyph of the same icon (Material Design,
+/// `nf-md-*`). None for a UDA or a field without one: that is a badge, its label then its value.
+pub fn field_icon(name: &str, nerd: bool) -> Option<&'static str> {
+    let (plain, glyph) = match name {
+        "id" => ("#", "\u{f0423}"),        // md-pound
+        "uuid" => ("≡", "\u{f0237}"),      // md-fingerprint
+        "status" => ("◉", "\u{f0ec3}"),    // md-record_circle_outline
+        "priority" => ("⚑", "\u{f023b}"),  // md-flag
+        "project" => ("▤", "\u{f024b}"),   // md-folder
+        "tags" => ("+", "\u{f04f9}"),      // md-tag
+        "due" => ("◷", "\u{f0150}"),       // md-clock_outline
+        "scheduled" => ("▦", "\u{f00ed}"), // md-calendar
+        "wait" => ("⧗", "\u{f051f}"),      // md-timer_sand
+        "until" => ("⊠", "\u{f00f4}"),     // md-calendar_remove
+        "entry" => ("⊕", "\u{f00f3}"),     // md-calendar_plus
+        "modified" => ("✎", "\u{f03eb}"),  // md-pencil
+        "start" => ("▶", "\u{f040a}"),     // md-play
+        "end" => ("✓", "\u{f05e1}"),       // md-check_circle_outline
+        "recur" => ("↻", "\u{f0456}"),     // md-repeat
+        "depends" => ("⇠", "\u{f0339}"),   // md-link_variant
+        "urgency" => ("↑", "\u{f140b}"),   // md-lightning_bolt
+        "parent" => ("⤴", "\u{f062c}"),    // md-source_branch
         _ => return None,
-    })
+    };
+    Some(if nerd { glyph } else { plain })
 }
 
 /// Swimlanes, from the report's own groups (a `/` in its sort, `project+/`): `heads` is the group heading above each of
@@ -961,8 +963,9 @@ mod tests {
 
     #[test]
     fn a_fields_symbol_is_chosen_by_its_name() {
-        assert_eq!(field_icon("due"), Some("◷"));
-        assert_eq!(field_icon("progressState"), None);
+        assert_eq!(field_icon("due", false), Some("◷"));
+        assert_eq!(field_icon("due", true), Some("\u{f0150}"));
+        assert_eq!(field_icon("progressState", true), None);
     }
 
     #[test]

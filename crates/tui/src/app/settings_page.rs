@@ -6,7 +6,7 @@ use super::{
 };
 
 /// The rows of General: the home page, what a task with no ID shows, and the card icons.
-const GENERAL_ROWS: usize = 3;
+const GENERAL_ROWS: usize = 4;
 
 impl App {
     pub(super) fn settings_action(&mut self, action: &str) {
@@ -14,6 +14,7 @@ impl App {
         match action {
             "settings.general.home" if self.general_sel == 1 => self.toggle_id_fallback(),
             "settings.general.home" if self.general_sel == 2 => self.toggle_card_icons(),
+            "settings.general.home" if self.general_sel == 3 => self.toggle_nerd_font(),
             "settings.general.home" => {
                 let mut options = vec![("next (the default)".to_owned(), None)];
                 options.extend(
@@ -188,6 +189,27 @@ impl App {
                     "A task with no ID shows its short uuid.".into()
                 } else {
                     "A task with no ID shows -.".into()
+                };
+                self.reload();
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
+    /// Draw the icons from a Nerd Font or as plain symbols, and save which in `settings.json` (`tui.nerdFont`, this
+    /// terminal's only).
+    pub(super) fn toggle_nerd_font(&mut self) {
+        if let Some(p) = &self.settings_problem {
+            self.status = format!("Not saved: put settings.json right first ({p}).");
+            return;
+        }
+        let on = !self.settings.nerd_font();
+        match settings::save_nerd_font(on) {
+            Ok(()) => {
+                self.status = if on {
+                    "Icons are drawn from your Nerd Font.".into()
+                } else {
+                    "Icons are plain symbols.".into()
                 };
                 self.reload();
             }

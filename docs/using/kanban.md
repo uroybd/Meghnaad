@@ -134,7 +134,10 @@ A card shows the report's columns under the task's description, each with its la
 fields by an icon instead: `#` for the ID, a flag for the priority, a folder for the project, a tag for the tags, a clock
 for `due`, and so on. The icon goes by the field itself, whatever the report's label or format (`due.relative` is still
 a clock). In the terminal app the icons are symbols (`⚑ H`, `◷ 2d`), turned on by the row Card icons in Settings →
-General.
+General; with the row Nerd Font on as well, they are your Nerd Font's glyphs of the web's icons.
+
+On every front end a card draws its description and fields as the report's table does, with your
+[transformations](settings.md#transformations) applied: a ticket key a rule turns into a link is a link on the card.
 
 On the web and the phone, with Icons in cards on, a UDA is a pill, its label then its value; off, it is its label and
 value on one line, as Taskwarrior's fields are. A UDA drawn as a progress bar is always the bar after its label. A string

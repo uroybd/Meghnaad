@@ -16,7 +16,7 @@ use crate::review::Phase;
 use crate::settings::Progress;
 use crate::theme::{self, Roles};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style, Stylize};
+use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, BorderType, Cell as TCell, Clear, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph, Row,
@@ -296,7 +296,16 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
     // The pages by name when they fit beside the chips, else by number and the first letters, else by number alone.
     let room = usize::from(area.width).saturating_sub(width + 12);
     let pages = app.pages();
-    let fits = |letters: usize| pages.iter().map(|p| p.title().len().min(letters) + 4).sum::<usize>() <= room;
+    // With a Nerd Font each page has its icon too, before its name (two columns more).
+    let nerd = app.settings.nerd_font();
+    let icon = usize::from(nerd) * 2;
+    let fits = |letters: usize| {
+        pages
+            .iter()
+            .map(|p| p.title().len().min(letters) + 4 + icon)
+            .sum::<usize>()
+            <= room
+    };
     let letters = [usize::MAX, 3].into_iter().find(|&n| fits(n)).unwrap_or(0);
     let mut left = vec![Span::styled(" ◆ Meghnaad ", theme::accent())];
     for p in &pages {
@@ -306,10 +315,11 @@ fn top_bar(f: &mut Frame, app: &App, area: Rect) {
             .iter()
             .position(|q| q == p)
             .map_or_else(|| "·".to_owned(), |i| ((i + 1) % 10).to_string());
+        let glyph = if nerd { format!("{} ", p.glyph()) } else { String::new() };
         let tab = Span::from(if title.is_empty() {
-            format!(" {number} ")
+            format!(" {number} {glyph}")
         } else {
-            format!(" {number} {title} ")
+            format!(" {number} {glyph}{title} ")
         });
         left.push(if *p == app.page {
             tab.style(theme::selected().add_modifier(Modifier::BOLD))
@@ -798,6 +808,21 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
                     "off: the report's labels"
                 },
                 if here(S::General) && app.general_sel == 2 {
+                    theme::selected()
+                } else {
+                    Style::new()
+                },
+            ),
+        ]),
+        Line::from(vec![
+            Span::from("Nerd Font      ").quiet(),
+            Span::styled(
+                if app.settings.nerd_font() {
+                    "on: icons from the terminal's Nerd Font (tui.nerdFont)"
+                } else {
+                    "off: plain symbols"
+                },
+                if here(S::General) && app.general_sel == 3 {
                     theme::selected()
                 } else {
                     Style::new()
@@ -1361,9 +1386,10 @@ fn task_info(f: &mut Frame, app: &App, info: &crate::info::Info, area: Rect) {
             .unwrap_or_default()
     };
     let hint = format!(
-        "{}/{} tab · {} task info · any other key closes",
+        "{}/{} tab · {} edit · {} task info · any other key closes",
         key("move.sectionPrev"),
         key("move.sectionNext"),
+        key("info.edit"),
         key("info.raw")
     );
     let block = text_pane("info", true)
@@ -1404,6 +1430,10 @@ fn task_info(f: &mut Frame, app: &App, info: &crate::info::Info, area: Rect) {
             Shown::Text(t) => t.lines().map(|l| Line::from(l.to_owned())).collect(),
             Shown::Dim(t) => vec![Line::from(t.clone()).quiet()],
             Shown::Tree(tree) => md::lines(tree, Style::default()),
+            Shown::Card(c) => {
+                let room = usize::from(body.width).saturating_sub(label_width + 2).min(64);
+                info_card(c, room, crate::kanbanui::priority_colour(app, c.priority.as_deref()))
+            }
         };
         for (i, l) in value.into_iter().enumerate() {
             let label = if i == 0 { e.label.as_str() } else { "" };
@@ -1423,6 +1453,45 @@ fn task_info(f: &mut Frame, app: &App, info: &crate::info::Info, area: Rect) {
             .scroll((info.scroll().min(room), 0)),
         body,
     );
+}
+
+/// A task as a card `width` columns wide, drawn in lines so it scrolls with the rest of the info: a rounded frame, its
+/// number and description in bold, then its facts; its left edge the priority's ribbon (`ribbon`), heavy, where it has one.
+fn info_card(c: &crate::info::TaskCard, width: usize, ribbon: Option<Color>) -> Vec<Line<'static>> {
+    let inner = width.saturating_sub(4).max(1);
+    let cut = |s: &str| -> String {
+        if s.chars().count() <= inner {
+            s.to_owned()
+        } else {
+            s.chars().take(inner.saturating_sub(1)).chain(['…']).collect()
+        }
+    };
+    let frame = theme::border(false);
+    let edge = match ribbon {
+        Some(r) => Span::styled("┃ ", Style::new().fg(r)),
+        None => Span::styled("│ ", frame),
+    };
+    let row = |content: Vec<Span<'static>>| {
+        let used: usize = content.iter().map(|s| s.content.chars().count()).sum();
+        let mut spans = vec![edge.clone()];
+        spans.extend(content);
+        spans.push(Span::from(" ".repeat(inner.saturating_sub(used))));
+        spans.push(Span::styled(" │", frame));
+        Line::from(spans)
+    };
+    let bar = "─".repeat(inner + 2);
+    let mut out = vec![Line::styled(format!("╭{bar}╮"), frame)];
+    let head = cut(&format!("{}  {}", c.id, c.title));
+    let (id, title) = head.split_at(head.find("  ").map_or(0, |i| i + 2));
+    out.push(row(vec![
+        Span::from(id.to_owned()).quiet(),
+        Span::styled(title.to_owned(), Style::new().add_modifier(Modifier::BOLD)),
+    ]));
+    if !c.facts.is_empty() {
+        out.push(row(vec![Span::from(cut(&c.facts.join(" · "))).quiet()]));
+    }
+    out.push(Line::styled(format!("╰{bar}╯"), frame));
+    out
 }
 
 /// A cell's lines: its text, then its notes (annotations) under it, as Taskwarrior writes a description.
@@ -1743,7 +1812,14 @@ fn add_card(app: &App, line: &str) -> Vec<Line<'static>> {
         return vec![Line::from("A description, then project: tags +x due: and the rest, as after task add.").quiet()];
     }
     let pv = app.preview(line.trim());
-    let mut text = vec![Line::from(pv.description.clone()).bold()];
+    // The description and string UDAs as they will be drawn: the transformations first (those without a condition: the
+    // task isn't there to match one yet), then the box wraps them.
+    let rules = tc_core::transform::Rules::new(&app.transformations);
+    let bold = Style::new().add_modifier(Modifier::BOLD);
+    let mut text = match rules.tree(Some(tc_core::transform::DESCRIPTION), None, &pv.description) {
+        Some(tree) => md::lines(&tree, bold),
+        None => vec![Line::styled(pv.description.clone(), bold)],
+    };
     if let Some(project) = &pv.project {
         text.push(field("project", project.clone()));
     }
@@ -1763,7 +1839,18 @@ fn add_card(app: &App, line: &str) -> Vec<Line<'static>> {
         text.push(field("depends", pv.depends.join(" ")));
     }
     for (name, v) in &pv.udas {
-        text.push(field(name, v.clone()));
+        match rules.tree(Some(name), None, v) {
+            Some(tree) => {
+                let mut lines = md::lines(&tree, Style::new()).into_iter();
+                let first = lines.next().unwrap_or_default();
+                let mut spans = vec![Span::from(format!("{name:>10}  ")).quiet()];
+                spans.extend(first.spans);
+                text.push(Line::from(spans));
+                let pad = " ".repeat(12);
+                text.extend(lines.map(|l| Line::from([vec![Span::from(pad.clone())], l.spans].concat())));
+            }
+            None => text.push(field(name, v.clone())),
+        }
     }
     for e in &pv.errors {
         text.push(Line::from(e.clone()).bad());
@@ -1962,6 +2049,37 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
 }
 
 /// Adding, changing or annotating a task, or a task command, in a box over the page: the line, then what it is about.
+/// The most rows a box's typed line takes before it scrolls.
+const MAX_INPUT_ROWS: usize = 6;
+
+/// `text` as rows of at most `width` characters (each of its lines wrapped at the edge, an empty line a row of its own),
+/// and the row and column of the caret, `caret` characters in. A caret after a full row is at the start of the next.
+fn wrap_input(text: &str, caret: usize, width: usize) -> (Vec<String>, usize, usize) {
+    let width = width.max(1);
+    let mut rows: Vec<String> = Vec::new();
+    let mut at = None;
+    let mut seen = 0;
+    for (n, line) in text.split('\n').enumerate() {
+        seen += usize::from(n > 0);
+        let chars: Vec<char> = line.chars().collect();
+        let top = rows.len();
+        rows.extend(chars.chunks(width).map(|c| c.iter().collect::<String>()));
+        if chars.is_empty() {
+            rows.push(String::new());
+        }
+        if at.is_none() && (seen..=seen + chars.len()).contains(&caret) {
+            let k = caret - seen;
+            at = Some((top + k / width, k % width));
+        }
+        seen += chars.len();
+    }
+    let (row, col) = at.unwrap_or((rows.len().saturating_sub(1), 0));
+    if row >= rows.len() {
+        rows.push(String::new());
+    }
+    (rows, row, col)
+}
+
 fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
     let uuid = match &p.kind {
         PromptKind::Annotate(u) => Some(u.clone()),
@@ -2006,12 +2124,18 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
         _ => (String::new(), Vec::new()),
     };
     let width = main.width.saturating_sub(4).min(84);
-    // A note of several lines (Alt+Enter) shows them all.
-    let typed: Vec<&str> = p.input.line.split('\n').collect();
-    let tall = u16::try_from(typed.len()).unwrap_or(1);
-    let height = u16::try_from(card.len() + 3 + typed.len())
-        .unwrap_or(6)
-        .min(main.height);
+    // What is typed wraps at the box's edge, and a note of several lines (Alt+Enter) shows them all, up to a few rows
+    // that scroll to keep the caret in sight.
+    let room = usize::from(width.saturating_sub(6)); // the frame, its padding and the `› ` in front
+    let (typed, at, caret) = wrap_input(&p.input.line, p.input.caret_chars(), room);
+    let shown = typed.len().min(MAX_INPUT_ROWS);
+    let first = at.saturating_sub(shown.saturating_sub(1));
+    let tall = u16::try_from(shown).unwrap_or(1);
+    // The card's rows once wrapped, so the box holds all of it.
+    let card_rows = Paragraph::new(card.clone())
+        .wrap(Wrap { trim: false })
+        .line_count(width.saturating_sub(4));
+    let height = u16::try_from(card_rows + 3 + shown).unwrap_or(6).min(main.height);
     let area = Rect::new(
         main.x + (main.width - width) / 2,
         main.y + main.height.saturating_sub(height) / 3,
@@ -2027,19 +2151,20 @@ fn popup(f: &mut Frame, app: &App, p: &Prompt, main: Rect) {
     let rows: Vec<Line> = typed
         .iter()
         .enumerate()
+        .skip(first)
+        .take(shown)
         .map(|(i, l)| {
             let lead = if i == 0 {
                 Span::styled("› ", theme::accent())
             } else {
                 Span::from("  ")
             };
-            Line::from(vec![lead, Span::from((*l).to_owned())])
+            Line::from(vec![lead, Span::from(l.clone())])
         })
         .collect();
     f.render_widget(Paragraph::new(rows), line);
-    let before: String = p.input.line.chars().take(p.input.caret_chars()).collect();
-    let down = u16::try_from(before.matches('\n').count()).unwrap_or(0);
-    let caret = u16::try_from(before.rsplit('\n').next().map_or(0, |l| l.chars().count())).unwrap_or(0);
+    let down = u16::try_from(at - first).unwrap_or(0);
+    let caret = u16::try_from(caret).unwrap_or(0);
     f.set_cursor_position(((line.x + 2 + caret).min(line.x + line.width), line.y + down));
     let line = Rect {
         y: line.y + down,
@@ -2075,6 +2200,79 @@ mod tests {
             .map(|t| t.and_utc().timestamp())
             .unwrap_or_default();
         naive - i64::from(local_offset(naive))
+    }
+
+    #[test]
+    fn the_add_card_shows_the_description_transformed() {
+        let mut app = crate::app::App::new(crate::task::Task::new("/nonexistent/task"));
+        app.transformations = vec![tc_core::transform::Rule {
+            pattern: r"FUL-\d+".into(),
+            replace: "[$0](https://j.example/$0)".into(),
+            fields: vec!["description".into()],
+            ..Default::default()
+        }];
+        let card = super::add_card(&app, "Fix FUL-7 +work");
+        assert_eq!(card[0].to_string(), "Fix FUL-7");
+        assert!(
+            card[0]
+                .spans
+                .iter()
+                .any(|s| s.content == "FUL-7" && s.style.add_modifier.contains(ratatui::style::Modifier::UNDERLINED)),
+            "{card:?}"
+        );
+    }
+
+    #[test]
+    fn a_dependency_is_a_card_in_the_info() {
+        let c = crate::info::TaskCard {
+            id: "3".into(),
+            title: "Buy the paint for the hall".into(),
+            facts: vec!["Home".into(), "due 2026-12-01".into()],
+            priority: Some("H".into()),
+        };
+        let red = ratatui::style::Color::Red;
+        let lines = super::info_card(&c, 24, Some(red));
+        let text: Vec<String> = lines.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            text,
+            [
+                "╭──────────────────────╮",
+                "┃ 3  Buy the paint fo… │",
+                "┃ Home · due 2026-12-… │",
+                "╰──────────────────────╯",
+            ]
+        );
+        assert_eq!(lines[1].spans[0].style.fg, Some(red));
+        // No priority, no ribbon: the frame's own edge.
+        let plain = super::info_card(
+            &crate::info::TaskCard {
+                id: "4".into(),
+                title: "x".into(),
+                ..Default::default()
+            },
+            12,
+            None,
+        );
+        assert_eq!(plain.len(), 3);
+        assert!(plain[1].to_string().starts_with("│ 4  x"));
+    }
+
+    #[test]
+    fn a_long_line_wraps_and_the_caret_follows_it() {
+        let rows = |t: &str, caret: usize| super::wrap_input(t, caret, 4);
+        assert_eq!(
+            rows("abcdefghij", 10),
+            (vec!["abcd".into(), "efgh".into(), "ij".into()], 2, 2)
+        );
+        assert_eq!(rows("abcdefghij", 5).1, 1);
+        // At the end of a full row the caret starts the next one.
+        assert_eq!(rows("abcd", 4), (vec!["abcd".into(), String::new()], 1, 0));
+        // A note's lines each wrap, an empty one a row of its own.
+        assert_eq!(
+            rows("abcdef\n\nxy", 9),
+            (vec!["abcd".into(), "ef".into(), String::new(), "xy".into()], 3, 1)
+        );
+        assert_eq!(rows("", 0), (vec![String::new()], 0, 0));
     }
 
     #[test]

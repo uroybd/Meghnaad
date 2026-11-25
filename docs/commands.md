@@ -283,9 +283,9 @@ Since 0.8.11.
 
 ## :in[fo]
 
-Takes a tab: details, recurrence, timelog, annotations, unknown or raw.
+Takes a tab: details, recurrence, timelog, annotations, unknown or raw; or edit.
 
-The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it. On a kanban in the terminal, the info of the card under the cursor.
+The chosen task's info: everything about it, its notes and how its urgency adds up. In the info, a tab by its name: `:info timelog`; `:info raw` is `task info` as `task` prints it. In the terminal, `:info edit` changes the task in the full form, as `e` does there. On a kanban in the terminal, the info of the card under the cursor.
 
 Since 0.8.11.
 

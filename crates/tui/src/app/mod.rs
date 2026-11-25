@@ -92,6 +92,22 @@ impl Page {
         }
     }
 
+    /// Its icon in a Nerd Font (`tui.nerdFont`), the web app's for the page (Material Design, `nf-md-*`).
+    pub fn glyph(self) -> &'static str {
+        match self {
+            Page::Tasks => "\u{f096a}",    // md-format_list_checkbox
+            Page::Projects => "\u{f024b}", // md-folder
+            Page::Tags => "\u{f04f9}",     // md-tag
+            Page::Summary => "\u{f0128}",  // md-chart_bar
+            Page::Calendar => "\u{f0e17}", // md-calendar_month
+            Page::Burndown => "\u{f0533}", // md-trending_down
+            Page::Boards => "\u{f056e}",   // md-view_dashboard
+            Page::Kanban => "\u{f1487}",   // md-view_column_outline
+            Page::Console => "\u{f018d}",  // md-console
+            Page::Settings => "\u{f0493}", // md-cog
+        }
+    }
+
     /// The keymap's action that opens it (`page.tasks`).
     pub fn action(self) -> &'static str {
         match self {
@@ -893,6 +909,7 @@ impl App {
         (self.progress, self.progress_errors) = self.settings.progress();
         self.progress_errors.extend(self.settings.id_fallback_error());
         self.progress_errors.extend(self.settings.card_icons_error());
+        self.progress_errors.extend(self.settings.nerd_font_error());
         let (rules, mut errors) = self.settings.transformations();
         let string_udas: Vec<String> = self
             .cfg

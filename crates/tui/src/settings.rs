@@ -159,6 +159,9 @@ pub struct TuiSettings {
     pub export: Value,
     /// The reminder options (`remind::Settings`): `{ "on": true, "lead_minutes": 15, "all_day_hour": 9, … }`.
     pub reminders: Value,
+    /// `true` when the terminal's font is a Nerd Font: icons are drawn from it (`AppSettings::nerd_font`).
+    #[serde(rename = "nerdFont")]
+    pub nerd_font: Value,
 }
 
 /// The page the app opens on: a report or a board (`homepage` in `settings.json`, shared with the web app and the phone).
@@ -242,6 +245,18 @@ impl AppSettings {
             .pointer("/appearance/cardIcons")
             .and_then(Value::as_bool)
             .unwrap_or(false)
+    }
+
+    /// `tui.nerdFont`: the terminal's font is a Nerd Font, so the icons (a card's fields, the pages in the top bar) are
+    /// its glyphs, as the web app's icons are (off when absent, and when it is not `true` or `false`).
+    pub fn nerd_font(&self) -> bool {
+        self.tui.nerd_font.as_bool().unwrap_or(false)
+    }
+
+    /// What is wrong with `tui.nerdFont`, if it is there and not `true` or `false`.
+    pub fn nerd_font_error(&self) -> Option<String> {
+        (!self.tui.nerd_font.is_null() && !self.tui.nerd_font.is_boolean())
+            .then(|| "tui.nerdFont must be true or false".to_owned())
     }
 
     /// What is wrong with `appearance.cardIcons`, if it is there and not `true` or `false`.
@@ -933,6 +948,30 @@ pub fn save_card_icons(on: bool) -> Result<(), SettingsError> {
     save(|text| with_card_icons(text, on))
 }
 
+/// `text` with `tui.nerdFont` on (`true`) or taken out (off, the default), and every other key as it was.
+///
+/// # Errors
+///
+/// As [`with_tui`].
+pub fn with_nerd_font(text: &str, on: bool) -> Result<String, SettingsError> {
+    with_tui_edit(text, |tui| {
+        if on {
+            tui.insert("nerdFont".into(), Value::Bool(true));
+        } else {
+            tui.remove("nerdFont");
+        }
+    })
+}
+
+/// Save `tui.nerdFont`, keeping the rest of the file.
+///
+/// # Errors
+///
+/// As [`save_commands`].
+pub fn save_nerd_font(on: bool) -> Result<(), SettingsError> {
+    save(|text| with_nerd_font(text, on))
+}
+
 /// Save the theme's preset: `tui.theme` itself when it is a name, its `base` when it sets roles of its own (which are kept).
 ///
 /// # Errors
@@ -1381,6 +1420,24 @@ mod tests {
             ["boards[0] must be an object", "boards[1] (week): needs a sections list"]
         );
         assert!(lint_errors(&kept()["file"]).is_empty());
+    }
+
+    #[test]
+    fn nerd_font_is_read_and_saved_under_tui_with_the_rest_kept() {
+        let text = r#"{ "tui": { "sync": "manual" } }"#;
+        assert!(!AppSettings::parse(text).unwrap().nerd_font());
+        let on = with_nerd_font(text, true).unwrap();
+        let s = AppSettings::parse(&on).unwrap();
+        assert!(s.nerd_font() && s.nerd_font_error().is_none());
+        assert_eq!(s.tui.sync.as_deref(), Some("manual"));
+        let off: Value = serde_json::from_str(&with_nerd_font(&on, false).unwrap()).unwrap();
+        assert_eq!(off["tui"], serde_json::json!({ "sync": "manual" }));
+        let bad = AppSettings::parse(r#"{ "tui": { "nerdFont": "yes" } }"#).unwrap();
+        assert!(!bad.nerd_font());
+        assert_eq!(
+            bad.nerd_font_error().as_deref(),
+            Some("tui.nerdFont must be true or false")
+        );
     }
 
     #[test]

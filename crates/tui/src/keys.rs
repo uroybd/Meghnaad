@@ -144,6 +144,7 @@ pub const WORDS: &[(&str, &str)] = &[
     ("info.annotations", "annotations"),
     ("info.unknown", "unknown"),
     ("info.raw", "task info"),
+    ("info.edit", "edit"),
     ("tasks.modify", "modify"),
     ("tasks.annotate", "annotate"),
     ("tasks.denotate", "denotate"),

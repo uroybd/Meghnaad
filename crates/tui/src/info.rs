@@ -61,6 +61,18 @@ pub enum Shown {
     Dim(String),
     /// Markdown, a transformed text: drawn by `md.rs`, its links clickable.
     Tree(Vec<Node>),
+    /// Another task as a small card (what this one depends on), as the web app's and the phone's info show it.
+    Card(TaskCard),
+}
+
+/// A task drawn as a card: its number (or short uuid) and description, then what else is known of it, a few words each,
+/// with its priority as the ribbon down its left edge.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TaskCard {
+    pub id: String,
+    pub title: String,
+    pub facts: Vec<String>,
+    pub priority: Option<String>,
 }
 
 /// A line of a tab: a label (empty for one that runs on from the line above) and what it holds.
@@ -176,6 +188,39 @@ fn one_line(t: &Value) -> String {
         |id| id.to_string(),
     );
     format!("{id}  {}", str_of(t, "description").unwrap_or(""))
+}
+
+/// Task `t` as a card: its status where it is not pending (a dependency done or deleted), project and due date (in
+/// `dateformat`), and its priority.
+fn card(t: &Value, ctx: &Ctx) -> TaskCard {
+    let id = t.get("id").and_then(Value::as_u64).filter(|id| *id > 0).map_or_else(
+        || str_of(t, "uuid").unwrap_or("").chars().take(8).collect(),
+        |id| id.to_string(),
+    );
+    let mut facts = Vec::new();
+    let status = str_of(t, "status").unwrap_or("pending");
+    if status != "pending" {
+        facts.push(status.to_owned());
+    }
+    if let Some(p) = str_of(t, "project") {
+        facts.push(p.to_owned());
+    }
+    if let Some(ts) = date_of(t, "due") {
+        let pattern = ctx.cfg.settings.get("dateformat").filter(|p| !p.is_empty());
+        let shown = format_date(
+            pattern.map_or("Y-M-D", String::as_str),
+            ts,
+            local_offset(ts),
+            ctx.cfg.week_starts_monday(),
+        );
+        facts.push(format!("due {shown}"));
+    }
+    TaskCard {
+        id,
+        title: str_of(t, "description").unwrap_or("").to_owned(),
+        facts,
+        priority: str_of(t, "priority").map(str::to_owned),
+    }
 }
 
 /// The attributes `task` has of its own, not UDAs (the dates are below).
@@ -331,10 +376,11 @@ fn details(t: &Value, around: &Around, ctx: &Ctx) -> Vec<Entry> {
     if let Some(u) = t.get("urgency").and_then(Value::as_f64) {
         out.push(entry("Urgency", Shown::Text(trim_number(&format!("{u:.3}")))));
     }
-    for (label, tasks) in [("Depends on", &around.depends), ("Blocking", &around.blocking)] {
-        for (i, d) in tasks.iter().enumerate() {
-            out.push(entry(if i == 0 { label } else { "" }, Shown::Text(one_line(d))));
-        }
+    for (i, d) in around.depends.iter().enumerate() {
+        out.push(entry(if i == 0 { "Depends on" } else { "" }, Shown::Card(card(d, ctx))));
+    }
+    for (i, d) in around.blocking.iter().enumerate() {
+        out.push(entry(if i == 0 { "Blocking" } else { "" }, Shown::Text(one_line(d))));
     }
     // The UDAs the taskrc defines, by their label, in name order.
     for (name, uda) in &ctx.cfg.udas {
