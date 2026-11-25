@@ -78,22 +78,22 @@ class KanbanTest {
         val moves = moveCommands(true)
         assertEquals(
             listOf(
-                TaskCommand("pending", "modify status:pending progressState:", "circle-dashed"),
-                TaskCommand("inprogress", "modify status:pending progressState:inprogress", "loader-circle"),
-                TaskCommand("review", "modify status:pending progressState:review reviewed:", "eye"),
+                TaskCommand("pending", "modify status:pending progressState:", "circle-dashed", "To do"),
+                TaskCommand("inprogress", "modify status:pending progressState:inprogress", "loader-circle", "In progress"),
+                TaskCommand("inreview", "modify status:pending progressState:review reviewed:", "eye", "Review"),
             ),
             moves,
         )
-        assertEquals(listOf("pending", "inprogress", "review", "done"), automaticColumns(true, PROGRESS_UDA, moves).map { it.move })
-        // Someone's own review (same command, another icon: still usable) and pending (something else: left alone).
-        val mine = listOf(TaskCommand("pending", "modify +later"), TaskCommand("review", "modify status:pending progressState:review reviewed:", "x"))
+        assertEquals(listOf("pending", "inprogress", "inreview", "done"), automaticColumns(true, PROGRESS_UDA, moves).map { it.move })
+        // Someone's own inreview (same command, another icon: still usable) and pending (something else: left alone).
+        val mine = listOf(TaskCommand("pending", "modify +later"), TaskCommand("inreview", "modify status:pending progressState:review reviewed:", "x"))
         val usable = usableMoves(mine, true)
-        assertEquals(listOf("inprogress", "review"), usable.map { it.name })
+        assertEquals(listOf("inprogress", "inreview"), usable.map { it.name })
         assertEquals(
-            listOf("modify status:pending progressState:", "inprogress", "review", "done"),
+            listOf("modify status:pending progressState:", "inprogress", "inreview", "done"),
             automaticColumns(true, PROGRESS_UDA, usable).map { it.move },
         )
-        assertEquals(listOf("pending", "review", "inprogress"), withMoveCommands(mine, true).map { it.name })
+        assertEquals(listOf("pending", "inreview", "inprogress"), withMoveCommands(mine, true).map { it.name })
     }
 
     @Test

@@ -20,6 +20,9 @@ pub struct TaskCommand {
     pub command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// What the menus call it (spec 0032); the name, made words, without one ([`TaskCommand::label`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 impl TaskCommand {
@@ -31,8 +34,34 @@ impl TaskCommand {
         if let Some(i) = &self.icon {
             o.insert("icon".into(), i.clone().into());
         }
+        if let Some(l) = self.label.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+            o.insert("label".into(), l.into());
+        }
         serde_json::Value::Object(o)
     }
+
+    /// What a menu calls it: its label, else its name as words, each run of `_`, `-` or `.` a space and the first letter
+    /// upper case (`kanban_next` → `Kanban next`), as the web app's `commandLabel` does.
+    pub fn label(&self) -> String {
+        if let Some(l) = self.label.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+            return l.to_owned();
+        }
+        label_of(&self.name)
+    }
+}
+
+/// `name` as words: each run of `_`, `-` or `.` a space, the first letter upper case.
+pub fn label_of(name: &str) -> String {
+    let words = name
+        .split(['_', '-', '.'])
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut chars = words.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 /// Whether this word is part of a filter, so the command (if there is one) comes later: `+tag` and `-tag`, anything
@@ -141,6 +170,7 @@ pub fn alias_commands(settings: &BTreeMap<String, String>, commands: &[TaskComma
                 name: name.to_owned(),
                 command: v.to_owned(),
                 icon: Some(ALIAS_ICON.to_owned()),
+                label: None,
             })
         })
         .collect()
@@ -179,6 +209,7 @@ mod tests {
             name: name.into(),
             command: command.into(),
             icon: None,
+            label: None,
         }
     }
 

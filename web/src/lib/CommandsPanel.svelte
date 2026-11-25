@@ -1,7 +1,14 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { putAppSettings } from './api';
-  import { MAX_SETTINGS_BYTES, commandProblem, nameProblem, serializeSettings, type TaskCommand } from './appsettings';
+  import {
+    MAX_SETTINGS_BYTES,
+    commandLabel,
+    commandProblem,
+    nameProblem,
+    serializeSettings,
+    type TaskCommand,
+  } from './appsettings';
   import IconPicker from './IconPicker.svelte';
   import { lucide } from './lucideLib.svelte';
   import { Plus, TriangleAlert, X } from './icons';
@@ -16,16 +23,18 @@
     name: string;
     command: string;
     icon: string;
+    label: string;
   }
   let next = 0;
   const toRows = (cs: TaskCommand[]): Row[] =>
-    cs.map((c) => ({ key: next++, name: c.name, command: c.command, icon: c.icon ?? '' }));
+    cs.map((c) => ({ key: next++, name: c.name, command: c.command, icon: c.icon ?? '', label: c.label ?? '' }));
   const toCommands = (rows: Row[]): TaskCommand[] =>
-    rows.map((r) =>
-      r.icon
-        ? { name: r.name.trim(), command: r.command.trim(), icon: r.icon }
-        : { name: r.name.trim(), command: r.command.trim() },
-    );
+    rows.map((r) => ({
+      name: r.name.trim(),
+      command: r.command.trim(),
+      ...(r.icon ? { icon: r.icon } : {}),
+      ...(r.label.trim() ? { label: r.label.trim() } : {}),
+    }));
   const same = (a: TaskCommand[], b: TaskCommand[]) => JSON.stringify(a) === JSON.stringify(b);
 
   const saved = $derived(store.taskCommands);
@@ -94,7 +103,8 @@
     const seen = new Set<string>();
     for (const r of rows) {
       const name = r.name.trim();
-      const why = nameProblem(name) ?? commandProblem(r.command);
+      // With the taskrc, whose reports are commands too (spec 0032).
+      const why = nameProblem(name, store.config?.config) ?? commandProblem(r.command);
       const dup = seen.has(name) ? `there is already a command named ${name}` : null;
       seen.add(name);
       const bad = why ?? dup ?? (r.icon && lucide.missing[r.icon] ? `no Lucide icon is called “${r.icon}”` : null);
@@ -117,7 +127,7 @@
   const unread = $derived(store.appSettings?.errors ?? []);
 
   function add() {
-    rows.push({ key: next++, name: '', command: '', icon: '' });
+    rows.push({ key: next++, name: '', command: '', icon: '', label: '' });
     done = false;
   }
 
@@ -143,8 +153,9 @@
     A command is a word that stands for a whole command line. <code>fail</code> for <code>done outcome:fail</code>, and
     you can type <code>fail</code>, <code>task fail</code>, <code>3 fail</code> or <code>project:Home fail</code>: what
     comes before it selects the tasks. They also appear under the <strong>⋯</strong> menu on a task, and on the tasks
-    you have selected. They are kept in this app's own <code>settings.json</code>, not in your taskrc. A command wins
-    over a Taskwarrior command or report with the same name.
+    you have selected. They are kept in this app's own <code>settings.json</code>, not in your taskrc. A name can't be
+    one that is a command or report already (tasksh's <code>review</code> is one); the label, which the menus show, can say
+    the same.
   </p>
 
   {#if unread.length}
@@ -174,6 +185,15 @@
             spellcheck="false"
             autocomplete="off"
             autocapitalize="off"
+          />
+          <input
+            class="label"
+            bind:value={r.label}
+            oninput={() => (done = false)}
+            aria-label="Label for {r.name || 'the new command'}"
+            title="What the menus call it"
+            placeholder={commandLabel({ name: r.name.trim() }) || 'Label'}
+            autocomplete="off"
           />
           <input
             class="cmd mono"
@@ -315,7 +335,7 @@
   .row-item {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(90px, 160px) 1fr auto auto;
+    grid-template-columns: minmax(90px, 160px) minmax(90px, 180px) 1fr auto auto;
     gap: 8px;
     align-items: center;
   }
@@ -343,7 +363,8 @@
     .row-item {
       grid-template-columns: 1fr auto auto;
     }
-    .row-item .name {
+    .row-item .name,
+    .row-item .label {
       grid-column: 1 / -1;
     }
     .row-item .cmd {

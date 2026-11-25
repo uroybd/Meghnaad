@@ -447,7 +447,7 @@ fun MoreMenu(
                     leadingIcon = { CommandIcon(c.icon, 15) },
                     text = {
                         Column {
-                            Text(c.name, fontSize = 14.sp)
+                            Text(commandLabel(c), fontSize = 14.sp)
                             Text(c.command, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },

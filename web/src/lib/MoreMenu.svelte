@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, type Component } from 'svelte';
-  import type { TaskCommand } from './appsettings';
+  import { commandLabel, type TaskCommand } from './appsettings';
   import CommandIcon from './CommandIcon.svelte';
   import { Ellipsis } from './icons';
 
@@ -148,7 +148,7 @@
         {#each commands as c (c.name)}
           <button type="button" role="menuitem" tabindex="-1" title={c.command} onclick={() => run(c)}>
             <CommandIcon name={c.icon} size={15} />
-            <span class="name">{c.name}</span>
+            <span class="name">{commandLabel(c)}</span>
             <span class="what dim mono">{c.command}</span>
           </button>
         {/each}

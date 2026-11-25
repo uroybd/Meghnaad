@@ -78,6 +78,16 @@ pub fn time_log(task: &TimeTask, journal: Option<&Markers>, now: i64) -> TimeLog
 }
 
 /// A duration the way Taskwarrior writes it, one unit: `3d`, `2w`, `4mo`, `1.5y`; empty for under a second.
+/// The command `word` would run if it were typed as one (spec 0032: a task command can't be named so): one the engine runs
+/// or a report of `cfg`, by its whole name or a unique abbreviation (`sync` is `synchronize`), or tasksh's `review`, which
+/// the consoles take from three letters on (`rev`), as tasksh does. `None` for a word that is free.
+pub fn command_named(word: &str, cfg: &crate::taskrc::Config) -> Option<String> {
+    if word.len() >= 3 && "review".starts_with(word) {
+        return Some("review".into());
+    }
+    crate::cli::command_named(word, cfg)
+}
+
 pub fn vague(secs: i64) -> String {
     format_vague(secs)
 }
@@ -373,6 +383,10 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<crate::cells::Ctx>(2)?
         )),
         "command_names" => json!(crate::complete::COMMANDS.iter().map(|(c, _)| *c).collect::<Vec<_>>()),
+        "command_named" => json!(command_named(
+            &a.req::<String>(0)?,
+            &a.opt::<crate::taskrc::Config>(1)?.unwrap_or_default()
+        )),
         "virtual_tags" => json!(crate::complete::VIRTUAL_TAGS),
         "sortable_columns" => json!(sort::SORTABLE),
         "recur_presets" => json!(crate::complete::RECUR_PRESETS
@@ -975,5 +989,22 @@ mod tests {
             call("board_normalize", "[[1]]"),
             r#"{"boards":[],"errors":["board 1: not an object"]}"#
         );
+    }
+
+    #[test]
+    fn a_word_is_a_command_when_task_would_run_it_as_one() {
+        let named = |w: &str| call("command_named", &format!("[{}]", serde_json::json!(w)));
+        assert_eq!(named("review"), r#""review""#);
+        assert_eq!(named("rev"), r#""review""#, "tasksh's review from three letters");
+        assert_eq!(named("sync"), r#""synchronize""#, "an abbreviation");
+        assert_eq!(named("modify"), r#""modify""#);
+        assert_eq!(named("_get"), r#""_get""#);
+        assert_eq!(named("next"), r#""next""#, "a report");
+        for free in ["inreview", "inprogress", "pending", "fail", "re", "project"] {
+            assert_eq!(named(free), "null", "{free}");
+        }
+        // The taskrc's own reports, when its settings are given.
+        let cfg = serde_json::json!({ "reports": { "standup": { "name": "standup", "columns": ["id"] } } });
+        assert_eq!(call("command_named", &format!(r#"["standup", {cfg}]"#)), r#""standup""#);
     }
 }

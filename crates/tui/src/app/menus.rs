@@ -14,7 +14,11 @@ impl App {
         let q = query.to_lowercase();
         self.menu_commands()
             .into_iter()
-            .filter(|c| c.name.to_lowercase().contains(&q) || c.command.to_lowercase().contains(&q))
+            .filter(|c| {
+                c.name.to_lowercase().contains(&q)
+                    || c.label().to_lowercase().contains(&q)
+                    || c.command.to_lowercase().contains(&q)
+            })
             .collect()
     }
 

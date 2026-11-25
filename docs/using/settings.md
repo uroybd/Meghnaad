@@ -433,7 +433,7 @@ are `ink`, `coral`/`rose`, `sage`/`moss`, `amber`/`sand`, `sky`/`ocean`, `orchid
 ## Commands
 
 A command is a word that stands for a whole command line. Define it under **Settings → Commands**: a name, what it stands
-for, and optionally an icon. Any [Lucide](https://lucide.dev/icons) icon works, picked by sight, by name, or by what it is
+for, and optionally a label and an icon. Any [Lucide](https://lucide.dev/icons) icon works, picked by sight, by name, or by what it is
 for ("cancel" finds the circled cross). The app carries only the few icons it uses itself; any other is fetched from the
 jsdelivr CDN when first shown and remembered by your browser (see *Icons from a CDN* in the README's security notes).
 With no network, an icon you haven't used shows as a terminal, and the picker lets you type its name instead.
@@ -450,11 +450,22 @@ project:Home +work fail   → project:Home +work done outcome:fail
 What comes before the command word selects the tasks, as it always does (and the active context applies). What comes
 after is added to what the command stands for. A command may carry a filter of its own: `late` for `+OVERDUE list` makes
 `project:Home late` read `project:Home +OVERDUE list`. Only the command word can be one, so `add fail the test` still
-adds a task called "fail the test", and a command used inside another is written out too. A name is written out once on a
-line, which lets `done` stand for `done outcome:ok` and still reach Taskwarrior's `done`.
+adds a task called "fail the test", and a command used inside another is written out too.
 
-**A command wins over a Taskwarrior command, a report or a taskrc `alias.*` of the same name.** It differs from a taskrc
-alias in two ways: it is yours alone (kept in this app's `settings.json`, not the taskrc that mirrors your desktop one),
+**A name can't be a command already.** Not one of Taskwarrior's (hidden ones such as `_get` too), nor a word `task` would
+read as one (`sync` is `synchronize`, `old` is the `oldest` report), nor a report of your taskrc, nor tasksh's `review`
+(or `rev`), nor the console's `clear` and `cls`. A command named so is reported as a warning in `settings.json` and left
+out. Give it another name and a label: `inreview` labelled "Review" shows as Review in the menus.
+
+**Labels.** The menus show a command by its label. Without one, its name is made into words: each run of `_`, `-` or `.`
+is a space and the first letter is upper case (`kanban_next` is "Kanban next", `follow-up.later` "Follow up later"). The
+name is still what you type: on the console, in a chain, in a kanban's move.
+
+```json
+{ "name": "kanban_next", "command": "modify +next", "label": "Move to next column" }
+```
+
+**A command wins over a taskrc `alias.*` of the same name.** It differs from a taskrc alias in two ways: it is yours alone (kept in this app's `settings.json`, not the taskrc that mirrors your desktop one),
 and it reads the line as Taskwarrior does, so it applies only where the command goes.
 
 **Several commands.** `wrap` for `done outcome:fail && modify +failed` runs the second only if the first worked; `||` and

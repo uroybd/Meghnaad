@@ -199,7 +199,7 @@ On the Tasks page:
 | `D` | Delete the selected task; its question opens in a box |
 | `p` | Duplicate the selected task |
 | `X` | Delete the completed tasks the filter picks (`task <filter> status:completed delete`, which asks) |
-| `c` | Run one of your [task commands](#settings) on the selected task: a box lists them, typing narrows the list, `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
+| `c` | Run one of your [task commands](#settings) on the selected task: a box lists them by label, with the name and the line beside it; typing narrows the list (by label, name or line), `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
 | `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
 | `r` | Another report, by name |
 | `s` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `b` groups by it (a `/` after it, as the web's **Group** does) or stops, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
@@ -358,7 +358,8 @@ meghnaad 1 done '&&' 2 start ';' next # a chain: quote the operators so the shel
 
 The exit status is the last statement run's, as in a shell (2 for a line that is not a well-formed chain). `export`,
 `skill`, `--dry-run` (`-n`), `--help` and `--version` as the first word are the app's own, so `task export` itself is
-reached as `task export`, and a task command named `export` or `skill` only from the app's command line.
+reached as `task export`, and a task command named `skill` only from the app's command line (none can be named `export`,
+which is a command already).
 
 `meghnaad --dry-run <line>` prints the statements the line stands for, a statement to a line after the operator that
 joins it, and runs nothing:
@@ -533,7 +534,7 @@ and on into the next one, and `[` `]` jump between sections. `E`, in any section
 | General | Where `settings.json` is and what is wrong with it, as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept); the home page, which `Space` or `Enter` chooses from a list (`next`, each report, each board, each kanban while Kanban is on) and saves; on the row below, what a task with no ID shows in the ID column, `-` as `task` shows it or its short uuid, which `Space` or `Enter` switches and saves (`appearance.idFallback`, [as on the web](using/settings.md#ids)); on the next, Card icons, whether a kanban's cards show their fields as symbols, a UDA as a badge (`appearance.cardIcons`, [as on the web](using/settings.md#cards)); on the next, Nerd Font, whether the icons are drawn from your terminal's [Nerd Font](https://www.nerdfonts.com) (`tui.nerdFont`: the cards' field icons, and an icon before each page in the top bar, the web app's); and the [progress bars](#settings) |
 | Sync | `y`, `Space` or `Enter` goes through when to sync, and saves it ([Sync](#sync)) |
 | Theme | Shows the preset drawn and each role in its colours, and Taskwarrior's own; `Space` or `Enter` goes through `auto`, `light`, `dark` and `mono` (the `base` of a theme with roles of its own), `s` turns `task`'s shading on or off, and each is saved ([Colours](#colours)) |
-| Task commands | `a` adds one, `e` or `Enter` changes the one chosen, `D` deletes it |
+| Task commands | `a` adds one, `e` or `Enter` changes the one chosen (its name, then its line, then its label: left empty, the menus show the name as words), `D` deletes it |
 | Boards | `Enter` opens the board chosen |
 | Kanban | While it is off, the UDA and the two ways to set it up (`Enter` twice on the automatic one writes its lines); then Kanban's settings and each kanban's, a row each: `e` or `Enter` changes the row, `a` adds a column, `D` deletes a column or kanban or takes away a kanban's own setting, `K` `J` move a column, `n` adds a kanban, `o` opens one, `w` writes the UDA, `x` turns Kanban off ([Kanban](using/kanban.md#in-the-terminal-app)) |
 | Keybindings | Your keys, under a heading for each place they go: General (`keys`, every front end), Web, Mobile and Terminal (`tui.keys`). `t` shows the default keys too, faint; `f` searches the actions, what they do and their keys; `a` adds a key to the section of the line chosen; `D` takes out what you set, back to the defaults; `n` leaves the action without a key |

@@ -115,6 +115,7 @@ mod tests {
             name: name.into(),
             command: command.into(),
             icon: None,
+            label: None,
         }
     }
 

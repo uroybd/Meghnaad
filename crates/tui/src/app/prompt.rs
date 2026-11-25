@@ -259,12 +259,20 @@ impl App {
                     self.reopen(p);
                     return Action::None;
                 }
+                let label = at
+                    .and_then(|i| self.settings.task_commands.get(i))
+                    .and_then(|c| c.label.clone())
+                    .unwrap_or_default();
+                self.prompt(PromptKind::CommandLabel(*at, name.clone(), line.to_owned()), &label);
+            }
+            PromptKind::CommandLabel(at, name, command) => {
                 let mut list = self.settings.task_commands.clone();
                 let icon = at.and_then(|i| list.get(i)).and_then(|c| c.icon.clone());
                 let c = TaskCommand {
                     name: name.clone(),
-                    command: line.to_owned(),
+                    command: command.clone(),
                     icon,
+                    label: (!line.is_empty()).then(|| line.to_owned()),
                 };
                 match at.filter(|&i| i < list.len()) {
                     Some(i) => list[i] = c,

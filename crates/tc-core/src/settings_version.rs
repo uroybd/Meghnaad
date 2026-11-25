@@ -7,7 +7,7 @@
 use serde_json::{Map, Value};
 
 /// The version this build writes.
-pub const VERSION: u64 = 3;
+pub const VERSION: u64 = 4;
 
 /// The version `settings` says it is: `"version"`, or 1 for none.
 pub fn version_of(settings: &Value) -> u64 {
@@ -20,6 +20,8 @@ pub fn version_of(settings: &Value) -> u64 {
 /// - 1 → 2 (spec 0020): the keys are bound per group, a key to what it runs (`tc_core::keymap`).
 /// - 2 → 3: whether cards show their fields as icons is Appearance's (`appearance.cardIcons`), for every card, no longer
 ///   Kanban's (`kanban.icons`).
+/// - 3 → 4 (spec 0032): a task command may not be named like a command (`review` is tasksh's), so the kanban's move
+///   command `review` is `inreview`, and the move lines that ran it run that.
 pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     let root = settings.as_object()?;
     let from = version_of(settings);
@@ -32,6 +34,9 @@ pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     }
     if from < 3 {
         card_icons_v2_to_v3(&mut root);
+    }
+    if from < 4 {
+        review_command_v3_to_v4(&mut root);
     }
     root.insert("version".into(), Value::from(VERSION));
     Some(Value::Object(root))
@@ -51,6 +56,79 @@ fn card_icons_v2_to_v3(root: &mut Map<String, Value>) {
     if let Some(kanban) = root.get_mut("kanban").and_then(Value::as_object_mut) {
         kanban.remove("icons");
     }
+}
+
+/// The task command `review` (the kanban's automatic setup wrote it) is renamed `inreview`, and so is each statement of a
+/// column's move line that starts with it. Nothing changes when `inreview` is already taken: the reader then reports
+/// `review` as a name it can't have, for the person to rename.
+fn review_command_v3_to_v4(root: &mut Map<String, Value>) {
+    const OLD: &str = "review";
+    const NEW: &str = "inreview";
+    let Some(commands) = root.get_mut("taskCommands").and_then(Value::as_array_mut) else {
+        return;
+    };
+    let named = |c: &Value, n: &str| c.get("name").and_then(Value::as_str) == Some(n);
+    if commands.iter().any(|c| named(c, NEW)) {
+        return;
+    }
+    let Some(review) = commands
+        .iter_mut()
+        .find(|c| named(c, OLD))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    review.insert("name".into(), Value::from(NEW));
+    let Some(kanban) = root.get_mut("kanban").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let mut lists: Vec<&mut Value> = Vec::new();
+    let (columns, kanbans) = split_kanban(kanban);
+    lists.extend(columns);
+    if let Some(ks) = kanbans {
+        lists.extend(ks.iter_mut().filter_map(|k| k.get_mut("columns")));
+    }
+    for column in lists.into_iter().filter_map(Value::as_array_mut).flatten() {
+        if let Some(line) = column.get("move").and_then(Value::as_str) {
+            let renamed = rename_statement_word(line, OLD, NEW);
+            if let Some(c) = column.as_object_mut() {
+                c.insert("move".into(), Value::from(renamed));
+            }
+        }
+    }
+}
+
+/// `kanban.columns` and `kanban.kanbans`, borrowed apart.
+fn split_kanban(kanban: &mut Map<String, Value>) -> (Option<&mut Value>, Option<&mut Vec<Value>>) {
+    let mut columns = None;
+    let mut kanbans = None;
+    for (k, v) in kanban.iter_mut() {
+        match k.as_str() {
+            "columns" => columns = Some(v),
+            "kanbans" => kanbans = v.as_array_mut(),
+            _ => {}
+        }
+    }
+    (columns, kanbans)
+}
+
+/// `line` with the word `old` made `new` where it starts a statement (the line's first word, or the one after `&&`,
+/// `||` or `;`). Spacing is kept.
+fn rename_statement_word(line: &str, old: &str, new: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut starts = true;
+    let mut rest = line;
+    while !rest.is_empty() {
+        let space = rest.len() - rest.trim_start().len();
+        out.push_str(&rest[..space]);
+        rest = &rest[space..];
+        let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let word = &rest[..end];
+        out.push_str(if starts && word == old { new } else { word });
+        starts = matches!(word, "&&" | "||" | ";");
+        rest = &rest[end..];
+    }
+    out
 }
 
 #[cfg(test)]
@@ -73,7 +151,7 @@ mod tests {
         assert_eq!(
             new,
             json!({
-                "version": 3,
+                "version": 4,
                 "sync": "manual",
                 "keys": { "app": { "ctrl+k": "app.prompt", "/": "app.prompt" } },
                 // The old keys replaced an action's own: the default keys they left out are unbound.
@@ -89,11 +167,11 @@ mod tests {
     #[test]
     fn a_later_version_or_no_object_is_left() {
         assert_eq!(
-            migrate(&json!({ "version": 4, "keys": { "a.b": "x" } }), &defaults()),
+            migrate(&json!({ "version": 5, "keys": { "a.b": "x" } }), &defaults()),
             None
         );
         assert_eq!(migrate(&Value::Null, &defaults()), None);
-        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 3 })));
+        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 4 })));
     }
 
     #[test]
@@ -102,18 +180,48 @@ mod tests {
             json!({ "version": 2, "kanban": { "enabled": true, "icons": true }, "appearance": { "idFallback": true } });
         assert_eq!(
             migrate(&old, &defaults()).unwrap(),
-            json!({ "version": 3, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
+            json!({ "version": 4, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
         );
         let bare = json!({ "version": 2, "kanban": { "icons": false } });
         assert_eq!(
             migrate(&bare, &defaults()).unwrap(),
-            json!({ "version": 3, "kanban": {}, "appearance": { "cardIcons": false } })
+            json!({ "version": 4, "kanban": {}, "appearance": { "cardIcons": false } })
         );
         // Not a yes or no: left for the reader to report.
         let odd = json!({ "version": 2, "kanban": { "icons": "yes" } });
         assert_eq!(
             migrate(&odd, &defaults()).unwrap(),
-            json!({ "version": 3, "kanban": { "icons": "yes" } })
+            json!({ "version": 4, "kanban": { "icons": "yes" } })
+        );
+    }
+
+    #[test]
+    fn version_3_review_command_becomes_inreview_and_the_moves_that_run_it_follow() {
+        let old = json!({
+            "version": 3,
+            "taskCommands": [
+                { "name": "pending", "command": "modify status:pending p:" },
+                { "name": "review", "command": "modify status:pending p:review", "icon": "eye" }
+            ],
+            "kanban": {
+                "columns": [{ "name": "Review", "filter": "p:review", "move": "review" }],
+                "kanbans": [{ "id": "k", "columns": [{ "name": "R", "filter": "x", "move": "review && start ; annotate review" }] }]
+            }
+        });
+        let new = migrate(&old, &defaults()).unwrap();
+        assert_eq!(new["version"], 4);
+        assert_eq!(new["taskCommands"][1]["name"], "inreview");
+        assert_eq!(new["taskCommands"][1]["icon"], "eye");
+        assert_eq!(new["kanban"]["columns"][0]["move"], "inreview");
+        assert_eq!(
+            new["kanban"]["kanbans"][0]["columns"][0]["move"],
+            "inreview && start ; annotate review"
+        );
+        // `inreview` already taken: nothing is renamed, and the reader says what is wrong.
+        let taken = json!({ "version": 3, "taskCommands": [{ "name": "review", "command": "a" }, { "name": "inreview", "command": "b" }] });
+        assert_eq!(
+            migrate(&taken, &defaults()).unwrap()["taskCommands"],
+            taken["taskCommands"]
         );
     }
 }

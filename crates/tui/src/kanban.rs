@@ -252,25 +252,34 @@ pub fn column(name: &str, filter: &str, on_move: &str) -> Column {
 /// is the same word wherever the app runs a command on a task (kanban.ts `moveCommands`). With tasksh's review set up, a
 /// task moved to Review goes back in its queue.
 pub fn move_commands(review: bool, u: &str) -> Vec<TaskCommand> {
-    let command = |name: &str, command: String, icon: &str| TaskCommand {
+    let command = |name: &str, command: String, icon: &str, label: &str| TaskCommand {
         name: name.into(),
         command,
         icon: Some(icon.into()),
+        label: Some(label.into()),
     };
     vec![
-        command("pending", format!("modify status:pending {u}:"), "circle-dashed"),
+        command(
+            "pending",
+            format!("modify status:pending {u}:"),
+            "circle-dashed",
+            "To do",
+        ),
         command(
             "inprogress",
             format!("modify status:pending {u}:inprogress"),
             "loader-circle",
+            "In progress",
         ),
+        // Not `review`, which is tasksh's command (spec 0032).
         command(
-            "review",
+            "inreview",
             format!(
                 "modify status:pending {u}:review{}",
                 if review { " reviewed:" } else { "" }
             ),
             "eye",
+            "Review",
         ),
     ]
 }
@@ -850,33 +859,38 @@ mod tests {
     fn moves_with_task_commands_added_unless_one_of_that_name_stands_for_something_else() {
         let moves = move_commands(true, U);
         let names = |cs: &[TaskCommand]| cs.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
-        assert_eq!(names(&moves), ["pending", "inprogress", "review"]);
+        assert_eq!(names(&moves), ["pending", "inprogress", "inreview"]);
         assert_eq!(moves[2].command, "modify status:pending progressState:review reviewed:");
         assert_eq!(moves[1].icon.as_deref(), Some("loader-circle"));
+        assert_eq!(
+            moves.iter().map(TaskCommand::label).collect::<Vec<_>>(),
+            ["To do", "In progress", "Review"]
+        );
         let on_move = |cols: Vec<Column>| cols.into_iter().map(|c| c.on_move).collect::<Vec<_>>();
         assert_eq!(
             on_move(automatic_columns(true, U, &moves)),
-            ["pending", "inprogress", "review", "done"]
+            ["pending", "inprogress", "inreview", "done"]
         );
-        // Someone's own review (same command, another icon: still usable) and pending (something else: left alone).
+        // Someone's own inreview (same command, another icon: still usable) and pending (something else: left alone).
         let own = |name: &str, command: &str| TaskCommand {
             name: name.into(),
             command: command.into(),
             icon: None,
+            label: None,
         };
         let mine = [
             own("pending", "modify +later"),
-            own("review", "modify status:pending progressState:review reviewed:"),
+            own("inreview", "modify status:pending progressState:review reviewed:"),
         ];
         let usable = usable_moves(&mine, true, U);
-        assert_eq!(names(&usable), ["inprogress", "review"]);
+        assert_eq!(names(&usable), ["inprogress", "inreview"]);
         assert_eq!(
             on_move(automatic_columns(true, U, &usable)),
-            ["modify status:pending progressState:", "inprogress", "review", "done"]
+            ["modify status:pending progressState:", "inprogress", "inreview", "done"]
         );
         assert_eq!(
             names(&with_move_commands(&mine, true, U)),
-            ["pending", "review", "inprogress"]
+            ["pending", "inreview", "inprogress"]
         );
     }
 
@@ -995,6 +1009,7 @@ mod tests {
             name: "ship".into(),
             command: "modify +shipped && done".into(),
             icon: None,
+            label: None,
         };
         let steps = move_steps("ship", uuid, &[ship]).unwrap();
         let lines: Vec<&str> = steps.iter().map(|s| s.line.as_str()).collect();

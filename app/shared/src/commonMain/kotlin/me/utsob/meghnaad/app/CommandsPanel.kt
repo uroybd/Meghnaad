@@ -26,10 +26,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.JsonObject
 
 /** One line of the commands list while it is edited. */
-class CmdRow(val key: Int, name: String, command: String, icon: String) {
+class CmdRow(val key: Int, name: String, command: String, icon: String, label: String = "") {
     var name by mutableStateOf(name)
     var command by mutableStateOf(command)
     var icon by mutableStateOf(icon)
+    var label by mutableStateOf(label)
 }
 
 /** The commands tab's edits: kept while another tab is shown (CommandsPanel.svelte). */
@@ -40,10 +41,12 @@ class CommandsState(private val store: Store) {
     var error by mutableStateOf<String?>(null)
     var done by mutableStateOf(false)
 
-    private fun toRows(cs: List<TaskCommand>) = cs.map { CmdRow(next++, it.name, it.command, it.icon ?: "") }
+    private fun toRows(cs: List<TaskCommand>) = cs.map { CmdRow(next++, it.name, it.command, it.icon ?: "", it.label ?: "") }
 
     val commands: List<TaskCommand>
-        get() = rows.map { r -> TaskCommand(r.name.trim(), r.command.trim(), r.icon.takeIf { it.isNotEmpty() }) }
+        get() = rows.map { r ->
+            TaskCommand(r.name.trim(), r.command.trim(), r.icon.takeIf { it.isNotEmpty() }, r.label.trim().takeIf { it.isNotEmpty() })
+        }
 
     val saved: List<TaskCommand> get() = store.taskCommands
 
@@ -95,7 +98,8 @@ class CommandsState(private val store: Store) {
             val seen = HashSet<String>()
             for (r in rows) {
                 val name = r.name.trim()
-                val why = nameProblem(name) ?: commandProblem(r.command)
+                // With the taskrc, whose reports are commands too (spec 0032).
+                val why = nameProblem(name, store.config?.config) ?: commandProblem(r.command)
                 val dup = if (name in seen) "there is already a command named $name" else null
                 seen += name
                 val bad = why ?: dup ?: if (r.icon.isNotEmpty() && LucideLib.loaded && !LucideLib.has(r.icon)) "no Lucide icon is called “${r.icon}”" else null
@@ -152,7 +156,7 @@ fun CommandsPanel(store: Store, st: CommandsState) {
         Dim(
             "A command is a word that stands for a whole command line: fail for done outcome:fail, and you can type fail, task fail, 3 fail or project:Home fail: " +
                 "what comes before it selects the tasks. They also appear under the ⋯ menu on a task, and on the tasks you have selected. They are kept in this " +
-                "app's own settings.json, not in your taskrc. A command wins over a Taskwarrior command or report with the same name.",
+                "app's own settings.json, not in your taskrc. A name can't be one that is a command or report already (tasksh's review is one); the label, which the menus show, can say the same.",
             size = 13,
         )
         if (st.unread.isNotEmpty()) {
@@ -175,6 +179,12 @@ fun CommandsPanel(store: Store, st: CommandsState) {
                     IconPicker(r.icon, { r.icon = it; st.done = false }, "Icon for ${r.name.ifEmpty { "the new command" }}")
                     IconAction("x", "Remove ${r.name.ifEmpty { "this command" }}", { st.rows.remove(r); st.done = false }, size = 15.dp)
                 }
+                OutlinedTextField(
+                    r.label, { r.label = it; st.done = false }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("Label in menus", fontSize = 12.sp) },
+                    placeholder = { Text(commandLabel(TaskCommand(r.name.trim(), "")).ifEmpty { "Fail" }, fontSize = 13.sp) },
+                    textStyle = TextStyle(fontSize = 13.sp),
+                )
                 OutlinedTextField(
                     r.command, { r.command = it; st.done = false }, Modifier.fillMaxWidth(), singleLine = true, isError = why != null,
                     placeholder = { Text("done outcome:fail", fontSize = 13.sp) },

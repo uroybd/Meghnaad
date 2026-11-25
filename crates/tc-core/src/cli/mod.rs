@@ -543,6 +543,18 @@ fn all_names(cfg: &Config) -> Vec<(String, Cmd, bool)> {
     v
 }
 
+/// The command or report `word` runs at the head of a command line, as `task` reads it: its whole name, or a unique
+/// abbreviation (`sync` runs `synchronize`). `None` for a word that runs none, or is ambiguous.
+pub fn command_named(word: &str, cfg: &Config) -> Option<String> {
+    match match_command(word, cfg).ok()?? {
+        (Cmd::Report(r), _) => Some(r),
+        (Cmd::Builtin(k), _) => COMMANDS
+            .iter()
+            .find(|(_, kind, _)| *kind == k)
+            .map(|(n, ..)| (*n).to_owned()),
+    }
+}
+
 /// Exact match, else a unique prefix of at least `abbreviation.minimum` characters (`ann`, `proj`).
 fn match_command(word: &str, cfg: &Config) -> Result<Option<(Cmd, bool)>, String> {
     let names = all_names(cfg);

@@ -6,7 +6,7 @@ import MoreMenu from './MoreMenu.svelte';
 
 const CMDS: TaskCommand[] = [
   { name: 'fail', command: 'done outcome:fail', icon: 'circle-x' },
-  { name: 'later', command: 'modify wait:2d' },
+  { name: 'later', command: 'modify wait:2d', label: 'Put off two days' },
 ];
 
 let app: ReturnType<typeof mount> | null = null;
@@ -43,7 +43,7 @@ describe('the more-actions menu', () => {
     trigger()!.click();
     await tick();
     expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
-    expect(items().map((i) => i.querySelector('.name')?.textContent)).toEqual(['fail', 'later']);
+    expect(items().map((i) => i.querySelector('.name')?.textContent)).toEqual(['Fail', 'Put off two days']);
     expect(items()[0].textContent).toContain('done outcome:fail');
     // The first item is focused, for the keyboard.
     expect(document.activeElement).toBe(items()[0]);
@@ -110,7 +110,12 @@ describe('the more-actions menu', () => {
     flushSync();
     trigger()!.click();
     await tick();
-    expect(items().map((i) => i.querySelector('.name')?.textContent)).toEqual(['Done', 'Delete', 'fail', 'later']);
+    expect(items().map((i) => i.querySelector('.name')?.textContent)).toEqual([
+      'Done',
+      'Delete',
+      'Fail',
+      'Put off two days',
+    ]);
     // A disabled one is drawn, and the keyboard skips it.
     expect(document.querySelector<HTMLButtonElement>('[role=menuitem]:nth-child(2)')!.disabled).toBe(true);
     items()[0].click();

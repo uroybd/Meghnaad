@@ -9,6 +9,8 @@
 //                     "transformations": [ { "match": "\\b(BOR-\\d+)\\b", "replace": "[$1](https://…/$1)",
 //                                            "fields": ["description"] } ] } }
 
+import { callHelper } from '../engine/helpers';
+import type { ConfigResponse } from './types';
 import { normalizeBoards, type Board } from './boards';
 import { ChainError, splitChain } from './compound';
 import { emptyKanbanSettings, kanbanJson, parseKanban, type KanbanSettings } from './kanban';
@@ -23,6 +25,20 @@ export interface TaskCommand {
   command: string;
   /** A Lucide icon, by its name (`circle-x`), for the buttons that run it. */
   icon?: string;
+  /** What the menus call it (`commandLabel`); the name, made words, without one. */
+  label?: string;
+}
+
+/**
+ * What a menu calls a task command (or an alias in the menus): its label, else its name as words, each run of `_`, `-`
+ * or `.` a space and the first letter upper case (`kanban_next` → `Kanban next`), as a board control without a label
+ * is shown (`boards.ts` `rangeLabel`).
+ */
+export function commandLabel(c: { name: string; label?: string }): string {
+  const label = c.label?.trim();
+  if (label) return label;
+  const words = c.name.replace(/[_.-]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /**
@@ -235,16 +251,24 @@ export const ICON_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
  * Why `name` can't be a task command, or null. It has to be one word that can't be taken for part of a filter (a
- * number, `+tag`, `attribute:value`), because the line is read word by word.
+ * number, `+tag`, `attribute:value`), because the line is read word by word. Nor can it be a word `task` would run as
+ * a command (spec 0032): Taskwarrior's own, a unique abbreviation of one (`sync`), a report (`config`'s, else the default
+ * ones), tasksh's `review`, or a console's own word; a label can say the same.
  */
-export function nameProblem(name: string): string | null {
+export function nameProblem(name: string, config?: ConfigResponse['config']): string | null {
   if (!name) return 'needs a name';
   if (/\s/.test(name)) return 'a name is one word (no spaces)';
   if (/^[+\-/(]/.test(name) || /[:='"]/.test(name)) return 'a name can’t start with + - / ( or contain : = or quotes';
   if (/^[\d,.]+$/.test(name)) return 'a name can’t be a number';
   if (name === 'task' || name === '--') return `‘${name}’ can’t be a name`;
-  return null;
+  const runs = CONSOLE_WORDS.includes(name) ? name : callHelper<string | null>('command_named', name, config ?? null);
+  if (runs === null) return null;
+  const label = `give it another name (its label can still say “${commandLabel({ name })}”)`;
+  return runs === name ? `‘${name}’ is a command already: ${label}` : `‘${name}’ runs the command ${runs}: ${label}`;
 }
+
+/** The consoles' own words, answered before anything is sent (`clear` empties the scrollback). */
+const CONSOLE_WORDS = ['clear', 'cls'];
 
 /** Why what a command stands for is not a command line (`done &&` has nothing after the `&&`), or `null`. */
 export function commandProblem(command: string): string | null {
@@ -311,7 +335,7 @@ export function parseSettings(text: string): ParsedSettings {
     const at = `taskCommands[${i}]`;
     if (!c || typeof c !== 'object' || Array.isArray(c))
       return void out.errors.push(`${at}: must be { "name": …, "command": … }`);
-    const { name, command, icon } = c as Record<string, unknown>;
+    const { name, command, icon, label } = c as Record<string, unknown>;
     if (typeof name !== 'string') return void out.errors.push(`${at}: name must be text`);
     const bad = nameProblem(name);
     if (bad) return void out.errors.push(`${at} (${name || 'no name'}): ${bad}`);
@@ -321,7 +345,11 @@ export function parseSettings(text: string): ParsedSettings {
       return void out.errors.push(`${at} (${name}): icon must be a Lucide icon name such as "circle-x"`);
     if (seen.has(name)) return void out.errors.push(`${at}: there is already a command named ${name}`);
     seen.add(name);
-    out.commands.push(icon ? { name, command: command.trim(), icon } : { name, command: command.trim() });
+    const read: TaskCommand = icon ? { name, command: command.trim(), icon } : { name, command: command.trim() };
+    // A label that isn't text is said, and the command is used without it.
+    if (typeof label === 'string' && label.trim()) read.label = label;
+    else if (label !== undefined && typeof label !== 'string') out.errors.push(`${at} (${name}): label must be text`);
+    out.commands.push(read);
   });
   return out;
 }
@@ -429,7 +457,12 @@ function withCommands(raw: Record<string, unknown>, commands: TaskCommand[], rea
   const { taskCommands: _old, ...rest } = raw;
   const next: Record<string, unknown> = { ...rest };
   if (commands.length || (read && Array.isArray(raw.taskCommands)))
-    next.taskCommands = commands.map(({ name, command, icon }) => (icon ? { name, command, icon } : { name, command }));
+    next.taskCommands = commands.map(({ name, command, icon, label }) => ({
+      name,
+      command,
+      ...(icon ? { icon } : {}),
+      ...(label?.trim() ? { label: label.trim() } : {}),
+    }));
   return next;
 }
 

@@ -155,6 +155,8 @@ pub enum PromptKind {
     KeysSearch,
     /// What the task command named stands for.
     CommandLine(Option<usize>, String),
+    /// What the menus call the task command named, standing for the line (empty: its name as words).
+    CommandLabel(Option<usize>, String, String),
     /// A kanban's setting, or what the Kanban page shows a kanban with.
     Kanban(KanbanEdit),
 }
@@ -170,6 +172,7 @@ impl PromptKind {
             PromptKind::Report => "report",
             PromptKind::CommandName(_) => "name",
             PromptKind::CommandLine(..) => "command",
+            PromptKind::CommandLabel(..) => "label",
             PromptKind::KeysSearch => "search keys",
             PromptKind::Kanban(e) => e.label(),
         }
@@ -200,7 +203,10 @@ impl PromptKind {
             PromptKind::Kanban(KanbanEdit::Filter | KanbanEdit::Text(KanbanRow::Filter(_))) => Some(String::new()),
             PromptKind::Kanban(KanbanEdit::ColumnFilter { .. }) => Some(String::new()),
             PromptKind::Kanban(KanbanEdit::ColumnMove { .. }) => Some("1 ".into()),
-            PromptKind::CommandName(_) | PromptKind::KeysSearch | PromptKind::Kanban(_) => None,
+            PromptKind::CommandName(_)
+            | PromptKind::CommandLabel(..)
+            | PromptKind::KeysSearch
+            | PromptKind::Kanban(_) => None,
         }
     }
 }

@@ -175,9 +175,20 @@ export function hasReview(config: ConfigResponse | null): boolean {
  */
 export function moveCommands(review: boolean, u = PROGRESS_UDA): TaskCommand[] {
   return [
-    { name: 'pending', command: `modify status:pending ${u}:`, icon: 'circle-dashed' },
-    { name: 'inprogress', command: `modify status:pending ${u}:inprogress`, icon: 'loader-circle' },
-    { name: 'review', command: `modify status:pending ${u}:review${review ? ' reviewed:' : ''}`, icon: 'eye' },
+    { name: 'pending', command: `modify status:pending ${u}:`, icon: 'circle-dashed', label: 'To do' },
+    {
+      name: 'inprogress',
+      command: `modify status:pending ${u}:inprogress`,
+      icon: 'loader-circle',
+      label: 'In progress',
+    },
+    // Not `review`, which is tasksh's command (spec 0032).
+    {
+      name: 'inreview',
+      command: `modify status:pending ${u}:review${review ? ' reviewed:' : ''}`,
+      icon: 'eye',
+      label: 'Review',
+    },
   ];
 }
 

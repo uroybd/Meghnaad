@@ -902,6 +902,7 @@ fn settings(f: &mut Frame, app: &App, area: Rect) {
             .map(|c| {
                 ListItem::new(Line::from(vec![
                     Span::from(format!("{:<14}", c.name)).bold(),
+                    Span::from(format!("{:<20}", c.label())).quiet(),
                     Span::from(c.command.clone()),
                 ]))
             })
@@ -1278,7 +1279,9 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
         f.render_widget(Paragraph::new("No task command matches.").quiet(), rest);
         return;
     }
-    let widest = list.iter().map(|c| c.name.chars().count()).max().unwrap_or(0);
+    // The label first, as the other menus show it; the name, which is what is typed, beside it.
+    let widest = list.iter().map(|c| c.label().chars().count()).max().unwrap_or(0);
+    let named = list.iter().map(|c| c.name.chars().count()).max().unwrap_or(0);
     let items: Vec<ListItem> = list
         .iter()
         .map(|c| {
@@ -1286,7 +1289,8 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
             let alias = c.icon.as_deref() == Some(crate::commands::ALIAS_ICON);
             ListItem::new(Line::from(vec![
                 Span::from(if alias { "$ " } else { "  " }).quiet(),
-                Span::from(format!("{:<widest$}  ", c.name)).bold(),
+                Span::from(format!("{:<widest$}  ", c.label())).bold(),
+                Span::from(format!("{:<named$}  ", c.name)),
                 Span::from(c.command.clone()).quiet(),
             ]))
         })
@@ -2315,5 +2319,39 @@ mod tests {
         assert_eq!(text("250").as_deref(), Some("━━━━━━━━━━ 250"));
         assert_eq!(text("0").as_deref(), Some("────────── 0"));
         assert_eq!(text(""), None);
+    }
+
+    #[test]
+    fn the_task_commands_box_shows_each_label_with_the_name_beside_it_and_narrows_by_either() {
+        use crate::commands::TaskCommand;
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = crate::app::App::new(crate::task::Task::new("/nonexistent/task"));
+        let cmd = |name: &str, command: &str, label: Option<&str>| TaskCommand {
+            name: name.into(),
+            command: command.into(),
+            icon: None,
+            label: label.map(Into::into),
+        };
+        app.settings.task_commands = vec![
+            cmd("kanban_next", "modify +next", Some("Move to next column")),
+            cmd("fail", "done outcome:fail", None),
+        ];
+        let rows = |app: &crate::app::App, query: &str| {
+            let mut t = Terminal::new(TestBackend::new(80, 12)).unwrap();
+            t.draw(|f| super::commands(f, app, "u", query, 0, f.area())).unwrap();
+            let b = t.backend().buffer().clone();
+            (0..12)
+                .map(|y| (0..80).map(|x| b[(x, y)].symbol().to_owned()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let all = rows(&app, "");
+        assert!(all.contains("Move to next column  kanban_next  modify +next"), "{all}");
+        assert!(
+            all.contains("Fail                 fail         done outcome:fail"),
+            "{all}"
+        );
+        assert_eq!(app.matching_commands("next column").len(), 1, "by label");
+        assert_eq!(app.matching_commands("kanban_").len(), 1, "by name");
     }
 }

@@ -470,10 +470,20 @@ pub fn read_commands(list: Option<&Value>) -> (Vec<TaskCommand>, Vec<String>) {
             errors.push(format!("{at}: there is already a command named {name}"));
             continue;
         }
+        // A label that isn't text is said, and the command is used without it.
+        let label = match o.get("label") {
+            Some(Value::String(l)) if !l.trim().is_empty() => Some(l.clone()),
+            None | Some(Value::String(_)) => None,
+            Some(_) => {
+                errors.push(format!("{at} ({name}): label must be text"));
+                None
+            }
+        };
         out.push(TaskCommand {
             name: name.to_owned(),
             command: command.trim().to_owned(),
             icon,
+            label,
         });
     }
     (out, errors)
@@ -675,7 +685,21 @@ pub fn name_problem(name: &str) -> Option<String> {
     if name == "task" || name == "--" {
         return Some(format!("‘{name}’ can’t be a name"));
     }
-    None
+    // Nor a word `task` would run as a command (spec 0032): the engine's answer, with the default reports, as the web's.
+    let runs = if ["clear", "cls"].contains(&name) {
+        name.to_owned()
+    } else {
+        tc_core::helpers::command_named(name, &tc_core::taskrc::Config::default())?
+    };
+    let label = format!(
+        "give it another name (its label can still say “{}”)",
+        crate::commands::label_of(name)
+    );
+    Some(if runs == name {
+        format!("‘{name}’ is a command already: {label}")
+    } else {
+        format!("‘{name}’ runs the command {runs}: {label}")
+    })
 }
 
 /// Why `command` is not a command line (`done &&` has nothing after the `&&`), or `None`.
@@ -1209,13 +1233,44 @@ mod tests {
     }
 
     #[test]
+    fn a_commands_label_is_read_and_saved_and_its_name_cant_be_a_command_already() {
+        let text = r#"{ "taskCommands": [
+            { "name": "kanban_next", "command": "modify +next", "label": "Move to next column" },
+            { "name": "follow-up.later", "command": "wait:tomorrow" },
+            { "name": "odd", "command": "done", "label": 3 },
+            { "name": "review", "command": "modify +r", "label": "Review" },
+            { "name": "sync", "command": "modify +s" } ] }"#;
+        let (cmds, errors) = read_commands(serde_json::from_str::<Value>(text).unwrap().get("taskCommands"));
+        assert_eq!(
+            cmds.iter().map(TaskCommand::label).collect::<Vec<_>>(),
+            ["Move to next column", "Follow up later", "Odd"]
+        );
+        assert_eq!(
+            errors,
+            [
+                "taskCommands[2] (odd): label must be text",
+                "taskCommands[3] (review): ‘review’ is a command already: give it another name (its label can still say “Review”)",
+                "taskCommands[4] (sync): ‘sync’ runs the command synchronize: give it another name (its label can still say “Sync”)",
+            ]
+        );
+        let out: Value = serde_json::from_str(&with_commands(text, &cmds).unwrap()).unwrap();
+        assert_eq!(out["taskCommands"][0]["label"], "Move to next column");
+        assert!(out["taskCommands"][1].get("label").is_none());
+        for free in ["inreview", "inprogress", "pending", "fail"] {
+            assert_eq!(name_problem(free), None, "{free}");
+        }
+        assert!(name_problem("rev").is_some_and(|e| e.contains("runs the command review")));
+    }
+
+    #[test]
     fn saving_replaces_the_commands_and_keeps_the_rest() {
         let cmd = |n: &str, c: &str| TaskCommand {
             name: n.into(),
             command: c.into(),
             icon: None,
+            label: None,
         };
-        let text = r#"{ "boards": [1], "taskCommands": [ { "name": "old", "command": "done" } ] }"#;
+        let text = r#"{ "boards": [1], "taskCommands": [ { "name": "gone", "command": "done" } ] }"#;
         let out = with_commands(text, &[cmd("late", "modify +late")]).unwrap();
         let v: Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["boards"], serde_json::json!([1]));
@@ -1318,11 +1373,13 @@ mod tests {
             name: "late".into(),
             command: "+OVERDUE list".into(),
             icon: None,
+            label: None,
         });
         let edited = [TaskCommand {
             name: "fail".into(),
             command: "done outcome:failed".into(),
             icon: None,
+            label: None,
         }];
         let saves = [
             ("commands", with_commands(&file, &more).unwrap()),

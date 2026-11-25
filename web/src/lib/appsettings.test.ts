@@ -7,6 +7,7 @@ import {
   parseAppearance,
   progressFraction,
   serializeAppearance,
+  commandLabel,
   commandProblem,
   parseHomepage,
   parseSettings,
@@ -92,6 +93,48 @@ describe('aliasIcons', () => {
     expect(JSON.parse(serializeSettings(raw, [])).aliasIcons).toEqual(raw.aliasIcons);
     // The last one taken out: the section goes (all but what it could not read).
     expect(JSON.parse(serializeSettings({ aliasIcons: { rem: 'bell' } }, [], {}))).toEqual({});
+  });
+});
+
+describe('a task command’s label', () => {
+  it('is read, saved and shown in the menus; without one the name is made words', () => {
+    const p = parseSettings(
+      '{ "taskCommands": [ { "name": "kanban_next", "command": "modify +next", "label": "Move to next column" }, { "name": "follow-up.later", "command": "wait:tomorrow" }, { "name": "odd", "command": "done", "label": 3 } ] }',
+    );
+    expect(p.commands[0]).toEqual({ name: 'kanban_next', command: 'modify +next', label: 'Move to next column' });
+    expect(p.commands.map(commandLabel)).toEqual(['Move to next column', 'Follow up later', 'Odd']);
+    // A label that isn't text is said, and the command is kept without it.
+    expect(p.errors).toEqual(['taskCommands[2] (odd): label must be text']);
+    expect(p.commands[2]).toEqual({ name: 'odd', command: 'done' });
+    expect(commandLabel({ name: 'kanban__next', label: '  ' })).toBe('Kanban next');
+    const saved = JSON.parse(serializeSettings(p.raw, p.commands));
+    expect(saved.taskCommands[0].label).toBe('Move to next column');
+    expect(saved.taskCommands[1]).toEqual({ name: 'follow-up.later', command: 'wait:tomorrow' });
+  });
+});
+
+describe('a task command’s name', () => {
+  it('can’t be a command already: tasksh’s review, Taskwarrior’s, a hidden one, the console’s own', () => {
+    for (const name of ['review', 'modify', '_get', 'burndown.daily', 'next', 'clear'])
+      expect(nameProblem(name), name).toMatch(/is a command already/);
+    expect(nameProblem('review')).toBe(
+      '‘review’ is a command already: give it another name (its label can still say “Review”)',
+    );
+    // An abbreviation `task` would run, and tasksh's from three letters.
+    expect(nameProblem('sync')).toBe(
+      '‘sync’ runs the command synchronize: give it another name (its label can still say “Sync”)',
+    );
+    expect(nameProblem('rev')).toMatch(/runs the command review/);
+    for (const name of ['inreview', 'inprogress', 'pending', 'fail', 'standup'])
+      expect(nameProblem(name), name).toBeNull();
+    // The taskrc's own reports, when the settings panel has them.
+    const config = { reports: { standup: { name: 'standup' } } } as never;
+    expect(nameProblem('standup', config)).toMatch(/is a command already/);
+    const p = parseSettings('{ "taskCommands": [ { "name": "review", "command": "modify +r", "label": "Review" } ] }');
+    expect(p.commands).toEqual([]);
+    expect(p.errors).toEqual([
+      'taskCommands[0] (review): ‘review’ is a command already: give it another name (its label can still say “Review”)',
+    ]);
   });
 });
 

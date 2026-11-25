@@ -134,9 +134,10 @@ fun hasReview(config: ConfigResponse?): Boolean = config?.config?.udas?.get("rev
  * task moved to Review goes back in its queue.
  */
 fun moveCommands(review: Boolean, u: String = PROGRESS_UDA): List<TaskCommand> = listOf(
-    TaskCommand("pending", "modify status:pending $u:", "circle-dashed"),
-    TaskCommand("inprogress", "modify status:pending $u:inprogress", "loader-circle"),
-    TaskCommand("review", "modify status:pending $u:review" + if (review) " reviewed:" else "", "eye"),
+    TaskCommand("pending", "modify status:pending $u:", "circle-dashed", "To do"),
+    TaskCommand("inprogress", "modify status:pending $u:inprogress", "loader-circle", "In progress"),
+    // Not `review`, which is tasksh's command (spec 0032).
+    TaskCommand("inreview", "modify status:pending $u:review" + if (review) " reviewed:" else "", "eye", "Review"),
 )
 
 /**

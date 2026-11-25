@@ -28,7 +28,18 @@ data class TaskCommand(
     val command: String,
     /** A Lucide icon, by its name (`circle-x`), for the buttons that run it. */
     val icon: String? = null,
+    /** What the menus call it ([commandLabel]); the name, made words, without one. */
+    val label: String? = null,
 )
+
+/**
+ * What a menu calls a task command (or an alias in the menus): its label, else its name as words, each run of `_`, `-` or `.` a
+ * space and the first letter upper case (`kanban_next` → `Kanban next`), as a board control without a label is ([rangeLabel];
+ * appsettings.ts `commandLabel`).
+ */
+fun commandLabel(c: TaskCommand): String =
+    c.label?.trim()?.takeIf { it.isNotEmpty() }
+        ?: c.name.replace(Regex("[_.-]+"), " ").trim().replaceFirstChar { it.uppercase() }
 
 /** The page the app opens on: a report, a board or a kanban, one of them. Nothing set is `next`. */
 data class Homepage(val report: String? = null, val board: String? = null, val kanban: String? = null) {
@@ -184,9 +195,11 @@ val ICON_NAME = Regex("^[a-z0-9]+(-[a-z0-9]+)*$")
 
 /**
  * Why [name] cannot be a task command, or null. It has to be one word that cannot be taken for part of a filter (a number,
- * `+tag`, `attribute:value`), because the line is read word by word.
+ * `+tag`, `attribute:value`), because the line is read word by word. Nor can it be a word `task` would run as a command
+ * (spec 0032): Taskwarrior's own, a unique abbreviation of one (`sync`), a report ([config]'s, else the default ones),
+ * tasksh's `review`, or a console's own word; a label can say the same (appsettings.ts `nameProblem`).
  */
-fun nameProblem(name: String): String? {
+fun nameProblem(name: String, config: ConfigBody? = null): String? {
     if (name.isEmpty()) return "needs a name"
     if (name.any { it.isWhitespace() }) return "a name is one word (no spaces)"
     if (Regex("^[+\\-/(]").containsMatchIn(name) || Regex("[:='\"]").containsMatchIn(name)) {
@@ -194,7 +207,23 @@ fun nameProblem(name: String): String? {
     }
     if (Regex("^[\\d,.]+$").matches(name)) return "a name can’t be a number"
     if (name == "task" || name == "--") return "‘$name’ can’t be a name"
-    return null
+    val runs = if (name in CONSOLE_WORDS) name else commandNamed(name, config) ?: return null
+    val label = "give it another name (its label can still say “${commandLabel(TaskCommand(name, ""))}”)"
+    return if (runs == name) "‘$name’ is a command already: $label" else "‘$name’ runs the command $runs: $label"
+}
+
+/** The consoles' own words, answered before anything is sent (`clear` empties the scrollback). */
+private val CONSOLE_WORDS = setOf("clear", "cls")
+
+/** The command [word] would run, by the engine (`tc_core::helpers::command_named`), with [config]'s reports and settings. */
+private fun commandNamed(word: String, config: ConfigBody?): String? {
+    val cfg = config?.let { c ->
+        buildJsonObject {
+            put("reports", buildJsonObject { for (r in c.reports.keys) put(r, buildJsonObject { put("name", r) }) })
+            put("settings", buildJsonObject { for ((k, v) in c.settings) put(k, v) })
+        }
+    } ?: JsonNull
+    return (callHelper("command_named", JsonPrimitive(word), cfg) as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
 
 /** Why what a command stands for is not a command line (`done &&` has nothing after the `&&`), or null. */
@@ -277,7 +306,11 @@ fun parseSettings(text: String): ParsedSettings {
             errors += "$at: there is already a command named $name"
             return@forEachIndexed
         }
-        commands += TaskCommand(name, command.trim(), icon)
+        // A label that isn't text is said, and the command is used without it.
+        val labelElement = c["label"]
+        val label = labelElement?.text()
+        if (labelElement != null && label == null) errors += "$at ($name): label must be text"
+        commands += TaskCommand(name, command.trim(), icon, label?.takeIf { it.isNotBlank() })
     }
     return ParsedSettings(value, commands, errors, boards, boardErrors, homepage, appearance, appearanceErrors, kanban, kanbanErrors, aliasIcons)
 }
@@ -392,6 +425,7 @@ private fun withCommands(raw: JsonObject, commands: List<TaskCommand>, read: Boo
                         put("name", JsonPrimitive(c.name))
                         put("command", JsonPrimitive(c.command))
                         c.icon?.let { put("icon", JsonPrimitive(it)) }
+                        c.label?.trim()?.takeIf { it.isNotEmpty() }?.let { put("label", JsonPrimitive(it)) }
                     }
                 },
             ),

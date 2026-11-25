@@ -37,18 +37,21 @@ Kanban is off until you set it up in **Settings → Kanban**. There are two ways
   | --- | --- | --- |
   | To do | `status:pending progressState:` | `pending` |
   | In progress | `status:pending progressState:inprogress` | `inprogress` |
-  | Review | `status:pending progressState:review` | `review` |
+  | Review | `status:pending progressState:review` | `inreview` |
   | Done | `status:completed` | `done` |
 
-  `pending`, `inprogress` and `review` are [task commands](settings.md#commands) it adds to Commands, each with an
-  icon, so a move is the same word everywhere the app runs one on a task: a task's ⋯ menu, a report, the tasks you
-  have selected, and the console (`3 review`):
+  `pending`, `inprogress` and `inreview` are [task commands](settings.md#commands) it adds to Commands, each with a
+  label and an icon, so a move is the same word everywhere the app runs one on a task: a task's ⋯ menu, a report, the
+  tasks you have selected, and the console (`3 inreview`):
 
-  | Command | Stands for | Icon |
-  | --- | --- | --- |
-  | `pending` | `modify status:pending progressState:` | circle-dashed |
-  | `inprogress` | `modify status:pending progressState:inprogress` | loader-circle |
-  | `review` | `modify status:pending progressState:review` | eye |
+  | Command | Label | Stands for | Icon |
+  | --- | --- | --- | --- |
+  | `pending` | To do | `modify status:pending progressState:` | circle-dashed |
+  | `inprogress` | In progress | `modify status:pending progressState:inprogress` | loader-circle |
+  | `inreview` | Review | `modify status:pending progressState:review` | eye |
+
+  Not `review`, which is tasksh's command: a command can't be named like one. Settings made before 0.8.62 had it as
+  `review`; the app renames it `inreview` once, with the move lines that ran it.
 
   They are this app's, kept in `settings.json`, so the `task` CLI on the desktop does not know them. (A taskrc alias
   would be, but `task` writes an alias out wherever its word stands on the line, so `task add review the PR` would

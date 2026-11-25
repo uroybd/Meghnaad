@@ -60,6 +60,38 @@ class AppSettingsTest {
     }
 
     @Test
+    fun aCommandsLabelIsReadSavedAndShownAndWithoutOneTheNameIsMadeWords() {
+        val p = parseSettings(
+            """{ "taskCommands": [ { "name": "kanban_next", "command": "modify +next", "label": "Move to next column" }, { "name": "follow-up.later", "command": "wait:tomorrow" }, { "name": "odd", "command": "done", "label": 3 } ] }""",
+        )
+        assertEquals(TaskCommand("kanban_next", "modify +next", label = "Move to next column"), p.commands[0])
+        assertEquals(listOf("Move to next column", "Follow up later", "Odd"), p.commands.map(::commandLabel))
+        // A label that isn't text is said, and the command is kept without it (appsettings.test.ts).
+        assertEquals(listOf("taskCommands[2] (odd): label must be text"), p.errors)
+        assertEquals(TaskCommand("odd", "done"), p.commands[2])
+        assertEquals("Kanban next", commandLabel(TaskCommand("kanban__next", "", label = "  ")))
+        val back = Json.parseToJsonElement(serializeSettings(p.raw, p.commands)).jsonObject
+        assertEquals(
+            """[{"name":"kanban_next","command":"modify +next","label":"Move to next column"},{"name":"follow-up.later","command":"wait:tomorrow"},{"name":"odd","command":"done","label":3}]""",
+            back["taskCommands"].toString(),
+        ) // the label it couldn't use is kept in the file as it was, as the merge keeps what it can't read
+    }
+
+    @Test
+    fun aCommandsNameCantBeACommandAlreadyButItsLabelCanSayIt() {
+        for (n in listOf("review", "modify", "_get", "burndown.daily", "next", "clear")) assertTrue(nameProblem(n)!!.contains("is a command already"), n)
+        assertEquals("‘review’ is a command already: give it another name (its label can still say “Review”)", nameProblem("review"))
+        assertEquals("‘sync’ runs the command synchronize: give it another name (its label can still say “Sync”)", nameProblem("sync"))
+        assertTrue(nameProblem("rev")!!.contains("runs the command review"))
+        for (n in listOf("inreview", "inprogress", "pending", "fail", "standup")) assertNull(nameProblem(n), n)
+        // The taskrc's own reports, when the settings panel has them (appsettings.test.ts).
+        assertTrue(nameProblem("standup", ConfigBody(reports = mapOf("standup" to ReportCfg())))!!.contains("is a command already"))
+        val p = parseSettings("""{ "taskCommands": [ { "name": "review", "command": "modify +r", "label": "Review" } ] }""")
+        assertEquals(emptyList(), p.commands)
+        assertEquals(listOf("taskCommands[0] (review): ‘review’ is a command already: give it another name (its label can still say “Review”)"), p.errors)
+    }
+
+    @Test
     fun writesTheCommandsAndKeepsEveryOtherKey() {
         val p = parseSettings("""{ "future": { "a": 1 }, "taskCommands": [ { "name": "x", "command": "done" } ] }""")
         val text = serializeSettings(p.raw, listOf(TaskCommand("fail", "done outcome:fail", "circle-x")))

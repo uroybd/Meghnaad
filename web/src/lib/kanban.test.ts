@@ -107,25 +107,35 @@ describe('the automatic setup', () => {
   it('moves with task commands, added unless one of that name stands for something else', () => {
     const moves = moveCommands(true);
     expect(moves).toEqual([
-      { name: 'pending', command: 'modify status:pending progressState:', icon: 'circle-dashed' },
-      { name: 'inprogress', command: 'modify status:pending progressState:inprogress', icon: 'loader-circle' },
-      { name: 'review', command: 'modify status:pending progressState:review reviewed:', icon: 'eye' },
+      { name: 'pending', command: 'modify status:pending progressState:', icon: 'circle-dashed', label: 'To do' },
+      {
+        name: 'inprogress',
+        command: 'modify status:pending progressState:inprogress',
+        icon: 'loader-circle',
+        label: 'In progress',
+      },
+      {
+        name: 'inreview',
+        command: 'modify status:pending progressState:review reviewed:',
+        icon: 'eye',
+        label: 'Review',
+      },
     ]);
-    expect(automaticColumns(true, U, moves).map((c) => c.move)).toEqual(['pending', 'inprogress', 'review', 'done']);
-    // Someone's own `review` (same command, another icon: still usable) and `pending` (something else: left alone).
+    expect(automaticColumns(true, U, moves).map((c) => c.move)).toEqual(['pending', 'inprogress', 'inreview', 'done']);
+    // Someone's own `inreview` (same command, another icon: still usable) and `pending` (something else: left alone).
     const mine = [
       { name: 'pending', command: 'modify +later' },
-      { name: 'review', command: 'modify status:pending progressState:review reviewed:', icon: 'x' },
+      { name: 'inreview', command: 'modify status:pending progressState:review reviewed:', icon: 'x' },
     ];
     const usable = usableMoves(mine, true);
-    expect(usable.map((m) => m.name)).toEqual(['inprogress', 'review']);
+    expect(usable.map((m) => m.name)).toEqual(['inprogress', 'inreview']);
     expect(automaticColumns(true, U, usable).map((c) => c.move)).toEqual([
       'modify status:pending progressState:',
       'inprogress',
-      'review',
+      'inreview',
       'done',
     ]);
-    expect(withMoveCommands(mine, true).map((c) => c.name)).toEqual(['pending', 'review', 'inprogress']);
+    expect(withMoveCommands(mine, true).map((c) => c.name)).toEqual(['pending', 'inreview', 'inprogress']);
     expect(automaticSettings(emptyKanbanSettings(), true, U, false, usable).columns[1].move).toBe('inprogress');
   });
 
