@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { toAddress } from './base';
   import { shortUuid } from './format';
   import { ChevronDown, ChevronRight } from './icons';
@@ -11,11 +12,18 @@
   /**
    * Another task in the detail pane, as a line you can tap: its name as far as the page knows it, and on a tap a
    * card of it, fetched only then if the page does not have it already, with a button that opens it. `row` is the
-   * task when the caller already holds it (the tasks waiting on this one come with their data).
+   * task when the caller already holds it (the tasks waiting on this one come with their data). With `card` (what a
+   * task depends on) it is the card from the start, fetched at once, without the line.
    */
-  let { uuid, row = null, onopen }: { uuid: string; row?: Row | null; onopen?: (uuid: string) => void } = $props();
+  let {
+    uuid,
+    row = null,
+    onopen,
+    card: asCard = false,
+  }: { uuid: string; row?: Row | null; onopen?: (uuid: string) => void; card?: boolean } = $props();
 
-  let shown = $state(false);
+  let toggled = $state(false);
+  const shown = $derived(asCard || toggled);
   let fetched = $state<Row | null>(null);
   let missing = $state(false);
   let failed = $state<string | null>(null);
@@ -23,9 +31,7 @@
   const card = $derived(row ?? fetched);
   const name = $derived(card?.description ?? store.tasks.find((t) => t.uuid === uuid)?.description);
 
-  async function toggle() {
-    shown = !shown;
-    if (!shown || card) return;
+  async function load() {
     failed = null;
     try {
       const got = await fetchTask(uuid);
@@ -36,17 +42,28 @@
     }
   }
 
+  function toggle() {
+    toggled = !toggled;
+    if (toggled && !card) void load();
+  }
+
+  $effect(() => {
+    if (asCard && !untrack(() => card)) void load();
+  });
+
   const open = () => (onopen ? onopen(uuid) : store.openDetail(uuid, null));
 </script>
 
 <span class="item">
-  <button type="button" class="ghost line" aria-expanded={shown} title="Show this task" onclick={toggle}>
-    {#if shown}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
-    <span class="name">{name ?? 'Task'}</span>
-    <span class="dim mono">{shortUuid(uuid)}</span>
-  </button>
+  {#if !asCard}
+    <button type="button" class="ghost line" aria-expanded={shown} title="Show this task" onclick={toggle}>
+      {#if shown}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
+      <span class="name">{name ?? 'Task'}</span>
+      <span class="dim mono">{shortUuid(uuid)}</span>
+    </button>
+  {/if}
   {#if shown}
-    <span class="card" data-testid="depitem-card">
+    <span class="card" class:alone={asCard} data-testid="depitem-card">
       {#if card}
         <TaskCard row={card} />
       {:else if failed}
@@ -92,6 +109,9 @@
     background: var(--panel-2);
     border: 1px solid var(--line);
     border-radius: 8px;
+  }
+  .card.alone {
+    margin-left: 0;
   }
   .foot {
     display: flex;

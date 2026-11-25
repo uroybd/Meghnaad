@@ -61,9 +61,11 @@ mouse, clicking the id opens the task; on a touch screen the first tap shows the
 
 ### Dependencies
 
-**Depends on** lists the tasks this one waits for. Tap a line for a card of that task. A task others wait on shows a
+**Depends on** shows each task this one waits for as a card, read when the info opens, with a button that opens it. In
+the terminal app it is a small card in the Details tab: its number and description, then its status (when it is not
+pending), project and due date, with its priority as the ribbon down the left edge. A task others wait on shows a
 *Blocking* line; **Show the tasks waiting on this** looks them up when you ask (`( status:pending or status:waiting )
-depends.has:<uuid>`).
+depends.has:<uuid>`), each a line to tap for its card.
 
 ### Projects
 

@@ -67,6 +67,17 @@ describe('another task in the detail pane', () => {
     expect(document.querySelector('[data-testid="depitem-card"]')).toBeNull();
   });
 
+  it('as a card (what a task depends on), is the card at once, fetched without a tap', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => answer({ kind: 'info', tasks: [row] }));
+    vi.stubGlobal('fetch', fetchMock);
+    app = mount(DepItem, { target: document.body, props: { uuid: UUID, card: true } });
+    flushSync();
+    expect(document.querySelector('button.line')).toBeNull();
+    await settle();
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/cli')).toHaveLength(1);
+    expect(document.querySelector('[data-testid="depitem-card"]')!.textContent).toContain('Work.Event');
+  });
+
   it('does not fetch a task the caller already holds', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

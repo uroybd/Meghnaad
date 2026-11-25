@@ -155,7 +155,7 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
                 }
             }
         }
-        if (task.depends.isNotEmpty()) Field("Depends on") { Column { task.depends.forEach { d -> DepItem(store, d, onOpen = onOpen) } } }
+        if (task.depends.isNotEmpty()) Field("Depends on") { Column { task.depends.forEach { d -> DepItem(store, d, asCard = true, onOpen = onOpen) } } }
         if (task.blocking) {
             var blockers by remember(task.uuid, store.rev) { mutableStateOf<List<Row>?>(null) }
             var asking by remember(task.uuid, store.rev) { mutableStateOf(false) }

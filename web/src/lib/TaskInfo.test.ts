@@ -106,17 +106,23 @@ describe('the tasks around this one', () => {
       status: 200,
     });
 
-  it('lists what it depends on as lines to tap, asking for nothing until then', async () => {
+  it('shows what it depends on as cards, each read at once', async () => {
     store.config = { colors: {}, config: { udas: {}, settings: {}, reports: {} } } as unknown as ConfigResponse;
-    const fetchMock = vi.fn();
+    const other = { ...task(OTHER), description: 'Book the venue' };
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ wrote: false, result: { kind: 'info', tasks: [other] }, command: null }), {
+          status: 200,
+        }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     app = mount(TaskInfo, {
       target: document.body,
       props: { task: { ...task('44444444-4444-4444-4444-444444444444'), depends: [OTHER], blocked: true } },
     });
     await settle();
-    expect(document.querySelectorAll('button.line')).toHaveLength(1);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('button.line')).toHaveLength(0);
+    expect(document.querySelector('[data-testid="depitem-card"]')!.textContent).toContain('Book the venue');
   });
 
   it('finds the tasks waiting on it only when asked, and shows them without another request', async () => {

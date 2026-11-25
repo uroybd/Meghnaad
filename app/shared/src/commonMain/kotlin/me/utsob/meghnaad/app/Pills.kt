@@ -71,11 +71,13 @@ fun MiniCard(store: Store, row: Row) {
 
 /**
  * Another task as a line you can tap: its name as far as the app knows it, and on a tap a card of it, fetched only then, with a
- * button that opens it (DepItem.svelte).
+ * button that opens it (DepItem.svelte). With [asCard] (what a task depends on) it is the card from the start, fetched at once,
+ * without the line.
  */
 @Composable
-fun DepItem(store: Store, uuid: String, row: Row? = null, onOpen: (String) -> Unit) {
-    var shown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+fun DepItem(store: Store, uuid: String, row: Row? = null, asCard: Boolean = false, onOpen: (String) -> Unit) {
+    var toggled by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val shown = asCard || toggled
     var fetched by androidx.compose.runtime.remember(uuid) { androidx.compose.runtime.mutableStateOf<Row?>(null) }
     var missing by androidx.compose.runtime.remember(uuid) { androidx.compose.runtime.mutableStateOf(false) }
     val card = row ?: fetched
@@ -87,17 +89,19 @@ fun DepItem(store: Store, uuid: String, row: Row? = null, onOpen: (String) -> Un
         }
     }
     Column(Modifier.padding(vertical = 2.dp)) {
-        Row(
-            Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).clickable { shown = !shown }.padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            LucideIcon(if (shown) "chevron-down" else "chevron-right", size = 14.dp)
-            Text(name ?: "Task", fontSize = 14.sp)
-            Text(shortUuid(uuid), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!asCard) {
+            Row(
+                Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).clickable { toggled = !toggled }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                LucideIcon(if (shown) "chevron-down" else "chevron-right", size = 14.dp)
+                Text(name ?: "Task", fontSize = 14.sp)
+                Text(shortUuid(uuid), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         if (shown) {
-            Card(Modifier.padding(start = 20.dp)) {
+            Card(Modifier.padding(start = if (asCard) 0.dp else 20.dp)) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     when {
                         card != null -> MiniCard(store, card)

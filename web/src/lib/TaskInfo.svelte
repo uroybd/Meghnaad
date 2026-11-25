@@ -206,7 +206,7 @@
     {#if task.depends.length}
       <dt>Depends on</dt>
       <dd>
-        {#each task.depends as d (d)}<DepItem uuid={d} {onopen} />{/each}
+        {#each task.depends as d (d)}<DepItem uuid={d} card {onopen} />{/each}
       </dd>
     {/if}
     {#if task.blocking}
