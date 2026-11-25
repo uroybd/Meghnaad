@@ -851,6 +851,7 @@ pub const COMMANDS: [Command; 56] = [
             ("unknown", "info.unknown"),
             ("raw", "info.raw"),
             ("edit", "info.edit"),
+            ("links", "info.links"),
         ],
         Words::None,
     ),
@@ -2148,7 +2149,7 @@ mod tests {
         );
         assert_eq!(
             why("info nope").as_deref(),
-            Some("info takes “details”, “recurrence”, “timelog”, “annotations”, “unknown”, “raw” or “edit”")
+            Some("info takes “details”, “recurrence”, “timelog”, “annotations”, “unknown”, “raw”, “edit” or “links”")
         );
         assert_eq!(
             why("st").as_deref(),

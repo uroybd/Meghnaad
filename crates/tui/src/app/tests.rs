@@ -878,11 +878,15 @@ fn o_lists_a_tasks_links_to_choose_from_and_a_count_names_one() {
     })];
     a.selected = 0;
     typing(&mut a, "o");
-    let Mode::Links { options, targets, sel } = &a.mode else {
+    let Mode::Links {
+        options, targets, sel, ..
+    } = &a.mode
+    else {
         panic!("no list of links: {:?}", a.status);
     };
     assert_eq!(options, &["1 the doc  https://a.example/doc", "2 https://b.example"]);
-    assert_eq!(targets, &["https://a.example/doc", "https://b.example"]);
+    let url = |u: &str| crate::info::Target::Url(u.to_owned());
+    assert_eq!(targets, &[url("https://a.example/doc"), url("https://b.example")]);
     assert_eq!(*sel, 0);
     a.key(key(KeyCode::Esc));
     assert!(matches!(a.mode, Mode::Normal));
@@ -907,4 +911,54 @@ fn e_in_the_info_view_changes_the_task_in_the_full_form() {
         panic!("the form is open: {:?}", a.mode);
     };
     assert!(f.fields.iter().any(|x| x.key == "description"), "{f:?}");
+}
+
+#[test]
+fn o_in_the_info_lists_its_links_and_the_tasks_around_it_and_a_task_opens_with_esc_coming_back() {
+    let mut a = app();
+    a.transformations = vec![tc_core::transform::Rule {
+        pattern: r"FUL-\d+".into(),
+        replace: "[$0](https://j.example/$0)".into(),
+        fields: vec!["description".into()],
+        ..Default::default()
+    }];
+    let task =
+        serde_json::json!({ "uuid": "u-1", "id": 1, "description": "Throw the party FUL-7", "status": "pending" });
+    let dep = serde_json::json!({ "uuid": "d-1", "id": 2, "description": "Book the venue", "status": "pending" });
+    let waiting = serde_json::json!({ "uuid": "w-1", "id": 3, "description": "Clean up after", "status": "pending" });
+    let around = crate::info::Around {
+        depends: vec![dep],
+        blocking: vec![waiting],
+        ..Default::default()
+    };
+    let cfg = a.cfg.clone();
+    let rules = a.transformations.clone();
+    let ctx = crate::info::Ctx {
+        cfg: &cfg,
+        rules: &rules,
+        now: 0,
+    };
+    let info = crate::info::build(&task, &around, &ctx);
+    a.mode = Mode::TaskInfo(info.clone());
+    a.key(key(KeyCode::Char('o')));
+    let Mode::Links { options, targets, .. } = &a.mode else {
+        panic!("no list of links: {:?}", a.mode);
+    };
+    assert_eq!(
+        options,
+        &[
+            "1 FUL-7  https://j.example/FUL-7",
+            "2 depends on  2  Book the venue",
+            "3 blocking  3  Clean up after",
+        ]
+    );
+    assert_eq!(targets[1], crate::info::Target::Task("d-1".into()));
+    // Esc closes the list, back to the info.
+    a.key(key(KeyCode::Esc));
+    assert!(matches!(&a.mode, Mode::TaskInfo(i) if i.uuid == "u-1"));
+    // A task opens its info (this `task` can't read it), with the way back kept for Esc.
+    a.key(key(KeyCode::Char('o')));
+    a.key(key(KeyCode::Char('j')));
+    a.key(key(KeyCode::Enter));
+    assert_eq!(a.info_trail, vec!["u-1".to_owned()]);
 }

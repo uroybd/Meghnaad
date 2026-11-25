@@ -69,6 +69,7 @@ pub enum Shown {
 /// with its priority as the ribbon down its left edge.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TaskCard {
+    pub uuid: String,
     pub id: String,
     pub title: String,
     pub facts: Vec<String>,
@@ -110,6 +111,16 @@ pub struct Info {
     pub scroll: Vec<u16>,
     /// How far the shown tab can scroll, as it was last drawn (its lines depend on the width).
     pub room: std::cell::Cell<u16>,
+    /// What `o` offers: the task's links as it is drawn (the transformations applied), then the tasks it depends on and
+    /// those waiting on it; each as the list shows it, and where it goes.
+    pub links: Vec<(String, Target)>,
+}
+
+/// Where a link of the info goes: a web address, opened with the desktop's opener, or another task, whose info opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Target {
+    Url(String),
+    Task(String),
 }
 
 impl Info {
@@ -216,6 +227,7 @@ fn card(t: &Value, ctx: &Ctx) -> TaskCard {
         facts.push(format!("due {shown}"));
     }
     TaskCard {
+        uuid: str_of(t, "uuid").unwrap_or("").to_owned(),
         id,
         title: str_of(t, "description").unwrap_or("").to_owned(),
         facts,
@@ -320,7 +332,43 @@ pub fn build(t: &Value, around: &Around, ctx: &Ctx) -> Info {
         tabs,
         sel: 0,
         room: std::cell::Cell::new(u16::MAX),
+        links: links(t, around, ctx),
     }
+}
+
+/// What `o` offers in the info of `t`: its links (`md::links`: the description, notes and string UDAs as they are
+/// drawn), then what it depends on, then what waits on it.
+fn links(t: &Value, around: &Around, ctx: &Ctx) -> Vec<(String, Target)> {
+    let udas: Vec<&str> = ctx
+        .cfg
+        .udas
+        .iter()
+        .filter(|(_, d)| d.ty == UdaType::String)
+        .map(|(name, _)| name.as_str())
+        .collect();
+    let web = crate::md::links(t, &Rules::new(ctx.rules), &udas)
+        .into_iter()
+        .map(|(words, href)| {
+            let shown = if words == href {
+                href.clone()
+            } else {
+                format!("{words}  {href}")
+            };
+            (shown, Target::Url(href))
+        });
+    let tasks = |label: &'static str, list: &[Value]| -> Vec<(String, Target)> {
+        list.iter()
+            .filter_map(|d| {
+                Some((
+                    format!("{label}  {}", one_line(d)),
+                    Target::Task(str_of(d, "uuid")?.to_owned()),
+                ))
+            })
+            .collect()
+    };
+    web.chain(tasks("depends on", &around.depends))
+        .chain(tasks("blocking", &around.blocking))
+        .collect()
 }
 
 fn details(t: &Value, around: &Around, ctx: &Ctx) -> Vec<Entry> {

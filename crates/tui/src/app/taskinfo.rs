@@ -4,6 +4,7 @@
 use super::{now, scrolled, section_named, step_named, Action, App, KeyEvent, Mode, Step};
 use crate::info::{self, Around, Info, Tab};
 use crate::keys;
+use ratatui::crossterm::event::KeyCode;
 use serde_json::Value;
 
 impl App {
@@ -74,19 +75,26 @@ impl App {
     }
 
     /// A key in the info view: `[` `]` and a tab's own key go to a tab, the moves scroll the tab, `i` is `task info`,
-    /// `e` changes the task in the full form; any other key closes it.
+    /// `e` changes the task in the full form, `o` lists its links and the tasks it depends on and blocks to open one (a
+    /// task's info opens, and `Esc` there comes back); any other key closes it.
     pub(super) fn in_task_info(&mut self, mut info: Info, key: KeyEvent) -> Action {
         let action = keys::chord(key).and_then(|c| self.keymap.action("info", &c));
         match action {
             Some(a) if section_named(a).is_some() => info.step(section_named(a).unwrap_or(0)),
+            Some("info.links") => {
+                let links = info.links.clone();
+                self.offer_links(links, None, Some(info));
+                return Action::None;
+            }
             Some("info.edit") => {
                 let uuid = info.uuid.clone();
-                self.mode = Mode::Normal;
+                self.close_info();
                 self.modify_form(&uuid);
                 return Action::None;
             }
             Some("info.raw") => {
                 let uuid = info.uuid.clone();
+                self.info_trail.clear();
                 self.raw_info(&uuid);
                 return Action::None;
             }
@@ -104,11 +112,30 @@ impl App {
                     };
                     info.scroll_to(to);
                 }
-                None => return Action::None,
+                None => {
+                    self.close_info();
+                    return Action::None;
+                }
             },
-            None => return Action::None,
+            // Esc, from a task opened from a card, goes back to the one before.
+            None if key.code == KeyCode::Esc && !self.info_trail.is_empty() => {
+                if let Some(back) = self.info_trail.pop() {
+                    self.open_info(&back);
+                }
+                return Action::None;
+            }
+            None => {
+                self.close_info();
+                return Action::None;
+            }
         }
         self.mode = Mode::TaskInfo(info);
         Action::None
+    }
+
+    /// Leave the info view, and the trail of tasks opened from it.
+    fn close_info(&mut self) {
+        self.info_trail.clear();
+        self.mode = Mode::Normal;
     }
 }

@@ -305,7 +305,10 @@ nothing in it is left out.
 
 `[` `]` go to the tab before and the next, and the moves scroll the tab, each keeping its place. `i` shows `task info`
 as `task` prints it, for what the tabs leave out (its history of changes, among others). `e` opens the task in the full
-form to change it, as `m` does from the report (`:info edit` too). Any other key closes it.
+form to change it, as `m` does from the report (`:info edit` too). `o` lists the task's links, as it is drawn (your
+transformations applied: a ticket key a rule makes a link is one), then the tasks it depends on and those waiting on it;
+`Enter` on a link opens it in your browser and comes back to the info, and on a task opens that task's info, from which
+`Esc` comes back (`:info links` too). Any other key closes it.
 
 ## The command line
 

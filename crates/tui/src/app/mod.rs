@@ -265,11 +265,13 @@ pub enum Mode {
         targets: Vec<usize>,
         sel: usize,
     },
-    /// Choosing which of a task's links `o` opens: each as it is shown, and its address.
+    /// Choosing which of a task's links `o` opens: each as it is shown, and where it goes. From a task's info, that
+    /// info, to come back to.
     Links {
         options: Vec<String>,
-        targets: Vec<String>,
+        targets: Vec<crate::info::Target>,
         sel: usize,
+        info: Option<Box<crate::info::Info>>,
     },
 }
 
@@ -468,6 +470,8 @@ pub struct App {
     pub settings_sel: usize,
     /// The row of General: the home page (0) or the ID fallback (1).
     pub general_sel: usize,
+    /// The tasks whose info was left for a card's (`Enter` on a dependency), latest last: `Esc` goes back to them.
+    pub info_trail: Vec<String>,
     pub settings_board: usize,
     /// The line chosen in the Keybindings section, whether it shows the default keys too, and what it is narrowed to.
     pub keys_sel: usize,
@@ -719,6 +723,7 @@ impl App {
             settings_stamp: None,
             settings_sel: 0,
             general_sel: 0,
+            info_trail: Vec::new(),
             settings_board: 0,
             keys_sel: 0,
             keys_defaults: false,
@@ -1296,20 +1301,25 @@ impl App {
                 Action::None
             }
             Mode::Commands { uuid, query, sel } => self.in_commands(uuid, query, sel, key),
-            Mode::Links { options, targets, sel } => {
+            Mode::Links {
+                options,
+                targets,
+                sel,
+                info,
+            } => {
                 if let Some(step) = self.step_of(key) {
                     self.mode = Mode::Links {
                         sel: moved(sel, options.len(), step),
                         options,
                         targets,
+                        info,
                     };
                     return Action::None;
                 }
-                if key.code == KeyCode::Enter {
-                    if let Some(link) = targets.get(sel) {
-                        self.open_url(link);
-                    }
-                }
+                let chosen = (key.code == KeyCode::Enter)
+                    .then(|| targets.get(sel).cloned())
+                    .flatten();
+                self.follow_link(chosen, info.map(|i| *i));
                 Action::None
             }
             Mode::Context { options, sel } => {

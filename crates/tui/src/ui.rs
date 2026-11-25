@@ -169,7 +169,13 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::Reminders(b) => reminders_box(f, app, b, main),
         Mode::ExportPick { options, sel, .. } => picker(f, " export which table ", options, *sel, main),
         Mode::KanbanMove { options, sel, .. } => picker(f, " move to ", options, *sel, main),
-        Mode::Links { options, sel, .. } => picker(f, " open link ", options, *sel, main),
+        Mode::Links { options, sel, info, .. } => {
+            // From a task's info, over it.
+            if let Some(i) = info {
+                task_info(f, app, i, main);
+            }
+            picker(f, " open link ", options, *sel, main);
+        }
         _ => {}
     }
     // How many tasks are marked, in front of what was last said.
@@ -1385,10 +1391,12 @@ fn task_info(f: &mut Frame, app: &App, info: &crate::info::Info, area: Rect) {
             .map(|k| tc_core::keymap::display(k))
             .unwrap_or_default()
     };
+    let back = if app.info_trail.is_empty() { "" } else { "Esc back · " };
     let hint = format!(
-        "{}/{} tab · {} edit · {} task info · any other key closes",
+        "{}/{} tab · {} links · {} edit · {} task info · {back}any other key closes",
         key("move.sectionPrev"),
         key("move.sectionNext"),
+        key("info.links"),
         key("info.edit"),
         key("info.raw")
     );
@@ -2225,6 +2233,7 @@ mod tests {
     #[test]
     fn a_dependency_is_a_card_in_the_info() {
         let c = crate::info::TaskCard {
+            uuid: "u".into(),
             id: "3".into(),
             title: "Buy the paint for the hall".into(),
             facts: vec!["Home".into(), "due 2026-12-01".into()],
