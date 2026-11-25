@@ -520,7 +520,7 @@ Since 0.8.22.
 
 In Settings, apply the edits made on the page shown: what it changed is written into settings.json as the file is now. The terminal app's `Ctrl+S`; the web and the phone have an Apply button.
 
-Since the next release.
+Since 0.8.63.
 
 <a id="revert"></a>
 
@@ -528,7 +528,7 @@ Since the next release.
 
 In Settings, drop the edits made on the page shown, back to what settings.json has.
 
-Since the next release.
+Since 0.8.63.
 
 <a id="rule"></a>
 
@@ -538,7 +538,7 @@ Takes add or delete.
 
 In the appearance settings: `:rule add` adds a field transformation in a form, `:rule delete` deletes the one chosen.
 
-Since the next release.
+Since 0.8.63.
 
 <a id="syncwhen"></a>
 

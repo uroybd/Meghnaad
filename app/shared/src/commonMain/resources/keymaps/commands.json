@@ -416,7 +416,7 @@
       "summary": "apply this page's edits",
       "takes": "",
       "doc": "In Settings, apply the edits made on the page shown: what it changed is written into settings.json as the file is now. The terminal app's `Ctrl+S`; the web and the phone have an Apply button.",
-      "since": "unreleased"
+      "since": "0.8.63"
     },
     {
       "name": "revert",
@@ -424,7 +424,7 @@
       "summary": "drop this page's edits",
       "takes": "",
       "doc": "In Settings, drop the edits made on the page shown, back to what settings.json has.",
-      "since": "unreleased"
+      "since": "0.8.63"
     },
     {
       "name": "rule",
@@ -432,7 +432,7 @@
       "summary": "add or delete a field transformation",
       "takes": "add or delete",
       "doc": "In the appearance settings: `:rule add` adds a field transformation in a form, `:rule delete` deletes the one chosen.",
-      "since": "unreleased"
+      "since": "0.8.63"
     },
     {
       "name": "syncwhen",
