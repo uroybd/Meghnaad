@@ -1,6 +1,6 @@
 //! A row of a Settings list in a box, its fields together (spec 0033, the map's "form"): a task command, a kanban
 //! column, a field transformation. Each field is checked as it is typed; `Enter` keeps the row in the page's draft,
-//! `Esc` drops it. `↑` `↓` go between the fields, and `Tab` completes where the field takes a command line or a filter,
+//! `Esc` drops it. `Ctrl+N` `Ctrl+P` (or `↑` `↓`) go between the fields, and `Tab` completes where the field takes a command line or a filter,
 //! as in the task's form.
 
 use super::{settings, Action, App, Mode, TaskCommand};
@@ -267,6 +267,8 @@ impl App {
             KeyCode::Char('s') if ctrl => return self.keep_form(f),
             KeyCode::Down => f.at = (f.at + 1) % n,
             KeyCode::Up => f.at = (f.at + n - 1) % n,
+            KeyCode::Char('n') if ctrl => f.at = (f.at + 1) % n,
+            KeyCode::Char('p') if ctrl => f.at = (f.at + n - 1) % n,
             KeyCode::Tab | KeyCode::BackTab => {
                 let back = key.code == KeyCode::BackTab;
                 let prefix = f.fields.get(f.at).and_then(|x| x.prefix);

@@ -112,9 +112,18 @@ impl App {
             }
             KeyCode::Enter => return self.save_form(f),
             KeyCode::Char('s') if ctrl => return self.save_form(f),
-            KeyCode::Down => f.next(),
-            KeyCode::Up => f.prev(),
-            KeyCode::Tab | KeyCode::BackTab => self.complete_field(&mut f, key.code == KeyCode::BackTab),
+            KeyCode::Char('n') if ctrl => f.next(),
+            KeyCode::Char('p') if ctrl => f.prev(),
+            // In a field of several lines ↑ ↓ go between its lines, and on to the next field only past the last.
+            KeyCode::Down if !f.current().is_some_and(|x| x.multiline && x.input.down()) => f.next(),
+            KeyCode::Up if !f.current().is_some_and(|x| x.multiline && x.input.up()) => f.prev(),
+            KeyCode::Down | KeyCode::Up => {}
+            // Tab completes where the field completes (a project, a date, tags), else goes to the next field.
+            KeyCode::Tab | KeyCode::BackTab if f.current().is_some_and(|x| !x.locked && x.completes_as().is_some()) => {
+                self.complete_field(&mut f, key.code == KeyCode::BackTab);
+            }
+            KeyCode::BackTab => f.prev(),
+            KeyCode::Tab => f.next(),
             _ => {
                 if let Some(field) = f.current() {
                     edit_field(field, key, ctrl);

@@ -274,10 +274,11 @@ Tasks page clears them, and they are cleared after an action.
 The web app's task form, in a box over the page: a line for each part of a task, its name on the left. Description,
 project, priority, due, wait, scheduled, until, repeat, tags (space separated), each UDA your taskrc defines, and what it
 depends on (task ids); for a new task, whether to start it now and a note, and for one that exists, an annotation to add
-under the ones it has. `↑` `↓` go from line to line, `Tab` completes the line's word as the command line would
-(`project:Ho` → `project:Home`), `Space` ticks Start, `Enter` saves and `Esc` leaves. A string UDA with no `values`
+under the ones it has. `Ctrl+N` and `Ctrl+P` (or `↑` `↓`) go from line to line, `Tab` completes the line's word as the command line would
+(`project:Ho` → `project:Home`) and goes to the next line where nothing completes (`Shift+Tab` back), `Space` ticks Start, `Enter` saves and `Esc` leaves. A string UDA with no `values`
 and the note can hold several lines, as on the web and the phone: `Alt+Enter` starts a new one, and each shows under
-the one before. The `A` box takes `Alt+Enter` too, and a note of several lines is sent whole, its line breaks kept.
+the one before; in such a field `↑` `↓` move between its lines, and on to the next line of the form only past its first
+or last. The `A` box takes `Alt+Enter` too, and a note of several lines is sent whole, its line breaks kept.
 
 A date is typed as `task` takes it (`fri`, `eom`, `2026-11-20`, `2026-11-20T14:30`, `tomorrow+19h`); an empty date
 field, when chosen, lists these examples with today in your `dateformat`. What is typed is shown after it as `task` will
@@ -543,7 +544,7 @@ settings a row each, each with a faint line on what it does and its problems in 
 | choice | `Home page  next ▾` | `Enter` opens its list; `Enter` there picks one |
 | input | `min  [0]` | `Enter` edits it on the bottom line |
 | a list's rows | a row each, its fields in columns | `a` adds one, `Enter` or `e` changes it, `D` deletes it, `K` `J` move a column |
-| a row of several fields | a box over the page with every field | `↑` `↓` between fields, `Tab` completes (a command line, a filter) or goes to the next, `Enter` or `Ctrl+S` keeps the row, `Esc` drops it; each field's problem shows under it as you type |
+| a row of several fields | a box over the page with every field | `Ctrl+N` `Ctrl+P` (or `↑` `↓`) between fields, `Tab` completes (a command line, a filter) or goes to the next, `Enter` or `Ctrl+S` keeps the row, `Esc` drops it; each field's problem shows under it as you type |
 | an action | `› Edit it in $VISUAL or $EDITOR` | `Enter` runs it |
 
 **Edits wait until applied**, as on the web and the phone. An edit shows at once on its page, and the page's name gets a
@@ -565,7 +566,7 @@ closes.
 | Commands | Your task commands, a row each (name, label, command): `a` adds one and `Enter` or `e` changes one in its box (name, label, command, icon; a label left empty is the name made words, and a name may not be a command's, spec 0032), `D` deletes it. Then your taskrc's aliases; their icons are chosen on the web or the phone |
 | Sync | When to sync, a choice (`y`) ([Sync](#sync)) |
 
-![The Keybindings page: your keys, under General, Web, Mobile and Terminal](screenshots/terminal-keybindings.png)
+![The Keybindings page: search and the defaults switch, your keys under General, Web, Mobile and Terminal, then the : commands](screenshots/terminal-keybindings.png)
 
 `a` opens a box of the section's actions, each with the keys it has now; typing narrows it and `Enter` picks one. Then
 the next key you press is the one to add (any key but `Esc`, so one the app already uses can be given too), and `Enter`

@@ -281,6 +281,44 @@ fn alt_enter_starts_a_new_line_in_a_free_text_uda_and_nowhere_else() {
 }
 
 #[test]
+fn arrows_move_inside_a_field_of_several_lines_and_ctrl_n_p_between_fields() {
+    let mut app = app();
+    app.cfg = tc_core::taskrc::parse("uda.notes.type=string\n").config;
+    app.key(key(KeyCode::Char('a')));
+    app.key(key(KeyCode::Down));
+    let sel = |app: &App| match &app.mode {
+        Mode::Form(f) => (f.fields.get(f.sel).map(|x| x.key.clone()).unwrap_or_default(), f.sel),
+        _ => panic!("expected the form"),
+    };
+    let Mode::Form(f) = &mut app.mode else {
+        panic!("expected the form");
+    };
+    let notes = f.fields.iter().position(|x| x.key == "notes").unwrap();
+    f.sel = notes;
+    typing(&mut app, "one");
+    app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
+    typing(&mut app, "two");
+    // ↑ goes to the first line of the field, and only then to the field above.
+    app.key(key(KeyCode::Up));
+    assert_eq!(sel(&app), ("notes".to_owned(), notes));
+    app.key(key(KeyCode::Up));
+    assert_eq!(sel(&app).1, notes - 1);
+    // Ctrl+N and Ctrl+P go between fields whatever the field holds.
+    let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    app.key(ctrl('n'));
+    assert_eq!(sel(&app).1, notes);
+    app.key(ctrl('n'));
+    assert_eq!(sel(&app).1, notes + 1);
+    app.key(ctrl('p'));
+    app.key(ctrl('p'));
+    assert_eq!(sel(&app).1, notes - 1);
+    let Mode::Form(f) = &app.mode else {
+        panic!("expected the form");
+    };
+    assert_eq!(f.field("notes").map(|x| x.input.line.as_str()), Some("one\ntwo"));
+}
+
+#[test]
 fn a_form_that_cannot_be_saved_stays_open_and_says_why() {
     let mut app = app();
     app.key(key(KeyCode::Char('a')));
@@ -1028,4 +1066,23 @@ fn o_in_the_info_lists_its_links_and_the_tasks_around_it_and_a_task_opens_with_e
     a.key(key(KeyCode::Char('j')));
     a.key(key(KeyCode::Enter));
     assert_eq!(a.info_trail, vec!["u-1".to_owned()]);
+}
+
+#[test]
+fn tab_goes_to_the_next_field_where_nothing_completes() {
+    let mut app = app();
+    app.key(key(KeyCode::Char('a')));
+    app.key(key(KeyCode::Down));
+    let at = |app: &App| match &app.mode {
+        Mode::Form(f) => f.fields.get(f.sel).map(|x| x.key.clone()).unwrap_or_default(),
+        _ => panic!("expected the form"),
+    };
+    assert_eq!(at(&app), "description");
+    app.key(key(KeyCode::Tab));
+    assert_eq!(at(&app), "project");
+    // The project completes: Tab stays on it.
+    app.key(key(KeyCode::Tab));
+    assert_eq!(at(&app), "project");
+    app.key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    assert_eq!(at(&app), "description");
 }

@@ -220,7 +220,7 @@ fn screen(f: &mut Frame, app: &App) {
             f.render_widget(hints(keys), dock);
         }
         Mode::Form(_) => f.render_widget(
-            hints("↑/↓ field · Tab complete · ↵ save · Alt+↵ a new line in a note · Esc cancel · Ctrl+U clear"),
+            hints("Ctrl+N/P or ↑/↓ field · Tab complete or next · ↵ save · Alt+↵ a new line in a note · Esc cancel · Ctrl+U clear"),
             dock,
         ),
         Mode::Prompt(p) => prompt(f, p, main, dock),
@@ -243,7 +243,7 @@ fn screen(f: &mut Frame, app: &App) {
         Mode::Choose { .. } => f.render_widget(hints("↑/↓ choose · ↵ keep it · Esc cancel"), dock),
         Mode::QuitAsk => f.render_widget(hints("a apply and quit · d drop and quit · any other key stays"), dock),
         Mode::SettingsForm(_) => f.render_widget(
-            hints("↑/↓ field · Tab complete or next · ↵ keep · Esc cancel · Ctrl+U clear"),
+            hints("Ctrl+N/P or ↑/↓ field · Tab complete or next · ↵ keep · Esc cancel · Ctrl+U clear"),
             dock,
         ),
         Mode::Reminders(b) => {

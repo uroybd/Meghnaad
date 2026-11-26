@@ -478,7 +478,7 @@ pub fn now() -> i64 {
 /// The end of the list of keys: what typing in a box or the form takes, which is not in the keymap.
 const HELP_TAIL: &str = "\
 The form
-  ↑/↓ a field · Tab complete · Space starts the task (on Start) · ↵ save · Esc cancel
+  Ctrl+N/Ctrl+P or ↑/↓ a field (in a note of several lines ↑/↓ go between its lines) · Tab complete, or the next field where nothing completes · Alt+↵ a new line in a note · Space starts the task (on Start) · ↵ save · Esc cancel
 
 The command line
   Tab/Shift+Tab complete · Ctrl+A/E start/end · Ctrl+W delete a word · Ctrl+U clear · Esc cancel

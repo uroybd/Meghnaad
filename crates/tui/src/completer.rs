@@ -81,6 +81,41 @@ impl Input {
         self.caret = self.line.encode_utf16().count();
     }
 
+    /// The caret to the line above, at the same column or the line's end. False on the first line: nothing moved.
+    pub fn up(&mut self) -> bool {
+        let at = byte_at(&self.line, self.caret);
+        let Some(start) = self.line[..at].rfind('\n') else {
+            return false;
+        };
+        let col = self.line[start + 1..at].chars().count();
+        let above = self.line[..start].rfind('\n').map_or(0, |i| i + 1);
+        self.caret_to(above, start, col);
+        true
+    }
+
+    /// The caret to the line below, at the same column or the line's end. False on the last line: nothing moved.
+    pub fn down(&mut self) -> bool {
+        let at = byte_at(&self.line, self.caret);
+        let Some(end) = self.line[at..].find('\n').map(|i| at + i) else {
+            return false;
+        };
+        let col = self.line[self.line[..at].rfind('\n').map_or(0, |i| i + 1)..at]
+            .chars()
+            .count();
+        let below_end = self.line[end + 1..].find('\n').map_or(self.line.len(), |i| end + 1 + i);
+        self.caret_to(end + 1, below_end, col);
+        true
+    }
+
+    /// The caret `col` characters into the line from byte `start` to byte `end`, or at its end.
+    fn caret_to(&mut self, start: usize, end: usize, col: usize) {
+        let to = self.line[start..end]
+            .char_indices()
+            .nth(col)
+            .map_or(end, |(i, _)| start + i);
+        self.caret = self.line[..to].encode_utf16().count();
+    }
+
     /// Delete the word before the caret, as Ctrl+W does in a shell.
     pub fn delete_word(&mut self) {
         let at = byte_at(&self.line, self.caret);
@@ -204,6 +239,23 @@ mod tests {
         assert_eq!(i.line, "ab");
         i.delete_word();
         assert_eq!((i.line.as_str(), i.caret), ("", 0));
+    }
+
+    #[test]
+    fn up_and_down_go_between_lines_keeping_the_column() {
+        let mut i = Input::new("one\nab\nthree");
+        assert!(!i.down(), "the last line: nothing below");
+        assert_eq!(i.caret_chars(), 12);
+        assert!(i.up());
+        assert_eq!(i.caret_chars(), 6, "the end of the shorter line");
+        assert!(i.up());
+        assert_eq!(i.caret_chars(), 2);
+        assert!(!i.up(), "the first line: nothing above");
+        i.right();
+        assert!(i.down());
+        assert_eq!(i.caret_chars(), 6);
+        let mut single = Input::new("a😀");
+        assert!(!single.up() && !single.down());
     }
 
     #[test]

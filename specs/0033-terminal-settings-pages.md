@@ -1,6 +1,6 @@
 # 0033: The terminal app's Settings as pages
 
-- **Status:** in progress
+- **Status:** done
 - **Created:** 2026-11-26
 - **Layer:** 2 (UI)
 - **Front ends:** terminal; web for one switch (AI agents) that saved at once; the phone checked, already as the map
@@ -46,8 +46,8 @@ The web's controls, drawn in the terminal:
 | Web | Terminal |
 | --- | --- |
 | a checkbox (`label.pick`) | `[x] Card icons` / `[ ] Card icons`; `Space` or `Enter` switches it |
-| a `select`, with groups (`optgroup`) | the value and a `▾`; `Enter` opens a picker of the choices under their group headings (Reports, Boards, Kanbans), typing narrows it |
-| a text or number input | `Label  [value     ]`; `Enter` edits it in place on the row, `Enter` keeps it, `Esc` drops it |
+| a `select`, with groups (`optgroup`) | the value and a `▾`; `Enter` opens a picker of the choices, each with its group's name beside it (`report  list`); `j` `k` move, `Enter` takes one |
+| a text or number input | `Label  [value     ]`; `Enter` edits it on the bottom line, `Enter` keeps it, `Esc` drops it |
 | a list of rows (commands, columns, transformations) | a row each, its fields in columns as the web lays them out; `a` adds one, `e`/`Enter` changes it, `D` removes it, `K` `J` move it where the web has up and down |
 | a row's form of several fields | a **modal** with every field at once (below) |
 | Apply, Revert edits | as on the web and the phone: edits wait until applied. `Ctrl+S` applies the page (the border says `Ctrl+S apply` while there are edits, then `Saved`), `u` reverts its edits; leaving a page keeps them, as a tab does. An action (Turn Kanban off, Write them, Sync now) happens at once |
@@ -81,7 +81,8 @@ The pages, part by part as on the web:
 A form of several fields opens as a box over the page, its fields laid out as the web's row is (a label over or before
 each input): a task command (name, label, command, icon), a kanban column (name, filter, move), a transformation (match,
 replace, fields, condition). Every field is checked as it is typed and its problem shown under it (the name rule of spec
-0032, the line split, the regex); `Tab` and `Shift+Tab` move between fields; `Enter` on the last field, or `Ctrl+S`,
+0032, the line split, the regex); `Tab` and `Shift+Tab` move between fields, except in a field that completes, where `Tab` completes; `Ctrl+N` and `Ctrl+P`
+move between fields in any field, and `↑` `↓` too (inside a field of several lines they move between its lines); `Enter` on the last field, or `Ctrl+S`,
 keeps the row in the page's edits (applied with the page, as on the web); `Esc` drops it. A field that completes today
 (a command line, a filter, a move) keeps its completion. A one-value setting stays a picker or an inline input.
 
@@ -136,7 +137,7 @@ in the device's file), instead of saving as it is switched.
 - [x] The left pane on Settings lists the map's pages for the terminal; the main pane shows the one chosen, full height.
 - [x] Edits wait for `Ctrl+S` on every page, with the dot and Revert as on the web; actions happen at once.
 - [x] The web's AI agents switch waits for This device's Apply like the rest of the page.
-- [ ] Each page has the web panel's parts in its order, each setting drawn with the control above for the web's control.
+- [x] Each page has the web panel's parts in its order, each setting drawn with the control above for the web's control.
 - [x] Appearance has the theme, Cards (with Nerd Font), IDs, progress bars and transformations; General the home page and the file.
 - [x] A task command, a kanban column and a transformation are added and changed in a modal, checked as typed.
 - [x] A long section (many task commands, keys, kanban rows) scrolls within its page and the selection stays in view.
@@ -148,6 +149,8 @@ in the device's file), instead of saving as it is switched.
 - Later, its own spec: one shared routine for applying settings (the edit merged into the file as read, the save, then
   the sync), in `tc_core`, which every front end calls, so applying, syncing and two devices saving at once behave the
   same everywhere. The merge is already one set of cases (`fixtures/settings-kept.json`); the routine is not.
+- **What** says `l` gives the page the focus and `h` gives it back to the list; as built only `Tab` (and `Enter`,
+  `Esc`) do. uroybd to choose: bind `h` `l` in the keymap, or change **What** to `Tab`.
 
 ## Implementation notes
 
@@ -190,3 +193,10 @@ in the device's file), instead of saving as it is switched.
     input in place, the picker that narrows under headings, `Tab` between a form's fields): uroybd to choose between
     building them and changing **What**. The screenshots in `docs/screenshots/terminal-keybindings*.png` still show the
     old stacked sections.
+- 2026-11-26 (after 0.8.65): uroybd changed **What** to match the terminal as built: a picker naming each choice's
+  group, an input edited on the bottom line. On moving between a form's fields, uroybd chose not to rely on `↑` `↓`
+  alone, since a field of several lines needs them: `Ctrl+N` `Ctrl+P` move between fields in any field, `Tab`
+  `Shift+Tab` too where the field does not complete, and in a field of several lines `↑` `↓` move between its lines
+  (`Input::up`/`down`, `completer.rs`). The task form (`prompt.rs`) follows the same rule. Tests: `completer.rs`,
+  `app/tests.rs`. Docs: `docs/terminal.md`, the `?` help, the bottom line's hints. Done. The screenshots of the
+  keybindings page are still the old ones.
