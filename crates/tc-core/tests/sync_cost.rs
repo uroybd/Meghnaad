@@ -79,8 +79,10 @@ async fn cryptor(store: &Counting) -> Cryptor {
     load_cryptor(store, b"hunter2").await.unwrap()
 }
 
+/// A server that never asks for a snapshot: drawn at random, about one push in 128 would make one, and a test of what
+/// a sync costs would then fail now and then. What a snapshot costs is `server_urgent`'s to show.
 fn server(store: &Counting, c: &Cryptor) -> Box<dyn Server> {
-    Box::new(CloudServer::with_cryptor(store.clone(), c.clone()))
+    Box::new(CloudServer::with_cryptor(store.clone(), c.clone()).with_snapshot_urgency(SnapshotUrgency::None))
 }
 
 async fn add_task(r: &mut R, description: &str) {
