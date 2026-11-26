@@ -187,7 +187,7 @@ assert "sync.encryption_secret" in r["blocked"] and "sync.aws.secret_access_key"
 echo "$resp" | grep -q 'TOPSECRET' && fail "a secret value was echoed back"
 echo "$(curl -sf "$WEB/api/config")" | grep -q 'TOPSECRET\|ALSO-SECRET' && fail "a secret value is served by /api/config"
 webcli '{"line":"add sized thing estimate:big"}' | grep -q 'Created' || fail "add with UDA failed"
-webcli '{"line":"add rejected estimate:huge"}' | grep -q 'use one of' || fail "UDA validation missing"
+webcli '{"line":"add rejected estimate:huge"}' | grep -q "does not allow a value of 'huge'" || fail "UDA validation missing"
 webrows "sized estimate:big" | python3 -c 'import sys,json; r=json.load(sys.stdin); assert len(r)==1 and r[0]["extra"]["estimate"]=="big", r' \
   || fail "UDA report/filter failed"
 ok "taskrc UDAs and custom reports work; sync.* secrets were blocked and never stored"
