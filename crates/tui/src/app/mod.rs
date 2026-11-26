@@ -585,27 +585,6 @@ fn scrolled(at: u16, step: Step) -> u16 {
 /// so they run there. Its questions (`delete`, `undo`, `purge`, a bulk `modify`) are asked here, in a box.
 const TERMINAL: &[&str] = &["edit", "import", "import-v2", "news", "execute"];
 
-/// Taskwarrior's commands that change tasks, after which the app syncs when set to.
-const CHANGES: &[&str] = &[
-    "add",
-    "annotate",
-    "append",
-    "delete",
-    "denotate",
-    "done",
-    "duplicate",
-    "edit",
-    "import",
-    "import-v2",
-    "log",
-    "modify",
-    "prepend",
-    "purge",
-    "start",
-    "stop",
-    "undo",
-];
-
 /// The arguments that make `task` colour what it prints for a page this wide and tall.
 pub(crate) fn colored(width: u16, height: u16) -> Vec<String> {
     vec![

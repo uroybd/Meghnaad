@@ -2,7 +2,7 @@
 
 use super::{
     edit_field, plan_chain, review, split_words, Action, App, Completer, Form, Input, KeyCode, KeyEvent, KeyModifiers,
-    Mode, Phase, Prompt, PromptKind, CHANGES, TERMINAL,
+    Mode, Phase, Prompt, PromptKind, TERMINAL,
 };
 
 use crate::form::Kind;
@@ -280,22 +280,12 @@ impl App {
 
     /// Whether `line` changes tasks: its command is one of those that do.
     pub(super) fn changes_tasks(&self, line: &str) -> bool {
-        self.command_of(line).is_some_and(|c| CHANGES.contains(&c.as_str()))
+        crate::chain::changes_tasks(line, &self.commands)
     }
 
-    /// The Taskwarrior command `line` runs: the first word that is one, whole or a prefix of only one (at least two
-    /// letters), as `task` reads it.
+    /// The Taskwarrior command `line` runs, as `task` reads it.
     pub(super) fn command_of(&self, line: &str) -> Option<String> {
-        split_words(line).into_iter().find_map(|w| {
-            if self.commands.contains(&w) {
-                return Some(w);
-            }
-            let mut matches = self.commands.iter().filter(|c| w.len() >= 2 && c.starts_with(&w));
-            match (matches.next(), matches.next()) {
-                (Some(c), None) => Some(c.clone()),
-                _ => None,
-            }
-        })
+        crate::chain::command_of(line, &self.commands)
     }
 
     /// A line typed at the command line: `review` begins one; a chain with a command that asks (or a line with `!`

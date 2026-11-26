@@ -370,7 +370,7 @@ meghnaad 1 done '&&' 2 start ';' next # a chain: quote the operators so the shel
 ```
 
 The exit status is the last statement run's, as in a shell (2 for a line that is not a well-formed chain). `export`,
-`skill`, `--dry-run` (`-n`), `--help` and `--version` as the first word are the app's own, so `task export` itself is
+`skill`, `--sync`, `--dry-run` (`-n`), `--help` and `--version` as the first word are the app's own, so `task export` itself is
 reached as `task export`, and a task command named `skill` only from the app's command line (none can be named `export`,
 which is a command already).
 
@@ -382,6 +382,17 @@ meghnaad --dry-run 3 fail '&&' next   # 3 done outcome:fail, then && next
 ```
 
 ### With an AI agent
+
+`meghnaad --sync <line>` syncs around a one-off line, whatever the app's sync setting: `task sync` first, waited for,
+then the line, then `task sync` again in the background, as the app syncs when it closes, so the prompt comes back at
+once. The sync after runs only when a statement that ran changes tasks (`add`, `modify`, `done`, `annotate`, `start`,
+`delete`, `undo` and the rest); a report or an `export` is synced before only. A sync before that fails is said, and the
+line runs anyway; one after that fails is said the next time the app opens.
+
+```bash
+meghnaad --sync add Call the plumber due:tomorrow   # sync, add, sync in the background
+meghnaad --sync next                                # sync, next
+```
 
 An AI agent with a shell can use your tasks through `meghnaad`. A skill teaches it how: compact reads with
 `meghnaad export -f tsv -F …`, tasks named by UUID rather than by ID, `--dry-run` before your task commands, and asking

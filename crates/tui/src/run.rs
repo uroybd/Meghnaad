@@ -67,10 +67,15 @@ pub fn dry_run(args: &[String]) -> io::Result<i32> {
 
 /// Run `args` on `task`; the exit status for the shell: the last statement run's, as in a shell.
 ///
+/// With `sync` (`meghnaad --sync <line>`): `task sync` first, waited for (a failure is said, and the line runs
+/// anyway); then the line; then, if a statement that ran changes tasks ([`crate::chain::CHANGES`]), `task sync` again
+/// in the background, as the app syncs at close, so the shell has its prompt back at once (a failure is kept for the
+/// app to report when it next opens). A line that changes nothing is not synced after.
+///
 /// # Errors
 ///
 /// Writing to standard error failed.
-pub fn run(task: &Task, args: &[String]) -> io::Result<i32> {
+pub fn run(task: &Task, args: &[String], sync: bool) -> io::Result<i32> {
     let (settings, problem) = crate::settings::AppSettings::load();
     if let Some(p) = problem {
         writeln!(io::stderr(), "meghnaad: {p}")?;
@@ -82,11 +87,25 @@ pub fn run(task: &Task, args: &[String]) -> io::Result<i32> {
             return Ok(2);
         }
     };
+    if sync {
+        let result = task.capture(&["sync"]);
+        if !result.as_ref().is_ok_and(|o| o.ok) {
+            writeln!(io::stderr(), "meghnaad: {}", crate::sync::said(&result))?;
+        }
+    }
+    // Which statements change tasks, read from `task`'s own list of commands, only when it is needed.
+    let commands = if sync {
+        task.lines(&["_commands"]).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut changed = false;
     let mut code = 0;
     for s in steps {
         if !runs(s.join, code == 0) {
             continue;
         }
+        changed = changed || (sync && crate::chain::changes_tasks(&s.line, &commands));
         let mut words = split_words(&s.line);
         if words.first().is_some_and(|w| w == "task") {
             words.remove(0);
@@ -98,6 +117,11 @@ pub fn run(task: &Task, args: &[String]) -> io::Result<i32> {
                 127
             }
         };
+    }
+    if changed {
+        if let Err(e) = crate::sync::hand_over(task, None) {
+            writeln!(io::stderr(), "meghnaad: {e}")?;
+        }
     }
     Ok(code)
 }

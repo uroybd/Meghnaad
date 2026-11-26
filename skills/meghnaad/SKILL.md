@@ -95,7 +95,7 @@ mean more than one thing, or a description match such as `/report/` finds more t
 Show the person the tasks it will touch (an export of the same filter) and ask, before any of these:
 
 - a change to **more than one task** (`task` itself only asks above `rc.bulk`, 3 by default);
-- `delete`, `purge`, `undo`, `import`, `sync`;
+- `delete`, `purge`, `undo`, `import`, `sync` (and `meghnaad --sync <line>`, which syncs before and after);
 - `config`, `context` (define, delete, or switching it), anything that edits the taskrc.
 
 After a yes, name the tasks by their UUIDs (the filter could match more by now) and tell `task` not to ask again:

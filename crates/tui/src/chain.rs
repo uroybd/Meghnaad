@@ -5,6 +5,48 @@
 //! `||` has to be written `and` or `or` (or quoted, `'||'`). Operators bind left to right with no precedence:
 //! `a && b || c` is `(a && b) || c`, and a statement that is skipped leaves the status as it was.
 
+/// Taskwarrior's commands that change tasks, after which the app syncs when set to (and
+/// `meghnaad --sync <line>` syncs again).
+pub const CHANGES: &[&str] = &[
+    "add",
+    "annotate",
+    "append",
+    "delete",
+    "denotate",
+    "done",
+    "duplicate",
+    "edit",
+    "import",
+    "import-v2",
+    "log",
+    "modify",
+    "prepend",
+    "purge",
+    "start",
+    "stop",
+    "undo",
+];
+
+/// The Taskwarrior command `line` runs, of `commands` (`task _commands`): the first word that is one, whole or a prefix
+/// of only one (at least two letters), as `task` reads it.
+pub fn command_of(line: &str, commands: &[String]) -> Option<String> {
+    tc_core::filter::split_words(line).into_iter().find_map(|w| {
+        if commands.contains(&w) {
+            return Some(w);
+        }
+        let mut matches = commands.iter().filter(|c| w.len() >= 2 && c.starts_with(&w));
+        match (matches.next(), matches.next()) {
+            (Some(c), None) => Some(c.clone()),
+            _ => None,
+        }
+    })
+}
+
+/// Whether `line` changes tasks: its command is one of [`CHANGES`].
+pub fn changes_tasks(line: &str, commands: &[String]) -> bool {
+    command_of(line, commands).is_some_and(|c| CHANGES.contains(&c.as_str()))
+}
+
 /// How a statement follows the one before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Joiner {

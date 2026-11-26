@@ -7,6 +7,8 @@ Usage: meghnaad                open it on the tasks task reads (TASKRC and TASKD
        meghnaad <line>         run a command line as the app's command line does: task commands written out,
                                '&&' '||' ';' (quoted) between statements, everything else straight to task
        meghnaad export ...     task export, with the Export dialog's choices (meghnaad export --help)
+       meghnaad --sync <line>  the same, with task sync before it (waited for) and, if it changes tasks, after it
+                               (in the background)
        meghnaad --dry-run <line>
                                print the statements <line> would run (task commands written out); run nothing
        meghnaad skill          print the skill that teaches an AI agent to use meghnaad and task safely
@@ -47,9 +49,19 @@ fn main() -> ExitCode {
             Err(e) => status(Err(e)),
         },
         Some("--version" | "-V") => status(writeln!(io::stdout(), "meghnaad {}", env!("CARGO_PKG_VERSION"))),
-        Some(_) => {
+        Some("--sync") if args.len() == 1 => {
+            // Standard error itself may be what failed; the status says it either way.
+            writeln!(
+                io::stderr(),
+                "meghnaad: --sync goes before a command line: meghnaad --sync <line>"
+            )
+            .ok();
+            ExitCode::from(2)
+        }
+        Some(first) => {
             let task = meghnaad_tui::task::Task::from_env();
-            match meghnaad_tui::run::run(&task, &args) {
+            let sync = first == "--sync";
+            match meghnaad_tui::run::run(&task, args.get(usize::from(sync)..).unwrap_or_default(), sync) {
                 Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
                 Err(e) => status(Err(e)),
             }
