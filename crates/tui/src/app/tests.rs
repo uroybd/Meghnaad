@@ -241,7 +241,9 @@ fn the_one_line_add_opens_into_the_form_with_its_fields_filled() {
     assert_eq!(f.field("project").map(crate::form::Field::value), Some("Home"));
     assert_eq!(f.field("tags").map(crate::form::Field::value), Some("errand"));
     // Down goes from field to field, Space ticks Start, Esc closes it.
-    for _ in 0..f.fields.iter().position(|x| x.kind == Kind::Start).unwrap_or(0) {
+    // (Counting the fields on the form: the repeat fields of a mode not chosen are not.)
+    let start = f.fields.iter().position(|x| x.kind == Kind::Start).unwrap_or(0);
+    for _ in 0..(0..start).filter(|&i| f.shown(i)).count() {
         app.key(key(KeyCode::Down));
     }
     app.key(key(KeyCode::Char(' ')));

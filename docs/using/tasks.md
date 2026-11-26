@@ -102,7 +102,8 @@ a tag, an attribute, a date word), as in the console, and stays in the box; with
 Tab or the arrow keys go through it. Shift-Tab leaves the box when no menu is open.
 
 **More fields** opens the full form with the line already broken into fields: project, priority, due, wait, scheduled,
-until, repeat, tags, dependencies, UDAs, "start now" and a first note.
+until, repeat (doesn't repeat, [iterative or recurring](iterative.md#repeat-in-the-form), each with its own fields),
+tags, dependencies, UDAs, "start now" and a first note.
 
 - Each date field opens a panel. Type a date as Taskwarrior reads one (`tomorrow`, `eow`, `eow-2d`, `2026-10-01`; the
   date words complete with Tab or a tap), pick a keyword, or choose a day and optional time from the calendar.

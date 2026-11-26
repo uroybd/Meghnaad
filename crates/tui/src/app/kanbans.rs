@@ -33,6 +33,8 @@ pub struct Card {
     pub free: BTreeSet<String>,
     /// The swimlane it is in: the heading of its group in the report (a `/` in its sort); none without groups.
     pub lane: Option<String>,
+    /// How it repeats, if it does: the mark after its title.
+    pub repeats: Option<crate::model::Repeats>,
 }
 
 /// What the open kanban has: each column's cards, then Other's (the tasks the kanban picks that no column has).
@@ -971,6 +973,7 @@ fn cards(r: &model::Report, keep: &[usize], cfg: &tc_core::taskrc::Config) -> Ve
                 style: r.styles.get(i).copied().unwrap_or_default(),
                 priority: r.priorities.get(i).cloned().flatten(),
                 lane: None,
+                repeats: r.repeats.get(i).copied().flatten(),
             })
         })
         .collect()

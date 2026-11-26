@@ -68,4 +68,6 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0033 | [The terminal app's Settings as pages](0033-terminal-settings-pages.md) | done | 2 (UI) | terminal, web | Built; form keys `Ctrl+N`/`Ctrl+P`, `Tab` where nothing completes |
 | 0034 | [A UDA's choices drawn as pills](0034-uda-value-pills.md) | done | 2 (UI) | all | Built 2026-11-26; also: short string UDAs inline on cards (30 characters) |
 | 0035 | [Iterative tasks (Taskwarrior 3.6.0)](0035-iterative-tasks.md) | in progress | both | all | Built 2026-11-27; left: end-to-end sync with `task`-made tasks, more parity tests |
+| 0036 | [One Repeat choice in the task form](0036-repeat-mode.md) | done | both | all | Task 71b0056f; iterative to recurring blocked in the form; the console makes it in one modify |
+| 0037 | [A mark after a repeating task's title](0037-repeat-marks.md) | done | 2 (UI) | all | `repeat` / `iteration-cw`; `↻` / `↪` in the terminal |
 | 0038 | [`meghnaad --sync <line>`](0038-cli-sync.md) | done | 2 (UI) | terminal | Task b0cf7ad6 |

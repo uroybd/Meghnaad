@@ -273,10 +273,12 @@ Tasks page clears them, and they are cleared after an action.
 
 The web app's task form, in a box over the page: a line for each part of a task, its name on the left and its value on
 a shaded bar, underlined, the chosen one's underline in the accent. Description,
-project, priority, due, wait, scheduled, until, repeat, tags (space separated), each UDA your taskrc defines, and what it
+project, priority, due, wait, scheduled, until, Repeat (doesn't repeat, iterative or recurring: `Space` switches it, and
+only its own fields show, [as on the web](using/iterative.md#repeat-in-the-form)), tags (space separated), each UDA your taskrc defines, and what it
 depends on (task ids); for a new task, whether to start it now and a note, and for one that exists, an annotation to add
 under the ones it has. `Ctrl+N` and `Ctrl+P` (or `↑` `↓`) go from line to line, `Tab` completes the line's word as the command line would
-(`project:Ho` → `project:Home`) and goes to the next line where nothing completes (`Shift+Tab` back), `Space` ticks Start, `Enter` saves and `Esc` leaves. A string UDA with no `values`
+(`project:Ho` → `project:Home`) and goes to the next line where nothing completes (`Shift+Tab` back), `Space` ticks Start
+and switches Repeat, `Enter` saves and `Esc` leaves. A string UDA with no `values`
 and the note can hold several lines, as on the web and the phone: `Alt+Enter` starts a new one, and each shows under
 the one before; in such a field `↑` `↓` move between its lines, and on to the next line of the form only past its first
 or last. The `A` box takes `Alt+Enter` too, and a note of several lines is sent whole, its line breaks kept.
@@ -381,8 +383,6 @@ joins it, and runs nothing:
 meghnaad --dry-run 3 fail '&&' next   # 3 done outcome:fail, then && next
 ```
 
-### With an AI agent
-
 `meghnaad --sync <line>` syncs around a one-off line, whatever the app's sync setting: `task sync` first, waited for,
 then the line, then `task sync` again in the background, as the app syncs when it closes, so the prompt comes back at
 once. The sync after runs only when a statement that ran changes tasks (`add`, `modify`, `done`, `annotate`, `start`,
@@ -393,6 +393,8 @@ line runs anyway; one after that fails is said the next time the app opens.
 meghnaad --sync add Call the plumber due:tomorrow   # sync, add, sync in the background
 meghnaad --sync next                                # sync, next
 ```
+
+### With an AI agent
 
 An AI agent with a shell can use your tasks through `meghnaad`. A skill teaches it how: compact reads with
 `meghnaad export -f tsv -F …`, tasks named by UUID rather than by ID, `--dry-run` before your task commands, and asking

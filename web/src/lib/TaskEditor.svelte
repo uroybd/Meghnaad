@@ -13,6 +13,7 @@
   import { CornerUpLeft, Lock, Repeat, RotateCcw, X } from './icons';
   import { visibleNotes } from './journal';
   import { describeRecur, presetFor, PRESETS } from './recurrence';
+  import { modeOf, REPEAT_MODES, repeatChanges, type RepeatMode } from './repeat';
   import { ITER_TYPES } from './iterative';
   import { store, type Entry } from './store.svelte';
   import type { Row, UdaDef } from './types';
@@ -91,7 +92,8 @@
   const scheduledClash = $derived(clashOf('scheduled', scheduled));
   /* svelte-ignore state_referenced_locally */
   let tags = $state(init.tags);
-  // Repeat: a preset, or "custom" with a free-text period (`3d`, `P2W`, ...). The server validates it.
+  // Repeat: not at all, iterative or recurring, one at a time (`repeat.ts`). A recurring task's period is a preset, or
+  // "custom" with a free-text one (`3d`, `P2W`, ...); the server validates it.
   /* svelte-ignore state_referenced_locally */
   let recurChoice = $state(init.recur === '' ? '' : presetFor(init.recur) || 'custom');
   /* svelte-ignore state_referenced_locally */
@@ -103,7 +105,22 @@
   // A template can't stop repeating (Taskwarrior refuses); delete it instead.
   /* svelte-ignore state_referenced_locally */
   const template = row?.status === 'recurring';
-  const needsDue = $derived(!instance && recur !== '' && due === '');
+  // A recurring task stays one (Taskwarrior refuses to take its `recur` away); the rest can switch.
+  /* svelte-ignore state_referenced_locally */
+  let mode = $state<RepeatMode>(instance || template ? 'recurring' : modeOf(init));
+  // An iterative task is not made recurring in the form: its series is ended first (Doesn't repeat, saved), then it can
+  // be. The command line still does both at once (`modify iter: iter_type: recur:weekly`).
+  /* svelte-ignore state_referenced_locally */
+  const modes = REPEAT_MODES.filter((m) => !(m.value === 'recurring' && !adding && modeOf(start) === 'iterative'));
+  // What switching away from the task's own mode clears, said beside the dropdown.
+  const clears = $derived(
+    !adding && mode !== modeOf(start) && modeOf(start) !== 'none'
+      ? modeOf(start) === 'iterative'
+        ? 'Saving ends its iterative series (Iter and Iter type are cleared); then it can be made recurring.'
+        : 'Saving clears its period.'
+      : '',
+  );
+  const needsDue = $derived(!instance && mode === 'recurring' && recur !== '' && due === '');
   // Iterative (Taskwarrior 3.6): done, it makes the next one. Not for a recurring task, which can't be both.
   /* svelte-ignore state_referenced_locally */
   let iter = $state(init.iter);
@@ -115,8 +132,9 @@
     ...ITER_TYPES,
     ...(init.iterType === '' || ITER_TYPES.includes(init.iterType) ? [] : [init.iterType]),
   ];
-  const iterable = $derived(!instance && !template && recur === '');
-  const needsIterDate = $derived(iter.trim() !== '' && due === '' && scheduled === '' && wait === '');
+  const needsIterDate = $derived(
+    mode === 'iterative' && iter.trim() !== '' && due === '' && scheduled === '' && wait === '',
+  );
   /* svelte-ignore state_referenced_locally */
   let udaValues = $state<Record<string, string>>({ ...udaStart, ...(adding ? seed?.udas : null) });
   let startNow = $state(false);
@@ -139,12 +157,7 @@
     set('wait', wait, start.wait);
     set('scheduled', scheduled, start.scheduled);
     set('until', until, start.until);
-    if (!instance) set('recur', recur, start.recur);
-    if (!instance && !template) {
-      set('iter', iter.trim(), start.iter);
-      // Its type goes with it: cleared with the rule, the type goes too (`task` drops it as it ends the series).
-      if (iter.trim() !== '') set('iter_type', iterType, start.iterType);
-    }
+    if (!instance) a.push(...repeatChanges(mode, { recur, iter, iterType }, start));
     const want = new Set(
       tags
         .split(/[\s,]+/)
@@ -266,7 +279,7 @@
 
     <div class="pair repeat-tags">
       <div class="cell">
-        <label for="te-recur">Repeat</label>
+        <label for="te-recur-mode">Repeat</label>
         {#if instance}
           <div>
             <span class="chip"><Repeat size={12} /> {describeRecur(row?.recur)}</span>
@@ -288,24 +301,32 @@
         {:else}
           <div class="repeat">
             <div class="row wrapline">
-              <select id="te-recur" bind:value={recurChoice} aria-label="Repeat">
-                {#if !template}<option value="">Doesn't repeat</option>{/if}
-                {#each PRESETS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
-                <option value="custom">Custom…</option>
+              <select id="te-recur-mode" bind:value={mode} aria-label="Repeat" disabled={template}>
+                {#each modes as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
               </select>
-              {#if recurChoice === 'custom'}
-                <input
-                  bind:value={recurCustom}
-                  aria-label="Custom repeat period"
-                  placeholder="3d, 2w, P1M, 6mo…"
-                  autocapitalize="off"
-                  spellcheck="false"
-                />
+              {#if mode === 'recurring'}
+                <select id="te-recur" bind:value={recurChoice} aria-label="How often">
+                  {#if recurChoice === ''}<option value="">how often…</option>{/if}
+                  {#each PRESETS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
+                  <option value="custom">Custom…</option>
+                </select>
+                {#if recurChoice === 'custom'}
+                  <input
+                    bind:value={recurCustom}
+                    aria-label="Custom repeat period"
+                    placeholder="3d, 2w, P1M, 6mo…"
+                    autocapitalize="off"
+                    spellcheck="false"
+                  />
+                {/if}
               {/if}
             </div>
+            {#if clears}
+              <div class="dim hint">{clears}</div>
+            {/if}
             {#if needsDue}
               <div class="err hint" role="alert">A repeating task needs a due date.</div>
-            {:else if recur && !template}
+            {:else if mode === 'recurring' && recur && !template}
               <div class="dim hint">Repeats {describeRecur(recur)}, starting from the due date.</div>
             {:else if template}
               <div class="dim hint">
@@ -321,7 +342,7 @@
       </div>
     </div>
 
-    {#if iterable}
+    {#if mode === 'iterative'}
       <div class="pair iter">
         <div class="cell">
           <label for="te-iter">Iter</label>

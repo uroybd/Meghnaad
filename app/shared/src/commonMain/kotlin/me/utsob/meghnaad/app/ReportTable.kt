@@ -388,7 +388,7 @@ private fun TableCell(
                 maxLines = if (c.cls == "multiline") 6 else if (col.kind == "description") 4 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (col.name == "description" && row.recur != null) LucideIcon("repeat", size = 12.dp, tint = dim)
+            if (col.name == "description") RepeatMark(row, dim)
             if (col.name == "description" && row.orphans.isNotEmpty()) Pill("+${row.orphans.size}", height = 18.dp)
         }
     }

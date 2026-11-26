@@ -94,6 +94,80 @@ describe('the task form, for an iterative task', () => {
   });
 });
 
+describe('the task form, its repeat mode', () => {
+  const shown = () => document.querySelector('footer .preview')?.textContent ?? '';
+  const pick = (id: string, value: string) => {
+    const el = document.getElementById(id) as HTMLSelectElement;
+    el.value = value;
+    el.dispatchEvent(new Event('change'));
+    flushSync();
+  };
+  const task = (fields: Record<string, unknown>) =>
+    ({
+      uuid: '11111111-2222-3333-4444-555555555555',
+      id: 3,
+      status: 'iterative',
+      description: 'Water plants',
+      tags: [],
+      annotations: [],
+      depends: [],
+      due: Math.floor(new Date(2026, 10, 20).getTime() / 1000),
+      urgency: 0,
+      orphans: [],
+      active_seconds: null,
+      sessions: [],
+      extra: {},
+      ...fields,
+    }) as never;
+
+  it('shows the fields of the mode it is in, and only those', () => {
+    app = mount(TaskEditor, { target: document.body, props: { seed: seedOf(preview({}), 'Bins'), onclose: () => {} } });
+    flushSync();
+    expect((document.getElementById('te-recur-mode') as HTMLSelectElement).value).toBe('none');
+    expect(document.getElementById('te-iter')).toBeNull();
+    expect(document.getElementById('te-recur')).toBeNull();
+    pick('te-recur-mode', 'iterative');
+    expect(document.getElementById('te-iter')).not.toBeNull();
+    expect(document.getElementById('te-recur')).toBeNull();
+    pick('te-recur-mode', 'recurring');
+    expect(document.getElementById('te-iter')).toBeNull();
+    expect(document.getElementById('te-recur')).not.toBeNull();
+  });
+
+  it('does not make an iterative task recurring: its series is ended first', () => {
+    app = mount(TaskEditor, {
+      target: document.body,
+      props: { row: task({ iter: 'monthly', iter_type: 'fixed' }), onclose: () => {} },
+    });
+    flushSync();
+    const offered = [...(document.getElementById('te-recur-mode') as HTMLSelectElement).options].map((o) => o.value);
+    expect(offered).toEqual(['none', 'iterative']);
+  });
+
+  it("clears the other mode's fields in the modify it runs, and says so", () => {
+    app = mount(TaskEditor, {
+      target: document.body,
+      props: { row: task({ iter: 'monthly', iter_type: 'fixed' }), onclose: () => {} },
+    });
+    flushSync();
+    pick('te-recur-mode', 'none');
+    expect(shown()).toContain('modify iter: iter_type:');
+    expect(document.body.textContent).toContain('Saving ends its iterative series');
+    expect(document.body.textContent).toContain('then it can be made recurring');
+  });
+
+  it('keeps a recurring task recurring', () => {
+    app = mount(TaskEditor, {
+      target: document.body,
+      props: { row: task({ status: 'recurring', recur: 'weekly' }), onclose: () => {} },
+    });
+    flushSync();
+    const select = document.getElementById('te-recur-mode') as HTMLSelectElement;
+    expect(select.value).toBe('recurring');
+    expect(select.disabled).toBe(true);
+  });
+});
+
 describe('the quick add card', () => {
   it('says so beside a due date on a holiday', () => {
     const at = Math.floor(new Date(2026, 11, 25, 9, 0, 0).getTime() / 1000);

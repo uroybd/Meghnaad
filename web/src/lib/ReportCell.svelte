@@ -2,12 +2,11 @@
   import ChoicePill from './ChoicePill.svelte';
   import DepLink from './DepLink.svelte';
   import { trimNumber, type Cell } from './format';
-  import { Repeat } from './icons';
   import { inlineText } from './markdown';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import ProjectPath from './ProjectPath.svelte';
-  import { describeRecur } from './recurrence';
+  import RepeatMark from './RepeatMark.svelte';
   import { store, type Entry } from './store.svelte';
   import TagChip from './TagChip.svelte';
   import type { Column, Row } from './types';
@@ -67,18 +66,7 @@
 {:else}
   <span class="cap">{numeric(col.name) ? trimNumber(c.text) : c.text}</span>
 {/if}
-{#if col.name === 'description' && row.recur}
-  <span
-    class="repeat"
-    title={row.status === 'recurring'
-      ? `Recurring task: repeats ${describeRecur(row.recur)}`
-      : `Repeats ${describeRecur(row.recur)}`}
-  >
-    <Repeat size={12} /><span class="sr-only"
-      >{row.status === 'recurring' ? 'recurring' : 'repeats'} {describeRecur(row.recur)}</span
-    >
-  </span>
-{/if}
+{#if col.name === 'description'}<RepeatMark {row} />{/if}
 {#if col.name === 'description' && row.orphans.length}
   <span class="chip orphan" title="Has properties your taskrc doesn't define: {row.orphans.join(', ')} (read-only)">
     +{row.orphans.length}
@@ -120,12 +108,6 @@
   .orphan {
     margin-left: 6px;
     color: var(--dim);
-  }
-  .repeat {
-    display: inline-flex;
-    margin-left: 6px;
-    color: var(--dim);
-    vertical-align: -1px;
   }
   /* Phones: a card lays out its marks itself, so the cap is not a box there. */
   @media (max-width: 760px) {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatMoment } from './dates';
+  import RepeatMark from './RepeatMark.svelte';
   import StatusPill, { type Kind } from './StatusPill.svelte';
   import type { Row } from './types';
 
@@ -15,7 +16,7 @@
   {#if row.id != null}<span class="dim mono">#{row.id}</span>{/if}
   <StatusPill {kind} />
 </span>
-<strong class="desc">{row.description}</strong>
+<strong class="desc">{row.description}<RepeatMark {row} /></strong>
 <span class="meta dim">
   {#if row.project}{row.project}{/if}
   {#if row.priority}· priority {row.priority}{/if}

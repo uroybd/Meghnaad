@@ -245,6 +245,38 @@ pub fn moments(task: &Value) -> Vec<i64> {
     out
 }
 
+/// How a task repeats, for the mark after its title in a report and on a card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Repeats {
+    /// A recurring task: its template, or one of its instances (`recur`).
+    Recurring,
+    /// An iterative one (Taskwarrior 3.6.0's `iter`): done, it makes the next.
+    Iterative,
+}
+
+impl Repeats {
+    /// How `task` exports it: a `recur` is recurring, an open task with an `iter` iterative; else none.
+    pub fn of(t: &Value) -> Option<Repeats> {
+        let has = |k: &str| t.get(k).and_then(Value::as_str).is_some_and(|v| !v.is_empty());
+        if has("recur") {
+            Some(Repeats::Recurring)
+        } else if has("iter") && t.get("status").and_then(Value::as_str) == Some("iterative") {
+            Some(Repeats::Iterative)
+        } else {
+            None
+        }
+    }
+
+    /// The mark: `↻` round and round for a recurring task, `↪` on to the next for an iterative one (the web's and the
+    /// phone's Lucide `repeat` and `iteration-cw`).
+    pub fn mark(self) -> &'static str {
+        match self {
+            Repeats::Recurring => "↻",
+            Repeats::Iterative => "↪",
+        }
+    }
+}
+
 /// A report as the screen draws it: its labels and, per task, its uuid and cells.
 #[derive(Debug, Default)]
 pub struct Report {
@@ -260,6 +292,8 @@ pub struct Report {
     pub ids: Vec<Option<u64>>,
     /// Each task's priority (`H`), shown or not: a card's ribbon.
     pub priorities: Vec<Option<String>>,
+    /// Each task's way of repeating, if it does: the mark after its description.
+    pub repeats: Vec<Option<Repeats>>,
     pub cells: Vec<Vec<Cell>>,
     /// For a report whose sort has a `/`: the separator above each row that starts a group (`Project: Home`), `None`
     /// inside one. Empty when nothing groups the report.
@@ -348,6 +382,7 @@ pub fn report(
             .iter()
             .map(|t| t.get("priority").and_then(Value::as_str).map(str::to_owned))
             .collect(),
+        repeats: tasks.iter().map(Repeats::of).collect(),
         cells: table.cells.into_iter().map(|row| pick(row, &keep)).collect(),
         heads,
     })
@@ -483,6 +518,26 @@ pub fn vocab(task: &Task, cfg: &Config, tasks: &[Value]) -> Result<Vocab, String
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_task_repeats_as_its_export_says() {
+        use super::Repeats;
+        assert_eq!(
+            Repeats::of(&json!({ "status": "recurring", "recur": "weekly" })),
+            Some(Repeats::Recurring)
+        );
+        assert_eq!(
+            Repeats::of(&json!({ "status": "pending", "recur": "weekly", "parent": "p" })),
+            Some(Repeats::Recurring)
+        );
+        assert_eq!(
+            Repeats::of(&json!({ "status": "iterative", "iter": "monthly" })),
+            Some(Repeats::Iterative)
+        );
+        // Done, a task of a series keeps only its number: it repeats no more.
+        assert_eq!(Repeats::of(&json!({ "status": "completed", "iter_count": "2" })), None);
+        assert_eq!(Repeats::of(&json!({ "status": "pending" })), None);
+    }
+
     use super::*;
 
     const NOW: i64 = 1_791_376_200; // 2026-10-07 12:30:00 UTC

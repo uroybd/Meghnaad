@@ -110,12 +110,8 @@ fn e_on_a_board_exports_its_table_and_asks_which_when_there_are_two() {
     app.board = 0;
     app.board_open = true;
     app.page = meghnaad_tui::app::Page::Boards;
-    let table = |words: &str| {
-        meghnaad_tui::boards::Data::Table(
-            meghnaad_tui::model::Report::default(),
-            words.split(' ').map(String::from).collect(),
-        )
-    };
+    let table =
+        |words: &str| meghnaad_tui::boards::Data::Table(Box::default(), words.split(' ').map(String::from).collect());
     app.board_data = vec![
         ("t1".into(), table("due.before:eow next")),
         ("t2".into(), table("list")),

@@ -1446,6 +1446,15 @@ fn edit_field(field: &mut crate::form::Field, key: KeyEvent, ctrl: bool) {
         }
         return;
     }
+    if field.kind == Kind::Mode {
+        if key.code == KeyCode::Char(' ') {
+            let own = crate::form::RepeatMode::of_field(field.start.trim());
+            let next = crate::form::RepeatMode::of_field(field.value()).next(own);
+            field.input = Input::new(next.as_field());
+            field.touched = true;
+        }
+        return;
+    }
     let before = field.input.line.clone();
     let i = &mut field.input;
     match key.code {

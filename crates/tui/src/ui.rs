@@ -1454,7 +1454,16 @@ pub fn report_table(
                             theme::choice(name, &c.text, at, &app.cfg.settings),
                         ))]
                     }
-                    (None, None) => lines(c),
+                    (None, None) => {
+                        let mut out = lines(c);
+                        // After the description, how the task repeats (`↻` recurring, `↪` iterative).
+                        if r.names.get(j).is_some_and(|n| n == "description") {
+                            if let (Some(Some(how)), Some(first)) = (r.repeats.get(i), out.first_mut()) {
+                                first.push_span(Span::styled(format!(" {}", how.mark()), theme::dim()));
+                            }
+                        }
+                        out
+                    }
                 },
             )
             .collect();
@@ -1728,6 +1737,9 @@ fn task_card(app: &App, t: &Value) -> Vec<Line<'static>> {
 /// [`App::task_form_problems`]'s.
 fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
     let v = field.value();
+    if field.locked && field.kind == Kind::Mode {
+        return Some(Span::from("  a recurring task stays one; delete it to stop it").quiet());
+    }
     if field.locked {
         return Some(Span::from("  set on the recurring task").quiet());
     }
@@ -1783,6 +1795,9 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
     let mut rows: Vec<Line> = Vec::new();
     let mut caret = None;
     for (i, (field, problem)) in form.fields.iter().zip(&problems).enumerate() {
+        if !form.shown(i) {
+            continue;
+        }
         let chosen = i == form.sel;
         let label_style = match (chosen, problem.is_some()) {
             (_, true) => theme::bad(),
@@ -1815,6 +1830,15 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
             let mark = if form.start_now() { "[x]" } else { "[ ]" };
             let mut value = vec![Span::from(format!("{mark} start working on it now"))];
             value.extend(said(true));
+            rows.push(field_row(Some(label), value, chosen, bar));
+            continue;
+        }
+        if field.kind == Kind::Mode {
+            let mut value = vec![Span::from(format!("‹ {} ›", form.mode().label()))];
+            match form.clears() {
+                Some(c) => value.push(Span::from(format!("  {c}")).quiet()),
+                None => value.extend(said(true)),
+            }
             rows.push(field_row(Some(label), value, chosen, bar));
             continue;
         }

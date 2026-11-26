@@ -61,12 +61,33 @@ series starts at 1. `duplicate` also starts a new series at 1.
 
 - `status:iterative` and `+ITERATIVE` match one. `+PENDING` does too, unless it is waiting, but `status:pending`
   doesn't: that is the status itself.
+- An iterative task has a mark after its title, in reports and on cards: Lucide's `iteration-cw` on the web and the
+  phone, `↪` in the terminal (a recurring one has `repeat`, `↻`).
 - The columns `iter`, `iter_type` and `iter_count` can go in a report. The `status` column shows `iterative` (`I`).
-- In the add and edit forms and in bulk edit, **Iter** and **Iter type** are next to Repeat. The info view shows Iter,
-  Iter type and Iter count. A recurring task can't be iterative too, so a recurring task's form doesn't offer them.
+- In bulk edit, **Iter** and **Iter type** are next to Repeat. The info view shows Iter, Iter type and Iter count.
 - `stats` has an Iterative row. `info` shows the three rows and the `ITERATIVE` tag.
 - There are no settings for it: `recurrence`, `recurrence.limit`, `recurrence.indicator` and `color.recurring` are for
   recurring tasks only.
+
+## Repeat in the form
+
+The add and edit forms (web, phone and terminal) have one **Repeat** choice: *Doesn't repeat*, *Iterative* or
+*Recurring*. Each shows its own fields: Iter and Iter type for an iterative task, the period for a recurring one. In the
+terminal app `Space` goes to the next.
+
+Switching clears the other mode's fields when you save, in the same `modify` (the form's command line shows it, and the
+form says so under Repeat):
+
+| From | To | The form runs |
+| --- | --- | --- |
+| Iterative | Doesn't repeat | `modify iter: iter_type:`: the series ends, the task stays |
+| Doesn't repeat | Iterative or Recurring | the new mode's fields only |
+| Iterative | Recurring | not offered: end the series first (Doesn't repeat, save), then choose Recurring |
+| Recurring | anything | not offered: Taskwarrior won't take a recurring task's `recur` away; delete it to stop it |
+
+A mode you chose but haven't filled in yet (no period, no rule) changes nothing. One instance of a series follows its
+template. The console takes what the form doesn't: `modify iter: iter_type: recur:weekly` ends a series and makes the
+task a recurring template in one step, as `task` 3.6.0 does, and to keep the other mode's fields, type the change there.
 
 ## Time zones
 

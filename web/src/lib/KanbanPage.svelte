@@ -4,6 +4,7 @@
   // is in the first column that has it, and Other holds what the report picks and no column does. A card dropped on a
   // column runs that column's On move on it.
   import { untrack } from 'svelte';
+  import RepeatMark from './RepeatMark.svelte';
   import { runCli } from './api';
   import { toAddress } from './base';
   import { formatFor } from './dateformat';
@@ -314,7 +315,7 @@
     ondragend={() => ((dragging = null), (over = null))}
   >
     <button class="open ghost" onclick={() => store.openDetail(row.uuid)}>
-      {descriptionAt >= 0 && cs[descriptionAt] ? cs[descriptionAt].text : row.description}
+      {descriptionAt >= 0 && cs[descriptionAt] ? cs[descriptionAt].text : row.description}<RepeatMark {row} />
     </button>
     <dl>
       {#each fieldsOf(cs).filter((f) => f.shape !== 'text') as f (f.col.spec)}

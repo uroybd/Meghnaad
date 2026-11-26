@@ -24,7 +24,7 @@ pub enum Data {
     },
     /// The report as the Tasks page has it (its cells with the transformations applied, in `task`'s colours), and the
     /// words it ran (its filter, then its report), which its Export exports.
-    Table(crate::model::Report, Vec<String>),
+    Table(Box<crate::model::Report>, Vec<String>),
     Failed(String),
 }
 
@@ -263,7 +263,7 @@ pub fn load(
                     let report = crate::model::report(task, cfg, &name, &filter, ctx.now, look)?;
                     let mut words = filter;
                     words.push(name);
-                    Ok(Data::Table(report, words))
+                    Ok(Data::Table(Box::new(report), words))
                 }
                 Kind::Number => {
                     let text = tasks_of(&filter_of(None, None)?)?;

@@ -184,8 +184,14 @@ fn card_lines(
         Some(tree) => first_line(crate::md::lines(tree, bold)),
         None => vec![Span::styled(c.title.clone(), bold)],
     };
+    let mark = c
+        .repeats
+        .map(|how| Span::styled(format!(" {}", how.mark()), theme::dim()));
     let mut lines = vec![Line::from(
-        std::iter::once(Span::from(id).quiet()).chain(title).collect::<Vec<_>>(),
+        std::iter::once(Span::from(id).quiet())
+            .chain(title)
+            .chain(mark)
+            .collect::<Vec<_>>(),
     )];
     let mut line: Vec<Span> = Vec::new();
     let mut used = 0;
@@ -925,6 +931,22 @@ mod tests {
                 .any(|s| s.style.add_modifier.contains(Modifier::UNDERLINED))
         };
         assert!(linked(&lines[0]) && linked(&lines[1]), "{lines:?}");
+    }
+
+    #[test]
+    fn a_repeating_task_s_card_has_its_mark_after_the_title() {
+        use crate::model::Repeats;
+        let c = |repeats| Card {
+            uuid: "u".into(),
+            id: Some(3),
+            title: "Rent".into(),
+            repeats,
+            ..Default::default()
+        };
+        let first = |c: &Card| card_lines(c, 40, Icons::default(), &BTreeMap::new(), &BTreeMap::new())[0].to_string();
+        assert_eq!(first(&c(Some(Repeats::Recurring))), "3 Rent ↻");
+        assert_eq!(first(&c(Some(Repeats::Iterative))), "3 Rent ↪");
+        assert_eq!(first(&c(None)), "3 Rent");
     }
 
     #[test]

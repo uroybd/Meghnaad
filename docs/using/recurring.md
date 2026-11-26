@@ -1,7 +1,7 @@
 # Recurring tasks
 
 Taskwarrior 3.6.0 has a second way to repeat, with no template: [iterative tasks](iterative.md), where completing one
-makes the next.
+makes the next. A task's form chooses between them with its Repeat choice ([Repeat in the form](iterative.md#repeat-in-the-form)).
 
 ```
 add Water plants recur:weekly due:friday
@@ -10,7 +10,8 @@ add Pay rent recur:monthly due:eom until:2027-12-31
 ```
 
 Periods are Taskwarrior's: `daily` `weekdays` `weekly` `biweekly` `monthly` `quarterly` `yearly`, counts such as `3d`
-`2w` `6mo`, and ISO durations like `P1M`. A repeating task shows a repeat icon, and its detail lists its instances, each
+`2w` `6mo`, and ISO durations like `P1M`. A repeating task shows a repeat icon after its title, in reports and on cards (`↻` in the terminal; an
+[iterative task](iterative.md) has its own, `↪`), and its detail lists its instances, each
 linking back. The recurring task itself is a template: you can edit it, but not complete or start it.
 
 ## How instances are made

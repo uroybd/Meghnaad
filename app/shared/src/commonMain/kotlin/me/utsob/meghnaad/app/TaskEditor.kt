@@ -13,6 +13,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -100,7 +101,33 @@ class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = nul
 
     /** A template cannot stop repeating (Taskwarrior refuses); delete it instead. */
     val template = row?.status == "recurring"
-    val needsDue: Boolean get() = !instance && recur.isNotEmpty() && due.isEmpty()
+
+    // Repeat: not at all, iterative or recurring, one at a time (Repeat.kt). A recurring task stays one (Taskwarrior
+    // refuses to take its `recur` away); the rest can switch.
+    private val startRepeat = RepeatFields(startRecur, startIter, startIterType)
+    var mode by mutableStateOf(
+        if (instance || template) RepeatMode.Recurring
+        else modeOf(RepeatFields(initRecur, init?.iter ?: startIter, init?.iterType ?: startIterType)),
+    )
+
+    /**
+     * The modes the choice offers. An iterative task is not made recurring in the form: its series is ended first
+     * (Doesn't repeat, saved), then it can be. The command line still does both at once.
+     */
+    val modes: List<RepeatMode> = RepeatMode.entries.filter {
+        !(it == RepeatMode.Recurring && !adding && modeOf(startRepeat) == RepeatMode.Iterative)
+    }
+
+    /** What switching away from the task's own mode clears, said beside the choice. */
+    val clears: String get() {
+        val own = modeOf(startRepeat)
+        return when {
+            adding || mode == own || own == RepeatMode.None -> ""
+            own == RepeatMode.Iterative -> "Saving ends its iterative series (Iter and Iter type are cleared); then it can be made recurring."
+            else -> "Saving clears its period."
+        }
+    }
+    val needsDue: Boolean get() = !instance && mode == RepeatMode.Recurring && recur.isNotEmpty() && due.isEmpty()
 
     // Iterative (Taskwarrior 3.6): done, it makes the next one. Not for a recurring task, which can't be both.
     var iter by mutableStateOf(init?.iter ?: startIter)
@@ -109,8 +136,8 @@ class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = nul
     /** The types offered: a short form typed elsewhere (`fx`, `ch`) is kept as it is. */
     val iterTypes = ITER_TYPES + listOfNotNull(iterType.takeIf { it.isNotEmpty() && it !in ITER_TYPES })
     val iterCount = row?.iterCount
-    val iterable: Boolean get() = !instance && !template && recur.isEmpty()
-    val needsIterDate: Boolean get() = iter.isNotBlank() && due.isEmpty() && scheduled.isEmpty() && wait.isEmpty()
+    val needsIterDate: Boolean get() =
+        mode == RepeatMode.Iterative && iter.isNotBlank() && due.isEmpty() && scheduled.isEmpty() && wait.isEmpty()
     val udaValues = mutableStateMapOf<String, String>().also { it.putAll(udaStart); it.putAll(init?.udas ?: emptyMap()) }
     var startNow by mutableStateOf(false)
     var removedDeps by mutableStateOf(emptyList<String>())
@@ -131,12 +158,7 @@ class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = nul
         set("wait", wait, startWait)
         set("scheduled", scheduled, startScheduled)
         set("until", until, startUntil)
-        if (!instance) set("recur", recur, startRecur)
-        if (!instance && !template) {
-            set("iter", iter.trim(), startIter)
-            // Its type goes with it: cleared with the rule, the type goes too (`task` drops it as it ends the series).
-            if (iter.isNotBlank()) set("iter_type", iterType, startIterType)
-        }
+        if (!instance) a += repeatChanges(mode, RepeatFields(recur, iter, iterType), startRepeat)
         val want = tags.split(Regex("[\\s,]+")).filter { it.isNotEmpty() }.map { it.removePrefix("+") }.toSet()
         val had = startTags.split(' ').filter { it.isNotEmpty() }.toSet()
         for (t in want) if (t !in had) a += "+$t"
@@ -251,10 +273,21 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                             }
                         }
                     } else {
-                        val labels = (if (!st.template) listOf("Doesn't repeat") else emptyList()) + PRESETS.map { it.label } + "Custom…"
-                        val values = (if (!st.template) listOf("") else emptyList()) + PRESETS.map { it.value } + "custom"
-                        Choice(labels.getOrElse(values.indexOf(st.recurChoice).coerceAtLeast(0)) { "Doesn't repeat" }, labels) { i -> st.recurChoice = values[i] }
-                        if (st.recurChoice == "custom") {
+                        val modes = st.modes
+                        if (st.template) {
+                            Pill(RepeatMode.Recurring.label)
+                        } else {
+                            Choice(st.mode.label, modes.map { it.label }) { i -> st.mode = modes[i] }
+                        }
+                        if (st.clears.isNotEmpty()) Dim(st.clears, Modifier.padding(top = 4.dp), 12)
+                        if (st.mode == RepeatMode.Recurring) {
+                            val labels = (if (st.recurChoice.isEmpty()) listOf("how often…") else emptyList()) + PRESETS.map { it.label } + "Custom…"
+                            val values = (if (st.recurChoice.isEmpty()) listOf("") else emptyList()) + PRESETS.map { it.value } + "custom"
+                            Box(Modifier.padding(top = 6.dp)) {
+                                Choice(labels.getOrElse(values.indexOf(st.recurChoice).coerceAtLeast(0)) { "how often…" }, labels) { i -> st.recurChoice = values[i] }
+                            }
+                        }
+                        if (st.mode == RepeatMode.Recurring && st.recurChoice == "custom") {
                             OutlinedTextField(
                                 st.recurCustom, { st.recurCustom = it }, Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
                                 placeholder = { Text("3d, 2w, P1M, 6mo…", fontSize = 14.sp) },
@@ -263,7 +296,7 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                         }
                         when {
                             st.needsDue -> Text("A repeating task needs a due date.", color = colors.error, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                            st.recur.isNotEmpty() && !st.template -> Dim("Repeats ${describeRecur(st.recur)}, starting from the due date.", Modifier.padding(top = 4.dp), 12)
+                            st.mode == RepeatMode.Recurring && st.recur.isNotEmpty() && !st.template -> Dim("Repeats ${describeRecur(st.recur)}, starting from the due date.", Modifier.padding(top = 4.dp), 12)
                             st.template -> Dim("Changes to a repeating task also apply to its open instances (not their dates).", Modifier.padding(top = 4.dp), 12)
                         }
                     }
@@ -271,7 +304,7 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                         },
                         FieldCell("Tags", 2f) { SuggestField(st.tags, { st.tags = it }, store.tags, "tag", list = true, placeholder = "space separated") },
                     ))
-                    if (st.iterable) {
+                    if (st.mode == RepeatMode.Iterative) {
                         FieldGrid(240.dp, listOf(
                             FieldCell("Iter", 2f) {
                                 OutlinedTextField(

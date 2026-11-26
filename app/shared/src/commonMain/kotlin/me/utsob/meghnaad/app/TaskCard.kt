@@ -180,6 +180,7 @@ fun TaskCard(
                                 lineHeight = 21.sp,
                                 fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
                             )
+                            RepeatMark(row, colors.onSurfaceVariant)
                             if (row.orphans.isNotEmpty()) Pill("+${row.orphans.size}", height = 18.dp)
                         }
                         description?.notes?.forEach { NoteLine(it, Modifier.padding(top = 2.dp)) }

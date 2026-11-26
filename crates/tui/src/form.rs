@@ -24,7 +24,142 @@ pub enum Kind {
     Note,
     /// A yes or no: start the new task.
     Start,
+    /// How the task repeats ([`RepeatMode`]): Space goes to the next. It decides which of the repeat fields show.
+    Mode,
 }
+
+/// How a task repeats, as the form offers it: not at all, as an iterative task (Taskwarrior 3.6.0's `iter`), or as a
+/// recurring one (`recur`). One mode at a time: switching clears the other mode's fields in the same `modify`, which
+/// `task` takes (`iter: iter_type: recur:weekly` ends a series and makes the task the template of a recurring one).
+/// Who wants to keep them has the command line. The web's is `web/src/lib/repeat.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeatMode {
+    None,
+    Iterative,
+    Recurring,
+}
+
+impl RepeatMode {
+    /// The mode a task's fields say it is in: a `recur` is recurring (a task can't be both), an `iter` iterative.
+    pub fn of(recur: &str, iter: &str) -> RepeatMode {
+        if !recur.trim().is_empty() {
+            RepeatMode::Recurring
+        } else if !iter.trim().is_empty() {
+            RepeatMode::Iterative
+        } else {
+            RepeatMode::None
+        }
+    }
+
+    /// As the Repeat field holds it.
+    pub fn as_field(self) -> &'static str {
+        self.word()
+    }
+
+    /// What the Repeat field holds.
+    pub fn of_field(w: &str) -> RepeatMode {
+        RepeatMode::from_word(w)
+    }
+
+    fn word(self) -> &'static str {
+        match self {
+            RepeatMode::None => "none",
+            RepeatMode::Iterative => "iterative",
+            RepeatMode::Recurring => "recurring",
+        }
+    }
+
+    fn from_word(w: &str) -> RepeatMode {
+        match w {
+            "iterative" => RepeatMode::Iterative,
+            "recurring" => RepeatMode::Recurring,
+            _ => RepeatMode::None,
+        }
+    }
+
+    /// As the form shows it.
+    pub fn label(self) -> &'static str {
+        match self {
+            RepeatMode::None => "doesn't repeat",
+            RepeatMode::Iterative => "iterative",
+            RepeatMode::Recurring => "recurring",
+        }
+    }
+
+    /// The one Space goes to, for a task that was `own` when the form opened. An iterative task is not made recurring
+    /// in the form: its series is ended first (doesn't repeat, saved), then it can be. The command line still does
+    /// both at once (`modify iter: iter_type: recur:weekly`).
+    pub fn next(self, own: RepeatMode) -> RepeatMode {
+        let next = match self {
+            RepeatMode::None => RepeatMode::Iterative,
+            RepeatMode::Iterative => RepeatMode::Recurring,
+            RepeatMode::Recurring => RepeatMode::None,
+        };
+        if next == RepeatMode::Recurring && own == RepeatMode::Iterative {
+            RepeatMode::None
+        } else {
+            next
+        }
+    }
+}
+
+/// The fields of both modes: `recur`, `iter`, `iter_type`.
+#[derive(Debug, Clone, Copy)]
+pub struct RepeatFields<'a> {
+    pub recur: &'a str,
+    pub iter: &'a str,
+    pub iter_type: &'a str,
+}
+
+/// The words of an `add` or `modify` that leave the task in `mode` with the fields `now`, given what it had (`was`;
+/// all empty for a new task): the chosen mode's fields where they changed, and the other modes' fields cleared where
+/// it had them. A mode chosen and not filled in yet (no period, no rule) changes nothing, the others' fields included.
+pub fn repeat_changes(mode: RepeatMode, now: RepeatFields, was: RepeatFields) -> Vec<String> {
+    let unfilled = match mode {
+        RepeatMode::Iterative => now.iter.trim().is_empty(),
+        RepeatMode::Recurring => now.recur.trim().is_empty(),
+        RepeatMode::None => false,
+    };
+    if unfilled {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut clear = |name: &str, had: &str| {
+        if !had.trim().is_empty() {
+            out.push(format!("{name}:"));
+        }
+    };
+    if mode != RepeatMode::Iterative {
+        clear("iter", was.iter);
+        clear("iter_type", was.iter_type);
+    }
+    if mode != RepeatMode::Recurring {
+        clear("recur", was.recur);
+    }
+    match mode {
+        RepeatMode::Iterative => {
+            let iter = now.iter.trim();
+            if !iter.is_empty() && iter != was.iter.trim() {
+                out.push(format!("iter:{iter}"));
+            }
+            let ty = now.iter_type.trim();
+            if !iter.is_empty() && !ty.is_empty() && ty != was.iter_type.trim() {
+                out.push(format!("iter_type:{ty}"));
+            }
+        }
+        RepeatMode::Recurring => {
+            let recur = now.recur.trim();
+            if !recur.is_empty() && recur != was.recur.trim() {
+                out.push(format!("recur:{recur}"));
+            }
+        }
+        RepeatMode::None => {}
+    }
+    out
+}
+
+/// The fields a repeat mode owns.
+const REPEAT_KEYS: [&str; 3] = ["recur", "iter", "iter_type"];
 
 #[derive(Debug, Clone)]
 pub struct Field {
@@ -71,6 +206,7 @@ impl Field {
         });
         let text = match (self.kind, self.key.as_str()) {
             (Kind::Start, _) => "Space switches it",
+            (Kind::Mode, _) => "doesn't repeat, iterative or recurring; Space switches it",
             (Kind::Note, _) if self.label == "Note" => "added as an annotation; Alt+Enter: a new line",
             (Kind::Note, _) => "a new annotation; Alt+Enter: a new line",
             (Kind::Tags, _) if many => "+tag adds one, -tag takes one off; Tab completes",
@@ -80,7 +216,7 @@ impl Field {
             (Kind::Date, _) => "a date as task takes it; Tab completes",
             (_, "description") => "what the task is",
             (_, "project") => "Home, or Home.Garden for a part of it; Tab completes",
-            (_, "recur") => "daily, weekly, 2w, monthly, …; it needs a due date",
+            (_, "recur") => "how often: daily, weekly, 2w, monthly, …; it needs a due date",
             (_, "iter") => "monthly, every weekday, FREQ=…: done, it makes the next one",
             (_, "iter_type") => "fixed, fixed+ or chained",
             _ => match (choices, uda.map(|u| u.ty)) {
@@ -179,7 +315,9 @@ impl Form {
         for k in DATES {
             fields.push(blank(k, &title(k), Kind::Date, &date(k)));
         }
-        fields.push(blank("recur", "Repeat", Kind::Value, p.recur.as_deref().unwrap_or("")));
+        let mode = RepeatMode::of(p.recur.as_deref().unwrap_or(""), p.iter.as_deref().unwrap_or(""));
+        fields.push(blank("repeat", "Repeat", Kind::Mode, mode.word()));
+        fields.push(blank("recur", "Every", Kind::Value, p.recur.as_deref().unwrap_or("")));
         fields.push(blank("iter", "Iter", Kind::Value, p.iter.as_deref().unwrap_or("")));
         fields.push(blank(
             "iter_type",
@@ -238,12 +376,23 @@ impl Form {
         for k in DATES {
             fields.push(same(k, &title(k), Kind::Date, &date(k)));
         }
-        let mut recur = same("recur", "Repeat", Kind::Value, &s("recur"));
+        // A recurring task can't be iterative too, nor stop recurring (`task` refuses): its template or an instance
+        // keeps its mode, and the iterative fields shut.
+        let recurring = t.get("parent").is_some() || s("status") == "recurring";
+        let mode = same(
+            "repeat",
+            "Repeat",
+            Kind::Mode,
+            RepeatMode::of(&s("recur"), &s("iter")).word(),
+        );
+        fields.push(Field {
+            locked: recurring,
+            ..mode
+        });
+        let mut recur = same("recur", "Every", Kind::Value, &s("recur"));
         // One task of a series follows its template: the period is changed there.
         recur.locked = t.get("parent").is_some();
         fields.push(recur);
-        // A recurring task can't be iterative too: its template or an instance keeps the fields shut.
-        let recurring = t.get("parent").is_some() || s("status") == "recurring";
         for (key, label) in [("iter", "Iter"), ("iter_type", "Iter type")] {
             let mut field = same(key, label, Kind::Value, &s(key));
             field.locked = recurring;
@@ -366,7 +515,14 @@ impl Form {
     /// The form for a `task` before 3.6, which has no iterative tasks: without `iter` and `iter_type`.
     #[must_use]
     pub fn without_iter(mut self) -> Form {
-        self.fields.retain(|f| !matches!(f.key.as_str(), "iter" | "iter_type"));
+        // With no iterative tasks there is nothing to choose between: the period is the one repeat field, as before.
+        self.fields
+            .retain(|f| !matches!(f.key.as_str(), "iter" | "iter_type" | "repeat"));
+        for f in &mut self.fields {
+            if f.key == "recur" {
+                "Repeat".clone_into(&mut f.label);
+            }
+        }
         self
     }
 
@@ -395,7 +551,24 @@ impl Form {
     /// The `add` or `modify` arguments for what changed (the web form's `changes`).
     pub fn changes(&self) -> Vec<String> {
         let mut out = Vec::new();
-        for f in self.fields.iter().filter(|f| !f.locked) {
+        // With a mode to choose, the repeat fields are its: what it leaves the task as, and the others cleared.
+        let moded = self.field("repeat").is_some();
+        if moded && !self.field("recur").is_some_and(|f| f.locked) {
+            let was = |k: &str| self.field(k).map_or("", |f| f.start.trim());
+            let now = RepeatFields {
+                recur: self.value("recur"),
+                iter: self.value("iter"),
+                iter_type: self.value("iter_type"),
+            };
+            let had = RepeatFields {
+                recur: was("recur"),
+                iter: was("iter"),
+                iter_type: was("iter_type"),
+            };
+            out.extend(repeat_changes(self.mode(), now, had));
+        }
+        let own = |f: &&Field| moded && (f.kind == Kind::Mode || REPEAT_KEYS.contains(&f.key.as_str()));
+        for f in self.fields.iter().filter(|f| !f.locked && !own(f)) {
             let now = f.value();
             match f.kind {
                 Kind::Value | Kind::Date if now != f.start.trim() => out.push(format!("{}:{now}", f.key)),
@@ -437,12 +610,18 @@ impl Form {
         if self.uuid.is_none() && self.value("description").is_empty() {
             put("description", "A task needs a description.");
         }
-        let recur = self.field("recur");
+        let shown = |key: &str| {
+            self.fields
+                .iter()
+                .position(|f| f.key == key)
+                .is_some_and(|i| self.shown(i))
+        };
+        let recur = self.field("recur").filter(|_| shown("recur"));
         if recur.is_some_and(|r| !r.locked && !r.value().is_empty()) && self.value("due").is_empty() {
             put("recur", "A repeating task needs a due date.");
         }
         // An iterative task needs a date to go on from (the marked tasks' form leaves theirs as they are).
-        let iter = self.field("iter").is_some_and(|f| !f.locked && !f.value().is_empty());
+        let iter = shown("iter") && self.field("iter").is_some_and(|f| !f.locked && !f.value().is_empty());
         let dated = ["due", "scheduled", "wait"].iter().any(|d| !self.value(d).is_empty());
         if iter && self.many.is_empty() && !dated {
             put("iter", "An iterative task needs a due, scheduled or wait date.");
@@ -517,14 +696,62 @@ impl Form {
     }
 
     pub fn next(&mut self) {
-        self.sel = (self.sel + 1) % self.fields.len().max(1);
+        let n = self.fields.len().max(1);
+        for _ in 0..n {
+            self.sel = (self.sel + 1) % n;
+            if self.shown(self.sel) {
+                break;
+            }
+        }
         self.completer.close();
     }
 
     pub fn prev(&mut self) {
         let n = self.fields.len().max(1);
-        self.sel = (self.sel + n - 1) % n;
+        for _ in 0..n {
+            self.sel = (self.sel + n - 1) % n;
+            if self.shown(self.sel) {
+                break;
+            }
+        }
         self.completer.close();
+    }
+
+    /// How the task repeats, as its Repeat field says (none when the form has no such field).
+    pub fn mode(&self) -> RepeatMode {
+        RepeatMode::from_word(self.value("repeat"))
+    }
+
+    /// Whether field `i` is on the form now: a repeat field only in its mode (the period of one task of a series is
+    /// always shown, as it follows its template).
+    pub fn shown(&self, i: usize) -> bool {
+        let Some(f) = self.fields.get(i) else {
+            return false;
+        };
+        if self.field("repeat").is_none() {
+            return true;
+        }
+        match f.key.as_str() {
+            "recur" => f.locked || self.mode() == RepeatMode::Recurring,
+            "iter" | "iter_type" => self.mode() == RepeatMode::Iterative,
+            _ => true,
+        }
+    }
+
+    /// What saving clears that the task had, when its mode was switched: said under the Repeat field.
+    pub fn clears(&self) -> Option<&'static str> {
+        let f = self.field("repeat")?;
+        let was = RepeatMode::from_word(f.start.trim());
+        if self.uuid.is_none() || !self.many.is_empty() || self.mode() == was {
+            return None;
+        }
+        match was {
+            RepeatMode::Iterative => {
+                Some("saving ends its iterative series (Iter and Iter type are cleared); then it can be made recurring")
+            }
+            RepeatMode::Recurring => Some("saving clears its period"),
+            RepeatMode::None => None,
+        }
     }
 
     pub fn current(&mut self) -> Option<&mut Field> {
@@ -588,6 +815,7 @@ mod tests {
         // Without a date it can't be one.
         let mut bare = Form::add(&tc_core::preview::Preview::default(), &cfg());
         set(&mut bare, "description", "Rent");
+        set(&mut bare, "repeat", "iterative");
         set(&mut bare, "iter", "monthly");
         let at = bare.fields.iter().position(|x| x.key == "iter").unwrap();
         assert_eq!(
@@ -708,6 +936,7 @@ mod tests {
     fn a_repeating_task_needs_a_due_date() {
         let mut f = Form::add(&Preview::default(), &cfg());
         set(&mut f, "description", "Pay rent");
+        set(&mut f, "repeat", "recurring");
         set(&mut f, "recur", "monthly");
         let recur = f.fields.iter().position(|x| x.key == "recur").unwrap();
         assert_eq!(
@@ -716,6 +945,81 @@ mod tests {
         );
         set(&mut f, "due", "eom");
         assert!(f.problems().iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn the_repeat_mode_shows_its_fields_and_the_others_are_cleared_on_saving() {
+        let t = json!({
+            "uuid": "u-1", "id": 3, "status": "iterative", "description": "Water plants",
+            "iter": "monthly", "iter_type": "fixed", "iter_count": "2", "due": "20261120T000000Z"
+        });
+        let mut f = Form::modify(&t, &cfg(), &[]).for_task(true);
+        assert_eq!(f.mode(), RepeatMode::Iterative);
+        let at = |f: &Form, key: &str| f.fields.iter().position(|x| x.key == key).unwrap();
+        assert!(f.shown(at(&f, "iter")) && f.shown(at(&f, "iter_type")) && !f.shown(at(&f, "recur")));
+        assert_eq!(f.clears(), None);
+
+        // Space never takes an iterative task to recurring: its series is ended first.
+        assert_eq!(RepeatMode::Iterative.next(RepeatMode::Iterative), RepeatMode::None);
+        assert_eq!(RepeatMode::Iterative.next(RepeatMode::None), RepeatMode::Recurring);
+
+        // To none: the series ends.
+        set(&mut f, "repeat", "none");
+        assert!(!f.shown(at(&f, "iter")) && !f.shown(at(&f, "recur")));
+        assert_eq!(
+            f.clears(),
+            Some("saving ends its iterative series (Iter and Iter type are cleared); then it can be made recurring")
+        );
+        assert_eq!(f.statements(), vec![vec!["u-1", "modify", "iter:", "iter_type:"]]);
+
+        // A new task goes through all three, each with its own fields.
+        let mut new = Form::add(&Preview::default(), &cfg()).for_task(true);
+        set(&mut new, "repeat", "recurring");
+        assert!(new.shown(at(&new, "recur")) && !new.shown(at(&new, "iter")));
+
+        // Moving between fields skips the ones of the other modes.
+        f.sel = at(&f, "repeat");
+        f.next();
+        assert_eq!(f.fields[f.sel].key, "tags");
+    }
+
+    #[test]
+    fn a_recurring_task_stays_recurring_and_a_task_before_3_6_has_one_repeat_field() {
+        let t = json!({ "uuid": "t", "status": "recurring", "description": "Bins", "recur": "weekly", "due": "20261120T000000Z" });
+        let mut f = Form::modify(&t, &cfg(), &[]);
+        assert!(f.field("repeat").unwrap().locked);
+        assert_eq!(f.mode(), RepeatMode::Recurring);
+        set(&mut f, "recur", "daily");
+        assert_eq!(f.statements(), vec![vec!["t", "modify", "recur:daily"]]);
+
+        let mut old = Form::add(&Preview::default(), &cfg()).for_task(false);
+        assert!(old.field("repeat").is_none());
+        assert_eq!(old.field("recur").unwrap().label, "Repeat");
+        set(&mut old, "description", "Bins");
+        set(&mut old, "due", "eom");
+        set(&mut old, "recur", "weekly");
+        assert!(old.statements()[0].iter().any(|w| w == "recur:weekly"));
+    }
+
+    #[test]
+    fn repeat_changes_sends_the_mode_and_clears_the_rest() {
+        let f = |recur, iter, iter_type| RepeatFields { recur, iter, iter_type };
+        let none = f("", "", "");
+        let iterative = f("", "monthly", "fixed");
+        assert_eq!(
+            repeat_changes(RepeatMode::Iterative, iterative, none),
+            ["iter:monthly", "iter_type:fixed"]
+        );
+        assert_eq!(
+            repeat_changes(RepeatMode::None, none, f("", "", "fixed")),
+            ["iter_type:"]
+        );
+        assert_eq!(repeat_changes(RepeatMode::None, none, f("weekly", "", "")), ["recur:"]);
+        assert!(repeat_changes(RepeatMode::Iterative, f("", "", "fixed"), none).is_empty());
+        assert!(
+            repeat_changes(RepeatMode::Recurring, iterative, iterative).is_empty(),
+            "no period yet"
+        );
     }
 
     #[test]
