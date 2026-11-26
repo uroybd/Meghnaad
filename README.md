@@ -74,8 +74,11 @@ In short [below](#deploying-the-web-app); in full in **[Running the web app](doc
   migration, and nothing changes for the CLI.
 - **Taskwarrior's behaviour, not an imitation.** Filters, virtual tags, urgency, reports, recurrence, regexes, the
   calendar, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `purge`, `duplicate`, `context`,
-  `calc` and the confirmations are ported from the source and checked against the real `task` 3.5.0. Settings removed
-  before 3.5.0 are not supported.
+  `calc` and the confirmations are ported from the source and checked against the real `task`, now 3.6.0. Settings
+  removed before 3.5.0 are not supported.
+- **Iterative tasks**, Taskwarrior 3.6.0's new way to repeat: one task at a time, the next made when you complete it,
+  from a rule such as `monthly`, `FREQ=WEEKLY;BYDAY=MO` or `"every other day"`, in your own time zone
+  ([how](docs/using/iterative.md)).
 - **Your `taskrc`, safely.** Paste it, upload it, import a whole folder of files or import it from a link (your dotfiles
   repository). It is kept as you wrote it, `include` works, and the files are listed in Settings to add, edit, delete and
   include. UDAs, reports, contexts, holidays and settings are read; a line the app can't use is commented out, and sync
@@ -196,7 +199,7 @@ flowchart TB
     sh["shell aliases"]
     tsh["tasksh review"]
     tui["meghnaad<br/>terminal app"]
-    cli["task 3.5.0 (C++)"]
+    cli["task 3.6.0 (C++)"]
     tcd["TaskChampion"]
     db[("SQLite replica<br/>~/.task")]
     sh -.-> cli
@@ -298,7 +301,7 @@ More in [Architecture](docs/architecture.md).
 
 ## Quick start (local)
 
-Runs without a Cloudflare account; wrangler simulates R2. You need [Rust](https://rustup.rs) 1.91+ and Node.js 20+.
+Runs without a Cloudflare account; wrangler simulates R2. You need [Rust](https://rustup.rs) 1.94.1+ and Node.js 20+.
 
 ```bash
 git clone <this repo> && cd Meghnaad
@@ -373,7 +376,7 @@ the secrets for hooks never are. Everything about it, including building it your
 
 ## Terminal app
 
-On the desktop, `meghnaad` is a full-screen terminal app around the real `task` 3.5.0: your own `~/.task` and
+On the desktop, `meghnaad` is a full-screen terminal app around the real `task` 3.6.0 (or 3.5): your own `~/.task` and
 `~/.taskrc`, with no replica or server of its own: it syncs with `task sync`, in the background, by hand or when it
 opens and closes or after every change, as you set it. It is laid out as the web app is: pages along the top (Tasks,
 Projects, Tags, Summary, Calendar, Burndown, Boards, Kanban, Console, Settings), the reports down the side and a command line at the

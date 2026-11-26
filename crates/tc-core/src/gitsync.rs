@@ -571,6 +571,11 @@ impl<R: GitRepo> Server for GitServer<R> {
         SNAPSHOT_OF.with(|s| *s.borrow_mut() = Some((file.id, version)));
         Ok(Some((version, self.cryptor.unseal(version, &sealed)?)))
     }
+
+    /// The newest version `meta` names, nil before there is one (as for a bucket, `crate::cloud`).
+    async fn latest_version_id(&mut self) -> TcResult<VersionId> {
+        Ok(self.latest().await?.unwrap_or(Uuid::nil()))
+    }
 }
 
 /// The settings files the web app keeps (`web/…`) as an [`ObjectStore`] on the same branch: a name is a path from the

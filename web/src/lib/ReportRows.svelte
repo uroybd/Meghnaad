@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOpen as isOpenStatus } from './iterative';
   import { css, look, rowVars } from './colors';
   import { rowClass, type Cell } from './format';
   import ReportCell from './ReportCell.svelte';
@@ -61,7 +62,7 @@
     store.openDetail(row.uuid, entry);
   }
 
-  const isOpen = (row: Row) => row.status === 'pending';
+  const isOpen = (row: Row) => isOpenStatus(row.status);
   /** A card's ribbon, on a phone: the priority in the colour the taskrc gives it (color.uda.priority.H), if any. */
   function ribbon(row: Row): string {
     const p = row.priority ? look(store.config?.colors?.[`uda.priority.${row.priority}`], scheme.dark) : null;

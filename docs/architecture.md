@@ -14,7 +14,7 @@ real `task` on the desktop ([Where your tasks live](stores.md) has which reaches
 - **A replica, not a copy.** The browser and the phone each hold a full TaskChampion replica and read and write the
   store in TaskChampion's own format and encryption, so `task sync` and Meghnaad see each other's changes.
 - **One library for Taskwarrior's rules.** Filters, reports, urgency, recurrence, confirmations and dates live in one
-  Rust library, `tc-core`, checked against the real `task` 3.5.0. The browser runs it as WebAssembly, the phone as a
+  Rust library, `tc-core`, checked against the real `task` 3.6.0. The browser runs it as WebAssembly, the phone as a
   native library. The screens around it only draw what it returns.
 - **The secret stays in one place.** For the web app that place is either a small Cloudflare **Worker** between the page
   and the store (a bucket or a git branch), which checks Cloudflare Access, holds the encryption secret, and opens and
@@ -49,7 +49,7 @@ flowchart TB
     sh["shell aliases"]
     tsh["tasksh review"]
     tui["meghnaad<br/>terminal app"]
-    cli["task 3.5.0 (C++)"]
+    cli["task 3.6.0 (C++)"]
     tcd["TaskChampion"]
     db[("SQLite replica<br/>~/.task")]
     sh -.-> cli
@@ -145,7 +145,7 @@ them.
 
 Every feature belongs to one of two layers.
 
-1. **Taskwarrior and TaskChampion** (`tc-core` and the hosts that carry it). It does what the real `task` 3.5.0 does,
+1. **Taskwarrior and TaskChampion** (`tc-core` and the hosts that carry it). It does what the real `task` 3.6.0 does,
    command for command, and the sync format. Where `task` is odd, so is Meghnaad.
 2. **The front ends** (`web/`, `app/`, `crates/tui`). Everything a TUI or a shell adds around `task`: screens, the
    console, task commands, `&&` `||` `;` chains, bulk actions, review, reminders, themes, addresses. They send command
@@ -449,7 +449,7 @@ flowchart TB
   tui["meghnaad<br/>crates/tui, ratatui"]
   help["tc-core helpers<br/>completion, add preview, cells, keys, boards"]
   set[("settings.json<br/>~/.config/meghnaad")]
-  cli["task 3.5.0 (C++)"]
+  cli["task 3.6.0 (C++)"]
   tcd["TaskChampion"]
   db[("SQLite replica<br/>~/.task")]
   shim["meghnaad-hook<br/>crates/hook-shim"]
@@ -1018,7 +1018,7 @@ backup), the app's own `web/settings.json` (none) and each device's own, `web/de
 ## How correctness is kept
 
 The goal is Taskwarrior's behaviour, not a lookalike, so the method is to **read the C++, port it, and check it against
-the real `task` 3.5.0**: run both on a scratch data directory and compare. Examples: calendar layouts and week numbers,
+the real `task` 3.6.0**: run both on a scratch data directory and compare. Examples: calendar layouts and week numbers,
 burndown charts bar by bar, `summary`/`projects`/`tags` output, `calc` results, confirmation prompts, and the dates each
 `date.iso`/`dateformat` combination accepts.
 
@@ -1038,7 +1038,7 @@ burndown charts bar by bar, `summary`/`projects`/`tags` output, `calc` results, 
 | `tc_core::helpers`, `sortspec`, `keymap`, `complete`, `highlight`, `urgency_settings`, `cells`, `preview` and `markdown` unit tests | What every front end calls instead of keeping a copy: splitting and quoting a command line, a date in each `dateformat` token and week rule, a duration in one unit, how a recurrence period reads, every header click, grouping and sort-override case, how a key is written and which action it runs where (the keymap asset with the user's keys), what Tab completes, how a line is coloured, how urgency terms are named, what every column format shows, what a typed `add` line comes to, and the Markdown subset (nesting, checklists, safe links, the limits that keep a hostile text quick) |
 | `npm --prefix web test` | The browser-side logic (it loads the built engine for the helpers): formatting, completion, the store, the API client, the keys, and the engine client (with a stand-in Web Worker: one sync at a time, the other tabs are told of a write and never answer each other, a failed sync or save shows and clears) |
 | `cd app && ./gradlew :shared:testDebugUnitTest` | The Kotlin ports of the web app's logic with their tests, against the host build of the engine's library, and the phone's copy of the keymap asset |
-| `crates/tui` tests | The terminal app's ports with the web app's tests, and its reads and writes against the real `task` 3.5.0 on a scratch `TASKRC` and `TASKDATA` (skipped where `task` is missing) |
+| `crates/tui` tests | The terminal app's ports with the web app's tests, and its reads and writes against the real `task` 3.6.0 on a scratch `TASKRC` and `TASKDATA` (skipped where `task` is missing) |
 | `scripts/interop-local.sh` | The real `task` CLI and the Worker against one local S3 bucket, both directions: tasks, UDAs, recurring series, snapshots |
 | `scripts/auth-check.mjs` | Forged, expired and wrong-audience Access tokens are all refused |
 | `scripts/*.test.mjs` | The build and deploy scripts, including `package-release.mjs`: the prebuilt release has the built Worker and app, the scripts, and a config with no build step, and none of the sources |

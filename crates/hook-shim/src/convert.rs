@@ -33,6 +33,9 @@ const NOT_UDAS: &[&str] = &[
     "rtype",
     "template",
     "last",
+    "iter",
+    "iter_type",
+    "iter_count",
     "project",
     "priority",
     "depends",
@@ -97,6 +100,14 @@ pub fn facts_of(task: &Value, cfg: &Config) -> Result<Facts, String> {
             _ => None,
         },
         rtype: text(o, "rtype").map(str::to_owned),
+        iter: text(o, "iter").map(str::to_owned),
+        iter_type: text(o, "iter_type").map(str::to_owned),
+        // A number in what `task` 3.6.0 sends.
+        iter_count: match o.get("iter_count") {
+            Some(Value::Number(n)) => Some(n.to_string()),
+            Some(Value::String(s)) => Some(s.clone()),
+            _ => None,
+        },
         ..Facts::default()
     };
     if let Some(Value::Array(tags)) = o.get("tags") {
@@ -216,7 +227,12 @@ pub fn apply(mut task: Value, changes: &[Change], cfg: &Config) -> Value {
                 edit_list(o, "depends", |l| l.retain(|x| x.as_str() != Some(&u)));
             }
             // `diff` makes none of these.
-            Change::SetTags(_) | Change::Status(_) | Change::ClearDeps | Change::Recurring => {}
+            Change::SetTags(_)
+            | Change::Status(_)
+            | Change::ClearDeps
+            | Change::Recurring
+            | Change::Iterative
+            | Change::EndSeries => {}
         }
     }
     task
@@ -312,5 +328,21 @@ mod tests {
         let mut t = table_of(&f);
         t["status"] = json!("completed");
         assert!(changes_of(&f, &t).unwrap_err().contains("status"));
+    }
+
+    #[test]
+    fn an_iterative_task_reads_with_its_fields_not_as_udas() {
+        let mut t = sent();
+        t["status"] = "iterative".into();
+        t["iter"] = "monthly".into();
+        t["iter_type"] = "fixed".into();
+        t["iter_count"] = 2.into();
+        let f = facts_of(&t, &cfg()).unwrap();
+        assert_eq!(f.status, "iterative");
+        assert_eq!(
+            (f.iter.as_deref(), f.iter_type.as_deref(), f.iter_count.as_deref()),
+            (Some("monthly"), Some("fixed"), Some("2"))
+        );
+        assert!(!f.extra.contains_key("iter_count"));
     }
 }

@@ -67,7 +67,7 @@ fun ExportFilter(store: Store, scope: String, filter: String, onFilter: (String)
 @Composable
 fun TaskLine(store: Store, row: Row, depth: Int) {
     val colors = MaterialTheme.colorScheme
-    val pending = row.status == "pending"
+    val pending = isOpen(row.status)
     val late = pending && row.due != null && row.due < store.now
     val wash = row.style.tint(extras.dark, colors.surface)
     val fmt = formatFor(FormatKind.Report, store.config?.config?.settings)

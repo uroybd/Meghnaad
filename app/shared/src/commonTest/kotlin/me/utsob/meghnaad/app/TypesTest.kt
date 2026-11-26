@@ -41,6 +41,14 @@ class TypesTest {
     }
 
     @Test
+    fun anIterativeTasksFieldsAreRead() {
+        val got = parseResponse(report.replace(""""status":"pending",""", """"status":"iterative","iter":"monthly","iter_type":"fx","iter_count":"3","""))
+        val row = assertIs<CliResult.Report>(got.result).value.rows.single()
+        assertEquals("iterative", row.status)
+        assertEquals(Triple("monthly", "fx", "3"), Triple(row.iter, row.iterType, row.iterCount))
+    }
+
+    @Test
     fun aRefusedRequestIsAnError() {
         val e = assertFailsWith<EngineError> { parseResponse("""{"error":"invalid request: no"}""") }
         assertEquals("invalid request: no", e.message)

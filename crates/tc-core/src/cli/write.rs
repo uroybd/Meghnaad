@@ -101,8 +101,17 @@ async fn write_steps<S: Storage>(
     let declined = permission(kind, &sel, &would_change, &opts, cfg, ctx, all)?;
     let chosen = without(&sel, &declined);
     let changing = without(&would_change, &declined);
-    let mut agreed = agree(kind, &changing, &opts, cfg, ctx, all)?;
-    let targets = targets(kind, &chosen, &changing, &agreed, all);
+    let mut agreed = agree(kind, &changing, &words, &opts, cfg, ctx, all)?;
+    let mut targets = targets(kind, &chosen, &changing, &agreed, all);
+    // An iterative series the answer was not to end: that task is left as it is, and said so, as `task` does.
+    if !agreed.kept.is_empty() {
+        targets.retain(|t| !agreed.kept.contains(&t.uuid));
+        if targets.is_empty() {
+            return Ok(ok(CliResult::Text {
+                lines: agreed.kept.iter().map(|_| declined_line(kind).to_owned()).collect(),
+            }));
+        }
+    }
 
     let mut batch = Batch::new();
     if kind == Purge {
@@ -159,6 +168,9 @@ async fn write_steps<S: Storage>(
     let mut message = String::new();
     for n in &passed {
         message.push_str(&format!("{n} "));
+    }
+    for _ in &agreed.kept {
+        message.push_str(&format!("{} ", declined_line(kind)));
     }
     message.push_str(&format!("{past} {}.", plural(touched.len(), "task")));
     for n in &notes {
@@ -276,7 +288,7 @@ fn read_words(kind: Kind, p: &Parsed, cfg: &Config, typed: bool) -> Step<Words> 
 /// Whether the command does anything to this task.
 fn acts(kind: Kind, f: &Facts) -> bool {
     match kind {
-        Done => f.status == "pending",
+        Done => f.is_open(),
         Delete => f.status != "deleted",
         // Only a deleted task can be purged: it has to be marked deleted first.
         Purge => f.status == "deleted",
@@ -383,6 +395,8 @@ struct Agreed<'a> {
     kids: Vec<&'a Facts>,
     /// `dependency.reminder`'s lines not already shown with a question, to go under the result as warnings.
     reminders: Vec<crate::hooks::Line>,
+    /// The iterative tasks whose series `modify` would end (`iter` cleared) and the answer was no to.
+    kept: Vec<Uuid>,
 }
 
 /// What only comes up once permission is settled, asked in one more table: carrying a change to the rest of a recurring
@@ -391,6 +405,7 @@ struct Agreed<'a> {
 fn agree<'a>(
     kind: Kind,
     changing: &[&Facts],
+    words: &Words,
     opts: &Options,
     cfg: &Config,
     ctx: &EvalCtx<'_>,
@@ -434,6 +449,29 @@ fn agree<'a>(
                         propagate.insert(f.uuid);
                     }
                 }
+            }
+        }
+    }
+    // Clearing `iter` ends an iterative series, so it is asked about like a delete, when `confirmation` is on
+    // (`CmdModify`): "End the iterative series for task 1 'Pay rent'?".
+    let mut kept: Vec<Uuid> = Vec::new();
+    if kind == Modify && cfg.confirmation() {
+        for f in changing.iter().filter(|f| f.status == "iterative") {
+            let ends = modify_plan(words.mods.as_ref(), f, ctx, all)
+                .is_ok_and(|c| c.iter().any(|c| matches!(c, Change::EndSeries)));
+            if !ends {
+                continue;
+            }
+            let key = format!("end:{}", f.uuid);
+            if asking {
+                let question = format!(
+                    "End the iterative series for task {} '{}'?",
+                    ident(ctx, f),
+                    f.description
+                );
+                items.push(confirm_item(key, f, ctx, question));
+            } else if !said_yes(&key) {
+                kept.push(f.uuid);
             }
         }
     }
@@ -533,6 +571,7 @@ fn agree<'a>(
         repairs,
         kids,
         reminders,
+        kept,
     })
 }
 
@@ -721,8 +760,22 @@ async fn change_task<S: Storage>(
         }
     }
     match kind {
-        // Only pending tasks can be completed (not templates, not finished ones).
-        Done if f.status != "pending" => changed = false,
+        // Only open tasks can be completed (pending or iterative; not templates, not finished ones).
+        Done if !f.is_open() => changed = false,
+        // As `task` completes one: its status and its end now (whatever `end` the command gave), the on-modify hook
+        // seeing it with its `iter` still, and the next task of the series made after it, from what the hook leaves
+        // (`next_in_series`). Not through `Task::set_status`, which would make the next one in TaskChampion's own zone.
+        Done if f.status == "iterative" => {
+            task.set_value("status", Some("completed".into()), ops).map_err(e)?;
+            task.set_timestamp("end", Utc.timestamp_opt(ctx.clock.now, 0).single(), ops)
+                .map_err(e)?;
+            if f.start.is_some() {
+                task.stop(ops).map_err(e)?;
+                if let Some((_, stop)) = journal {
+                    add_note(&mut task, stop, ctx.clock.now, ops)?;
+                }
+            }
+        }
         Delete if f.status == "deleted" => changed = false,
         Start | Stop if f.status == "recurring" => changed = false,
         Done => {
@@ -822,12 +875,63 @@ async fn change_task<S: Storage>(
         let hooked = hk.modify(f, Facts::from_task(&task)).await?;
         apply_changes(&mut task, &hooked, &mut batch.ops)?;
     }
+    if changed && kind == Done && f.status == "iterative" && task.get_value("status") == Some("completed") {
+        next_in_series(replica, &mut task, ctx, &mut batch.ops).await?;
+    }
     // An instance's state is mirrored in its parent's mask (`+` done, `X` deleted, ...), by the commands that
     // change a task's state; not by the ones that only add to it or take from it.
     if changed && !matches!(kind, Annotate | Denotate | Append | Prepend) {
         mirror_mask(&mut batch.masks, &mut batch.mask_dirty, all, f, &task);
     }
     Ok(changed)
+}
+
+/// What completing an iterative task makes (`crate::iter::next`): the next task of its series, a copy of this one under
+/// a uuid derived from its own, its dates moved on and its place one further, unless the series is over. The completed
+/// task keeps its `iter_count` and loses `iter` and `iter_type`. No hook sees the new task, as none does in `task`.
+async fn next_in_series<S: Storage>(
+    replica: &mut Replica<S>,
+    task: &mut Task,
+    ctx: &EvalCtx<'_>,
+    ops: &mut Operations,
+) -> Result<(), String> {
+    let e = |e: taskchampion::Error| e.to_string();
+    let data = task.clone().into_task_data();
+    let ts = |p: &str| task.get_timestamp(p).map(|t| t.timestamp());
+    let series = crate::iter::Series {
+        uuid: task.get_uuid(),
+        iter: data.get("iter").unwrap_or_default(),
+        iter_type: data.get("iter_type"),
+        iter_count: data.get("iter_count"),
+        due: ts("due"),
+        scheduled: ts("scheduled"),
+        wait: ts("wait"),
+        until: ts("until"),
+    };
+    if let Some(next) = crate::iter::next(&series, &ctx.clock)? {
+        let at = |t: i64| Utc.timestamp_opt(t, 0).single();
+        let mut succ = replica.create_task(next.uuid, ops).await.map_err(e)?;
+        for (k, v) in data.iter().filter(|(k, _)| !crate::iter::not_copied(k)) {
+            succ.set_value(k.clone(), Some(v.clone()), ops).map_err(e)?;
+        }
+        succ.set_value("status", Some("iterative".into()), ops).map_err(e)?;
+        succ.set_value("iter_count", Some(next.iter_count.to_string()), ops)
+            .map_err(e)?;
+        for (name, value) in [
+            ("due", next.due),
+            ("scheduled", next.scheduled),
+            ("wait", next.wait),
+            ("until", next.until),
+        ] {
+            if let Some(v) = value {
+                succ.set_timestamp(name, at(v), ops).map_err(e)?;
+            }
+        }
+        succ.set_entry(at(ctx.clock.now), ops).map_err(e)?;
+    }
+    task.set_value("iter", None, ops).map_err(e)?;
+    task.set_value("iter_type", None, ops).map_err(e)?;
+    Ok(())
 }
 
 /// A description with `text` appended or prepended.
@@ -924,8 +1028,11 @@ async fn duplicate<S: Storage>(
     let uuid = crate::crypto::new_uuid().map_err(|e| e.to_string())?;
     let mut task = replica.create_task(uuid, ops).await.map_err(e)?;
     for (k, v) in data.iter() {
-        let skip = matches!(k.as_str(), "status" | "start" | "end" | "entry" | "modified")
-            || (instance && matches!(k.as_str(), "parent" | "recur" | "until" | "imask"))
+        // A copy of an iterative task starts a series of its own, at 1.
+        let skip = matches!(
+            k.as_str(),
+            "status" | "start" | "end" | "entry" | "modified" | "iter_count"
+        ) || (instance && matches!(k.as_str(), "parent" | "recur" | "until" | "imask"))
             || (template && k == "mask");
         if !skip {
             task.set_value(k.clone(), Some(v.clone()), ops).map_err(e)?;
@@ -940,6 +1047,10 @@ async fn duplicate<S: Storage>(
         ops,
     )
     .map_err(e)?;
+    // A pending task with an `iter` is iterative (`Task::validate`), the copy of an iterative task too.
+    if !template && !instance && data.get("iter").is_some_and(|i| !i.is_empty()) {
+        apply_changes(&mut task, &[Change::Iterative], ops)?;
+    }
     task.set_entry(Utc.timestamp_opt(ctx.clock.now, 0).single(), ops)
         .map_err(e)?;
     if let Some(x) = extra {

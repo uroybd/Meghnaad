@@ -315,7 +315,7 @@ pub fn timesheet(tasks: &[&Facts], ids: &BTreeMap<Uuid, u32>, clock: &Clock) -> 
     let key = |t: &Facts| -> i64 {
         match t.status.as_str() {
             "completed" => t.end.unwrap_or(0),
-            "pending" => t.start.unwrap_or(0),
+            "pending" | "iterative" => t.start.unwrap_or(0),
             _ => 0,
         }
     };
@@ -324,7 +324,7 @@ pub fn timesheet(tasks: &[&Facts], ids: &BTreeMap<Uuid, u32>, clock: &Clock) -> 
         if t.status == "completed" {
             completed += 1;
         }
-        if t.status == "pending" && t.start.is_some() {
+        if t.is_open() && t.start.is_some() {
             started += 1;
         }
     }

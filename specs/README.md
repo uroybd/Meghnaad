@@ -67,3 +67,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0032 | [A label for each task command](0032-task-command-labels.md) | done | 2 (UI) | web, Android, terminal | Task 06efbdfc; also: a name can't be a command |
 | 0033 | [The terminal app's Settings as pages](0033-terminal-settings-pages.md) | done | 2 (UI) | terminal, web | Built; form keys `Ctrl+N`/`Ctrl+P`, `Tab` where nothing completes |
 | 0034 | [A UDA's choices drawn as pills](0034-uda-value-pills.md) | done | 2 (UI) | all | Built 2026-11-26; also: short string UDAs inline on cards (30 characters) |
+| 0035 | [Iterative tasks (Taskwarrior 3.6.0)](0035-iterative-tasks.md) | in progress | both | all | Built 2026-11-27; left: end-to-end sync with `task`-made tasks, more parity tests |

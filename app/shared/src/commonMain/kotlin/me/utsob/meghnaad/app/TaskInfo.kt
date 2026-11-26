@@ -138,6 +138,16 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
                 }
             }
         }
+        task.iter?.let { iter ->
+            Field("Iter") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LucideIcon("repeat", size = 12.dp)
+                    Text(iter, fontSize = 14.sp)
+                }
+            }
+        }
+        task.iterType?.let { Field("Iter type") { Text(it, fontSize = 14.sp) } }
+        task.iterCount?.let { Field("Iter count") { Text(it, fontSize = 14.sp) } }
         task.project?.let { p -> Field("Project") { ProjectPath(projectSegments(p), onPick = { store.showProject(it) }) } }
         task.priority?.let { Field("Priority") { Text(it, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) } }
         if (task.tags.isNotEmpty()) Field("Tags") { Chips { task.tags.forEach { t -> Pill(t, onClick = { store.showTag(t) }) } } }

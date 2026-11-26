@@ -74,6 +74,8 @@ describe('the Modify editor', () => {
       'scheduled',
       'until',
       'recur',
+      'iter',
+      'iter_type',
       '+',
       '-',
       'depends',

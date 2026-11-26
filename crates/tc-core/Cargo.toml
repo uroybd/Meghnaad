@@ -9,8 +9,12 @@ description = "TaskChampion cloud-sync protocol (crypto, object layout, ops, rep
 [features]
 # Saving a replica to bytes and loading it again (what the browser keeps in IndexedDB). The Worker never does, so it
 # leaves this out and does not carry the code (about 14 KB compressed).
-default = ["save"]
+default = ["save", "iterative"]
 save = []
+# Iterative tasks (Taskwarrior 3.6.0, `crate::iter`): TaskChampion's `iterative` status and working set, and what
+# computes a series' next date (RRULEs, their English forms, the zones). The Worker runs no commands, so it leaves
+# this out and does not carry them.
+iterative = ["taskchampion/iterative-tasks", "dep:rrule", "dep:text2rrule", "dep:chrono-tz", "uuid/v5"]
 # Hooks written in Lua (`lua_hooks`), run in a sandbox. The browser engine has them; the Worker does not (yet).
 lua = ["dep:omnilua"]
 
@@ -28,8 +32,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 sha2 = "0.10"
-taskchampion = { version = "3.1", default-features = false }
+taskchampion = { version = "3.2", default-features = false }
 thiserror = "2"
+# The versions TaskChampion 3.2.0 uses for its iterative tasks, so a next date is computed as `task` computes it.
+rrule = { version = "0.14.0", optional = true }
+text2rrule = { version = "=0.1.2", optional = true }
+chrono-tz = { version = "0.10", optional = true }
 # A pure-Rust Lua with the whole standard library; lean, so no io/os/package/debug/coroutine/utf8.
 omnilua = { version = "0.7.1", default-features = false, features = ["async"], optional = true }
 uuid = { version = "1", default-features = false, features = ["serde"] }

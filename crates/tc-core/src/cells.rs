@@ -48,6 +48,9 @@ pub struct Row {
     depends: Vec<String>,
     recur: Option<String>,
     parent: Option<String>,
+    iter: Option<String>,
+    iter_type: Option<String>,
+    iter_count: Option<String>,
     extra: BTreeMap<String, String>,
     urgency: f64,
     id: Option<u32>,
@@ -385,12 +388,17 @@ fn cell(col: &Col, row: &Row, ctx: &Ctx, rules: &Rules) -> Cell {
         }
         ("uuid", Some("short")) => Cell::text(short(&row.uuid)),
         ("uuid", _) => Cell::text(&row.uuid),
-        ("status", Some("short")) => Cell::text(if row.waiting {
+        // Only a pending task reads as waiting (`Task::getStatus`): an iterative one with a wait date is still iterative.
+        ("status", Some("short")) => Cell::text(if row.waiting && row.status == "pending" {
             "W".to_owned()
         } else {
             row.status.chars().take(1).collect::<String>().to_uppercase()
         }),
-        ("status", _) => Cell::text(if row.waiting { "waiting" } else { &row.status }),
+        ("status", _) => Cell::text(if row.waiting && row.status == "pending" {
+            "waiting"
+        } else {
+            &row.status
+        }),
         ("description", _) => description_cell(row, f, ctx, rules),
         ("project", _) => project_cell(row.project.as_deref(), f),
         ("priority", _) => {
@@ -432,6 +440,9 @@ fn cell(col: &Col, row: &Row, ctx: &Ctx, rules: &Rules) -> Cell {
         .cls(format!("urg-{}", urgency_level(row.urgency))),
         ("recur", Some("indicator")) => flag(row.recur.is_some(), &ctx.recur_indicator, "R"),
         ("recur", _) => Cell::text(row.recur.clone().unwrap_or_default()),
+        ("iter", _) => Cell::text(row.iter.clone().unwrap_or_default()),
+        ("iter_type", _) => Cell::text(row.iter_type.clone().unwrap_or_default()),
+        ("iter_count", _) => Cell::text(row.iter_count.clone().unwrap_or_default()),
         ("parent", _) => Cell {
             links: row.parent.clone().map(|p| vec![p]),
             ..Cell::text(row.parent.as_deref().map(short).unwrap_or_default())

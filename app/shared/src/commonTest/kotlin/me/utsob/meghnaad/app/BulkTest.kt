@@ -51,10 +51,11 @@ class BulkTest {
     @Test
     fun offersTheUsualFieldsTagsToAddAndRemoveAndTheTaskrcsUdas() {
         assertEquals(
-            listOf("project", "priority", "due", "wait", "scheduled", "until", "recur", "+", "-", "depends", "estimate", "size"),
+            listOf("project", "priority", "due", "wait", "scheduled", "until", "recur", "iter", "iter_type", "+", "-", "depends", "estimate", "size"),
             fields.map { it.key },
         )
         assertEquals("Estimate", fields.first { it.key == "estimate" }.label)
+        assertEquals(listOf("fixed", "fixed+", "chained"), fields.first { it.key == "iter_type" }.values)
         assertEquals(listOf("S", "M"), fields.first { it.key == "size" }.values)
     }
 

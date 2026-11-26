@@ -118,4 +118,8 @@ impl Server for Prefetched {
     async fn get_snapshot(&mut self) -> Result<Option<(VersionId, Snapshot)>, Error> {
         self.server.get_snapshot().await
     }
+
+    async fn latest_version_id(&mut self) -> Result<VersionId, Error> {
+        self.server.latest_version_id().await
+    }
 }

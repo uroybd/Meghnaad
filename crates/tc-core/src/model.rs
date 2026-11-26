@@ -26,7 +26,7 @@ pub struct Session {
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Facts {
     pub uuid: Uuid,
-    /// Raw stored status: pending | completed | deleted | recurring | (unknown).
+    /// Raw stored status: pending | completed | deleted | recurring | iterative | (unknown).
     pub status: String,
     pub description: String,
     pub project: Option<String>,
@@ -54,6 +54,16 @@ pub struct Facts {
     /// `periodic` or `chained`, on a recurring parent and its instances. Filters and `info`'s text read it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rtype: Option<String>,
+    /// An iterative task's interval (`monthly`, `every weekday`, an RRULE), as typed. Kept on a pending or waiting task
+    /// too, which it makes iterative; a completed one loses it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iter: Option<String>,
+    /// `fixed`, `fixed+` or `chained`, or a short form, as typed (`crate::iter::TYPES`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iter_type: Option<String>,
+    /// The task's place in its series, from 1, as stored (a number). Read only; a completed task keeps it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iter_count: Option<String>,
     /// Properties that aren't core attributes: candidate UDA values (and orphans).
     pub extra: BTreeMap<String, String>,
 }
@@ -75,6 +85,9 @@ const CORE: &[&str] = &[
     "mask",
     "imask",
     "rtype",
+    "iter",
+    "iter_type",
+    "iter_count",
     "template",
     "last",
     "project",
@@ -93,6 +106,8 @@ pub fn status_str(s: &Status) -> String {
         Status::Completed => "completed".into(),
         Status::Deleted => "deleted".into(),
         Status::Recurring => "recurring".into(),
+        #[cfg(feature = "iterative")]
+        Status::Iterative => "iterative".into(),
         Status::Unknown(other) => other.clone(),
     }
 }
@@ -142,6 +157,9 @@ impl Facts {
             mask: t.get_value("mask").and_then(nonempty),
             imask: t.get_value("imask").and_then(|v| v.parse().ok()),
             rtype: t.get_value("rtype").and_then(nonempty),
+            iter: t.get_value("iter").and_then(nonempty),
+            iter_type: t.get_value("iter_type").and_then(nonempty),
+            iter_count: t.get_value("iter_count").and_then(nonempty),
             // taskchampion only knows a subset of Taskwarrior's attributes (it reports
             // `project`, `scheduled`, ... as "UDAs"), so filter those out ourselves.
             extra: crate::ordered::map_of(
@@ -152,12 +170,23 @@ impl Facts {
         }
     }
 
-    /// Pending and `wait` is in the future (Taskwarrior 3 has no stored "waiting" status).
+    /// Pending or iterative, and `wait` is in the future (Taskwarrior 3 has no stored "waiting" status).
     pub fn is_waiting(&self, clock: &Clock) -> bool {
-        self.status == "pending" && self.wait.is_some_and(|w| w > clock.now)
+        self.is_open() && self.wait.is_some_and(|w| w > clock.now)
     }
 
-    fn open(&self) -> bool {
+    /// `Task::is_open`: its stored status is pending or iterative, so it is still to be done (waiting or not).
+    pub fn is_open(&self) -> bool {
+        self.status == "pending" || self.status == "iterative"
+    }
+
+    /// `Task::is_pending`, what `+PENDING` means: open and not waiting.
+    pub fn is_pending(&self, clock: &Clock) -> bool {
+        self.is_open() && !self.is_waiting(clock)
+    }
+
+    /// Not finished: neither completed nor deleted (a recurring template counts).
+    fn unfinished(&self) -> bool {
         self.status != "completed" && self.status != "deleted"
     }
 
@@ -182,10 +211,7 @@ impl Facts {
     }
 
     pub fn is_ready(&self, clock: &Clock) -> bool {
-        self.status == "pending"
-            && !self.blocked
-            && !self.is_waiting(clock)
-            && self.scheduled.is_none_or(|s| clock.now > s)
+        self.is_pending(clock) && !self.blocked && self.scheduled.is_none_or(|s| clock.now > s)
     }
 
     pub fn has_uda(&self, cfg: &Config) -> bool {
@@ -249,10 +275,10 @@ impl Facts {
     pub fn virtual_tag(&self, name: &str, cfg: &Config, clock: &Clock) -> Option<bool> {
         let due_state = || {
             self.due
-                .filter(|_| self.open())
+                .filter(|_| self.unfinished())
                 .map(|d| Self::date_state(d, cfg, clock))
         };
-        let due_between = |lo: i64, hi: i64| self.due.is_some_and(|d| self.open() && d >= lo && d <= hi);
+        let due_between = |lo: i64, hi: i64| self.due.is_some_and(|d| self.unfinished() && d >= lo && d <= hi);
         let due_between_words = |from: &str, to: &str| match (parse_date(from, clock), parse_date(to, clock)) {
             (Some(lo), Some(hi)) => due_between(lo.ts, hi.ts),
             _ => false,
@@ -272,10 +298,10 @@ impl Facts {
             }
             "YESTERDAY" => self
                 .due
-                .is_some_and(|d| self.open() && clock.same_day(d, clock.start_of_day(now) - DAY)),
+                .is_some_and(|d| self.unfinished() && clock.same_day(d, clock.start_of_day(now) - DAY)),
             "TOMORROW" => self
                 .due
-                .is_some_and(|d| self.open() && clock.same_day(d, clock.start_of_day(now) + DAY)),
+                .is_some_and(|d| self.unfinished() && clock.same_day(d, clock.start_of_day(now) + DAY)),
             "OVERDUE" => {
                 self.status != "recurring"
                     && matches!(due_state(), Some(DateState::EarlierToday | DateState::BeforeToday))
@@ -294,7 +320,8 @@ impl Facts {
             // Taskwarrior: a template is a task that has a mask (i.e. has had instances made).
             "PARENT" | "TEMPLATE" => self.mask.is_some(),
             "WAITING" => self.is_waiting(clock),
-            "PENDING" => self.status == "pending" && !self.is_waiting(clock),
+            "PENDING" => self.is_pending(clock),
+            "ITERATIVE" => self.status == "iterative",
             "COMPLETED" => self.status == "completed",
             "DELETED" => self.status == "deleted",
             "UDA" => self.has_uda(cfg),
@@ -327,6 +354,7 @@ impl Facts {
             "DUE",
             "DUETODAY",
             "INSTANCE",
+            "ITERATIVE",
             "MONTH",
             "ORPHAN",
             "OVERDUE",

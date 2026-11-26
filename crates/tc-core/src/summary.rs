@@ -101,7 +101,8 @@ pub fn summarize(tasks: &[&Facts], all_projects: bool, clock: &Clock) -> Summary
 
     let mut listed: BTreeSet<String> = BTreeSet::new();
     for f in tasks {
-        if all_projects || status(f) == "pending" {
+        // `Task::is_pending`: open and not waiting, an iterative task too.
+        if all_projects || f.is_pending(clock) {
             listed.insert(f.project.clone().unwrap_or_default());
         }
     }
@@ -116,7 +117,7 @@ pub fn summarize(tasks: &[&Facts], all_projects: bool, clock: &Clock) -> Summary
             *counter.entry(p.clone()).or_insert(0usize) += 1;
         }
         match status(f).as_str() {
-            "pending" | "waiting" => {
+            "pending" | "waiting" | "iterative" => {
                 for p in &chain {
                     *pending.entry(p.clone()).or_insert(0usize) += 1;
                     if let Some(entry) = f.entry.filter(|e| *e != 0) {

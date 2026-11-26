@@ -1,7 +1,7 @@
 # taskrc support
 
 Which of Taskwarrior's `taskrc` options Meghnaad handles, and which it doesn't. The list of options comes from the
-`taskrc(5)` man page of Taskwarrior **3.5.0**, and the status of each comes from reading this repository's code.
+`taskrc(5)` man page of Taskwarrior **3.6.0**, and the status of each comes from reading this repository's code.
 
 **How the taskrc is used.** You paste or choose your `~/.taskrc` (or a folder of files, with `include` followed). The text
 is kept as written in your store (`web/rc/…`, in the bucket or on the git branch), only an allowlist of settings is read
@@ -9,7 +9,7 @@ from it (and what they add up to is kept in `web/config.json`), and your desktop
 credential lines are removed. See [Your taskrc](using/settings.md#your-taskrc). The app's own settings, such as task
 commands, aren't taskrc options: they live in a `settings.json` of their own ([Commands](using/settings.md#commands)).
 
-**Scope.** This tracks Taskwarrior **3.5.0 and newer** only. Settings removed or deprecated before 3.5.0 aren't listed and
+**Scope.** This tracks Taskwarrior **3.5.0 and newer** only (it follows 3.6.0). Settings removed or deprecated before 3.5.0 aren't listed and
 aren't supported, even if an older taskrc contains them.
 
 `show` and `config` (Console only) read and edit the same saved settings under the same rules; see
@@ -106,6 +106,9 @@ See [Recurring tasks](using/recurring.md#recurring-tasks) for how it behaves.
 | `recurrence.confirmation` | Done | Unset or `prompt` asks, a true-ish value is yes, anything else no. It governs `modify`, `append`, `prepend`, `annotate` and `delete` on a task of a series, and `purge` of a template |
 | `recurrence.indicator` | Done | |
 | `recurrence.limit` | Done | |
+
+Iterative tasks (3.6.0's `iter`, [Iterative tasks](using/iterative.md)) have no settings of their own, in `task` or here. The
+`recurrence` settings above are for recurring tasks only.
 
 ## Lists, indicators and charts
 

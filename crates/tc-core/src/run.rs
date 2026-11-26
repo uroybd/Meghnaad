@@ -130,11 +130,8 @@ pub struct Output {
 /// Number pending tasks 1..N in a stable order (entry, then uuid). These ids are specific to
 /// the web replica and generally differ from a desktop's, which are local to that replica.
 pub fn working_set_ids(all: &[Facts]) -> BTreeMap<Uuid, u32> {
-    // TaskChampion's working set holds pending *and recurring* tasks, so templates are numbered too.
-    let mut pending: Vec<&Facts> = all
-        .iter()
-        .filter(|f| f.status == "pending" || f.status == "recurring")
-        .collect();
+    // TaskChampion's working set holds pending, recurring and iterative tasks, so templates are numbered too.
+    let mut pending: Vec<&Facts> = all.iter().filter(|f| f.is_open() || f.status == "recurring").collect();
     pending.sort_unstable_by_key(|f| (f.entry.unwrap_or(0), f.uuid));
     crate::ordered::map_of(pending.iter().zip(1u32..).map(|(f, n)| (f.uuid, n)))
 }
@@ -142,7 +139,8 @@ pub fn working_set_ids(all: &[Facts]) -> BTreeMap<Uuid, u32> {
 pub(crate) fn kind_of(name: &str, cfg: &Config) -> &'static str {
     match name {
         "id" => "id",
-        "uuid" | "parent" | "recur" | "mask" | "imask" | "template" | "rtype" => "string",
+        "uuid" | "parent" | "recur" | "mask" | "imask" | "template" | "rtype" | "iter" | "iter_type" => "string",
+        "iter_count" => "number",
         "description" => "description",
         "project" => "project",
         "priority" => "priority",
@@ -189,6 +187,9 @@ fn default_label(name: &str, format: Option<&str>, cfg: &Config) -> String {
         "mask" => "Mask",
         "imask" => "Mask Index",
         "rtype" => "Recurrence type",
+        "iter" => "Iter",
+        "iter_type" => "Iter type",
+        "iter_count" => "Iter count",
         "project" => "Project",
         "priority" => "Priority",
         other => {
@@ -266,6 +267,9 @@ const SORT_FIELDS: &[&str] = &[
     "random",
     "mask",
     "imask",
+    "iter",
+    "iter_type",
+    "iter_count",
 ];
 
 fn valid_sort_field(name: &str, cfg: &Config) -> bool {
@@ -321,6 +325,8 @@ fn str_of<'a>(f: &'a Facts, field: &str) -> Option<Cow<'a, str>> {
         "tags" => Cow::Owned(f.tags.iter().map(String::as_str).collect::<Vec<_>>().join(",")),
         "uuid" => Cow::Owned(f.uuid.to_string()),
         "parent" => Cow::Owned(f.parent.map(|p| p.to_string()).unwrap_or_default()),
+        "iter" => Cow::Borrowed(f.iter.as_deref().unwrap_or("")),
+        "iter_type" => Cow::Borrowed(f.iter_type.as_deref().unwrap_or("")),
         "mask" | "imask" => Cow::Borrowed(""),
         _ => return None,
     })
@@ -367,6 +373,11 @@ fn cmp_key<'a>(
         "random" => dir(fnv(&a.facts.uuid, seed).cmp(&fnv(&b.facts.uuid, seed)), desc),
         "urgency" => dir(a.urgency.partial_cmp(&b.urgency).unwrap_or(Ordering::Equal), desc),
         "id" => dir(a.id.unwrap_or(0).cmp(&b.id.unwrap_or(0)), desc),
+        // A number, as `task` sorts it; a task without one comes first going up, as 0 would.
+        "iter_count" => {
+            let n = |f: &Facts| f.iter_count.as_deref().and_then(|c| c.parse::<u64>().ok()).unwrap_or(0);
+            dir(n(a.facts).cmp(&n(b.facts)), desc)
+        }
         "recur" => {
             let (x, y) = (
                 a.facts.recur.as_deref().unwrap_or(""),

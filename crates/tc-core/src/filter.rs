@@ -155,6 +155,9 @@ enum Core {
     Mask,
     Imask,
     Rtype,
+    Iter,
+    IterType,
+    IterCount,
     Depends,
     Tags,
     Annotation,
@@ -181,6 +184,9 @@ const CORE_NAMES: &[(&str, Core)] = &[
     ("mask", Core::Mask),
     ("imask", Core::Imask),
     ("rtype", Core::Rtype),
+    ("iter", Core::Iter),
+    ("iter_type", Core::IterType),
+    ("iter_count", Core::IterCount),
     ("depends", Core::Depends),
     ("tags", Core::Tags),
     ("annotation", Core::Annotation),
@@ -205,7 +211,7 @@ impl Attr {
     fn ty(&self) -> Ty {
         match self {
             Attr::Core(c) => match c {
-                Core::Id | Core::Urgency | Core::Imask => Ty::Num,
+                Core::Id | Core::Urgency | Core::Imask | Core::IterCount => Ty::Num,
                 Core::Entry
                 | Core::Start
                 | Core::End
@@ -1336,6 +1342,13 @@ fn attr_value<'a>(attr: &Attr, f: &'a Facts, ctx: &EvalCtx) -> Val<'a> {
             // and `imask.any:` finds all, as in Taskwarrior.
             Core::Imask => Val::Num(f.imask.unwrap_or(0) as f64),
             Core::Rtype => s(&f.rtype),
+            Core::Iter => s(&f.iter),
+            Core::IterType => s(&f.iter_type),
+            Core::IterCount => f
+                .iter_count
+                .as_deref()
+                .and_then(|c| c.parse::<f64>().ok())
+                .map_or(Val::Unset, Val::Num),
             Core::Entry => d(f.entry),
             Core::Start => d(f.start),
             Core::End => d(f.end),

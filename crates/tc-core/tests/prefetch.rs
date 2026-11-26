@@ -48,6 +48,10 @@ impl Server for Counting {
         self.requests.set(self.requests.get() + 1);
         self.inner.get_snapshot().await
     }
+    async fn latest_version_id(&mut self) -> Result<VersionId, Error> {
+        self.requests.set(self.requests.get() + 1);
+        self.inner.latest_version_id().await
+    }
 }
 
 async fn server(store: &MemStore) -> Box<dyn Server> {

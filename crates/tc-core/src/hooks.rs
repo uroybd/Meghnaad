@@ -264,6 +264,9 @@ pub fn task_to_json(f: &Facts) -> serde_json::Value {
         "parent": f.parent.map(|u| u.to_string()),
         "mask": f.mask,
         "imask": f.imask,
+        "iter": f.iter,
+        "iter_type": f.iter_type,
+        "iter_count": f.iter_count,
         "uda": f.extra,
     })
 }
@@ -331,6 +334,9 @@ pub fn task_from_json(v: &serde_json::Value, before: &Facts) -> Result<Facts, St
     f.recur = text("recur")?;
     f.parent = text("parent")?.map(|s| uuid_of(&s, "parent")).transpose()?;
     f.mask = text("mask")?;
+    f.iter = text("iter")?;
+    f.iter_type = text("iter_type")?;
+    f.iter_count = text("iter_count")?;
     f.imask = match o.get("imask") {
         None | Some(J::Null) => None,
         Some(n) => n.as_u64().map(|n| n as usize),
@@ -380,6 +386,9 @@ pub fn diff(before: &Facts, after: &Facts) -> Result<Vec<Change>, String> {
     if before.parent != after.parent || before.mask != after.mask || before.imask != after.imask {
         return Err(fixed("recurrence bookkeeping (parent, mask, imask)"));
     }
+    if before.iter_count != after.iter_count {
+        return Err(fixed("place in its iterative series (iter_count)"));
+    }
 
     let mut out = Vec::new();
     if before.description != after.description {
@@ -396,6 +405,17 @@ pub fn diff(before: &Facts, after: &Facts) -> Result<Vec<Change>, String> {
     }
     if before.priority != after.priority {
         out.push(Change::Priority(after.priority.clone().filter(|p| !p.is_empty())));
+    }
+    for (name, was, is) in [
+        ("iter", &before.iter, &after.iter),
+        ("iter_type", &before.iter_type, &after.iter_type),
+    ] {
+        if was != is {
+            out.push(Change::Prop {
+                name: name.into(),
+                value: is.clone().filter(|v| !v.is_empty()),
+            });
+        }
     }
     for t in before.tags.difference(&after.tags) {
         out.push(Change::RemoveTag(t.clone()));

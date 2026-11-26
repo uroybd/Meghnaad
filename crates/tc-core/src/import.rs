@@ -183,6 +183,11 @@ fn convert(
                 let (k, text) = (if k == "modification" { "modified" } else { k }, text_of(value));
                 if crate::run::kind_of(k, cfg) == "date" {
                     props.insert(k.to_owned(), date(k, &text)?.to_string());
+                } else if let (Value::Number(n), "iter_count") = (value, k) {
+                    // `iter_count` is a whole number (`Task::parseJSON`), not a double as other numbers are.
+                    #[expect(clippy::cast_possible_truncation, reason = "as `task` casts it")]
+                    let n = n.as_f64().unwrap_or(0.0) as i64;
+                    props.insert(k.to_owned(), n.to_string());
                 } else if let Value::Number(n) = value {
                     // A JSON number is kept as Taskwarrior writes a double (`std::to_string`, `%f`): `0` is stored as
                     // `0.000000`, and a report shows it so, as the real `task` does.
@@ -201,11 +206,36 @@ fn convert(
         "completed" => "completed",
         "deleted" => "deleted",
         "recurring" => "recurring",
+        "iterative" => "iterative",
         other => return Err(format!("The status '{other}' is not valid.")),
     };
     let has = |p: &BTreeMap<String, String>, k: &str| p.contains_key(k);
-    if status == "pending" && has(&props, "due") && has(&props, "recur") && !has(&props, "parent") {
+    let iter = props.get("iter").filter(|i| !i.is_empty()).cloned();
+    // Without its `iter` an iterative task is a plain one, its series ended; with one a pending task is iterative.
+    if status == "iterative" && iter.is_none() && has(&props, "iter_count") {
+        status = "pending";
+        props.remove("iter_type");
+        props.remove("iter_count");
+    } else if status == "pending" && iter.is_some() {
+        status = "iterative";
+    } else if status == "pending" && has(&props, "due") && has(&props, "recur") && !has(&props, "parent") {
         status = "recurring";
+    }
+    if status == "iterative" {
+        // As TaskChampion takes it: checked, and the first of its series unless it says otherwise.
+        let at = |k: &str| props.get(k).and_then(|v| v.parse::<i64>().ok());
+        let series = crate::iter::Series {
+            uuid,
+            iter: iter.as_deref().unwrap_or_default(),
+            iter_type: props.get("iter_type").map(String::as_str),
+            iter_count: props.get("iter_count").map(String::as_str),
+            due: at("due"),
+            scheduled: at("scheduled"),
+            wait: at("wait"),
+            until: None,
+        };
+        crate::iter::check(&series, clock)?;
+        props.entry("iter_count".into()).or_insert_with(|| "1".into());
     }
     props.insert("status".into(), status.into());
     if status == "recurring" && !has(&props, "rtype") {
@@ -220,7 +250,7 @@ fn convert(
     if generated_end {
         props.insert("end".into(), now.to_string());
     }
-    if status == "pending" {
+    if status == "pending" || status == "iterative" {
         props.remove("end");
     }
     if !has(&props, "modified") {
@@ -448,14 +478,22 @@ async fn run<S: Storage>(
                 task.set_value(k.clone(), None, &mut ops).map_err(e)?;
             }
         }
-        if old.as_ref().and_then(|o| o.get("status")) != Some(&status) {
-            let status = match status.as_str() {
-                "completed" => Status::Completed,
-                "deleted" => Status::Deleted,
-                "recurring" => Status::Recurring,
-                _ => Status::Pending,
-            };
-            task.set_status(status, &mut ops).map_err(e)?;
+        let was = old.as_ref().and_then(|o| o.get("status"));
+        if was != Some(&status) {
+            if status == "iterative" || was.is_some_and(|w| w == "iterative") {
+                // Written as a value: through `Task::set_status` TaskChampion would check an iterative task again in
+                // its own zone, and complete one by making the next of its series. An import says what each task is,
+                // and its `end` is already among its properties.
+                task.set_value("status", Some(status.clone()), &mut ops).map_err(e)?;
+            } else {
+                let status = match status.as_str() {
+                    "completed" => Status::Completed,
+                    "deleted" => Status::Deleted,
+                    "recurring" => Status::Recurring,
+                    _ => Status::Pending,
+                };
+                task.set_status(status, &mut ops).map_err(e)?;
+            }
         }
         // `on-add` or `on-modify`: the hook sees the task as it will be and may change it or refuse.
         let after = Facts::from_task(&task);

@@ -233,7 +233,7 @@ impl App {
                     return Action::None;
                 }
                 "tasks.modify" => {
-                    self.mode = Mode::Form(Form::many(marked, &self.cfg));
+                    self.mode = Mode::Form(Form::many(marked, &self.cfg).for_task(self.iterative));
                     return Action::None;
                 }
                 _ => {}

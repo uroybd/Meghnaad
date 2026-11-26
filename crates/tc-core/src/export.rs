@@ -26,7 +26,7 @@ enum Kind {
 fn core_kind(name: &str) -> Kind {
     match name {
         "due" | "end" | "entry" | "modified" | "scheduled" | "start" | "until" | "wait" => Kind::Date,
-        "imask" => Kind::Numeric,
+        "imask" | "iter_count" => Kind::Numeric,
         "recur" => Kind::Duration,
         _ => Kind::Text,
     }

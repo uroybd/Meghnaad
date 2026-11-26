@@ -48,9 +48,11 @@ end
 ## Tasks, tags and dates
 
 **A task** is a table: `description`, `project`, `priority`, `status`, `uuid`, `blocked`, `blocking`, `recur`,
-`annotations` (a list of `{entry, text}`), the dates, and your UDAs as plain fields (`task.estimate = "big"`; set one to
-`nil` to remove it). Change the task you are given, or return one. A hook may change what `modify` may change: `uuid`,
-`status`, annotations and the recurrence fields can be read but not changed, and trying is an error. The change joins
+`iter`, `iter_type`, `iter_count`, `annotations` (a list of `{entry, text}`), the dates, and your UDAs as plain fields
+(`task.estimate = "big"`; set one to `nil` to remove it). Change the task you are given, or return one. A hook may change
+what `modify` may change: `uuid`, `status`, annotations, the recurrence fields and `iter_count` can be read but not
+changed, and trying is an error. Completing an [iterative task](iterative.md) runs `on_modify` for it, with its `iter`
+still set; no hook runs for the next one it makes, as in `task`. The change joins
 the command's undo step, and a refused command saves nothing. In `on_modify`, `old` is read-only.
 
 **Tags** (and `task.depends`, a set of task ids as text) are a set: `task.tags:has("work")`, `:add("a", "b")`,
@@ -71,7 +73,8 @@ They follow your time zone and `dateformat`.
 ## Helpers and messages
 
 - `task:in_project("Work")` (also true for `Work.Mail`), `:is_pending()`, `:is_completed()`, `:is_deleted()`,
-  `:is_recurring()`, `:is_waiting()`, `:is_overdue()`.
+  `:is_recurring()`, `:is_iterative()`, `:is_waiting()`, `:is_overdue()` (the last two are true for an iterative task
+  too).
 - `say("…")`, `warn("…")` and `print` show under the command's result in the Console, or as a toast elsewhere.
 - `refuse("why")`, or any error in the script, stops the command with that message. An error in `on_exit` is shown but
   stops nothing.

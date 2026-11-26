@@ -4,7 +4,7 @@
 //! bucket and in where the hooks run. Everything between a request and its answer is here so that they cannot differ.
 
 use crate::cli::{execute, Options, UndoStack};
-use crate::dates::Clock;
+use crate::dates::{Clock, ZoneName};
 use crate::filter::split_words;
 use crate::hooks::HookHost;
 use crate::taskrc::Config;
@@ -24,6 +24,9 @@ struct Request {
     args: Option<Vec<String>>,
     /// The UTC offset in seconds east of UTC, so "today" is the user's today.
     tz: Option<i32>,
+    /// The user's IANA time zone (`Asia/Dhaka`), when the host knows it: an iterative task's next dates are worked out
+    /// in it, across changes of the clocks, as `task` does in the machine's zone. Without it, `tz` is taken as fixed.
+    zone: Option<String>,
     #[serde(default)]
     confirmed: bool,
     approved: Option<Vec<String>>,
@@ -72,7 +75,10 @@ pub async fn run<S: Storage>(
     };
     let now = req.now as i64;
     // The active context's own settings count here too: it may choose its own week start.
-    let clock = clock_at(cfg, now, req.tz.unwrap_or(0));
+    let clock = Clock {
+        zone: req.zone.as_deref().map_or(ZoneName::NONE, ZoneName::new),
+        ..clock_at(cfg, now, req.tz.unwrap_or(0))
+    };
     let done = execute(
         replica,
         cfg,

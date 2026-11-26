@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOpen as isOpenStatus } from './iterative';
   import { formatFor } from './dateformat';
   import { formatMoment } from './dates';
   import { css, look } from './colors';
@@ -12,7 +13,7 @@
   let { row, depth }: { row: Row; depth: number } = $props();
 
   const fmt = $derived(formatFor('report', store.config?.config.settings));
-  const pending = $derived(row.status === 'pending');
+  const pending = $derived(isOpenStatus(row.status));
   const late = $derived(pending && row.due != null && row.due < store.now);
 </script>
 

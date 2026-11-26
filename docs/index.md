@@ -8,7 +8,7 @@
 terminal](terminal.md). Meghnaad is another **replica** of your Taskwarrior data: the `task` CLI keeps syncing as it
 does today, to a git repository, an S3 or R2 bucket or a TaskChampion sync server, and Meghnaad reads and writes the same
 store. A task added here shows up on your laptop after `task sync`, and the other way round. Behaviour follows
-Taskwarrior **3.5.0**, command for command, and where it does not, that is a bug.
+Taskwarrior **3.6.0**, command for command, and where it does not, that is a bug.
 
 It is **console-first**: type `task` commands, with tables, forms, boards and charts beside them. Both ways of using it
 run the same Rust command engine, so anything you can click you can type.

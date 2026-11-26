@@ -90,8 +90,9 @@ back to plain text.
 
 **`modify` and `add` take `tags:` and `status:` too.** `tags:a,b` makes those the task's tags and no others (`tags:`
 none). `status:completed` or `status:deleted` finishes the task with an `end` of now, and `status:pending` takes it back.
-`end:` on a pending task is refused (`modify`) or left out (`add`), as in Taskwarrior. `rtype:`, `mask:`, `imask:`,
-`uuid:`, `id:` and `urgency:` are refused. A dependency you take away (`depends:-3`) must be one the task has. A tag is
+`end:` on a pending or iterative task is refused (`modify`) or left out (`add`), as in Taskwarrior. `rtype:`, `mask:`,
+`imask:`, `iter_count:`, `uuid:`, `id:` and `urgency:` are refused. `iter:` and `iter_type:` make an
+[iterative task](iterative.md). A dependency you take away (`depends:-3`) must be one the task has. A tag is
 kept under any name (`+URGENT`, `+a:b`, `+Mixed`; case-sensitive), and one that is also a virtual tag such as `+PENDING`
 is stored, but a filter reads the virtual one. An empty description is refused.
 
@@ -105,7 +106,7 @@ stays a note.
 moment you enter it, and `recur:` and `wait:` are refused. `3 duplicate` copies task 3 as a new pending task, keeping
 everything but its identity, `start`, `end` and `entry`. What follows is applied to the copy (`3 duplicate due:eow
 +again`), with plain words becoming a note. Copying a recurring instance gives an ordinary task; copying a template
-gives another template. Both ask first at `bulk` tasks, like any write.
+gives another template; copying an iterative task starts a series of its own, at 1. Both ask first at `bulk` tasks, like any write.
 
 **`purge`** removes deleted tasks for good: `purge status:deleted`, or `purge project:Old`. A task has to be deleted first;
 anything else is skipped with a hint. It asks about each task ("Permanently remove task 3 'x'?"), and with no filter it

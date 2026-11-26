@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOpen as isOpenStatus } from './iterative';
   import { Check, Pencil, Play, Square, Trash2 } from './icons';
   import MoreMenu, { type MenuAction } from './MoreMenu.svelte';
   import { store, type Entry } from './store.svelte';
@@ -24,7 +25,7 @@
     pending: string | null;
   } = $props();
 
-  const isOpen = $derived(row.status === 'pending');
+  const isOpen = $derived(isOpenStatus(row.status));
 
   function act(...rest: string[]) {
     store.act(entry, [row.uuid, ...rest]);

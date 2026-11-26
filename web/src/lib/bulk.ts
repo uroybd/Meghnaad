@@ -1,5 +1,6 @@
 // Pure helpers for the bulk actions: how tasks are named to the engine, and the fields the Modify editor offers.
 
+import { ITER_TYPES } from './iterative';
 import { orList, priorityValues } from './priority';
 import type { UdaDef } from './types';
 
@@ -82,6 +83,8 @@ export function fieldsFor(udas: Record<string, UdaDef>): Field[] {
     { key: 'scheduled', label: 'Scheduled', kind: 'date', hint: DATE_HINT },
     { key: 'until', label: 'Until', kind: 'date', hint: DATE_HINT },
     { key: 'recur', label: 'Repeat', kind: 'text', hint: 'daily, weekly, 3d, ... (empty clears it)' },
+    { key: 'iter', label: 'Iter', kind: 'text', hint: 'monthly, every weekday, FREQ=… (empty ends the series)' },
+    { key: 'iter_type', label: 'Iter type', kind: 'text', hint: 'fixed, fixed+ or chained', values: ITER_TYPES },
     { key: '+', label: 'Add tags', kind: 'tags', hint: 'tags to add, separated by spaces', required: true },
     { key: '-', label: 'Remove tags', kind: 'tags', hint: 'tags to take off, separated by spaces', required: true },
     { key: 'depends', label: 'Depends on', kind: 'text', hint: 'task numbers or uuids (empty clears them)' },

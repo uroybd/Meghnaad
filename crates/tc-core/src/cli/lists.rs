@@ -48,6 +48,9 @@ pub(super) fn names_list(cfg: &Config, kind: Kind) -> Done {
                 "entry",
                 "id",
                 "imask",
+                "iter",
+                "iter_count",
+                "iter_type",
                 "last",
                 "mask",
                 "modified",
@@ -214,6 +217,9 @@ pub(super) fn id_lists(cfg: &Config, ctx: &EvalCtx<'_>, all: &[Facts], kind: Kin
                     }
                     "recur" => values.extend(f.recur.clone()),
                     "rtype" => values.extend(f.rtype.clone()),
+                    "iter" => values.extend(f.iter.clone()),
+                    "iter_type" => values.extend(f.iter_type.clone()),
+                    "iter_count" => values.extend(f.iter_count.clone()),
                     "mask" => values.extend(f.mask.clone()),
                     "parent" => values.extend(f.parent.map(|u| u.to_string())),
                     "uuid" => {
@@ -254,7 +260,7 @@ pub(super) fn projects_or_tags(cfg: &Config, ctx: &EvalCtx<'_>, all: &[Facts], k
     };
     let pool: Vec<&Facts> = all
         .iter()
-        .filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring"))
+        .filter(|f| everything || f.is_open() || f.status == "recurring")
         .collect();
     // `tags` counts the tasks before the filter; `projects` the ones that match it.
     let before = pool.len();

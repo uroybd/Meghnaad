@@ -224,7 +224,8 @@ pub fn burndown(tasks: &[&Facts], period: Period, cumulative: bool, clock: &Cloc
         if r.end.is_none() {
             current += 1;
         }
-        let pending = f.status == "pending"; // `waiting` is a pending task with a wait date
+        // Open: pending (a waiting task is one, with a wait date) or iterative (`Task::is_open`).
+        let pending = f.is_open();
         match f.status.as_str() {
             _ if pending => {
                 // A range whose start is after its end is empty (a task can end before it began, after

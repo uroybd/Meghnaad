@@ -1,5 +1,6 @@
 // Grouping tasks by tag for the Tags page. A task with two tags appears under both.
 import type { Row } from './types';
+import { isOpen } from './iterative';
 
 export interface TagEntry {
   name: string;
@@ -26,7 +27,7 @@ export function buildTags(rows: Row[], now: number, extra?: string): TagEntry[] 
     for (const t of r.tags) {
       const e = entry(t);
       e.tasks.push(r);
-      if (r.status === 'pending' && r.due != null && r.due < now) e.overdue++;
+      if (isOpen(r.status) && r.due != null && r.due < now) e.overdue++;
     }
   }
   if (extra) entry(extra);

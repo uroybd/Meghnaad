@@ -110,7 +110,7 @@ fun TaskCard(
     val x = extras
     val dark = x.dark
     val scope = rememberCoroutineScope()
-    val open = row.status == "pending"
+    val open = isOpen(row.status)
     val started = row.start != null && row.end == null
     val overdue = open && row.due != null && row.due < store.now
     val picked = selectable && store.selection.has(row.uuid)
@@ -369,7 +369,7 @@ fun Actions(
 ) {
     val colors = MaterialTheme.colorScheme
     var sure by remember(row.uuid) { mutableStateOf(false) }
-    val open = row.status == "pending"
+    val open = isOpen(row.status)
     val box = if (compact) 36.dp else 44.dp
     // The second tap is the answer to Taskwarrior's "Delete task N?" (the `confirmation` setting); with it off, the first tap
     // deletes.

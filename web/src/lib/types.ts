@@ -7,7 +7,7 @@ export interface Note {
 
 export interface Facts {
   uuid: string;
-  /** pending | completed | deleted | recurring */
+  /** pending | completed | deleted | recurring | iterative */
   status: string;
   description: string;
   project: string | null;
@@ -31,6 +31,12 @@ export interface Facts {
   mask: string | null;
   /** On an instance: its position in the parent's mask. */
   imask: number | null;
+  /** An iterative task's rule (`monthly`, `FREQ=WEEKLY;BYDAY=MO`, `every other day`): done, it makes the next one. */
+  iter?: string;
+  /** `fixed`, `fixed+` or `chained`, or a short form, as typed. */
+  iter_type?: string;
+  /** Its place in the series, from 1. Read only. */
+  iter_count?: string;
   /** Non-core properties: UDA values, and orphans (see `Row.orphans`). */
   extra: Record<string, string>;
 }

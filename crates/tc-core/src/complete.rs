@@ -148,6 +148,8 @@ const ATTRS: &[(&str, &str)] = &[
     ("scheduled", "scheduled date"),
     ("until", "expires"),
     ("recur", "repeat period: daily, weekly, 3d…"),
+    ("iter", "next one on completion: daily, weekly, an RRULE…"),
+    ("iter_type", "fixed, fixed+ or chained"),
     ("start", "when started"),
     ("end", "when finished"),
     ("entry", "when created"),
@@ -214,6 +216,7 @@ pub const VIRTUAL_TAGS: &[&str] = &[
     "DUE",
     "DUETODAY",
     "INSTANCE",
+    "ITERATIVE",
     "LATEST",
     "MONTH",
     "ORPHAN",
@@ -497,11 +500,19 @@ pub fn complete(line: &str, caret: usize, v: &Vocab) -> Completion {
                 ),
                 None => ["H", "M", "L"].iter().map(|p| choice(p, None)).collect(),
             },
-            "status" => ["pending", "completed", "deleted", "recurring", "waiting"]
+            "status" => ["pending", "completed", "deleted", "recurring", "waiting", "iterative"]
                 .iter()
                 .map(|p| choice(p, None))
                 .collect(),
-            "recur" => recur_words(),
+            "recur" | "iter" => recur_words(),
+            "iter_type" => [
+                ("fixed", "on its dates"),
+                ("fixed+", "on its dates, none in the past"),
+                ("chained", "from when it is done"),
+            ]
+            .iter()
+            .map(|(p, h)| choice(p, Some(h)))
+            .collect(),
             "limit" => ["page", "none", "10", "25"].iter().map(|p| choice(p, None)).collect(),
             "depends" => {
                 // A comma list: complete the last item, keep the rest.

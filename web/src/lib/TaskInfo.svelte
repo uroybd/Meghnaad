@@ -184,6 +184,12 @@
         {/if}
       </dd>
     {/if}
+    {#if task.iter}<dt>Iter</dt>
+      <dd data-testid="iter"><span class="chip"><Repeat size={11} /> {task.iter}</span></dd>{/if}
+    {#if task.iter_type}<dt>Iter type</dt>
+      <dd>{task.iter_type}</dd>{/if}
+    {#if task.iter_count}<dt>Iter count</dt>
+      <dd>{task.iter_count}</dd>{/if}
     {#if task.project}<dt>Project</dt>
       <dd><ProjectPath segments={projectSegments(task.project)} onpick={(p) => store.showProject(p)} /></dd>{/if}
     {#if task.priority}<dt>Priority</dt>

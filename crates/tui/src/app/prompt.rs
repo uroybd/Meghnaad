@@ -13,7 +13,7 @@ impl App {
         // The one line opens into the full form, with what it says broken into the fields.
         if p.kind == PromptKind::Add && (key.code == KeyCode::Down || (ctrl && key.code == KeyCode::Char('f'))) {
             let preview = self.preview(p.input.line.trim());
-            self.mode = Mode::Form(Form::add(&preview, &self.cfg));
+            self.mode = Mode::Form(Form::add(&preview, &self.cfg).for_task(self.iterative));
             return Action::None;
         }
         if !matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {

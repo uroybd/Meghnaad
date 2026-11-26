@@ -1,4 +1,4 @@
-//! Meghnaad on the desktop: a terminal app around the real `task` 3.5.0. Every command and every read is a `task`
+//! Meghnaad on the desktop: a terminal app around the real `task` 3.6.0 (3.5 works too). Every command and every read is a `task`
 //! command line, and its tasks are the desktop's own (`~/.task`, synced by `task sync`). `tc-core` comes in only for what
 //! `task` has no command for, the same helpers the page and the phone call: completion, the add preview, and report
 //! cells. Its own `settings.json` (task commands, boards, and its settings under `tui`) is kept on this machine only.
@@ -147,9 +147,10 @@ pub fn run() -> io::Result<()> {
     let task = task::Task::from_env();
     let version = task.version().map_err(io::Error::other)?;
     let mut app = App::new(task);
-    if version != task::VERSION {
+    if !task::supported(&version) {
         app.status = format!("task {version} found; this app follows Taskwarrior {}.", task::VERSION);
     }
+    app.iterative = task::has_iter(&version);
     // Asked before the screen is taken, while the terminal answers only this.
     app.appearance = appearance::detect();
     app.system_mode = appearance::system();

@@ -199,7 +199,7 @@ fun rowClass(row: Row): String {
     if (row.status == "completed" || row.status == "deleted") c += listOf("done", row.status)
     if (row.waiting) c += "waiting"
     if (row.blocked) c += "blocked"
-    if (row.start != null && row.status == "pending") c += "active"
+    if (row.start != null && isOpen(row.status)) c += "active"
     return c.joinToString(" ")
 }
 

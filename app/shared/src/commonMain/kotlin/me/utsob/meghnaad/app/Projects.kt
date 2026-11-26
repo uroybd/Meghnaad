@@ -37,7 +37,7 @@ fun buildTree(rows: List<Row>, now: Long, ensure: String? = null): List<ProjectN
     for (r in rows) {
         val n = node(r.project ?: NO_PROJECT)
         n.own += r
-        val late = r.status == "pending" && r.due != null && r.due < now
+        val late = isOpen(r.status) && r.due != null && r.due < now
         // Count on the node and on each ancestor.
         var name = n.name
         while (true) {

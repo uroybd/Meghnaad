@@ -1,6 +1,7 @@
 <script lang="ts">
   /** A task's state as a coloured pill: each state has its own colour. */
-  export type Kind = 'pending' | 'completed' | 'deleted' | 'recurring' | 'waiting' | 'blocked' | 'blocking';
+  export type Kind =
+    'pending' | 'completed' | 'deleted' | 'recurring' | 'iterative' | 'waiting' | 'blocked' | 'blocking';
   let { kind, label = kind }: { kind: Kind; label?: string } = $props();
 </script>
 
@@ -29,6 +30,9 @@
   }
   .recurring {
     --c: hsl(265 var(--seg-s) var(--seg-l));
+  }
+  .iterative {
+    --c: hsl(295 var(--seg-s) var(--seg-l));
   }
   .waiting {
     --c: var(--warn);

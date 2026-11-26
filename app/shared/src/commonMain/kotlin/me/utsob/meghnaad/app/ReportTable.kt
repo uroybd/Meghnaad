@@ -246,7 +246,7 @@ private fun TableRow(
 ) {
     val colors = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    val open = row.status == "pending"
+    val open = isOpen(row.status)
     val overdue = open && row.due != null && row.due < store.now
     val picked = selectable && store.selection.has(row.uuid)
     val done = row.status == "completed" || row.status == "deleted" || row.waiting

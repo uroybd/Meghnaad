@@ -345,6 +345,8 @@ pub enum Action {
 /// The sections of the Settings page, top to bottom. The keys act on the one that has the focus.
 pub struct App {
     pub task: Task,
+    /// Whether `task` has iterative tasks (3.6.0 on): the forms offer `iter` and `iter_type` only then.
+    pub iterative: bool,
     pub cfg: Config,
     pub vocab: Vocab,
     pub settings: AppSettings,
@@ -634,6 +636,7 @@ impl App {
     pub fn new(task: Task) -> App {
         App {
             task,
+            iterative: true,
             cfg: Config::default(),
             vocab: Vocab::default(),
             settings: AppSettings::default(),
@@ -1162,7 +1165,7 @@ impl App {
                 serde_json::from_str::<Vec<Value>>(&text).ok()?.into_iter().next()
             });
         match found {
-            Some(t) => self.mode = Mode::Form(Form::modify(&t, &self.cfg, &self.pending)),
+            Some(t) => self.mode = Mode::Form(Form::modify(&t, &self.cfg, &self.pending).for_task(self.iterative)),
             None => self.status = "That task could not be read.".into(),
         }
     }

@@ -58,6 +58,8 @@ const SETTABLE: &[&str] = &[
     "entry",
     "depends",
     "recur",
+    "iter",
+    "iter_type",
     "tags",
     "status",
     // Taskwarrior takes it and stamps its own time over it.
@@ -73,6 +75,7 @@ const READ_ONLY: &[&str] = &[
     "mask",
     "imask",
     "rtype",
+    "iter_count",
 ];
 
 /// What `+name` may name: anything without a space, as in Taskwarrior (whether the replica can keep it is
@@ -170,6 +173,12 @@ pub enum Change {
     ClearDeps,
     /// Make this task a recurring parent: status `recurring` and `rtype=periodic`.
     Recurring,
+    /// Make this task iterative (it has an `iter`): status `iterative`, and `iter_count` 1 unless it has one. Checked
+    /// before it is planned (`crate::iter::check`).
+    Iterative,
+    /// End this task's iterative series (`iter` cleared): status `pending`, without `iter_type` and `iter_count`, so
+    /// that an `iter` given again starts a new series at 1. Planned first, so the rest applies to a plain task.
+    EndSeries,
 }
 
 const TS_PROPS: &[&str] = &["due", "wait", "scheduled", "until", "start", "end", "entry"];
@@ -444,6 +453,8 @@ pub fn plan(
                     "pending" | "waiting" => "pending",
                     "completed" => "completed",
                     "deleted" => "deleted",
+                    // Only with an `iter` it can have: `iterative_rules` says so otherwise.
+                    "iterative" => "iterative",
                     "recurring" => {
                         return err("A task is made recurring by giving it a `recur` and a `due`, not a status.")
                     }
@@ -452,7 +463,7 @@ pub fn plan(
                 out.push(Change::Status(status.to_owned()));
                 // A finished task ends now; one made pending again has no end.
                 if !m.attrs.iter().any(|(n, _)| n == "end") {
-                    let end = (status != "pending").then_some(ctx.clock.now);
+                    let end = (status != "pending" && status != "iterative").then_some(ctx.clock.now);
                     out.push(Change::Timestamp {
                         name: "end",
                         value: end,
@@ -499,6 +510,19 @@ pub fn plan(
                     });
                 }
             }
+            "iter" => out.push(Change::Prop {
+                name: "iter".into(),
+                value: (!v.is_empty()).then(|| v.to_owned()),
+            }),
+            "iter_type" => {
+                if !v.is_empty() && !crate::iter::TYPES.contains(&v) {
+                    return err(format!("The 'iter_type' attribute does not allow a value of '{v}'."));
+                }
+                out.push(Change::Prop {
+                    name: "iter_type".into(),
+                    value: (!v.is_empty()).then(|| v.to_owned()),
+                });
+            }
             n if ts_prop(n).is_some() => {
                 let value = if v.is_empty() {
                     None
@@ -542,6 +566,7 @@ pub fn plan(
     if becomes_recurring(m, mode, current, &out) {
         out.push(Change::Recurring);
     }
+    iterative_rules(current, &mut out, ctx)?;
     // After the recurrence check, as in Taskwarrior: a recurring task still has to be given its
     // own `due`, a default doesn't stand in for it.
     if mode == Mode::Add {
@@ -648,6 +673,87 @@ fn recurrence_rules(
             // It is being made recurring but has no due date to repeat from.
             (Mode::Modify, false) => "You cannot specify a recurring task without a due date.",
         });
+    }
+    Ok(())
+}
+
+/// A string property as it will be after these changes (`current` before them).
+fn final_prop(out: &[Change], current: Option<String>, prop: &str) -> Option<String> {
+    let mut value = current;
+    for c in out {
+        if let Change::Prop { name, value: v } = c {
+            if name == prop {
+                value.clone_from(v);
+            }
+        }
+    }
+    value
+}
+
+/// A date as it will be after these changes.
+fn final_date(out: &[Change], current: Option<i64>, prop: &str) -> Option<i64> {
+    let mut value = current;
+    for c in out {
+        if let Change::Timestamp { name, value: v } = c {
+            if *name == prop {
+                value = *v;
+            }
+        }
+    }
+    value
+}
+
+/// Taskwarrior 3.6.0's rules for iterative tasks (`Task::checkIterative`, `Task::validate`,
+/// `CmdModify::checkConsistency`), and what follows from them: a pending or waiting task given an `iter` becomes
+/// iterative (checked as TaskChampion checks it), and an iterative one whose `iter` is cleared ends its series. An
+/// `iter` changed on a task that already is iterative is not checked, as in `task`: a bad one is refused only when the
+/// task is completed.
+fn iterative_rules(current: Option<&Facts>, out: &mut Vec<Change>, ctx: &EvalCtx) -> Result<(), ModError> {
+    let iter = final_prop(out, current.and_then(|c| c.iter.clone()), "iter");
+    let iter_type = final_prop(out, current.and_then(|c| c.iter_type.clone()), "iter_type");
+    let was = current.is_some_and(|c| c.status == "iterative");
+    let status_given = out.iter().rev().find_map(|c| match c {
+        Change::Status(s) => Some(s.clone()),
+        _ => None,
+    });
+    let due = final_date(out, current.and_then(|c| c.due), "due");
+    let scheduled = final_date(out, current.and_then(|c| c.scheduled), "scheduled");
+    let wait = final_date(out, current.and_then(|c| c.wait), "wait");
+    if iter.is_some() {
+        let recurring = final_recur(out, current).is_some() || current.is_some_and(|c| c.parent.is_some());
+        if recurring {
+            return err("A task cannot be both recurring and iterative.");
+        }
+        if was && iter_type.is_none() {
+            return err("You cannot remove the iteration type from an iterative task.");
+        }
+        if was && due.is_none() && scheduled.is_none() && wait.is_none() {
+            return err("You cannot remove the last of the due, scheduled and wait dates from an iterative task.");
+        }
+        if was && status_given.as_deref().is_some_and(|s| s != "iterative") {
+            return err("You cannot change the status of an iterative task. Clear iter to end the series instead.");
+        }
+    }
+    if was && iter.is_none() && current.is_some_and(|c| c.iter_count.is_some()) {
+        out.insert(0, Change::EndSeries);
+        return Ok(());
+    }
+    let status = status_given.unwrap_or_else(|| current.map_or_else(|| "pending".to_owned(), |c| c.status.clone()));
+    let becomes = !was && ((status == "pending" && iter.is_some()) || status == "iterative");
+    if becomes {
+        let series = crate::iter::Series {
+            uuid: current.map(|c| c.uuid).unwrap_or_default(),
+            iter: iter.as_deref().unwrap_or_default(),
+            iter_type: iter_type.as_deref(),
+            iter_count: current.and_then(|c| c.iter_count.as_deref()),
+            due,
+            scheduled,
+            wait,
+            until: None,
+        };
+        crate::iter::check(&series, &ctx.clock).map_err(ModError)?;
+        out.retain(|c| !matches!(c, Change::Status(_)));
+        out.push(Change::Iterative);
     }
     Ok(())
 }

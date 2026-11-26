@@ -1424,6 +1424,9 @@ impl DomSource<'_> {
                     ("mask", _) => Dom::Text(t.mask.clone().unwrap_or_default()),
                     ("imask", _) => Dom::Real(t.imask.map_or(0.0, |i| i as f64)),
                     ("rtype", _) => Dom::Text(t.rtype.clone().unwrap_or_default()),
+                    ("iter", _) => Dom::Text(t.iter.clone().unwrap_or_default()),
+                    ("iter_type", _) => Dom::Text(t.iter_type.clone().unwrap_or_default()),
+                    ("iter_count", _) => Dom::Int(t.iter_count.as_deref().and_then(|c| c.parse().ok()).unwrap_or(0)),
                     // The older names of a recurrence's bookkeeping, which are in the task only when something wrote them.
                     ("last", _) => Dom::Int(t.extra.get("last").and_then(|v| v.parse().ok()).unwrap_or(0)),
                     ("template", _) => Dom::Text(t.extra.get("template").cloned().unwrap_or_default()),

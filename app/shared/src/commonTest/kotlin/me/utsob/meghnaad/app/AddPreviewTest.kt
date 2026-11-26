@@ -47,6 +47,19 @@ class AddPreviewTest {
     }
 
     @Test
+    fun anIterativeTaskIsCarriedIntoTheForm() {
+        val p = preview("Pay rent iter:monthly iter_type:fixed due:2026-12-20")
+        assertEquals("monthly" to "fixed", p.iter to p.iterType)
+        assertTrue(p.errors.isEmpty())
+        val seed = seedOf(p, offsetAt = utc)
+        assertEquals("monthly" to "fixed", seed.iter to seed.iterType)
+        // Without a date it can't be one: said so, and the rest shows.
+        val bare = preview("Pay rent iter:monthly iter_type:fixed")
+        assertNull(bare.iter)
+        assertEquals(listOf("Usage Error: Iterative tasks require a 'due', 'scheduled' or 'wait' date."), bare.errors)
+    }
+
+    @Test
     fun theFormStartsFromTheBreakdown() {
         val seed = seedOf(preview("Ship it project:Work +a +b priority:M due:2026-12-24T09:30 depends:3"), offsetAt = utc)
         assertEquals("Ship it", seed.description)

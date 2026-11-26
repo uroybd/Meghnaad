@@ -13,6 +13,7 @@
   import { CornerUpLeft, Lock, Repeat, RotateCcw, X } from './icons';
   import { visibleNotes } from './journal';
   import { describeRecur, presetFor, PRESETS } from './recurrence';
+  import { ITER_TYPES } from './iterative';
   import { store, type Entry } from './store.svelte';
   import type { Row, UdaDef } from './types';
 
@@ -62,6 +63,8 @@
     until: wire(row?.until),
     tags: (row?.tags ?? []).join(' '),
     recur: row?.recur ?? '',
+    iter: row?.iter ?? '',
+    iterType: row?.iter_type ?? '',
   };
   /* svelte-ignore state_referenced_locally */
   const udaStart = Object.fromEntries(Object.values(store.config?.config.udas ?? {}).map((u) => [u.name, uda(u, row)]));
@@ -101,6 +104,19 @@
   /* svelte-ignore state_referenced_locally */
   const template = row?.status === 'recurring';
   const needsDue = $derived(!instance && recur !== '' && due === '');
+  // Iterative (Taskwarrior 3.6): done, it makes the next one. Not for a recurring task, which can't be both.
+  /* svelte-ignore state_referenced_locally */
+  let iter = $state(init.iter);
+  /* svelte-ignore state_referenced_locally */
+  let iterType = $state(init.iterType);
+  // A short form typed elsewhere (`fx`, `ch`) is kept as it is.
+  /* svelte-ignore state_referenced_locally */
+  const iterTypes = [
+    ...ITER_TYPES,
+    ...(init.iterType === '' || ITER_TYPES.includes(init.iterType) ? [] : [init.iterType]),
+  ];
+  const iterable = $derived(!instance && !template && recur === '');
+  const needsIterDate = $derived(iter.trim() !== '' && due === '' && scheduled === '' && wait === '');
   /* svelte-ignore state_referenced_locally */
   let udaValues = $state<Record<string, string>>({ ...udaStart, ...(adding ? seed?.udas : null) });
   let startNow = $state(false);
@@ -124,6 +140,11 @@
     set('scheduled', scheduled, start.scheduled);
     set('until', until, start.until);
     if (!instance) set('recur', recur, start.recur);
+    if (!instance && !template) {
+      set('iter', iter.trim(), start.iter);
+      // Its type goes with it: cleared with the rule, the type goes too (`task` drops it as it ends the series).
+      if (iter.trim() !== '') set('iter_type', iterType, start.iterType);
+    }
     const want = new Set(
       tags
         .split(/[\s,]+/)
@@ -299,6 +320,37 @@
         <TagsInput id="te-tags" bind:value={tags} names={store.tags} placeholder="space separated" />
       </div>
     </div>
+
+    {#if iterable}
+      <div class="pair iter">
+        <div class="cell">
+          <label for="te-iter">Iter</label>
+          <input
+            id="te-iter"
+            bind:value={iter}
+            placeholder="monthly, every weekday, FREQ=…"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </div>
+        <div class="cell">
+          <label for="te-iter-type">Iter type</label>
+          <select id="te-iter-type" bind:value={iterType} disabled={iter.trim() === ''}>
+            <option value="">choose…</option>
+            {#each iterTypes as t (t)}<option value={t}>{t}</option>{/each}
+          </select>
+        </div>
+        {#if needsIterDate}
+          <div class="err hint wide" role="alert">An iterative task needs a due, scheduled or wait date.</div>
+        {:else if iter.trim() !== ''}
+          <div class="dim hint wide">
+            When it is done, the next one is made: {iterType === 'chained' || iterType === 'ch'
+              ? 'from the day it is done'
+              : 'on the next date of the rule'}{row?.iter_count ? `. This is number ${row.iter_count}.` : '.'}
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     {#each defined as u (u.name)}
       <label for="te-uda-{u.name}">{udaLabel(u)}</label>
@@ -516,9 +568,16 @@
   .pair.repeat-tags {
     grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   }
+  .pair.iter {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+  .pair .wide {
+    grid-column: 1 / -1;
+  }
   @media (max-width: 520px) {
     .pair.project,
-    .pair.repeat-tags {
+    .pair.repeat-tags,
+    .pair.iter {
       grid-template-columns: minmax(0, 1fr);
     }
   }

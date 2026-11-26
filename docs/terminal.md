@@ -1,7 +1,7 @@
 # The terminal app
 
 `meghnaad` is Meghnaad on the desktop, beside its web app and Android app: a full-screen terminal app around the
-real `task` 3.5.0, laid out as the web app is. It has no engine, replica or sync of its own. Every report it shows is
+real `task` 3.6.0, laid out as the web app is. It has no engine, replica or sync of its own. Every report it shows is
 `task <filter> export <report>` and every change it makes is a `task` command line, so it works on whatever data and
 taskrc your `task` uses (`~/.task` and `~/.taskrc`, or `TASKDATA`, `TASKRC` and `rc.data.location`), and your hooks run
 as they always do. What it adds is the web app's pages, a command line with Tab completion, `&&` `||` `;` chains and your
@@ -9,7 +9,7 @@ own task commands, an add line that shows the task it will make, tasksh's review
 
 ## Install
 
-It runs on macOS and Linux, around Taskwarrior's `task` 3.5.0. Pick one of the three ways below; each ends with
+It runs on macOS and Linux, around Taskwarrior's `task` 3.6.0 (3.5 works too, without [iterative tasks](using/iterative.md)). Pick one of the three ways below; each ends with
 `meghnaad` on your `PATH`.
 
 ### With Homebrew (macOS and Linux)
@@ -25,7 +25,7 @@ meghnaad
 
 ### Prebuilt, no Rust needed
 
-1. Install `task` 3.5.0 (from your package manager or [taskwarrior.org](https://taskwarrior.org/download/)), and check
+1. Install `task` 3.6.0 (from your package manager or [taskwarrior.org](https://taskwarrior.org/download/)), and check
    it with `task --version`. If it isn't on your `PATH`, set `MEGHNAAD_TASK` to the binary instead.
 2. Download `meghnaad-<version>-<platform>.tar.gz` for your system (Linux or macOS, x86_64 or arm64) from the
    [latest release](https://github.com/uroybd/Meghnaad/releases/latest).
@@ -45,9 +45,9 @@ meghnaad
 
 5. Run `meghnaad`.
 
-### From source, with Rust 1.91 or later
+### From source, with Rust 1.94.1 or later
 
-With `task` 3.5.0 installed as in step 1 above:
+With `task` 3.6.0 installed as in step 1 above:
 
 ```sh
 cargo install --git https://github.com/uroybd/Meghnaad meghnaad-tui --locked

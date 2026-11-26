@@ -20,6 +20,9 @@ pub struct Preview {
     pub tags: Vec<String>,
     pub dates: BTreeMap<String, i64>,
     pub recur: Option<String>,
+    /// An iterative task's rule and type (`iter`, `iter_type`).
+    pub iter: Option<String>,
+    pub iter_type: Option<String>,
     /// Task ids and uuids as typed; they are resolved when the task is added.
     pub depends: Vec<String>,
     pub udas: BTreeMap<String, String>,
@@ -87,6 +90,13 @@ pub fn add(line: &str, cfg: &Config, now: i64, tz: i32) -> Preview {
             Ok(_) => keep.push(pair),
             // A repeat with no due date is about the pair of them, not this one alone.
             Err(e) if pair.0 == "recur" && e.0.contains("due") => keep.push(pair),
+            // An iterative task needs its rule, its type and a date together: they are judged together, below.
+            Err(e)
+                if matches!(pair.0.as_str(), "iter" | "iter_type")
+                    && e.0.starts_with("Usage Error: Iterative tasks require") =>
+            {
+                keep.push(pair);
+            }
             Err(e) => out.errors.push(e.0),
         }
     }
@@ -96,7 +106,8 @@ pub fn add(line: &str, cfg: &Config, now: i64, tz: i32) -> Preview {
     if let Err(e) = &changes {
         // Repeating needs a due date: say so, and show the task without the repeat.
         out.errors.push(e.0.clone());
-        mods.attrs.retain(|(n, _)| n != "recur");
+        mods.attrs
+            .retain(|(n, _)| !matches!(n.as_str(), "recur" | "iter" | "iter_type"));
         changes = attempt(&mods);
     }
     let Ok(changes) = changes else {
@@ -109,6 +120,8 @@ pub fn add(line: &str, cfg: &Config, now: i64, tz: i32) -> Preview {
             Change::Description(d) if described => out.description = d,
             Change::Prop { name, value: Some(v) } if name == "project" => out.project = Some(v),
             Change::Prop { name, value: Some(v) } if name == "recur" => out.recur = Some(v),
+            Change::Prop { name, value: Some(v) } if name == "iter" => out.iter = Some(v),
+            Change::Prop { name, value: Some(v) } if name == "iter_type" => out.iter_type = Some(v),
             Change::Prop { name, value: Some(v) } => {
                 out.udas.insert(name, v);
             }
@@ -212,5 +225,23 @@ mod tests {
     #[test]
     fn dependencies_are_carried_as_typed() {
         assert_eq!(of("Ship depends:3,ab12cd34", "").depends, vec!["3", "ab12cd34"]);
+    }
+
+    #[cfg(feature = "iterative")]
+    #[test]
+    fn an_iterative_task_is_judged_whole() {
+        let p = of("Pay rent iter:monthly iter_type:fixed due:tomorrow", "");
+        assert_eq!(
+            (p.iter.as_deref(), p.iter_type.as_deref()),
+            (Some("monthly"), Some("fixed"))
+        );
+        assert!(p.errors.is_empty(), "{:?}", p.errors);
+        let p = of("Pay rent iter:monthly iter_type:fixed", "");
+        assert_eq!((p.iter, p.iter_type), (None, None));
+        assert_eq!(
+            p.errors,
+            ["Usage Error: Iterative tasks require a 'due', 'scheduled' or 'wait' date."]
+        );
+        assert_eq!(p.description, "Pay rent");
     }
 }

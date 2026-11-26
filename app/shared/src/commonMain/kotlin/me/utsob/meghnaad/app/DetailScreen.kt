@@ -105,7 +105,7 @@ fun DetailScreen(store: Store, ref: DetailRef) {
                 message?.let { Text(it, color = colors.error, fontSize = 14.sp) }
                 if (live != null) {
                     FlowRow(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (live.status == "pending") {
+                        if (isOpen(live.status)) {
                             Button(onClick = { act("done") }) {
                                 LucideIcon("check", size = 15.dp, tint = colors.onPrimary)
                                 Text("  Done")

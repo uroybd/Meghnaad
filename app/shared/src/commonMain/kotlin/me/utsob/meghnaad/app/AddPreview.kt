@@ -1,5 +1,6 @@
 package me.utsob.meghnaad.app
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -20,6 +21,9 @@ data class AddPreview(
     val tags: List<String> = emptyList(),
     val dates: Map<String, Long> = emptyMap(),
     val recur: String? = null,
+    /** An iterative task's rule and type. */
+    val iter: String? = null,
+    @SerialName("iter_type") val iterType: String? = null,
     /** Task ids and uuids as typed. */
     val depends: List<String> = emptyList(),
     /** By UDA name; one of type date is a timestamp. */
@@ -64,6 +68,8 @@ data class FormSeed(
     val until: String = "",
     val tags: String = "",
     val recur: String = "",
+    val iter: String = "",
+    val iterType: String = "",
     /** Task ids, space separated. */
     val depends: String = "",
     val udas: Map<String, String> = emptyMap(),
@@ -86,6 +92,8 @@ fun seedOf(p: AddPreview?, description: String = "", defs: Map<String, UdaDef> =
         until = wire(p?.dates?.get("until")),
         tags = (p?.tags ?: emptyList()).joinToString(" "),
         recur = p?.recur ?: "",
+        iter = p?.iter ?: "",
+        iterType = p?.iterType ?: "",
         depends = (p?.depends ?: emptyList()).joinToString(" "),
         udas = (p?.udas ?: emptyMap()).mapValues { (name, value) -> if (defs[name]?.type == "date") wire(value.toLongOrNull()) else value },
         carried = (p?.dates ?: emptyMap()).filterKeys { it !in FORM_DATES }.map { (name, ts) -> "$name:${wire(ts)}" },

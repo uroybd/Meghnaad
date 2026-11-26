@@ -126,6 +126,7 @@ pub fn clock(cfg: &Config, now: i64, tz_offset: i32) -> Clock {
         week_starts_monday: cfg.week_starts_monday(),
         iso: cfg.date_iso(),
         format: cfg.date_format(),
+        ..Clock::utc(0)
     }
 }
 

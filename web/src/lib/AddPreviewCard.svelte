@@ -39,7 +39,7 @@
           >{preview.priority}</span
         >{/if}
     </div>
-    {#if preview.project || preview.tags.length || dates.length || preview.recur || udas.length || preview.depends.length}
+    {#if preview.project || preview.tags.length || dates.length || preview.recur || preview.iter || udas.length || preview.depends.length}
       <div class="facts">
         {#if preview.project}<span class="fact"><Folder size={13} /> {preview.project}</span>{/if}
         {#each dates as d (d.name)}
@@ -50,6 +50,11 @@
           >
         {/each}
         {#if preview.recur}<span class="fact"><Repeat size={13} /> {describeRecur(preview.recur)}</span>{/if}
+        {#if preview.iter}<span class="fact"
+            ><Repeat size={13} /> <span class="dim">iter</span>
+            {preview.iter}{#if preview.iter_type}
+              ({preview.iter_type}){/if}</span
+          >{/if}
         {#each udas as u (u.label)}<span class="fact"><span class="dim">{u.label}</span> {u.value}</span>{/each}
         {#if preview.depends.length}<span class="fact"><Link size={13} /> depends on {preview.depends.join(', ')}</span
           >{/if}

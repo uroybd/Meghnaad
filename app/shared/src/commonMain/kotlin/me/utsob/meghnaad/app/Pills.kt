@@ -36,6 +36,7 @@ fun StatusPill(kind: String, label: String = kind) {
         "completed" -> x.ok
         "deleted" -> colors.error
         "recurring" -> Color.hsl(265f, s, l)
+        "iterative" -> Color.hsl(295f, s, l)
         "waiting" -> x.warn
         "blocked" -> Color.hsl(25f, s, l)
         "blocking" -> Color.hsl(180f, s, l)

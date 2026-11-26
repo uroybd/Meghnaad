@@ -1,7 +1,7 @@
 # Using Meghnaad
 
 The app has a normal interface and a console, and both talk to the same command engine, so anything you can click
-you can type, and the other way round. Behaviour follows Taskwarrior **3.5.0**; where it differs from the desktop,
+you can type, and the other way round. Behaviour follows Taskwarrior **3.6.0**; where it differs from the desktop,
 this guide says so. How the engine works is in [Architecture](architecture.md); every supported `taskrc` setting is in
 [taskrc support](taskrc-support.md).
 

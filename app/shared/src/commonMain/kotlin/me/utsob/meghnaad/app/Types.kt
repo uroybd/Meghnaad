@@ -33,7 +33,7 @@ data class Session(val start: Long, val end: Long? = null, val seconds: Long = 0
 @Serializable
 data class Row(
     val uuid: String,
-    /** pending | completed | deleted | recurring */
+    /** pending | completed | deleted | recurring | iterative */
     val status: String,
     val description: String,
     val project: String? = null,
@@ -55,6 +55,12 @@ data class Row(
     val parent: String? = null,
     val mask: String? = null,
     val imask: Int? = null,
+    /** An iterative task's rule (`monthly`, `FREQ=WEEKLY;BYDAY=MO`): done, it makes the next one. */
+    val iter: String? = null,
+    /** `fixed`, `fixed+` or `chained`, or a short form, as typed. */
+    @SerialName("iter_type") val iterType: String? = null,
+    /** Its place in the series, from 1. Read only. */
+    @SerialName("iter_count") val iterCount: String? = null,
     val extra: Map<String, String> = emptyMap(),
     val style: Resolved? = null,
     val urgency: Double = 0.0,

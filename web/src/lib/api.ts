@@ -17,6 +17,18 @@ export function tzOffsetSeconds(d = new Date()): number {
   return -d.getTimezoneOffset() * 60;
 }
 
+/**
+ * The browser's time zone by name (`Asia/Dhaka`), or nothing if it gives none. The engine works out an iterative
+ * task's next dates in it, so they keep their time of day across a change of the clocks.
+ */
+export function timeZoneName(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Could this request be sent a second time without doing anything twice? Only a read is. */
 function safeToRepeat(init?: RequestInit): boolean {
   return (init?.method ?? 'GET').toUpperCase() === 'GET';
@@ -185,7 +197,7 @@ function answer<T>(text: string): T {
 export async function runCli(input: CliInput): Promise<CliResponse> {
   await ready();
   const res = answer<CliResponse & { config?: unknown }>(
-    await waitFor(engine.run({ ...input, tz: tzOffsetSeconds(), now: Date.now() / 1000 })),
+    await waitFor(engine.run({ ...input, tz: tzOffsetSeconds(), zone: timeZoneName(), now: Date.now() / 1000 })),
   );
   // `config` changed the settings: they are saved on the server, where they live, and the engine takes them up.
   const { config, ...response } = res;

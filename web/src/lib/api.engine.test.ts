@@ -57,7 +57,12 @@ describe('the engine in the page', () => {
     expect(res.result).toEqual({ kind: 'text', lines: ['3'] });
     expect(engine.start).toHaveBeenCalledWith(JSON.stringify(config.config));
     const sent = engine.run.mock.calls[0][0];
-    expect(sent).toMatchObject({ line: 'count', tz: expect.any(Number), now: expect.any(Number) });
+    expect(sent).toMatchObject({
+      line: 'count',
+      tz: expect.any(Number),
+      zone: expect.any(String),
+      now: expect.any(Number),
+    });
     expect(urls()).toEqual(['/api/config', '/api/hooks/defined']);
     // The engine is told which hooks the saved script defines, so it only asks the server for those.
     expect(engine.setHooks).toHaveBeenCalledWith(['on_add']);

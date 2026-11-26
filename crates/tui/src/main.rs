@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-const HELP: &str = "meghnaad: Meghnaad in the terminal, around the real task (Taskwarrior 3.5.0).
+const HELP: &str = "meghnaad: Meghnaad in the terminal, around the real task (Taskwarrior 3.6.0; 3.5 works too).
 
 Usage: meghnaad                open it on the tasks task reads (TASKRC and TASKDATA are honoured)
        meghnaad <line>         run a command line as the app's command line does: task commands written out,

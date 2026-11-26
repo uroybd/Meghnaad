@@ -2,13 +2,13 @@
 name: meghnaad
 description: >
   Read and change the person's Taskwarrior tasks safely through the `meghnaad` command line (around the real `task`
-  3.5): compact exports, UUIDs, and asking before bulk or destructive changes. Use when the person asks about their
+  3.6 or 3.5): compact exports, UUIDs, and asking before bulk or destructive changes. Use when the person asks about their
   tasks, todos, projects, due dates or what to do next, or asks to add, change, complete or annotate a task.
 ---
 
 # Meghnaad: the person's tasks, from a shell
 
-`meghnaad` is a terminal app around the real Taskwarrior `task` 3.5. From a shell it is two things:
+`meghnaad` is a terminal app around the real Taskwarrior `task` 3.6 (3.5 works too). From a shell it is two things:
 
 - `meghnaad export [options] [filter]`: `task export`, reshaped (JSON with fewer fields, CSV, or TSV).
 - `meghnaad <line>`: a `task` command line, with the person's own task commands written out and `'&&'` `'||'` `';'`
@@ -19,7 +19,7 @@ Both work on the person's real data: whatever `TASKRC` and `TASKDATA` point at, 
 ## 1. Check first
 
 ```sh
-meghnaad --version && task --version    # task must be 3.5.x
+meghnaad --version && task --version    # task must be 3.6.x or 3.5.x
 ```
 
 If `meghnaad` is missing, use `task` for writes and `task export` for reads; everything below about IDs and asking
@@ -84,6 +84,8 @@ meghnaad 06dcf9a8 start      # stop, done likewise
 - Check the exit status and stderr: hooks may refuse or change a task. Re-read with an export if it matters.
 - Run commands with `</dev/null`: `task` then answers "no" to any question instead of waiting, changes nothing and exits
   1. Treat exit 1 with `Task not modified.` or `Task not deleted.` as "it needed a yes".
+- An iterative task (`status:iterative`, 3.6 only) makes the next of its series when it is done: complete the one task,
+  and never add the next one by hand. Clearing its `iter` ends the series, and `task` asks first.
 
 ## 6. Ask before
 

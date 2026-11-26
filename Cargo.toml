@@ -7,7 +7,7 @@ members = ["crates/tc-core", "crates/worker", "crates/browser", "crates/browser-
 version = "0.8.67"
 edition = "2021"
 license = "MIT"
-rust-version = "1.91"
+rust-version = "1.94.1"
 
 # The lints every crate inherits (`[lints] workspace = true`). CI runs clippy with `-D warnings`, so each one is an error
 # there. `clippy.toml` keeps tests out of the panic-family lints. A lint that is wrong for one place is silenced there

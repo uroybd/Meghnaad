@@ -148,6 +148,7 @@ fun AddPreviewCard(store: Store, preview: AddPreview?) {
                     } else Fact("calendar", name, formatMoment(ts, store.offsetAt(ts), fmt))
                 }
                 preview.recur?.let { Fact("repeat", null, describeRecur(it)) }
+                preview.iter?.let { Fact("repeat", "iter", it + (preview.iterType?.let { t -> " ($t)" } ?: "")) }
                 for ((name, value) in preview.udas) {
                     val def = defs[name]
                     Fact(null, def?.let { udaLabel(it) } ?: name, if (def?.type == "date") formatMoment(value.toLongOrNull(), store.offsetAt(value.toLongOrNull() ?: 0L), fmt) else value)

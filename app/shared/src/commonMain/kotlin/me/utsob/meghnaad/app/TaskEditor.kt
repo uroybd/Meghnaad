@@ -73,6 +73,8 @@ class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = nul
     private val startUntil = wire(row?.until)
     private val startTags = (row?.tags ?: emptyList()).joinToString(" ")
     private val startRecur = row?.recur ?: ""
+    private val startIter = row?.iter ?: ""
+    private val startIterType = row?.iterType ?: ""
     private val udaStart = defined.associate { it.name to uda(it) }
 
     // What the fields hold when the form opens: the task, or the seed.
@@ -99,6 +101,16 @@ class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = nul
     /** A template cannot stop repeating (Taskwarrior refuses); delete it instead. */
     val template = row?.status == "recurring"
     val needsDue: Boolean get() = !instance && recur.isNotEmpty() && due.isEmpty()
+
+    // Iterative (Taskwarrior 3.6): done, it makes the next one. Not for a recurring task, which can't be both.
+    var iter by mutableStateOf(init?.iter ?: startIter)
+    var iterType by mutableStateOf(init?.iterType ?: startIterType)
+
+    /** The types offered: a short form typed elsewhere (`fx`, `ch`) is kept as it is. */
+    val iterTypes = ITER_TYPES + listOfNotNull(iterType.takeIf { it.isNotEmpty() && it !in ITER_TYPES })
+    val iterCount = row?.iterCount
+    val iterable: Boolean get() = !instance && !template && recur.isEmpty()
+    val needsIterDate: Boolean get() = iter.isNotBlank() && due.isEmpty() && scheduled.isEmpty() && wait.isEmpty()
     val udaValues = mutableStateMapOf<String, String>().also { it.putAll(udaStart); it.putAll(init?.udas ?: emptyMap()) }
     var startNow by mutableStateOf(false)
     var removedDeps by mutableStateOf(emptyList<String>())
@@ -120,6 +132,11 @@ class EditorState(private val store: Store, val row: Row?, seed: FormSeed? = nul
         set("scheduled", scheduled, startScheduled)
         set("until", until, startUntil)
         if (!instance) set("recur", recur, startRecur)
+        if (!instance && !template) {
+            set("iter", iter.trim(), startIter)
+            // Its type goes with it: cleared with the rule, the type goes too (`task` drops it as it ends the series).
+            if (iter.isNotBlank()) set("iter_type", iterType, startIterType)
+        }
         val want = tags.split(Regex("[\\s,]+")).filter { it.isNotEmpty() }.map { it.removePrefix("+") }.toSet()
         val had = startTags.split(' ').filter { it.isNotEmpty() }.toSet()
         for (t in want) if (t !in had) a += "+$t"
@@ -254,6 +271,31 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                         },
                         FieldCell("Tags", 2f) { SuggestField(st.tags, { st.tags = it }, store.tags, "tag", list = true, placeholder = "space separated") },
                     ))
+                    if (st.iterable) {
+                        FieldGrid(240.dp, listOf(
+                            FieldCell("Iter", 2f) {
+                                OutlinedTextField(
+                                    st.iter, { st.iter = it }, Modifier.fillMaxWidth(), singleLine = true,
+                                    placeholder = { Text("monthly, every weekday, FREQ=…", fontSize = 14.sp) },
+                                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
+                                )
+                            },
+                            FieldCell("Iter type", 1f) {
+                                val labels = listOf("choose…") + st.iterTypes
+                                val values = listOf("") + st.iterTypes
+                                Choice(labels.getOrElse(values.indexOf(st.iterType).coerceAtLeast(0)) { "choose…" }, labels) { i -> st.iterType = values[i] }
+                            },
+                        ))
+                        when {
+                            st.needsIterDate -> Text("An iterative task needs a due, scheduled or wait date.", color = colors.error, fontSize = 12.sp)
+                            st.iter.isNotBlank() -> Dim(
+                                "When it is done, the next one is made: " +
+                                    (if (st.iterType == "chained" || st.iterType == "ch") "from the day it is done" else "on the next date of the rule") +
+                                    (st.iterCount?.let { ". This is number $it." } ?: "."),
+                                size = 12,
+                            )
+                        }
+                    }
                     for (u in st.defined) {
                         FieldLabel(udaLabel(u))
                         val current = st.udaValues[u.name] ?: ""

@@ -28,6 +28,7 @@ pub mod hooks;
 pub mod ics;
 pub mod import;
 pub mod info_text;
+pub mod iter;
 pub mod keymap;
 pub mod live;
 #[cfg(feature = "lua")]

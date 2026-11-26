@@ -1,5 +1,6 @@
 // Grouping tasks into the project tree. `Home.Kitchen` is a child of `Home`, as in Taskwarrior.
 import type { Row } from './types';
+import { isOpen } from './iterative';
 
 export interface ProjectNode {
   /** Full dotted name; '' is the group of tasks that have no project. */
@@ -41,7 +42,7 @@ export function buildTree(rows: Row[], now: number, ensure?: string): ProjectNod
   for (const r of rows) {
     const n = node(r.project ?? NO_PROJECT);
     n.own.push(r);
-    const late = r.status === 'pending' && r.due != null && r.due < now;
+    const late = isOpen(r.status) && r.due != null && r.due < now;
     // Count on the node and on each ancestor.
     for (let name = n.name; ; name = name.slice(0, name.lastIndexOf('.'))) {
       const m = nodes.get(name)!;

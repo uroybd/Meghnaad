@@ -18,6 +18,40 @@ pub struct Clock {
     pub iso: bool,
     /// `dateformat`: tried first on every date typed.
     pub format: DateFormat,
+    /// The user's zone by its IANA name (`Asia/Dhaka`), when the host knows it. Only an iterative task's next date
+    /// reads it (`crate::iter`): a rule such as "every weekday" needs the zone's own days and its changes of clock,
+    /// which `tz_offset` alone cannot give. Everything else keeps to `tz_offset`.
+    pub zone: ZoneName,
+}
+
+/// An IANA zone name held inline, so the clock stays `Copy`. The longest names are 32 characters
+/// (`America/Argentina/ComodRivadavia`); one longer, or not ASCII, is no name at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZoneName {
+    buf: [u8; 32],
+    len: u8,
+}
+
+impl ZoneName {
+    pub const NONE: ZoneName = ZoneName { buf: [0; 32], len: 0 };
+
+    pub fn new(name: &str) -> Self {
+        let name = name.trim();
+        let mut buf = [0u8; 32];
+        if !name.is_ascii() || name.len() > buf.len() {
+            return Self::NONE;
+        }
+        buf[..name.len()].copy_from_slice(name.as_bytes());
+        #[expect(clippy::cast_possible_truncation, reason = "at most 32, checked above")]
+        let len = name.len() as u8;
+        ZoneName { buf, len }
+    }
+
+    /// The name, `None` when there is none.
+    pub fn get(&self) -> Option<&str> {
+        let s = std::str::from_utf8(&self.buf[..self.len as usize]).ok()?;
+        (!s.is_empty()).then_some(s)
+    }
 }
 
 /// A `dateformat` pattern (`Y-M-D`, `m/d/Y H:N`), held inline so the clock stays `Copy`.
@@ -307,6 +341,7 @@ impl Clock {
             week_starts_monday: true,
             iso: true,
             format: DateFormat::default_pattern(),
+            zone: ZoneName::NONE,
         }
     }
 

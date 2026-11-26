@@ -66,6 +66,8 @@ fun fieldsFor(udas: Map<String, UdaDef>): List<BulkField> {
         BulkField("scheduled", "Scheduled", FieldKind.Date, DATE_HINT),
         BulkField("until", "Until", FieldKind.Date, DATE_HINT),
         BulkField("recur", "Repeat", FieldKind.Text, "daily, weekly, 3d, … (empty clears it)"),
+        BulkField("iter", "Iter", FieldKind.Text, "monthly, every weekday, FREQ=… (empty ends the series)"),
+        BulkField("iter_type", "Iter type", FieldKind.Text, "fixed, fixed+ or chained", values = ITER_TYPES),
         BulkField("+", "Add tags", FieldKind.Tags, "tags to add, separated by spaces", required = true),
         BulkField("-", "Remove tags", FieldKind.Tags, "tags to take off, separated by spaces", required = true),
         BulkField("depends", "Depends on", FieldKind.Text, "task numbers or uuids (empty clears them)"),

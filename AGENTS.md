@@ -1,6 +1,6 @@
 # Working on Meghnaad
 
-Taskwarrior 3.5.0 in the browser: a pure engine (`crates/tc-core`) that runs **in the page** as WebAssembly
+Taskwarrior 3.6.0 in the browser: a pure engine (`crates/tc-core`) that runs **in the page** as WebAssembly
 (`crates/browser`, in a Web Worker, with its replica saved in IndexedDB), a Svelte 5 app (`web/`) that draws what it
 returns, a small Rust → WASM Cloudflare Worker (`crates/worker`) that checks Access, holds the secret and opens and seals
 versions, and the TaskChampion store: an R2 bucket or a branch of a git repository (the static flavour reaches the branch
@@ -47,7 +47,7 @@ web/                Svelte 5. src/engine/ (engine.worker.ts, client.svelte.ts, p
 app/                Kotlin + Compose. shared/commonMain (Store.kt, Sync.kt, screens; ports of web/src/lib with tests),
                     jvmCommonMain/NativeEngine.kt (JNI names: keep package me.utsob.meghnaad), androidMain (AndroidVault
                     = Keystore), androidApp (MainActivity, ReminderReceiver, widgets/, SyncWorker). desktopApp = preview.
-crates/tui          meghnaad (crate meghnaad-tui), ratatui. Backend = real `task` 3.5.0 (task.rs); tc-core for helpers only.
+crates/tui          meghnaad (crate meghnaad-tui), ratatui. Backend = real `task` 3.6.0, 3.5 also works (task.rs); tc-core for helpers only.
                     app/{mod,actions,menus,prompt,sort,keyhelp,settings_page,settings_form,taskinfo,tests}.rs,
                     settingsui.rs (Settings' pages, drawn as the map's controls), info.rs; settings.json in
                     $MEGHNAAD_CONFIG_DIR or ~/.config/meghnaad; sync = background `task sync`. Never reaches the bucket.
@@ -68,7 +68,7 @@ preview, markdown, time log, urgency names, sortspec, board, keymap. Everything 
 Two layers. Ask which one the feature is about.
 
 1. **Taskwarrior and TaskChampion** (`crates/tc-core`, carried by `crates/browser`, `crates/worker`, `crates/android` and
-   the bucket). It does what the real `task` 3.5.0 CLI does, command for command: what a filter, report, date, urgency,
+   the bucket). It does what the real `task` 3.6.0 CLI does, command for command: what a filter, report, date, urgency,
    recurrence, confirmation, `calc`, setting or hook means, and the sync format. Check against the real `task`; where it
    is odd, so are we. The Worker, the browser engine, the phone library and the bucket only host this layer (storage,
    sync, the secret, running hooks) and add no behaviour.
@@ -117,7 +117,7 @@ statuses are in `specs/README.md`). When pointed at one:
 1. Read it, the index, and any spec it supersedes or relates to. Its **Status** must be `ready` or `in progress`; for a
    `draft`, or where an **Open question** changes what you would build, ask before writing code.
 2. Check it against this file: which layer it is (the test under "Where a feature goes"), and for layer 1 run the real
-   `task` 3.5.0 on a scratch `TASKRC` and data directory. Where the spec disagrees with `task` or with the rules here,
+   `task` 3.6.0 on a scratch `TASKRC` and data directory. Where the spec disagrees with `task` or with the rules here,
    say so and ask; don't quietly follow either.
 3. If **Design** is empty or `TBD`, write your proposal there and wait for a yes before building. Then set **Status** to
    `in progress` in the spec and in the index row.
@@ -178,7 +178,7 @@ run `npm run format` after editing any code, not just at the end.
 
 ## Conventions
 
-- **Follow Taskwarrior 3.5.0, not a lookalike.** For behaviour (filters, dates, reports, confirmations, `calc`, settings)
+- **Follow Taskwarrior 3.6.0, not a lookalike.** For behaviour (filters, dates, reports, confirmations, `calc`, settings)
   read the C++ first and check against the real `task` run on a scratch `TASKRC` and data directory. Don't guess.
 - **Settings follow the map.** `docs/settings-map.md` lists every setting: its page, its part, its control (switch,
   choice, input, rows, form, picker, action) and its key, for the web, the phone and the terminal at once, with what a
@@ -199,8 +199,8 @@ run `npm run format` after editing any code, not just at the end.
   credential-like names and never echo their values, and `PUT /api/config/engine` refuses them too; keep tests that
   prove it passing, and add one for any new path that handles settings.
 - **Mind the Worker's size.** The rule is for the Worker alone: it is compressed WebAssembly with Cloudflare's 1 MB
-  limit (about 660 KB with the Lua and its network; `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`), and a
-  change must not grow it without need. The browser engine has no such limit (about 669 KB;
+  limit (about 707 KB with the Lua and its network; `gzip -9 -c crates/worker/build/index_bg.wasm | wc -c`), and a
+  change must not grow it without need. The browser engine has no such limit (about 1.2 MB, a quarter of it what iterative tasks brought: `rrule`, its time-zone database, `text2rrule`;
   `gzip -9 -c web/src/engine/pkg/tc_browser_bg.wasm | wc -c` after `npm run build:engine`): report its size when a
   change moves it, but don't trade clarity for its bytes. For the Worker, measure a release build before and after, and prefer reusing what
   is already compiled in (an existing `BTreeSet<String>`, `serde_json::from_slice`, the `config` line editing) over a
@@ -276,12 +276,12 @@ with its tests. `./gradlew :desktopApp:hotRun --auto` (see `app/README.md`) open
 ## The terminal app
 
 `crates/tui` (the program `meghnaad`, the crate `meghnaad-tui`; ratatui) is a front end whose backend is the real
-`task` 3.5.0, not the engine: every read and change is a `task` command line (`_show`, `<filter> export <report>`, `_projects`, …) on the desktop's own data. It
+`task` 3.6.0 (or 3.5), not the engine: every read and change is a `task` command line (`_show`, `<filter> export <report>`, `_projects`, …) on the desktop's own data. It
 links `tc-core` only for helpers `task` has no command for (completion, the add preview, report cells) and adds nothing to
 `tc-core` for itself; its glue (export to rows, chains, task commands, the Projects and Tags lists, the task form,
 review, reminders, and boards' glue from Android's `Boards.kt`, drawn with ratatui's charts) lives in the crate, ported with the web app's tests. Syncing is `task sync` run in the background, when
 the `sync` key of its `settings.json` says. It never reaches the bucket: `settings.json` is read and written in
-place in `$MEGHNAAD_CONFIG_DIR` (else `~/.config/meghnaad`) and nothing else there is touched. Its tests that run `task` use a scratch `TASKRC` and `TASKDATA` and skip where `task` 3.5.0 is missing.
+place in `$MEGHNAAD_CONFIG_DIR` (else `~/.config/meghnaad`) and nothing else there is touched. Its tests that run `task` use a scratch `TASKRC` and `TASKDATA` and skip where `task` 3.6.0 is missing.
 
 ## Running it
 

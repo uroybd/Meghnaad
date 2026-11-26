@@ -311,7 +311,9 @@ local Task = {}
 local ALIAS = { finished = "end", expires = "until" }
 
 local DATES = { "entry", "modified", "start", "end", "due", "wait", "scheduled", "until" }
-local STRINGS = { "uuid", "status", "description", "project", "priority", "recur", "parent", "mask" }
+local STRINGS = {
+  "uuid", "status", "description", "project", "priority", "recur", "parent", "mask", "iter", "iter_type", "iter_count",
+}
 
 local CORE = {
   tags = true, depends = true, annotations = true, blocked = true, blocking = true, imask = true,
@@ -343,17 +345,20 @@ function Task:is_pending() return self.status == "pending" end
 function Task:is_completed() return self.status == "completed" end
 function Task:is_deleted() return self.status == "deleted" end
 function Task:is_recurring() return self.status == "recurring" end
+function Task:is_iterative() return self.status == "iterative" end
 
---- Is the task waiting (pending, with a `wait` date in the future)?
+local function open(t) return t.status == "pending" or t.status == "iterative" end
+
+--- Is the task waiting (pending or iterative, with a `wait` date in the future)?
 function Task:is_waiting()
   local w = self.wait
-  return self.status == "pending" and w ~= nil and w > now()
+  return open(self) and w ~= nil and w > now()
 end
 
---- Is it overdue (pending, with a `due` date in the past)?
+--- Is it overdue (pending or iterative, with a `due` date in the past)?
 function Task:is_overdue()
   local d = self.due
-  return self.status == "pending" and d ~= nil and d < now()
+  return open(self) and d ~= nil and d < now()
 end
 
 --- The task as a hook works with it, from the plain table the engine gives.

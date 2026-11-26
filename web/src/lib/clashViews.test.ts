@@ -33,6 +33,8 @@ const preview = (dates: Record<string, number>): AddPreview => ({
   tags: [],
   dates,
   recur: null,
+  iter: null,
+  iter_type: null,
   depends: [],
   udas: {},
   errors: [],
@@ -62,6 +64,33 @@ describe('the task form', () => {
     flushSync();
     expect(document.getElementById('te-due')?.classList.contains('warn')).toBe(true);
     expect(document.getElementById('te-due')?.title).toContain('due (eod) is 2026-10-18');
+  });
+});
+
+describe('the task form, for an iterative task', () => {
+  const shown = () => document.querySelector('footer .preview')?.textContent ?? '';
+
+  it('takes Iter and Iter type from a quick add line and sends them', () => {
+    const seed = { ...seedOf(preview({}), 'Rent'), due: '2026-11-20', iter: 'monthly', iterType: 'fixed' };
+    app = mount(TaskEditor, { target: document.body, props: { seed, onclose: () => {} } });
+    flushSync();
+    expect((document.getElementById('te-iter') as HTMLInputElement).value).toBe('monthly');
+    expect((document.getElementById('te-iter-type') as HTMLSelectElement).value).toBe('fixed');
+    expect(shown()).toContain('iter:monthly iter_type:fixed');
+  });
+
+  it('says a date is needed, and offers no Iter on a repeating task', () => {
+    const seed = { ...seedOf(preview({}), 'Rent'), iter: 'monthly', iterType: 'fixed' };
+    app = mount(TaskEditor, { target: document.body, props: { seed, onclose: () => {} } });
+    flushSync();
+    expect(document.querySelector('[role=alert]')?.textContent).toContain('needs a due, scheduled or wait date');
+    unmount(app);
+    app = mount(TaskEditor, {
+      target: document.body,
+      props: { seed: { ...seedOf(preview({}), 'Bins'), due: '2026-11-20', recur: 'weekly' }, onclose: () => {} },
+    });
+    flushSync();
+    expect(document.getElementById('te-iter')).toBeNull();
   });
 });
 

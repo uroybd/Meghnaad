@@ -366,3 +366,29 @@ async fn a_set_counts_lists_and_iterates_in_order() {
         .unwrap();
     assert_eq!(got.lines[0].text, "a,b,c 3 true false a, b, c");
 }
+
+/// An iterative task, as `task` 3.6.0 hooks see one: on-add for the task made, on-modify for the one completed (with
+/// its `iter` still), and no hook at all for the next one, which the completion makes. `iter_count` is not theirs to
+/// change.
+#[tokio::test(flavor = "current_thread")]
+async fn hooks_see_an_iterative_task_and_not_the_next_one_it_makes() {
+    let mut r = replica();
+    let script = r#"
+        function on_add(task)
+          say("add " .. task.description .. " " .. tostring(task:is_iterative()) .. " " .. task.iter_count)
+        end
+        function on_modify(old, new)
+          say("modify " .. new.status .. " " .. tostring(new.iter) .. " " .. tostring(new.iter_type))
+          if new.description == "Fiddle" then new.iter_count = "9" end
+        end
+    "#;
+    let (_, said) = run(&mut r, script, "add Rent iter:monthly iter_type:fixed due:tomorrow").await;
+    assert_eq!(said, ["add Rent true 1"]);
+    let (_, said) = run(&mut r, script, "1 done").await;
+    assert_eq!(said, ["modify completed monthly fixed"]);
+    assert_eq!(load_facts(&mut r).await.unwrap().len(), 2);
+
+    run(&mut r, script, "add Fiddle iter:daily iter_type:fixed due:tomorrow").await;
+    let (res, _) = run(&mut r, script, "Fiddle modify +x").await;
+    assert!(message(&res).contains("iter_count"), "{}", message(&res));
+}

@@ -222,6 +222,12 @@ impl<T: Transport> Server for RemoteServer<T> {
     async fn get_snapshot(&mut self) -> TcResult<Option<(Uuid, Vec<u8>)>> {
         self.transport.get_snapshot().await
     }
+
+    /// The Worker has no route for it, and doesn't need one: TaskChampion asks only when an empty replica finds no
+    /// versions, and takes "unimplemented" to mean the store is empty too, as TaskChampion 3.1 always assumed.
+    async fn latest_version_id(&mut self) -> TcResult<Uuid> {
+        Err(taskchampion::Error::ServerUnimplemented)
+    }
 }
 
 #[cfg(test)]

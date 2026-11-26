@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOpen as isOpenStatus } from './iterative';
   import Description from './Description.svelte';
   import { submitOnEnter } from './multiline';
   import { runCli } from './api';
@@ -123,7 +124,7 @@
 
   {#if live}
     <div class="actions row">
-      {#if live.status === 'pending'}
+      {#if isOpenStatus(live.status)}
         <button class="primary btn" onclick={() => act('done')}><Check size={15} /> Done</button>
         {#if live.start != null}
           <button class="btn" onclick={() => act('stop')}><Square size={13} fill="currentColor" /> Stop</button>

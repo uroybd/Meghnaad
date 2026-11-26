@@ -1,5 +1,8 @@
 # Recurring tasks
 
+Taskwarrior 3.6.0 has a second way to repeat, with no template: [iterative tasks](iterative.md), where completing one
+makes the next.
+
 ```
 add Water plants recur:weekly due:friday
 add Pay rent recur:monthly due:eom until:2027-12-31
@@ -58,7 +61,7 @@ shows and edits recurring tasks and reads instances made elsewhere.
 
 ### Only periodic recurrence is acted on
 
-A template's `rtype` is `periodic` (every period from the due date, and all that the app and `task` 3.5.0 create) or
-`chained` (the next starts when the last ends). Taskwarrior 3.5.0 knows the word `chained` but never acts on it, and
+A template's `rtype` is `periodic` (every period from the due date, and all that the app and `task` 3.6.0 create) or
+`chained` (the next starts when the last ends). Taskwarrior 3.6.0 knows the word `chained` but never acts on it, and
 doesn't let you set it, so neither does this app. A template that arrives with `rtype:chained` (an import, or another
 client) is kept and exported as it was, and its instances are made on the periodic schedule, as `task` makes them.

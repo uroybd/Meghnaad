@@ -107,6 +107,9 @@ impl InfoTask {
                 .and_then(Value::as_u64)
                 .and_then(|i| usize::try_from(i).ok()),
             rtype: text(v, "rtype"),
+            iter: text(v, "iter"),
+            iter_type: text(v, "iter_type"),
+            iter_count: text(v, "iter_count"),
             extra: v
                 .get("extra")
                 .and_then(Value::as_object)
@@ -272,6 +275,15 @@ pub fn render(task: &InfoTask, around: &Around<'_>, cfg: &Config, now: i64, tz: 
     }
     if let Some(r) = &f.rtype {
         add("Recurrence type", r.clone());
+    }
+    for (name, value) in [
+        ("Iter", &f.iter),
+        ("Iter type", &f.iter_type),
+        ("Iter count", &f.iter_count),
+    ] {
+        if let Some(v) = value {
+            add(name, v.clone());
+        }
     }
     let valid = |d: Option<i64>| d.filter(|&t| t != 0);
     if let Some(e) = valid(f.entry) {

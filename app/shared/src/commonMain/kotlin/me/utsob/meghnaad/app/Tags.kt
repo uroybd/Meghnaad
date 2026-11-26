@@ -22,7 +22,7 @@ fun buildTags(rows: List<Row>, now: Long, extra: String? = null): List<TagEntry>
         for (t in r.tags) {
             val e = entry(t)
             e.tasks += r
-            if (r.status == "pending" && r.due != null && r.due < now) e.overdue++
+            if (isOpen(r.status) && r.due != null && r.due < now) e.overdue++
         }
     }
     if (extra != null) entry(extra)

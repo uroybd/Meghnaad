@@ -1269,7 +1269,7 @@ fn completion_names(
     };
     let pool: Vec<&Facts> = all
         .iter()
-        .filter(|f| everything || matches!(f.status.as_str(), "pending" | "recurring"))
+        .filter(|f| everything || f.is_open() || f.status == "recurring")
         .collect();
     let (sel, _) = select_from(&pool, ctx, cfg, filter, false)?;
     let mut names: BTreeSet<String> = BTreeSet::new();
@@ -1323,7 +1323,7 @@ fn modify_plan(
     let mods = mods.ok_or("modify has nothing to change")?;
     let changes = modify::plan(mods, Mode::Modify, Some(f), ctx, all).map_err(|e| e.0)?;
     // A task that is not finished has no end to give it, unless the same command sets its status.
-    if f.status == "pending"
+    if f.is_open()
         && mods.attrs.iter().any(|(n, v)| n == "end" && !v.is_empty())
         && !changes.iter().any(|c| matches!(c, Change::Status(_)))
     {
@@ -1385,9 +1385,28 @@ pub(crate) fn apply_changes(task: &mut Task, changes: &[Change], ops: &mut Opera
                 let status = match status.as_str() {
                     "completed" => Status::Completed,
                     "deleted" => Status::Deleted,
+                    // Left once the rules have run only on a task that is iterative already.
+                    "iterative" => continue,
                     _ => Status::Pending,
                 };
                 task.set_status(status, ops).map_err(e)?;
+            }
+            // Written as values, not through `Task::set_status`: TaskChampion would check the `iter` again in its own
+            // zone (UTC in a browser), where `crate::iter::check` already has in the user's.
+            Change::Iterative => {
+                task.set_value("status", Some("iterative".into()), ops).map_err(e)?;
+                if task.get_value("iter_count").is_none() {
+                    task.set_value("iter_count", Some("1".into()), ops).map_err(e)?;
+                }
+                // An open task has no end (`Task::validate`).
+                if task.get_value("end").is_some() {
+                    task.set_value("end", None, ops).map_err(e)?;
+                }
+            }
+            Change::EndSeries => {
+                task.set_value("status", Some("pending".into()), ops).map_err(e)?;
+                task.set_value("iter_type", None, ops).map_err(e)?;
+                task.set_value("iter_count", None, ops).map_err(e)?;
             }
             Change::AddDep(u) => task.add_dependency(*u, ops).map_err(e)?,
             Change::RemoveDep(u) => task.remove_dependency(*u, ops).map_err(e)?,
@@ -1778,7 +1797,7 @@ async fn pending_matching<S: Storage>(
     let ids = run::working_set_ids(&all);
     let ctx = EvalCtx::new(cfg, clock, &ids).with_inheritance(&all);
     let f = Filter::parse(filter, &ctx).map_err(|e| e.0)?;
-    let pending = |x: &&Facts| matches!(x.status.as_str(), "pending" | "recurring");
+    let pending = |x: &&Facts| x.is_open() || x.status == "recurring";
     let n = all.iter().filter(pending).filter(|x| f.matches(x, &ctx)).count();
     ctx.take_error().map_err(|e| e.0)?;
     Ok(n)
@@ -2010,6 +2029,7 @@ const VIRTUAL_TAG_NAMES: &[&str] = &[
     "DUE",
     "DUETODAY",
     "INSTANCE",
+    "ITERATIVE",
     "LATEST",
     "MONTH",
     "ORPHAN",
@@ -2096,7 +2116,7 @@ async fn add<S: Storage>(
     if !log
         && !changes
             .iter()
-            .any(|c| matches!(c, Change::Status(st) if st != "pending"))
+            .any(|c| matches!(c, Change::Status(st) if st != "pending" && st != "iterative"))
     {
         changes.retain(|c| !matches!(c, Change::Timestamp { name: "end", .. }));
     }

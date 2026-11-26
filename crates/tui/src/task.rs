@@ -10,7 +10,20 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 /// The Taskwarrior release the app follows.
-pub const VERSION: &str = "3.5.0";
+pub const VERSION: &str = "3.6.0";
+
+/// Whether the app works with this `task --version`: 3.6, which it follows, or 3.5, the one before.
+pub fn supported(version: &str) -> bool {
+    version.starts_with("3.6.") || version.starts_with("3.5.")
+}
+
+/// Whether this `task` has iterative tasks (`iter`, 3.6.0 on). An older one would keep `iter` as a property it does not
+/// know, so the forms leave the fields out.
+pub fn has_iter(version: &str) -> bool {
+    let mut parts = version.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    (major, minor) >= (3, 6)
+}
 
 /// What a captured run gave back.
 #[derive(Debug)]
@@ -477,6 +490,16 @@ impl Output {
 
 #[cfg(test)]
 mod tests {
+    use super::{has_iter, supported};
+
+    #[test]
+    fn it_follows_3_6_and_works_with_3_5_where_only_3_6_has_iterative_tasks() {
+        assert!(supported("3.6.0") && supported("3.6.2") && supported("3.5.0"));
+        assert!(!supported("3.4.1") && !supported("2.6.2") && !supported("3.7.0"));
+        assert!(has_iter("3.6.0") && has_iter("3.10.1") && has_iter("4.0.0"));
+        assert!(!has_iter("3.5.0") && !has_iter("garbage"));
+    }
+
     use super::*;
 
     #[cfg(unix)]

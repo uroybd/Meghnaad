@@ -12,6 +12,7 @@
   - [Kanban](./using/kanban.md)
   - [Settings](./using/settings.md)
   - [Recurring tasks](./using/recurring.md)
+  - [Iterative tasks](./using/iterative.md)
   - [Hooks](./using/hooks.md)
   - [Time tracking and reminders](./using/time-tracking.md)
   - [On a phone](./using/phone.md)

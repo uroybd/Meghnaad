@@ -6,6 +6,7 @@
 
 import { callHelper } from '../engine/helpers';
 import type { Row } from './types';
+import { isOpen } from './iterative';
 
 /**
  * What the reminders and the timer read of a task, which is all that `_remind` sends (a full `Row` costs the Worker a
@@ -100,7 +101,7 @@ export function dueNotices(
   let overdue = 0;
 
   for (const r of rows) {
-    if (r.status !== 'pending') continue;
+    if (!isOpen(r.status)) continue;
     const waiting = r.wait != null && r.wait > now;
     // The task's own times before its dates, or the setting's lead. On a date with no time only the task's own count,
     // back from the hour for such dates: that hour's notice is the setting's.
@@ -182,6 +183,6 @@ export function prune(seen: Record<string, number>, now: number, maxAge = 3 * DA
  * `rows` (done or deleted, here or on another device, or left with no date to remind of).
  */
 export function noticesToClear(shown: Iterable<string>, rows: Reminder[]): Set<string> {
-  const open = new Set(rows.filter((r) => r.status === 'pending' || r.status === 'waiting').map((r) => r.uuid));
+  const open = new Set(rows.filter((r) => isOpen(r.status) || r.status === 'waiting').map((r) => r.uuid));
   return new Set([...shown].filter((u) => !open.has(u)));
 }

@@ -46,6 +46,12 @@ interface Clock {
     fun offsetAt(epochSeconds: Long): Int
 
     fun nowSeconds(): Double
+
+    /**
+     * The time zone by name (`Asia/Dhaka`), or null if there is none to give. The engine works out an iterative task's next
+     * dates in it, so they keep their time of day across a change of the clocks.
+     */
+    fun zoneName(): String? = null
 }
 
 /** Answers already given to the engine's questions about one command. */
@@ -92,6 +98,7 @@ class Tw(private val port: EnginePort, private val clock: Clock) {
             if (line != null) put("line", line)
             if (args != null) put("args", buildJsonArray { args.forEach { add(JsonPrimitive(it)) } })
             put("tz", clock.utcOffsetSeconds())
+            clock.zoneName()?.let { put("zone", it) }
             put("now", clock.nowSeconds())
             if (answers.confirmed) put("confirmed", true)
             answers.approved?.let { put("approved", buildJsonArray { it.forEach { k -> add(JsonPrimitive(k)) } }) }

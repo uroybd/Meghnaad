@@ -229,6 +229,18 @@ impl Server for SyncServer {
         Ok(())
     }
 
+    /// As TaskChampion's own client asks it: a 404 that is the server's own answer is an older server without the
+    /// route, which TaskChampion takes as "unimplemented" (and the store as empty, as 3.1 always did).
+    async fn latest_version_id(&mut self) -> TcResult<VersionId> {
+        let what = "asking the sync server for its latest version";
+        let r = self.send("GET", "v1/client/latest-version-id", None, Vec::new())?;
+        if r.status == 404 && !is_page(&r) {
+            return Err(taskchampion::Error::ServerUnimplemented);
+        }
+        let r = Self::ok(what, r)?;
+        Ok(uuid_header(what, r.version.as_deref(), "X-Version-Id")?)
+    }
+
     async fn get_snapshot(&mut self) -> TcResult<Option<(VersionId, Snapshot)>> {
         let what = "getting a snapshot from the sync server";
         let r = self.send("GET", "v1/client/snapshot", None, Vec::new())?;

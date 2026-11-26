@@ -81,6 +81,8 @@ impl Field {
             (_, "description") => "what the task is",
             (_, "project") => "Home, or Home.Garden for a part of it; Tab completes",
             (_, "recur") => "daily, weekly, 2w, monthly, …; it needs a due date",
+            (_, "iter") => "monthly, every weekday, FREQ=…: done, it makes the next one",
+            (_, "iter_type") => "fixed, fixed+ or chained",
             _ => match (choices, uda.map(|u| u.ty)) {
                 (Some(c), _) => return c,
                 (None, Some(UdaType::Numeric)) => "a number",
@@ -178,6 +180,13 @@ impl Form {
             fields.push(blank(k, &title(k), Kind::Date, &date(k)));
         }
         fields.push(blank("recur", "Repeat", Kind::Value, p.recur.as_deref().unwrap_or("")));
+        fields.push(blank("iter", "Iter", Kind::Value, p.iter.as_deref().unwrap_or("")));
+        fields.push(blank(
+            "iter_type",
+            "Iter type",
+            Kind::Value,
+            p.iter_type.as_deref().unwrap_or(""),
+        ));
         fields.push(blank("tags", "Tags", Kind::Tags, &p.tags.join(" ")));
         for (name, label, ty) in udas(cfg) {
             let raw = p.udas.get(&name).cloned().unwrap_or_default();
@@ -233,6 +242,13 @@ impl Form {
         // One task of a series follows its template: the period is changed there.
         recur.locked = t.get("parent").is_some();
         fields.push(recur);
+        // A recurring task can't be iterative too: its template or an instance keeps the fields shut.
+        let recurring = t.get("parent").is_some() || s("status") == "recurring";
+        for (key, label) in [("iter", "Iter"), ("iter_type", "Iter type")] {
+            let mut field = same(key, label, Kind::Value, &s(key));
+            field.locked = recurring;
+            fields.push(field);
+        }
         let tags: Vec<&str> = t
             .get("tags")
             .and_then(Value::as_array)
@@ -303,6 +319,8 @@ impl Form {
             fields.push(blank(k, &title(k), Kind::Date));
         }
         fields.push(blank("recur", "Repeat", Kind::Value));
+        fields.push(blank("iter", "Iter", Kind::Value));
+        fields.push(blank("iter_type", "Iter type", Kind::Value));
         fields.push(blank("tags", "Tags", Kind::Tags));
         for (name, label, ty) in udas(cfg) {
             let mut field = blank(&name, &label, uda_kind(ty));
@@ -343,6 +361,23 @@ impl Form {
             }
         }
         out
+    }
+
+    /// The form for a `task` before 3.6, which has no iterative tasks: without `iter` and `iter_type`.
+    #[must_use]
+    pub fn without_iter(mut self) -> Form {
+        self.fields.retain(|f| !matches!(f.key.as_str(), "iter" | "iter_type"));
+        self
+    }
+
+    /// The form for this `task`: [`Form::without_iter`] unless it has iterative tasks.
+    #[must_use]
+    pub fn for_task(self, iterative: bool) -> Form {
+        if iterative {
+            self
+        } else {
+            self.without_iter()
+        }
     }
 
     pub fn field(&self, key: &str) -> Option<&Field> {
@@ -405,6 +440,12 @@ impl Form {
         let recur = self.field("recur");
         if recur.is_some_and(|r| !r.locked && !r.value().is_empty()) && self.value("due").is_empty() {
             put("recur", "A repeating task needs a due date.");
+        }
+        // An iterative task needs a date to go on from (the marked tasks' form leaves theirs as they are).
+        let iter = self.field("iter").is_some_and(|f| !f.locked && !f.value().is_empty());
+        let dated = ["due", "scheduled", "wait"].iter().any(|d| !self.value(d).is_empty());
+        if iter && self.many.is_empty() && !dated {
+            put("iter", "An iterative task needs a due, scheduled or wait date.");
         }
         out
     }
@@ -522,6 +563,38 @@ mod tests {
     use super::*;
     use serde_json::json;
     use tc_core::filter::split_words;
+
+    #[test]
+    fn an_iterative_task_has_its_fields_where_task_has_them() {
+        let p = tc_core::preview::add(
+            "Rent iter:monthly iter_type:fixed due:tomorrow",
+            &cfg(),
+            1_791_376_200,
+            0,
+        );
+        let f = Form::add(&p, &cfg()).for_task(true);
+        assert_eq!(f.field("iter").map(Field::value), Some("monthly"));
+        assert_eq!(f.field("iter_type").map(Field::value), Some("fixed"));
+        let words = f.statements().concat();
+        assert!(
+            words.iter().any(|w| w == "iter:monthly") && words.iter().any(|w| w == "iter_type:fixed"),
+            "{words:?}"
+        );
+        // A `task` before 3.6 has none, and the form leaves them out.
+        assert!(Form::add(&p, &cfg()).for_task(false).field("iter").is_none());
+        // A recurring task can't be iterative: the fields are shut on one.
+        let t = json!({ "uuid": "t", "status": "recurring", "description": "Bins", "recur": "weekly" });
+        assert!(Form::modify(&t, &cfg(), &[]).field("iter").unwrap().locked);
+        // Without a date it can't be one.
+        let mut bare = Form::add(&tc_core::preview::Preview::default(), &cfg());
+        set(&mut bare, "description", "Rent");
+        set(&mut bare, "iter", "monthly");
+        let at = bare.fields.iter().position(|x| x.key == "iter").unwrap();
+        assert_eq!(
+            bare.problems()[at].as_deref(),
+            Some("An iterative task needs a due, scheduled or wait date.")
+        );
+    }
 
     fn cfg() -> Config {
         tc_core::taskrc::parse("uda.estimate.type=numeric\nuda.estimate.label=Estimate\n").config

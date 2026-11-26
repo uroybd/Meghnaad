@@ -502,4 +502,10 @@ impl<S: ObjectStore> Server for CloudServer<S> {
         };
         Ok(Some((version, self.cryptor.unseal(version, &sealed)?)))
     }
+
+    /// TaskChampion asks only when an empty replica finds no versions after its own: the nil id says the bucket is
+    /// empty too, anything else that it holds versions this replica has not got.
+    async fn latest_version_id(&mut self) -> TcResult<VersionId> {
+        Ok(self.latest().await?.unwrap_or(Uuid::nil()))
+    }
 }

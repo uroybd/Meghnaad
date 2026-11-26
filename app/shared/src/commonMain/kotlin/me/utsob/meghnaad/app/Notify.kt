@@ -118,7 +118,7 @@ fun dueNotices(
     var overdue = 0
 
     for (r in rows) {
-        if (r.status != "pending") continue
+        if (!isOpen(r.status)) continue
         val wait = r.wait
         val waiting = wait != null && wait > now
         // The task's own times before its dates, or the setting's lead.
@@ -183,7 +183,7 @@ fun nextTrigger(rows: List<Reminder>, now: Long, s: NotifySettings, seen: Set<St
     val offsetsOf = { v: String? -> v?.let { read[it] } }
     val moments = sortedSetOf<Long>()
     for (r in rows) {
-        if (r.status != "pending") continue
+        if (!isOpen(r.status)) continue
         val (offsets, own) = offsetsFor(r, s, offsetsOf)
         for (date in listOfNotNull(r.due, r.scheduled)) {
             countFrom(date, own, s, tz)?.let { at -> offsets.forEach { moments.add(at - it) } }
@@ -205,6 +205,6 @@ fun prune(seen: Map<String, Long>, now: Long, maxAge: Long = 3 * DAY): Map<Strin
  * (done or deleted, here or on another device, or left with no date to remind of).
  */
 fun noticesToClear(shown: Collection<String>, rows: List<Reminder>): Set<String> {
-    val open = rows.filter { it.status == "pending" || it.status == "waiting" }.map { it.uuid }.toSet()
+    val open = rows.filter { isOpen(it.status) || it.status == "waiting" }.map { it.uuid }.toSet()
     return shown.filterNot { it in open }.toSet()
 }

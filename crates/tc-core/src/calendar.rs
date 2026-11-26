@@ -396,7 +396,8 @@ pub fn plan(words: &[String], cfg: &Config, clock: &Clock, tasks: &[Facts]) -> R
     }
 
     let live = |f: &&Facts| {
-        (f.status == "pending") && !f.tags.contains("nocal") // `waiting` is a pending task with a wait date
+        // Open: pending (waiting too, a pending task with a wait date) or iterative.
+        f.is_open() && !f.tags.contains("nocal")
     };
     let details_mode = mode(cfg, "calendar.details", "sparse");
     let holiday_mode = mode(cfg, "calendar.holidays", "none");

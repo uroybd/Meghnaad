@@ -7,6 +7,7 @@ import type { DateFmt } from './dateformat';
 import type { Markers } from './journal';
 import type { MdNode } from './markdown';
 import type { Column, Row, UdaDef } from './types';
+import { isOpen } from './iterative';
 
 export interface Cell {
   text: string;
@@ -162,7 +163,7 @@ export function rowClass(row: Row): string {
   if (row.status === 'completed' || row.status === 'deleted') c.push('done', row.status);
   if (row.waiting) c.push('waiting');
   if (row.blocked) c.push('blocked');
-  if (row.start != null && row.status === 'pending') c.push('active');
+  if (row.start != null && isOpen(row.status)) c.push('active');
   return c.join(' ');
 }
 

@@ -4,9 +4,10 @@
     clippy::panic,
     reason = "test code: a failure is the point"
 )]
-//! Against the real `task` 3.5.0, on a data folder and taskrc of its own (never `~/.task`). Where `task` 3.5.0 is not
-//! installed (CI has none yet) the test returns without checking anything.
+//! Against the real `task` the app follows (`VERSION`, 3.6.0), on a data folder and taskrc of its own (never `~/.task`).
+//! Where that `task` is not installed (CI has none yet) the test returns without checking anything.
 
+use meghnaad_tui::form::Form;
 use meghnaad_tui::model;
 use meghnaad_tui::task::{Task, VERSION};
 use std::path::PathBuf;
@@ -18,7 +19,7 @@ fn scratch() -> PathBuf {
     std::fs::write(
         dir.join("rc"),
         format!(
-            "data.location={}\nnews.version=3.5.0\nuda.estimate.type=numeric\nuda.estimate.label=Est\nreport.mine.columns=id,project,due.relative,estimate,description\nreport.mine.labels=ID,Proj,Due,Est,Description\nreport.mine.filter=status:pending\nreport.mine.sort=urgency-\ncolor.tag.errand=color4\ncolor.project.Work=bold\n",
+            "data.location={}\nnews.version={VERSION}\nuda.estimate.type=numeric\nuda.estimate.label=Est\nreport.mine.columns=id,project,due.relative,estimate,description\nreport.mine.labels=ID,Proj,Due,Est,Description\nreport.mine.filter=status:pending\nreport.mine.sort=urgency-\ncolor.tag.errand=color4\ncolor.project.Work=bold\n",
             dir.join("data").display()
         ),
     )
@@ -123,6 +124,33 @@ fn reads_reports_completion_and_adds_through_the_real_task() {
     assert_eq!(vocab.tasks.len(), 2);
     let c = tc_core::complete::complete("add x project:Wo", 16, &vocab);
     assert_eq!(c.options.first().map(|o| o.value.as_str()), Some("project:Work"));
+
+    // An iterative task, from the add form as it saves: `task` makes it, and done, makes the next one of its series.
+    let preview = tc_core::preview::add("Rent iter:monthly iter_type:fixed due:tomorrow", &cfg, now, 0);
+    let form = Form::add(&preview, &cfg).for_task(true);
+    assert_eq!(
+        form.field("iter").map(meghnaad_tui::form::Field::value),
+        Some("monthly")
+    );
+    for words in form.statements() {
+        assert!(task.capture(&words).unwrap().ok, "{words:?}");
+    }
+    let iterative = |task: &Task| {
+        let out = task.capture(&["status:iterative", "export"]).unwrap().stdout;
+        serde_json::from_str::<Vec<serde_json::Value>>(&out).unwrap()
+    };
+    let [first] = iterative(&task).try_into().unwrap();
+    assert_eq!(first["iter_type"], "fixed");
+    assert!(task.capture(&[first["uuid"].as_str().unwrap(), "done"]).unwrap().ok);
+    let [next] = iterative(&task).try_into().unwrap();
+    assert_eq!(next["iter_count"], 2);
+    let ctx = meghnaad_tui::info::Ctx {
+        cfg: &cfg,
+        rules: &[],
+        now,
+    };
+    let shown = meghnaad_tui::info::build(&next, &meghnaad_tui::info::Around::default(), &ctx);
+    assert!(format!("{shown:?}").contains("Iter count"), "{shown:?}");
 
     std::fs::remove_dir_all(&dir).ok(); // a leftover scratch folder harms nothing
 }

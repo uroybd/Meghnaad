@@ -16,6 +16,9 @@ export interface AddPreview {
   tags: string[];
   dates: Record<string, number>;
   recur: string | null;
+  /** An iterative task's rule and type. */
+  iter: string | null;
+  iter_type: string | null;
   /** Task ids and uuids as typed. */
   depends: string[];
   /** By UDA name; one of type date is a timestamp. */
@@ -43,6 +46,8 @@ export interface FormSeed {
   until: string;
   tags: string;
   recur: string;
+  iter: string;
+  iterType: string;
   /** Task ids, space separated. */
   depends: string;
   udas: Record<string, string>;
@@ -73,6 +78,8 @@ export function seedOf(
     until: wire(p?.dates.until),
     tags: (p?.tags ?? []).join(' '),
     recur: p?.recur ?? '',
+    iter: p?.iter ?? '',
+    iterType: p?.iter_type ?? '',
     depends: (p?.depends ?? []).join(' '),
     udas,
     carried: Object.entries(p?.dates ?? {})

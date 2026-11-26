@@ -257,6 +257,9 @@ const CORE: &[&str] = &[
     "rtype",
     "template",
     "last",
+    "iter",
+    "iter_type",
+    "iter_count",
 ];
 
 /// The date attributes, and what each is called here (as the web app's panel names them).
@@ -469,6 +472,18 @@ fn recurrence(t: &Value, around: &Around, ctx: &Ctx) -> Vec<Entry> {
     }
     if str_of(t, "status") == Some("recurring") {
         out.push(entry("Template", Shown::Dim("this task is the template".into())));
+    }
+    // An iterative task (Taskwarrior 3.6): done, it makes the next of its series. `iter_count` is a number in `export`.
+    for (key, label) in [("iter", "Iter"), ("iter_type", "Iter type")] {
+        if let Some(v) = str_of(t, key) {
+            out.push(entry(label, Shown::Text(v.to_owned())));
+        }
+    }
+    if let Some(n) = t.get("iter_count").filter(|n| !n.is_null()) {
+        out.push(entry(
+            "Iter count",
+            Shown::Text(n.as_str().map_or_else(|| n.to_string(), str::to_owned)),
+        ));
     }
     if let Some(p) = &around.parent {
         out.push(entry("Template", Shown::Text(one_line(p))));

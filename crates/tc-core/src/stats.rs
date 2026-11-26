@@ -27,6 +27,7 @@ fn percent(part: usize, whole: usize) -> String {
 pub fn stats(tasks: &[&Facts], clock: &Clock, undo: usize, backlog: usize) -> TableOut {
     let now = clock.now;
     let (mut pending, mut waiting, mut recurring, mut completed, mut deleted) = (0, 0, 0, 0, 0);
+    let mut iterative = 0;
     let (mut tagged, mut annotations, mut blocked, mut blocking, mut length) = (0, 0, 0, 0, 0);
     let (mut earliest, mut latest, mut days_pending) = (now, 1, 0.0);
     let mut tags: BTreeSet<String> = BTreeSet::new();
@@ -40,6 +41,11 @@ pub fn stats(tasks: &[&Facts], clock: &Clock, undo: usize, backlog: usize) -> Ta
                 days_pending += (f.end.unwrap_or(0) - entry) as f64 / 86_400.0;
             }
             "recurring" => recurring += 1,
+            // Counted as such waiting or not: only a pending task's status reads as `waiting` (`Task::getStatus`).
+            "iterative" => {
+                iterative += 1;
+                days_pending += (now - entry) as f64 / 86_400.0;
+            }
             _ if f.wait.is_some_and(|w| w > now) => waiting += 1,
             _ => {
                 pending += 1;
@@ -62,6 +68,7 @@ pub fn stats(tasks: &[&Facts], clock: &Clock, undo: usize, backlog: usize) -> Ta
         ("Pending", pending.to_string()),
         ("Waiting", waiting.to_string()),
         ("Recurring", recurring.to_string()),
+        ("Iterative", iterative.to_string()),
         ("Completed", completed.to_string()),
         ("Deleted", deleted.to_string()),
         ("Total", total.to_string()),
@@ -89,8 +96,8 @@ pub fn stats(tasks: &[&Facts], clock: &Clock, undo: usize, backlog: usize) -> Ta
     if deleted > 0 {
         rows.push(("Task deleted every", every(deleted)));
     }
-    if pending + completed > 0 {
-        let average = (days_pending / (pending + completed) as f64 * 86_400.0) as i64;
+    if pending + iterative + completed > 0 {
+        let average = (days_pending / (pending + iterative + completed) as f64 * 86_400.0) as i64;
         rows.push(("Average time pending", format_vague(average)));
     }
     if let Some(average) = length.checked_div(total) {
