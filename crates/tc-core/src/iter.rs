@@ -25,11 +25,9 @@ pub enum IterType {
     Chained,
 }
 
-/// Every spelling `iter_type` takes (`ColumnIterType::validate`); it is stored as typed.
-pub const TYPES: [&str; 7] = ["fixed", "fx", "fixed+", "f+", "fp", "chained", "ch"];
-
 impl IterType {
-    /// As TaskChampion reads it: exactly one of [`TYPES`], case and all.
+    /// As TaskChampion reads it, from each spelling `iter_type` takes (`ColumnIterType::validate`), case and all. It is
+    /// stored as typed.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "fixed" | "fx" => Some(IterType::Fixed),
@@ -88,15 +86,15 @@ pub fn not_copied(prop: &str) -> bool {
 }
 
 #[cfg(feature = "iterative")]
-pub use engine::{check, next, successor_uuid};
+pub use engine::{check, next};
 
 #[cfg(not(feature = "iterative"))]
-pub use stub::{check, next, successor_uuid};
+pub use stub::{check, next};
 
 /// Without the feature (the Worker, which runs no commands): nothing can be made iterative or completed.
 #[cfg(not(feature = "iterative"))]
 mod stub {
-    use super::{Clock, Series, Successor, Uuid};
+    use super::{Clock, Series, Successor};
 
     const NOT_HERE: &str = "Iterative tasks are not available in this build.";
 
@@ -106,10 +104,6 @@ mod stub {
 
     pub fn next(_s: &Series<'_>, _clock: &Clock) -> Result<Option<Successor>, String> {
         Err(NOT_HERE.into())
-    }
-
-    pub fn successor_uuid(uuid: Uuid) -> Uuid {
-        uuid
     }
 }
 
@@ -503,7 +497,7 @@ mod engine {
 
 #[cfg(all(test, feature = "iterative"))]
 mod tests {
-    use super::engine::utc;
+    use super::engine::{successor_uuid, utc};
     use super::*;
     use crate::dates::ZoneName;
 
@@ -691,8 +685,12 @@ mod tests {
         assert!(check(&series("FREQ=WEEKLY;UNTIL=20200101T000000Z", "fixed", due), &c)
             .unwrap_err()
             .starts_with("Usage Error: Couldn't validate rrule: "));
-        for t in TYPES {
+        // Every spelling `task` 3.6.0 takes, and only those, case and all.
+        for t in ["fixed", "fx", "fixed+", "f+", "fp", "chained", "ch"] {
             assert!(check(&series("weekly", t, due), &c).is_ok(), "{t}");
+        }
+        for t in ["Fixed", "chain", "fixed-", ""] {
+            assert!(IterType::parse(t).is_none(), "{t}");
         }
     }
 

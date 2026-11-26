@@ -58,7 +58,7 @@ pub struct Facts {
     /// too, which it makes iterative; a completed one loses it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iter: Option<String>,
-    /// `fixed`, `fixed+` or `chained`, or a short form, as typed (`crate::iter::TYPES`).
+    /// `fixed`, `fixed+` or `chained`, or a short form, as typed (`crate::iter::IterType::parse`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iter_type: Option<String>,
     /// The task's place in its series, from 1, as stored (a number). Read only; a completed task keeps it.

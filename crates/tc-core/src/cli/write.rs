@@ -762,24 +762,20 @@ async fn change_task<S: Storage>(
     match kind {
         // Only open tasks can be completed (pending or iterative; not templates, not finished ones).
         Done if !f.is_open() => changed = false,
-        // As `task` completes one: its status and its end now (whatever `end` the command gave), the on-modify hook
-        // seeing it with its `iter` still, and the next task of the series made after it, from what the hook leaves
-        // (`next_in_series`). Not through `Task::set_status`, which would make the next one in TaskChampion's own zone.
-        Done if f.status == "iterative" => {
-            task.set_value("status", Some("completed".into()), ops).map_err(e)?;
-            task.set_timestamp("end", Utc.timestamp_opt(ctx.clock.now, 0).single(), ops)
-                .map_err(e)?;
-            if f.start.is_some() {
-                task.stop(ops).map_err(e)?;
-                if let Some((_, stop)) = journal {
-                    add_note(&mut task, stop, ctx.clock.now, ops)?;
-                }
-            }
-        }
         Delete if f.status == "deleted" => changed = false,
         Start | Stop if f.status == "recurring" => changed = false,
         Done => {
-            task.set_status(Status::Completed, ops).map_err(e)?;
+            if f.status == "iterative" {
+                // As `task` completes one: its status and its end now (whatever `end` the command gave), the on-modify
+                // hook seeing it with its `iter` still, and the next task of the series made after it, from what the
+                // hook leaves (`next_in_series`). Not through `Task::set_status`, which would make the next one in
+                // TaskChampion's own zone.
+                task.set_value("status", Some("completed".into()), ops).map_err(e)?;
+                task.set_timestamp("end", Utc.timestamp_opt(ctx.clock.now, 0).single(), ops)
+                    .map_err(e)?;
+            } else {
+                task.set_status(Status::Completed, ops).map_err(e)?;
+            }
             // Completing an active task stops it, like `task done` does.
             if f.start.is_some() {
                 task.stop(ops).map_err(e)?;

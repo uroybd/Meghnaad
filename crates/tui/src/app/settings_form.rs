@@ -83,6 +83,20 @@ fn field_words(text: &str) -> Vec<String> {
 }
 
 /// The transformation a form has.
+/// `item` in place of the one at `at`, or at the end when there is none there: where it is now.
+fn put<T>(list: &mut Vec<T>, at: Option<usize>, item: T) -> usize {
+    match at.and_then(|i| list.get_mut(i).map(|slot| (i, slot))) {
+        Some((i, slot)) => {
+            *slot = item;
+            i
+        }
+        None => {
+            list.push(item);
+            list.len() - 1
+        }
+    }
+}
+
 fn form_rule(f: &SettingsForm) -> Rule {
     let condition = f.value(3);
     Rule {
@@ -345,16 +359,7 @@ impl App {
                     label: (!label.is_empty()).then(|| label.to_owned()),
                 };
                 let mut list = self.settings.task_commands.clone();
-                let i = match at.filter(|&i| i < list.len()) {
-                    Some(i) => {
-                        list[i] = c;
-                        i
-                    }
-                    None => {
-                        list.push(c);
-                        list.len() - 1
-                    }
-                };
+                let i = put(&mut list, at, c);
                 let done = self.save_commands(&list);
                 if done {
                     self.choose_act(&crate::settingsui::Act::Command(i));
@@ -375,16 +380,7 @@ impl App {
                         ..r.clone()
                     })
                     .collect();
-                let i = match at.filter(|&i| i < rules.len()) {
-                    Some(i) => {
-                        rules[i] = rule;
-                        i
-                    }
-                    None => {
-                        rules.push(rule);
-                        rules.len() - 1
-                    }
-                };
+                let i = put(&mut rules, at, rule);
                 let done = self.write_settings(|t| settings::with_transformations(t, &rules));
                 if done {
                     self.choose_act(&crate::settingsui::Act::Rule(i));
@@ -416,5 +412,20 @@ impl App {
             .filter(|(_, u)| u.ty == tc_core::taskrc::UdaType::String)
             .map(|(name, _)| name.clone())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::put;
+
+    #[test]
+    fn put_replaces_the_one_there_or_adds_at_the_end() {
+        let mut list = vec!["a", "b"];
+        assert_eq!(put(&mut list, Some(1), "B"), 1);
+        assert_eq!(put(&mut list, None, "c"), 2);
+        // A place past the end (the list changed under the form) adds, as a new one would.
+        assert_eq!(put(&mut list, Some(9), "d"), 3);
+        assert_eq!(list, ["a", "B", "c", "d"]);
     }
 }

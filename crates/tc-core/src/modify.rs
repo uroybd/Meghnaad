@@ -262,7 +262,7 @@ fn uda_date(value: &str, cfg: &Config, clock: &Clock) -> Result<i64, ModError> {
     }
     let epoch = |n: f64| -> Result<i64, ModError> {
         if n >= 315_532_800.0 {
-            #[allow(
+            #[expect(
                 clippy::cast_possible_truncation,
                 reason = "a moment in seconds, its fraction dropped as task does"
             )]
@@ -274,7 +274,7 @@ fn uda_date(value: &str, cfg: &Config, clock: &Clock) -> Result<i64, ModError> {
     match crate::calc::evaluate(value, clock, &|_| None) {
         Ok(Value::Date(ts)) => Ok(ts),
         Ok(Value::Dur(s)) => Ok(clock.now + s),
-        #[allow(clippy::cast_precision_loss, reason = "a moment in seconds fits a double exactly")]
+        #[expect(clippy::cast_precision_loss, reason = "a moment in seconds fits a double exactly")]
         Ok(Value::Int(n)) => epoch(n as f64),
         Ok(Value::Real(n)) => epoch(n),
         Ok(Value::Bool(_)) => err(format!("'{value}' is not a valid date.")),
@@ -515,7 +515,7 @@ pub fn plan(
                 value: (!v.is_empty()).then(|| v.to_owned()),
             }),
             "iter_type" => {
-                if !v.is_empty() && !crate::iter::TYPES.contains(&v) {
+                if !v.is_empty() && crate::iter::IterType::parse(v).is_none() {
                     return err(format!("The 'iter_type' attribute does not allow a value of '{v}'."));
                 }
                 out.push(Change::Prop {
@@ -562,7 +562,7 @@ pub fn plan(
         }
     }
 
-    recurrence_rules(m, mode, current, &out, ctx)?;
+    recurrence_rules(mode, current, &out)?;
     if becomes_recurring(m, mode, current, &out) {
         out.push(Change::Recurring);
     }
@@ -629,40 +629,11 @@ fn add_defaults(out: &mut Vec<Change>, ctx: &EvalCtx) {
     }
 }
 
-/// The `due` a task will have after these changes: `Some(None)` means it is being cleared.
-fn final_due(out: &[Change], current: Option<&Facts>) -> Option<i64> {
-    let mut due = current.and_then(|c| c.due);
-    for c in out {
-        if let Change::Timestamp { name: "due", value } = c {
-            due = *value;
-        }
-    }
-    due
-}
-
-fn final_recur(out: &[Change], current: Option<&Facts>) -> Option<String> {
-    let mut recur = current.and_then(|c| c.recur.clone());
-    for c in out {
-        if let Change::Prop { name, value } = c {
-            if name == "recur" {
-                recur = value.clone();
-            }
-        }
-    }
-    recur
-}
-
 /// Taskwarrior's consistency rules for recurring tasks (`Task::validate_add`,
 /// `CmdModify::checkConsistency`).
-fn recurrence_rules(
-    _m: &Mods,
-    mode: Mode,
-    current: Option<&Facts>,
-    out: &[Change],
-    _ctx: &EvalCtx,
-) -> Result<(), ModError> {
-    let due = final_due(out, current);
-    let recur = final_recur(out, current);
+fn recurrence_rules(mode: Mode, current: Option<&Facts>, out: &[Change]) -> Result<(), ModError> {
+    let due = final_date(out, current.and_then(|c| c.due), "due");
+    let recur = final_prop(out, current.and_then(|c| c.recur.clone()), "recur");
 
     if recur.is_some() && due.is_none() {
         let had_due_and_recur = current.is_some_and(|c| c.due.is_some() && c.recur.is_some());
@@ -720,7 +691,8 @@ fn iterative_rules(current: Option<&Facts>, out: &mut Vec<Change>, ctx: &EvalCtx
     let scheduled = final_date(out, current.and_then(|c| c.scheduled), "scheduled");
     let wait = final_date(out, current.and_then(|c| c.wait), "wait");
     if iter.is_some() {
-        let recurring = final_recur(out, current).is_some() || current.is_some_and(|c| c.parent.is_some());
+        let recurring = final_prop(out, current.and_then(|c| c.recur.clone()), "recur").is_some()
+            || current.is_some_and(|c| c.parent.is_some());
         if recurring {
             return err("A task cannot be both recurring and iterative.");
         }
@@ -762,7 +734,7 @@ fn iterative_rules(current: Option<&Facts>, out: &mut Vec<Change>, ctx: &EvalCtx
 /// (template) of a recurring series.
 fn becomes_recurring(m: &Mods, mode: Mode, current: Option<&Facts>, out: &[Change]) -> bool {
     let sets_recur = m.attrs.iter().any(|(n, v)| n == "recur" && !v.is_empty());
-    if !sets_recur || final_due(out, current).is_none() {
+    if !sets_recur || final_date(out, current.and_then(|c| c.due), "due").is_none() {
         return false;
     }
     match (mode, current) {

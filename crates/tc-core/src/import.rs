@@ -211,7 +211,8 @@ fn convert(
     };
     let has = |p: &BTreeMap<String, String>, k: &str| p.contains_key(k);
     let iter = props.get("iter").filter(|i| !i.is_empty()).cloned();
-    // Without its `iter` an iterative task is a plain one, its series ended; with one a pending task is iterative.
+    // Without its `iter`, a task that has been in a series (it has an `iter_count`) is a plain one, its series ended, and
+    // one that never was is refused below, as `task` 3.6.0 imports them; with an `iter`, a pending task is iterative.
     if status == "iterative" && iter.is_none() && has(&props, "iter_count") {
         status = "pending";
         props.remove("iter_type");
