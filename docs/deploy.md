@@ -319,7 +319,7 @@ settings and hooks through the bucket or the git branch (**Settings → Sync** o
 
 Skip this if your CLI already syncs to the store. Otherwise [Where your tasks live](stores.md) has the settings for each:
 [a git repository](stores.md#a-git-repository), [an S3 or R2 bucket](stores.md#an-s3-or-r2-bucket) (with
-`AWS_ENDPOINT_URL` for R2) or [a sync server](stores.md#a-taskchampion-sync-server).
+`sync.aws.endpoint_url` for R2) or [a sync server](stores.md#a-taskchampion-sync-server).
 
 ## Configuration reference
 
@@ -348,7 +348,7 @@ Skip this if your CLI already syncs to the store. Otherwise [Where your tasks li
 | A banner says "Couldn't sync with the server" | The page couldn't reach `/api/tc/*`: you're offline, Cloudflare Access signed you out (reload to sign in again), or the Worker failed. Your changes are kept in the browser and go up with the next sync that works. **Start over from the server** discards the browser's copy, for a replaced store or a changed secret |
 | `wrangler dev` says the assets directory is missing | Run `npm --prefix web run build` once |
 | `wrangler dev` exits with "register a workers.dev subdomain" | `wrangler.jsonc` has an extra `"remote": true` R2 binding (added when you ran `wrangler r2 bucket create`). Delete it, keeping only `TASKS` |
-| `task sync` fails with `PermanentRedirect` | `AWS_ENDPOINT_URL` isn't set in that environment, so it's talking to AWS |
+| `task sync` fails with `PermanentRedirect` | `sync.aws.endpoint_url` isn't set (with `task` 3.5, `AWS_ENDPOINT_URL` in that environment), so it's talking to AWS |
 
 ## Making a release (for maintainers)
 

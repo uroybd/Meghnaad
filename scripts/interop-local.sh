@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Interop check: the real `task` CLI (via an S3-compatible endpoint) <-> the Worker's local R2.
-# Proves both share one TaskChampion chain. Stable Taskwarrior has no endpoint config key, so the
-# CLI gets the endpoint from AWS_ENDPOINT_URL (the same trick used for real R2).
+# Proves both share one TaskChampion chain. The CLI finds the endpoint in `sync.aws.endpoint_url`
+# (Taskwarrior 3.6.0), as a real R2 user's would.
 #
-# Needs: task >= 3.0, aws CLI, sqlite3, node, and a local S3 endpoint that enforces conditional
+# Needs: task >= 3.6, aws CLI, sqlite3, node, and a local S3 endpoint that enforces conditional
 # writes, e.g.  docker run -d --name tw-s3 -p 18333:8333 chrislusf/seaweedfs server -s3 -dir=/data
 #
 # Local R2 (Miniflare) and `wrangler dev` contend for the same SQLite state, so objects are copied
@@ -70,10 +70,11 @@ sync.aws.region=us-east-1
 sync.aws.bucket=$BUCKET
 sync.aws.access_key_id=any
 sync.aws.secret_access_key=any
+sync.aws.endpoint_url=$S3_URL
 RC
   echo "$d/taskrc"
 }
-tw() { local rc=$1; shift; AWS_ENDPOINT_URL=$S3_URL TASKRC=$rc task "$@"; }
+tw() { local rc=$1; shift; env -u AWS_ENDPOINT_URL TASKRC="$rc" task "$@"; }
 
 order_latest_last() { grep -v '^latest$' || true; echo latest; }
 

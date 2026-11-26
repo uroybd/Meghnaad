@@ -250,7 +250,8 @@ an access key and its secret. For R2, the key is an R2 API token with **Object R
 | Encryption secret | the same as `sync.encryption_secret` in your taskrc | same | same |
 
 These are the values your `task` CLI already has: `sync.aws.region`, `sync.aws.bucket`, `sync.aws.access_key_id`,
-`sync.aws.secret_access_key` and `sync.encryption_secret`, plus the endpoint in `AWS_ENDPOINT_URL`. For R2 the account
+`sync.aws.secret_access_key`, `sync.encryption_secret` and `sync.aws.endpoint_url` (with `task` 3.5, the endpoint is in
+`AWS_ENDPOINT_URL`). The app always puts the bucket in the path, so `sync.aws.force_path_style` has no field. For R2 the account
 id in the endpoint is in the dashboard's right-hand column.
 
 The endpoint must be `https://`; plain `http://` is accepted only for `localhost` and `127.0.0.1` (for trying it out).

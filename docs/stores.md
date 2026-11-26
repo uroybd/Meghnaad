@@ -76,15 +76,17 @@ task config sync.aws.region        auto
 task config sync.aws.bucket        <your bucket name>
 task config sync.aws.access_key_id     <R2 access key id>
 task config sync.aws.secret_access_key <R2 secret access key>
-
-export AWS_ENDPOINT_URL=https://<ACCOUNT_ID>.r2.cloudflarestorage.com   # add to your shell profile
+task config sync.aws.endpoint_url      https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 task sync
 ```
 
-Released versions of Taskwarrior have no setting for a custom S3 endpoint, but the AWS SDK it uses reads
-`AWS_ENDPOINT_URL` from the environment, which is what points it at R2 (or MinIO). Set it **everywhere `task sync` runs**
-(your shell, cron, hooks, GUI launchers), or `task` quietly talks to real AWS and fails with a `PermanentRedirect`
-error. For AWS S3 itself, leave it unset and use the bucket's real region; `man task-sync` has the IAM policy it needs.
+`sync.aws.endpoint_url` (Taskwarrior 3.6.0) is what points `task` at R2 or MinIO instead of AWS; with the setting
+missing, `task` talks to real AWS and fails with a `PermanentRedirect` error. A store that wants the bucket in the path
+rather than the host name (MinIO on its own domain, often) also needs `task config sync.aws.force_path_style true`. For
+AWS S3 itself, leave both unset and use the bucket's real region; `man task-sync` has the IAM policy it needs.
+
+Taskwarrior 3.5 and older have no such setting. There the AWS SDK's `AWS_ENDPOINT_URL` environment variable does the
+same, and must be set **everywhere `task sync` runs** (your shell, cron, hooks, GUI launchers).
 
 - **Keep the bucket private** and the key scoped to it. The tasks and hook secrets are encrypted; the app's settings,
   taskrc files and hooks script are plain text under `web/`.

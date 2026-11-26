@@ -428,7 +428,7 @@ UDA, adds it: `Enter` asks, and `Enter` again runs `task config` for its type an
 
 ## Sync
 
-Syncing is `task sync`, with Taskwarrior's own sync settings (`sync.*` in the taskrc, `AWS_ENDPOINT_URL` and the like in
+Syncing is `task sync`, with Taskwarrior's own sync settings (`sync.*` in the taskrc, and with `task` 3.5 `AWS_ENDPOINT_URL` and the like in
 the environment; [Where your tasks live](stores.md) has them for each store). It runs in the background: the screen stays yours, the top bar shows `⟳ syncing`, then how long ago it
 worked or `⟳ failed`, and how it went is said in the status line and kept on the Console page, with what `task` wrote
 when it failed. The pages are read again when it ends. While it runs, a command you give waits for it, so the two never
@@ -630,7 +630,7 @@ none, and the app will not save over it until it is put right.
 The app reads and writes `settings.json` in that folder and touches nothing else there. Its one other file, `close-sync.json`, is in its state
 folder ([Sync](#sync)). It writes the file in place, so
 a symlink stays a symlink and a dotfiles manager (stow and the like) can own the folder. It never reaches the store itself: syncing is `task sync`, and its settings (`sync.*`
-in the taskrc, `AWS_ENDPOINT_URL` and the like in the environment) are Taskwarrior's.
+in the taskrc, and with `task` 3.5 `AWS_ENDPOINT_URL` and the like in the environment) are Taskwarrior's.
 
 ## How it fits (for contributors)
 
