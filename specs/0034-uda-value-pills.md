@@ -79,3 +79,7 @@ uroybd: "For uda with choices show values as distinct badge/pill style in an UI"
   link counted as Markdown and so as a paragraph, measured before the transformation. Now a tree of one line is
   measured by the words it shows (`inlineText`, web `markdown.ts`, phone `Kanban.kt`) and drawn in line; the limit is
   30 characters (uroybd), on the web, the phone and now the terminal (`Card.free`, `SHORT_TEXT`).
+- 2026-11-26 (after 0.8.64): uroybd: no box around a card's whole label and value. A card's UDA is now its label in
+  bold, then its value, in line as tags and the project are (`KanbanPage.svelte`, `TaskCard.kt`, `kanbanui.rs`); a
+  choice keeps its own pill. The **What** line about the badge's value half is left as written: the pill is still the
+  value's colour, only the badge around it is gone.

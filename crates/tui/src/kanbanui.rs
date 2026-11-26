@@ -255,9 +255,10 @@ fn card_lines(
             p.extend(bar);
             p
         } else if badge {
+            // A UDA: its label in bold, then its value, in line as a tag or a project is; a choice as its own pill.
             vec![
-                Span::styled(format!(" {label} "), Style::new().add_modifier(Modifier::REVERSED)).quiet(),
-                Span::styled(format!(" {text} "), pill.unwrap_or_else(theme::badge_value)),
+                Span::styled(format!("{label} "), Style::new().add_modifier(Modifier::BOLD)).quiet(),
+                pill.map_or_else(|| Span::from(text.clone()), |style| theme::pill(text, style)),
             ]
         } else if let Some(style) = pill {
             let head = symbol.map_or_else(|| label.clone(), str::to_owned);
@@ -839,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn a_uda_choice_is_its_badges_value_in_the_colour_of_its_place_or_the_taskrcs() {
+    fn a_uda_choice_is_a_pill_in_the_colour_of_its_place_or_the_taskrcs() {
         // spec 0034: `size` is S, M, L; the card shows M (the second) and XL (none of them).
         let c = Card {
             uuid: "u".into(),

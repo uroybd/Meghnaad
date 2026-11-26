@@ -9,7 +9,7 @@
   import { formatFor } from './dateformat';
   import { debounce } from './debounce';
   import FilterInput from './FilterInput.svelte';
-  import { choiceColor, css, look } from './colors';
+  import { css, look } from './colors';
   import { formatTable, rowClass, type Cell } from './format';
   import type { Component } from 'svelte';
   import {
@@ -323,21 +323,9 @@
           {#if Icon}<dt class="ic" title={f.col.label}>
               <Icon size={13} /><span class="sr-only">{f.col.label}</span>
             </dt>{:else}<dt>{f.col.label}</dt>{/if}
-          {#if f.shape === 'pill' && f.c.choice != null}
-            <!-- A UDA's choice: the badge's value half in the value's colour (spec 0034). -->
-            {@const hue = choiceColor(
-              f.col.name.split('.')[0],
-              f.c.text,
-              f.c.choice,
-              store.config?.colors,
-              scheme.dark,
-            )}
-            <dd class="choice" class:other={hue == null} style={hue ? `--hue:${hue}` : undefined}>{f.c.text}</dd>
-          {:else}
-            <dd class="{f.col.kind} {f.c.cls ?? ''}" style={priorityStyle(f.col.name, row)}>
-              <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
-            </dd>
-          {/if}
+          <dd class="{f.col.kind} {f.c.cls ?? ''}" style={priorityStyle(f.col.name, row)}>
+            <ReportCell col={f.col} c={f.c} {row} entry={null} activeTags={[]} />
+          </dd>
         </div>
       {/each}
     </dl>
@@ -863,27 +851,9 @@
     margin: 0;
   }
   /* A UDA: a pill, its label on one half and its value on the other. */
-  dl div.badge {
-    gap: 0;
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    overflow: hidden;
-    line-height: 1.5;
-  }
+  /* A UDA: its label in bold, then its value, in line as a tag or a project is; a choice is its own pill. */
   .badge dt {
-    padding: 0 6px;
-    background: var(--panel-2);
-  }
-  .badge dd {
-    padding: 0 6px;
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-  }
-  .badge dd.choice {
-    background: color-mix(in srgb, var(--hue) 18%, transparent);
-  }
-  .badge dd.choice.other {
-    background: var(--panel-2);
-    color: var(--dim);
+    font-weight: 600;
   }
   /* As the table draws them: a priority in its colour, a finished task tinted, a waiting one dim. */
   dd.priority {

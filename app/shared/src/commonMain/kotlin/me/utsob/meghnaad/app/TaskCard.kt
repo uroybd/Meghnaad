@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -266,25 +265,18 @@ internal fun Mark(
         }
     }
     when {
-        pill -> Row(
-            Modifier.clip(RoundedCornerShape(4.dp)).border(1.dp, colors.outlineVariant, RoundedCornerShape(4.dp)),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // A UDA as a badge: its label on one half, its value on the other, a number without the zeros it ends in. One
-            // drawn as a progress bar is never a pill: it is the bar after its label.
-            Text(col.label, Modifier.background(colors.surfaceVariant).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 12.sp, color = dim)
-            // A UDA's choice: the value half in the value's colour, grey for one not among them (spec 0034).
-            val hue = c.choice?.let { choiceColor(baseColumn(col.name), c.text, it, store.config?.colors ?: emptyMap(), extras.dark, colors.background) }
-            val tint = when {
-                c.choice == null -> colors.primary.copy(alpha = 0.14f)
-                hue == null -> colors.surfaceVariant
-                else -> hue.copy(alpha = 0.18f)
-            }
-            val half = Modifier.background(tint).padding(horizontal = 6.dp, vertical = 1.dp)
+        pill -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            // A UDA: its label in bold, then its value, in line as a tag or a project is; a number without the zeros it
+            // ends in, a choice as its own pill (spec 0034). One drawn as a progress bar is never this: it is the bar after
+            // its label.
+            Text(col.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = dim)
             val numeric = store.config?.config?.udas?.get(baseColumn(col.name))?.type == "numeric"
-            // One line of Markdown (a ticket key a transformation made a link) is drawn as it shows, its link kept.
-            if (c.blocks != null) MarkdownView(c.blocks, half, color = colors.onSurface, size = 12.sp)
-            else Text(if (numeric) trimNumber(c.text) else c.text, half, fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            when {
+                c.choice != null -> ChoicePill(store, col.name, c.text, c.choice)
+                // One line of Markdown (a ticket key a transformation made a link) is drawn as it shows, its link kept.
+                c.blocks != null -> MarkdownView(c.blocks, color = colors.onSurface, size = 12.5.sp)
+                else -> Text(if (numeric) trimNumber(c.text) else c.text, fontSize = 12.5.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
         col.name == "priority" && row.priority != null && icons != false -> {
             // The priority as a small pill of its own colour: the user's `color.uda.priority.*` washes it, the text stays readable.
