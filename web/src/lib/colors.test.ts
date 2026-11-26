@@ -3,6 +3,8 @@ import {
   CHART_COLOR_NAMES,
   chartColor,
   chartProps,
+  choiceColor,
+  choiceOf,
   contrast,
   css,
   defaultSeriesColor,
@@ -182,5 +184,20 @@ describe('the colour of each value of a UDA', () => {
     const white = valueColors('priority', [{ key: 'H' }], { 'uda.priority.H': { fg: 15 } }, false)[0]!;
     expect(contrast(white, '#ffffff')).toBeGreaterThanOrEqual(1.8);
     expect(valueColors('priority', [{ key: 'H' }], colors, true)[0]).toBe(paletteHex(9, true));
+  });
+});
+
+describe('a UDA value as a pill (spec 0034)', () => {
+  it('is where the value is among the choices, -1 for none, nothing for an empty value or a UDA without choices', () => {
+    expect(choiceOf(['S', 'M', 'L'], 'M')).toBe(1);
+    expect(choiceOf(['S', 'M', 'L'], 'XL')).toBe(-1);
+    expect(choiceOf(['S', 'M', 'L'], '')).toBeUndefined();
+    expect(choiceOf([], 'x')).toBeUndefined();
+  });
+  it('takes a chart’s colour by its place, the taskrc’s own first, none for a value not among them', () => {
+    expect(choiceColor('size', 'S', 0, undefined, false)).toBe(defaultSeriesColor(0, false));
+    expect(choiceColor('size', 'M', 1, undefined, true)).toBe(defaultSeriesColor(1, true));
+    expect(choiceColor('size', 'L', 2, { 'uda.size.L': { fg: 5 } }, false)).not.toBe(defaultSeriesColor(2, false));
+    expect(choiceColor('size', 'XL', -1, undefined, false)).toBeNull();
   });
 });

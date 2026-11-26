@@ -166,7 +166,17 @@ fn first_line(lines: Vec<Line<'static>>) -> Vec<Span<'static>> {
 }
 
 /// What a card says: its number and title, then its fields as many to a line as fit in `width`.
-fn card_lines(c: &Card, width: usize, icons: Icons, bars: &BTreeMap<String, Progress>) -> Vec<Line<'static>> {
+/// A free-text value up to this long, on one line, sits beside its label (the web's `SHORT_TEXT`); longer, it is
+/// lines of its own.
+const SHORT_TEXT: usize = 30;
+
+fn card_lines(
+    c: &Card,
+    width: usize,
+    icons: Icons,
+    bars: &BTreeMap<String, Progress>,
+    taskrc: &BTreeMap<String, String>,
+) -> Vec<Line<'static>> {
     let id = c.id.map(|i| format!("{i} ")).unwrap_or_default();
     let bold = c.style.add_modifier(Modifier::BOLD);
     // The title as the table draws its cell: from its Markdown where it has some (a transformation's link), first line.
@@ -183,7 +193,15 @@ fn card_lines(c: &Card, width: usize, icons: Icons, bars: &BTreeMap<String, Prog
         let tree = c.md.get(name).map(|t| crate::md::lines(t, theme::dim()));
         // A value of several lines (a free-text UDA's notes, Markdown of more than one line): lines of its own, under
         // its label.
-        if text.contains('\n') || tree.as_ref().is_some_and(|t| t.len() > 1) {
+        // Measured as shown: a link a transformation made counts as its words.
+        let shown = tree
+            .as_ref()
+            .and_then(|t| t.first())
+            .map_or_else(|| text.trim().chars().count(), Line::width);
+        if text.contains('\n')
+            || tree.as_ref().is_some_and(|t| t.len() > 1)
+            || (c.free.contains(name) && shown > SHORT_TEXT)
+        {
             if !line.is_empty() {
                 lines.push(Line::from(std::mem::take(&mut line)));
                 used = 0;
@@ -223,6 +241,12 @@ fn card_lines(c: &Card, width: usize, icons: Icons, bars: &BTreeMap<String, Prog
         let badge = icons.on && symbol.is_none() && !label.is_empty();
         // A UDA with a progress range (`appearance.progress`): its label, then the bar, as in the table.
         let bar = bars.get(name).and_then(|p| crate::ui::progress_spans(text, *p));
+        // One of a UDA's choices: the value as a pill in its colour (spec 0034), after its label, or as the badge's
+        // value half.
+        let pill = c
+            .choices
+            .get(name)
+            .map(|&at| theme::choice(name.split('.').next().unwrap_or(name), text, at, taskrc));
         let piece: Vec<Span> = if let Some(bar) = bar {
             let mut p = Vec::new();
             if !label.is_empty() {
@@ -233,8 +257,16 @@ fn card_lines(c: &Card, width: usize, icons: Icons, bars: &BTreeMap<String, Prog
         } else if badge {
             vec![
                 Span::styled(format!(" {label} "), Style::new().add_modifier(Modifier::REVERSED)).quiet(),
-                Span::styled(format!(" {text} "), theme::badge_value()),
+                Span::styled(format!(" {text} "), pill.unwrap_or_else(theme::badge_value)),
             ]
+        } else if let Some(style) = pill {
+            let head = symbol.map_or_else(|| label.clone(), str::to_owned);
+            let mut p = Vec::new();
+            if !head.is_empty() {
+                p.push(Span::from(format!("{head} ")).quiet());
+            }
+            p.push(theme::pill(text, style));
+            p
         } else {
             let head = symbol.map_or_else(|| label.clone(), str::to_owned);
             let piece = if head.is_empty() {
@@ -272,7 +304,7 @@ fn lane(f: &mut Frame, app: &App, area: Rect, title: &str, cards: &[Card], sel: 
     let width = usize::from(body.width.saturating_sub(4));
     let pieces: Vec<Vec<Line>> = cards
         .iter()
-        .map(|c| card_lines(c, width, icons, &app.progress))
+        .map(|c| card_lines(c, width, icons, &app.progress, &app.cfg.settings))
         .collect();
     let height = |lines: &Vec<Line>| framed(lines.len());
     // From the first card that keeps the chosen one's bottom in sight.
@@ -461,7 +493,11 @@ fn swimlanes(
         .map(|(i, cs)| {
             let shown = i < n || app.kanban_other;
             let width = usize::from(areas.get(i).map_or(0, |a| a.width).saturating_sub(6));
-            shown.then(|| cs.iter().map(|c| card_lines(c, width, icons, &app.progress)).collect())
+            shown.then(|| {
+                cs.iter()
+                    .map(|c| card_lines(c, width, icons, &app.progress, &app.cfg.settings))
+                    .collect()
+            })
         })
         .collect();
     let heights: Vec<Option<Vec<u16>>> = lines
@@ -789,14 +825,78 @@ mod tests {
             ..Default::default()
         };
         let bars = BTreeMap::from([("progress".to_owned(), Progress { min: 0.0, max: 100.0 })]);
-        let lines: Vec<String> = card_lines(&c, 40, ON, &bars).iter().map(ToString::to_string).collect();
+        let lines: Vec<String> = card_lines(&c, 40, ON, &bars, &BTreeMap::new())
+            .iter()
+            .map(ToString::to_string)
+            .collect();
         assert_eq!(lines[1].trim_end(), "Progress ━━━━━───── 50");
         // Without a range it is the badge it was.
-        let plain: Vec<String> = card_lines(&c, 40, ON, &BTreeMap::new())
+        let plain: Vec<String> = card_lines(&c, 40, ON, &BTreeMap::new(), &BTreeMap::new())
             .iter()
             .map(ToString::to_string)
             .collect();
         assert!(!plain[1].contains('━'), "{plain:?}");
+    }
+
+    #[test]
+    fn a_uda_choice_is_its_badges_value_in_the_colour_of_its_place_or_the_taskrcs() {
+        // spec 0034: `size` is S, M, L; the card shows M (the second) and XL (none of them).
+        let c = Card {
+            uuid: "u".into(),
+            title: "t".into(),
+            fields: vec![
+                ("size".into(), "Size".into(), "M".into()),
+                ("fit".into(), "Fit".into(), "XL".into()),
+            ],
+            choices: BTreeMap::from([("size".to_owned(), 1), ("fit".to_owned(), -1)]),
+            ..Default::default()
+        };
+        let span = |lines: &[Line], text: &str| {
+            lines
+                .iter()
+                .flat_map(|l| l.spans.iter())
+                .find(|s| s.content.trim() == text)
+                .map(|s| s.style)
+        };
+        let lines = card_lines(&c, 40, ON, &BTreeMap::new(), &BTreeMap::new());
+        assert_eq!(
+            span(&lines, "M").and_then(|s| s.fg),
+            Some(Color::Red),
+            "the second colour, as on a chart"
+        );
+        assert_ne!(span(&lines, "XL").and_then(|s| s.fg), Some(Color::Red));
+        let taskrc = BTreeMap::from([("color.uda.size.M".to_owned(), "green".to_owned())]);
+        let lines = card_lines(&c, 40, ON, &BTreeMap::new(), &taskrc);
+        assert_eq!(
+            span(&lines, "M").and_then(|s| s.fg),
+            Some(Color::Indexed(2)),
+            "the taskrc's own colour wins"
+        );
+        // Without icons, the value is a pill after its label.
+        let lines = card_lines(&c, 40, Icons::default(), &BTreeMap::new(), &BTreeMap::new());
+        assert!(lines[1].to_string().contains("Size  M "), "{:?}", lines[1].to_string());
+    }
+
+    #[test]
+    fn a_free_text_uda_sits_beside_its_label_up_to_thirty_characters() {
+        let card = |text: &str| Card {
+            uuid: "u".into(),
+            title: "t".into(),
+            fields: vec![("notes".into(), "Notes".into(), text.into())],
+            free: BTreeSet::from(["notes".to_owned()]),
+            ..Default::default()
+        };
+        let short = card_lines(
+            &card("call the plumber back"),
+            60,
+            Icons::default(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        assert_eq!(short.len(), 2, "beside its label: {short:?}");
+        let long = card("call the plumber back about the leak in the hall");
+        let long = card_lines(&long, 60, Icons::default(), &BTreeMap::new(), &BTreeMap::new());
+        assert_eq!(long[1].to_string(), "Notes", "past thirty, under its label");
     }
 
     #[test]
@@ -813,7 +913,7 @@ mod tests {
             ]),
             ..Default::default()
         };
-        let lines = card_lines(&c, 40, Icons::default(), &BTreeMap::new());
+        let lines = card_lines(&c, 40, Icons::default(), &BTreeMap::new(), &BTreeMap::new());
         let text: Vec<String> = lines.iter().map(ToString::to_string).collect();
         assert_eq!(text[0], "Fix FUL-7");
         assert_eq!(text[1].trim_end(), "Jira FUL-7");
@@ -834,7 +934,7 @@ mod tests {
             fields: vec![("due".into(), "Due".into(), "2d".into())],
             ..Default::default()
         };
-        let line = |icons| card_lines(&c, 40, icons, &BTreeMap::new())[1].to_string();
+        let line = |icons| card_lines(&c, 40, icons, &BTreeMap::new(), &BTreeMap::new())[1].to_string();
         assert_eq!(line(ON).trim_end(), "◷ 2d");
         assert_eq!(line(Icons { on: true, nerd: true }).trim_end(), "\u{f0150} 2d");
         // The labels, with icons off, whatever the font.

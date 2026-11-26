@@ -103,6 +103,10 @@ What Taskwarrior has a colour for is drawn in `task`'s colours, from your taskrc
   for `uuid` and colour forced on, and draws each row in the colour that uuid came back in. Every rule counts, as
   `task` applies it: `rule.precedence.color`, `rule.color.merge`, `color.active`, `color.due`, `color.tag.X`,
   `color.project.X`, `color.uda.*`, a `nocolor` tag. The row chosen is drawn reversed, so its colour still shows.
+- **A UDA with choices** (`uda.size.values=S,M,L`) shows its value as a pill, in the table, on a card and in the
+  info: the value in its colour on the badge's ground, the colour of its place in `values` (blue, red, green, yellow,
+  magenta, cyan, then the bright blue, red and green), or `color.uda.size.L`'s where the taskrc gives one. A value not
+  among the choices is grey, as every pill is with the `mono` theme.
 - **The column labels** are in `color.label`, and those the report sorts by in `color.label.sort`.
 - **Summary, Calendar, Burndown and `info`** are what `task` printed, in its colours, at the page's width.
 

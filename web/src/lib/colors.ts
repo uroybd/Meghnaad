@@ -234,6 +234,28 @@ export function valueColors(
   });
 }
 
+/**
+ * The colour of a UDA's value as a pill (spec 0034): its place among the UDA's choices (`choice`, from the engine's cell)
+ * picks a chart's default colour, so a value looks the same in a pill and on a chart; the taskrc's
+ * `color.uda.<name>.<value>` wins. Null for a value not among the choices (`-1`): a grey pill.
+ */
+export function choiceColor(
+  name: string,
+  value: string,
+  choice: number,
+  colors: Record<string, Resolved> | undefined,
+  dark: boolean,
+): string | null {
+  if (choice < 0) return null;
+  return valueColors(name, [{ key: value }], colors, dark)[0] ?? defaultSeriesColor(choice, dark);
+}
+
+/** Where `value` is among a UDA's choices, as the engine's cell says it (`tc_core::cells`): -1 for none of them. */
+export function choiceOf(values: readonly string[] | undefined, value: string): number | undefined {
+  if (!values?.length || value === '') return undefined;
+  return values.indexOf(value);
+}
+
 /** The look as an inline `style` value. */
 export function css(l: Look | null): string {
   if (!l) return '';

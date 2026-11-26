@@ -35,6 +35,11 @@ list). Underneath it is the same command: grouping by `project` adds
 - IDs are bold, and hovering one shows the uuid with a Copy button.
 - Project names are split at the dots, each part in its own colour. Tags are pills, wrapping onto more lines past a
   width, as any long value does, so one cell never makes its column wide.
+- A UDA with choices (`uda.size.values=S,M,L`) shows its value as a pill, in the table, on a kanban card and in the
+  detail view, on every front end. Each value has its own colour, by where it is in `values`: the first takes a
+  chart's first colour (blue), the second the next (red), and so on, so a value looks the same in a pill and on a
+  chart. `color.uda.size.L` in your taskrc gives a value its own colour instead, as a tint. A value that is not among
+  the choices is a grey pill; a UDA without `values`, an empty value and `priority` are drawn as before.
 - Urgency is coloured by level (under 5, to 10, to 15, from 15).
 - The `start.active`, `tags.indicator` and `depends.indicator` columns follow `active.indicator`, `tag.indicator` and
   `dependency.indicator`.

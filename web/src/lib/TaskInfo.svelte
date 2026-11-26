@@ -1,5 +1,7 @@
 <script lang="ts">
   import { runCli } from './api';
+  import ChoicePill from './ChoicePill.svelte';
+  import { choiceOf } from './colors';
   import { formatFor } from './dateformat';
   import { formatMoment, formatSeconds, formatStamp } from './dates';
   import { projectSegments, shortUuid, trimNumber, udaLabel, urgencyLevel } from './format';
@@ -226,7 +228,9 @@
     {/if}
     {#each udaKeys as k (k)}
       <dt>{udaLabel(defs[k])}</dt>
-      {#if udaTrees[k]}
+      {#if choiceOf(defs[k].values, task.extra[k]) != null}
+        <dd><ChoicePill name={k} value={task.extra[k]} choice={choiceOf(defs[k].values, task.extra[k]) ?? -1} /></dd>
+      {:else if udaTrees[k]}
         <dd class="md">
           <MarkdownNodes
             nodes={udaTrees[k]}

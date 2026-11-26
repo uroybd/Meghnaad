@@ -18,6 +18,7 @@ import { freshId, SLUG } from './boards';
 import { shellQuote, splitWords } from './cmdline';
 import { splitChain, type Joiner } from './compound';
 import { planChain } from './taskCommands';
+import { inlineText, type MdNode } from './markdown';
 import type { ConfigResponse, Row } from './types';
 
 export interface KanbanColumn {
@@ -404,25 +405,27 @@ export const FIELD_ICONS: Readonly<Record<string, string>> = {
 
 export const fieldIcon = (name: string): string | null => FIELD_ICONS[name] ?? null;
 
-/** A free-text value up to this long, on one line and plain, is a pill like any other UDA's. */
-export const SHORT_TEXT = 20;
+/** A free-text value up to this long, on one line, is a pill like any other UDA's. */
+export const SHORT_TEXT = 30;
 
 /**
  * How a card shows a field: one of Taskwarrior's as it is (`field`); a UDA as a pill of its label and value (`pill`),
- * unless it is a string free to hold anything holding more than a few words (`text`): several lines, `SHORT_TEXT`
- * characters or more, or Markdown (`markdown`, so its checkboxes can be ticked), which is a paragraph of its own. A
- * string UDA with `values` is one of a few words, so a pill.
+ * unless it is a string free to hold anything holding more than a few words (`text`): several lines, more than
+ * `SHORT_TEXT` characters, which is a paragraph of its own. Where the cell has a tree (Markdown, or what a transformation
+ * made of it), the tree is what is measured: one line of it by the words it shows, anything more (a checkbox to tick)
+ * is a paragraph. A string UDA with `values` is one of a few words, so a pill.
  */
 export function cardShape(
   name: string,
   udas: Record<string, { type: string; values: string[] }>,
   text = '',
-  markdown = false,
+  tree: MdNode[] | null = null,
 ): 'field' | 'pill' | 'text' {
   const def = udas[name];
   if (!def) return 'field';
   if (def.type !== 'string' || def.values.length > 0) return 'pill';
-  const long = markdown || text.includes('\n') || [...text.trim()].length >= SHORT_TEXT;
+  const shown = tree ? inlineText(tree) : text;
+  const long = shown == null || shown.includes('\n') || [...shown.trim()].length > SHORT_TEXT;
   return long ? 'text' : 'pill';
 }
 

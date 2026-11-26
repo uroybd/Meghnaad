@@ -1228,6 +1228,12 @@ fn task_info(f: &mut Frame, app: &App, info: &crate::info::Info, area: Rect) {
         let value: Vec<Line<'static>> = match &e.shown {
             Shown::Text(t) => t.lines().map(|l| Line::from(l.to_owned())).collect(),
             Shown::Dim(t) => vec![Line::from(t.clone()).quiet()],
+            Shown::Choice(name, v, at) => {
+                vec![Line::from(theme::pill(
+                    v,
+                    theme::choice(name, v, *at, &app.cfg.settings),
+                ))]
+            }
             Shown::Tree(tree) => md::lines(tree, Style::default()),
             Shown::Card(c) => {
                 let room = usize::from(body.width).saturating_sub(label_width + 2).min(64);
@@ -1410,7 +1416,11 @@ pub fn report_table(
                 .cells
                 .iter()
                 .filter_map(|row| row.get(j))
-                .map(|c| c.text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
+                .map(|c| {
+                    let w = c.text.lines().map(|l| l.chars().count()).max().unwrap_or(0);
+                    // A pill is padded by a space each side.
+                    w + if c.choice.is_some() { 2 } else { 0 }
+                })
                 .map(|w| if bar_of(j).is_some() { w + BAR as usize + 1 } else { w })
                 .chain(labels.get(j).map(|l| l.chars().count()))
                 .max()
@@ -1427,10 +1437,20 @@ pub fn report_table(
         let cells: Vec<Vec<Line<'static>>> = row
             .iter()
             .enumerate()
-            .map(|(j, c)| match bar_of(j).and_then(|p| progress_line(&c.text, p)) {
-                Some(bar) => vec![bar],
-                None => lines(c),
-            })
+            .map(
+                |(j, c)| match (bar_of(j).and_then(|p| progress_line(&c.text, p)), c.choice) {
+                    (Some(bar), _) => vec![bar],
+                    // One of a UDA's choices: a pill in the value's colour (spec 0034).
+                    (None, Some(at)) => {
+                        let name = r.names.get(j).map_or("", |n| n.split('.').next().unwrap_or(n));
+                        vec![Line::from(theme::pill(
+                            &c.text,
+                            theme::choice(name, &c.text, at, &app.cfg.settings),
+                        ))]
+                    }
+                    (None, None) => lines(c),
+                },
+            )
             .collect();
         let height = cells.iter().map(Vec::len).max().unwrap_or(1);
         heights.push(u16::try_from(height).unwrap_or(1));

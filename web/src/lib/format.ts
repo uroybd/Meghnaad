@@ -23,6 +23,8 @@ export interface Cell {
   uuid?: string;
   /** Other tasks this cell names (their uuids), each drawn as a link to its card. */
   links?: string[];
+  /** A UDA with choices: where its value is among them (its pill's colour); -1 for one not among them (a grey pill). */
+  choice?: number;
 }
 
 export type UrgencyLevel = 'low' | 'mid' | 'high' | 'crit';
@@ -121,7 +123,10 @@ export interface Table {
 export function formatTable(columns: Column[], rows: Row[], ctx: Ctx): Table {
   if (!rows.length || !columns.length) return { cells: rows.map(() => []), empty: columns.map(() => true) };
   const udas = Object.fromEntries(
-    Object.entries(ctx.udas ?? {}).map(([k, u]) => [k, { type: u.type, indicator: u.indicator }]),
+    Object.entries(ctx.udas ?? {}).map(([k, u]) => [
+      k,
+      { type: u.type, indicator: u.indicator, values: u.values ?? [] },
+    ]),
   );
   const wire = {
     now: ctx.now,

@@ -86,6 +86,9 @@ pub struct Uda {
     kind: String,
     #[serde(default)]
     indicator: Option<String>,
+    /// `uda.<name>.values`: the choices it may have, in order. Empty for a UDA free to hold anything.
+    #[serde(default)]
+    values: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -178,6 +181,10 @@ pub struct Cell {
     /// Other tasks this cell names (their uuids), each drawn as a link.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub links: Option<Vec<String>>,
+    /// A UDA with choices (`uda.<name>.values`): where its value is among them, which colours its pill the same on every
+    /// front end; `-1` for a value not among them (a grey pill). None for any other cell, or an empty value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choice: Option<i64>,
 }
 
 impl Cell {
@@ -310,6 +317,14 @@ fn uda_cell(row: &Row, col: &Col, ctx: &Ctx, rules: &Rules) -> Cell {
     }
     if let (Some(ind), Some("indicator")) = (def.and_then(|d| d.indicator.as_deref()), col.format.as_deref()) {
         return Cell::text(ind);
+    }
+    // One of its choices: a pill, coloured by where the value is among them.
+    if let Some(d) = def.filter(|d| !d.values.is_empty() && !raw.is_empty()) {
+        let at = d.values.iter().position(|v| v == raw);
+        return Cell {
+            choice: Some(at.and_then(|i| i64::try_from(i).ok()).unwrap_or(-1)),
+            ..Cell::text(raw)
+        };
     }
     // A string may hold Markdown; a multi-line value keeps its lines instead of running them together.
     let cell = Cell {
@@ -745,6 +760,18 @@ mod tests {
         assert_eq!(one("absent", row.clone(), ctx.clone()).text, "");
         // A date UDA that is not a number is shown as it is.
         assert_eq!(one("when", json!({ "extra": { "when": "soon" } }), ctx).text, "soon");
+    }
+
+    #[test]
+    fn a_uda_with_choices_says_where_its_value_is_among_them() {
+        let ctx = json!({ "udas": { "size": { "type": "string", "values": ["S", "M", "L", ""] }, "mood": { "type": "string" } } });
+        let at = |v: &str| one("size", json!({ "extra": { "size": v, "mood": v } }), ctx.clone()).choice;
+        assert_eq!(at("S"), Some(0));
+        assert_eq!(at("L"), Some(2));
+        assert_eq!(at("XL"), Some(-1), "not among them: a grey pill");
+        assert_eq!(at(""), None, "empty: nothing to draw");
+        let free = one("mood", json!({ "extra": { "mood": "good" } }), ctx);
+        assert_eq!(free.choice, None, "a UDA free to hold anything is text");
     }
 
     #[test]

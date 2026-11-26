@@ -138,11 +138,14 @@ class KanbanTest {
             "estimate" to UdaDef("estimate", "numeric"),
             "review" to UdaDef("review", "date"),
         )
-        assertEquals(CardShape.Text, cardShape("notes", udas, "a long note, past twenty"))
+        assertEquals(CardShape.Text, cardShape("notes", udas, "a long note, past thirty characters"))
         // A few words on one line, plain, is a pill too; several lines or Markdown (boxes to tick) a paragraph.
         assertEquals(CardShape.Pill, cardShape("notes", udas, "call back"))
         assertEquals(CardShape.Text, cardShape("notes", udas, "one\ntwo"))
-        assertEquals(CardShape.Text, cardShape("notes", udas, "- [ ] call", markdown = true))
+        assertEquals(CardShape.Text, cardShape("notes", udas, "- [ ] call", listOf(Md("ul", c = listOf(Md("li", done = false, line = 0))))))
+        // What a transformation made a link is measured by the words it shows, not the Markdown it was written as.
+        val link = listOf(Md("p", c = listOf(Md("a", href = "https://jira.example/browse/FUL-3600", c = listOf(Md("text", s = "FUL-3600"))))))
+        assertEquals(CardShape.Pill, cardShape("notes", udas, "[FUL-3600](https://jira.example/browse/FUL-3600)", link))
         assertEquals(CardShape.Pill, cardShape("size", udas))
         assertEquals(CardShape.Pill, cardShape("estimate", udas))
         assertEquals(CardShape.Pill, cardShape("review", udas))

@@ -48,3 +48,24 @@ export function transformProblems(rules: Transformation[], fields: string[]): st
 export function toggled(text: string, line: number): string | null {
   return callHelper<string | null>('markdown_toggle', text, line);
 }
+
+/**
+ * What a Markdown tree shows when it is one line: a single paragraph with no line break in it (a ticket key a
+ * transformation made a link, a few bold words), as its words read; null for anything more (lists, checkboxes, several
+ * paragraphs).
+ */
+export function inlineText(tree: MdNode[]): string | null {
+  const [p, ...rest] = tree;
+  if (!p || rest.length || p.t !== 'p') return null;
+  const words = (n: MdNode): string | null => {
+    if (n.t === 'br' || (n.s ?? '').includes('\n')) return null;
+    let out = n.s ?? '';
+    for (const c of n.c ?? []) {
+      const w = words(c);
+      if (w == null) return null;
+      out += w;
+    }
+    return out;
+  };
+  return words(p);
+}

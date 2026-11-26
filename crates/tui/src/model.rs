@@ -173,7 +173,12 @@ pub fn ctx(cfg: &Config, moments: impl Iterator<Item = i64>, now: i64, look: Loo
     let udas: BTreeMap<&String, Value> = cfg
         .udas
         .iter()
-        .map(|(name, u)| (name, json!({ "type": u.ty, "indicator": u.indicator })))
+        .map(|(name, u)| {
+            (
+                name,
+                json!({ "type": u.ty, "indicator": u.indicator, "values": u.values }),
+            )
+        })
         .collect();
     let journal = cfg
         .journal()

@@ -61,6 +61,9 @@ pub enum Shown {
     Dim(String),
     /// Markdown, a transformed text: drawn by `md.rs`, its links clickable.
     Tree(Vec<Node>),
+    /// One of a UDA's choices (spec 0034): the UDA's name, its value and where it is among them (`-1` for none), drawn as
+    /// a pill.
+    Choice(String, String, i64),
     /// Another task as a small card (what this one depends on), as the web app's and the phone's info show it.
     Card(TaskCard),
 }
@@ -440,6 +443,15 @@ fn details(t: &Value, around: &Around, ctx: &Ctx) -> Vec<Entry> {
             (UdaType::Date, Value::String(s)) => {
                 Shown::Text(parse_date(s).map_or_else(|| s.clone(), |ts| ctx.date(ts)))
             }
+            (_, Value::String(s)) if !uda.values.is_empty() && !s.is_empty() => Shown::Choice(
+                name.clone(),
+                s.clone(),
+                uda.values
+                    .iter()
+                    .position(|v| v == s)
+                    .and_then(|i| i64::try_from(i).ok())
+                    .unwrap_or(-1),
+            ),
             (UdaType::String, Value::String(s)) => ctx.text(t, name, s),
             (_, Value::Number(n)) => Shown::Text(trim_number(&n.to_string())),
             (_, Value::String(s)) => Shown::Text(s.clone()),
@@ -583,6 +595,26 @@ mod tests {
         let notes = tab(Tab::Annotations);
         assert_eq!(notes.len(), 1);
         assert!(matches!(notes[0].shown, Shown::Tree(_)));
+    }
+
+    #[test]
+    fn a_uda_with_choices_is_a_pill_of_its_place_among_them() {
+        // spec 0034: a value among the choices, one not among them (-1), and a UDA free to hold anything.
+        let c = cfg("uda.size.type=string\nuda.size.values=S,M,L\nuda.fit.type=string\nuda.fit.values=a,b\nuda.mood.type=string\n");
+        let ctx = Ctx {
+            cfg: &c,
+            rules: &[],
+            now: 0,
+        };
+        let mut t = task();
+        t["size"] = json!("L");
+        t["fit"] = json!("z");
+        t["mood"] = json!("good");
+        let info = build(&t, &Around::default(), &ctx);
+        let details = &info.tabs.iter().find(|x| x.0 == Tab::Details).unwrap().1;
+        assert!(details.contains(&entry("size", Shown::Choice("size".into(), "L".into(), 2))));
+        assert!(details.contains(&entry("fit", Shown::Choice("fit".into(), "z".into(), -1))));
+        assert!(details.contains(&entry("mood", Shown::Text("good".into()))));
     }
 
     #[test]

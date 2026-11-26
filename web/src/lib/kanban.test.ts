@@ -306,11 +306,24 @@ describe('settings.json', () => {
       estimate: { type: 'numeric', values: [] },
       review: { type: 'date', values: [] },
     };
-    expect(cardShape('notes', udas, 'a long note, past twenty')).toBe('text');
+    expect(cardShape('notes', udas, 'a long note, past thirty characters')).toBe('text');
     // A few words on one line, plain, is a pill too; several lines or Markdown (boxes to tick) a paragraph.
     expect(cardShape('notes', udas, 'call back')).toBe('pill');
     expect(cardShape('notes', udas, 'one\ntwo')).toBe('text');
-    expect(cardShape('notes', udas, '- [ ] call', true)).toBe('text');
+    expect(cardShape('notes', udas, '- [ ] call', [{ t: 'ul', c: [{ t: 'li', done: false, line: 0, c: [] }] }])).toBe(
+      'text',
+    );
+    // What a transformation made a link is measured by the words it shows, not the Markdown it was written as.
+    const link = [
+      { t: 'p', c: [{ t: 'a', href: 'https://jira.example/browse/FUL-3600', c: [{ t: 'text', s: 'FUL-3600' }] }] },
+    ];
+    expect(cardShape('notes', udas, '[FUL-3600](https://jira.example/browse/FUL-3600)', link)).toBe('pill');
+    expect(
+      cardShape('notes', udas, 'x', [
+        { t: 'p', c: [{ t: 'text', s: 'a' }] },
+        { t: 'p', c: [{ t: 'text', s: 'b' }] },
+      ]),
+    ).toBe('text');
     expect(cardShape('size', udas)).toBe('pill');
     expect(cardShape('estimate', udas)).toBe('pill');
     expect(cardShape('review', udas)).toBe('pill');

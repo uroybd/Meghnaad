@@ -118,7 +118,8 @@ screen: a long column scrolls its own cards. A card is drawn as the report's tab
 your taskrc gives the row (`color.overdue`, `color.active`, `color.tag.x`, …, in the order `rule.precedence.color`
 says, as `task` itself colours it) is a faint wash behind the card (in the terminal app, its frame), the priority is a
 ribbon down its left edge in the colour the taskrc gives that priority (`color.uda.priority.H`, the colour of the
-priority's word in a table), tags are chips, and a finished task is tinted. A ribbon is not Taskwarrior's: it is only
+priority's word in a table), tags are chips, a UDA's choice is a pill in its value's colour (the value half of its
+badge, with icons on), and a finished task is tinted. A ribbon is not Taskwarrior's: it is only
 ever the priority, on every front end, and the cards of a task list on a phone have it too. In the Android app a card is the one the report's list
 shows, with its Done button and ⋯ menu, and **Move to…** under its fields. With the phone held upright, a column takes
 the screen's width, and a swipe goes to the next.
@@ -144,8 +145,9 @@ On every front end a card draws its description and fields as the report's table
 
 On the web and the phone, with Icons in cards on, a UDA is a pill, its label then its value; off, it is its label and
 value on one line, as Taskwarrior's fields are. A UDA drawn as a progress bar is always the bar after its label. A string
-UDA with no `values`, free to hold anything, is a pill or on one line too while it holds a few words (one plain line,
-under 20 characters); longer, on several lines or in Markdown, it is a paragraph of its own under the other fields,
+UDA with no `values`, free to hold anything, is a pill or on one line too while it holds a few words (one line of up to
+30 characters, counted as shown: a ticket key a transformation made a link counts as the key); longer, on several lines
+or Markdown of more than one line (a checklist), it is a paragraph of its own under the other fields,
 headed by its name in bold and drawn as Markdown, and a checkbox in it (`- [ ] call back`) can be ticked right on the
 card, which saves the task's text with it ticked.
 

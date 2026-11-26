@@ -187,7 +187,10 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
         }
         for (k in udaKeys) Field(udaLabel(defs.getValue(k))) {
             val tree = udaTrees[k]
-            if (tree != null) {
+            val choice = choiceOf(defs.getValue(k).values, task.extra.getValue(k))
+            if (choice != null) {
+                ChoicePill(store, k, task.extra.getValue(k), choice)
+            } else if (tree != null) {
                 MarkdownView(tree, onToggle = { line -> store.go { tickBox(null, task.uuid, k, task.extra.getValue(k), line) } })
             } else {
                 val v = task.extra.getValue(k)

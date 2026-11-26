@@ -103,3 +103,14 @@ fun blendColors(colors: List<Color>, weights: List<Double>): Color {
     fun mix(channel: (Color) -> Float) = colors.indices.sumOf { channel(colors[it]) * (w[it] / total) }.toFloat()
     return Color(mix { it.red }, mix { it.green }, mix { it.blue })
 }
+
+/**
+ * The colour of a UDA's value as a pill (spec 0034; web/src/lib/colors.ts, `choiceColor`): its place among the UDA's choices ([choice],
+ * from the engine's cell) picks a chart's default colour, so a value looks the same in a pill and on a chart; the taskrc's
+ * `color.uda.<name>.<value>` wins. Null for a value not among the choices (`-1`): a grey pill.
+ */
+fun choiceColor(name: String, value: String, choice: Int, colors: Map<String, Resolved>, dark: Boolean, page: Color): Color? =
+    if (choice < 0) null else valueColors(name, listOf(ChartLabel(value, value)), colors, dark, page).firstOrNull() ?: defaultSeriesColor(choice, dark)
+
+/** Where [value] is among a UDA's choices, as the engine's cell says it (`tc_core::cells`): -1 for none of them; null for no choices or no value. */
+fun choiceOf(values: List<String>, value: String): Int? = if (values.isEmpty() || value.isEmpty()) null else values.indexOf(value)

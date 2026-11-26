@@ -343,17 +343,34 @@ fun fieldIcon(name: String): String? = FIELD_ICONS[name]
 /** How a card shows a field (kanban.ts `cardShape`): one of Taskwarrior's as it is, a UDA as a pill, a free-text one as a paragraph. */
 enum class CardShape { Field, Pill, Text }
 
-/** A free-text value up to this long, on one line and plain, is a pill like any other UDA's (kanban.ts `SHORT_TEXT`). */
-const val SHORT_TEXT = 20
+/** A free-text value up to this long, on one line, is a pill like any other UDA's (kanban.ts `SHORT_TEXT`). */
+const val SHORT_TEXT = 30
 
 /**
- * A string UDA with no `values` holding more than a few words (several lines, [SHORT_TEXT] characters or more, or
- * [markdown], so its boxes can be ticked) is a paragraph of its own; any other UDA is a pill.
+ * What a Markdown tree shows when it is one line (kanban.ts `inlineText`): a single paragraph with no line break in it (a
+ * ticket key a transformation made a link, a few bold words), as its words read; null for anything more.
  */
-fun cardShape(name: String, udas: Map<String, UdaDef>, text: String = "", markdown: Boolean = false): CardShape {
+fun inlineText(tree: List<Md>): String? {
+    val p = tree.singleOrNull()?.takeIf { it.t == "p" } ?: return null
+    fun words(n: Md): String? {
+        if (n.t == "br" || n.s?.contains('\n') == true) return null
+        val out = StringBuilder(n.s ?: "")
+        for (c in n.c) out.append(words(c) ?: return null)
+        return out.toString()
+    }
+    return words(p)
+}
+
+/**
+ * A string UDA with no `values` holding more than a few words (several lines, more than [SHORT_TEXT] characters) is a
+ * paragraph of its own; any other UDA is a pill. Where the cell has a [tree] (Markdown, or what a transformation made of
+ * it), the tree is measured: one line of it by the words it shows, anything more (a box to tick) is a paragraph.
+ */
+fun cardShape(name: String, udas: Map<String, UdaDef>, text: String = "", tree: List<Md>? = null): CardShape {
     val def = udas[name] ?: return CardShape.Field
     if (def.type != "string" || def.values.isNotEmpty()) return CardShape.Pill
-    val long = markdown || '\n' in text || text.trim().length >= SHORT_TEXT
+    val shown = if (tree != null) inlineText(tree) else text
+    val long = shown == null || '\n' in shown || shown.trim().length > SHORT_TEXT
     return if (long) CardShape.Text else CardShape.Pill
 }
 

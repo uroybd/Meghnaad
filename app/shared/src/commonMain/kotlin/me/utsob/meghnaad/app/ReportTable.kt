@@ -347,6 +347,7 @@ private fun TableCell(
             for (u in c.links) DepLink(store, u) { id -> store.openDetail(id, null) }
         }
         c.segments != null -> ProjectPath(c.segments, onPick = { store.showProject(it) })
+        c.choice != null -> ChoicePill(store, col.name, c.text, c.choice)
         c.chips != null -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (t in c.chips) {
                 val on = t in activeTags

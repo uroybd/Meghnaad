@@ -444,6 +444,40 @@ pub fn badge_value() -> Style {
 }
 
 /// A background a shade away from the page's, for the terminal's light or dark ground; grey in `mono`.
+/// The colours a UDA's choices take by their place among them, as a chart's series that name none do on the web and
+/// the phone (`DEFAULT_SERIES` in `web/src/lib/colors.ts`), so a value has the same colour on all three.
+const CHOICES: [Color; 9] = [
+    Color::Blue,
+    Color::Red,
+    Color::Green,
+    Color::Yellow,
+    Color::Magenta,
+    Color::Cyan,
+    Color::LightBlue,
+    Color::LightRed,
+    Color::LightGreen,
+];
+
+/// A UDA's value that is one of its choices, as a pill (spec 0034): the badge's ground, the value in its colour, which
+/// is the taskrc's `color.uda.<name>.<value>` where it gives one, else the colour of its place (`choice`, from the
+/// engine's cell). A value not among the choices (`-1`) is grey, as is every pill in `mono`.
+pub fn choice(name: &str, value: &str, choice: i64, taskrc: &BTreeMap<String, String>) -> Style {
+    let ground = badge_value();
+    if choice < 0 || current().mono {
+        return ground.patch(dim());
+    }
+    let own = taskrc
+        .get(&format!("color.uda.{name}.{value}"))
+        .and_then(|spec| style_of(spec).ok()?.fg);
+    let place = usize::try_from(choice).map_or(Color::Reset, |i| CHOICES[i % CHOICES.len()]);
+    ground.fg(own.unwrap_or(place)).add_modifier(Modifier::BOLD)
+}
+
+/// A value as a pill: padded, in `style`.
+pub fn pill(value: &str, style: Style) -> ratatui::text::Span<'static> {
+    ratatui::text::Span::styled(format!(" {value} "), style)
+}
+
 fn shade(light: &str, dark: &str) -> Style {
     let t = current();
     let hex = if t.mode == Mode::Light { light } else { dark };

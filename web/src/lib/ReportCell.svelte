@@ -1,7 +1,9 @@
 <script lang="ts">
+  import ChoicePill from './ChoicePill.svelte';
   import DepLink from './DepLink.svelte';
   import { trimNumber, type Cell } from './format';
   import { Repeat } from './icons';
+  import { inlineText } from './markdown';
   import MarkdownNodes from './MarkdownNodes.svelte';
   import ProgressBar from './ProgressBar.svelte';
   import ProjectPath from './ProjectPath.svelte';
@@ -48,6 +50,11 @@
   <span class="cap chips"
     >{#each c.chips as t (t)}<TagChip tag={t} active={activeTags.includes(t)} onclick={ontag} />{/each}</span
   >
+{:else if c.choice != null}
+  <ChoicePill name={col.name} value={c.text} choice={c.choice} />
+{:else if c.blocks && inlineText(c.blocks) != null}
+  <!-- One line of Markdown (a ticket key a transformation made a link): its words in line, beside a label. -->
+  <span class="cap"><MarkdownNodes nodes={c.blocks[0]?.c ?? []} /></span>
 {:else if c.blocks}
   <div class="md">
     <MarkdownNodes nodes={c.blocks} ontoggle={(line) => store.tickBox(entry, row.uuid, col.name, c.text, line)} />

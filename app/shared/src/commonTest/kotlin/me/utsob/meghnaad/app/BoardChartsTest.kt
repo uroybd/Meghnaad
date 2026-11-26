@@ -257,4 +257,17 @@ class BoardChartsTest {
         assertEquals(listOf(blue), heatColors(section(rows, null), listOf(grid, grid), 1, false))
         assertEquals(listOf(red, blue), heatColors(section(rows, true), listOf(grid), 0, false))
     }
+
+    @Test
+    fun aUdaChoiceTakesAChartColourByItsPlaceTheTaskrcsFirstAndGreyForNone() {
+        // spec 0034, as web/src/lib/colors.test.ts.
+        assertEquals(1, choiceOf(listOf("S", "M", "L"), "M"))
+        assertEquals(-1, choiceOf(listOf("S", "M", "L"), "XL"))
+        assertEquals(null, choiceOf(listOf("S", "M", "L"), ""))
+        assertEquals(null, choiceOf(emptyList(), "x"))
+        val page = Color.White
+        assertEquals(defaultSeriesColor(0, false), choiceColor("size", "S", 0, emptyMap(), false, page))
+        assertEquals(paletteColor(5, false), choiceColor("size", "L", 2, mapOf("uda.size.L" to Resolved(fg = 5)), false, page))
+        assertEquals(null, choiceColor("size", "XL", -1, emptyMap(), false, page))
+    }
 }

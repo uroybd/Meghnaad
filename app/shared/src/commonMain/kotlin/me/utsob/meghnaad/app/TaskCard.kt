@@ -142,14 +142,14 @@ fun TaskCard(
     val marks = cells.filter { (col, c) -> col.name != "description" && col.name != "id" && !(c.text.isEmpty() && c.notes.isNullOrEmpty() && c.chips.isNullOrEmpty()) }
     // A field that is a few lines, not a mark: Markdown in a UDA, or on a kanban any free-text UDA.
     val udas = store.config?.config?.udas.orEmpty()
-    fun paragraph(col: Column, c: Cell) = if (kanban) cardShape(col.name, udas, c.text, c.blocks != null) == CardShape.Text else c.blocks != null
+    fun paragraph(col: Column, c: Cell) = if (kanban) cardShape(col.name, udas, c.text, c.blocks) == CardShape.Text else c.blocks != null && inlineText(c.blocks) == null
     // Appearance's `cardIcons`: every field by its icon, a UDA as a pill. Off, a report's card shows a few by an icon and
     // the kanban's each by its label.
     val cardIcons = store.appearance.cardIcons
     val icons = if (cardIcons) true else if (kanban) false else null
     // A UDA as a pill while Icons in cards is on (off, its label then its value), but not one drawn as a progress bar:
     // that is the bar after its label.
-    fun pill(col: Column, c: Cell) = cardIcons && cardShape(col.name, udas, c.text, c.blocks != null) == CardShape.Pill && store.appearance.progress[col.name] == null
+    fun pill(col: Column, c: Cell) = cardIcons && cardShape(col.name, udas, c.text, c.blocks) == CardShape.Pill && store.appearance.progress[col.name] == null
 
     Column(Modifier.padding(top = if (gapBefore) 14.dp else 0.dp, bottom = if (kanban) 0.dp else 10.dp)) {
         Box(
@@ -273,9 +273,18 @@ internal fun Mark(
             // A UDA as a badge: its label on one half, its value on the other, a number without the zeros it ends in. One
             // drawn as a progress bar is never a pill: it is the bar after its label.
             Text(col.label, Modifier.background(colors.surfaceVariant).padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 12.sp, color = dim)
-            val half = Modifier.background(colors.primary.copy(alpha = 0.14f)).padding(horizontal = 6.dp, vertical = 1.dp)
+            // A UDA's choice: the value half in the value's colour, grey for one not among them (spec 0034).
+            val hue = c.choice?.let { choiceColor(baseColumn(col.name), c.text, it, store.config?.colors ?: emptyMap(), extras.dark, colors.background) }
+            val tint = when {
+                c.choice == null -> colors.primary.copy(alpha = 0.14f)
+                hue == null -> colors.surfaceVariant
+                else -> hue.copy(alpha = 0.18f)
+            }
+            val half = Modifier.background(tint).padding(horizontal = 6.dp, vertical = 1.dp)
             val numeric = store.config?.config?.udas?.get(baseColumn(col.name))?.type == "numeric"
-            Text(if (numeric) trimNumber(c.text) else c.text, half, fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // One line of Markdown (a ticket key a transformation made a link) is drawn as it shows, its link kept.
+            if (c.blocks != null) MarkdownView(c.blocks, half, color = colors.onSurface, size = 12.sp)
+            else Text(if (numeric) trimNumber(c.text) else c.text, half, fontSize = 12.sp, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         col.name == "priority" && row.priority != null && icons != false -> {
             // The priority as a small pill of its own colour: the user's `color.uda.priority.*` washes it, the text stays readable.
@@ -289,6 +298,11 @@ internal fun Mark(
                 LucideIcon("flag", size = 13.dp, tint = tint)
                 Text(c.text, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
             }
+        }
+        c.choice != null && !iconOnly -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            // Its label as the card's other fields have it, then the value as a pill (spec 0034).
+            if (icons == null) Text(col.label.uppercase(), fontSize = 11.sp, letterSpacing = 0.6.sp, color = dim.copy(alpha = 0.75f)) else lead()
+            ChoicePill(store, col.name, c.text, c.choice)
         }
         c.chips != null && !iconOnly -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             lead()
@@ -315,6 +329,8 @@ internal fun Mark(
             else Text(col.label.uppercase(), fontSize = 11.sp, letterSpacing = 0.6.sp, color = dim.copy(alpha = 0.75f))
             if (bar != null) {
                 ProgressBar(bar.second, trimNumber(c.text), bar.first, col.label, dim, Modifier.width(120.dp))
+            } else if (!iconOnly && c.blocks != null) {
+                MarkdownView(c.blocks, color = dim, size = 13.sp)
             } else if (!iconOnly) {
                 Text(
                     if (store.config?.config?.udas?.get(baseColumn(col.name))?.type == "numeric") trimNumber(c.text) else c.text,

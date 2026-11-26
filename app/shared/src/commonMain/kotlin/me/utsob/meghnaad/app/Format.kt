@@ -36,6 +36,8 @@ data class Cell(
     val uuid: String? = null,
     /** Other tasks this cell names (their uuids), each drawn as a link. */
     val links: List<String>? = null,
+    /** A UDA with choices: where its value is among them (its pill's colour); -1 for one not among them (a grey pill). */
+    val choice: Int? = null,
 )
 
 enum class UrgencyLevel { Low, Mid, High, Crit }
@@ -126,7 +128,7 @@ private fun Ctx.json(rows: List<Row>): JsonObject = buildJsonObject {
     put("now", now)
     put("tz", tz)
     put("offsets", offsetAt?.let { offsetsFor(rows, this@json, it) } ?: JsonArray(emptyList()))
-    put("udas", buildJsonObject { udas.forEach { (name, u) -> put(name, buildJsonObject { put("type", u.type); put("indicator", u.indicator) }) } })
+    put("udas", buildJsonObject { udas.forEach { (name, u) -> put(name, buildJsonObject { put("type", u.type); put("indicator", u.indicator); put("values", JsonArray(u.values.map { JsonPrimitive(it) })) }) } })
     put("dates", buildJsonObject { put("report", reportDates.json()); put("annotation", annotationDates.json()) })
     put("recur_indicator", recurIndicator)
     put("indicators", buildJsonObject { put("active", indicators.active); put("tag", indicators.tag); put("dependency", indicators.dependency) })

@@ -26,6 +26,11 @@ pub struct Card {
     pub style: Style,
     /// The task's priority (`H`): the ribbon down the card's left edge, in `color.uda.priority.<it>`.
     pub priority: Option<String>,
+    /// The fields that are one of a UDA's choices, by field name: where the value is among them, `-1` for none (spec
+    /// 0034), drawn as a pill.
+    pub choices: BTreeMap<String, i64>,
+    /// The fields that are a string UDA free to hold anything: past a few words, lines of their own.
+    pub free: BTreeSet<String>,
     /// The swimlane it is in: the heading of its group in the report (a `/` in its sort); none without groups.
     pub lane: Option<String>,
 }
@@ -332,9 +337,9 @@ impl App {
             columns: reports
                 .iter()
                 .zip(&kept)
-                .map(|(r, keep)| laned(cards(r, keep)))
+                .map(|(r, keep)| laned(cards(r, keep, &self.cfg)))
                 .collect(),
-            other: laned(cards(&all, &other)),
+            other: laned(cards(&all, &other, &self.cfg)),
             lanes,
         };
         let before = self.kanban_cursor().map(|c| c.lane.clone());
@@ -911,7 +916,17 @@ fn kanbans_problem(s: &Settings) -> Option<String> {
 }
 
 /// The cards of a report's rows at `keep`: the description first (with the ID in front), then the other cells.
-fn cards(r: &model::Report, keep: &[usize]) -> Vec<Card> {
+fn cards(r: &model::Report, keep: &[usize], cfg: &tc_core::taskrc::Config) -> Vec<Card> {
+    let free: BTreeSet<String> = r
+        .names
+        .iter()
+        .filter(|n| {
+            cfg.udas
+                .get(n.as_str())
+                .is_some_and(|u| u.ty == tc_core::taskrc::UdaType::String && u.values.is_empty())
+        })
+        .cloned()
+        .collect();
     let desc = r.names.iter().position(|n| n == "description");
     let id = r.names.iter().position(|n| n == "id");
     let name = |j: usize| r.names.get(j).cloned().unwrap_or_default();
@@ -938,12 +953,20 @@ fn cards(r: &model::Report, keep: &[usize]) -> Vec<Card> {
                 .zip(cells)
                 .filter_map(|(n, c)| Some((n.clone(), c.blocks.clone()?)))
                 .collect();
+            let choices = r
+                .names
+                .iter()
+                .zip(cells)
+                .filter_map(|(n, c)| Some((n.clone(), c.choice?)))
+                .collect();
             Some(Card {
                 uuid: r.uuids.get(i)?.clone(),
                 id: r.ids.get(i).copied().flatten(),
                 title: title.lines().next().unwrap_or("").to_owned(),
                 fields,
                 md,
+                choices,
+                free: free.clone(),
                 title_field: at.map(name).unwrap_or_default(),
                 style: r.styles.get(i).copied().unwrap_or_default(),
                 priority: r.priorities.get(i).cloned().flatten(),
