@@ -434,3 +434,22 @@ async fn a_request_naming_its_zone_keeps_the_wall_clock_time() {
     assert_eq!(next_due(Some("America/New_York")).await, 1_807_329_600);
     assert_eq!(next_due(None).await, 1_807_329_600 + 3600);
 }
+
+#[tokio::test]
+async fn an_iterative_task_made_recurring_in_one_modify_is_a_template() {
+    // What a form switching Repeat from iterative to recurring runs, as `task` 3.6.0 takes it: the series ended and the
+    // task the template of a recurring one, with its first instance.
+    let mut r = Replica::new(LiveStorage::new());
+    let cfg = cfg();
+    run(&mut r, &cfg, "add Water plants iter:daily iter_type:fixed due:tomorrow").await;
+    let res = run(&mut r, &cfg, "1 modify iter: iter_type: recur:weekly").await;
+    assert!(!message(&res).starts_with("ERROR"), "{}", message(&res));
+    run(&mut r, &cfg, "count").await; // the first command after makes the first instance
+    let tasks = all(&mut r).await;
+    let mut statuses: Vec<_> = tasks.iter().map(|f| f.status.as_str()).collect();
+    statuses.sort_unstable();
+    assert_eq!(statuses, ["pending", "recurring"], "{tasks:?}");
+    assert!(tasks
+        .iter()
+        .all(|f| f.iter.is_none() && f.iter_type.is_none() && f.iter_count.is_none()));
+}

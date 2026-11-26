@@ -739,8 +739,9 @@ fn becomes_recurring(m: &Mods, mode: Mode, current: Option<&Facts>, out: &[Chang
     }
     match (mode, current) {
         (Mode::Add, _) => true,
-        // Only a plain pending task, never an instance (it has a parent) or an existing parent.
-        (Mode::Modify, Some(c)) => c.status == "pending" && c.parent.is_none(),
+        // Only a plain pending task, never an instance (it has a parent) or an existing parent. An iterative one too:
+        // the same command ends its series (`iter:`, or `iterative_rules` refuses it), as `task` 3.6.0 takes it.
+        (Mode::Modify, Some(c)) => c.is_open() && c.parent.is_none(),
         (Mode::Modify, None) => false,
     }
 }
