@@ -267,6 +267,25 @@ async fn clearing_iter_asks_and_ends_the_series() {
 }
 
 #[tokio::test]
+async fn clearing_iter_ends_a_series_that_came_without_a_count() {
+    // `task` always numbers one, but a task synced from elsewhere may lack `iter_count`: clearing its `iter` still makes
+    // it a plain task, not an iterative one with no rule to complete it by.
+    let mut r = Replica::new(LiveStorage::new());
+    let cfg = cfg();
+    run(&mut r, &cfg, "add Pay rent iter:monthly iter_type:fixed due:tomorrow").await;
+    let uuid = all(&mut r).await[0].uuid;
+    let mut ops = taskchampion::Operations::new();
+    let mut t = r.get_task(uuid).await.unwrap().unwrap();
+    t.set_value("iter_count", None, &mut ops).unwrap();
+    r.commit_operations(ops).await.unwrap();
+
+    run(&mut r, &cfg, "1 modify iter:").await;
+    let f = one(&mut r, uuid).await;
+    assert_eq!(f.status, "pending");
+    assert_eq!((f.iter, f.iter_type, f.iter_count), (None, None, None));
+}
+
+#[tokio::test]
 async fn a_copy_starts_a_series_of_its_own() {
     let mut r = Replica::new(LiveStorage::new());
     let cfg = cfg();

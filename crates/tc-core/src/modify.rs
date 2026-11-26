@@ -734,7 +734,7 @@ fn iterative_rules(current: Option<&Facts>, out: &mut Vec<Change>, ctx: &EvalCtx
             return err("You cannot change the status of an iterative task. Clear iter to end the series instead.");
         }
     }
-    if was && iter.is_none() && current.is_some_and(|c| c.iter_count.is_some()) {
+    if was && iter.is_none() {
         out.insert(0, Change::EndSeries);
         return Ok(());
     }
