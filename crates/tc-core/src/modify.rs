@@ -200,36 +200,94 @@ pub fn resolve_task(token: &str, ids: &BTreeMap<Uuid, u32>, all: &[Facts]) -> Re
     }
 }
 
+/// A UDA's value as `Task::modify` takes it (checked against task 3.6.0, whose `modify` is 3.5's): a numeric or
+/// duration value is evaluated as an expression and kept by its result's type, a date read as a date or an expression,
+/// a uuid a uuid or its start, a string one of its `values` when it has them. The refusals are word for word `task`'s.
 fn validate_uda(name: &str, value: &str, cfg: &Config, clock: &Clock) -> Result<String, ModError> {
+    use crate::calc::{evaluate, fmt_duration, fmt_real, Value};
     let Some(def) = cfg.udas.get(name) else {
         return Ok(value.to_owned());
     };
+    let value = value.trim();
     match def.ty {
-        UdaType::Numeric => value
-            .trim()
-            .parse::<f64>()
-            .map(|_| value.trim().to_owned())
-            .map_err(|_| ModError(format!("'{value}' is not a number (uda {name})"))),
-        UdaType::Date => parse_date_expr(value, clock)
-            .map(|d| d.ts.to_string())
-            .ok_or_else(|| ModError(format!("'{value}' is not a valid date (uda {name})"))),
-        UdaType::String => {
-            if !def.values.is_empty() && !def.values.iter().any(|v| v == value) {
-                let allowed: Vec<&str> = def
-                    .values
-                    .iter()
-                    .map(String::as_str)
-                    .filter(|v| !v.is_empty())
-                    .collect();
-                return err(format!(
-                    "'{value}' is not an allowed value for {name}; use one of: {}",
-                    allowed.join(", ")
-                ));
+        UdaType::Numeric => match evaluate(value, clock, &|_| None) {
+            Ok(Value::Int(i)) => Ok(i.to_string()),
+            Ok(Value::Real(r)) => Ok(fmt_real(r)),
+            Ok(Value::Date(s) | Value::Dur(s)) => Ok(s.to_string()),
+            // `Variant::type_boolean` is the first of its types.
+            Ok(Value::Bool(_)) => err("Unexpected variant type: '0'"),
+            Ok(Value::Text(_)) | Err(_) => err(format!("The value '{value}' is not a valid numeric value.")),
+        },
+        UdaType::Duration => match evaluate(value, clock, &|_| None) {
+            Ok(Value::Dur(s)) => Ok(fmt_duration(s)),
+            // A word the expression reader leaves as text but `Duration` knows (`weekly`, `fortnight`); never a bare
+            // number, which `task` refuses.
+            Ok(Value::Text(_)) if value.contains(|c: char| c.is_ascii_alphabetic()) => {
+                crate::dates::parse_duration(value)
+                    .map(fmt_duration)
+                    .ok_or_else(|| ModError(format!("The duration value '{value}' is not supported.")))
             }
-            Ok(value.to_owned())
-        }
-        UdaType::Duration | UdaType::Uuid => Ok(value.to_owned()),
+            _ => err(format!("The duration value '{value}' is not supported.")),
+        },
+        UdaType::Date => uda_date(value, cfg, clock).map(|ts| ts.to_string()),
+        UdaType::Uuid if uuid_start(value) => Ok(value.to_owned()),
+        UdaType::String if def.values.is_empty() || def.values.iter().any(|v| v == value) => Ok(value.to_owned()),
+        UdaType::Uuid | UdaType::String => err(format!("The '{name}' attribute does not allow a value of '{value}'.")),
     }
+}
+
+/// A date's value in `add` and `modify` (a date UDA's, `due`'s): a date as `task` reads one, else an expression that
+/// comes to a date or a duration from now. A number alone is a moment since the epoch from 1980 on
+/// (`Datetime::parse_epoch`), never seconds from now as a filter's date may be: `due:1795695679` and `due:1.5e9` are
+/// moments, `due:3` is refused, and eight digits (`20261127`) are read as a date in the `dateformat` and refused.
+fn uda_date(value: &str, cfg: &Config, clock: &Clock) -> Result<i64, ModError> {
+    use crate::calc::Value;
+    let number = value.starts_with(|c: char| c.is_ascii_digit() || c == '.') && value.parse::<f64>().is_ok();
+    if number && value.len() == 8 && value.bytes().all(|c| c.is_ascii_digit()) {
+        return Err(unreadable_date(value, cfg));
+    }
+    if !number {
+        if let Some(d) = parse_date_expr(value, clock) {
+            return Ok(d.ts);
+        }
+    }
+    let epoch = |n: f64| -> Result<i64, ModError> {
+        if n >= 315_532_800.0 {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "a moment in seconds, its fraction dropped as task does"
+            )]
+            Ok(n as i64)
+        } else {
+            err(format!("'{value}' is not a valid date."))
+        }
+    };
+    match crate::calc::evaluate(value, clock, &|_| None) {
+        Ok(Value::Date(ts)) => Ok(ts),
+        Ok(Value::Dur(s)) => Ok(clock.now + s),
+        #[allow(clippy::cast_precision_loss, reason = "a moment in seconds fits a double exactly")]
+        Ok(Value::Int(n)) => epoch(n as f64),
+        Ok(Value::Real(n)) => epoch(n),
+        Ok(Value::Bool(_)) => err(format!("'{value}' is not a valid date.")),
+        _ => Err(unreadable_date(value, cfg)),
+    }
+}
+
+/// `task`'s refusal of a date it can't read, in the `dateformat` it would have taken.
+fn unreadable_date(value: &str, cfg: &Config) -> ModError {
+    let format = cfg.settings.get("dateformat").map_or("Y-M-D", String::as_str);
+    ModError(format!("'{value}' is not a valid date in the '{format}' format."))
+}
+
+/// Whether `value` is a uuid or the start of one, eight characters or more (`Lexer::isUUID`): each a hex digit, or a
+/// dash where a uuid has one.
+fn uuid_start(value: &str) -> bool {
+    const SHAPE: &[u8] = b"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+    (8..=SHAPE.len()).contains(&value.len())
+        && value
+            .bytes()
+            .zip(SHAPE)
+            .all(|(c, &want)| if want == b'-' { c == b'-' } else { c.is_ascii_hexdigit() })
 }
 
 /// `/from/to/` (`/from/to/g` for every match): `from` is a pattern unless `regex` is off, and `to` is
@@ -445,12 +503,10 @@ pub fn plan(
                 let value = if v.is_empty() {
                     None
                 } else {
-                    Some(
-                        own_date(v, current, &out)
-                            .map(|d| d.ok_or_else(|| ModError(format!("'{v}' is not a valid date for {n}"))))
-                            .or_else(|| parse_date_expr(v, &ctx.clock).map(|d| Ok(d.ts)))
-                            .unwrap_or_else(|| Err(ModError(format!("'{v}' is not a valid date for {n}"))))?,
-                    )
+                    Some(own_date(v, current, &out).map_or_else(
+                        || uda_date(v, cfg, &ctx.clock),
+                        |d| d.ok_or_else(|| unreadable_date(v, cfg)),
+                    )?)
                 };
                 let Some(name) = ts_prop(n) else {
                     return err(format!("'{n}' is not a date"));
@@ -879,6 +935,146 @@ mod tests {
             .contains("valid date"));
     }
 
+    /// Each value as real task 3.6.0 took it, on scratch data with these UDAs: what it stored, or its refusal.
+    #[test]
+    fn uda_values_as_task_takes_them() {
+        let h = H::new(
+            "uda.est.type=numeric\nuda.len.type=duration\nuda.ship.type=date\nuda.ref.type=uuid\n\
+             uda.size.type=string\nuda.size.values=S,M,L\n",
+        );
+        let now = clock().now;
+        let got = |line: &str| match h.plan(Mode::Add, &format!("x {line}"), None) {
+            Ok(c) => c
+                .into_iter()
+                .find_map(|c| match c {
+                    Change::Prop { name, value } if name != "description" => value,
+                    _ => None,
+                })
+                .unwrap_or_default(),
+            Err(e) => e.0,
+        };
+        let cases: &[(&str, &str)] = &[
+            ("est:3", "3"),
+            ("est:3+2", "5"),
+            ("est:2*3", "6"),
+            ("est:(1+2)*3", "9"),
+            ("est:7/2", "3"),
+            ("est:1e3", "1000"),
+            ("est:1e20", "1e+20"),
+            ("est:-2", "-2"),
+            ("est:+3", "3"),
+            ("est:2.", "2"),
+            ("est:2.50", "2.5"),
+            ("est:0.1+0.2", "0.3"),
+            ("est:2^3", "8"),
+            ("est:2h", "7200"),
+            ("est:2h-1h", "3600"),
+            ("est:.5", "The value '.5' is not a valid numeric value."),
+            ("est:1,5", "The value '1,5' is not a valid numeric value."),
+            ("est:inf", "The value 'inf' is not a valid numeric value."),
+            ("est:0x10", "The value '0x10' is not a valid numeric value."),
+            ("est:abc", "The value 'abc' is not a valid numeric value."),
+            ("est:007", "The value '007' is not a valid numeric value."),
+            ("est:12abc", "The value '12abc' is not a valid numeric value."),
+            ("est:5>3", "Unexpected variant type: '0'"),
+            ("len:2h", "PT2H"),
+            ("len:2h+1h", "PT3H"),
+            ("len:1.5h", "PT1H30M"),
+            ("len:P1W", "P7D"),
+            ("len:weekly", "P7D"),
+            ("len:-2h", "-PT2H"),
+            ("len:P0D", "PT0S"),
+            ("len:3", "The duration value '3' is not supported."),
+            ("len:abc", "The duration value 'abc' is not supported."),
+            ("ship:nonsense", "'nonsense' is not a valid date in the 'Y-M-D' format."),
+            ("ship:3", "'3' is not a valid date."),
+            ("ship:1.5", "'1.5' is not a valid date."),
+            ("size:XL", "The 'size' attribute does not allow a value of 'XL'."),
+            ("size:s", "The 'size' attribute does not allow a value of 's'."),
+            ("size:M", "M"),
+            ("ref:12345678", "12345678"),
+            ("ref:1234abcd-1", "1234abcd-1"),
+            (
+                "ref:12345678-1234-1234-1234-123456789ABC",
+                "12345678-1234-1234-1234-123456789ABC",
+            ),
+            (
+                "ref:1234567",
+                "The 'ref' attribute does not allow a value of '1234567'.",
+            ),
+            (
+                "ref:123456789",
+                "The 'ref' attribute does not allow a value of '123456789'.",
+            ),
+            (
+                "ref:ghijklmn",
+                "The 'ref' attribute does not allow a value of 'ghijklmn'.",
+            ),
+        ];
+        let wrong: Vec<String> = cases
+            .iter()
+            .filter(|(line, want)| got(line) != *want)
+            .map(|(line, want)| format!("{line}: got {:?}, want {want:?}", got(line)))
+            .collect();
+        assert!(wrong.is_empty(), "{wrong:#?}");
+        assert_eq!(got("ship:2h"), (now + 7200).to_string());
+        assert_eq!(got("ship:now+1d"), (now + 86_400).to_string());
+    }
+
+    #[test]
+    fn a_date_it_cannot_read_is_refused_in_tasks_words() {
+        let h = H::new("");
+        let refusal = |line: &str| h.plan(Mode::Add, line, None).unwrap_err().0;
+        assert_eq!(
+            refusal("x due:nonsense"),
+            "'nonsense' is not a valid date in the 'Y-M-D' format."
+        );
+        assert_eq!(refusal("x due:3"), "'3' is not a valid date.");
+        assert_eq!(refusal("x due:5>3"), "'5>3' is not a valid date.");
+        assert_eq!(
+            refusal("x wait:due-1d"),
+            "'due-1d' is not a valid date in the 'Y-M-D' format."
+        );
+        assert_eq!(refusal("x due:100000000"), "'100000000' is not a valid date.");
+        assert_eq!(
+            refusal("x due:20261127"),
+            "'20261127' is not a valid date in the 'Y-M-D' format."
+        );
+        let epoch = h.plan(Mode::Add, "x due:1795695679", None).unwrap();
+        assert!(
+            epoch.iter().any(|c| matches!(
+                c,
+                Change::Timestamp {
+                    value: Some(1_795_695_679),
+                    ..
+                }
+            )),
+            "{epoch:?}"
+        );
+        assert_eq!(refusal("x due:315532799"), "'315532799' is not a valid date.");
+        assert_eq!(refusal("x due:202611"), "'202611' is not a valid date.");
+        assert_eq!(
+            refusal("x due:99999999"),
+            "'99999999' is not a valid date in the 'Y-M-D' format."
+        );
+        let at = |line: &str| {
+            h.plan(Mode::Add, line, None)
+                .unwrap()
+                .into_iter()
+                .find_map(|c| match c {
+                    Change::Timestamp { value, .. } => value,
+                    _ => None,
+                })
+        };
+        assert_eq!(at("x due:315532800"), Some(315_532_800));
+        assert_eq!(at("x due:1.5e9"), Some(1_500_000_000));
+        let dmy = H::new("dateformat=D.M.Y\n");
+        assert_eq!(
+            dmy.plan(Mode::Add, "x due:nonsense", None).unwrap_err().0,
+            "'nonsense' is not a valid date in the 'D.M.Y' format."
+        );
+    }
+
     #[test]
     fn uda_validation_and_defaults() {
         let h = H::new(
@@ -914,12 +1110,12 @@ mod tests {
             .plan(Mode::Add, "x estimate:huge", None)
             .unwrap_err()
             .0
-            .contains("use one of: big, small"));
+            .contains("does not allow a value of 'huge'"));
         assert!(h
             .plan(Mode::Add, "x points:abc", None)
             .unwrap_err()
             .0
-            .contains("not a number"));
+            .contains("not a valid numeric value"));
         assert!(h
             .plan(Mode::Add, "x ship:never", None)
             .unwrap_err()

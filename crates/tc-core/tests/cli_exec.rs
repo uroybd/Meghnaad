@@ -1393,7 +1393,11 @@ async fn udas_and_custom_reports_from_taskrc() {
     run(&mut r, &cfg, "add small thing estimate:small").await;
     run(&mut r, &cfg, "add big thing estimate:big points:8").await;
     let (res, _) = run(&mut r, &cfg, "add bad estimate:huge").await;
-    assert!(message(&res).contains("use one of: big, small"), "{}", message(&res));
+    assert!(
+        message(&res).contains("does not allow a value of 'huge'"),
+        "{}",
+        message(&res)
+    );
 
     let (CliResult::Report(o), _) = run(&mut r, &cfg, "sized").await else {
         panic!()

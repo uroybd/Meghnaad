@@ -1259,6 +1259,32 @@ pub fn truth(code: &Compiled, clock: &Clock, dom: DomFn) -> Result<bool, String>
     run_postfix(&code.0, clock, dom).map(|v| truthy(&v))
 }
 
+/// What an expression comes to, in its own type, as `Eval` hands it to `Task::modify` (a numeric or duration UDA's
+/// value is worked out this way: `est:3+2` is 5, `len:2h*2` four hours).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    Bool(bool),
+    Int(i64),
+    Real(f64),
+    Text(String),
+    Date(i64),
+    Dur(i64),
+}
+
+/// Evaluate an infix expression to its value; the errors are the ones `calc` gives.
+pub fn evaluate(expression: &str, clock: &Clock, dom: DomFn) -> Result<Value, String> {
+    let mut tokens = tokenize(expression, clock);
+    Parse(&mut tokens, 0).logical();
+    Ok(match run_postfix(&to_postfix(tokens)?, clock, dom)? {
+        V::Bool(b) => Value::Bool(b),
+        V::Int(i) => Value::Int(i),
+        V::Real(r) => Value::Real(r),
+        V::Str(t) => Value::Text(t),
+        V::Date(d) => Value::Date(d),
+        V::Dur(d) => Value::Dur(d),
+    })
+}
+
 pub fn calc(expression: &str, postfix: bool, clock: &Clock, dom: DomFn) -> Result<String, String> {
     let mut tokens = tokenize(expression, clock);
     if !postfix {

@@ -255,7 +255,7 @@ inheritance rules, which follow Taskwarrior's source.
 
 | Option | Status | Remark |
 | --- | --- | --- |
-| `uda.<name>.type` | Done | `string`, `numeric`, `date`, `duration`, `uuid` |
+| `uda.<name>.type` | Done | `string`, `numeric`, `date`, `duration`, `uuid`. A value is taken as `task` takes it: a numeric or duration value is worked out as an expression (`est:3+2` is 5, `len:2h*2` is `PT4H`), a date as a date or an expression (`now+1d`, `2h` from now, a number from 1980 on as an epoch time), a uuid whole or its first eight characters or more, a string one of its `values` when it has them; anything else is refused in `task`'s words ("The value 'abc' is not a valid numeric value.") |
 | `uda.<name>.label` | Done | |
 | `uda.<name>.values` | Done | Also drives sorting. A trailing blank value is allowed |
 | `uda.<name>.default` | Done | See Defaults |
