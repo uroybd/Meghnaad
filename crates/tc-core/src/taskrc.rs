@@ -497,8 +497,9 @@ pub fn valid_ident(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// The id in `holiday.<id>.name`: Taskwarrior's own files use `en-US1`, so a dash is as good as a letter.
-fn valid_holiday_id(s: &str) -> bool {
+/// A name that may have a dash in it: a holiday's id (Taskwarrior's own files use `en-US1`), and a context's
+/// (`task` 3.6.0 reads `rc.context.my-ctx`).
+pub fn valid_dashed_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
@@ -965,7 +966,7 @@ fn parse_one(p: &mut Parsed, raw_uda: &mut RawAttrs, raw_report: &mut RawAttrs, 
         }
         // A context's own settings. The key goes through the same checks as one typed on a command
         // line, and anything credential-like is refused by name, never stored.
-        ["context", n, "rc", key @ ..] if valid_ident(n) && !key.is_empty() => {
+        ["context", n, "rc", key @ ..] if valid_dashed_name(n) && !key.is_empty() => {
             let key = key.join(".");
             if is_sensitive(&key) {
                 p.blocked.push(name.to_owned());
@@ -983,7 +984,7 @@ fn parse_one(p: &mut Parsed, raw_uda: &mut RawAttrs, raw_report: &mut RawAttrs, 
                 Err(RcProblem::Bad(why)) => p.warnings.push(format!("{name}: {why}")),
             }
         }
-        ["context", n, attr] if valid_ident(n) && matches!(*attr, "read" | "write") => {
+        ["context", n, attr] if valid_dashed_name(n) && matches!(*attr, "read" | "write") => {
             let c = p.config.contexts.entry((*n).to_owned()).or_insert_with(|| ContextDef {
                 name: (*n).to_owned(),
                 ..Default::default()
@@ -1033,7 +1034,7 @@ fn parse_one(p: &mut Parsed, raw_uda: &mut RawAttrs, raw_report: &mut RawAttrs, 
             p.config.settings.insert(name.to_owned(), unescape(value));
         }
         // `holiday.<id>.name`, and `.date` or `.start` and `.end`, for the calendar.
-        ["holiday", id, attr] if valid_holiday_id(id) && matches!(*attr, "name" | "date" | "start" | "end") => {
+        ["holiday", id, attr] if valid_dashed_name(id) && matches!(*attr, "name" | "date" | "start" | "end") => {
             p.config.settings.insert(name.to_owned(), unescape(value));
         }
         // Taskwarrior refuses to start with anything but Sunday or Monday here.
@@ -1490,6 +1491,7 @@ verbose=nothing
         ("sync.aws.secret_access_key", "wJalrXUtnFEMI-SECRETKEY"),
         ("sync.aws.bucket", "my-private-bucket"),
         ("sync.aws.endpoint_url", "https://acct123.r2.cloudflarestorage.com"),
+        ("sync.aws.force_path_style", "true-PATHSTYLE"),
         ("sync.server.client_id", "11111111-2222-3333-4444-555555555555"),
         ("sync.server.url", "https://tasks.example.com"),
         ("sync.gcp.credential_path", "/home/me/gcp.json"),

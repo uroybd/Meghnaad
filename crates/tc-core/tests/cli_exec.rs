@@ -5327,6 +5327,38 @@ mod duplicate_log_stats_context {
     }
 
     #[tokio::test]
+    async fn a_quoted_definition_is_judged_word_by_word() {
+        // As `task` 3.6.0 (#4229): quoted, `or` is still an `or`, and a new task would otherwise have it in its
+        // description.
+        let mut r = replica();
+        for (line, filter, why) in [
+            (
+                r#"context define mine "+personal or +home or +work""#,
+                "+personal or +home or +work",
+                "contains the 'OR' operator",
+            ),
+            (
+                r#"context define mine "project:a -work""#,
+                "project:a -work",
+                "contains tag exclusion '-work'",
+            ),
+            (
+                r#"context define mine "due.before:today""#,
+                "due.before:today",
+                "contains an attribute modifier 'due.before:today'",
+            ),
+        ] {
+            let d = done(&mut r, &quiet(), line, false).await;
+            let m = message(&d.result);
+            assert!(m.contains(&format!("because it {why}.")), "{line}: {m}");
+            assert!(m.contains("Context 'mine' defined (read only)."), "{m}");
+            let cfg = d.config.expect("new settings");
+            assert_eq!(cfg.contexts["mine"].read.as_deref(), Some(filter));
+            assert_eq!(cfg.contexts["mine"].write, None);
+        }
+    }
+
+    #[tokio::test]
     async fn context_refuses_what_it_cannot_define() {
         let mut r = replica();
         let cfg = quiet();
@@ -5349,7 +5381,7 @@ mod duplicate_log_stats_context {
             ),
             (
                 "context define a.b +x",
-                "ERROR: 'a.b' can't be a context name: use letters, digits and underscores.",
+                "ERROR: 'a.b' can't be a context name: use letters, digits, dashes and underscores.",
             ),
         ] {
             let d = done(&mut r, &cfg, line, false).await;
@@ -5584,6 +5616,24 @@ mod commands_and_get {
             assert!(!wrote, "{line}");
             assert_eq!(message(&res), expected, "{line}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_setting_named_with_a_dash_is_a_dom_reference() {
+        // As `task` 3.6.0 (#4197); a dash at the end is not part of the name.
+        let mut r = replica();
+        let cfg = tc_core::taskrc::parse("context.my-ctx.read=project:x\n").config;
+        assert_eq!(text(&mut r, &cfg, "_get rc.context.my-ctx.read").await, "project:x");
+        assert_eq!(text(&mut r, &cfg, "calc rc.context.my-ctx.read").await, "project:x");
+        // `task` made it: the context is kept, and can be switched to.
+        assert!(cfg.contexts.contains_key("my-ctx"));
+        let (res, _) = run(&mut r, &cfg, "context my-ctx").await;
+        assert_eq!(
+            message(&res),
+            "Context 'my-ctx' set. Use 'task context none' to remove."
+        );
+        let (res, _) = run(&mut r, &cfg, "_get rc.foo-").await;
+        assert_eq!(message(&res), "ERROR: 'rc.foo-' is not a DOM reference.");
     }
 
     #[tokio::test]
@@ -6453,13 +6503,14 @@ async fn a_filter_in_one_quoted_argument_is_read_as_an_expression() {
         let (res, _) = run(&mut r, &cfg, &format!("\"{filter}\" count")).await;
         assert_eq!(message(&res), count, "{filter}");
     }
-    // `context define` takes the same kind of text, and the context then filters by it.
+    // `context define` takes the same kind of text, and the context then filters by it. With an `or` in it, it is for
+    // reading only, as in `task` 3.6.0 (3.5 also made it what new tasks get, `or` and all).
     for line in [
         "context define a \"+x or (end.after:sow and end.before:eow) or (scheduled.after:sow and scheduled.before:eow)\"",
         "context define b \"(due.after:sow and due.before:eow) or (end.after:sow and end.before:eow)\"",
     ] {
         let (res, _) = run_yes(&mut r, &cfg, line).await;
-        assert!(message(&res).contains("defined (read, write)"), "{line}: {}", message(&res));
+        assert!(message(&res).contains("defined (read only)"), "{line}: {}", message(&res));
     }
 }
 

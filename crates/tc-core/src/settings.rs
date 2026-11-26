@@ -10,7 +10,7 @@
 //! credential-like name is refused by name, and nothing of that kind is ever stored to be shown.
 
 use crate::cli::{CliResult, TableOut};
-use crate::taskrc::{is_sensitive, parse, render, valid_ident, Config, ContextDef, SETTING_DEFAULTS};
+use crate::taskrc::{is_sensitive, parse, render, valid_dashed_name, Config, ContextDef, SETTING_DEFAULTS};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// What `config` decided.
@@ -359,9 +359,9 @@ pub fn context(
                     "The name '{name}' is reserved and not allowed to use as a context name."
                 ));
             }
-            if !valid_ident(name) {
+            if !valid_dashed_name(name) {
                 return Outcome::Error(format!(
-                    "'{name}' can't be a context name: use letters, digits and underscores."
+                    "'{name}' can't be a context name: use letters, digits, dashes and underscores."
                 ));
             }
             let value = filter.join(" ");
@@ -375,7 +375,8 @@ pub fn context(
                     "The filter '{value}' matches 0 pending tasks. Do you wish to continue?"
                 ));
             }
-            let reason = not_a_write_rule(filter);
+            // The definition as it is stored, word by word: quoted, `"+a or +b"` is one word on the command line.
+            let reason = not_a_write_rule(&crate::filter::split_words(&value));
             let mut edited = edit(stored, &key("read"), Some(&value));
             if reason.is_none() {
                 edited = edited.and_then(|c| edit(&c, &key("write"), Some(&value)));

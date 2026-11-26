@@ -178,8 +178,10 @@ when its filter matches no pending task, and deleting asks when `confirmation` i
 your context names, and `rc.context:` the same way.
 
 A filter that can't also serve as what new tasks get (one with `or`, a `-tag` or a modifier such as `.before`) makes a
-read-only context, and says so. Put the whole filter in quotes (`context define this_week "+WEEK or (due.after:sow and
-due.before:eow)"`) to read it as one filter, as Taskwarrior does, unless it starts with a `name:value`, which takes all of it.
+read-only context, and says so, quoted or not (as in Taskwarrior 3.6.0). Put the whole filter in quotes (`context define
+this_week "+WEEK or (due.after:sow and due.before:eow)"`) to read it as one filter, as Taskwarrior does, unless it starts
+with a `name:value`, which takes all of it. A context's name is letters, digits, `-` and `_` (`my-ctx`), and
+`_get rc.context.my-ctx.read` reads its filter.
 
 **The active context is the console's.** It sits above the prompt (`context work`, with a ✕ that runs `context none`),
 and every command runs in it. While one is active, the pill in the top bar, the Run button and the prompt are amber.

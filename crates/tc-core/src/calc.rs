@@ -483,8 +483,17 @@ fn tokenize(src: &str, clock: &Clock) -> Vec<Tok> {
         // Words: `and`, `or`, `xor`, named dates, constants, anything else is a string.
         if c.is_ascii_alphabetic() || c == b'_' {
             let mut j = 0;
-            while j < rest.len() && (rest[j].is_ascii_alphanumeric() || rest[j] == b'_' || rest[j] == b'.') {
+            let name = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'.';
+            while j < rest.len() && name(rest[j]) {
                 j += 1;
+                // A setting's name may have a dash in it (`rc.context.my-ctx`): a dash with more of the name after
+                // it is part of the word, as in `task` 3.6.0; `rc.x-1` is still `rc.x-1`, and `rc.x - 1` a sum.
+                if rest.starts_with(b"rc.")
+                    && rest.get(j) == Some(&b'-')
+                    && rest.get(j + 1).is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_')
+                {
+                    j += 1;
+                }
             }
             // A named date ends at its dot: `tomorrow.year` is the date and a word `.year`, which is no expression.
             if let Some((date, _)) = src[i..i + j].split_once('.').filter(|(d, _)| NAMED_DATES.contains(d)) {
@@ -785,7 +794,11 @@ pub fn is_dom_ref(word: &str, is_attribute: &dyn Fn(&str) -> bool, is_date: &dyn
     const PARTS: [&str; 9] = [
         "year", "month", "day", "week", "weekday", "julian", "hour", "minute", "second",
     ];
-    if word.strip_prefix("rc.").is_some_and(|k| !k.is_empty()) || FIXED.contains(&word) {
+    if let Some(key) = word.strip_prefix("rc.") {
+        // A dash joins two parts of a name (`rc.context.my-ctx`); at an end it is a minus.
+        return key.split('-').all(|part| !part.is_empty());
+    }
+    if FIXED.contains(&word) {
         return true;
     }
     let task = |head: &str| {
@@ -1536,11 +1549,15 @@ mod tests {
             "1.annotations.2.entry",
             "1.annotations.2.entry.hour",
             "9.description",
+            "rc.context.my-ctx",
         ] {
             assert!(is(yes), "{yes}");
         }
         for no in [
             "rc.",
+            "rc.foo-",
+            "rc.-foo",
+            "rc.a--b",
             "foo",
             "1",
             "1.",
@@ -1845,5 +1862,15 @@ mod tests {
         assert_eq!(fmt_real(-2.5e-5), "-2.5e-05");
         assert_eq!(fmt_real(999999.5), "1e+06");
         assert_eq!(fmt_real(123456.0), "123456");
+    }
+
+    #[test]
+    fn a_dash_joins_a_setting_name_and_is_a_minus_elsewhere() {
+        let clock = Clock::utc(1_791_376_200);
+        let w = |e: &str| words(e, &clock);
+        assert_eq!(w("rc.context.my-ctx"), ["rc.context.my-ctx"]);
+        assert_eq!(w("rc.foo-"), ["rc.foo", "-"]);
+        assert_eq!(w("rc.foo - 1"), ["rc.foo", "-", "1"]);
+        assert_eq!(w("due-1d"), ["due", "-", "1d"]);
     }
 }
