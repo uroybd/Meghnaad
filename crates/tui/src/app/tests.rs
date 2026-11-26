@@ -253,6 +253,70 @@ fn the_one_line_add_opens_into_the_form_with_its_fields_filled() {
     assert!(matches!(app.mode, Mode::Normal));
 }
 
+/// The task form checks each field as typed, as Settings' forms do (task 18): a value `task` would refuse says so in
+/// its own row, the chosen field says what it takes, and moving between fields never moves the rows (task 17).
+#[test]
+fn each_field_of_the_task_form_says_its_problem_in_its_row_and_the_rows_stay_put() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let mut app = app();
+    app.cfg = tc_core::taskrc::parse("uda.est.type=numeric\nuda.size.type=string\nuda.size.values=S,M,L\n").config;
+    app.key(key(KeyCode::Char('a')));
+    typing(&mut app, "Paint the hall");
+    app.key(key(KeyCode::Down));
+    if let Mode::Form(f) = &mut app.mode {
+        for (k, v) in [("priority", "Q"), ("est", "3+2"), ("size", "XL")] {
+            if let Some(x) = f.fields.iter_mut().find(|x| x.key == k) {
+                x.input = Input::new(v);
+            }
+        }
+    }
+    let Mode::Form(f) = &app.mode else {
+        panic!("expected the form");
+    };
+    let problems = app.task_form_problems(f);
+    let of = |k: &str| {
+        let i = f.fields.iter().position(|x| x.key == k).unwrap();
+        problems[i].clone()
+    };
+    assert_eq!(
+        of("priority").as_deref(),
+        Some("The 'priority' attribute does not allow a value of 'Q'.")
+    );
+    assert_eq!(
+        of("size").as_deref(),
+        Some("The 'size' attribute does not allow a value of 'XL'.")
+    );
+    assert_eq!(of("est"), None, "task works 3+2 out to 5");
+    assert_eq!(of("description"), None);
+    let screen = |app: &App| {
+        let mut t = Terminal::new(TestBackend::new(110, 40)).unwrap();
+        t.draw(|fr| crate::ui::draw(fr, app)).unwrap();
+        let b = t.backend().buffer().clone();
+        (0..40)
+            .map(|y| (0..110).map(|x| b[(x, y)].symbol().to_owned()).collect::<String>())
+            .collect::<Vec<_>>()
+    };
+    let rows = screen(&app);
+    let row = |rows: &[String], label: &str| rows.iter().position(|r| r.contains(label)).unwrap();
+    let priority = row(&rows, "Priority ");
+    assert!(
+        rows[priority].contains("Q  The 'priority' attribute does not allow"),
+        "{}",
+        rows[priority]
+    );
+    assert!(
+        rows[row(&rows, "Description ")].contains("what the task is"),
+        "the chosen field says what it takes"
+    );
+    let at = |rows: &[String]| ["Description ", "Priority ", "Tags ", "Note "].map(|l| row(rows, l));
+    let before = at(&rows);
+    app.key(key(KeyCode::Down));
+    app.key(key(KeyCode::Down));
+    let after = screen(&app);
+    assert_eq!(at(&after), before, "the rows stay where they were");
+    assert!(!after[row(&after, "Description ")].contains("what the task is"));
+}
+
 #[test]
 fn alt_enter_starts_a_new_line_in_a_free_text_uda_and_nowhere_else() {
     let mut app = app();
@@ -1000,22 +1064,52 @@ fn o_lists_a_tasks_links_to_choose_from_and_a_count_names_one() {
     assert_eq!(a.status, "This task has 2 links.");
 }
 
+/// The Tasks page's keys for one task work in its info too: `m` modifies it in the full form, `A` annotates it and `x`
+/// takes an annotation off, each on this task (task 16).
 #[test]
-fn e_in_the_info_view_changes_the_task_in_the_full_form() {
-    let mut a = app();
+fn the_info_view_takes_the_task_keys_of_the_tasks_page() {
     let task = serde_json::json!({ "uuid": "u-1", "id": 1, "description": "Fix the tap", "status": "pending" });
-    a.pending = vec![task.clone()];
-    let ctx = crate::info::Ctx {
-        cfg: &a.cfg,
-        rules: &[],
-        now: 0,
+    let opened = || {
+        let mut a = app();
+        a.pending = vec![task.clone()];
+        let ctx = crate::info::Ctx {
+            cfg: &a.cfg,
+            rules: &[],
+            now: 0,
+        };
+        a.mode = Mode::TaskInfo(crate::info::build(&task, &crate::info::Around::default(), &ctx));
+        a
     };
-    a.mode = Mode::TaskInfo(crate::info::build(&task, &crate::info::Around::default(), &ctx));
-    a.key(key(KeyCode::Char('e')));
+    let mut a = opened();
+    a.key(key(KeyCode::Char('m')));
     let Mode::Form(f) = &a.mode else {
         panic!("the form is open: {:?}", a.mode);
     };
     assert!(f.fields.iter().any(|x| x.key == "description"), "{f:?}");
+    let mut a = opened();
+    a.key(key(KeyCode::Char('A')));
+    assert!(
+        matches!(&a.mode, Mode::Prompt(p) if p.kind == PromptKind::Annotate("u-1".into())),
+        "{:?}",
+        a.mode
+    );
+    let mut a = opened();
+    a.key(key(KeyCode::Char('x')));
+    assert!(
+        matches!(&a.mode, Mode::Prompt(p) if p.kind == PromptKind::Console && p.input.line == "u-1 denotate "),
+        "{:?}",
+        a.mode
+    );
+    // `d` is still the Details tab, so done is `D`, and `s` starts or stops it.
+    let keys = &a.keymap;
+    assert_eq!(keys.action("info", "d"), Some("info.details"));
+    assert_eq!(keys.action("info", "D"), Some("info.done"));
+    assert_eq!(keys.action("info", "s"), Some("info.toggle"));
+    assert_eq!(
+        keys.action("info", "e"),
+        None,
+        "e was edit: modify is m, as on the Tasks page"
+    );
 }
 
 #[test]

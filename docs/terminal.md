@@ -271,7 +271,8 @@ Tasks page clears them, and they are cleared after an action.
 
 ### The form
 
-The web app's task form, in a box over the page: a line for each part of a task, its name on the left. Description,
+The web app's task form, in a box over the page: a line for each part of a task, its name on the left and its value on
+a shaded bar, underlined, the chosen one's underline in the accent. Description,
 project, priority, due, wait, scheduled, until, repeat, tags (space separated), each UDA your taskrc defines, and what it
 depends on (task ids); for a new task, whether to start it now and a note, and for one that exists, an annotation to add
 under the ones it has. `Ctrl+N` and `Ctrl+P` (or `↑` `↓`) go from line to line, `Tab` completes the line's word as the command line would
@@ -285,10 +286,15 @@ field, when chosen, lists these examples with today in your `dateformat`. What i
 read it, in `dateformat.info` (`Y-M-D H:N:S` unless set) so a time shows, or in `dateformat` for a day at midnight; a
 repeat shows its period in words. One task of a series shows its period but leaves it to the recurring task.
 
+Each field is checked as it is typed, as the Settings forms check theirs: what `task` would refuse is said in red in the
+field's own line (a date it can't read, `priority:Q`, a value not among a UDA's `values`, a numeric UDA's `abc`), and
+its name turns red. The chosen field says what it takes (`one of H, M, L`, `a number`, `words, a tag each`). Nothing
+takes a line of its own, so the lines stay where they are as you move between them.
+
 Saving sends only what changed: `<uuid> modify` with those attributes (`project:` to remove one, `+tag` and `-tag`,
 `depends:-3`), or `add` with what is filled in, then `+LATEST start` and `+LATEST annotate` when asked for. The bottom
-border shows the command line it will run. A form `task` refuses stays open with the reason, as does one with no
-description, or a repeat without a due date.
+border shows the command line it will run. A form `task` refuses stays open with the reason, as does one with a
+field's problem (no description, a repeat without a due date).
 
 In the command line, the boxes and the form, `Tab` completes the word: the shared part first, then each option in turn, with `Shift+Tab` going
 back. `Ctrl+A` and `Ctrl+E` go to the start and the end, `Ctrl+W` deletes a word, `Ctrl+U` the line, `Enter` runs it and
@@ -309,8 +315,10 @@ nothing in it is left out.
 | Unknown properties | `u` | What the task holds that no UDA in your taskrc defines |
 
 `[` `]` go to the tab before and the next, and the moves scroll the tab, each keeping its place. `i` shows `task info`
-as `task` prints it, for what the tabs leave out (its history of changes, among others). `e` opens the task in the full
-form to change it, as `m` does from the report (`:info edit` too). `o` lists the task's links, as it is drawn (your
+as `task` prints it, for what the tabs leave out (its history of changes, among others). The Tasks page's keys for a
+task work here on this one, and close the info: `m` (or `M`) opens it in the full form (`:info modify` too), `D` marks it
+done (`d` is the Details tab), `s` starts it or stops it when it is started, `A` annotates it and `x` takes an
+annotation off. `o` lists the task's links, as it is drawn (your
 transformations applied: a ticket key a rule makes a link is one), then the tasks it depends on and those waiting on it;
 `Enter` on a link opens it in your browser and comes back to the info, and on a task opens that task's info, from which
 `Esc` comes back (`:info links` too). Any other key closes it.
@@ -544,7 +552,7 @@ settings a row each, each with a faint line on what it does and its problems in 
 | choice | `Home page  next ▾` | `Enter` opens its list; `Enter` there picks one |
 | input | `min  [0]` | `Enter` edits it on the bottom line |
 | a list's rows | a row each, its fields in columns | `a` adds one, `Enter` or `e` changes it, `D` deletes it, `K` `J` move a column |
-| a row of several fields | a box over the page with every field | `Ctrl+N` `Ctrl+P` (or `↑` `↓`) between fields, `Tab` completes (a command line, a filter) or goes to the next, `Enter` or `Ctrl+S` keeps the row, `Esc` drops it; each field's problem shows under it as you type |
+| a row of several fields | a box over the page with every field, each its label over a shaded, underlined bar (the chosen one's underline in the accent) | `Ctrl+N` `Ctrl+P` (or `↑` `↓`) between fields, `Tab` completes (a command line, a filter) or goes to the next, `Enter` or `Ctrl+S` keeps the row, `Esc` drops it; each field's problem shows under it as you type |
 | an action | `› Edit it in $VISUAL or $EDITOR` | `Enter` runs it |
 
 **Edits wait until applied**, as on the web and the phone. An edit shows at once on its page, and the page's name gets a

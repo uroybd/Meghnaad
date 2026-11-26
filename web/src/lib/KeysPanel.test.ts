@@ -48,7 +48,7 @@ afterEach(() => {
 
 describe('the Keybindings tab', () => {
   it('shows only your own keys until the defaults are asked for', async () => {
-    await open({ version: 5, tui: { keys: { tasks: { x: 'tasks.done' } } } });
+    await open({ version: 6, tui: { keys: { tasks: { x: 'tasks.done' } } } });
     expect(rows('Terminal')).toEqual(['done']);
     expect(rows('General')).toEqual([]);
     expect(section('General').textContent).toContain('None of your own.');
@@ -63,7 +63,7 @@ describe('the Keybindings tab', () => {
 
   it('searches what is shown by name, what it does, or a key', async () => {
     await open({
-      version: 5,
+      version: 6,
       keys: { app: { 'ctrl+k': 'app.prompt' } },
       tui: { keys: { tasks: { x: 'tasks.done', z: 'tasks.start' } } },
     });
@@ -76,7 +76,7 @@ describe('the Keybindings tab', () => {
   });
 
   it('adds a key from the search, typed, and applies it', async () => {
-    await open({ version: 5, taskCommands: [] });
+    await open({ version: 6, taskCommands: [] });
     button('Add', section('Web')).click();
     flushSync();
     type(section('Web').querySelector('input[aria-label="Search actions"]') as HTMLInputElement, 'add');
@@ -97,14 +97,14 @@ describe('the Keybindings tab', () => {
     button('Apply').click();
     await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
     expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({
-      version: 5,
+      version: 6,
       taskCommands: [],
       web: { keys: { app: { 'ctrl+shift+n': 'add', a: null } } },
     });
   });
 
   it('starts from the command a preset runs, checks it as typed, and saves the command', async () => {
-    await open({ version: 5, taskCommands: [] });
+    await open({ version: 6, taskCommands: [] });
     button('Add', section('General')).click();
     flushSync();
     type(section('General').querySelector('input[aria-label="Search actions"]') as HTMLInputElement, 'tasks.filter');
@@ -124,14 +124,14 @@ describe('the Keybindings tab', () => {
     button('Apply').click();
     await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
     expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({
-      version: 5,
+      version: 6,
       taskCommands: [],
       keys: { tasks: { 'g h': 'filter +home' } },
     });
   });
 
   it('adds a command of your own, asking where one of several places runs it', async () => {
-    await open({ version: 5 });
+    await open({ version: 6 });
     button('Add', section('Terminal')).click();
     flushSync();
     const own = [...section('Terminal').querySelectorAll('.result')].find((b) =>
@@ -157,7 +157,7 @@ describe('the Keybindings tab', () => {
   });
 
   it('warns of a key that runs no command, and takes it out', async () => {
-    await open({ version: 5, keys: { tasks: { z: 'done 3', x: 'done' } } });
+    await open({ version: 6, keys: { tasks: { z: 'done 3', x: 'done' } } });
     const warn = document.querySelector('.warn') as HTMLElement;
     expect(warn.textContent).toContain('done takes no words');
     expect(warn.textContent).toContain('keys.tasks');
@@ -166,7 +166,7 @@ describe('the Keybindings tab', () => {
     expect(document.querySelector('.warn')).toBeNull();
     button('Apply').click();
     await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
-    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({ version: 5, keys: { tasks: { x: 'done' } } });
+    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({ version: 6, keys: { tasks: { x: 'done' } } });
   });
 
   it('records a key pressed, and leaves an action with none', async () => {
@@ -192,7 +192,7 @@ describe('the Keybindings tab', () => {
   });
 
   it('lists the commands a key can run, and a key bound to one with what it does', async () => {
-    await open({ version: 5, tui: { keys: { tasks: { 'g h': 'filter +home' } } } });
+    await open({ version: 6, tui: { keys: { tasks: { 'g h': 'filter +home' } } } });
     const names = () => [...section('Commands').querySelectorAll('kbd')].map((k) => k.textContent);
     expect(names()).toContain(':tabn[ext]');
     expect(section('Commands').textContent).toContain('takes');
@@ -214,6 +214,6 @@ describe('the Keybindings tab', () => {
     expect(rows('Web')).toEqual([]);
     button('Apply').click();
     await vi.waitFor(() => expect(api.putAppSettings).toHaveBeenCalled());
-    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({ version: 5 });
+    expect(JSON.parse(api.putAppSettings.mock.calls[0][0])).toEqual({ version: 6 });
   });
 });

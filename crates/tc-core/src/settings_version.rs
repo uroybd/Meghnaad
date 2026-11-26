@@ -7,7 +7,7 @@
 use serde_json::{Map, Value};
 
 /// The version this build writes.
-pub const VERSION: u64 = 5;
+pub const VERSION: u64 = 6;
 
 /// The version `settings` says it is: `"version"`, or 1 for none.
 pub fn version_of(settings: &Value) -> u64 {
@@ -23,6 +23,8 @@ pub fn version_of(settings: &Value) -> u64 {
 /// - 3 → 4 (spec 0032): a task command may not be named like a command (`review` is tasksh's), so the kanban's move
 ///   command `review` is `inreview`, and the move lines that ran it run that.
 /// - 4 → 5 (spec 0033): Settings has no Boards section, so the keys of its group (`settings.boards`) go.
+/// - 5 → 6: the terminal's info view changes a task with `info.modify`, as the Tasks page does with `tasks.modify`, so
+///   a key bound to `info.edit` runs `info.modify`.
 pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     let root = settings.as_object()?;
     let from = version_of(settings);
@@ -41,6 +43,9 @@ pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     }
     if from < 5 {
         boards_section_v4_to_v5(&mut root);
+    }
+    if from < 6 {
+        info_modify_v5_to_v6(&mut root);
     }
     root.insert("version".into(), Value::from(VERSION));
     Some(Value::Object(root))
@@ -120,6 +125,27 @@ fn boards_section_v4_to_v5(root: &mut Map<String, Value>) {
     }
 }
 
+/// A key bound to `info.edit`, in any group of any section of keys, runs `info.modify`.
+fn info_modify_v5_to_v6(root: &mut Map<String, Value>) {
+    let mut sections: Vec<&mut Value> = Vec::new();
+    for (name, value) in root.iter_mut() {
+        match name.as_str() {
+            "keys" => sections.push(value),
+            "web" | "mobile" | "tui" => sections.extend(value.get_mut("keys")),
+            _ => {}
+        }
+    }
+    let groups = sections
+        .into_iter()
+        .filter_map(Value::as_object_mut)
+        .flat_map(|s| s.values_mut());
+    for action in groups.filter_map(Value::as_object_mut).flat_map(|g| g.values_mut()) {
+        if action.as_str() == Some("info.edit") {
+            *action = Value::from("info.modify");
+        }
+    }
+}
+
 /// `kanban.columns` and `kanban.kanbans`, borrowed apart.
 fn split_kanban(kanban: &mut Map<String, Value>) -> (Option<&mut Value>, Option<&mut Vec<Value>>) {
     let mut columns = None;
@@ -173,7 +199,7 @@ mod tests {
         assert_eq!(
             new,
             json!({
-                "version": 5,
+                "version": 6,
                 "sync": "manual",
                 "keys": { "app": { "ctrl+k": "app.prompt", "/": "app.prompt" } },
                 // The old keys replaced an action's own: the default keys they left out are unbound.
@@ -189,11 +215,11 @@ mod tests {
     #[test]
     fn a_later_version_or_no_object_is_left() {
         assert_eq!(
-            migrate(&json!({ "version": 6, "keys": { "a.b": "x" } }), &defaults()),
+            migrate(&json!({ "version": 7, "keys": { "a.b": "x" } }), &defaults()),
             None
         );
         assert_eq!(migrate(&Value::Null, &defaults()), None);
-        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 5 })));
+        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 6 })));
     }
 
     #[test]
@@ -202,18 +228,18 @@ mod tests {
             json!({ "version": 2, "kanban": { "enabled": true, "icons": true }, "appearance": { "idFallback": true } });
         assert_eq!(
             migrate(&old, &defaults()).unwrap(),
-            json!({ "version": 5, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
+            json!({ "version": 6, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
         );
         let bare = json!({ "version": 2, "kanban": { "icons": false } });
         assert_eq!(
             migrate(&bare, &defaults()).unwrap(),
-            json!({ "version": 5, "kanban": {}, "appearance": { "cardIcons": false } })
+            json!({ "version": 6, "kanban": {}, "appearance": { "cardIcons": false } })
         );
         // Not a yes or no: left for the reader to report.
         let odd = json!({ "version": 2, "kanban": { "icons": "yes" } });
         assert_eq!(
             migrate(&odd, &defaults()).unwrap(),
-            json!({ "version": 5, "kanban": { "icons": "yes" } })
+            json!({ "version": 6, "kanban": { "icons": "yes" } })
         );
     }
 
@@ -231,7 +257,7 @@ mod tests {
             }
         });
         let new = migrate(&old, &defaults()).unwrap();
-        assert_eq!(new["version"], 5);
+        assert_eq!(new["version"], VERSION);
         assert_eq!(new["taskCommands"][1]["name"], "inreview");
         assert_eq!(new["taskCommands"][1]["icon"], "eye");
         assert_eq!(new["kanban"]["columns"][0]["move"], "inreview");
@@ -255,8 +281,24 @@ mod tests {
             "tui": { "keys": { "settings.boards": { "enter": null }, "tasks": { "F": "tasks.filter" } } }
         });
         let new = migrate(&old, &defaults()).unwrap();
-        assert_eq!(new["version"], 5);
+        assert_eq!(new["version"], VERSION);
         assert_eq!(new["keys"], json!({ "app": { "Q": "app.quit" } }));
         assert_eq!(new["tui"]["keys"], json!({ "tasks": { "F": "tasks.filter" } }));
+    }
+
+    #[test]
+    fn version_5_keys_of_info_edit_run_info_modify() {
+        let old = json!({
+            "version": 5,
+            "keys": { "info": { "E": "info.edit" } },
+            "tui": { "keys": { "info": { "e": null, "c": "info.edit", "o": "info.links" }, "tasks": { "F": "tasks.filter" } } }
+        });
+        let new = migrate(&old, &defaults()).unwrap();
+        assert_eq!(new["version"], 6);
+        assert_eq!(new["keys"], json!({ "info": { "E": "info.modify" } }));
+        assert_eq!(
+            new["tui"]["keys"],
+            json!({ "info": { "e": null, "c": "info.modify", "o": "info.links" }, "tasks": { "F": "tasks.filter" } })
+        );
     }
 }

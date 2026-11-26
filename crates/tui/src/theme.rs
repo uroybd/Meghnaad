@@ -443,6 +443,17 @@ pub fn badge_value() -> Style {
     shade("#d8d8d2", "#34363b")
 }
 
+/// A form's field (spec 0033, task 17): its value on a shade, underlined, so each field reads as a place to type; the
+/// chosen one's underline in the accent. Nothing about it takes a row, so moving between fields moves nothing.
+pub fn field(chosen: bool) -> Style {
+    let line = if chosen {
+        current().accent.fg.unwrap_or(Color::Reset)
+    } else {
+        current().border.fg.unwrap_or(Color::DarkGray)
+    };
+    badge_value().add_modifier(Modifier::UNDERLINED).underline_color(line)
+}
+
 /// A background a shade away from the page's, for the terminal's light or dark ground; grey in `mono`.
 /// The colours a UDA's choices take by their place among them, as a chart's series that name none do on the web and
 /// the phone (`DEFAULT_SERIES` in `web/src/lib/colors.ts`), so a value has the same colour on all three.

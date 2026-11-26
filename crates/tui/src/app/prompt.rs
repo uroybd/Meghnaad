@@ -5,6 +5,8 @@ use super::{
     Mode, Phase, Prompt, PromptKind, CHANGES, TERMINAL,
 };
 
+use crate::form::Kind;
+
 impl App {
     pub(super) fn in_prompt(&mut self, mut p: Prompt, key: KeyEvent) -> Action {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
@@ -162,11 +164,29 @@ impl App {
         }
     }
 
+    /// What is wrong with each field of the task form, as typed: the form's own rules, then what the engine's preview
+    /// of the field alone says (a date it can't read, a value a UDA doesn't allow), as `task` would refuse it.
+    pub fn task_form_problems(&self, f: &Form) -> Vec<Option<String>> {
+        let mut out = f.problems();
+        for (field, problem) in f.fields.iter().zip(out.iter_mut()) {
+            let checked = matches!(field.kind, Kind::Value | Kind::Date) && field.key != "description";
+            if problem.is_some() || !checked || field.locked || field.value().is_empty() {
+                continue;
+            }
+            let pv = self.preview(&format!("x {}:{}", field.key, crate::form::quote(field.value())));
+            *problem = pv
+                .errors
+                .into_iter()
+                .find(|e| !(field.key == "recur" && e.contains("due")));
+        }
+        out
+    }
+
     /// Save the form: `add` or `modify` with what changed, then `start` and `annotate`, each while the last worked.
     /// When the first is refused the form stays, to be put right.
     pub(super) fn save_form(&mut self, f: Form) -> Action {
-        if let Some(why) = f.problem() {
-            self.status = why.into();
+        if let Some(why) = self.task_form_problems(&f).into_iter().flatten().next() {
+            self.status = why;
             self.mode = Mode::Form(f);
             return Action::None;
         }

@@ -1184,16 +1184,22 @@ fn task_info(f: &mut Frame, app: &App, info: &crate::info::Info, area: Rect) {
     };
     let back = if app.info_trail.is_empty() { "" } else { "Esc back · " };
     let hint = format!(
-        "{}/{} tab · {} links · {} edit · {} task info · {back}any other key closes",
+        "{} done · {} start/stop · {} modify · {} annotate · {} denotate · {} links · {}/{} tab · {} task info · \
+         {back}any other key closes",
+        key("info.done"),
+        key("info.toggle"),
+        key("info.modify"),
+        key("info.annotate"),
+        key("info.denotate"),
+        key("info.links"),
         key("move.sectionPrev"),
         key("move.sectionNext"),
-        key("info.links"),
-        key("info.edit"),
         key("info.raw")
     );
+    // The keys as many as fit, those for the task first (the rest are in `? all keys`).
     let block = text_pane("info", true)
         .title_top(note(&info.title.chars().take(60).collect::<String>()))
-        .title_bottom(note(&hint));
+        .title_bottom(border_hints(&hint, room(area, 0)));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let [tabs_area, _, body] =
@@ -1718,7 +1724,8 @@ fn task_card(app: &App, t: &Value) -> Vec<Line<'static>> {
     text
 }
 
-/// What a field of the form will be, shown after it: a date as `task` reads it, a period in words.
+/// What a field of the form will be, shown after it: a date as `task` reads it, a period in words. Its problems are
+/// [`App::task_form_problems`]'s.
 fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
     let v = field.value();
     if field.locked {
@@ -1730,9 +1737,6 @@ fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
     match field.kind {
         Kind::Date => {
             let pv = app.preview(&format!("x {}:{}", field.key, form::quote(v)));
-            if let Some(e) = pv.errors.first() {
-                return Some(Span::from(format!("  {e}")).bad());
-            }
             let ts = pv
                 .dates
                 .get(&field.key)
@@ -1749,8 +1753,21 @@ fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
     }
 }
 
-/// The full form: a row for each field, the label on the left, the chosen one in the accent, and the command line it
-/// will run along the bottom.
+/// A field's row of a form, the label (if it is beside it) on the left and the value on a bar of `bar` columns
+/// (`theme::field`), what is said about it (its problem, what it will be, what it takes) inside the bar after the value.
+fn field_row(label: Option<Span<'static>>, mut value: Vec<Span<'static>>, chosen: bool, bar: usize) -> Line<'static> {
+    let style = theme::field(chosen);
+    value.insert(0, Span::from(" "));
+    let used: usize = value.iter().map(Span::width).sum();
+    value.push(Span::from(" ".repeat(bar.saturating_sub(used))));
+    let mut spans: Vec<Span> = label.into_iter().collect();
+    spans.extend(value.into_iter().map(|s| s.patch_style(style)));
+    Line::from(spans)
+}
+
+/// The full form: a row for each field, the label on the left and the value on a bar, the chosen one in the accent,
+/// and the command line it will run along the bottom. A field's problem shows in its row as it is typed, and the chosen
+/// field says what it takes, so moving between fields never moves the rows.
 fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
     const LABEL: u16 = 12;
     let title = match (&form.uuid, form.id) {
@@ -1759,53 +1776,68 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
         (Some(_), Some(id)) => format!(" modify task {id} "),
         (Some(u), None) => format!(" modify task {} ", u.chars().take(8).collect::<String>()),
     };
+    let width = main.width.saturating_sub(4).min(96);
+    let bar = usize::from(width.saturating_sub(2 + LABEL));
+    let problems = app.task_form_problems(form);
+    let indent = || Span::from(" ".repeat(usize::from(LABEL)));
     let mut rows: Vec<Line> = Vec::new();
     let mut caret = None;
-    for (i, field) in form.fields.iter().enumerate() {
+    for (i, (field, problem)) in form.fields.iter().zip(&problems).enumerate() {
         let chosen = i == form.sel;
-        let label_style = if chosen { theme::accent() } else { theme::dim() };
-        let mut spans = vec![Span::styled(
-            format!("{:>w$} ", field.label, w = usize::from(LABEL) - 1),
-            label_style,
-        )];
+        let label_style = match (chosen, problem.is_some()) {
+            (_, true) => theme::bad(),
+            (true, false) => theme::accent(),
+            (false, false) => theme::dim(),
+        };
+        let label = Span::styled(format!("{:>w$} ", field.label, w = usize::from(LABEL) - 1), label_style);
+        // What is said after the value: its problem, else what it will be, else (chosen) what it takes.
+        let said = |first: bool| -> Vec<Span<'static>> {
+            if let Some(p) = problem.as_ref().filter(|_| first) {
+                return vec![Span::from(format!("  {p}")).bad()];
+            }
+            if let Some(h) = field_hint(app, field).filter(|_| first) {
+                return vec![h];
+            }
+            if !chosen || field.locked {
+                return Vec::new();
+            }
+            if field.kind == Kind::Date && field.value().is_empty() {
+                return vec![Span::from(format!("  {}", date_examples(&app.cfg, crate::app::now()))).quiet()];
+            }
+            let hint = field.hint(&app.cfg, !form.many.is_empty());
+            if hint.is_empty() {
+                Vec::new()
+            } else {
+                vec![Span::from(format!("  {hint}")).quiet()]
+            }
+        };
         if field.kind == Kind::Start {
             let mark = if form.start_now() { "[x]" } else { "[ ]" };
-            spans.push(Span::from(format!("{mark} start working on it now")));
-            if chosen {
-                spans.push(Span::from("  Space").quiet());
-            }
-        } else {
-            // A value of several lines (a free-text UDA): the first beside the label, the others under it.
-            let mut lines = field.input.line.split('\n');
-            let value = Span::from(lines.next().unwrap_or_default().to_owned());
-            spans.push(if field.locked { value.quiet() } else { value });
-            if chosen {
-                // The caret's line and column within the value.
-                let before: String = field.input.line.chars().take(field.input.caret_chars()).collect();
-                let down = before.matches('\n').count();
-                let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count());
-                caret = Some((rows.len() + down, u16::try_from(col).unwrap_or(0)));
-            }
-            if chosen && field.kind == Kind::Date && !field.locked && field.value().is_empty() {
-                spans.push(Span::from(format!("  {}", date_examples(&app.cfg, crate::app::now()))).quiet());
-            }
-            let rest: Vec<&str> = lines.collect();
-            if rest.is_empty() {
-                spans.extend(field_hint(app, field));
-                if chosen && field.multiline && !field.locked {
-                    spans.push(Span::from("  Alt+Enter: a new line").quiet());
-                }
-            } else {
-                for l in rest {
-                    rows.push(Line::from(std::mem::take(&mut spans)));
-                    spans = vec![
-                        Span::from(format!("{:>w$} ", "", w = usize::from(LABEL) - 1)),
-                        Span::from(l.to_owned()),
-                    ];
-                }
-            }
+            let mut value = vec![Span::from(format!("{mark} start working on it now"))];
+            value.extend(said(true));
+            rows.push(field_row(Some(label), value, chosen, bar));
+            continue;
         }
-        rows.push(Line::from(spans));
+        if chosen {
+            // The caret's line and column within the value.
+            let before: String = field.input.line.chars().take(field.input.caret_chars()).collect();
+            let down = before.matches('\n').count();
+            let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count());
+            caret = Some((rows.len() + down, u16::try_from(col).unwrap_or(0)));
+        }
+        // A value of several lines (a free-text UDA, the note): each on a bar of its own, under the first; what is
+        // said about it goes after the last.
+        let lines: Vec<&str> = field.input.line.split('\n').collect();
+        let last = lines.len() - 1;
+        for (n, l) in lines.iter().enumerate() {
+            let text = Span::from((*l).to_owned());
+            let mut value = vec![if field.locked { text.quiet() } else { text }];
+            if n == last {
+                value.extend(said(true));
+            }
+            let lead = if n == 0 { label.clone() } else { indent() };
+            rows.push(field_row(Some(lead), value, chosen, bar));
+        }
     }
     if !form.notes.is_empty() {
         rows.push(Line::default());
@@ -1813,18 +1845,10 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
             // A note of several lines: each under the first.
             for (i, l) in n.split('\n').enumerate() {
                 let lead = if i == 0 { "· " } else { "  " };
-                rows.push(Line::from(vec![
-                    Span::from(format!("{:>w$} ", "", w = usize::from(LABEL) - 1)),
-                    Span::from(format!("{lead}{l}")).quiet(),
-                ]));
+                rows.push(Line::from(vec![indent(), Span::from(format!("{lead}{l}")).quiet()]));
             }
         }
     }
-    if let Some(why) = form.problem() {
-        rows.push(Line::default());
-        rows.push(Line::from(format!("{:>w$} {why}", "", w = usize::from(LABEL) - 1)).bad());
-    }
-    let width = main.width.saturating_sub(4).min(96);
     let height = u16::try_from(rows.len() + 2).unwrap_or(u16::MAX).min(main.height);
     let area = Rect::new(
         main.x + (main.width - width) / 2,
@@ -1856,12 +1880,12 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
     );
     if let Some((row, col)) = caret {
         let y = inner.y + u16::try_from(row - skip).unwrap_or(0);
-        let x = (inner.x + LABEL + col).min(inner.x + inner.width.saturating_sub(1));
+        let x = (inner.x + LABEL + 1 + col).min(inner.x + inner.width.saturating_sub(1));
         f.set_cursor_position((x, y));
         if let Some(m) = &form.completer.menu {
             let below = main.y + main.height - (y + 1);
             let h = menu_height(m).min(below);
-            let mx = (inner.x + LABEL).min(main.x + main.width.saturating_sub(MENU_WIDTH));
+            let mx = (inner.x + LABEL + 1).min(main.x + main.width.saturating_sub(MENU_WIDTH));
             menu(f, m, Rect::new(mx, y + 1, MENU_WIDTH.min(main.width), h));
         }
     }
@@ -2016,12 +2040,10 @@ fn settings_form_box(f: &mut Frame, app: &App, form: &SettingsForm, main: Rect) 
         )));
         if here {
             let before: String = field.input.line.chars().take(field.input.caret_chars()).collect();
-            caret = Some((lines.len(), 2 + before.chars().count()));
+            caret = Some((lines.len(), 1 + before.chars().count()));
         }
-        lines.push(Line::from(vec![
-            Span::styled("› ", if here { theme::accent() } else { Style::new() }),
-            Span::from(field.input.line.clone()),
-        ]));
+        // The value on a bar the box's width, as in the task's form (`field_row`), with no label beside it.
+        lines.push(field_row(None, vec![Span::from(field.input.line.clone())], here, room));
         let under = match problem {
             Some(p) => vec![Line::from(p.clone()).bad()],
             None => wrap(field.hint, room)
@@ -2053,7 +2075,7 @@ fn settings_form_box(f: &mut Frame, app: &App, form: &SettingsForm, main: Rect) 
             if let Some(m) = &form.completer.menu {
                 let below = main.y + main.height - (y + 1);
                 let h = menu_height(m).min(below);
-                let mx = (inner.x + 2).min(main.x + main.width.saturating_sub(MENU_WIDTH));
+                let mx = (inner.x + 1).min(main.x + main.width.saturating_sub(MENU_WIDTH));
                 menu(f, m, Rect::new(mx, y + 1, MENU_WIDTH.min(main.width), h));
             }
         }

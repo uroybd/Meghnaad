@@ -1,7 +1,7 @@
 //! The task info view (spec 0006): opening it on a task, from `export` of the task and of the tasks around it, and its
 //! keys. What its tabs say is built in `crate::info`.
 
-use super::{now, scrolled, section_named, step_named, Action, App, KeyEvent, Mode, Step};
+use super::{now, scrolled, section_named, step_named, Action, App, KeyEvent, Mode, PromptKind, Step};
 use crate::info::{self, Around, Info, Tab};
 use crate::keys;
 use ratatui::crossterm::event::KeyCode;
@@ -75,7 +75,8 @@ impl App {
     }
 
     /// A key in the info view: `[` `]` and a tab's own key go to a tab, the moves scroll the tab, `i` is `task info`,
-    /// `e` changes the task in the full form, `o` lists its links and the tasks it depends on and blocks to open one (a
+    /// `m` changes the task in the full form, `D` marks it done, `s` starts or stops it, `A` annotates it and `x` takes
+    /// an annotation off, as on the Tasks page; `o` lists its links and the tasks it depends on and blocks to open one (a
     /// task's info opens, and `Esc` there comes back); any other key closes it.
     pub(super) fn in_task_info(&mut self, mut info: Info, key: KeyEvent) -> Action {
         let action = keys::chord(key).and_then(|c| self.keymap.action("info", &c));
@@ -86,10 +87,20 @@ impl App {
                 self.offer_links(links, None, Some(info));
                 return Action::None;
             }
-            Some("info.edit") => {
-                let uuid = info.uuid.clone();
+            // What the Tasks page's keys do to the chosen task, done to this one; the info closes for it.
+            Some(a @ ("info.modify" | "info.done" | "info.toggle" | "info.annotate" | "info.denotate")) => {
+                let (a, u) = (a.to_owned(), info.uuid.clone());
                 self.close_info();
-                self.modify_form(&uuid);
+                match a.as_str() {
+                    "info.modify" => self.modify_form(&u),
+                    "info.done" => self.quick(&[u, "done".into()]),
+                    "info.toggle" => {
+                        let verb = if self.started(&u) { "stop" } else { "start" };
+                        self.quick(&[u, verb.into()]);
+                    }
+                    "info.annotate" => self.prompt(PromptKind::Annotate(u), ""),
+                    _ => self.prompt(PromptKind::Console, &format!("{u} denotate ")),
+                }
                 return Action::None;
             }
             Some("info.raw") => {

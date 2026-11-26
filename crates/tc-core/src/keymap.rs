@@ -831,13 +831,31 @@ pub const COMMANDS: [Command; 59] = [
             "settings.kanban.open",
         ],
     ),
-    cmd("done", 2, &["tasks.done"]),
+    cmd("done", 2, &["tasks.done", "info.done"]),
     cmd("start", 3, &["tasks.start"]),
     cmd("stop", 3, &["tasks.stop"]),
-    cmd("toggle", 2, &["tasks.toggle"]),
-    with("modify", 3, &["tasks.modify"], &[], Words::Any("tasks.modify")),
-    with("annotate", 2, &["tasks.annotate"], &[], Words::Any("tasks.annotate")),
-    with("denotate", 3, &["tasks.denotate"], &[], Words::Any("tasks.denotate")),
+    cmd("toggle", 2, &["tasks.toggle", "info.toggle"]),
+    with(
+        "modify",
+        3,
+        &["tasks.modify", "info.modify"],
+        &[],
+        Words::Any("tasks.modify"),
+    ),
+    with(
+        "annotate",
+        2,
+        &["tasks.annotate", "info.annotate"],
+        &[],
+        Words::Any("tasks.annotate"),
+    ),
+    with(
+        "denotate",
+        3,
+        &["tasks.denotate", "info.denotate"],
+        &[],
+        Words::Any("tasks.denotate"),
+    ),
     cmd("duplicate", 3, &["tasks.duplicate"]),
     with(
         "info",
@@ -850,7 +868,7 @@ pub const COMMANDS: [Command; 59] = [
             ("annotations", "info.annotations"),
             ("unknown", "info.unknown"),
             ("raw", "info.raw"),
-            ("edit", "info.edit"),
+            ("modify", "info.modify"),
             ("links", "info.links"),
         ],
         Words::None,
@@ -1940,12 +1958,12 @@ mod tests {
     #[test]
     fn a_key_is_set_and_taken_out_and_nothing_else_moves() {
         let d = defaults();
-        let s = json!({ "version": 5, "taskCommands": [1], "web": { "theme": "dark" } });
+        let s = json!({ "version": 6, "taskCommands": [1], "web": { "theme": "dark" } });
         let one = with_binding(&s, &d, "web", "app.prompt", None, Some(&["ctrl+k".into()]));
         // The key runs the action, in its group; the default key it no longer has is unbound.
         assert_eq!(
             one,
-            json!({ "version": 5, "taskCommands": [1],
+            json!({ "version": 6, "taskCommands": [1],
                     "web": { "theme": "dark", "keys": { "app": { "ctrl+k": "app.prompt", "/": null } } } })
         );
         assert_eq!(km(&one, Platform::Web).keys_of("app.prompt"), ["ctrl+k"]);
@@ -1974,7 +1992,7 @@ mod tests {
                 None,
                 None
             ),
-            json!({ "version": 5, "keys": { "app": { "U": "app.undo", "u": null } } })
+            json!({ "version": 6, "keys": { "app": { "U": "app.undo", "u": null } } })
         );
     }
 
@@ -2167,7 +2185,7 @@ mod tests {
         );
         assert_eq!(
             why("info nope").as_deref(),
-            Some("info takes “details”, “recurrence”, “timelog”, “annotations”, “unknown”, “raw”, “edit” or “links”")
+            Some("info takes “details”, “recurrence”, “timelog”, “annotations”, “unknown”, “raw”, “modify” or “links”")
         );
         assert_eq!(
             why("st").as_deref(),
@@ -2323,7 +2341,7 @@ mod tests {
     #[test]
     fn a_skipped_key_can_be_taken_out() {
         let d = defaults();
-        let s = json!({ "version": 5, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
+        let s = json!({ "version": 6, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
         let b = bindings(&d, &s);
         assert_eq!(b.bad.len(), 1, "{:?}", b.bad);
         assert_eq!(
@@ -2331,7 +2349,7 @@ mod tests {
             ("z", "done takes no words")
         );
         let out = without_key(&s, &d, "general", "tasks", "z");
-        assert_eq!(out, json!({ "version": 5, "keys": { "tasks": { "x": "done" } } }));
+        assert_eq!(out, json!({ "version": 6, "keys": { "tasks": { "x": "done" } } }));
         assert!(bindings(&d, &out).bad.is_empty());
     }
 

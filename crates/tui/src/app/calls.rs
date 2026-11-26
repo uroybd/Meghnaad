@@ -117,7 +117,7 @@ impl App {
         self.marked_picks().into_iter().map(|p| p.0).collect()
     }
 
-    fn started(&self, uuid: &str) -> bool {
+    pub(super) fn started(&self, uuid: &str) -> bool {
         self.active().iter().any(|a| a.0 == uuid)
     }
 

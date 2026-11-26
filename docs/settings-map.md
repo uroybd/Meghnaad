@@ -17,7 +17,7 @@ Each setting is one of these. The front ends draw them each in their own way, an
 | **choice**: one of a list | a `select`, its choices under group headings | a dropdown menu | the value and `▾`; `Enter` opens a picker, each choice named with its group (`report  list`) |
 | **input**: text or a number | an input with its label before it | an outlined text field with its label | `Label  [value]`; `Enter` edits it on the bottom line |
 | **rows**: a list of records | a row each, its fields side by side; remove and move buttons; **Add a …** below | the same, stacked on a phone | a row each, its fields in columns; `a` adds, `e` changes, `D` removes, `K` `J` move |
-| **form**: one row's fields together | inline in the row | inline in the row | a **modal** with every field (`Ctrl+N` `Ctrl+P` or `↑` `↓` between them, `Tab` completes or goes on) |
+| **form**: one row's fields together | inline in the row | inline in the row | a **modal** with every field, each on a shaded, underlined bar (`Ctrl+N` `Ctrl+P` or `↑` `↓` between them, `Tab` completes or goes on) |
 | **picker**: a long list to pick from (icons, actions, holidays) | a drawer | a bottom sheet | a picker box |
 | **action**: does something now | a button | a button | a key, named in the border |
 

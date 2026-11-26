@@ -14,7 +14,7 @@ class KeysPanelTest {
 
     @Test
     fun onlyYourOwnKeysUntilTheDefaultsAreAskedFor() {
-        val b = keymapBindings(settings("""{ "version": 5, "tui": { "keys": { "tasks": { "x": "tasks.done" } } } }"""))
+        val b = keymapBindings(settings("""{ "version": 6, "tui": { "keys": { "tasks": { "x": "tasks.done" } } } }"""))
         assertEquals(listOf("tasks.done"), bindingRows(b.sections["tui"].orEmpty(), false, "").map { it.action })
         assertEquals("done", b.sections["tui"].orEmpty().first().command, "the command it runs")
         assertEquals(emptyList(), bindingRows(b.sections["general"].orEmpty(), false, "").map { it.action })
@@ -24,20 +24,20 @@ class KeysPanelTest {
 
     @Test
     fun theSearchMatchesANameWhatItDoesOrAKey() {
-        val b = keymapBindings(settings("""{ "version": 5, "keys": { "app": { "ctrl+k": "app.prompt" } }, "tui": { "keys": { "tasks": { "x": "tasks.done", "z": "tasks.start" } } } }"""))
+        val b = keymapBindings(settings("""{ "version": 6, "keys": { "app": { "ctrl+k": "app.prompt" } }, "tui": { "keys": { "tasks": { "x": "tasks.done", "z": "tasks.start" } } } }"""))
         assertEquals(listOf("tasks.start"), bindingRows(b.sections["tui"].orEmpty(), false, "start").map { it.action })
         assertEquals(listOf("app.prompt"), bindingRows(b.sections["general"].orEmpty(), false, "Ctrl+K").map { it.action })
     }
 
     @Test
     fun aKeyIsSetAndTakenOutAndTheRestStaysInItsOrder() {
-        val s = settings("""{ "version": 5, "taskCommands": [], "appearance": {} }""")
+        val s = settings("""{ "version": 6, "taskCommands": [], "appearance": {} }""")
         val one = withBinding(s, "web", "app.add", listOf("ctrl+shift+n"))
         assertEquals(listOf("version", "taskCommands", "appearance", "web"), one.keys.toList())
         val app = one["web"]!!.jsonObject["keys"]!!.jsonObject["app"]!!.jsonObject
         assertEquals(JsonPrimitive("app.add"), app["ctrl+shift+n"])
         assertEquals(s, withBinding(one, "web", "app.add", null))
-        assertEquals(settings("""{ "version": 5 }"""), withBinding(JsonObject(emptyMap()), "mobile", "app.prompt", null))
+        assertEquals(settings("""{ "version": 6 }"""), withBinding(JsonObject(emptyMap()), "mobile", "app.prompt", null))
     }
 
     @Test
@@ -72,7 +72,7 @@ class KeysPanelTest {
         val c = checkCommand("filter +home")
         assertEquals(Triple("tasks.filter", listOf("+home"), null as String?), Triple(c.action, c.args, c.problem))
         assertEquals(listOf(KeyPlace("tasks", "tasks.filter")), c.places)
-        val s = settings("""{ "version": 5 }""")
+        val s = settings("""{ "version": 6 }""")
         val one = withBinding(s, "general", "filter +home", listOf("g h"), group = "tasks")
         assertEquals(JsonPrimitive("filter +home"), one["keys"]!!.jsonObject["tasks"]!!.jsonObject["g h"])
         assertEquals(listOf("filter +home"), keymapBindings(one).sections["general"].orEmpty().filter { it.keys != null }.map { it.action })
@@ -82,17 +82,17 @@ class KeysPanelTest {
     fun aCommandOfSeveralPlacesIsBoundWhereChosen() {
         val c = checkCommand("next")
         assertEquals(listOf("calendar", "boards", "kanban"), c.places.map { it.group })
-        val out = withBinding(settings("""{ "version": 5 }"""), "tui", "next", listOf("N"), group = "boards")
+        val out = withBinding(settings("""{ "version": 6 }"""), "tui", "next", listOf("N"), group = "boards")
         assertEquals(JsonPrimitive("next"), out["tui"]!!.jsonObject["keys"]!!.jsonObject["boards"]!!.jsonObject["N"])
     }
 
     @Test
     fun aKeyThatRunsNoCommandIsWarnedOfAndTakenOut() {
-        val s = settings("""{ "version": 5, "keys": { "tasks": { "z": "done 3", "x": "done" } } }""")
+        val s = settings("""{ "version": 6, "keys": { "tasks": { "z": "done 3", "x": "done" } } }""")
         val bad = keymapBindings(s).bad.single()
         assertEquals("keys.tasks" to "done takes no words", bad.at to bad.why)
         val out = withoutKey(s, bad)
-        assertEquals(settings("""{ "version": 5, "keys": { "tasks": { "x": "done" } } }"""), out)
+        assertEquals(settings("""{ "version": 6, "keys": { "tasks": { "x": "done" } } }"""), out)
         assertTrue(keymapBindings(out).bad.isEmpty())
     }
 }

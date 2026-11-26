@@ -62,6 +62,37 @@ impl Field {
         self.input.line.trim()
     }
 
+    /// What the field takes, in a few words, shown beside it while it is chosen; `many` for the marked tasks' form.
+    pub fn hint(&self, cfg: &Config, many: bool) -> String {
+        let uda = cfg.udas.get(&self.key);
+        let choices = uda.filter(|u| !u.values.is_empty()).map(|u| {
+            let named: Vec<&str> = u.values.iter().map(String::as_str).filter(|v| !v.is_empty()).collect();
+            format!("one of {}", named.join(", "))
+        });
+        let text = match (self.kind, self.key.as_str()) {
+            (Kind::Start, _) => "Space switches it",
+            (Kind::Note, _) if self.label == "Note" => "added as an annotation; Alt+Enter: a new line",
+            (Kind::Note, _) => "a new annotation; Alt+Enter: a new line",
+            (Kind::Tags, _) if many => "+tag adds one, -tag takes one off; Tab completes",
+            (Kind::Tags, _) => "words, a tag each; Tab completes",
+            (Kind::Depends, _) if many => "3 adds task 3, -3 takes it off; Tab completes",
+            (Kind::Depends, _) => "task ids or uuids; Tab completes",
+            (Kind::Date, _) => "a date as task takes it; Tab completes",
+            (_, "description") => "what the task is",
+            (_, "project") => "Home, or Home.Garden for a part of it; Tab completes",
+            (_, "recur") => "daily, weekly, 2w, monthly, …; it needs a due date",
+            _ => match (choices, uda.map(|u| u.ty)) {
+                (Some(c), _) => return c,
+                (None, Some(UdaType::Numeric)) => "a number",
+                (None, Some(UdaType::Duration)) => "a duration: 2h, 3d, P1W",
+                (None, Some(UdaType::Uuid)) => "a task's uuid",
+                _ if self.multiline => "Alt+Enter: a new line",
+                _ => "",
+            },
+        };
+        text.to_owned()
+    }
+
     /// For completion: what goes in front of the word being typed (`project:`, `+`), and whether only the last word
     /// of the field is completed.
     pub fn completes_as(&self) -> Option<(String, bool)> {
@@ -356,19 +387,26 @@ impl Form {
         out
     }
 
-    /// Why the form can't be saved as it is, or `None`.
-    pub fn problem(&self) -> Option<&'static str> {
+    /// What is wrong with each field as it stands, the form's own rules: a new task's description, a repeat's due date.
+    /// What `task` makes of a value (a date, a UDA's choices) is the engine's preview, added by the app.
+    pub fn problems(&self) -> Vec<Option<String>> {
+        let mut out = vec![None; self.fields.len()];
         if !self.many.is_empty() {
-            return None;
+            return out;
         }
+        let mut put = |key: &str, why: &str| {
+            if let Some(i) = self.fields.iter().position(|f| f.key == key) {
+                out[i] = Some(why.to_owned());
+            }
+        };
         if self.uuid.is_none() && self.value("description").is_empty() {
-            return Some("A task needs a description.");
+            put("description", "A task needs a description.");
         }
         let recur = self.field("recur");
         if recur.is_some_and(|r| !r.locked && !r.value().is_empty()) && self.value("due").is_empty() {
-            return Some("A repeating task needs a due date.");
+            put("recur", "A repeating task needs a due date.");
         }
-        None
+        out
     }
 
     /// The `task` command lines that save it, each as its words, run one after the other while each succeeds. None
@@ -516,9 +554,9 @@ mod tests {
                 vec!["+LATEST", "annotate", "the back wheel"],
             ]
         );
-        assert_eq!(f.problem(), None);
+        assert!(f.problems().iter().all(Option::is_none));
         set(&mut f, "description", " ");
-        assert_eq!(f.problem(), Some("A task needs a description."));
+        assert_eq!(f.problems()[0].as_deref(), Some("A task needs a description."));
     }
 
     #[test]
@@ -598,9 +636,13 @@ mod tests {
         let mut f = Form::add(&Preview::default(), &cfg());
         set(&mut f, "description", "Pay rent");
         set(&mut f, "recur", "monthly");
-        assert_eq!(f.problem(), Some("A repeating task needs a due date."));
+        let recur = f.fields.iter().position(|x| x.key == "recur").unwrap();
+        assert_eq!(
+            f.problems()[recur].as_deref(),
+            Some("A repeating task needs a due date.")
+        );
         set(&mut f, "due", "eom");
-        assert_eq!(f.problem(), None);
+        assert!(f.problems().iter().all(Option::is_none));
     }
 
     #[test]
