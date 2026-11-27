@@ -727,6 +727,15 @@ pub(crate) fn row_line(app: &App, row: KanbanRow) -> Line<'static> {
                 } else {
                     Span::from(format!("→ {}", c.on_move)).style(theme::accent())
                 });
+                // What it runs on an iterative task, where that is another line (`status:` left out, a `done` clearing).
+                let commands = &app.settings.task_commands;
+                let clears = cols
+                    .map(|cs| crate::kanban::board_clears(cs, commands, &app.cfg))
+                    .unwrap_or_default();
+                if let Some(line) = crate::kanban::iterative_move(&c.on_move, &clears, commands, &app.cfg) {
+                    let shown = if line.is_empty() { "nothing".to_owned() } else { line };
+                    spans.push(Span::from(format!("  iterative: {shown}")).quiet());
+                }
             }
         }
         KanbanRow::Name(i) => {

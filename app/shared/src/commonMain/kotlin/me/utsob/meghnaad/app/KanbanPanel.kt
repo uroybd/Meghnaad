@@ -240,7 +240,7 @@ fun KanbanPanel(store: Store, st: KanbanState) {
                 TextField("Filter", d.filter) { v -> st.set { it.copy(filter = v) } }
                 TextField("Completed since", d.completedSince, "today-14d (empty: all)") { v -> st.set { it.copy(completedSince = v) } }
                 Text("Columns", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                ColumnsEditor(d.columns) { cols -> st.set { it.copy(columns = cols) } }
+                ColumnsEditor(store, d.columns) { cols -> st.set { it.copy(columns = cols) } }
             }
             d.kanbans.forEachIndexed { i, k -> KanbanEditor(store, st, i, k) }
             TextButton(onClick = st::addKanban) { Text("Add a kanban") }
@@ -274,8 +274,11 @@ private fun TextField(label: String, value: String, placeholder: String? = null,
 }
 
 @Composable
-private fun ColumnsEditor(columns: List<KanbanColumn>, onChange: (List<KanbanColumn>) -> Unit) {
+private fun ColumnsEditor(store: Store, columns: List<KanbanColumn>, onChange: (List<KanbanColumn>) -> Unit) {
     val colors = MaterialTheme.colorScheme
+    // What each move runs on an iterative task, where that is another line (`status:` left out, a `done` clearing).
+    val udas = store.config?.config?.udas?.keys?.toList() ?: emptyList()
+    val clears = boardClears(columns, store.taskCommands, udas)
     fun change(j: Int, f: (KanbanColumn) -> KanbanColumn) = onChange(columns.toMutableList().also { it[j] = f(it[j]) })
     fun move(j: Int, by: Int) {
         val to = j + by
@@ -293,6 +296,11 @@ private fun ColumnsEditor(columns: List<KanbanColumn>, onChange: (List<KanbanCol
             TextField("Name", c.name) { v -> change(j) { it.copy(name = v) } }
             TextField("Filter", c.filter) { v -> change(j) { it.copy(filter = v) } }
             TextField("On move", c.move, "empty: takes no cards") { v -> change(j) { it.copy(move = v) } }
+            if (c.move.isNotBlank()) {
+                iterativeMove(c.move, clears, store.taskCommands, udas)?.let { line ->
+                    Text("On an iterative task: ${line.ifEmpty { "nothing" }}", color = colors.onSurfaceVariant, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
             columnProblem(c)?.let { Text(it, color = colors.error, fontSize = 12.sp) }
         }
     }
@@ -332,7 +340,7 @@ private fun KanbanEditor(store: Store, st: KanbanState, i: Int, k: KanbanEntry) 
         st.kanbanProblemAt(i)?.let { Text(it, color = colors.error, fontSize = 12.sp) }
         k.columns?.let { cols ->
             Text("Its columns", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-            ColumnsEditor(cols) { next -> st.change(i) { it.copy(columns = next) } }
+            ColumnsEditor(store, cols) { next -> st.change(i) { it.copy(columns = next) } }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.weight(1f))

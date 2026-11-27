@@ -35,9 +35,9 @@ Kanban is off until you set it up in **Settings → Kanban**. There are two ways
 
   | Column | Filter | On move |
   | --- | --- | --- |
-  | To do | `status:pending progressState:` | `pending` |
-  | In progress | `status:pending progressState:inprogress` | `inprogress` |
-  | Review | `status:pending progressState:review` | `inreview` |
+  | To do | `+PENDING progressState:` | `pending` |
+  | In progress | `+PENDING progressState:inprogress` | `inprogress` |
+  | Review | `+PENDING progressState:review` | `inreview` |
   | Done | `status:completed` | `done` |
 
   `pending`, `inprogress` and `inreview` are [task commands](settings.md#commands) it adds to Commands, each with a
@@ -63,6 +63,10 @@ Kanban is off until you set it up in **Settings → Kanban**. There are two ways
   `progressState` is. Moving a card out of Done reopens the task, because each move sets `status:pending`. No column
   starts a task: started is for time tracking, not a stage. If tasksh's review is set up (the `reviewed` UDA is
   defined), moving a card to Review also clears `reviewed`, which puts the task back in the review queue.
+
+  The open columns filter on `+PENDING`, which takes [iterative tasks](iterative.md) as well as pending ones (and, as
+  `status:pending` did, no waiting ones). Settings from before 0.8.73 had `status:pending` there; the app changes those
+  three filters once, as the setup wrote them, and leaves a filter you wrote yourself alone.
 - **Manual** changes nothing in your taskrc. You write the columns yourself, using tags (`+next`), a UDA of your own,
   `+ACTIVE`, or anything else a filter can say.
 
@@ -78,13 +82,29 @@ started`), and so does one of your [task commands](settings.md#commands). It run
 task's uuid in front of each part. A column with an empty On move takes no cards. The columns' filters and moves name
 the UDA themselves, so if you rename the UDA, change them to match.
 
+### Iterative tasks on a kanban
+
+Taskwarrior won't change an [iterative task](iterative.md)'s status by hand ("You cannot change the status of an
+iterative task"), and completing one makes the next as a copy of it. So a move runs a little differently on an
+iterative card, on every platform:
+
+- Its `status:` modifications are left out, whether the On move says them or a task command it runs does (`stat:` too):
+  `inprogress` runs `modify progressState:inprogress` on one. A statement left with nothing to run is skipped, and a
+  move that only changes the status says so and runs nothing.
+- A `done` also clears what the kanban's moves set: each UDA they give a value (`progressState:`) and each tag they add
+  (`-doing`). The next task of the series then starts in the first column, not in the one its last was moved through.
+  Taskwarrior's own attributes (dates, project, priority) are kept.
+
+Wherever a column's On move runs otherwise on an iterative task, the column editor shows the line it runs, muted, under
+it (the terminal app beside it): *On an iterative task: `modify progressState:inprogress`*.
+
 Everything is kept in the app's own `settings.json`, under `kanban`:
 
 ```json
 "kanban": {
   "enabled": true, "setup": "automatic", "uda": "progressState",
   "report": "kanban", "filter": "", "completedSince": "today-14d",
-  "columns": [ { "name": "To do", "filter": "status:pending progressState:",
+  "columns": [ { "name": "To do", "filter": "+PENDING progressState:",
                  "move": "modify status:pending progressState:" } ],
   "kanbans": [ { "id": "kanban", "name": "Kanban" },
                { "id": "work", "name": "Work", "filter": "project:Work" } ]

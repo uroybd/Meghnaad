@@ -48,6 +48,8 @@
     placeTasks,
     type Kanban,
     type KanbanView,
+    boardClears,
+    forIterative,
   } from './kanban';
   import ReportCell from './ReportCell.svelte';
   import { kanbanPath } from './route';
@@ -267,7 +269,18 @@
     const k = kanban;
     const col = k?.columns[to];
     if (!k || !col || !col.move.trim() || from === to) return;
-    const ok = await store.actSteps(null, moveSteps(col.move, uuid, store.taskCommands));
+    let steps = moveSteps(col.move, uuid, store.taskCommands);
+    // An iterative task: no `status:`, and a `done` clears what the board's moves set (`board_move`).
+    const card = board?.columns.flat().find((r) => r.uuid === uuid) ?? board?.other.find((r) => r.uuid === uuid);
+    if (card?.status === 'iterative') {
+      const udas = Object.keys(store.config?.config.udas ?? {});
+      steps = forIterative(steps, boardClears(k.columns, store.taskCommands, udas), udas);
+      if (!steps.length) {
+        store.notify(`${col.name}’s On move only changes the status, which an iterative task keeps.`, 'err');
+        return;
+      }
+    }
+    const ok = await store.actSteps(null, steps);
     // `act` reads the page again through `rev`; read it now to say where the task went.
     await load();
     if (!ok || !board) return;

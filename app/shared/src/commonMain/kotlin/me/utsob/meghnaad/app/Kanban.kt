@@ -158,9 +158,9 @@ fun automaticColumns(review: Boolean, u: String = PROGRESS_UDA, moves: List<Task
     val (todo, progress, inReview) = moveCommands(review, u)
     fun move(m: TaskCommand) = if (moves.any { it.name == m.name }) m.name else m.command
     return listOf(
-        KanbanColumn("To do", "status:pending $u:", move(todo)),
-        KanbanColumn("In progress", "status:pending $u:inprogress", move(progress)),
-        KanbanColumn("Review", "status:pending $u:review", move(inReview)),
+        KanbanColumn("To do", "+PENDING $u:", move(todo)),
+        KanbanColumn("In progress", "+PENDING $u:inprogress", move(progress)),
+        KanbanColumn("Review", "+PENDING $u:review", move(inReview)),
         KanbanColumn("Done", "status:completed", "done"),
     )
 }
@@ -460,6 +460,48 @@ fun columnOf(columns: List<List<Row>>, uuid: String): Int = columns.indexOfFirst
  */
 /** A move changes the card's task only: a recurring task's instance, without asking about the rest of its series. */
 const val ONLY_THIS_TASK = "rc.recurrence.confirmation:no"
+
+private fun strings(xs: List<String>) = JsonArray(xs.map { JsonPrimitive(it) })
+
+/**
+ * What a `done` on an iterative card clears: what the moves of `columns` set, task commands written out (the engine's
+ * `board_move::board_clears`: each UDA they give a value, `-tag` for each tag they add). `udas`: the taskrc's UDAs.
+ */
+fun boardClears(columns: List<KanbanColumn>, commands: List<TaskCommand>, udas: List<String>): List<String> {
+    val lines = columns.flatMap { c -> planChain(c.move, commands).map { it.line } }
+    return (callHelper("board_clears", strings(lines), strings(udas)) as JsonArray).map { (it as JsonPrimitive).content }
+}
+
+/**
+ * `steps` as they run on an iterative task: no `status:` (Taskwarrior refuses to change one's status), and a `done` with
+ * `clears` (the engine's `board_move::iterative_statement`); a statement left with nothing goes.
+ */
+fun forIterative(steps: List<CommandStep>, clears: List<String>, udas: List<String>): List<CommandStep> {
+    val out = mutableListOf<CommandStep>()
+    for (s in steps) {
+        val line = callHelper(
+            "iterative_statement",
+            JsonPrimitive(s.words.joinToString(" ") { shellQuote(it) }),
+            strings(clears),
+            strings(udas),
+        ).let { (it as JsonPrimitive).content }
+        if (line.isNotEmpty()) out += CommandStep(splitWords(line), if (out.isEmpty()) null else s.join)
+    }
+    return out
+}
+
+private fun lineOf(steps: List<CommandStep>): String =
+    steps.joinToString("") { s -> (s.join?.let { " ${it.text} " } ?: "") + s.words.joinToString(" ") { shellQuote(it) } }
+
+/**
+ * What `move` runs on an iterative card, task commands written out, when that is another line than on any other card:
+ * `modify progressState:inprogress` for `inprogress`; "" when it runs nothing on one. Null when it is the same.
+ */
+fun iterativeMove(move: String, clears: List<String>, commands: List<TaskCommand>, udas: List<String>): String? {
+    val steps = planChain(move, commands).map { CommandStep(splitWords(it.line), it.join) }
+    val changed = forIterative(steps, clears, udas)
+    return lineOf(changed).takeIf { it != lineOf(steps) }
+}
 
 fun moveSteps(move: String, uuid: String, commands: List<TaskCommand>): List<CommandStep> {
     val line = splitChain(move).mapIndexed { i, s -> (if (i > 0) " ${s.join?.text} " else "") + "$ONLY_THIS_TASK $uuid ${s.line}" }.joinToString("")

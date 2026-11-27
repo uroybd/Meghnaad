@@ -27,7 +27,7 @@ const applies = () => [...document.querySelectorAll('button')].filter((b) => b.t
 beforeEach(() => {
   api.putDeviceSettings.mockResolvedValue({ ok: true });
   api.listDevices.mockResolvedValue([]);
-  store.appSettings = parseSettings(JSON.stringify({ version: 6 }));
+  store.appSettings = parseSettings(JSON.stringify({ version: 7 }));
   store.keymapDefaults = null;
   store.deviceId = 'laptop';
   store.deviceRaw = { deviceId: 'laptop' };

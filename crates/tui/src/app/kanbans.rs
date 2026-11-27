@@ -417,6 +417,20 @@ impl App {
         }
         match kanban::move_steps(&col.on_move, &card.uuid, &self.settings.task_commands) {
             Ok(steps) => {
+                // An iterative task: no `status:`, and a `done` clears what the board's moves set (`board_move`).
+                let steps = if card.repeats == Some(crate::model::Repeats::Iterative) {
+                    let clears = kanban::board_clears(&k.columns, &self.settings.task_commands, &self.cfg);
+                    kanban::for_iterative(steps, &clears, &self.cfg)
+                } else {
+                    steps
+                };
+                if steps.is_empty() {
+                    self.status = format!(
+                        "{}'s On move only changes the status, which an iterative task keeps.",
+                        col.name
+                    );
+                    return;
+                }
                 let is_alias = |w: &str| self.cfg.settings.contains_key(&format!("alias.{w}"));
                 if let Some(w) = kanban::unknown_command(&steps, &self.commands, is_alias) {
                     self.status = format!(

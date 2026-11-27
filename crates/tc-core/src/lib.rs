@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod appsettings;
 pub mod board;
+pub mod board_move;
 pub mod burndown;
 pub mod calc;
 pub mod calendar;

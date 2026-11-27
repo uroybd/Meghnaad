@@ -1958,12 +1958,12 @@ mod tests {
     #[test]
     fn a_key_is_set_and_taken_out_and_nothing_else_moves() {
         let d = defaults();
-        let s = json!({ "version": 6, "taskCommands": [1], "web": { "theme": "dark" } });
+        let s = json!({ "version": 7, "taskCommands": [1], "web": { "theme": "dark" } });
         let one = with_binding(&s, &d, "web", "app.prompt", None, Some(&["ctrl+k".into()]));
         // The key runs the action, in its group; the default key it no longer has is unbound.
         assert_eq!(
             one,
-            json!({ "version": 6, "taskCommands": [1],
+            json!({ "version": 7, "taskCommands": [1],
                     "web": { "theme": "dark", "keys": { "app": { "ctrl+k": "app.prompt", "/": null } } } })
         );
         assert_eq!(km(&one, Platform::Web).keys_of("app.prompt"), ["ctrl+k"]);
@@ -1992,7 +1992,7 @@ mod tests {
                 None,
                 None
             ),
-            json!({ "version": 6, "keys": { "app": { "U": "app.undo", "u": null } } })
+            json!({ "version": 7, "keys": { "app": { "U": "app.undo", "u": null } } })
         );
     }
 
@@ -2341,7 +2341,7 @@ mod tests {
     #[test]
     fn a_skipped_key_can_be_taken_out() {
         let d = defaults();
-        let s = json!({ "version": 6, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
+        let s = json!({ "version": 7, "keys": { "tasks": { "z": "done 3", "x": "done" } } });
         let b = bindings(&d, &s);
         assert_eq!(b.bad.len(), 1, "{:?}", b.bad);
         assert_eq!(
@@ -2349,7 +2349,7 @@ mod tests {
             ("z", "done takes no words")
         );
         let out = without_key(&s, &d, "general", "tasks", "z");
-        assert_eq!(out, json!({ "version": 6, "keys": { "tasks": { "x": "done" } } }));
+        assert_eq!(out, json!({ "version": 7, "keys": { "tasks": { "x": "done" } } }));
         assert!(bindings(&d, &out).bad.is_empty());
     }
 

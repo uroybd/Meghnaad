@@ -15,6 +15,7 @@
 
 import { commandProblem, type TaskCommand } from './appsettings';
 import { freshId, SLUG } from './boards';
+import { callHelper } from '../engine/helpers';
 import { shellQuote, splitWords } from './cmdline';
 import { splitChain, type Joiner } from './compound';
 import { planChain } from './taskCommands';
@@ -219,9 +220,9 @@ export function automaticColumns(review: boolean, u = PROGRESS_UDA, moves: TaskC
   const [todo, progress, inReview] = moveCommands(review, u);
   const move = (m: TaskCommand) => (moves.some((x) => x.name === m.name) ? m.name : m.command);
   return [
-    { name: 'To do', filter: `status:pending ${u}:`, move: move(todo) },
-    { name: 'In progress', filter: `status:pending ${u}:inprogress`, move: move(progress) },
-    { name: 'Review', filter: `status:pending ${u}:review`, move: move(inReview) },
+    { name: 'To do', filter: `+PENDING ${u}:`, move: move(todo) },
+    { name: 'In progress', filter: `+PENDING ${u}:inprogress`, move: move(progress) },
+    { name: 'Review', filter: `+PENDING ${u}:review`, move: move(inReview) },
     { name: 'Done', filter: 'status:completed', move: 'done' },
   ];
 }
@@ -505,6 +506,44 @@ export function columnOf(columns: Row[][], uuid: string): number {
  */
 /** A move changes the card's task only: a recurring task's instance, without asking about the rest of its series. */
 export const ONLY_THIS_TASK = 'rc.recurrence.confirmation:no';
+
+/**
+ * What a `done` on an iterative card clears: what the moves of `columns` set, task commands written out (the engine's
+ * `board_move::board_clears`: each UDA they give a value, `-tag` for each tag they add). `udas`: the taskrc's UDAs.
+ */
+export function boardClears(columns: KanbanColumn[], commands: TaskCommand[], udas: string[]): string[] {
+  const lines = columns.flatMap((c) => planChain(c.move, commands).map((s) => s.line));
+  return callHelper<string[]>('board_clears', lines, udas);
+}
+
+/**
+ * `steps` as they run on an iterative task: no `status:` (Taskwarrior refuses to change one's status), and a `done`
+ * with `clears` (the engine's `board_move::iterative_statement`); a statement left with nothing goes.
+ */
+export function forIterative<S extends { args: string[]; join: Joiner | null }>(
+  steps: S[],
+  clears: string[],
+  udas: string[],
+): { args: string[]; join: Joiner | null }[] {
+  const out: { args: string[]; join: Joiner | null }[] = [];
+  for (const s of steps) {
+    const line = callHelper<string>('iterative_statement', s.args.map(shellQuote).join(' '), clears, udas);
+    if (line) out.push({ args: splitWords(line), join: out.length ? s.join : null });
+  }
+  return out;
+}
+
+/**
+ * What `move` runs on an iterative card, task commands written out, when that is another line than on any other card:
+ * `modify progressState:inprogress` for `inprogress`; `''` when it runs nothing on one. `null` when it is the same.
+ */
+export function iterativeMove(move: string, clears: string[], commands: TaskCommand[], udas: string[]): string | null {
+  const steps = planChain(move, commands).map((s) => ({ args: splitWords(s.line), join: s.join }));
+  const changed = forIterative(steps, clears, udas);
+  const line = (xs: { args: string[]; join: Joiner | null }[]) =>
+    xs.map((s) => (s.join ? ` ${s.join} ` : '') + s.args.map(shellQuote).join(' ')).join('');
+  return line(changed) === line(steps) ? null : line(changed);
+}
 
 export function moveSteps(
   move: string,

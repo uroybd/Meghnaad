@@ -273,6 +273,16 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         "iter_rule_describe" => json!(crate::iter_rule::describe(&a.req::<crate::iter_rule::CalendarRule>(0)?)),
         "iter_month_choices" => json!(crate::iter_rule::month_choices(&a.req::<String>(0)?)),
         "describe_iter" => json!(crate::iter_rule::describe_iter(&a.req::<String>(0)?)),
+        // A board's move on an iterative task (`board_move`); the UDAs' names stand in for the taskrc.
+        "board_clears" => json!(crate::board_move::board_clears(
+            &a.req::<Vec<String>>(0)?,
+            &crate::board_move::config_with_udas(&a.opt::<Vec<String>>(1)?.unwrap_or_default()),
+        )),
+        "iterative_statement" => json!(crate::board_move::iterative_statement(
+            &a.req::<String>(0)?,
+            &a.req::<Vec<String>>(1)?,
+            &crate::board_move::config_with_udas(&a.opt::<Vec<String>>(2)?.unwrap_or_default()),
+        )),
         "remind_offsets" => json!(remind_offsets(&a.req::<String>(0)?)),
         "set_vocab" => {
             *VOCAB.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =

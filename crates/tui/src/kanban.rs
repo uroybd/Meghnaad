@@ -323,9 +323,9 @@ pub fn automatic_columns(review: bool, u: &str, moves: &[TaskCommand]) -> Vec<Co
         })
     };
     vec![
-        column("To do", &format!("status:pending {u}:"), &mv(0)),
-        column("In progress", &format!("status:pending {u}:inprogress"), &mv(1)),
-        column("Review", &format!("status:pending {u}:review"), &mv(2)),
+        column("To do", &format!("+PENDING {u}:"), &mv(0)),
+        column("In progress", &format!("+PENDING {u}:inprogress"), &mv(1)),
+        column("Review", &format!("+PENDING {u}:review"), &mv(2)),
         column("Done", "status:completed", "done"),
     ]
 }
@@ -716,6 +716,52 @@ pub fn lanes_of(uuids: &[String], heads: &[Option<String>]) -> (Vec<String>, BTr
 /// A move changes the card's task only: a recurring task's instance, without asking about the rest of its series.
 pub const ONLY_THIS_TASK: &str = "rc.recurrence.confirmation:no";
 
+/// What a `done` on an iterative card clears: what the moves of `columns` set (`tc_core::board_move::board_clears`).
+pub fn board_clears(columns: &[Column], commands: &[TaskCommand], cfg: &Config) -> Vec<String> {
+    let lines: Vec<String> = columns
+        .iter()
+        .filter_map(|c| plan_chain(&c.on_move, commands).ok())
+        .flatten()
+        .map(|s| s.line)
+        .collect();
+    tc_core::board_move::board_clears(&lines, cfg)
+}
+
+/// `steps` as they run on an iterative task: each statement through `tc_core::board_move::iterative_statement`, and the
+/// ones left with nothing to run taken out.
+pub fn for_iterative(steps: Vec<Statement>, clears: &[String], cfg: &Config) -> Vec<Statement> {
+    let mut out: Vec<Statement> = Vec::new();
+    for s in steps {
+        let line = tc_core::board_move::iterative_statement(&s.line, clears, cfg);
+        if line.is_empty() {
+            continue;
+        }
+        let join = if out.is_empty() { None } else { s.join };
+        out.push(Statement { line, join });
+    }
+    out
+}
+
+/// The statements written as one line, `a && b`.
+fn line_of(steps: &[Statement]) -> String {
+    steps
+        .iter()
+        .map(|s| match s.join {
+            Some(j) => format!(" {} {}", j.as_str(), s.line),
+            None => s.line.clone(),
+        })
+        .collect()
+}
+
+/// What `on_move` runs on an iterative card, task commands written out, when that is not what it runs on another:
+/// `modify progressState:inprogress` for `inprogress`. An empty line when it runs nothing on one.
+pub fn iterative_move(on_move: &str, clears: &[String], commands: &[TaskCommand], cfg: &Config) -> Option<String> {
+    let steps = plan_chain(on_move, commands).ok()?;
+    let changed = for_iterative(steps.clone(), clears, cfg);
+    let same = changed.len() == steps.len() && changed.iter().zip(&steps).all(|(a, b)| a.line == b.line);
+    (!same).then(|| line_of(&changed))
+}
+
 pub fn move_steps(on_move: &str, uuid: &str, commands: &[TaskCommand]) -> Result<Vec<Statement>, String> {
     let line: String = split_chain(on_move)?
         .iter()
@@ -849,7 +895,7 @@ mod tests {
         );
         assert_eq!(
             automatic_columns(false, "stage", &[])[1].filter,
-            "status:pending stage:inprogress"
+            "+PENDING stage:inprogress"
         );
         assert!(has_review(&cfg("uda.reviewed.type=date\n")));
         assert!(!has_review(&cfg("")));
@@ -1101,5 +1147,30 @@ mod tests {
                 "kanban.columns: column 2 (B): a column needs a filter"
             ]
         );
+    }
+
+    #[test]
+    fn an_iterative_card_moves_without_a_status_and_done_clears_the_boards_column() {
+        let cfg = tc_core::taskrc::parse("uda.progressState.type=string\n").config;
+        let moves = move_commands(false, U);
+        let cols = automatic_columns(false, U, &moves);
+        assert_eq!(cols[0].filter, "+PENDING progressState:");
+        let clears = board_clears(&cols, &moves, &cfg);
+        assert_eq!(clears, ["progressState:"]);
+        let shown = |c: &Column| iterative_move(&c.on_move, &clears, &moves, &cfg);
+        assert_eq!(shown(&cols[0]).as_deref(), Some("modify progressState:"));
+        assert_eq!(shown(&cols[1]).as_deref(), Some("modify progressState:inprogress"));
+        assert_eq!(shown(&cols[3]).as_deref(), Some("done progressState:"));
+        // A move with no status is the same on an iterative task.
+        assert_eq!(iterative_move("modify +x", &clears, &moves, &cfg), None);
+        let uuid = "0b1c2d3e";
+        let steps = for_iterative(move_steps("inprogress", uuid, &moves).unwrap(), &clears, &cfg);
+        assert_eq!(
+            steps.iter().map(|s| s.line.as_str()).collect::<Vec<_>>(),
+            [format!("{ONLY_THIS_TASK} {uuid} modify progressState:inprogress")]
+        );
+        // A statement left with nothing goes, and the next one starts the chain.
+        let steps = for_iterative(split_chain("modify status:pending && modify +x").unwrap(), &[], &cfg);
+        assert_eq!((steps.len(), steps[0].join.is_none()), (1, true));
     }
 }

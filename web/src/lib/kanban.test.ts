@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { lintSettings, parseSettings, serializeKanban } from './appsettings';
 import {
   automaticColumns,
+  boardClears,
+  forIterative,
+  iterativeMove,
   automaticSettings,
   moveCommands,
   usableMoves,
@@ -85,21 +88,21 @@ describe('the automatic setup', () => {
 
   it('makes To do, In progress, Review and Done; Review clears reviewed when tasksh review is set up', () => {
     expect(automaticColumns(false)).toEqual([
-      { name: 'To do', filter: 'status:pending progressState:', move: 'modify status:pending progressState:' },
+      { name: 'To do', filter: '+PENDING progressState:', move: 'modify status:pending progressState:' },
       {
         name: 'In progress',
-        filter: 'status:pending progressState:inprogress',
+        filter: '+PENDING progressState:inprogress',
         move: 'modify status:pending progressState:inprogress',
       },
       {
         name: 'Review',
-        filter: 'status:pending progressState:review',
+        filter: '+PENDING progressState:review',
         move: 'modify status:pending progressState:review',
       },
       { name: 'Done', filter: 'status:completed', move: 'done' },
     ]);
     expect(automaticColumns(true)[2].move).toBe('modify status:pending progressState:review reviewed:');
-    expect(automaticColumns(false, 'stage')[1].filter).toBe('status:pending stage:inprogress');
+    expect(automaticColumns(false, 'stage')[1].filter).toBe('+PENDING stage:inprogress');
     expect(hasReview(configWith({ reviewed: { type: 'date' } }))).toBe(true);
     expect(hasReview(configWith({}))).toBe(false);
   });
@@ -410,6 +413,38 @@ describe('swimlanes', () => {
       ['c', 1],
       ['d', 0],
       ['e', 2],
+    ]);
+  });
+});
+
+describe('a move on an iterative card', () => {
+  const udas = ['progressState'];
+  const moves = moveCommands(false);
+  const cols = automaticColumns(false, 'progressState', moves);
+
+  it('takes iterative tasks into the open columns', () => {
+    expect(cols.map((c) => c.filter)).toEqual([
+      '+PENDING progressState:',
+      '+PENDING progressState:inprogress',
+      '+PENDING progressState:review',
+      'status:completed',
+    ]);
+  });
+
+  it('leaves the status out, and done clears what the moves set', () => {
+    const clears = boardClears(cols, moves, udas);
+    expect(clears).toEqual(['progressState:']);
+    expect(cols.map((c) => iterativeMove(c.move, clears, moves, udas))).toEqual([
+      'modify progressState:',
+      'modify progressState:inprogress',
+      'modify progressState:review',
+      'done progressState:',
+    ]);
+    expect(iterativeMove('modify +x', clears, moves, udas)).toBeNull();
+    expect(iterativeMove('modify status:pending', clears, moves, udas)).toBe('');
+    const uuid = '0b1c2d3e-0000-4000-8000-000000000000';
+    expect(forIterative(moveSteps('inprogress', uuid, moves), clears, udas)).toEqual([
+      { args: ['rc.recurrence.confirmation:no', uuid, 'modify', 'progressState:inprogress'], join: null },
     ]);
   });
 });

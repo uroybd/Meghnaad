@@ -133,7 +133,19 @@ private fun KanbanScreen(store: Store, kanban: Kanban) {
         val col = kanban.columns.getOrNull(to) ?: return
         if (col.move.isBlank() || from == to) return
         scope.launch {
-            val ok = store.actSteps(null, moveSteps(col.move, uuid, store.taskCommands))
+            var steps = moveSteps(col.move, uuid, store.taskCommands)
+            // An iterative task: no `status:`, and a `done` clears what the board's moves set (`board_move`).
+            val placed = data?.placed
+            val card = placed?.columns?.flatten()?.find { it.uuid == uuid } ?: placed?.other?.find { it.uuid == uuid }
+            if (card?.status == "iterative") {
+                val udas = store.config?.config?.udas?.keys?.toList() ?: emptyList()
+                steps = forIterative(steps, boardClears(kanban.columns, store.taskCommands, udas), udas)
+                if (steps.isEmpty()) {
+                    store.notify("${col.name}’s On move only changes the status, which an iterative task keeps.", bad = true)
+                    return@launch
+                }
+            }
+            val ok = store.actSteps(null, steps)
             load()
             val d = data ?: return@launch
             if (!ok) return@launch

@@ -7,7 +7,7 @@
 use serde_json::{Map, Value};
 
 /// The version this build writes.
-pub const VERSION: u64 = 6;
+pub const VERSION: u64 = 7;
 
 /// The version `settings` says it is: `"version"`, or 1 for none.
 pub fn version_of(settings: &Value) -> u64 {
@@ -25,6 +25,8 @@ pub fn version_of(settings: &Value) -> u64 {
 /// - 4 → 5 (spec 0033): Settings has no Boards section, so the keys of its group (`settings.boards`) go.
 /// - 5 → 6: the terminal's info view changes a task with `info.modify`, as the Tasks page does with `tasks.modify`, so
 ///   a key bound to `info.edit` runs `info.modify`.
+/// - 6 → 7 (spec 0040): the automatic kanban's open columns take iterative tasks too: their filter
+///   `status:pending progressState:…` (as the setup wrote it, on any UDA) is `+PENDING progressState:…`.
 pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     let root = settings.as_object()?;
     let from = version_of(settings);
@@ -46,6 +48,9 @@ pub fn migrate(settings: &Value, keymap_defaults: &Value) -> Option<Value> {
     }
     if from < 6 {
         info_modify_v5_to_v6(&mut root);
+    }
+    if from < 7 {
+        open_columns_v6_to_v7(&mut root);
     }
     root.insert("version".into(), Value::from(VERSION));
     Some(Value::Object(root))
@@ -146,6 +151,42 @@ fn info_modify_v5_to_v6(root: &mut Map<String, Value>) {
     }
 }
 
+/// A column filter the kanban's automatic setup wrote, `status:pending <uda>:` with no value, `inprogress` or `review`,
+/// is `+PENDING <uda>:…`: `status:pending` leaves out iterative tasks, `+PENDING` has them (and, as before, no waiting
+/// ones). A filter written any other way is the person's, and stays.
+fn open_columns_v6_to_v7(root: &mut Map<String, Value>) {
+    let Some(kanban) = root.get_mut("kanban").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let mut lists: Vec<&mut Value> = Vec::new();
+    let (columns, kanbans) = split_kanban(kanban);
+    lists.extend(columns);
+    if let Some(ks) = kanbans {
+        lists.extend(ks.iter_mut().filter_map(|k| k.get_mut("columns")));
+    }
+    for column in lists.into_iter().filter_map(Value::as_array_mut).flatten() {
+        let Some(c) = column.as_object_mut() else {
+            continue;
+        };
+        let Some(rest) = c
+            .get("filter")
+            .and_then(Value::as_str)
+            .and_then(|f| f.strip_prefix("status:pending "))
+        else {
+            continue;
+        };
+        let automatic = rest.split_once(':').is_some_and(|(uda, value)| {
+            !uda.is_empty()
+                && uda.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+                && matches!(value, "" | "inprogress" | "review")
+        });
+        if automatic {
+            let filter = format!("+PENDING {rest}");
+            c.insert("filter".into(), Value::from(filter));
+        }
+    }
+}
+
 /// `kanban.columns` and `kanban.kanbans`, borrowed apart.
 fn split_kanban(kanban: &mut Map<String, Value>) -> (Option<&mut Value>, Option<&mut Vec<Value>>) {
     let mut columns = None;
@@ -199,7 +240,7 @@ mod tests {
         assert_eq!(
             new,
             json!({
-                "version": 6,
+                "version": 7,
                 "sync": "manual",
                 "keys": { "app": { "ctrl+k": "app.prompt", "/": "app.prompt" } },
                 // The old keys replaced an action's own: the default keys they left out are unbound.
@@ -219,7 +260,7 @@ mod tests {
             None
         );
         assert_eq!(migrate(&Value::Null, &defaults()), None);
-        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 6 })));
+        assert_eq!(migrate(&json!({}), &defaults()), Some(json!({ "version": 7 })));
     }
 
     #[test]
@@ -228,18 +269,18 @@ mod tests {
             json!({ "version": 2, "kanban": { "enabled": true, "icons": true }, "appearance": { "idFallback": true } });
         assert_eq!(
             migrate(&old, &defaults()).unwrap(),
-            json!({ "version": 6, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
+            json!({ "version": 7, "kanban": { "enabled": true }, "appearance": { "idFallback": true, "cardIcons": true } })
         );
         let bare = json!({ "version": 2, "kanban": { "icons": false } });
         assert_eq!(
             migrate(&bare, &defaults()).unwrap(),
-            json!({ "version": 6, "kanban": {}, "appearance": { "cardIcons": false } })
+            json!({ "version": 7, "kanban": {}, "appearance": { "cardIcons": false } })
         );
         // Not a yes or no: left for the reader to report.
         let odd = json!({ "version": 2, "kanban": { "icons": "yes" } });
         assert_eq!(
             migrate(&odd, &defaults()).unwrap(),
-            json!({ "version": 6, "kanban": { "icons": "yes" } })
+            json!({ "version": 7, "kanban": { "icons": "yes" } })
         );
     }
 
@@ -294,11 +335,51 @@ mod tests {
             "tui": { "keys": { "info": { "e": null, "c": "info.edit", "o": "info.links" }, "tasks": { "F": "tasks.filter" } } }
         });
         let new = migrate(&old, &defaults()).unwrap();
-        assert_eq!(new["version"], 6);
+        assert_eq!(new["version"], 7);
         assert_eq!(new["keys"], json!({ "info": { "E": "info.modify" } }));
         assert_eq!(
             new["tui"]["keys"],
             json!({ "info": { "e": null, "c": "info.modify", "o": "info.links" }, "tasks": { "F": "tasks.filter" } })
+        );
+    }
+
+    #[test]
+    fn version_6_automatic_open_columns_take_iterative_tasks() {
+        let col = |f: &str| json!({ "name": "c", "filter": f, "move": "x" });
+        let old = json!({
+            "version": 6,
+            "kanban": {
+                "columns": [col("status:pending progressState:"), col("status:pending progressState:inprogress"),
+                    col("status:pending progressState:review"), col("status:completed")],
+                "kanbans": [{ "name": "Mine", "columns": [col("status:pending stage:review"),
+                    col("status:pending project:Home"), col("status:pending stage:later")] }]
+            }
+        });
+        let new = migrate(&old, &defaults()).unwrap();
+        let filters = |v: &Value| -> Vec<String> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["filter"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        assert_eq!(
+            filters(&new["kanban"]["columns"]),
+            [
+                "+PENDING progressState:",
+                "+PENDING progressState:inprogress",
+                "+PENDING progressState:review",
+                "status:completed"
+            ]
+        );
+        // The setup's shape on another UDA moves too; filters the person wrote stay.
+        assert_eq!(
+            filters(&new["kanban"]["kanbans"][0]["columns"]),
+            [
+                "+PENDING stage:review",
+                "status:pending project:Home",
+                "status:pending stage:later"
+            ]
         );
     }
 }

@@ -26,6 +26,8 @@
     type KanbanEntry,
     type KanbanSettings,
     type Part,
+    boardClears,
+    iterativeMove,
   } from './kanban';
   import { store } from './store.svelte';
   import { configArgs } from './tasksh';
@@ -202,6 +204,9 @@
 {/snippet}
 
 {#snippet columnsEditor(cols: KanbanColumn[], why: (string | null)[])}
+  {@const udas = Object.keys(store.config?.config.udas ?? {})}
+  {@const clears = boardClears(cols, store.taskCommands, udas)}
+  {@const iterRuns = cols.map((c) => (c.move.trim() ? iterativeMove(c.move, clears, store.taskCommands, udas) : null))}
   {#if cols.length}
     <ol class="cols">
       {#each cols as c, j (j)}
@@ -250,6 +255,9 @@
             >
           </span>
           {#if why[j]}<span class="why" role="alert">{why[j]}</span>{/if}
+          {#if iterRuns[j] != null}
+            <span class="iter-run">On an iterative task: <code>{iterRuns[j] || 'nothing'}</code></span>
+          {/if}
         </li>
       {/each}
     </ol>
@@ -637,6 +645,12 @@
   }
   .tools {
     display: inline-flex;
+  }
+  /* What the move runs on an iterative task, where that is another line: muted, under the row. */
+  .iter-run {
+    grid-column: 1 / -1;
+    color: var(--dim);
+    font-size: 12.5px;
   }
   .why {
     grid-column: 1 / -1;

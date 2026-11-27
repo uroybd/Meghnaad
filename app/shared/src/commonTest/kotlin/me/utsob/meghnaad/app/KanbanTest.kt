@@ -68,7 +68,7 @@ class KanbanTest {
         assertEquals("done", cols[3].move)
         assertEquals("modify status:pending progressState:review", cols[2].move)
         assertEquals("modify status:pending progressState:review reviewed:", automaticColumns(true)[2].move)
-        assertEquals("status:pending stage:inprogress", automaticColumns(false, "stage")[1].filter)
+        assertEquals("+PENDING stage:inprogress", automaticColumns(false, "stage")[1].filter)
         assertTrue(hasReview(config(UdaDef("reviewed", "date"))))
         assertFalse(hasReview(config()))
     }
@@ -289,5 +289,25 @@ class KanbanTest {
         assertEquals("mine", renamedKanban(KanbanEntry("mine", "Work"), "Work 2", false, listOf("kanban")).id)
         assertEquals("work", renamedKanban(KanbanEntry("work", "Work"), "Jobs", true, listOf("kanban")).id)
         assertEquals("kanban-2", renamedKanban(fresh, "Kanban", false, listOf("kanban")).id)
+    }
+
+    @Test
+    fun anIterativeCardMovesWithoutAStatusAndDoneClearsTheBoardsColumn() {
+        val udas = listOf("progressState")
+        val moves = moveCommands(false)
+        val cols = automaticColumns(false, PROGRESS_UDA, moves)
+        assertEquals("+PENDING progressState:", cols[0].filter)
+        val clears = boardClears(cols, moves, udas)
+        assertEquals(listOf("progressState:"), clears)
+        assertEquals(
+            listOf("modify progressState:", "modify progressState:inprogress", "modify progressState:review", "done progressState:"),
+            cols.map { iterativeMove(it.move, clears, moves, udas) },
+        )
+        assertEquals(null, iterativeMove("modify +x", clears, moves, udas))
+        val uuid = "0b1c2d3e-0000-4000-8000-000000000000"
+        assertEquals(
+            listOf(CommandStep(listOf(ONLY_THIS_TASK, uuid, "modify", "progressState:inprogress"), null)),
+            forIterative(moveSteps("inprogress", uuid, moves), clears, udas),
+        )
     }
 }
