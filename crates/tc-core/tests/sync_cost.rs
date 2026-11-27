@@ -9,13 +9,15 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use taskchampion::{Operations, Replica, Server, Status};
 use tc_core::crypto::Cryptor;
 use tc_core::LiveStorage;
-use tc_core::{load_cryptor, names, CloudServer, MemStore, ObjectStore, Result};
+use tc_core::{names, CloudServer, MemStore, ObjectStore, Result};
 
 /// A [`MemStore`] that counts what is asked of it, by kind. Clones share the counts.
 #[derive(Clone, Default)]
@@ -76,7 +78,7 @@ fn replica() -> R {
 
 /// The key is derived once per Worker isolate and reused, so it is not part of a request's cost.
 async fn cryptor(store: &Counting) -> Cryptor {
-    load_cryptor(store, b"hunter2").await.unwrap()
+    common::cryptor(store, b"hunter2").await
 }
 
 /// A server that never asks for a snapshot: drawn at random, about one push in 128 would make one, and a test of what
@@ -256,7 +258,7 @@ async fn push_n(store: &Counting, c: &Cryptor, r: &mut R, n: usize, u: SnapshotU
 #[tokio::test]
 async fn snapshot_odds_match_taskchampions_cloud_server() {
     let store = MemStore::new();
-    let mut s = CloudServer::new(store, b"hunter2").await.unwrap();
+    let mut s = common::server(store, b"hunter2").await;
     let (mut parent, mut high, mut low) = (uuid::Uuid::nil(), 0u32, 0u32);
     let n = 20_000u32;
     for _ in 0..n {
@@ -280,9 +282,8 @@ async fn snapshot_odds_match_taskchampions_cloud_server() {
 #[tokio::test]
 async fn a_rejected_push_never_asks_for_a_snapshot() {
     let store = MemStore::new();
-    let mut s = CloudServer::new(store, b"hunter2")
+    let mut s = common::server(store, b"hunter2")
         .await
-        .unwrap()
         .with_snapshot_urgency(SnapshotUrgency::High);
     let (res, _) = s.add_version(uuid::Uuid::nil(), b"[]".to_vec()).await.unwrap();
     assert!(matches!(res, AddVersionResult::Ok(_)));

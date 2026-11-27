@@ -9,14 +9,16 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use taskchampion::{Operations, Replica, Server, Status};
 use tc_core::LiveStorage;
-use tc_core::{names, CloudServer, MemStore, ObjectStore};
+use tc_core::{names, MemStore, ObjectStore};
 
 type R = Replica<LiveStorage>;
 
 async fn server(store: &MemStore) -> Box<dyn Server> {
-    Box::new(CloudServer::new(store.clone(), b"hunter2").await.unwrap())
+    Box::new(common::server(store.clone(), b"hunter2").await)
 }
 
 fn replica() -> R {
@@ -83,7 +85,7 @@ async fn concurrent_edits_converge() {
 async fn stale_parent_is_rejected_and_leaves_no_orphan() {
     use taskchampion::server::AddVersionResult;
     let store = MemStore::new();
-    let mut s = CloudServer::new(store.clone(), b"hunter2").await.unwrap();
+    let mut s = common::server(store.clone(), b"hunter2").await;
 
     let (res, _) = s.add_version(uuid::Uuid::nil(), b"[]".to_vec()).await.unwrap();
     let AddVersionResult::Ok(v1) = res else {
@@ -104,6 +106,6 @@ async fn wrong_secret_cannot_read() {
     add_task(&mut a, "secret stuff").await;
     a.sync(&mut server(&store).await, true).await.unwrap();
 
-    let mut wrong: Box<dyn Server> = Box::new(CloudServer::new(store.clone(), b"not-the-secret").await.unwrap());
+    let mut wrong: Box<dyn Server> = Box::new(common::server(store.clone(), b"not-the-secret").await);
     assert!(replica().sync(&mut wrong, true).await.is_err());
 }

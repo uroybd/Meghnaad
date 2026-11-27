@@ -211,7 +211,7 @@ run `npm run format` after editing any code, not just at the end.
   flavour loads it separately as `crates/browser-hooks`). The engine
   calls hooks through the async `HookHost`; `RemoteHooks` (`crates/browser`) is the one that asks the Worker. A hook is a
   task in and a task out as JSON, so change `task_to_json` / `task_from_json` and `lua/prelude.lua` together, and keep the
-  tests in `crates/tc-core/tests/lua_hooks.rs` passing (run them with `cargo test -p tc-core --features lua`). The Lua
+  tests in `crates/tc-core/tests/lua_hooks.rs` passing (plain `cargo test` runs them: the workspace's other crates turn `lua` on, so no separate run with `--features lua` is needed). The Lua
   must stay a sandbox: nothing in the prelude or the host functions may reach a file, or a real clock. The network and secrets
   exist only through the `Net` a host passes in (the Worker's `hooknet.rs`); the runner, not the host, enforces the
   allowlist, https, the request limits and the redaction of a secret's value, and the tests for that are `tests/lua_net.rs`.

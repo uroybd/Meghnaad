@@ -8,6 +8,8 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use taskchampion::Replica;
 use tc_core::cli::{execute, load_facts, Ask, CliResult, ConfirmItem, Options, UndoStack};
 use tc_core::dates::{Clock, DAY};
@@ -1688,10 +1690,10 @@ async fn bulk_commands_from_the_bar_change_exactly_the_selected_tasks() {
 mod with_sync {
     use super::*;
     use taskchampion::Server;
-    use tc_core::{CloudServer, MemStore};
+    use tc_core::MemStore;
 
     async fn server(store: &MemStore) -> Box<dyn Server> {
-        Box::new(CloudServer::new(store.clone(), b"secret").await.unwrap())
+        Box::new(crate::common::server(store.clone(), b"secret").await)
     }
 
     async fn sync(r: &mut R, store: &MemStore) {
@@ -2642,7 +2644,7 @@ mod recurrence_as_task_does_it {
     use super::*;
     use taskchampion::{Operations, Server};
     use tc_core::model::Facts;
-    use tc_core::{CloudServer, MemStore};
+    use tc_core::MemStore;
 
     async fn all(r: &mut R) -> Vec<Facts> {
         load_facts(r).await.unwrap()
@@ -2727,7 +2729,7 @@ mod recurrence_as_task_does_it {
     #[tokio::test]
     async fn clients_that_each_make_an_instance_before_they_sync_end_up_with_one() {
         async fn sync(r: &mut R, store: &MemStore) {
-            let mut server: Box<dyn Server> = Box::new(CloudServer::new(store.clone(), b"pw").await.unwrap());
+            let mut server: Box<dyn Server> = Box::new(crate::common::server(store.clone(), b"pw").await);
             r.sync(&mut server, true).await.unwrap();
         }
         let cfg = parse("recurrence=on\n").config;

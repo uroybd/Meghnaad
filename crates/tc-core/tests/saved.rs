@@ -10,13 +10,15 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use taskchampion::server::SnapshotUrgency;
 use taskchampion::Replica;
 use tc_core::cli::{execute, load_facts, Options, UndoStack};
 use tc_core::dates::Clock;
 use tc_core::filter::split_words;
 use tc_core::taskrc::Config;
-use tc_core::{load_cryptor, save_replica, CloudServer, LiveStorage, MemStore};
+use tc_core::{save_replica, CloudServer, LiveStorage, MemStore};
 
 type R = Replica<LiveStorage>;
 
@@ -105,7 +107,7 @@ async fn same(a: &mut R, b: &mut R, when: &str) {
 async fn a_saved_replica_is_the_same_replica_and_carries_on_the_same_way() {
     for seed in [3u64, 41, 977] {
         let store = MemStore::new();
-        let c = load_cryptor(&store, b"secret").await.unwrap();
+        let c = common::cryptor(&store, b"secret").await;
         let server = |u| -> Box<dyn taskchampion::Server> {
             Box::new(CloudServer::with_cryptor(store.clone(), c.clone()).with_snapshot_urgency(u))
         };

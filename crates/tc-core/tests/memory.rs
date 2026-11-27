@@ -14,6 +14,8 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use taskchampion::server::SnapshotUrgency;
@@ -23,7 +25,7 @@ use tc_core::dates::Clock;
 use tc_core::filter::split_words;
 use tc_core::taskrc::Config;
 use tc_core::LiveStorage;
-use tc_core::{load_cryptor, CloudServer, MemStore};
+use tc_core::{CloudServer, MemStore};
 
 struct Counting;
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
@@ -124,7 +126,7 @@ fn server(store: &MemStore, c: &tc_core::crypto::Cryptor, urgency: SnapshotUrgen
 
 async fn bucket() -> (MemStore, tc_core::crypto::Cryptor) {
     let store = MemStore::new();
-    let c = load_cryptor(&store, b"secret").await.unwrap();
+    let c = common::cryptor(&store, b"secret").await;
     (store, c)
 }
 

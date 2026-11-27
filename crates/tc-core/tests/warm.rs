@@ -11,6 +11,8 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use taskchampion::chrono::{TimeZone, Utc};
 use taskchampion::server::SnapshotUrgency;
 use taskchampion::storage::Storage;
@@ -20,7 +22,7 @@ use tc_core::dates::Clock;
 use tc_core::filter::split_words;
 use tc_core::taskrc::Config;
 use tc_core::warm::Warm;
-use tc_core::{load_cryptor, CloudServer, LiveStorage, MemStore};
+use tc_core::{CloudServer, LiveStorage, MemStore};
 use uuid::Uuid;
 
 type R = Replica<LiveStorage>;
@@ -182,7 +184,7 @@ async fn a_few_writes_between_reads_are_patched_and_many_are_built_again() {
 #[tokio::test(flavor = "current_thread")]
 async fn what_another_replica_pushed_is_seen_after_a_pull() {
     let store = MemStore::new();
-    let c = load_cryptor(&store, b"secret").await.unwrap();
+    let c = common::cryptor(&store, b"secret").await;
     let server = |u| -> Box<dyn taskchampion::Server> {
         Box::new(CloudServer::with_cryptor(store.clone(), c.clone()).with_snapshot_urgency(u))
     };
@@ -265,7 +267,7 @@ async fn the_counter_moves_on_writes_and_abandoned_writes_and_stays_for_reads() 
 #[tokio::test(flavor = "current_thread")]
 async fn a_sync_with_nothing_to_do_leaves_the_cache_alone() {
     let store = MemStore::new();
-    let c = load_cryptor(&store, b"secret").await.unwrap();
+    let c = common::cryptor(&store, b"secret").await;
     let server = || -> Box<dyn taskchampion::Server> {
         Box::new(CloudServer::with_cryptor(store.clone(), c.clone()).with_snapshot_urgency(SnapshotUrgency::None))
     };

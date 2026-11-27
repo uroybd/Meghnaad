@@ -9,6 +9,8 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use taskchampion::server::{AddVersionResult, SnapshotUrgency, VersionId};
 use taskchampion::{Operations, Replica, Server, Status};
 use tc_core::LiveStorage;
@@ -21,7 +23,7 @@ const DAY: i64 = 86_400;
 const LONG_AGO: i64 = 1_000;
 
 async fn server(store: &MemStore) -> S {
-    CloudServer::new(store.clone(), b"hunter2").await.unwrap()
+    common::server(store.clone(), b"hunter2").await
 }
 
 /// One more version on top of `parent`.

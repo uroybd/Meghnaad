@@ -11,6 +11,8 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use async_trait::async_trait;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,7 +23,7 @@ use tc_core::dates::Clock;
 use tc_core::filter::split_words;
 use tc_core::taskrc::Config;
 use tc_core::wire::{decode_versions, encode_versions, pull, push, Pushed, RemoteServer, Transport, Version, PULL_MAX};
-use tc_core::{load_cryptor, CloudServer, LiveStorage, MemStore};
+use tc_core::{CloudServer, LiveStorage, MemStore};
 use uuid::Uuid;
 
 type R = Replica<LiveStorage>;
@@ -70,7 +72,7 @@ impl Transport for Worker {
 
 async fn worker(urgency: SnapshotUrgency) -> Worker {
     let store = MemStore::new();
-    let cryptor = load_cryptor(&store, b"secret").await.unwrap();
+    let cryptor = common::cryptor(&store, b"secret").await;
     Worker {
         store,
         cryptor,

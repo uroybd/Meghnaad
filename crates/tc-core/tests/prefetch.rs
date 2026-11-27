@@ -9,6 +9,8 @@
     reason = "test code: a failure is the point"
 )]
 
+mod common;
+
 use async_trait::async_trait;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -16,7 +18,7 @@ use taskchampion::server::{AddVersionResult, GetVersionResult, HistorySegment, S
 use taskchampion::{Error, Operations, Replica, Server, Status};
 use tc_core::live::BaseVersion;
 use tc_core::prefetch::{fetch, Prefetched};
-use tc_core::{CloudServer, LiveStorage, MemStore};
+use tc_core::{LiveStorage, MemStore};
 
 type R = Replica<LiveStorage>;
 
@@ -55,7 +57,7 @@ impl Server for Counting {
 }
 
 async fn server(store: &MemStore) -> Box<dyn Server> {
-    Box::new(CloudServer::new(store.clone(), b"hunter2").await.unwrap())
+    Box::new(common::server(store.clone(), b"hunter2").await)
 }
 
 async fn counting(store: &MemStore) -> (Box<dyn Server>, Rc<Cell<usize>>) {
