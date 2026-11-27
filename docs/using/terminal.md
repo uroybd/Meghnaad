@@ -1,0 +1,543 @@
+# In the terminal
+
+The terminal app has the pages of this guide around your own `task`. This chapter is how it looks and what its keys
+and command line do. Installing it, syncing and its `settings.json` are in [The terminal app](../terminal.md).
+
+## The screen
+
+The top bar has the pages, by number (with their names where they fit), then the started task with how long it has run,
+the context, review and the reminders. The reports are down the left side (on a terminal 72 columns wide or more) and
+the page fills the middle, each in a rounded pane titled in its border; the pane the keys go to has its border in the
+accent, and its bottom border lists that pane's own keys (as many as fit, the most used first) and which row of how
+many is chosen. The bottom two lines are the status line and the command line, which shows the keys every page has
+(moving, the pages, the reports, the command line, adding a task on Tasks, the context) until you type into it, with
+`? all keys` and `q quit` always on the right. A key is said in one place only: in the pane's border, or on the bottom
+line.
+
+| Page | Shows |
+| --- | --- |
+| `1` Tasks | A report: the one your `default.command` names, else `next`, with its columns, labels, filter and sort |
+| `2` Projects | The project tree from the pending tasks, with counts (sub-projects included) and how many are overdue |
+| `3` Tags | Each tag, with the same counts |
+| `4` Summary | `task summary`, as it prints it |
+| `5` Calendar | `task calendar`, from this month; `h` `l` go a month back or on |
+| `6` Burndown | `task burndown.weekly`; `d` `w` `m` show the daily, weekly or monthly one |
+| `7` Boards | The list of your [boards](#boards): `j` `k` choose one and `Enter` opens it; on a board, `j` `k` scroll, `h` `l` go to the board before or after, `[` `]` to its next section or the one before, and `Esc` (or `b`) comes back to the list |
+| `8` Kanban | There while [Kanban](kanban.md#in-the-terminal-app) is on, after Boards (`g8` or `gk` opens it): the list of kanbans, then one, its columns side by side (each on a deeper shade, its title on a lighter line, every card framed in the task's colour, the chosen one's frame thick, with a ● in its top edge; a value of several lines, such as a free-text UDA's, keeps its lines under its label); `h` `l` choose a column, `j` `k` a card, `H` `L` move the card, `m` moves it to a column from a list, `f` `r` `s` change the filter, report and Completed since here, `o` shows Other |
+| `9` Console | What the command lines run here printed, scrolled with `j` `k`; `c` clears it |
+| `0` Settings | Its pages down the side, as on the web: General, This device, Appearance, Keybindings, Kanban, Commands, Sync ([Settings](#the-settings-page)) |
+
+`Enter` on a project or tag opens its tasks: the Tasks page with `project:Home` or `+errand` as the filter. Colours
+follow `task` ([Colours](#colours)).
+
+## Colours
+
+What Taskwarrior has a colour for is drawn in `task`'s colours, from your taskrc (and any theme it includes):
+
+- **A report's rows** are coloured as `task` colours them: the app asks `task` for the report with its columns swapped
+  for `uuid` and colour forced on, and draws each row in the colour that uuid came back in. Every rule counts, as
+  `task` applies it: `rule.precedence.color`, `rule.color.merge`, `color.active`, `color.due`, `color.tag.X`,
+  `color.project.X`, `color.uda.*`, a `nocolor` tag. The row chosen is drawn reversed, so its colour still shows.
+- **A UDA with choices** (`uda.size.values=S,M,L`) shows its value as a pill, in the table, on a card and in the
+  info: the value in its colour on the badge's ground, the colour of its place in `values` (blue, red, green, yellow,
+  magenta, cyan, then the bright blue, red and green), or `color.uda.size.L`'s where the taskrc gives one. A value not
+  among the choices is grey, as every pill is with the `mono` theme.
+- **The column labels** are in `color.label`, and those the report sorts by in `color.label.sort`.
+- **Summary, Calendar, Burndown and `info`** are what `task` printed, in its colours, at the page's width.
+
+Taskwarrior's default colours shade every other row, weekends and week numbers in fixed dark greys, which suit a dark
+terminal and turn into black blocks on a light one. By default that shading is left out (and dark grey text is drawn
+dim), so the pages read on either; `"shading": "task"` draws it as `task` does, `color.alternate` on every other row of a
+report included.
+
+What Taskwarrior has no colour for is the app's own: a light and a dark preset, in the colours the web app and the phone
+use, so the three look alike.
+
+| Role | Drawn on | Light | Dark |
+| --- | --- | --- | --- |
+| `accent` | the brand, the page open, keys in the hints, titles | `#1f6feb` | `#58a6ff` |
+| `focus` | the border and title of the pane the keys go to (drawn thick, so it shows without colour too) | `bold #1f6feb` | `bold #58a6ff` |
+| `border` | the other panes | `#75756f` | `#9a9a90` |
+| `selected` | the row, item or field chosen: `reverse` (its own colours swapped), `marker` (the `▸` and bold only), `accent`, or a colour | `reverse` | `reverse` |
+| `dim` | notes, help, what matters less | `#75756f` | `#9a9a90` |
+| `ok` | the timer | `#1a7f37` | `#56d364` |
+| `bad` | what failed, overdue counts | `#cf222e` | `#ff7b72` |
+| `marked` | a task marked on the Tasks page, to act on with others | `on #ddf4ff` | `on #0c2d6b` |
+
+Which preset is drawn is `tui.theme` in `settings.json`, chosen under Theme on the Settings page's Appearance:
+
+| `"theme"` | Draws |
+| --- | --- |
+| `"auto"` (or none) | The preset for the terminal's background: the app asks the terminal for it (`OSC 11`), and where it does not answer, the system's appearance (macOS's dark mode, GNOME's colour scheme); dark when neither says |
+| `"light"`, `"dark"` | That preset, whatever the terminal is |
+| `"mono"` | No colour: bold, reverse and dim only (as the `NO_COLOR` variable does) |
+| `{ "base": "auto", "accent": "magenta", … }` | A preset (`base`, `auto` when left out) with roles of your own over it |
+
+On `auto` the app follows the terminal as it changes: it asks again when the terminal gets the focus back and when the
+system's appearance changes (looked at every few seconds), since a terminal that follows the system changes with it.
+`settings.json` is read again when it changes, so a theme edited by hand shows at once.
+
+A role is written as a taskrc colour is (`bold white on rgb013`, `color33`, `bright red`), or as `#rrggbb`; on a terminal
+without 24-bit colour (`COLORTERM` is not `truecolor` or `24bit`) a `#` colour is drawn as the nearest of its 256. An
+`accent` of your own is the `focus` too, unless you set that as well. A role that is not a colour is said in the status
+line and on the Settings page, and the preset's is used. `color=off` in the taskrc cannot be seen from here: `task`
+turns colour off itself whenever it writes to a pipe, as it does for this app.
+
+## The keys
+
+These are the defaults; every one can be changed on the Settings page ([Keybindings](#the-settings-page)) or in
+`settings.json` ([Keys](settings.md#keys)), and `?` lists them as they are, with what each does. The hints along
+the bottom and in the panes' borders follow what you set.
+
+![? lists every key as it is, a group at a time, with what it does](../screenshots/terminal-keys-help.png)
+
+The defaults follow [vim-taskwarrior](https://github.com/farseer90718/vim-taskwarrior)'s, which vim users of
+Taskwarrior know. A number before a move repeats it, as in vim: `5j` is five rows down, `12G` row 12. A key of two
+presses (`gg`, `g1`) waits for the second; what is waiting shows on the status line, and `Esc` drops it.
+
+On every page:
+
+| Key | Does |
+| --- | --- |
+| `g1` to `g9`, `g0` | Open a page by its number in the top bar: Kanban is `g8`, Console `g9`, Settings `g0`; `gt` `gT` the next and the one before |
+| `j` `k` (or the arrows) | Down and up a row, a field, or a line |
+| `[` `]` | The section before and the next: the page of Settings, of a board, of `?` and a task's info |
+| `Ctrl+D` `Ctrl+U` | Half a page down and up |
+| `Ctrl+F` `Ctrl+B` (or PgDn PgUp) | A page down and up |
+| `gg` `G` (or Home End) | The first and the last; with a number before it, that row (`5G`) |
+| `Tab` | Move to the reports down the side and back (`Esc` also comes back); `Enter` opens one, `.` shows the hidden ones, whose names start with `_`. On Settings the side lists its pages instead |
+| `a` | Add a task, in a box over the page: type what follows `task add`, and the box shows the task it will make; `↓` or `Ctrl+F` opens it into [the full form](#the-form). Where a page has an `a` of its own (adding a task command or a kanban column in Settings, a sort field, the Annotations tab of a task's info), that one wins, and the bottom line says `a add` only where `a` adds a task |
+| `/` | The command line |
+| `:` | The command line with `:` typed, for a [command](#commands) (`:tabn Tasks`, `:5`, `:done`) |
+| `v` | Review the tasks that need it |
+| `C` | Choose the context (`task context <name>`, or `none`) |
+| `T` | Stop the started task the timer shows |
+| `N` | The Reminders box: the options, and turning them on or off |
+| `S` | [Sync](../terminal.md#sync) now, in the background |
+| `u` | `task undo`; its question opens in a box |
+| `R` | Read everything again |
+| `?` | Every key |
+| `q` | Quit |
+
+The moves are vim's, and the same on every page and in every box. In a box you type into (the form, a prompt, a
+search), `j` `k` are letters, so the arrows and `Tab` move there.
+
+On the Tasks page:
+
+| Key | Does |
+| --- | --- |
+| `j` `k` and the moves above | Move through the report's rows (a group's separator is not a row) |
+| `[` `]` | On a grouped report, the first row of the group before, or of the next |
+| `Enter` | The task's info, in tabs ([Task info](#task-info)); any other key closes it |
+| `m` `M` | Modify the selected task, in [the full form](#the-form) |
+| `A` | Annotate the selected task, in a box that shows it as it is; `Alt+Enter` starts a new line |
+| `x` | Take an annotation off the selected task: the command line opens with `<uuid> denotate ` |
+| `o` | Open a link in the selected task as it is drawn (its description, then its notes, then its string UDAs, with your [transformations](settings.md#transformations) applied: a `FUL-3586` a rule turns into a link opens it) with the desktop's opener: the only one, or, when it has several, the one you choose from a list of them, numbered in that order; with a count, that one at once (`2o` opens the second) |
+| `d` | Mark the selected task done |
+| `+` | Start the selected task, or stop it when it is started; with tasks marked, `:start` and `:stop` start or stop them, passing over those already so |
+| `D` | Delete the selected task; its question opens in a box |
+| `p` | Duplicate the selected task |
+| `X` | Delete the completed tasks the filter picks (`task <filter> status:completed delete`, which asks) |
+| `c` | Run one of your [task commands](../terminal.md#settings) on the selected task: a box lists them by label, with the name and the line beside it; typing narrows the list (by label, name or line), `Enter` runs the one chosen as `<uuid> <name>` would run at the command line |
+| `f` | The filter put in front of the report, as in `task <filter> next`; it stays until you change it or quit |
+| `r` | Another report, by name |
+| `s` | Sort the report, in a box: its sort keys in order; `a` adds a column, `d` takes the chosen key out, `Space` reverses it, `b` groups by it (a `/` after it, as the web's **Group** does) or stops, `K` `J` move it earlier or later, `R` goes back to the report's own sort, `Enter` applies and `Esc` leaves it as it was |
+| `e` | [Export](#export) the report as a file: JSON, CSV or TSV, with the fields you choose |
+| `Space` | Mark the selected task, or unmark it, and move down ([Bulk actions](#bulk-actions)) |
+| `V` | Mark every row from the last one marked to the selected one |
+| `*` | Mark every row, or unmark them all when they all are |
+| `Esc` | With tasks marked, clear the marks |
+
+Over the table a line says what `task` adds to your filter: the report's own filter, the sort in force (and the
+report's own when you changed it) and the context; `f`, `s` and `C` change them. A sort is put in the filter as
+`rc.report.<name>.sort:<spec>`, as the web app's header clicks do, so the command line sorts the same way; it belongs to
+its report, and showing another report drops it. The labels of the columns sorted by have `↑` or `↓`, and their place
+when there is more than one. `export` leaves out the context, so the app puts the context's read filter in front of the
+report itself, in parentheses, as `task <report>` does (and not for a report with `report.<name>.context=0`).
+
+A report whose sort has a `/` (`project+/`, from the taskrc or from `b` in the sort box) is grouped, as the web app
+draws it: where `task` leaves a blank line, a line across the table names the group, with `(none)` for an empty value
+and ` · ` between the columns when more than one is grouped. The value is written as the report shows that column, and
+a column the report doesn't show is named by its UDA label.
+
+```
+── Proj: Home · Result: fail ──────────────────────────
+  2  Home  b
+── Proj: Home · Result: (none) ────────────────────────
+  1  Home  a
+  3  Home  c
+```
+
+The quick keys (`a`, `A`, `d`, `+`, `p`, `T`, `C`) and the form run `task` without handing it the terminal and put its first line
+(`Created task 3.`) in the status line. They add no overrides. When `task` asks a question (`Delete task 3 'x'? (yes/no)`, or whether to
+change every recurrence of a recurring task), the question opens in a box: `y` or `n` answers it, and `a` or `q` where
+it offers `all` and `quit`; `Esc` is `quit` where it is offered, else `no`. The box shows what `task` printed before
+the question, so the chain-repair question comes with `dependency.reminder`'s `Task 3 is blocked by:` and the rest.
+Where a key's command prints that reminder with no question (`+` on a task still waiting on others, or `d` on the end
+of a chain), it opens in a **task warns** box, bordered in `color.warning`, which any key closes. After every command
+the pages and what completion offers are read again.
+
+![a opens the add box over the report; it shows the task the line will make](../screenshots/terminal-add.png)
+
+The add box is Meghnaad's reading of the line, by the same rules as `task add`, ported from Taskwarrior. What is made
+is what `task add` makes. A line it finds a problem in stays open with the reason. The card shows the description
+and string UDAs with your [transformations](settings.md#transformations) applied (those with a condition wait
+for the task to exist), then wrapped to the box; a long line wraps too, and past six rows it scrolls with the caret. Adding and
+changing task commands on the Settings page use a box of their own, a field each.
+
+### Bulk actions
+
+`Space` marks a task (and moves down a row), `V` marks a range from the last one marked, as vim's visual line does, and
+`*` marks the whole report. A marked row has a `●` in front and the `marked` [colour](#colours); the status line says
+how many (`3 marked`) and the table's border lists the keys that act on them. `Esc` clears the marks.
+
+With tasks marked, the quick keys act on all of them, as the web app's bulk bar does: `d` `s` `x` `D` run
+`task <uuids> done` (`start`, `stop`, `delete`), `A` asks for one note and adds it to each, and `c` runs the task
+command chosen on them. They go as command lines naming the tasks by uuid, 120 at a time, each while the last worked, so
+`undo` takes back a batch at a time; `task`'s questions (`bulk`, `confirmation`, the `(yes/no/all/quit)` for each task)
+open in the box, and `quit` or a refusal stops the batches still to go. `m` opens [the form](#the-form) empty: only the
+lines you type in are changed, on every marked task, as one `modify` (a line typed in and emptied clears that
+attribute; tags are typed `+tag` or `-tag`). `:` starts the command line with them, as the web's **CLI** button does:
+their IDs as a list (`1,3-5`) and the uuid of any without one, so you type the rest. `Enter` and `a` stay on the
+selected task.
+
+Marks live while their tasks are in the list: another filter, report or sort drops the ones no longer shown, leaving the
+Tasks page clears them, and they are cleared after an action.
+
+### The form
+
+The web app's task form, in a box over the page: a line for each part of a task, its name on the left and its value on
+a shaded bar, underlined, the chosen one's underline in the accent. Description,
+project, priority, due, wait, scheduled, until, Repeat (doesn't repeat, iterative or recurring: `Space` switches it, and
+only its own fields show, under it with a bar in the accent down their left edge; `Ctrl+O` on Iter opens its picker,
+Taskwarrior or calendar style, [as on the web](iterative.md#repeat-in-the-form)), tags (space separated), each UDA your taskrc defines, and what it
+depends on (task ids); for a new task, whether to start it now and a note, and for one that exists, an annotation to add
+under the ones it has. `Ctrl+N` and `Ctrl+P` (or `↑` `↓`) go from line to line, `Tab` completes the line's word as the command line would
+(`project:Ho` → `project:Home`) and goes to the next line where nothing completes (`Shift+Tab` back), `Space` ticks Start
+and switches Repeat, `Enter` saves and `Esc` leaves. A string UDA with no `values`
+and the note can hold several lines, as on the web and the phone: `Alt+Enter` starts a new one, and each shows under
+the one before; in such a field `↑` `↓` move between its lines, and on to the next line of the form only past its first
+or last. The `A` box takes `Alt+Enter` too, and a note of several lines is sent whole, its line breaks kept.
+
+A date is typed as `task` takes it (`fri`, `eom`, `2026-11-20`, `2026-11-20T14:30`, `tomorrow+19h`); an empty date
+field, when chosen, lists these examples with today in your `dateformat`. What is typed is shown after it as `task` will
+read it, in `dateformat.info` (`Y-M-D H:N:S` unless set) so a time shows, or in `dateformat` for a day at midnight; a
+repeat shows its period in words. One task of a series shows its period but leaves it to the recurring task.
+
+Each field is checked as it is typed, as the Settings forms check theirs: what `task` would refuse is said in red in the
+field's own line (a date it can't read, `priority:Q`, a value not among a UDA's `values`, a numeric UDA's `abc`), and
+its name turns red. The chosen field says what it takes (`one of H, M, L`, `a number`, `words, a tag each`). Nothing
+takes a line of its own, so the lines stay where they are as you move between them.
+
+Saving sends only what changed: `<uuid> modify` with those attributes (`project:` to remove one, `+tag` and `-tag`,
+`depends:-3`), or `add` with what is filled in, then `+LATEST start` and `+LATEST annotate` when asked for. The bottom
+border shows the command line it will run. A form `task` refuses stays open with the reason, as does one with a
+field's problem (no description, a repeat without a due date).
+
+In the command line, the boxes and the form, `Tab` completes the word: the shared part first, then each option in turn, with `Shift+Tab` going
+back. `Ctrl+A` and `Ctrl+E` go to the start and the end, `Ctrl+W` deletes a word, `Ctrl+U` the line, `Enter` runs it and
+`Esc` leaves it. Completion offers commands and reports, attributes, projects, tags, UDA values, task ids and date words,
+from what `task` lists (`_show`, `_projects`, `_tags` and the pending tasks).
+
+## Task info
+
+`Enter` on a task opens its info, as the web app's and the phone's panel has it, in tabs along the top. A tab with
+nothing in it is left out.
+
+| Tab | Key | Shows |
+| --- | --- | --- |
+| Details | `d` | The description (with your [transformations](settings.md#transformations), its links clickable), ID, UUID, status, project, priority, tags, the dates, how long it has been active, urgency, what it depends on (each a small card) and what waits on it, and the UDAs by their labels |
+| Recurrence | `r` | Its recurrence, its template (for an instance) or its instances, newest first (for a template) |
+| Time log | `t` | With `journal.time` on: each session from its Started and Stopped notes, the running one last, and the total |
+| Annotations | `a` | Each note with its date, drawn as Markdown; the journal's own notes are in the Time log instead |
+| Unknown properties | `u` | What the task holds that no UDA in your taskrc defines |
+
+`[` `]` go to the tab before and the next, and the moves scroll the tab, each keeping its place. `i` shows `task info`
+as `task` prints it, for what the tabs leave out (its history of changes, among others). The Tasks page's keys for a
+task work here on this one, and close the info: `m` (or `M`) opens it in the full form (`:info modify` too), `D` marks it
+done (`d` is the Details tab), `s` starts it or stops it when it is started, `A` annotates it and `x` takes an
+annotation off. `o` lists the task's links, as it is drawn (your
+transformations applied: a ticket key a rule makes a link is one), then the tasks it depends on and those waiting on it;
+`Enter` on a link opens it in your browser and comes back to the info, and on a task opens that task's info, from which
+`Esc` comes back (`:info links` too). Any other key closes it.
+
+## The command line
+
+`/` takes a whole command line without the `task` in front, as the web app's console does.
+
+- **Where it runs.** A line runs here, and what `task` prints goes to the Console page (opened for you when it is more
+  than a line; a single line goes to the status line). Its questions (`delete`, `undo`, `purge`, a bulk `modify`
+  asking `(yes/no/all/quit)` for each task) open in the same box as the quick keys', and the console keeps each
+  question with the answer given, as the terminal would show it. A line whose command needs the terminal itself
+  (`edit`, `import`, `news`, `execute`, and their abbreviations) hands the terminal to `task` instead, and the app comes
+  back when you press Enter. Put `!` in front of any line to run it on the terminal.
+- **Chains.** `1 done && 2 start ; next` runs each statement as a shell would: `&&` after a success, `||` after a
+  failure, `;` always. Quote an operator to keep it (`add 'a && b'`). A chain with one statement that needs the terminal
+  runs there as a whole.
+- **Task commands.** A word from `taskCommands` in `settings.json` stands for its command line, with the filter before
+  it and the words after it: `3 fail` runs `3 done outcome:fail`. See [Commands](settings.md#commands).
+- **Review.** `review`, or `review 10` to stop after ten, begins a review, as `v` does.
+- **Sync.** `sync` alone syncs in the background, as `S` does.
+- **Commands.** A line that starts with `:` joined to a command runs the command instead (below); `: tabn` (a space
+  after the `:`), `:` before anything that is no command, or a `:` anywhere else goes to `task` as it is.
+
+### Commands
+
+The app's own commands, typed after `:` (the `:` key opens the command line with it) or bound to a key. They are vim's
+where vim has the command, and as short as vim allows: `:tabn`, `:tabne` and `:tabnext` are one command. `Tab`
+completes a command's name. `?` lists them all.
+
+Each command, what it does, the words it takes and the version that brought it in are in
+[Commands](../commands.md), one part each (`commands.html#tabnext`), which `?` and the Keybindings section link to.
+
+A key runs a command when [settings.json](settings.md#keys) binds the command to it, with its words:
+`"tui": { "keys": { "tasks": { "g h": "filter +home" }, "page": { "T": "tabn Tasks" } } }`. The key acts where its
+group does (`tasks` on the Tasks page, `page` everywhere).
+
+### `meghnaad <line>`, from a shell
+
+`meghnaad` followed by a command line runs it as the command line above does, on the terminal: the task commands in
+`settings.json` are written out, with the filter before the name and the words after it, and each statement runs on
+`task` with this terminal's input and output. A line with neither is `task` with the same words, so `meghnaad` can stand
+in for `task` (`alias t=meghnaad`).
+
+```bash
+meghnaad 3 fail                       # 3 done outcome:fail, if fail stands for that
+meghnaad +work late                   # +work +OVERDUE list
+meghnaad 1 done '&&' 2 start ';' next # a chain: quote the operators so the shell hands them on
+```
+
+The exit status is the last statement run's, as in a shell (2 for a line that is not a well-formed chain). `export`,
+`skill`, `--sync`, `--dry-run` (`-n`), `--help` and `--version` as the first word are the app's own, so `task export` itself is
+reached as `task export`, and a task command named `skill` only from the app's command line (none can be named `export`,
+which is a command already).
+
+`meghnaad --dry-run <line>` prints the statements the line stands for, a statement to a line after the operator that
+joins it, and runs nothing:
+
+```bash
+meghnaad --dry-run 3 fail '&&' next   # 3 done outcome:fail, then && next
+```
+
+`meghnaad --sync <line>` syncs around a one-off line, whatever the app's sync setting: `task sync` first, waited for,
+then the line, then `task sync` again in the background, as the app syncs when it closes, so the prompt comes back at
+once. The sync after runs only when a statement that ran changes tasks (`add`, `modify`, `done`, `annotate`, `start`,
+`delete`, `undo` and the rest); a report or an `export` is synced before only. A sync before that fails is said, and the
+line runs anyway; one after that fails is said the next time the app opens.
+
+```bash
+meghnaad --sync add Call the plumber due:tomorrow   # sync, add, sync in the background
+meghnaad --sync next                                # sync, next
+```
+
+### With an AI agent
+
+An AI agent with a shell can use your tasks through `meghnaad`. A skill teaches it how: compact reads with
+`meghnaad export -f tsv -F …`, tasks named by UUID rather than by ID, `--dry-run` before your task commands, and asking
+you first before it changes more than one task, deletes, purges, undoes, syncs or touches the taskrc or the context. It
+never opens an editor or the full-screen app, and tries things on scratch data, not yours. Get it either way:
+
+- In Claude Code, as a plugin from this repository: `/plugin install meghnaad --marketplace uroybd/Meghnaad` (Claude
+  Code 2.1.275 or later; before that, `/plugin marketplace add uroybd/Meghnaad`, then `/plugin install meghnaad@meghnaad`).
+- From the program, for any agent that reads skills or an `AGENTS.md`: `meghnaad skill` prints it, matching the
+  release you have.
+
+  ```bash
+  mkdir -p ~/.claude/skills/meghnaad && meghnaad skill > ~/.claude/skills/meghnaad/SKILL.md
+  ```
+
+Without a terminal to answer it, `task` answers "no" to its own questions, so an agent's command that needs a yes
+changes nothing.
+
+## Review
+
+Review is tasksh's: it walks the tasks the `_reviewed` report lists (by default, pending or waiting tasks not reviewed
+in the last six days) and shows each with `info`. `Enter` marks it reviewed (`modify reviewed:now`), `s` skips it, `e`
+opens `task edit` and then marks it reviewed, `m` takes what follows `modify`, `c` completes it, `d` deletes it and `q`
+ends the review. Each step runs with `rc.confirmation:no rc.verbose:nothing`, as tasksh runs them.
+
+Review needs a `reviewed` UDA of type date and the `_reviewed` report in your taskrc. When either is missing, it asks
+before writing each one with `task config`, in tasksh's words; this is the one time the app changes your taskrc, and only
+when you answer `y`.
+
+## The timer and reminders
+
+The top bar shows the started task (the earliest, with `+N` when there are more) and how long it has run, counting each
+second; `T` stops it. Reminders are the web app's: a heads-up 15 minutes before a due or scheduled time, an all-day
+task at 9 on its day, a task coming back when its wait ends, and one notice a day for whatever is overdue; a task's own
+`remind_in` times ([Time tracking and reminders](time-tracking.md)) replace the heads-up. They show in the status
+line and the Console page, and the count is in the top bar; with **Desktop notifications** on (the default) each is
+also a notification from the system: `osascript` on macOS, `notify-send` on Linux when it is installed. They work while
+the app is open, each is said once per run, and the pending tasks are read again every minute for them.
+
+`N` opens the Reminders box, the web app's dialog: reminders on or off, the heads-up (`←` `→`), the hour for dates with
+no time, the wait notice and desktop notifications. They are kept in `settings.json`, as `tui.reminders`
+(`on`, `lead_minutes`, `all_day_hour`, `wait_over`, `desktop`). Its last line, while your taskrc has no `remind_in`
+UDA, adds it: `Enter` asks, and `Enter` again runs `task config` for its type and label.
+
+## Boards
+
+A board is a page of your own: numbers, charts and tables over your tasks, on a grid of twelve columns, the same boards
+the web app and the phone draw ([Boards](boards.md)). The Boards page lists them, each with its description, and
+opens the one you choose.
+
+The terminal app shows boards and does not make or change them. They are the `boards` of `settings.json`, so there are
+two ways to make one:
+
+- **On the web app or the phone**, where a board is made and laid out on the page (**Boards** → **New board**, then
+  **Edit**). Then copy that `settings.json` here: from the web app's Settings, or `web/settings.json` in the bucket or on the git branch.
+- **By hand**, in `settings.json` here: a board is an `id`, a `name` and its `sections`, each placed on the grid (`x`,
+  `y`, `w`, `h`) with a `type` and what it shows. [Boards](boards.md) has every kind of section and a whole
+  board as JSON. `R` reads the file again.
+
+What each section shows is worked out as on the web: one `task <filter> export` for each filter the board uses (the
+board's, the section's and a series', with the board's controls written in, as each was saved), measured by the same code. Numbers are
+a figure; bars run down the page for values and across for dates; lines and areas, pies, donuts, polar charts and
+radars are drawn in braille dots; a heatmap is a grid of shaded cells; a table is the report drawn as the Tasks page draws it, in
+`task`'s colours, with your [transformations](settings.md#transformations) and their links, Markdown and progress
+bars. A series' colour is the one it names, else blue, red, green, yellow, magenta and cyan in turn; a chart
+stacked by a field (`stackBy`) has a series for each value, in those colours, named in its legend. A stacked chart
+(`stacked`, on unless it is turned off for one stacked by a field) piles its series up, the first at the bottom: bars are
+drawn as one bar of coloured parts with the total beside it, named by its group (a date, a project) or, in a chart
+grouped by nothing, by the series in it (cut short where there is no room, as there is no tooltip here), and lines and areas add up, each area a band on the one
+below. A character cell has one colour, so where two parts of a bar meet inside one, it takes the colour at its middle.
+On a page narrower than 100 columns the board has six columns, as on a phone, and the sections keep their order. A board
+is read when its page opens, and again with `R`.
+
+## Export
+
+`e` on the Tasks page opens the Export dialog, the same one the web app and the phone have
+([Exporting a table](pages.md#exporting-a-table)): it exports the tasks the report shows, as
+`<filter> export <report>` with the context in front, and asks how the file should look. On a board, `e` exports one of
+its tables (a box asks which when there are several).
+
+- **Format**: JSON (the default), CSV or TSV; for JSON, a list or one task to a line, starting as your `json.array`.
+- **Fields**: all of them, only the table's columns, or the ones you tick.
+- **Save to**: a path, filled in with the file's name (`tasks-next-20261116-015300.tsv`) in the folder the app started
+  in; `~/` is your home folder. A file already there is only replaced after a second `Enter`.
+
+`↑` `↓` (or `j` `k`, `Tab`) move between the lines, `Space` picks, typing on the path line edits it, `Enter` saves and
+`Esc` cancels. The last format and fields are kept in `settings.json`, as `tui.export`.
+
+### `meghnaad export`, from a shell
+
+`meghnaad export` is `task export` for scripts, with the dialog's choices as options. With no options it is
+`task <words> export` exactly: the same output, messages and exit status, and, like `task export`, no context. With any
+option, each task also has its tracked time, `time_tracking` ([below](#tracked-time-in-an-export)); `--rich` asks for
+that and changes nothing else.
+
+```text
+meghnaad export [options] [--] [filter and rc. words]
+```
+
+| Option | Does |
+| --- | --- |
+| `--rich` | `task`'s export with each task's `time_tracking` after its own fields, nothing else changed |
+| `-f`, `--format json\|csv\|tsv` | The output; JSON when left out |
+| `-F`, `--fields all\|table\|a,b,c` | Every field (the default), the report's columns (needs `-r`), or these, in this order |
+| `--include-time-tracking` | `time_tracking` as well as the fields `-F` chose |
+| `-r`, `--report NAME` | `task <filter> export NAME`: the report's filter and sort apply (`export` ignores its limit) |
+| `-a`, `--array` / `-A`, `--no-array` | JSON: a list, or one task to a line; as `json.array` says when left out |
+| `-H`, `--no-header` | CSV and TSV: no header line |
+| `-0`, `--null` | TSV: end each task with NUL instead of a newline, for `xargs -0` |
+| `-h`, `--help` | The usage |
+
+Options come first. The first word that is not one (a filter word such as `-home` included) starts `task`'s words, and
+`--` ends the options on purpose. A word starting with `--` that is not an option is an error, as is a choice that does
+not fit (`--null` with CSV, `--fields table` without a report): it says so and exits with 2 before `task` runs.
+
+CSV and TSV write dates as `2026-11-19 18:00:00`, in UTC, which a spreadsheet reads as a date in any locale (a date UDA
+too). CSV keeps a value's line breaks inside quotes, so a spreadsheet shows them in one cell; use CSV for a spreadsheet.
+TSV writes a tab, newline, carriage return and backslash as `\t`, `\n`, `\r` and `\\`, so one line is always one task
+for `cut`, `awk` and `read`; `printf '%b'` turns a value back.
+
+```bash
+meghnaad export -f tsv -F id,due,description -r next +work | column -t -s $'\t'
+meghnaad export -f tsv -F uuid -H -0 +old | xargs -0 -I{} task {} done
+meghnaad export -f csv -F table -r list > tasks.csv
+```
+
+To export in another order, give `task` the sort with an `rc.` word: with `-r`, override the report's own; without a
+report, make one on the line (with an empty filter it exports the same tasks as plain `export`, in that order).
+
+```bash
+meghnaad export -f tsv -r next rc.report.next.sort=due+,priority- +work
+meghnaad export -f csv -r _x rc.report._x.columns=id rc.report._x.filter= rc.report._x.sort=entry- > tasks.csv
+```
+
+#### Tracked time in an export
+
+With `journal.time=on`, `start` and `stop` write notes that the info's **Time log** pairs into sessions
+([Time tracking](time-tracking.md)). `meghnaad export` with any option gives each task the same, as
+`time_tracking`, after `task`'s own fields:
+
+```json
+"time_tracking": {
+  "total": 2700,
+  "sessions": [
+    { "start": "20261124T090000Z", "end": "20261124T093000Z", "duration": 1800, "description": "wrote the tests" },
+    { "start": "20261124T100000Z", "end": null, "duration": 900, "description": "" }
+  ]
+}
+```
+
+Dates are written as `task export` writes them (UTC); `total` and `duration` are seconds. The running session is last,
+with `end` null and its duration counted to now. A session's `description` is the annotations written during it, one to
+a line. Every task has `time_tracking`: one with nothing tracked, or any task while `journal.time` is off, has
+`{ "total": 0, "sessions": [] }`, so totals add up without a check. It is a field like the others: `-F all` keeps it,
+`-F table` and a list leave it out unless they name it or `--include-time-tracking` is given, and in CSV and TSV its cell
+is the total in seconds.
+
+```bash
+meghnaad export --rich project:Work | jq '[.[].time_tracking.total] | add / 3600'   # hours on Work
+meghnaad export -f tsv -F description --include-time-tracking -H project:Work
+```
+
+## The Settings page
+
+The Settings page has its own pages, as on the web and the phone, in the same order and laid out the same way; the
+[settings map](../settings-map.md) says what is on each, with what the terminal leaves out and why. On this page the side
+pane lists them in place of the reports: General, This device, Appearance, Keybindings, Kanban, Commands and Sync. With
+[Nerd Font](../terminal.md#settings) on, each has its icon before its name. `Tab` gives the list the focus, `j` `k` choose a page, which
+shows at once, and `Enter` (or `Tab`) goes into it; from the page, `[` `]` go to the page before and the next.
+
+A page fills the pane top to bottom and scrolls to keep the row chosen in view. Each part has its heading, then its
+settings a row each, each with a faint line on what it does and its problems in the error colour:
+
+| Control | How it looks | Keys |
+| --- | --- | --- |
+| switch | `[x] Icons in cards` | `Space` or `Enter` switches it |
+| choice | `Home page  next ▾` | `Enter` opens its list; `Enter` there picks one |
+| input | `min  [0]` | `Enter` edits it on the bottom line |
+| a list's rows | a row each, its fields in columns | `a` adds one, `Enter` or `e` changes it, `D` deletes it, `K` `J` move a column |
+| a row of several fields | a box over the page with every field, each its label over a shaded, underlined bar (the chosen one's underline in the accent) | `Ctrl+N` `Ctrl+P` (or `↑` `↓`) between fields, `Tab` completes (a command line, a filter) or goes to the next, `Enter` or `Ctrl+S` keeps the row, `Esc` drops it; each field's problem shows under it as you type |
+| an action | `› Edit it in $VISUAL or $EDITOR` | `Enter` runs it |
+
+**Edits wait until applied**, as on the web and the phone. An edit shows at once on its page, and the page's name gets a
+dot in the list and its border says so; `Ctrl+S` (`:apply`) applies the page, laying what it changed over
+`settings.json` as the file is then (a change made meanwhile by another page, an editor or a sync is kept), and `u`
+(`:revert`) drops its edits. Each page keeps its edits while another is shown, and the other pages show the file as it
+is. Quitting with edits asks: `a` applies them and quits, `d` drops them and quits, any other key stays. An action
+(Set up automatically, Turn on, Turn Kanban off, Write them) happens at once, as on the web. `E`, on any page, opens
+`settings.json` in your editor (`$VISUAL`, else `$EDITOR`, else `vi`) on the terminal, and reads it again when the editor
+closes.
+
+| Page | What it has |
+| --- | --- |
+| General | The home page, a choice of `next`, each report, each board, each kanban while Kanban is on; then `settings.json`: where it is, what is wrong with it as the web app lints it (an error, which stops the file being used or saved over until it is put right, then each task command or other entry it can't use, which is kept), and `E` |
+| This device | Reminders (the reminder options, as `N` opens them: [The timer and reminders](#the-timer-and-reminders)). The terminal's `settings.json` is the machine's own already, so it has no device ID or home page of its own |
+| Appearance | Theme: the preset (`auto`, `light`, `dark`, `mono`; the `base` of a theme with roles of its own), each role in its colours and Taskwarrior's own, and `[x] Shading` (`s`) ([Colours](#colours)); Cards: Icons in cards (`appearance.cardIcons`, [as on the web](settings.md#cards)) and Nerd Font (`tui.nerdFont`); IDs: the short uuid when a task has no ID (`appearance.idFallback`, [as on the web](settings.md#ids)); Progress bars: a switch per numeric UDA, then its min and max ([as on the web](settings.md#progress-bars)); Transformations: a row each, `a` adds one in its box (match, replace, the fields it applies to, condition), `Enter` changes it, `D` deletes it ([as on the web](settings.md#transformations)) |
+| Keybindings | Search keys (`f`) and `[x] Show default keys` (`t`), then your keys under a heading for each place they go: General (`keys`, every front end), Web, Mobile and Terminal (`tui.keys`). `a` adds a key to the heading of the line chosen; `D` takes out what you set, back to the defaults; `n` leaves the action without a key. Then the `:` commands |
+| Kanban | While it is off: the UDA, Automatic (whether to draw the kanbans on a `kanban` report, then Set up automatically: `Enter` twice writes its lines) and Manual (Turn on). While it is on: Every kanban's report, filter, Completed since and columns, then each kanban's name, address and settings. `Enter` or `e` changes the row (a column in its box: name, filter, on move), `a` adds a column, `D` deletes a column or kanban or takes away a kanban's own setting, `K` `J` move a column, `n` adds a kanban, `o` opens one, `w` writes the UDA, `x` turns Kanban off ([Kanban](kanban.md#in-the-terminal-app)) |
+| Commands | Your task commands, a row each (name, label, command): `a` adds one and `Enter` or `e` changes one in its box (name, label, command, icon; a label left empty is the name made words, and a name may not be a command's, spec 0032), `D` deletes it. Then your taskrc's aliases; their icons are chosen on the web or the phone |
+| Sync | When to sync, a choice (`y`) ([Sync](../terminal.md#sync)) |
+
+![The Keybindings page: search and the defaults switch, your keys under General, Web, Mobile and Terminal, then the : commands](../screenshots/terminal-keybindings.png)
+
+`a` opens a box of the section's actions, each with the keys it has now; typing narrows it and `Enter` picks one. Then
+the next key you press is the one to add (any key but `Esc`, so one the app already uses can be given too), and `Enter`
+keeps it in the page's edits, beside any you set before, for `Ctrl+S` to apply; `Backspace` lets you press another. A key you give an
+action replaces its defaults and is taken from any action that had it, as [Keys](settings.md#keys) explains. The
+web app and the phone have the same in **Settings → Keybindings**.
+
+![Adding a key: the Terminal section's actions narrowed to sort, each with its keys](../screenshots/terminal-keybindings-add.png)

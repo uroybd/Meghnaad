@@ -1,0 +1,252 @@
+# The web app on Cloudflare
+
+A small Worker on Cloudflare serves the page and sits between it and your store: it checks Cloudflare Access (the
+login), holds the encryption secret, and opens and seals the versions that pass through; it never parses a task. It
+comes in two builds, one for an R2 bucket and one for a git repository
+([below](#a-git-repository-instead-of-r2)); every route here deploys either, except the button, which deploys the R2 one.
+
+## What you need
+
+| | Plan | Why |
+| --- | --- | --- |
+| **Workers** | Free is fine | Workers Free allows 10 ms of CPU per request. The Worker only checks Access and opens and seals versions (the engine runs in your browser), but the first request after an idle spell derives the encryption key, which can be cut off with error 1102. Cloudflare tolerates an occasional overrun and the app retries. Workers Paid ($5/month) lifts the limit. See [Limits of the platform](architecture.md#limits-of-the-platform) |
+| **R2** | Free is fine | The bucket your `task` CLI syncs to (not needed with [a git repository](#a-git-repository-instead-of-r2)) |
+| **Access** | Free is fine | Sign-in (one-time PIN works with no setup) |
+
+On your machine you need Node.js 20+ for every route. Routes A and C also need [Rust](https://rustup.rs) when you deploy
+from a clone of the source: the build compiles the Worker and the in-browser engine to WASM, and installs the
+`wasm32-unknown-unknown` target, `worker-build` and `wasm-bindgen` (at the version in `Cargo.lock`) if missing. The first
+build takes a few minutes. **Route 0 needs no Rust**: it deploys a prebuilt release. Route B builds on Cloudflare, and
+route D on GitHub.
+
+Pick one route to start. Route D is for updating after A, C or 0 has done the first deploy.
+
+## 0. Prebuilt: no Rust, no build
+
+Every release is built once by CI and published ready to deploy: to the `release` branch and, for a tagged version, as a
+`.tar.gz` on the [releases page](https://github.com/uroybd/Meghnaad/releases). Nothing about your hooks, secrets or
+settings is in the build (they live in your store), so everyone deploys the same files.
+
+**With the button** (nothing to install):
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release)
+
+Choose your R2 bucket (your existing sync bucket, or a new one) and give the encryption secret (the same value as
+`sync.encryption_secret`). Then open the address it gives you and follow the setup page to connect Access
+([Connecting Access](#connecting-access)).
+
+**From a terminal** (Node.js 20+ only):
+
+```bash
+git clone --branch release --depth 1 https://github.com/uroybd/Meghnaad.git meghnaad
+cd meghnaad
+npm install
+npm run setup        # the same guided questions as route A, without the build
+```
+
+To update, pull the `release` branch (or download the new release) and run `npm run deploy`. Your answers are kept in
+`.deploy.vars`, which `git pull` never touches because it isn't tracked.
+
+## A. Guided: `npm run setup`
+
+```bash
+npm install
+npm run setup
+```
+
+It checks your build tools (offering to install what's missing), logs you in with `wrangler login`, then asks:
+
+| Question | Notes |
+| --- | --- |
+| **Where the tasks are kept** | `r2` (a bucket) or `git` (a branch of a git repository: [below](#a-git-repository-instead-of-r2)). With `git` it asks for the repository, branch, API address and token instead of a bucket |
+| **R2 bucket** (`r2`) | Your **existing** sync bucket is used as is; a name that doesn't exist yet is created. Nothing in the bucket is changed |
+| **Custom domain** | Optional, e.g. `tasks.example.com`. The domain must already be a zone on your Cloudflare account. Empty means the free `*.workers.dev` address. With a custom domain the `workers.dev` address is switched off |
+| **Encryption secret** | The same value as `sync.encryption_secret` in your taskrc (for a new store, invent a strong passphrase and use it for the CLI too). Stored as a Worker secret |
+| **Cloudflare Access** | It tells you exactly what to click (below), asks for the team domain and AUD tag, then deploys again |
+
+Your answers are saved in `.deploy.vars` (git-ignored). Run **`npm run deploy`** to update, or `npm run setup` again to
+change something; both are safe to repeat. `npm run deploy -- --check` prints the exact config that would be deployed.
+Any key can be an environment variable instead (handy in CI).
+
+**You can stop after the first deploy.** Until Access is connected, the app refuses every request and shows a **setup
+page** with your hostname filled in, explaining what's left. Nothing about your tasks is reachable.
+
+### Connecting Access
+
+This is the one part that needs the dashboard, because the AUD tag only exists once the application does:
+
+1. Cloudflare dashboard → **Access controls → Applications → Add an application → Self-hosted**.
+2. Destination: your hostname (the custom domain if you set one, otherwise the `workers.dev` address).
+3. Add an **Allow** policy with the selector **Emails** and your address. *One-time PIN* login works without setup.
+4. Copy the application's **Application Audience (AUD) tag**. Your team domain, `https://<team>.cloudflareaccess.com`, is
+   under Access controls → **Settings**.
+5. So AI agents can read what the app is, add one more application: **Self-hosted**, Destination your hostname with the
+   path `/llms.txt`, and a **Bypass** policy with the selector **Everyone**. Access prefers it over the whole
+   hostname's for that one path. The file is the same in every deployment and holds nothing of yours
+   ([AI agents](using/console.md#ai-agents)); without the rule, an agent asking for it gets the sign-in page.
+
+Access signs people in; the Worker then **re-verifies the signed token on every API call** (signature, issuer, audience,
+expiry), so your data stays protected even if someone finds a way around Access. Make the Access application cover the
+**whole hostname**: the static app shell (HTML and JavaScript, nothing private) is served without running the Worker, so
+Access is what guards it.
+
+## B. From the dashboard (no terminal)
+
+For the R2 Worker. Fork this repo, then in the Cloudflare dashboard go to **Workers & Pages → Create → Import a repository**. Set the build
+command to `node scripts/build.mjs` and leave the deploy command as `npx wrangler deploy`. Before the first build, edit
+`wrangler.jsonc` in your fork if you need a different bucket (`bucket_name`) or a custom domain (`routes`).
+
+Then open the deployed address. The setup page walks you through Access and the two **Text variables** (`TEAM_DOMAIN`,
+`POLICY_AUD`) to add under *Settings → Variables and Secrets*; add `TC_ENCRYPTION_SECRET` there as a **Secret**.
+(`keep_vars` is on, so redeploys don't remove what you added.)
+
+The **Deploy to Cloudflare** button is route 0, which uses the prebuilt `release` branch and needs no Rust. This route is
+for building on Cloudflare from your own fork, for example to carry your own changes.
+
+## C. By hand
+
+For the R2 Worker (the git Worker's steps are [below](#a-git-repository-instead-of-r2)):
+
+```bash
+npx wrangler login
+npx wrangler r2 bucket create <name>             # skip if the bucket exists
+echo "R2_BUCKET=<name>" > .deploy.vars           # skip if it is the default, taskwarrior-sync
+npm run deploy                                   # builds, then prints the URL (Access can't be connected before this)
+npx wrangler secret put TC_ENCRYPTION_SECRET     # the same value as sync.encryption_secret
+# create the Access application, add TEAM_DOMAIN=... and POLICY_AUD=... to .deploy.vars, then:
+npm run deploy
+```
+
+`.deploy.vars` takes `R2_BUCKET`, `CUSTOM_DOMAIN`, `TEAM_DOMAIN`, `POLICY_AUD` and `WORKER_NAME` (to run a second copy),
+one `KEY=value` per line. The tracked `wrangler.jsonc` never needs editing: `npm run deploy` overlays these values into a
+git-ignored `wrangler.deploy.jsonc`.
+
+> **Heads-up:** after `wrangler r2 bucket create`, wrangler may offer to add the bucket to `wrangler.jsonc` as a *new*
+> binding (named after the bucket, with `"remote": true`). Answer **no**, or delete it afterwards. The app uses exactly
+> one binding, `TASKS`, and `wrangler dev` refuses to start with an extra remote binding unless you've registered a
+> workers.dev subdomain. (`npm run dev` runs locally, so it ignores remote bindings either way.)
+
+## D. From GitHub Actions (manual)
+
+The repository has a workflow, [`.github/workflows/deploy.yml`](https://github.com/uroybd/Meghnaad/blob/main/.github/workflows/deploy.yml),
+that deploys the Worker when you start it: **Actions → Deploy → Run workflow**. When the [Release](building.md#making-a-release) workflow
+has built that commit (a released version), it deploys that build from the `release` branch as it is, waiting for the
+release while it is still building; any other commit it builds from source first. It never runs on a push. Do
+route 0, A or C **once** first, since the store and Access have to exist and the first deploy is where you find out they
+work. After that, updating is one click. In your fork:
+
+1. **Create an API token** at Cloudflare → My Profile → API Tokens, from the *Edit Cloudflare Workers* template (it needs
+   Workers Scripts: Edit and, for a custom domain, Workers Routes / Zone access). Note your **Account ID** (Workers &
+   Pages overview, right-hand side).
+2. **Settings → Environments → New environment → `production`.** Add *required reviewers* if you want an approval click
+   before each deploy. Put the secrets and variables below on this environment (or on the repository).
+3. Add these:
+
+| Where | Name | Value |
+| --- | --- | --- |
+| Secret | `CLOUDFLARE_API_TOKEN` | the token from step 1 |
+| Secret | `CLOUDFLARE_ACCOUNT_ID` | your account id |
+| Secret, *optional* | `TC_ENCRYPTION_SECRET` | the same value as `sync.encryption_secret`. If unset, the Worker keeps the secret it already has from route 0, A or C. Set it only if you want the workflow to be the single source of truth |
+| Secret, *optional* | `GIT_TOKEN` | for the git Worker (`BACKEND=git`): the repository token. If unset, the Worker keeps the one it has |
+| Variable | `DEPLOY_VARS` | your deployment choices: **the contents of your `.deploy.vars`**, one `KEY=value` per line. Optional; without it the defaults apply |
+
+`DEPLOY_VARS` is a multi-line variable. Paste what `.deploy.vars` holds, for example:
+
+```
+# Same choices as `npm run setup` saved on your machine.
+R2_BUCKET=taskwarrior-sync
+CUSTOM_DOMAIN=tasks.example.com
+TEAM_DOMAIN=https://myteam.cloudflareaccess.com
+POLICY_AUD=<the 64-character Application Audience tag>
+WORKER_NAME=taskwarrior-web
+```
+
+All five are optional, `#` comments and blank lines are fine, and each value is checked as `npm run deploy` checks it (a
+typo fails the run before anything is built). The workflow writes the variable out as `.deploy.vars`, so it works exactly
+like a deploy from your machine. **Use the same values you deployed with**: leaving out `TEAM_DOMAIN` or `POLICY_AUD`
+later removes nothing (`keep_vars`), but a different `R2_BUCKET` or `WORKER_NAME` points at a different bucket or Worker.
+
+It is a variable, not a secret, because none of it is secret (a team domain and an AUD tag are in every request's token).
+The encryption secret and the API token are, and only the steps that need them receive them.
+
+The workflow's one option is **Dry run**: it only prints the Worker config your settings would produce, the quickest way
+to check your variables, and builds and deploys nothing. It doesn't run the tests, because the
+[CI workflow](https://github.com/uroybd/Meghnaad/blob/main/.github/workflows/ci.yml) already runs them on every push and
+pull request, so deploy a commit whose CI is green. Run it from the branch you want to deploy (your hooks are not part of
+the build: they live in your store, [Hooks](using/hooks.md)). Runs are serialised, so two clicks never deploy at once.
+
+**Last step, whichever route:** open the URL, sign in, and import your `taskrc` (**Settings → taskrc**) to get your UDAs and
+custom reports.
+
+## A git repository instead of R2
+
+`task` 3.5.0 can sync to a git repository (`man task-sync`, `sync.git.*`), and so can Meghnaad: every release carries a
+second Worker, built to keep everything on a branch of a git repository on **GitHub**, **Gitea** or **Forgejo** instead of
+in R2. The page is the same. The Worker reaches the repository through the forge's API with a token, so it needs no
+bucket and no `git`. `task`, the git Worker and the phone can all share one branch.
+
+| Setting | Where | Default | What |
+| --- | --- | --- | --- |
+| `BACKEND` | `.deploy.vars` | `r2` | `git` deploys the git Worker |
+| `GIT_REPO` | `.deploy.vars` | (needed) | `owner/name`, such as `alice/tasks` |
+| `GIT_BRANCH` | `.deploy.vars` | `taskchampion` | The branch, the same as `sync.git.branch` |
+| `GIT_API` | `.deploy.vars` | `https://api.github.com` | `https://<host>/api/v1` for Gitea or Forgejo, `https://<host>/api/v3` for GitHub Enterprise |
+| `GIT_TOKEN` | Worker secret | (needed) | A token that may read and write the repository's contents |
+
+`npm run setup` asks for all of them (answer `git` to the first question) and sets the token as a secret. By hand:
+
+```bash
+printf 'BACKEND=git\nGIT_REPO=alice/tasks\n' > .deploy.vars
+npm run deploy
+npx wrangler secret put GIT_TOKEN
+npx wrangler secret put TC_ENCRYPTION_SECRET
+```
+
+- **The token.** On GitHub, a fine-grained personal access token for that one repository, with **Contents: Read and
+  write** (nothing else). On Gitea and Forgejo, an access token with the **repository** scope, read and write.
+- **Keep the repository private.** Tasks and hook secrets are encrypted, but the settings, the taskrc files and the hooks
+  script are kept under `web/` on the same branch as plain text.
+- **On GitHub the repository needs at least one commit** (create it with a README) so the branch can be made from it;
+  Gitea and Forgejo make the branch from nothing. The branch is made on the first sync if it isn't there.
+- **The Deploy to Cloudflare button deploys the R2 Worker only.** For git, use route 0 from a terminal, A or C.
+- From GitHub Actions (route D), set the repository variables as `DEPLOY_VARS` and the token as the `GIT_TOKEN` secret.
+- History grows with every sync, as it does with the CLI: removed versions stay in older commits.
+- GitHub allows 5,000 API requests an hour per token. An idle sync is one request and a change three or four, so the
+  page's sync every 30 seconds while it is visible stays far below it.
+
+To point `task` at the same branch, see [a git repository](stores.md#a-git-repository).
+
+## Connect your `task` CLI
+
+Skip this if your CLI already syncs to the store. Otherwise [Where your tasks live](stores.md) has the settings for each:
+[a git repository](stores.md#a-git-repository), [an S3 or R2 bucket](stores.md#an-s3-or-r2-bucket) (with
+`sync.aws.endpoint_url` for R2) or [a sync server](stores.md#a-taskchampion-sync-server).
+
+## Configuration reference
+
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `TASKS` | R2 binding (`wrangler.jsonc`) | The R2 Worker's bucket, the one your `task` CLI syncs to |
+| `TC_ENCRYPTION_SECRET` | Worker secret | Same value as the CLI's `sync.encryption_secret` |
+| `TEAM_DOMAIN` | var (not in `wrangler.jsonc`) | `https://<team>.cloudflareaccess.com`. Set by `npm run setup` (via `.deploy.vars`) or as a Text variable in the dashboard |
+| `POLICY_AUD` | var (not in `wrangler.jsonc`) | The Access application's AUD tag; set the same two ways |
+| `R2_BUCKET`, `CUSTOM_DOMAIN`, `WORKER_NAME` | `.deploy.vars` | Optional deploy choices |
+| `BACKEND`, `GIT_REPO`, `GIT_BRANCH`, `GIT_API` | `.deploy.vars` | The git Worker's repository ([A git repository instead of R2](#a-git-repository-instead-of-r2)) |
+| `GIT_TOKEN` | Worker secret | The git Worker's token for the repository |
+| `DEV_AUTH_BYPASS` | `.dev.vars` only | Skips the Access check for local development. Honoured only for loopback hosts (`localhost`, `127.x.x.x`, `::1`); anywhere else it is ignored and logged. Never set it on a deployed Worker |
+
+## Troubleshooting a deployment
+
+| Symptom | Likely cause |
+| --- | --- |
+| The app shows an "Almost there" page | Access isn't connected yet: follow the page, or run `npm run setup` |
+| `403` from `/api/*` after deploying | `TEAM_DOMAIN` or `POLICY_AUD` is unset or wrong (the token's `iss` and `aud` must match exactly), or you're not signed in through Access. The Worker log says why (`auth rejected: …`) |
+| **Cloudflare error 1102** ("Worker exceeded resource limits"), usually on the first request after a while | The CPU limit (10 ms on Workers Free), passed by the one request that does the most work. The app retries read-only requests once, and the retry meets a warm instance. If it keeps happening, say with a very large task list, Workers Paid lifts the limit. In the dashboard, "Exceeded CPU Time Limits" vs "Exceeded Memory" says which; `npx wrangler tail` shows it live |
+| A stack trace in `wrangler tail` shows only `wasm-function[1234]` | The build leaves out debug function names to save about 70 KB. Build and deploy once with `KEEP_WASM_NAMES=1 npm run deploy` when you need to read one |
+| "task storage error" (502) | Wrong `TC_ENCRYPTION_SECRET`, or the wrong bucket or repository. The cached state resets on the next request |
+| Task command icons show as a terminal, and the icon picker says the list could not be fetched | The browser can't reach `cdn.jsdelivr.net`: it is offline or blocked, or a proxy in front of the app sets a Content-Security-Policy without it (`web/public/_headers` allows it with `connect-src 'self' https://cdn.jsdelivr.net https://holidata.net https://date.nager.at`). Typing an icon's name in the picker still works |
+| Every command fails with "The engine could not start in this browser" | The in-page WebAssembly engine was blocked or failed: a proxy sets a Content-Security-Policy without `'wasm-unsafe-eval'` (`web/public/_headers` has `script-src 'self' 'wasm-unsafe-eval'`), or the browser has no Web Workers or WebAssembly. The reason follows the message; nothing on the Worker can run commands instead |
+| A banner says "Couldn't sync with the server" | The page couldn't reach `/api/tc/*`: you're offline, Cloudflare Access signed you out (reload to sign in again), or the Worker failed. Your changes are kept in the browser and go up with the next sync that works. **Start over from the server** discards the browser's copy, for a replaced store or a changed secret |
+| `wrangler dev` says the assets directory is missing | Run `npm --prefix web run build` once |
+| `wrangler dev` exits with "register a workers.dev subdomain" | `wrangler.jsonc` has an extra `"remote": true` R2 binding (added when you ran `wrangler r2 bucket create`). Delete it, keeping only `TASKS` |
+| `task sync` fails with `PermanentRedirect` | `sync.aws.endpoint_url` isn't set (with `task` 3.5, `AWS_ENDPOINT_URL` in that environment), so it's talking to AWS |

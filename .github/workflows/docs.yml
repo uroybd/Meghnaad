@@ -1,5 +1,5 @@
 # The documentation site (mdBook, from docs/), published to GitHub Pages. The custom domain is set in the repository's
-# Pages settings (docs/CNAME is not used by a workflow deploy); see docs/deploy.md.
+# Pages settings (docs/CNAME is not used by a workflow deploy); see docs/building.md.
 name: Docs
 
 on:

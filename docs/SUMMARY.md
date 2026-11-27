@@ -2,7 +2,16 @@
 
 [Introduction](./index.md)
 
-# Guides
+# Getting started
+
+- [Where your tasks live](./stores.md)
+- [The web app](./deploy.md)
+  - [The static web app](./web-static.md)
+  - [The web app on Cloudflare](./web-cloudflare.md)
+- [The Android app](./android.md)
+- [The terminal app](./terminal.md)
+
+# Using Meghnaad
 
 - [Using Meghnaad](./using.md)
   - [The pages](./using/pages.md)
@@ -15,12 +24,10 @@
   - [Iterative tasks](./using/iterative.md)
   - [Hooks](./using/hooks.md)
   - [Time tracking and reminders](./using/time-tracking.md)
-  - [On a phone](./using/phone.md)
+  - [The web app on a phone](./using/phone.md)
+  - [The Android app's own](./using/android.md)
+  - [In the terminal](./using/terminal.md)
   - [Different from the desktop](./using/different-from-the-desktop.md)
-- [Where your tasks live](./stores.md)
-- [Running the web app](./deploy.md)
-- [The Android app](./android.md)
-- [The terminal app](./terminal.md)
 
 # Reference
 
@@ -28,3 +35,4 @@
 - [taskrc support](./taskrc-support.md)
 - [The settings map](./settings-map.md)
 - [Architecture](./architecture.md)
+- [Building and releasing](./building.md)

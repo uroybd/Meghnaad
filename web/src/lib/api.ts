@@ -77,7 +77,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
       return request<T>(path, init, true);
     }
     const why = RESOURCE_LIMIT.test(text)
-      ? 'The Worker ran out of CPU time on this request (Cloudflare error 1102). Try again; if it keeps happening, see docs/deploy.md (Troubleshooting a deployment).'
+      ? 'The Worker ran out of CPU time on this request (Cloudflare error 1102). Try again; if it keeps happening, see docs/web-cloudflare.md (Troubleshooting a deployment).'
       : `Server error (${res.status}).`;
     throw new ApiError(res.ok ? 'The server sent an unreadable response.' : why, res.status);
   }

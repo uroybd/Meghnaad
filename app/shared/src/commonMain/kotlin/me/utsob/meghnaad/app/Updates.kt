@@ -28,7 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
 // Looking for a newer version of the app. The app is not in a store: each release publishes its APK on GitHub (the Release workflow), so
 // the latest release says what the newest version is and where its APK is. Nothing is installed here: the APK is handed to the
 // phone's browser, which downloads it and offers to install it over this app (an update keeps the tasks and the connection when it
-// is signed with the same key, see docs/android.md).
+// is signed with the same key, see docs/building.md).
 
 /** The repository the app's releases are published to (`owner/name`), set by the build that made the app; empty in a build that was not made by a release, which does not check. */
 var UPDATE_REPO: String = ""

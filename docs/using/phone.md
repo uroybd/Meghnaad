@@ -1,4 +1,4 @@
-# On a phone
+# The web app on a phone
 
 Below about 760 px (a phone, or a narrow window) the layout changes:
 

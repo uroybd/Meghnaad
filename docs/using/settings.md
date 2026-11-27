@@ -138,7 +138,7 @@ key of two presses (`gg`) waits for the second, shown at the bottom right:
 | `S` | Sync now |
 | `N` | Reminders |
 
-The phone has `/` alone, with a hardware keyboard; the terminal app's are in [its guide](../terminal.md#the-keys).
+The phone has `/` alone, with a hardware keyboard; the terminal app's are in [its guide](terminal.md#the-keys).
 
 ### Keybindings
 
@@ -155,7 +155,7 @@ several pages (`next`) asks **Where**. Then press the key, or type it (`ctrl+k`)
 **Add key**, which stays off while the command is malformed; **No key** leaves it without one. The key is saved as the
 command. A key you add replaces the default keys of what it runs, and a second one goes beside the first. **✕** takes out what you set, so the
 action has its defaults again. Nothing is saved until **Apply**, and the tab shows a dot while there are changes. The
-phone has the same tab, and the terminal app [a Keybindings section](../terminal.md#the-settings-page) of its own.
+phone has the same tab, and the terminal app [a Keybindings section](terminal.md#the-settings-page) of its own.
 
 ## Appearance
 

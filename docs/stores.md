@@ -58,8 +58,8 @@ and write. The API address is `https://api.github.com` for GitHub, `https://<hos
 - **GitHub allows 5,000 API requests an hour per token.** An idle sync is one request and a change three or four, so even
   the web app's sync every 30 seconds while a page is visible stays far below it.
 
-Setting it up in each app: [the static site](deploy.md#the-static-app), [the git
-Worker](deploy.md#a-git-repository-instead-of-r2), [the Android app](android.md#a-git-repository).
+Setting it up in each app: [the static site](web-static.md), [the git
+Worker](web-cloudflare.md#a-git-repository-instead-of-r2), [the Android app](android.md#a-git-repository).
 
 ## An S3 or R2 bucket
 

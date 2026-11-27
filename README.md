@@ -38,92 +38,96 @@ completion and task commands around your own `task` CLI.
 - **Free to run.** The static site needs only a free static host; on Cloudflare, Workers, R2 and Access each have a free
   plan that is enough ([limits](docs/architecture.md#limits-of-the-platform)).
 
-## Where your tasks live
+## Get it
 
-You choose once, and every app uses the same place: a **git repository** (GitHub, Gitea or Forgejo, the branch `task`
-3.5.0 syncs to with `sync.git.*`), an **S3 or R2 bucket** (`sync.aws.*`), or a **TaskChampion sync server**
-(`sync.server.*`). Not every app reaches every store:
+- **In a browser, with nothing to install:** [mn.utsob.me](https://mn.utsob.me) is the static web app, for tasks that
+  sync with a git repository. Your token, secret and tasks stay in your browser and your repository.
+- **Your own web app:** [on any static host](docs/web-static.md), or [on Cloudflare](docs/web-cloudflare.md) with Access and an R2
+  bucket or a git repository. The button above deploys the R2 one; `npm run setup` from the `release` branch deploys
+  either, with only Node.js.
+- **On Android:** the APK from the [latest release](https://github.com/uroybd/Meghnaad/releases/latest), then
+  [connect it](docs/android.md#first-run) to your store.
+- **In a terminal:** `brew install uroybd/tap/meghnaad`, or a [prebuilt download](docs/terminal.md#install).
 
-| | Git repository | S3 / R2 bucket | Sync server |
-| --- | --- | --- | --- |
-| Web app, static site | yes | no | no |
-| Web app, Cloudflare Worker | yes | R2 only | no |
-| Android app | yes | yes | yes |
-| Terminal app (`task`'s own sync) | yes | yes | yes |
+## Four flavours
 
-How to point `task` at each, and what must stay private, is in **[Where your tasks live](docs/stores.md)**.
+The same app comes in four flavours. The first three run Meghnaad's own engine, written in Rust; the terminal app runs
+your real `task`.
 
-## Running the web app
+| | Static web app | Web app on Cloudflare | Android app | Terminal app |
+| --- | --- | --- | --- | --- |
+| **Runs** | in any browser, from any static host | in any browser, behind a Cloudflare Worker | on your phone or tablet | in your desktop's terminal |
+| **The engine** | in the page, as WebAssembly | in the page, as WebAssembly | on the phone, natively | your own `task` 3.6.0 (or 3.5) |
+| **Your tasks live in** | a git repository | an R2 bucket or a git repository | a git repository, any S3-compatible bucket or a sync server | wherever `task sync` reaches |
+| **Sign-in** | the encryption secret unlocks the page | Cloudflare Access | none: it is your phone | none: it is your desktop |
+| **The secret is held by** | your browser, sealed at rest | the Worker, as a Cloudflare secret | the Android Keystore | your taskrc |
+| **Offline** | keeps working once open; starts only online | keeps working once open; starts only online | yes | yes |
+| **Hooks** | your Lua script, in the page | your Lua script, on the Worker | your Lua script, on the phone | `task`'s own hooks, and the same Lua script through `meghnaad-hook` |
+| **What only it has** | nothing to run: use [mn.utsob.me](https://mn.utsob.me) or any free static host | one sign-in for every browser, no secret on any device | reminders with the app closed, home-screen widgets | your own data and taskrc, as they are |
+| **Get it** | [The static web app](docs/web-static.md) | [The web app on Cloudflare](docs/web-cloudflare.md) | [The Android app](docs/android.md) | [The terminal app](docs/terminal.md) |
 
-There are three ways to host it. None is the default; pick the one whose needs and trust suit you:
+### Which one?
 
-| | Static site | Cloudflare Worker with R2 | Cloudflare Worker with git |
-| --- | --- | --- | --- |
-| **Your tasks** | a git repository | an R2 bucket | a git repository |
-| **You need** | any static host (GitHub Pages, Cloudflare Pages, Netlify) and a repository token | Cloudflare Workers, R2 and Access | Cloudflare Workers and Access, and a repository token |
-| **Sign-in** | the encryption secret unlocks the page | Cloudflare Access | Cloudflare Access |
-| **The secret and token are held by** | your browser: sealed at rest, in memory while unlocked | the Worker, as Cloudflare secrets | the Worker, as Cloudflare secrets |
-| **You trust** | the site's code, your browser and its extensions; the forge sees your settings, never your tasks | Cloudflare, and whoever can read your account's Worker secrets | the same; the forge sees your settings, never your tasks |
-| **Hooks run** | in the page | on the Worker | on the Worker |
+- **You sync `task` with a git repository and want it in a browser:** the static web app. There is nothing to deploy if
+  you use the public copy, and the page talks to your repository from your browser alone.
+- **You sync with R2, or want a sign-in rather than a secret on each device:** the web app on Cloudflare. It runs on
+  Cloudflare's free plans.
+- **You want it on your phone:** the Android app, whatever your store. It needs no server of its own.
+- **You live in a terminal:** the terminal app, beside the `task` you already use.
 
-In short [below](#deploying-the-web-app); in full in **[Running the web app](docs/deploy.md)**.
+They are not exclusive. On the same store they are replicas of the same tasks, so any mix of them stays in step with
+each other and with your `task` CLI. The web app and the Android app can share their settings and hooks through the
+store as well (never the secrets); the terminal app keeps its own in `~/.config/meghnaad`.
 
-## What you get
+## Features
 
-- **Uses the store you already sync to.** The same repository, bucket or sync server and the same encryption secret. No
-  migration, and nothing changes for the CLI.
-- **Taskwarrior's behaviour, not an imitation.** Filters, virtual tags, urgency, reports, recurrence, regexes, the
-  calendar, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `purge`, `duplicate`, `context`,
-  `calc` and the confirmations are ported from the source and checked against the real `task`, now 3.6.0. Settings
-  removed before 3.5.0 are not supported.
-- **Iterative tasks**, Taskwarrior 3.6.0's new way to repeat: one task at a time, the next made when you complete it,
-  from a rule such as `monthly`, `FREQ=WEEKLY;BYDAY=MO` or `"every other day"`, in your own time zone
-  ([how](docs/using/iterative.md)).
-- **Your `taskrc`, safely.** Paste it, upload it, import a whole folder of files or import it from a link (your dotfiles
-  repository). It is kept as you wrote it, `include` works, and the files are listed in Settings to add, edit, delete and
-  include. UDAs, reports, contexts, holidays and settings are read; a line the app can't use is commented out, and sync
-  settings and credentials are removed ([what is read](docs/taskrc-support.md)).
-- **tasksh's `review`.** Walk the tasks you have not looked at lately and mark each reviewed, skip, edit, change, finish or
-  delete it, from the top bar's Review button (a card) or the Console (`review`), with keys as in tasksh. It sets up the
-  `reviewed` attribute and `_reviewed` report itself.
-- **Your own commands.** A word for a whole command line, such as `fail` for `done outcome:fail`, with an icon from
-  Lucide. It works typed (`3 fail`, `project:Home fail`) and from a **⋯** menu on a task and on the selected tasks. Kept in
-  the app's own `settings.json`.
-- **Keys, as in a terminal app.** `a` adds, `f` the filter, `r` a report, `C` the context, `v` review, `1` to `9` the
-  pages, `/` the prompt, and `?` lists them. **Settings → Keybindings** shows the keys you changed and changes any of
-  them, for the web app, the phone and the terminal app at once or for one alone ([Keys](docs/using/settings.md#keys)).
-- **Colours as on the desktop.** `color.*` rules, precedence and themes, drawn softly, plus a default theme of its own.
-- **Boards.** Pages of your own made of numbers, tables and charts (bars, stacked or side by side, lines, areas, pies,
-  donuts, radar, heatmaps: a sum of estimates by project, what you finish per week, split by outcome), each with its own
-  filter, laid out on a 12-column grid that you drag and resize, and on 4 or 6 columns on a phone (several numbers to a
-  row, resizable there too). Controls above a board (a date range, a date, a number or a range of them, a pick of
-  projects, tags or a UDA's values, a switch) feed every filter on it as `$name` ([Controls](docs/using/boards.md#controls)).
-  Kept in the app's own `settings.json` ([Boards](docs/using/boards.md#boards)).
-- **Kanban.** Your tasks as columns of cards, each column a filter and a command line run on a card moved into it
-  (`modify`, `done`, a chain or one of your task commands), drawn from a report whose columns the cards show. Set up
-  automatically (a `progressState` UDA and To do, In progress, Review, Done) or by hand, on the web, the phone and the
-  terminal ([Kanban](docs/using/kanban.md)).
-- **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` become functions in a script you edit in Settings,
-  kept beside your tasks and run on the Worker, in the page on the static site, or on the phone in the Android app
-  ([Hooks](#hooks)).
-- **Works on a phone.** The layout adapts (a menu for the pages, tasks as cards with their marks, time tracking, reminders,
-  a console with completion), and there is a native **[Android app](#android-app)**.
-- **An Android app and widgets.** The engine runs on the phone, so it works offline and syncs directly with a git
-  repository, any S3-compatible bucket or a TaskChampion sync server (no Worker, no Cloudflare Access). It has four
-  home-screen widgets (a task list for any report, a burndown, a calendar and a card of a board), boards you can make and
-  change on the phone, and a link to every page ([the Android app](docs/android.md)).
+- **Your store, as it is.** The same git repository, bucket or sync server and the same encryption secret your `task`
+  CLI uses. No migration, and nothing changes for the CLI.
+- **Taskwarrior's behaviour, not an imitation.** Filters, virtual tags, urgency, reports, recurrence, regexes,
+  contexts, `calendar`, `summary`, `burndown`, `history`, `timesheet`, `stats`, `export`, `import`, `purge`, `calc` and
+  the confirmations, ported from the source and checked against the real `task`.
+- **A console with everything around it.** Tab completion, a preview of the task an `add` will make, chains with `&&`
+  `||` `;`, and Taskwarrior's yes/no/all/quit as a table of ticks ([The console](docs/using/console.md)).
+- **Pages for what you look at most.** Any report as a table or as cards, Projects, Tags, Summary, Calendar, Burndown,
+  and a detail for each task with its annotations, history and tracked time ([The pages](docs/using/pages.md)).
+- **Iterative tasks**, Taskwarrior 3.6.0's new way to repeat: the next one made when you complete this one, from a rule
+  such as `monthly` or `"every other day"` ([Iterative tasks](docs/using/iterative.md)).
+- **Boards.** Pages of your own made of numbers, tables and charts, each with its own filter, laid out on a grid, with
+  controls (a date range, a pick of projects) that feed every filter on them ([Boards](docs/using/boards.md)).
+- **Kanban.** Your tasks as columns of cards; moving a card runs that column's command line ([Kanban](docs/using/kanban.md)).
+- **Your own commands.** A word for a whole command line, such as `fail` for `done outcome:fail`, typed or picked from a
+  task's menu, with an icon ([Settings](docs/using/settings.md)).
+- **Your `taskrc`.** Paste it, upload a folder or import it from your dotfiles; UDAs, reports, contexts, holidays,
+  urgency and colours are read ([taskrc support](docs/taskrc-support.md)).
+- **tasksh's `review`**, with tasksh's keys, as a card or in the console.
+- **Time tracking and reminders.** `start` and `stop` become sessions with a running total, and due tasks remind you
+  ([Time tracking and reminders](docs/using/time-tracking.md)).
+- **Hooks, as Lua.** `on-add`, `on-modify`, `on-launch` and `on-exit` as functions in one script, sandboxed, with
+  network calls and secrets you allow; the same script runs with the real `task` ([Hooks](docs/using/hooks.md)).
+- **Keys, as in a terminal app**, the same across the web, the phone and the terminal, and yours to change
+  ([Keys](docs/using/settings.md#keys)).
+- **On Android**, home-screen widgets (a report, a calendar, a burndown, a card of a board) and reminders with the app
+  closed ([The Android app's own](docs/using/android.md)).
+
+## A look at it
+
+**In the browser:** the Tasks page, a report as a table with the console underneath.
+
+![The web app's Tasks page: the next report as a table, with the prompt underneath](docs/screenshots/tasks.png)
+
+**On Android:** the same report as cards with the console underneath, a task's detail, and the menu of pages; and on
+the home screen, widgets for a report, the calendar and a burndown.
+
+![The Android app: the next report as cards with the prompt underneath, a task's detail, and the menu of pages](docs/screenshots/android-app.png)
+
+![The Android app's three widgets: a task list, a calendar with the tasks of the selected day, and a burndown](docs/screenshots/android-widgets.png)
+
+**In the terminal:** the same pages around your own `task`, with its colours and your keys.
+
+![The terminal app: the list of reports on the left, the next report as a table, and the keys along the bottom](docs/screenshots/terminal-tasks.png)
 
 > **Status.** Verified against the released `task` 3.5.0 on a local S3-compatible server, in both directions (tasks,
 > UDAs, reports, recurring series, snapshots, purge, import), and in use on a real R2 bucket.
-
-<p align="center">
-  <img src="docs/screenshots/android-widgets.png" alt="The Android app's three widgets: a task list, a calendar with the tasks of the selected day, and a burndown" width="900" />
-  <br /><sub>The Android app's widgets: tasks (any report, the fields you choose), a calendar (tap a day to see its tasks) and a burndown</sub>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/tasks.png" alt="The Tasks view: the next report as a table, with the prompt underneath" width="900" />
-</p>
 
 <table>
   <tr>
@@ -182,13 +186,15 @@ The same pages are a searchable site at **[meghnaad.utsob.me](https://meghnaad.u
 
 | | |
 | --- | --- |
-| **[Using Meghnaad](docs/using.md)** | Pages, console, confirmations, hooks, recurrence, urgency, time tracking |
-| **[Where your tasks live](docs/stores.md)** | A git repository, an S3 or R2 bucket or a sync server: which app reaches which, pointing `task` at it |
-| **[Running the web app](docs/deploy.md)** | The static site, the Worker with R2 or with git, Access, GitHub Actions, troubleshooting |
-| **[The Android app](docs/android.md)** | Install, connect (a git repository, a bucket or a sync server, or none), the four widgets, sharing settings and hooks, building it |
-| **[The terminal app](docs/terminal.md)** | Install, the pages and keys, the command line, review, where its settings are kept, [AI agents](docs/terminal.md#with-an-ai-agent) |
-| **[Architecture](docs/architecture.md)** | A diagram per platform, the engine, sync, hooks, platform limits, how correctness is kept |
+| **[Introduction](docs/index.md)** | What it is, the four flavours, which one to pick |
+| **[Where your tasks live](docs/stores.md)** | A git repository, an S3 or R2 bucket or a sync server: which flavour reaches which, pointing `task` at it |
+| **[The web app](docs/deploy.md)** | [The static web app](docs/web-static.md) and [the web app on Cloudflare](docs/web-cloudflare.md): setup, Access, GitHub Actions, troubleshooting |
+| **[The Android app](docs/android.md)** | Install, connect (a git repository, a bucket or a sync server, or none), updates, sharing settings and hooks |
+| **[The terminal app](docs/terminal.md)** | Install, sync, where its settings are kept |
+| **[Using Meghnaad](docs/using.md)** | Pages, console, tasks, boards, kanban, settings, recurrence, hooks, time tracking; [Android's own](docs/using/android.md) and [the terminal's](docs/using/terminal.md) |
 | **[taskrc support](docs/taskrc-support.md)** | Every `taskrc` option: done, partial, not done |
+| **[Architecture](docs/architecture.md)** | A diagram per platform, the engine, sync, hooks, platform limits, how correctness is kept |
+| **[Building and releasing](docs/building.md)** | Releases, building and signing the Android app, how the apps fit together |
 
 ## How it works
 
@@ -275,12 +281,12 @@ flowchart TB
 - **The store** is a bucket holding TaskChampion's standard cloud layout, or a git branch holding its git layout, on
   GitHub, Gitea or Forgejo; either is encrypted client-side. The browser's replica and your CLI are interchangeable
   replicas of it. The Worker comes in two builds, one for each (`BACKEND=r2` or `git`;
-  [deploying it](docs/deploy.md#a-git-repository-instead-of-r2)).
+  [deploying it](docs/web-cloudflare.md#a-git-repository-instead-of-r2)).
 - **The Worker keeps the secret.** It checks Cloudflare Access, and opens and seals the versions that pass between the
   store and your browser (`/api/tc/*`), so the encryption secret never leaves it. It parses no tasks. It also runs your
   hooks: the engine sends it a task and gets the task back (`/api/run`).
 - **The static site has no Worker.** The page reaches the git branch through the forge's API itself, holds the token and
-  the secret once you unlock it, and runs hooks in the page ([the static app](docs/deploy.md#the-static-app)).
+  the secret once you unlock it, and runs hooks in the page ([the static app](docs/web-static.md)).
 - **The browser keeps a copy** in IndexedDB, so a visit starts from where the last one ended and only pulls what is new.
   It pushes soon after every write, pulls when you come back to the tab and every 30 seconds while you look at it, and
   answers commands while it syncs; other tabs are told when one pushes.
@@ -298,159 +304,6 @@ flowchart TB
 | Hooks | Scripts in `~/.task/hooks` | Lua functions in a script kept in the store, edited in Settings; they run on the Worker or in the page (or with `task`, through `meghnaad-hook`) |
 
 More in [Architecture](docs/architecture.md).
-
-## Quick start (local)
-
-Runs without a Cloudflare account; wrangler simulates R2. You need [Rust](https://rustup.rs) 1.94.1+ and Node.js 20+.
-
-```bash
-git clone <this repo> && cd Meghnaad
-npm install
-cp .dev.vars.example .dev.vars   # local-only secret + Access bypass
-npm run dev                      # builds the engine, then serves the app (hot reload) and the Worker
-```
-
-The first build takes a few minutes (it installs the `wasm-bindgen` tool once). Open **http://127.0.0.1:5273**: the
-app with hot reload, and the Worker behind it on 8787. The engine is rebuilt when the Rust under `crates/tc-core` or
-`crates/browser` changes, and the Worker when its own does. For demo data run `./scripts/seed-dev.sh`. Local R2 data lives
-in `.wrangler/state` (delete it to start over), or somewhere else with `npm run dev -- --persist-to DIR`; the ports
-are `--api-port` and `--web-port`.
-
-## Deploying the web app
-
-Pick a setup from [the chooser](#running-the-web-app); the steps for each are in
-**[Running the web app](docs/deploy.md)**.
-
-### The static site
-
-No server of its own: each release has a static build of the web app that syncs with a git repository straight from the
-browser (GitHub, Gitea or Forgejo), unlocked with your encryption secret. Host it on GitHub Pages, Cloudflare Pages or
-Netlify from the template attached to the release. See **[The static app](docs/deploy.md#the-static-app)**.
-
-If your tasks sync with a git repository and you'd rather host nothing, **[mn.utsob.me](https://mn.utsob.me)** is the
-author's copy, open to anyone: your token, secret and tasks stay in your browser and your repository, and you trust only
-the code it serves ([more](docs/deploy.md#the-static-app)).
-
-### The Cloudflare Worker, with R2 or git
-
-You need Workers and Access, and R2 for a bucket; each has a free plan. **No Rust needed:** CI publishes a prebuilt
-release. Use the button (it deploys the R2 Worker),
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/uroybd/Meghnaad/tree/release)
-
-or, for either store, a terminal with only Node.js 20+:
-
-```bash
-git clone --branch release --depth 1 https://github.com/uroybd/Meghnaad.git meghnaad && cd meghnaad
-npm install
-npm run setup        # guided: R2 or git, domain, secret, Access; safe to repeat
-npm run deploy       # whenever you update (after pulling the release branch)
-```
-
-From a clone of the source (Rust needed), the same two commands build it first.
-
-Setup asks where your tasks are kept (an R2 bucket or a git repository) and for the encryption secret, deploys, and tells
-you what to click to connect Access. Until then the app shows a setup page and nothing is reachable. To deploy from
-GitHub instead, run the manual **Deploy** workflow ([setup](docs/deploy.md#d-from-github-actions-manual)). Pointing your
-`task` CLI at the same store is in **[Where your tasks live](docs/stores.md)**.
-
-## Android app
-
-The same app on your phone, with the engine on the phone. It works offline, keeps your keys in the Android Keystore, and
-syncs directly with your store: a git repository, an S3-compatible bucket (R2, AWS S3, MinIO, ...) or a TaskChampion sync
-server. It needs no Worker and no Cloudflare Access.
-
-1. Download `meghnaad-<version>.apk` from the [latest release](https://github.com/uroybd/Meghnaad/releases/latest) and
-   open it (allow installing from your browser or files app when asked). It is about 4.5 MB, for 64-bit ARM phones, and
-   later releases update it in place.
-2. Choose where your tasks live (**S3 bucket**, **Sync server** or **Git**), fill in what it asks for and the encryption
-   secret (the same as your taskrc's `sync.encryption_secret`), or press **Use on this phone only** to start without
-   syncing and connect later in **Settings → Sync**.
-3. Long-press the home screen, **Widgets → Meghnaad**: **Tasks** (any report, a filter, the fields you tick; tick a task
-   done, tap one to open it, **+** to add), **Burndown** and **Calendar**.
-
-Settings and hooks can be kept in step with the web app's through the bucket or the git branch (two switches under
-**Settings → Sync**);
-the secrets for hooks never are. Everything about it, including building it yourself, is in
-**[the Android app](docs/android.md)**.
-
-## Terminal app
-
-On the desktop, `meghnaad` is a full-screen terminal app around the real `task` 3.6.0 (or 3.5): your own `~/.task` and
-`~/.taskrc`, with no replica or server of its own: it syncs with `task sync`, in the background, by hand or when it
-opens and closes or after every change, as you set it. It is laid out as the web app is: pages along the top (Tasks,
-Projects, Tags, Summary, Calendar, Burndown, Boards, Kanban, Console, Settings), the reports down the side and a command line at the
-bottom with Tab completion, `&&` `||` `;` chains and your task commands. It has an add line that shows the task before it
-makes it and opens into the full task form, which modifying always uses, your boards drawn as terminal charts,
-reports in `task`'s own colours, tasksh's review, a timer and reminders.
-
-```bash
-brew install uroybd/tap/meghnaad   # or a prebuilt from the release, or cargo install (see the guide)
-meghnaad
-meghnaad 3 fail                    # a line as the app's command line runs it: task commands, chains
-meghnaad export -f tsv -F id,due,description -r next   # task export for scripts: JSON, CSV or TSV
-meghnaad export --rich project:Work                    # task export, each task with its tracked time
-```
-
-![The terminal app on the Tasks page: the reports down the side, the next report in task's colours, and the page's keys along the bottom](docs/screenshots/terminal-tasks.png)
-
-Its `settings.json` (task commands, boards, keys, and its own settings under `tui`: when to sync and its theme) is kept
-in `~/.config/meghnaad`, or in `$MEGHNAAD_CONFIG_DIR`. The keys and the rest are in **[the terminal app](docs/terminal.md)**.
-
-An AI agent with a shell can use your tasks through it too, with a skill that keeps it to UUIDs and compact exports and
-has it ask before bulk or destructive changes ([With an AI agent](docs/terminal.md#with-an-ai-agent)). In Claude Code:
-
-```text
-/plugin install meghnaad --marketplace uroybd/Meghnaad
-```
-
-For any other agent, `meghnaad skill` prints the same skill.
-
-## Using it
-
-The header has **Tasks**, **Projects**, **Tags**, **Summary**, **Calendar**, **Burndown**, **Boards**, **Kanban** (once it is
-set up) and **Console**, and **Settings** (the taskrc, tasksh, Kanban, your own commands, hooks and urgency). Anything you can click
-you can type:
-
-```
-project:Home +errand due.before:eow list
-add Pay rent project:Home due:eom +bills
-3 modify due:2026-12-25T08:30 priority:H
-3 done            3 delete            undo
-calc 2 days + 3 hours
-history.monthly   ghistory.monthly   timesheet   export   (Console only; export downloads a file)
-show weekstart     config weekstart monday   (Console only)
-3 done && add Next step ; list   (Console, and task commands: && after a success, || after a failure, ; always)
-```
-
-A report typed in the Console prints there; elsewhere it opens in Tasks. Taskwarrior's confirmations arrive as a table of
-ticks. `&&`, `||` and `;` chain commands as in a shell: the page runs them one after the other. More in **[Using Meghnaad](docs/using.md)**.
-
-## Hooks
-
-Taskwarrior's four hooks are functions in a **Lua script** you edit in **Settings → Hooks**, with highlighting and errors
-marked as you type. A hook gets the task (tags as a set, dates you can calculate with), returns it changed or refuses the
-command, and what it prints appears in the Console. The script is kept in your store beside the tasks and runs on the
-Worker (in the page on the static site, on the phone in the Android app), so changing it needs no rebuild or deploy. See
-[Hooks](docs/using/hooks.md#hooks).
-
-```lua
-function on_add(task)
-  if task:in_project("Work") then
-    task.tags:add("office")
-    say("Tagged +office.")
-  end
-end
-```
-
-The Lua runs in a sandbox (`string`, `table` and `math` only; no files) and is stopped if it runs too long. A script can
-call other services (`http.post(...)`, to hosts it declares, over https) and use named secrets (`secret("jira")`) that
-are kept apart from the script and go only to the hosts you saved them with; on the Worker they never reach the page. The
-Lua adds about 305 KB (compressed) to the Worker; the engine in the browser is unaffected, and the static site loads its
-own Lua runner only when a hook first runs.
-
-The same script runs with the real `task` on your computer through `meghnaad-hook`, which `task` calls as an ordinary hook
-(secrets there are environment variables); see [the same script with the real `task`](docs/using/hooks.md#the-same-script-with-the-real-task).
 
 ## Security
 
@@ -481,6 +334,23 @@ The same script runs with the real `task` on your computer through `meghnaad-hoo
   hooks script are plain text on the branch, so keep the repository private.
 - **The taskrc importer** never stores, logs or returns sync or credential values; tests feed it a file full of secrets
   and check none appear.
+
+## Running it locally
+
+Runs without a Cloudflare account; wrangler simulates R2. You need [Rust](https://rustup.rs) 1.94.1+ and Node.js 20+.
+
+```bash
+git clone <this repo> && cd Meghnaad
+npm install
+cp .dev.vars.example .dev.vars   # local-only secret + Access bypass
+npm run dev                      # builds the engine, then serves the app (hot reload) and the Worker
+```
+
+The first build takes a few minutes (it installs the `wasm-bindgen` tool once). Open **http://127.0.0.1:5273**: the
+app with hot reload, and the Worker behind it on 8787. The engine is rebuilt when the Rust under `crates/tc-core` or
+`crates/browser` changes, and the Worker when its own does. For demo data run `./scripts/seed-dev.sh`. Local R2 data lives
+in `.wrangler/state` (delete it to start over), or somewhere else with `npm run dev -- --persist-to DIR`; the ports
+are `--api-port` and `--web-port`.
 
 ## Development
 
@@ -524,18 +394,10 @@ It does not touch a running dev server.
 CI (`.github/workflows/ci.yml`) runs tests, formatting, linting and the type check on every push and pull request (and the
 Android app's unit tests). Deploying is the separate manual workflow. A release is a version in `package.json` and a tag
 `v<version>` (`just release`): the Release workflow publishes the web package and the signed Android APK together
-([Making a release](docs/deploy.md#making-a-release-for-maintainers)).
+([Making a release](docs/building.md#making-a-release)).
 
 Taskwarrior's behaviour is ported from its source and checked against the real `task`: when changing filters, sorting,
 urgency, dates or confirmations, read the C++ first and compare ([method](docs/architecture.md)).
-
-## Troubleshooting
-
-See [Running the web app](docs/deploy.md#troubleshooting-a-deployment). One to know: **Cloudflare error 1102** ("Worker exceeded
-resource limits"), usually on the first request after a quiet spell, is the CPU limit of the free plan. It is uncommon,
-since the engine runs in your browser and the Worker only passes versions through; the app retries and Workers Paid
-lifts the limit if it ever bothers you. If the page shows *Couldn't sync with the server*, what you changed is kept in
-the browser and goes up when it works again.
 
 ## Known limitations
 

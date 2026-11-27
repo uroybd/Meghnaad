@@ -4,12 +4,12 @@
 #   - the Android app, as an APK: attached to the release for a tag, or kept as the run's artifact;
 #   - meghnaad-hook, the Lua hooks script for the real `task`, and meghnaad, the terminal app around the real `task`, as
 #     programs for Linux and macOS (x86_64 and arm64), the same way, and, when the repository names a Homebrew tap
-#     (docs/deploy.md), their formulas there.
+#     (docs/building.md), their formulas there.
 # The version is the one in package.json. To release: change it there, commit, then tag that commit `v<version>` and push
 # the tag (git tag v0.2.0 && git push origin v0.2.0). A tag that does not match package.json is refused. A run by hand
 # (Actions > "Release" > Run workflow) builds the same things as `<version>-dev.<commit>` and publishes only the branch.
 # The APK is signed when the repository has the secrets ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
-# ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD (docs/android.md says how to make them); without them it is a debug build,
+# ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD (docs/building.md says how to make them); without them it is a debug build,
 # which installs but cannot be updated in place by a later release.
 # It does not run the tests: CI does that on every push, so release a commit CI has passed. How the web package is made
 # is scripts/package-release.mjs.
@@ -157,13 +157,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           cat > "$RUNNER_TEMP/notes.md" <<NOTES
-          **Web app**: deploy it with the [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/${GITHUB_REPOSITORY}/tree/release) button, or with \`npm run setup\` from the \`release\` branch ([Deploying](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deploy.md)). \`meghnaad-$VERSION.tar.gz\` is the same built package.
+          **Web app**: deploy it with the [Deploy to Cloudflare](https://deploy.workers.cloudflare.com/?url=https://github.com/${GITHUB_REPOSITORY}/tree/release) button, or with \`npm run setup\` from the \`release\` branch ([Deploying](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/web-cloudflare.md)). \`meghnaad-$VERSION.tar.gz\` is the same built package.
 
           **Hooks with the real \`task\`**: \`meghnaad-hook-$VERSION-<platform>.tar.gz\` is the program that runs your Lua hooks script for \`task\` ([the same script with the real task](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/using/hooks.md#the-same-script-with-the-real-task)); the builds are added to this release when they finish.
 
           **Terminal app**: \`meghnaad-$VERSION-<platform>.tar.gz\` (the program \`meghnaad\`, once \`meghnaad-tui\`) is Meghnaad in the terminal, around the real \`task\` ([the terminal app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/terminal.md)); the builds are added to this release when they finish.
 
-          **Static web app**: \`meghnaad-static-$VERSION.tar.gz\` is the web app with no Worker, for any static host (GitHub Pages, Cloudflare Pages, Netlify): your tasks on a git branch, unlocked in the browser. \`meghnaad-static-template.tar.gz\` is a repository that deploys it ([the static app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deploy.md#the-static-app)).
+          **Static web app**: \`meghnaad-static-$VERSION.tar.gz\` is the web app with no Worker, for any static host (GitHub Pages, Cloudflare Pages, Netlify): your tasks on a git branch, unlocked in the browser. \`meghnaad-static-template.tar.gz\` is a repository that deploys it ([the static app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/web-static.md)).
 
           **Android app**: install \`meghnaad-$VERSION.apk\` ([the Android app](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/docs/android.md)); it is added to this release when its build finishes.
 

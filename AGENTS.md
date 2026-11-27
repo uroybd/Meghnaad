@@ -252,7 +252,7 @@ type (`scripts/release-notes.mjs`, `just notes` to preview), so a `feat:`/`fix:`
 ## The Android app
 
 `crates/android` is `tc-core` natively (S3 sync with its own SigV4, a TaskChampion sync-server client, the settings routes over a folder, hooks on the
-phone) behind a JNI layer; `app/` is the app that loads it (below); see `docs/android.md`. `node scripts/build-android.mjs`
+phone) behind a JNI layer; `app/` is the app that loads it (below); see `docs/android.md` and `docs/building.md`. `node scripts/build-android.mjs`
 builds the APK. Anything the screens need from a server must also be answered by the app (the engine's `api` call answers
 `/api/…` on the phone), so a new settings route goes in `tc_core::webapi` where the Worker and the app share it. A request's meaning is in `tc_core::request`, shared with the browser engine: change it there, not in
 one host. Nothing may put the bucket keys or the encryption secret anywhere a screen can read them. The few files a phone may keep

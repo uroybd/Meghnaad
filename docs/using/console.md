@@ -266,5 +266,5 @@ you turn them on, per device: **Settings → This device → AI agents**. Off, t
 Either way, a question Taskwarrior asks (a change to several tasks, `delete`, `undo`) is shown here for **you** to
 answer: no tool answers it. The app describes all this to agents at `/llms.txt` (and the page links to it), a public file that is the same for
 every deployment and names nothing of yours (on Cloudflare it needs the Access rule in
-[Deploy](../deploy.md#connecting-access)). Your tasks, reports and boards are only reachable from your signed-in tab.
-For an agent with a shell, use the [terminal app's skill](../terminal.md#with-an-ai-agent) instead.
+[Deploy](../web-cloudflare.md#connecting-access)). Your tasks, reports and boards are only reachable from your signed-in tab.
+For an agent with a shell, use the [terminal app's skill](terminal.md#with-an-ai-agent) instead.

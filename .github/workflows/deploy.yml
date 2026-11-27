@@ -1,6 +1,6 @@
 # Deploy the Worker and the web app to Cloudflare. Run by hand: Actions > "Deploy" > Run workflow (`just deploy`).
 # It does not run the tests: CI does that on every push and pull request, so run this from a commit CI has passed.
-# What it needs, and how to set it up, is in docs/deploy.md ("D. From GitHub Actions").
+# What it needs, and how to set it up, is in docs/web-cloudflare.md ("D. From GitHub Actions").
 #
 # When the Release workflow has built this very commit (a released version: `just ship` tags it and starts this), the
 # built package on the `release` branch is deployed as it is, with no Rust and nothing built again; while that Release is

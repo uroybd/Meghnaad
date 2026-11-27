@@ -4,6 +4,10 @@ A **board** is a page of your own made of **sections**, each a number, a table o
 Open **Boards**, type a name and press **New board**. **Edit** lets you change the layout and sections, and **Save** keeps
 them.
 
+Every flavour has the same boards, kept in `settings.json`. The Android app makes and changes them on the phone
+([Boards on Android](android.md#boards)), and the terminal app draws them as terminal charts
+([Boards in the terminal](terminal.md#boards)).
+
 ## Address
 
 Every board has a **slug**, the last part of its address (`/board/week`): one lower-case word of letters,

@@ -9,6 +9,9 @@ sign-in, so its secrets never reach the page; on the static site it runs in the 
 app. Your desktop's own hooks are separate: they fire only for commands run there, unless you run this same
 script on the desktop too ([below](#the-same-script-with-the-real-task)).
 
+The terminal app runs the real `task`, so `task`'s own hooks run there as they always do; the same Lua script runs
+with them through `meghnaad-hook` ([below](#the-same-script-with-the-real-task)).
+
 A command waits for each hook in turn, as `task` waits for its scripts (`add` asks for `on_launch`, `on_add` and
 `on_exit`). A new task doesn't hold the page up for that: **+** and the full form wait a second, so a refusal comes back
 to the form it was typed in, then they close and a **Creating…** notice stays until the task is made. If a hook refuses

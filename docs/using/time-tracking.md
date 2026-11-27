@@ -8,7 +8,7 @@ timer in the header and in the tab title.
 Annotate a task while it runs (`task 12 annotate 'wrote the tests'`) and the note is that session's description: the
 time log shows the notes written between a start and its stop under that session, one to a line. Hooks read the same
 sessions as `task.time_tracking` ([Hooks](hooks.md#tasks-tags-and-dates)), and the Export dialog and `meghnaad export`
-write them as `time_tracking` ([details](../terminal.md#tracked-time-in-an-export)).
+write them as `time_tracking` ([details](terminal.md#tracked-time-in-an-export)).
 
 **Reminders.** The **bell** in the header turns them on. You get:
 

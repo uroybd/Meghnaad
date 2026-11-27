@@ -42,7 +42,7 @@ This is the built app, ready to deploy: no Rust, no build. It is generated from
 
 Either way the app shows a setup page until Cloudflare Access is connected; nothing is reachable before that. The steps,
 and pointing your \`task\` CLI at the bucket, are in
-[Deploying](https://github.com/uroybd/Meghnaad/blob/main/docs/deploy.md).
+[Deploying](https://github.com/uroybd/Meghnaad/blob/main/docs/web-cloudflare.md).
 
 | | |
 | --- | --- |
