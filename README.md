@@ -1,4 +1,4 @@
-# Meghnaad 0.8.74: prebuilt
+# Meghnaad 0.8.75: prebuilt
 
 This is the built app, ready to deploy: no Rust, no build. It is generated from
 [the source](https://github.com/uroybd/Meghnaad) by the Release workflow; don't edit it here.
