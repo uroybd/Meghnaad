@@ -79,7 +79,12 @@ fun BulkBar(store: Store) {
                 OutlinedButton(enabled = !busy, onClick = { modifying = true }) { LucideIcon("pencil", size = 15.dp); Text("  Modify…") }
                 // Name the tasks at the prompt and leave the rest to the user.
                 OutlinedButton(enabled = !busy, onClick = { store.requestPrompt(promptFor(picks)) }) { LucideIcon("terminal", size = 15.dp); Text("  CLI") }
-                MoreMenu(store.menuCommands, "More actions for the selected tasks", enabled = !busy) { c ->
+                MoreMenu(
+                    store.menuCommands,
+                    "More actions for the selected tasks",
+                    enabled = !busy,
+                    shown = { commandShown(it, picks.isNotEmpty() && picks.all { p -> p.iterative }, store.taskCommands, udaNames(store.config)) },
+                ) { c ->
                     // An iterative task (`+ITERATIVE`) gets it without its `status:`; the rest as it is.
                     val udas = udaNames(store.config)
                     val groups = listOf(false, true)

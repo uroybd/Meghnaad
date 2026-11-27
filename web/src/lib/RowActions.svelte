@@ -101,6 +101,7 @@
 {/if}
 <MoreMenu
   commands={store.menuCommands}
+  iterative={row.status === 'iterative'}
   actions={card ? menuActions(false) : folded ? menuActions() : []}
   onrun={(c) => {
     const steps = commandStepsOn(c, [row.uuid], row.status === 'iterative', udaNames(store.config));

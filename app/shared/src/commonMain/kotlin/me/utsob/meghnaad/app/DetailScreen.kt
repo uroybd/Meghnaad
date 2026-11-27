@@ -138,7 +138,7 @@ fun DetailScreen(store: Store, ref: DetailRef) {
                                 }
                             }
                         }
-                        MoreMenu(store.menuCommands) { c ->
+                        MoreMenu(store.menuCommands, shown = { commandShown(it, live?.status == "iterative", store.taskCommands, udaNames(store.config)) }) { c ->
                             val steps = commandStepsOn(c, listOf(uuid), live?.status == "iterative", udaNames(store.config))
                             if (steps.isEmpty()) store.notify("${c.name} only changes the status, which an iterative task keeps.", bad = true) else store.go { actSteps(ref.from, steps) }
                         }

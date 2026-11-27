@@ -66,7 +66,7 @@ series starts at 1. `duplicate` also starts a new series at 1.
 - On a kanban, a move leaves out its `status:` and a `done` clears the columns' UDA and tags, so the next one starts in
   the first column ([Iterative tasks on a kanban](kanban.md#iterative-tasks-on-a-kanban)). Your
   [task commands](settings.md#commands) leave out their `status:` too, run from a menu or on selected tasks (not
-  typed on the console).
+  typed on the console), and the menu shows that line; one that only sets the status shows "nothing on an iterative task".
 - The columns `iter`, `iter_type` and `iter_count` can go in a report. The `status` column shows `iterative` (`I`).
 - In bulk edit, **Iter type** and **Iter** are next to Repeat (in the terminal app, `Ctrl+O` on Iter opens its picker
   there too). The info view shows Iter, Iter type and Iter count.

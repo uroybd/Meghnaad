@@ -418,7 +418,7 @@ fun Actions(
                 }
             }
         }
-        MoreMenu(store.menuCommands, extra = own, box = box) { c ->
+        MoreMenu(store.menuCommands, extra = own, box = box, shown = { commandShown(it, row.status == "iterative", store.taskCommands, udaNames(store.config)) }) { c ->
             val steps = commandStepsOn(c, listOf(row.uuid), row.status == "iterative", udaNames(store.config))
             if (steps.isEmpty()) store.notify("${c.name} only changes the status, which an iterative task keeps.", bad = true) else store.go { actSteps(from, steps) }
         }
@@ -436,6 +436,8 @@ fun MoreMenu(
     enabled: Boolean = true,
     extra: List<MenuAction> = emptyList(),
     box: Dp = 44.dp,
+    /** The line a command shows: on an iterative task, what it runs there ([commandShown]); "" for nothing. */
+    shown: (TaskCommand) -> String = { it.command },
     onRun: (TaskCommand) -> Unit,
 ) {
     if (commands.isEmpty() && extra.isEmpty()) return
@@ -455,12 +457,14 @@ fun MoreMenu(
             }
             if (extra.isNotEmpty() && commands.isNotEmpty()) HorizontalDivider()
             for (c in commands) {
+                val line = shown(c)
                 DropdownMenuItem(
+                    enabled = line.isNotEmpty(),
                     leadingIcon = { CommandIcon(c.icon, 15) },
                     text = {
                         Column {
                             Text(commandLabel(c), fontSize = 14.sp)
-                            Text(c.command, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(line.ifEmpty { "nothing on an iterative task" }, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
                     onClick = {

@@ -146,6 +146,7 @@
       {/if}
       <MoreMenu
         commands={store.menuCommands}
+        iterative={live.status === 'iterative'}
         onrun={(c) => {
           const steps = commandStepsOn(c, [uuid], live.status === 'iterative', udaNames(store.config));
           if (steps.length) store.actSteps(store.detail?.from ?? null, steps);

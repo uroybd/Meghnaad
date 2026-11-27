@@ -116,6 +116,7 @@
     >
     <MoreMenu
       commands={store.menuCommands}
+      iterative={picks.length > 0 && picks.every((p) => p.iterative)}
       disabled={busy}
       onrun={runCommand}
       label="More actions for the selected tasks"

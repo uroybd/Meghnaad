@@ -1304,3 +1304,29 @@ fn a_task_command_leaves_its_status_out_on_an_iterative_task() {
         app.log
     );
 }
+
+/// The `c` menu shows what a task command runs: without its `status:` on an iterative task, nothing where that is all
+/// it does, and as it is on another task or a marked set that is not all iterative.
+#[test]
+fn the_command_menu_shows_what_runs_on_an_iterative_task() {
+    let mut app = app();
+    app.cfg = tc_core::taskrc::parse("uda.progressState.type=string\n").config;
+    let (it, plain) = (
+        "1499a653-f3c1-4764-b952-39d3a165870f",
+        "2599a653-f3c1-4764-b952-39d3a165870f",
+    );
+    app.report.uuids = vec![it.into(), plain.into()];
+    app.report.repeats = vec![Some(crate::model::Repeats::Iterative), None];
+    let command = |name: &str, command: &str| TaskCommand {
+        name: name.into(),
+        command: command.into(),
+        icon: None,
+        label: None,
+    };
+    let doing = command("doing", "modify status:pending progressState:inprogress");
+    let reopen = command("reopen", "modify status:pending");
+    assert_eq!(app.command_shown(&doing, it), "modify progressState:inprogress");
+    assert_eq!(app.command_shown(&reopen, it), "");
+    assert_eq!(app.command_shown(&doing, plain), doing.command);
+    assert_eq!(app.command_shown(&doing, &format!("{it} {plain}")), doing.command);
+}

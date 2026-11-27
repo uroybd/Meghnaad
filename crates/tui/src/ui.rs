@@ -1199,11 +1199,18 @@ fn commands(f: &mut Frame, app: &App, uuid: &str, query: &str, sel: usize, main:
         .map(|c| {
             // A taskrc alias is marked with a prompt sign, as the web and the phone draw it with a terminal.
             let alias = c.icon.as_deref() == Some(crate::commands::ALIAS_ICON);
+            // On an iterative task, the line it runs there (its `status:` left out).
+            let line = app.command_shown(c, uuid);
             ListItem::new(Line::from(vec![
                 Span::from(if alias { "$ " } else { "  " }).quiet(),
                 Span::from(format!("{:<widest$}  ", c.label())).bold(),
                 Span::from(format!("{:<named$}  ", c.name)),
-                Span::from(c.command.clone()).quiet(),
+                Span::from(if line.is_empty() {
+                    "nothing on an iterative task".to_owned()
+                } else {
+                    line
+                })
+                .quiet(),
             ]))
         })
         .collect();

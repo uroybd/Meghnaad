@@ -325,4 +325,14 @@ class KanbanTest {
         )
         assertEquals(emptyList(), commandStepsOn(TaskCommand("reopen", "modify status:pending"), listOf("u1"), true, udas))
     }
+
+    @Test
+    fun aMenuShowsTheLineATaskCommandRunsOnAnIterativeTask() {
+        val c = TaskCommand("doing", "modify status:pending progressState:inprogress ; annotate started")
+        val udas = listOf("progressState")
+        assertEquals("modify progressState:inprogress ; annotate started", commandShown(c, true, emptyList(), udas))
+        assertEquals(c.command, commandShown(c, false, emptyList(), udas))
+        assertEquals("annotate hi", commandShown(TaskCommand("note", "annotate hi"), true, emptyList(), udas))
+        assertEquals("", commandShown(TaskCommand("reopen", "modify status:pending"), true, emptyList(), udas))
+    }
 }

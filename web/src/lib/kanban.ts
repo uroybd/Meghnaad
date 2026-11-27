@@ -567,6 +567,14 @@ export function commandStepsOn(
   return own.map((s) => ({ ...s, args: [...uuids, ...s.words] }));
 }
 
+/**
+ * What a menu shows a task command runs: its line, or on an iterative task (`iterative`) that line without its
+ * `status:` (`iterativeMove`); `''` when it runs nothing there.
+ */
+export function commandShown(c: TaskCommand, iterative: boolean, commands: TaskCommand[], udas: string[]): string {
+  return (iterative ? iterativeMove(c.command, [], commands, udas) : null) ?? c.command;
+}
+
 /** The taskrc's UDAs, by name: what the engine needs to read a command's words. */
 export function udaNames(config: ConfigResponse | null): string[] {
   return Object.keys(config?.config.udas ?? {});

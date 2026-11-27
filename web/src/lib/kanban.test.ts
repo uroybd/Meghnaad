@@ -3,6 +3,7 @@ import { lintSettings, parseSettings, serializeKanban } from './appsettings';
 import {
   automaticColumns,
   boardClears,
+  commandShown,
   commandStepsOn,
   forIterative,
   iterativeMove,
@@ -464,5 +465,12 @@ describe('a task command on an iterative task', () => {
       ['u1', 'annotate', 'started'],
     ]);
     expect(commandStepsOn({ name: 'reopen', command: 'modify status:pending' }, ['u1'], true, udas)).toEqual([]);
+  });
+
+  it('shows in a menu the line it runs there', () => {
+    expect(commandShown(c, true, [], udas)).toBe('modify progressState:inprogress ; annotate started');
+    expect(commandShown(c, false, [], udas)).toBe(c.command);
+    expect(commandShown({ name: 'note', command: 'annotate hi' }, true, [], udas)).toBe('annotate hi');
+    expect(commandShown({ name: 'reopen', command: 'modify status:pending' }, true, [], udas)).toBe('');
   });
 });

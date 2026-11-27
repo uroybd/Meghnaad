@@ -3,6 +3,8 @@
   import { commandLabel, type TaskCommand } from './appsettings';
   import CommandIcon from './CommandIcon.svelte';
   import { Ellipsis } from './icons';
+  import { commandShown, udaNames } from './kanban';
+  import { store } from './store.svelte';
 
   /** One of the app's own buttons, folded into the menu where there is no room for it. */
   export interface MenuAction {
@@ -26,13 +28,18 @@
     onrun = () => {},
     label = 'More actions',
     disabled = false,
+    iterative = false,
   }: {
     commands?: TaskCommand[];
     actions?: MenuAction[];
     onrun?: (c: TaskCommand) => void;
     label?: string;
     disabled?: boolean;
+    /** The menu is for iterative tasks (`+ITERATIVE`): each command shows the line it runs there. */
+    iterative?: boolean;
   } = $props();
+
+  const shown = (c: TaskCommand) => commandShown(c, iterative, store.taskCommands, udaNames(store.config));
 
   let open = $state(false);
   let button: HTMLButtonElement | undefined = $state();
@@ -146,10 +153,18 @@
         {/each}
         {#if actions.length && commands.length}<hr />{/if}
         {#each commands as c (c.name)}
-          <button type="button" role="menuitem" tabindex="-1" title={c.command} onclick={() => run(c)}>
+          {@const line = shown(c)}
+          <button
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            title={line || 'Only changes the status, which an iterative task keeps'}
+            disabled={!line}
+            onclick={() => run(c)}
+          >
             <CommandIcon name={c.icon} size={15} />
             <span class="name">{commandLabel(c)}</span>
-            <span class="what dim mono">{c.command}</span>
+            <span class="what dim mono">{line || 'nothing on an iterative task'}</span>
           </button>
         {/each}
       </div>

@@ -28,6 +28,16 @@ impl App {
             })
     }
 
+    /// What the menu shows `c` runs on `uuids` (space-separated): its line, or when they are all iterative that line
+    /// without its `status:` (`kanban::iterative_move`), as it runs there; empty when it runs nothing there.
+    pub fn command_shown(&self, c: &TaskCommand, uuids: &str) -> String {
+        let iterative = uuids.split_whitespace().all(|u| self.is_iterative(u)) && !uuids.trim().is_empty();
+        iterative
+            .then(|| crate::kanban::iterative_move(&c.command, &[], &self.settings.task_commands, &self.cfg))
+            .flatten()
+            .unwrap_or_else(|| c.command.clone())
+    }
+
     /// The task commands and aliases whose name or command line has `query` in it, in their order.
     pub fn matching_commands(&self, query: &str) -> Vec<TaskCommand> {
         let q = query.to_lowercase();

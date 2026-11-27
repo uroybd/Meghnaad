@@ -514,6 +514,13 @@ fun commandStepsOn(c: TaskCommand, uuids: List<String>, iterative: Boolean, udas
     return own.map { it.copy(words = uuids + it.words) }
 }
 
+/**
+ * What a menu shows a task command runs: its line, or on an iterative task that line without its `status:`
+ * ([iterativeMove]); "" when it runs nothing there. As the web's `commandShown`.
+ */
+fun commandShown(c: TaskCommand, iterative: Boolean, commands: List<TaskCommand>, udas: List<String>): String =
+    (if (iterative) iterativeMove(c.command, emptyList(), commands, udas) else null) ?: c.command
+
 /** The taskrc's UDAs, by name: what the engine needs to read a command's words. */
 fun udaNames(config: ConfigResponse?): List<String> = config?.config?.udas?.keys?.toList() ?: emptyList()
 
