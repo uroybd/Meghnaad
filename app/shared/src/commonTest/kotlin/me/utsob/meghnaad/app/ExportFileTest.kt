@@ -23,14 +23,15 @@ class ExportFileTest {
 
     @Test
     fun shapesTheFileAsJsonCsvOrTsv() {
-        assertEquals(listOf("id", "description", "tags", "uuid"), exportFields(text))
+        assertEquals(listOf("id", "description", "tags", "uuid", "time_tracking"), exportFields(text))
         assertEquals(listOf("id", "due"), tableFields(listOf("id", "due.relative")))
-        val csv = renderExport("tasks-next.json", text, ExportChoice(ExportFormat.Csv, fields = ExportFields.Custom, picked = listOf("description", "tags")), emptyList(), raw)
+        val csv = renderExport("tasks-next.json", text, ExportChoice(ExportFormat.Csv, fields = ExportFields.Custom, picked = listOf("description", "tags")), emptyList(), raw, 0)
         assertEquals(FileResult("tasks-next.csv", "text/csv", "description,tags\r\n\"Buy, milk\",a b\r\n"), csv)
-        assertEquals(text, renderExport("x.json", text, ExportChoice(), emptyList(), raw).text)
+        val none = ",\"time_tracking\":{\"total\":0,\"sessions\":[]}}"
+        assertEquals(text.replace("\"u1\"}", "\"u1\"$none"), renderExport("x.json", text, ExportChoice(), emptyList(), raw, 0).text)
         val dated = "[\n{\"description\":\"two\\nlines\",\"due\":\"20261119T180000Z\",\"uuid\":\"u1\"}\n]\n"
-        val tsv = renderExport("tasks.json", dated, ExportChoice(ExportFormat.Tsv), emptyList(), raw)
-        assertEquals(FileResult("tasks.tsv", "text/tab-separated-values", "description\tdue\tuuid\ntwo\\nlines\t2026-11-19 18:00:00\tu1\n"), tsv)
+        val tsv = renderExport("tasks.json", dated, ExportChoice(ExportFormat.Tsv), emptyList(), raw, 0)
+        assertEquals(FileResult("tasks.tsv", "text/tab-separated-values", "description\tdue\tuuid\ttime_tracking\ntwo\\nlines\t2026-11-19 18:00:00\tu1\t0\n"), tsv)
         assertEquals(true, jsonArrayOf(raw))
     }
 

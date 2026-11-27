@@ -125,7 +125,7 @@ fun ExportDialog(store: Store, args: List<String>, columns: List<String>, onClos
                 enabled = exported != null && count > 0 && store.files != null,
                 onClick = {
                     val e = exported ?: return@TextButton
-                    val file = renderExport(e.name, e.text, choice, columns, raw)
+                    val file = renderExport(e.name, e.text, choice, columns, raw, store.clockNow())
                     store.keepExportChoice(keptExport(choice))
                     scope.launch {
                         store.files?.save(file.name, file.mime, file.text)

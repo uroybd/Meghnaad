@@ -653,6 +653,7 @@ impl Engine {
     fn hooks(
         (web, secrets, script): (&WebSettings<FileStore>, &Rc<Secrets>, &mut Option<String>),
         clock: tc_core::dates::Clock,
+        journal: Option<(String, String)>,
     ) -> Option<Arc<dyn HookHost>> {
         let source = match script {
             Some(s) => s.clone(),
@@ -674,7 +675,7 @@ impl Engine {
                 clippy::arc_with_non_send_sync,
                 reason = "the engine is entered by one thread at a time (see `jni`)"
             )]
-            Ok(hooks) => Arc::new(hooks),
+            Ok(hooks) => Arc::new(hooks.with_journal(journal)),
             Err(p) => Arc::new(tc_core::hooks::Broken(p.refusal())),
         };
         Some(hooks)
@@ -683,12 +684,13 @@ impl Engine {
     /// One command: the answer as JSON text (`{ error }` if the request is not one).
     pub fn run(&mut self, request: &str) -> String {
         let (web, secrets, script) = (&self.web, &self.secrets, &mut self.script);
+        let journal = self.cfg.journal();
         pollster::block_on(request::run(
             &mut self.replica,
             &self.cfg,
             &self.warm,
             &mut self.undo,
-            |clock| Self::hooks((web, secrets, script), clock),
+            |clock| Self::hooks((web, secrets, script), clock, journal),
             request,
         ))
     }
@@ -696,11 +698,12 @@ impl Engine {
     /// A file of tasks as `task export` writes it, imported (or, without `apply`, only reported on): JSON text.
     pub fn import(&mut self, text: &str, apply: bool, tz: i32, now: f64) -> String {
         let (web, secrets, script) = (&self.web, &self.secrets, &mut self.script);
+        let journal = self.cfg.journal();
         pollster::block_on(request::import(
             &mut self.replica,
             &self.cfg,
             &mut self.undo,
-            |clock| Self::hooks((web, secrets, script), clock),
+            |clock| Self::hooks((web, secrets, script), clock, journal),
             (text, apply, tz, now),
         ))
     }

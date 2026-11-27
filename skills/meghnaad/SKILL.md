@@ -38,6 +38,8 @@ task rc.verbose=nothing count project:Home
 task rc.verbose=nothing _projects        # also _tags, _unique project
 ```
 
+With any option each task also has `time_tracking` (`total` and `sessions` in seconds, from the `journal.time` notes);
+`--rich` adds it and changes nothing else, `--include-time-tracking` adds it to the fields `-F` chose.
 `meghnaad export --help` lists every option. `-F table` gives a report's own columns, which usually leave out `uuid`;
 name the fields when you will act on the result.
 

@@ -62,15 +62,18 @@ fun jsonArrayOf(raw: JsonElement?): Boolean = callHelper("json_array", settingsO
 /** The fields a table shows, once each, in its order (`due.relative` is `due`). */
 fun tableFields(columns: List<String>): List<String> = strings(callHelper("table_fields", words(columns)))
 
-/** The file for [choice] from what `export` wrote ([name], [text]): the engine's name with the format's extension, the text, its type. */
-fun renderExport(name: String, text: String, choice: ExportChoice, columns: List<String>, raw: JsonElement?): FileResult {
+/**
+ * The file for [choice] from what `export` wrote ([name], [text]): the engine's name with the format's extension, the text, its type.
+ * Each task has its tracked time (`time_tracking`), a running session counted to [now] (seconds since 1970).
+ */
+fun renderExport(name: String, text: String, choice: ExportChoice, columns: List<String>, raw: JsonElement?, now: Long): FileResult {
     val c = buildJsonObject {
         put("format", choice.format.key)
         choice.array?.let { put("array", it) } ?: put("array", JsonNull)
         put("fields", choice.fields.key)
         putJsonArray("picked") { choice.picked.forEach { add(JsonPrimitive(it)) } }
     }
-    val f = callHelper("export_file", JsonPrimitive(name), JsonPrimitive(text), c, words(columns), settingsOf(raw)).jsonObject
+    val f = callHelper("export_file", JsonPrimitive(name), JsonPrimitive(text), c, words(columns), settingsOf(raw), JsonPrimitive(now)).jsonObject
     return FileResult(
         name = f.getValue("name").jsonPrimitive.content,
         mime = f.getValue("mime").jsonPrimitive.content,

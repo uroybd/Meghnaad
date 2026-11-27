@@ -513,12 +513,15 @@ fn time(t: &Value, ctx: &Ctx) -> Vec<Entry> {
         .sessions
         .iter()
         .enumerate()
-        .map(|(i, s)| {
+        .flat_map(|(i, s)| {
             let end = s.end.map_or_else(|| "running".to_owned(), |e| ctx.date(e));
-            entry(
+            let row = entry(
                 &format!("#{}", i + 1),
                 Shown::Text(format!("{} → {end}  {}", ctx.date(s.start), format_seconds(s.seconds))),
-            )
+            );
+            // The notes written during it, a line each, under it.
+            let said = s.description.lines().map(|l| entry("", Shown::Text(l.to_owned())));
+            std::iter::once(row).chain(said)
         })
         .collect();
     out.push(entry("Total", Shown::Text(format_seconds(log.total))));

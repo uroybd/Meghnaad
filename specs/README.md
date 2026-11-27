@@ -73,3 +73,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0038 | [`meghnaad --sync <line>`](0038-cli-sync.md) | done | 2 (UI) | terminal | Task b0cf7ad6 |
 | 0039 | [The Iter picker](0039-iter-picker.md) | done | both | all | Taskwarrior and Calendar (RRULE) modes; Iter type before Iter |
 | 0040 | [Iterative tasks on a kanban, and task commands on one](0040-iterative-kanban-moves.md) | done | both | all | Moves and task commands leave out status:, done clears the columns, +PENDING columns |
+| 0041 | [Tracked time in `meghnaad export` and in hooks](0041-time-tracking-in-export-and-hooks.md) | done | 2 (UI), hooks API | all | Task f109d79f; `time_tracking` (sessions with descriptions), `--rich`, `--include-time-tracking` |

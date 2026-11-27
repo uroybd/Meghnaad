@@ -206,13 +206,18 @@ impl Engine {
     /// One command: the answer as JSON text (`{ error }` if the request is not one).
     pub async fn run(&mut self, request: &str) -> String {
         // The hooks of the script on the Worker (none if it defines none).
-        let (hooks, base, dateformat) = (self.hooks.clone(), self.base.clone(), self.dateformat());
+        let (hooks, base, dateformat, journal) = (
+            self.hooks.clone(),
+            self.base.clone(),
+            self.dateformat(),
+            self.cfg.journal(),
+        );
         request::run(
             &mut self.replica,
             &self.cfg,
             &self.warm,
             &mut self.undo,
-            move |clock| remote_hooks(hooks, base, clock, dateformat),
+            move |clock| remote_hooks(hooks, base, clock, dateformat, journal),
             request,
         )
         .await
@@ -221,12 +226,17 @@ impl Engine {
     /// A file of tasks as `task export` writes it, imported (or, without `apply`, only reported on): the answer as
     /// JSON text.
     pub async fn import(&mut self, text: &str, apply: bool, tz: i32, now: f64) -> String {
-        let (hooks, base, dateformat) = (self.hooks.clone(), self.base.clone(), self.dateformat());
+        let (hooks, base, dateformat, journal) = (
+            self.hooks.clone(),
+            self.base.clone(),
+            self.dateformat(),
+            self.cfg.journal(),
+        );
         request::import(
             &mut self.replica,
             &self.cfg,
             &mut self.undo,
-            move |clock| remote_hooks(hooks, base, clock, dateformat),
+            move |clock| remote_hooks(hooks, base, clock, dateformat, journal),
             (text, apply, tz, now),
         )
         .await
@@ -239,6 +249,7 @@ fn remote_hooks(
     base: String,
     clock: Clock,
     dateformat: Option<String>,
+    journal: Option<(String, String)>,
 ) -> Option<Arc<dyn HookHost>> {
     if defined.is_empty() {
         return None;
@@ -248,6 +259,7 @@ fn remote_hooks(
         defined.into_iter().collect(),
         clock,
         dateformat,
+        journal,
     )))
 }
 

@@ -239,8 +239,9 @@ impl Runner {
 }
 
 /// A task as a hook script is given it, as JSON: the plain table `lua/prelude.lua` expects. Dates are seconds since the
-/// epoch; UDAs are in `uda`; `blocked` and `blocking` are there to read.
-pub fn task_to_json(f: &Facts) -> serde_json::Value {
+/// epoch; UDAs are in `uda`; `blocked` and `blocking` are there to read, and so is `time_tracking`, worked out from the
+/// `journal.time` notes (`journal`, the taskrc's) as of `now` ([`Facts::time_tracking`]).
+pub fn task_to_json(f: &Facts, journal: Option<&(String, String)>, now: i64) -> serde_json::Value {
     serde_json::json!({
         "uuid": f.uuid.to_string(),
         "status": f.status,
@@ -268,6 +269,7 @@ pub fn task_to_json(f: &Facts) -> serde_json::Value {
         "iter_type": f.iter_type,
         "iter_count": f.iter_count,
         "uda": f.extra,
+        "time_tracking": f.time_tracking(journal, now, serde_json::Value::from),
     })
 }
 
@@ -601,7 +603,7 @@ mod tests {
     #[test]
     fn a_task_goes_to_a_script_and_comes_back_the_same() {
         let t = full_task();
-        let json = task_to_json(&t);
+        let json = task_to_json(&t, None, 0);
         assert_eq!(json["tags"], serde_json::json!(["a", "b"]));
         assert_eq!(json["uda"]["jira"], "ABC-1");
         assert_eq!(
@@ -614,7 +616,7 @@ mod tests {
     #[test]
     fn lua_cannot_tell_an_empty_list_from_an_empty_table_so_either_is_taken() {
         let t = task();
-        let mut json = task_to_json(&t);
+        let mut json = task_to_json(&t, None, 0);
         json["uda"] = serde_json::json!([]);
         json["tags"] = serde_json::json!({});
         json["depends"] = serde_json::json!({});
@@ -625,7 +627,7 @@ mod tests {
     #[test]
     fn what_a_script_changed_comes_out_as_changes_and_what_it_got_wrong_is_an_error() {
         let t = full_task();
-        let mut json = task_to_json(&t);
+        let mut json = task_to_json(&t, None, 0);
         json["tags"] = serde_json::json!(["a", "c"]);
         json["due"] = serde_json::json!(99);
         json["project"] = serde_json::Value::Null;
@@ -654,7 +656,7 @@ mod tests {
                 "task.depends: nope is not a task id.",
             ),
         ] {
-            let mut bad = task_to_json(&t);
+            let mut bad = task_to_json(&t, None, 0);
             bad[field] = value;
             assert_eq!(task_from_json(&bad, &t), Err(message.to_owned()), "{field}");
         }

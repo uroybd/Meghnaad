@@ -70,6 +70,10 @@ Taskwarrior's does). The dialog shows the command line it ran, then asks how the
   `json.array` says, and you can change it for this file.
 - **Fields**: all of them, only the table's columns (`due.relative` is `due`), or the ones you tick.
 
+Each task in the file also has its tracked time, `time_tracking`: the sessions of its time log, each with when it began
+and ended, how long it was in seconds and the notes written during it, and their total (`0` when nothing is tracked).
+It is one of the fields to tick, and in CSV and TSV its cell is the total in seconds ([details](../terminal.md#tracked-time-in-an-export)).
+
 CSV and TSV have a header of the fields; tags and dependencies are separated by spaces, and annotations by their text,
 with `; ` between them. Dates are written `2026-11-19 18:00:00`, in UTC, which a spreadsheet reads as a date in any
 locale. CSV keeps a value's line breaks inside quotes (a spreadsheet shows them in one cell); TSV writes a tab, line

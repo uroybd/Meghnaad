@@ -23,7 +23,7 @@ describe('the Export button, through the engine', () => {
   });
 
   it('shapes the file', () => {
-    expect(exportFields(TEXT)).toEqual(['id', 'description', 'tags', 'uuid']);
+    expect(exportFields(TEXT)).toEqual(['id', 'description', 'tags', 'uuid', 'time_tracking']);
     expect(tableFields(['id', 'due.relative'])).toEqual(['id', 'due']);
     const csv = renderExport(
       { name: 'tasks-next-20261116-010203.json', text: TEXT },
@@ -42,7 +42,8 @@ describe('the Export button, through the engine', () => {
       [],
       cfg,
     );
-    expect(same.text).toBe(TEXT);
+    // Every field: what `export` wrote, each task with its tracked time after its own fields.
+    expect(same.text).toBe(TEXT.replace('"u1"}', '"u1","time_tracking":{"total":0,"sessions":[]}}'));
   });
 
   it('writes TSV, a task to a line, and dates a spreadsheet reads, in UTC', () => {
@@ -50,10 +51,10 @@ describe('the Export button, through the engine', () => {
     const choice: ExportChoice = { format: 'tsv', array: null, fields: 'all', picked: [] };
     expect(renderExport({ name: 'tasks.json', text }, choice, [], cfg)).toEqual({
       name: 'tasks.tsv',
-      text: 'description\tdue\tuuid\ntwo\\nlines\t2026-11-19 18:00:00\tu1\n',
+      text: 'description\tdue\tuuid\ttime_tracking\ntwo\\nlines\t2026-11-19 18:00:00\tu1\t0\n',
       mime: 'text/tab-separated-values',
     });
     const csv = renderExport({ name: 'tasks.json', text }, { ...choice, format: 'csv' }, [], cfg);
-    expect(csv.text).toBe('description,due,uuid\r\n"two\nlines",2026-11-19 18:00:00,u1\r\n');
+    expect(csv.text).toBe('description,due,uuid,time_tracking\r\n"two\nlines",2026-11-19 18:00:00,u1,0\r\n');
   });
 });

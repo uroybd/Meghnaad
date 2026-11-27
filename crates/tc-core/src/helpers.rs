@@ -556,9 +556,14 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<crate::taskrc::Config>(1)?,
             a.opt::<String>(2)?.as_deref()
         )),
-        "export_fields" => json!(crate::table_export::fields_of(&crate::table_export::parse(
-            &a.req::<String>(0)?
-        )?)),
+        // Every task gets `time_tracking`, so it is one of the fields whatever the journal says.
+        "export_fields" => json!(crate::table_export::fields_of(
+            &crate::table_export::with_time_tracking(
+                crate::table_export::parse(&a.req::<String>(0)?)?,
+                &crate::taskrc::Config::default(),
+                0
+            )
+        )),
         "json_array" => json!(a.req::<crate::taskrc::Config>(0)?.json_array()),
         "table_fields" => json!(crate::table_export::table_fields(&a.req::<Vec<String>>(0)?)),
         "export_file" => json!(crate::table_export::render(
@@ -566,7 +571,7 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
             &a.req::<String>(1)?,
             &a.req::<crate::table_export::Choice>(2)?,
             &a.req::<Vec<String>>(3)?,
-            &a.req::<crate::taskrc::Config>(4)?
+            (&a.req::<crate::taskrc::Config>(4)?, a.req::<i64>(5)?)
         )?),
         "board_place" => json!(crate::board::layout::place(
             &a.req::<Vec<Cell>>(0)?,
@@ -732,12 +737,12 @@ mod tests {
         let markers = r#"{ "start": "Started task", "stop": "Stopped task" }"#;
         let log: serde_json::Value =
             serde_json::from_str(&call("time_log", &format!("[{task}, {markers}, 1000]"))).unwrap();
-        // 100 to 400; the second stop closes nothing; the running one from its start note at 800.
+        // 100 to 400, with the note written during it; the second stop closes nothing; the running one from its start note at 800.
         assert_eq!(
             log,
             serde_json::json!({ "sessions": [
-                { "start": 100, "end": 400, "seconds": 300 },
-                { "start": 800, "end": null, "seconds": 200 } ], "total": 500 })
+                { "start": 100, "end": 400, "seconds": 300, "description": "mine" },
+                { "start": 800, "end": null, "seconds": 200, "description": "" } ], "total": 500 })
         );
         // journal.time off: no log.
         let off: serde_json::Value = serde_json::from_str(&call("time_log", &format!("[{task}, null, 1000]"))).unwrap();

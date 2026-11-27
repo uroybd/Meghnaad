@@ -200,7 +200,7 @@ pub fn run(hook: Hook, inv: &Invocation, stdin: &str, now: i64, tz_offset: i32) 
     if !runner.defined().contains(&hook.function()) {
         return finish(hook, Vec::new(), unchanged(&tasks));
     }
-    match handle(hook, inv, &tasks, &runner, &cfg) {
+    match handle(hook, inv, &tasks, &runner, (&cfg, now)) {
         Ok((lines, task)) => finish(hook, feedback(&lines), task),
         Err(failed) => {
             let mut out = feedback(&failed.lines);
@@ -233,7 +233,14 @@ fn refuse(hook: Hook, message: &str) -> Outcome {
 
 type Done = (Vec<Line>, Option<String>);
 
-fn handle(hook: Hook, inv: &Invocation, tasks: &[&str], runner: &LuaRunner, cfg: &Config) -> Result<Done, Failed> {
+/// `cfg` is the taskrc `task` named, `now` the time the hook runs at (for a running session's `time_tracking`).
+fn handle(
+    hook: Hook,
+    inv: &Invocation,
+    tasks: &[&str],
+    runner: &LuaRunner,
+    (cfg, now): (&Config, i64),
+) -> Result<Done, Failed> {
     match hook {
         Hook::Launch => {
             let called = call(runner, hook, &[Value::String(inv.command.clone())])?;
@@ -242,7 +249,7 @@ fn handle(hook: Hook, inv: &Invocation, tasks: &[&str], runner: &LuaRunner, cfg:
         Hook::Add => {
             let sent = parse(tasks.first())?;
             let before = facts_of(&sent, cfg).map_err(fail)?;
-            let called = call(runner, hook, &[table_of(&before)])?;
+            let called = call(runner, hook, &[table_of(&before, cfg, now)])?;
             let task = returned(&sent, &before, &called, cfg)?;
             Ok((called.lines, Some(task)))
         }
@@ -250,7 +257,7 @@ fn handle(hook: Hook, inv: &Invocation, tasks: &[&str], runner: &LuaRunner, cfg:
             let old = facts_of(&parse(tasks.first())?, cfg).map_err(fail)?;
             let sent = parse(tasks.get(1))?;
             let new = facts_of(&sent, cfg).map_err(fail)?;
-            let called = call(runner, hook, &[table_of(&old), table_of(&new)])?;
+            let called = call(runner, hook, &[table_of(&old, cfg, now), table_of(&new, cfg, now)])?;
             let task = returned(&sent, &new, &called, cfg)?;
             Ok((called.lines, Some(task)))
         }
@@ -260,7 +267,7 @@ fn handle(hook: Hook, inv: &Invocation, tasks: &[&str], runner: &LuaRunner, cfg:
                 .map(|t| {
                     parse(Some(t))
                         .and_then(|v| facts_of(&v, cfg).map_err(fail))
-                        .map(|f| table_of(&f))
+                        .map(|f| table_of(&f, cfg, now))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let called = call(runner, hook, &[Value::Array(changed)])?;

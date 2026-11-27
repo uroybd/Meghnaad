@@ -60,6 +60,13 @@ pub fn iso(epoch: i64) -> String {
         .unwrap_or_default()
 }
 
+/// The epoch of a date as `export` writes it (`20261009T120000Z`); `None` for anything else.
+pub fn from_iso(text: &str) -> Option<i64> {
+    taskchampion::chrono::NaiveDateTime::parse_from_str(text, "%Y%m%dT%H%M%SZ")
+        .ok()
+        .map(|d| d.and_utc().timestamp())
+}
+
 /// A number the way C++'s `ostream << float` prints it (`%g`, six significant digits): `12.5371`,
 /// `2.7`, `1e+06`.
 pub fn g6(x: f64) -> String {

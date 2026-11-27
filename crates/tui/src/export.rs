@@ -1,7 +1,8 @@
 //! `meghnaad export`: `task export` from a shell, with the Export dialog's choices as options. With none of them, it is
 //! `task <words> export` exactly: its output, its messages and its exit status. With them, what `export` wrote is
 //! reshaped by the engine's `tc_core::table_export`, as the dialog's file is: JSON with fewer fields or the other
-//! shape, CSV, or TSV for `cut`, `awk` and `xargs`. Like `task export`, it never applies the context.
+//! shape, CSV, or TSV for `cut`, `awk` and `xargs`, each task with its tracked time (`time_tracking`, spec 0041). Like
+//! `task export`, it never applies the context.
 
 use crate::task::Task;
 use std::io::{self, Write};
@@ -12,16 +13,23 @@ pub const HELP: &str = "meghnaad export: task export, with the Export dialog's c
 
 Usage: meghnaad export [options] [--] [filter and rc. words]
 
-With no options it is `task <words> export`, exactly. Options come first; the first word
-that is not one (or `--`) starts task's words.
+With no options it is `task <words> export`, exactly. With any, each task also has its
+tracked time, `time_tracking`. Options come first; the first word that is not one (or `--`)
+starts task's words.
 
+      --rich                    our export with nothing else changed: task's, plus time_tracking
   -f, --format json|csv|tsv     the output (json)
   -F, --fields all|table|a,b,c  every field, the report's columns (needs -r), or these, in order
+      --include-time-tracking   time_tracking as well as the fields -F chose
   -r, --report NAME             task <filter> export NAME: the report's filter and sort
   -a, --array / -A, --no-array  JSON: a list, or a task to a line (as json.array says)
   -H, --no-header               CSV and TSV: no header line
   -0, --null                    TSV: end each task with NUL instead of a newline (xargs -0)
   -h, --help                    this
+
+time_tracking is {\"total\": seconds, \"sessions\": [{\"start\", \"end\", \"duration\"}]}, from the
+journal.time notes as the Time log pairs them: dates as task writes them, durations in
+seconds, end null while running. Untracked is a total of 0. In CSV and TSV it is the total.
 
 CSV and TSV write dates as YYYY-MM-DD HH:MM:SS, in UTC. TSV escapes tab, newline, carriage
 return and backslash as \\t \\n \\r \\\\ (printf '%b' undoes it), so a line is a task.
@@ -45,7 +53,9 @@ pub struct Options {
     pub header: bool,
     pub null: bool,
     pub help: bool,
-    /// Whether any option was given: none, and the export is `task`'s own.
+    /// `time_tracking` as well as the fields `-F` chose.
+    pub time_tracking: bool,
+    /// Whether any option was given (`--rich` is one that changes nothing else): none, and the export is `task`'s own.
     pub any: bool,
     pub words: Vec<String>,
 }
@@ -60,6 +70,7 @@ impl Default for Options {
             header: true,
             null: false,
             help: false,
+            time_tracking: false,
             any: false,
             words: Vec::new(),
         }
@@ -125,6 +136,8 @@ pub fn parse(args: &[String]) -> Result<Options, String> {
             "-H" | "--no-header" => o.header = false,
             "-0" | "--null" => o.null = true,
             "-h" | "--help" => o.help = true,
+            "--rich" => {}
+            "--include-time-tracking" => o.time_tracking = true,
             _ if name.starts_with("--") => return Err(format!("{name} is not an option of meghnaad export")),
             _ => break,
         }
@@ -155,15 +168,15 @@ pub fn line(o: &Options) -> Vec<String> {
     line
 }
 
-/// What `export` wrote (`text`), shaped as `o` asks, with `cfg` for `json.array`, the report's columns and which
-/// fields are dates.
+/// What `export` wrote (`text`), shaped as `o` asks, each task with its `time_tracking` as of `now`, with `cfg` for
+/// `json.array`, the report's columns, which fields are dates and the `journal.time` notes.
 ///
 /// # Errors
 ///
 /// `text` is not what `export` writes.
-pub fn shape(o: &Options, text: &str, cfg: &Config) -> Result<String, String> {
-    let tasks = table_export::parse(text)?;
-    let fields = match &o.fields {
+pub fn shape(o: &Options, text: &str, cfg: &Config, now: i64) -> Result<String, String> {
+    let tasks = table_export::with_time_tracking(table_export::parse(text)?, cfg, now);
+    let mut fields = match &o.fields {
         Fields::All => table_export::fields_of(&tasks),
         Fields::These(f) => f.clone(),
         Fields::Table => {
@@ -176,6 +189,9 @@ pub fn shape(o: &Options, text: &str, cfg: &Config) -> Result<String, String> {
             table_export::table_fields(&columns)
         }
     };
+    if o.time_tracking && !fields.iter().any(|f| f == table_export::TIME_TRACKING) {
+        fields.push(table_export::TIME_TRACKING.to_owned());
+    }
     Ok(match o.format {
         Format::Csv => {
             let csv = table_export::to_csv(&tasks, &fields, cfg);
@@ -189,10 +205,9 @@ pub fn shape(o: &Options, text: &str, cfg: &Config) -> Result<String, String> {
         }
         Format::Tsv => table_export::to_tsv(&tasks, &fields, cfg, o.header, if o.null { '\0' } else { '\n' }),
         Format::Json => {
-            let as_rc = cfg.json_array();
-            let array = o.array.unwrap_or(as_rc);
-            if o.fields == Fields::All && array == as_rc {
-                text.to_owned()
+            let array = o.array.unwrap_or_else(|| cfg.json_array());
+            if o.fields == Fields::All {
+                table_export::to_json_all(text, &tasks, array)
             } else {
                 table_export::to_json(&tasks, &fields, array)
             }
@@ -255,7 +270,8 @@ pub fn run(task: &Task, args: &[String]) -> io::Result<i32> {
         io::stdout().write_all(&out.stdout)?;
         return Ok(out.status.code().unwrap_or(1));
     }
-    let shaped = settings(task, &o.words).and_then(|cfg| shape(&o, &String::from_utf8_lossy(&out.stdout), &cfg));
+    let now = crate::app::now();
+    let shaped = settings(task, &o.words).and_then(|cfg| shape(&o, &String::from_utf8_lossy(&out.stdout), &cfg, now));
     match shaped {
         Ok(text) => {
             io::stdout().write_all(text.as_bytes())?;
@@ -288,6 +304,15 @@ mod tests {
         assert!(!o.any);
         assert_eq!(w, args("project:work rc.json.array=off"));
         assert_eq!(line(&o), args("project:work rc.json.array=off export"));
+    }
+
+    #[test]
+    fn rich_is_an_option_that_changes_nothing_else() {
+        let (o, w) = words("--rich project:work").unwrap();
+        assert!(o.any && !o.time_tracking && o.fields == Fields::All && o.format == Format::Json);
+        assert_eq!(w, args("project:work"));
+        let (o, _) = words("--include-time-tracking -F table -r next").unwrap();
+        assert!(o.any && o.time_tracking);
     }
 
     #[test]
@@ -329,22 +354,41 @@ mod tests {
     fn the_export_is_shaped_as_asked() {
         let cfg = taskrc::parse("report.mine.columns=id,due.relative\n").config;
         let opts = |line: &str| parse(&args(line)).unwrap();
-        assert_eq!(shape(&opts("-a"), TEXT, &cfg).unwrap(), TEXT);
+        let none = ",\"time_tracking\":{\"total\":0,\"sessions\":[]}}";
+        let rich = TEXT
+            .replace("\"u1\"}", &format!("\"u1\"{none}"))
+            .replace("\"u2\"}", &format!("\"u2\"{none}"));
+        assert_eq!(shape(&opts("-a"), TEXT, &cfg, 0).unwrap(), rich);
+        assert_eq!(shape(&opts("--rich"), TEXT, &cfg, 0).unwrap(), rich);
         assert_eq!(
-            shape(&opts("-F uuid,id -A"), TEXT, &cfg).unwrap(),
+            shape(&opts("-F uuid --include-time-tracking -A"), TEXT, &cfg, 0).unwrap(),
+            format!("{{\"uuid\":\"u1\"{none}\n{{\"uuid\":\"u2\"{none}\n")
+        );
+        assert_eq!(
+            shape(
+                &opts("-f tsv -F table -r mine --include-time-tracking -H"),
+                TEXT,
+                &cfg,
+                0
+            )
+            .unwrap(),
+            "1\t2026-11-19 18:00:00\t0\n2\t\t0\n"
+        );
+        assert_eq!(
+            shape(&opts("-F uuid,id -A"), TEXT, &cfg, 0).unwrap(),
             "{\"uuid\":\"u1\",\"id\":1}\n{\"uuid\":\"u2\",\"id\":2}\n"
         );
         assert_eq!(
-            shape(&opts("-f tsv -F table -r mine"), TEXT, &cfg).unwrap(),
+            shape(&opts("-f tsv -F table -r mine"), TEXT, &cfg, 0).unwrap(),
             "id\tdue\n1\t2026-11-19 18:00:00\n2\t\n"
         );
-        assert_eq!(shape(&opts("-f tsv -F uuid -H -0"), TEXT, &cfg).unwrap(), "u1\0u2\0");
+        assert_eq!(shape(&opts("-f tsv -F uuid -H -0"), TEXT, &cfg, 0).unwrap(), "u1\0u2\0");
         assert_eq!(
-            shape(&opts("-f tsv -F description -H"), TEXT, &cfg).unwrap(),
+            shape(&opts("-f tsv -F description -H"), TEXT, &cfg, 0).unwrap(),
             "a\\tb\nc\n"
         );
         assert_eq!(
-            shape(&opts("-f csv -F id,due -H"), TEXT, &cfg).unwrap(),
+            shape(&opts("-f csv -F id,due -H"), TEXT, &cfg, 0).unwrap(),
             "1,2026-11-19 18:00:00\r\n2,\r\n"
         );
     }

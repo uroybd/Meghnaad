@@ -55,6 +55,20 @@ changed, and trying is an error. Completing an [iterative task](iterative.md) ru
 still set; no hook runs for the next one it makes, as in `task`. The change joins
 the command's undo step, and a refused command saves nothing. In `on_modify`, `old` is read-only.
 
+**Tracked time** is `task.time_tracking`, the sessions of the task's [time log](time-tracking.md), to read:
+`total` (a duration) and `sessions`, a list of `{ start, finish, duration, description }`, where `start` and `finish`
+are dates (`finish` is `nil` for the running session, since `end` is a Lua keyword), `duration` a duration and
+`description` the annotations written during the session, one to a line. A task with nothing tracked, or any task while
+`journal.time` is off, has a zero `total` and no sessions. In `on_modify`, `new.time_tracking` already counts the
+change (a `start` or a `stop`). Setting it is an error.
+
+```lua
+-- Keep a `spent` UDA in hours, from the time log.
+function on_modify(old, new)
+  new.spent = string.format("%.1f", new.time_tracking.total:in_hours())
+end
+```
+
 **Tags** (and `task.depends`, a set of task ids as text) are a set: `task.tags:has("work")`, `:add("a", "b")`,
 `:remove("x")`, `:has_any("a", "b")`, `:has_all(…)`, `:list()`, `#task.tags`, and `for t in task.tags:each() do … end`.
 

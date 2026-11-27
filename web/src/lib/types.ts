@@ -110,6 +110,8 @@ export interface Session {
   start: number;
   end: number | null;
   seconds: number;
+  /** The notes written during it (between its start and stop notes), one to a line; empty when none. */
+  description: string;
 }
 
 export type ColumnKind =

@@ -189,8 +189,10 @@ describe('the time log', () => {
       props: { task: { ...task('77777777-7777-7777-7777-777777777777'), annotations: notes } },
     });
     await settle();
-    const rows = document.querySelectorAll('[data-testid="sessions"] tbody tr');
+    const rows = document.querySelectorAll('[data-testid="sessions"] tbody tr:not(.said)');
     expect(rows.length).toBe(1);
+    // The note written during the session, under it.
+    expect(document.querySelector('[data-testid="sessions"] tr.said')?.textContent?.trim()).toBe('mine');
     expect(document.querySelector('[data-testid="sessions-total"]')?.textContent).toBe('1h 0m');
   });
 });

@@ -104,6 +104,7 @@ impl ExportBox {
             array: Some(self.array),
             fields: self.fields,
             picked: self.picked.clone(),
+            time_tracking: false,
         }
     }
 
@@ -149,7 +150,7 @@ impl ExportBox {
     /// Nothing was exported, or what was is not `export`'s.
     pub fn file(&self, cfg: &tc_core::taskrc::Config) -> Result<table_export::File, String> {
         let text = self.text.as_ref().map_err(Clone::clone)?;
-        table_export::render(&self.name, text, &self.choice(), &self.columns, cfg)
+        table_export::render(&self.name, text, &self.choice(), &self.columns, (cfg, super::now()))
     }
 }
 
@@ -196,7 +197,12 @@ impl App {
             .ok()
             .and_then(|t| table_export::parse(t).ok())
             .unwrap_or_default();
-        let available = table_export::fields_of(&tasks);
+        // Each task gets its `time_tracking` in the file, so it is one of the fields to tick.
+        let available = table_export::fields_of(&table_export::with_time_tracking(
+            tasks.clone(),
+            &self.cfg,
+            super::now(),
+        ));
         let (report, filter) = match line.iter().position(|w| w == "export") {
             Some(at) => (line.get(at + 1).map(String::as_str), line.get(..at).unwrap_or_default()),
             None => (None, &line[..]),
@@ -415,7 +421,10 @@ mod tests {
         assert_eq!(b.path, "tasks-next-20261116-010203.tsv");
         let f = b.file(&tc_core::taskrc::Config::default()).unwrap();
         assert_eq!(f.name, "tasks-next-20261116-010203.tsv");
-        assert_eq!(f.text, "id\tdescription\tdue\tuuid\n1\ta\t2026-11-19 18:00:00\tu1\n");
+        assert_eq!(
+            f.text,
+            "id\tdescription\tdue\tuuid\ttime_tracking\n1\ta\t2026-11-19 18:00:00\tu1\t0\n"
+        );
         // A path typed by hand stays as it is.
         b.path = "out.txt".into();
         b.sel = 1;

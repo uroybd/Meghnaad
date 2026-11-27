@@ -107,6 +107,47 @@ impl Task {
     }
 }
 
+/// The field a task's tracked time is in (spec 0041): `{ total, sessions: [{ start, end, duration }] }`, put after
+/// Taskwarrior's own by [`with_time_tracking`]. `export` itself has no such field.
+pub const TIME_TRACKING: &str = "time_tracking";
+
+/// A task's `time_tracking`, as the info's Time log works it out: the `journal.time` notes in its annotations (the
+/// taskrc's texts) and its `start`, as of `now`. Dates as `export` writes them, durations in seconds.
+fn time_tracking_of(t: &Task, cfg: &Config, now: i64) -> Value {
+    let date = |v: Option<&Value>| v.and_then(Value::as_str).and_then(crate::export::from_iso);
+    let facts = crate::model::Facts {
+        annotations: t
+            .get("annotations")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|n| {
+                Some(crate::model::Note {
+                    entry: date(n.get("entry"))?,
+                    text: n.get("description").and_then(Value::as_str)?.to_owned(),
+                })
+            })
+            .collect(),
+        start: date(t.get("start")),
+        ..crate::model::Facts::default()
+    };
+    facts.time_tracking(cfg.journal().as_ref(), now, |e| Value::String(crate::export::iso(e)))
+}
+
+/// Each task with its `time_tracking` ([`TIME_TRACKING`]) after its own fields, as of `now`: every task has one, a
+/// zero total when nothing is tracked.
+pub fn with_time_tracking(tasks: Vec<Task>, cfg: &Config, now: i64) -> Vec<Task> {
+    tasks
+        .into_iter()
+        .map(|mut t| {
+            let v = time_tracking_of(&t, cfg, now);
+            t.0.retain(|(k, _)| k != TIME_TRACKING);
+            t.0.push((TIME_TRACKING.to_owned(), v));
+            t
+        })
+        .collect()
+}
+
 /// The tasks in what `export` wrote, either way `json.array` has it.
 pub fn parse(text: &str) -> Result<Vec<Task>, String> {
     let t = text.trim();
@@ -177,11 +218,13 @@ pub struct Choice {
     pub fields: Fields,
     /// The fields picked, for `custom`.
     pub picked: Vec<String>,
+    /// `time_tracking` as well as the fields chosen (`--include-time-tracking`).
+    pub time_tracking: bool,
 }
 
 /// The fields the file holds, in order.
 pub fn chosen_fields(choice: &Choice, available: &[String], columns: &[String]) -> Vec<String> {
-    match choice.fields {
+    let mut fields: Vec<String> = match choice.fields {
         Fields::All => available.to_vec(),
         Fields::Table => table_fields(columns),
         Fields::Custom => available
@@ -189,16 +232,80 @@ pub fn chosen_fields(choice: &Choice, available: &[String], columns: &[String]) 
             .filter(|f| choice.picked.contains(f))
             .cloned()
             .collect(),
+    };
+    if choice.time_tracking && !fields.iter().any(|f| f == TIME_TRACKING) {
+        fields.push(TIME_TRACKING.to_owned());
     }
+    fields
+}
+
+/// A field's value as JSON text: `time_tracking` with its keys in the order the spec gives them (`total`, then each
+/// session's `start`, `end`, `duration`, `description`), anything else as serde writes it.
+fn value_text(field: &str, v: &Value) -> String {
+    if field != TIME_TRACKING {
+        return v.to_string();
+    }
+    let at = |k: &str, o: &Value| o.get(k).cloned().unwrap_or(Value::Null);
+    let sessions: Vec<String> = v
+        .get("sessions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|s| {
+            format!(
+                "{{\"start\":{},\"end\":{},\"duration\":{},\"description\":{}}}",
+                at("start", s),
+                at("end", s),
+                at("duration", s),
+                at("description", s)
+            )
+        })
+        .collect();
+    format!("{{\"total\":{},\"sessions\":[{}]}}", at("total", v), sessions.join(","))
 }
 
 /// A task as one JSON object with only `fields`, in that order; one it lacks is left out, as `export` does.
 fn json_of(t: &Task, fields: &[String]) -> String {
     let parts: Vec<String> = fields
         .iter()
-        .filter_map(|f| t.get(f).map(|v| format!("{}:{v}", Value::String(f.clone()))))
+        .filter_map(|f| {
+            t.get(f)
+                .map(|v| format!("{}:{}", Value::String(f.clone()), value_text(f, v)))
+        })
         .collect();
     format!("{{{}}}", parts.join(","))
+}
+
+/// Every field: each task's line exactly as `export` wrote it (`text`, a task to a line either way `json.array` has
+/// it), with its `time_tracking` from `tasks` (as [`with_time_tracking`] made them) added at the end; shaped as a list
+/// or a task to a line. Tasks whose lines can't be told apart are written field by field instead.
+pub fn to_json_all(text: &str, tasks: &[Task], array: bool) -> String {
+    let own: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with('{'))
+        .map(|l| l.strip_suffix(',').unwrap_or(l))
+        .collect();
+    if own.len() != tasks.len() || !own.iter().all(|l| l.ends_with('}')) {
+        return to_json(tasks, &fields_of(tasks), array);
+    }
+    let lines: Vec<String> = own
+        .iter()
+        .zip(tasks)
+        .map(|(line, t)| {
+            let Some(v) = t.get(TIME_TRACKING) else {
+                return (*line).to_owned();
+            };
+            let body = line.get(1..line.len() - 1).unwrap_or_default().trim();
+            let tracked = format!("\"{TIME_TRACKING}\":{}", value_text(TIME_TRACKING, v));
+            if body.is_empty() {
+                format!("{{{tracked}}}")
+            } else {
+                format!("{{{body},{tracked}}}")
+            }
+        })
+        .collect();
+    crate::export::render(&lines, array)
 }
 
 /// Tasks as `export` writes them: a list one task to a line, or a task to a line.
@@ -253,9 +360,13 @@ fn sheet_date(s: &str) -> Option<String> {
     ))
 }
 
-/// A field of a task as a sheet (CSV or TSV) holds it: a date as a spreadsheet reads it, else as [`cell`] writes it.
+/// A field of a task as a sheet (CSV or TSV) holds it: a date as a spreadsheet reads it, `time_tracking` as its total
+/// in seconds, else as [`cell`] writes it.
 fn sheet_cell(t: &Task, field: &str, cfg: &Config) -> String {
     let v = t.get(field);
+    if field == TIME_TRACKING {
+        return cell(v.and_then(|v| v.get("total")));
+    }
     if is_date(field, cfg) {
         if let Some(d) = v.and_then(Value::as_str).and_then(sheet_date) {
             return d;
@@ -330,10 +441,16 @@ pub struct File {
 }
 
 /// The file for `choice` from what `export` wrote (`name`, `text`): the engine's name with the format's extension.
-/// `columns` are the table's column specs; `cfg` gives `json.array`. All fields, shaped as the taskrc says, is
-/// exactly what `export` wrote.
-pub fn render(name: &str, text: &str, choice: &Choice, columns: &[String], cfg: &Config) -> Result<File, String> {
-    let tasks = parse(text)?;
+/// `columns` are the table's column specs; `cfg` gives `json.array` and the `journal.time` notes, `now` the time a
+/// running session counts to. Each task has `time_tracking`, a field like the others.
+pub fn render(
+    name: &str,
+    text: &str,
+    choice: &Choice,
+    columns: &[String],
+    (cfg, now): (&Config, i64),
+) -> Result<File, String> {
+    let tasks = with_time_tracking(parse(text)?, cfg, now);
     let fields = chosen_fields(choice, &fields_of(&tasks), columns);
     let base = name.strip_suffix(".json").unwrap_or(name);
     match choice.format {
@@ -353,10 +470,9 @@ pub fn render(name: &str, text: &str, choice: &Choice, columns: &[String], cfg: 
         }
         Format::Json => {}
     }
-    let as_rc = cfg.json_array();
-    let array = choice.array.unwrap_or(as_rc);
-    let text = if choice.fields == Fields::All && array == as_rc {
-        text.to_owned()
+    let array = choice.array.unwrap_or_else(|| cfg.json_array());
+    let text = if choice.fields == Fields::All {
+        to_json_all(text, &tasks, array)
     } else {
         to_json(&tasks, &fields, array)
     };
@@ -433,18 +549,77 @@ mod tests {
     }
 
     #[test]
-    fn the_file_keeps_what_export_wrote_when_nothing_changes_it() {
+    fn the_file_is_what_export_wrote_with_each_tasks_time_tracking_after_its_own_fields() {
         let f = render(
             "tasks-next-20261116-010203.json",
             TEXT,
             &Choice::default(),
             &[],
-            &Config::default(),
+            (&Config::default(), 0),
         )
         .unwrap();
         assert_eq!(f.name, "tasks-next-20261116-010203.json");
-        assert_eq!(f.text, TEXT);
+        let none = ",\"time_tracking\":{\"total\":0,\"sessions\":[]}}";
+        assert_eq!(
+            f.text,
+            TEXT.replace("\"urgency\":2}", &format!("\"urgency\":2{none}"))
+                .replace("\"urgency\":1.5}", &format!("\"urgency\":1.5{none}"))
+        );
         assert_eq!(f.mime, "application/json");
+    }
+
+    /// Spec 0041: the sessions the Time log shows, dates as `export` writes them, durations in seconds, the running
+    /// one with a null `end`; a field like the others, and in a sheet its total.
+    #[test]
+    fn time_tracking_is_the_time_logs_sessions_and_a_field_like_the_others() {
+        // Started 09:00, stopped 09:30, started again 10:00 and still running at 10:15.
+        let text = "[\n{\"uuid\":\"u1\",\"start\":\"20261124T100000Z\",\"annotations\":[\
+            {\"entry\":\"20261124T090000Z\",\"description\":\"Started task\"},\
+            {\"entry\":\"20261124T093000Z\",\"description\":\"Stopped task\"},\
+            {\"entry\":\"20261124T100000Z\",\"description\":\"Started task\"}]},\n{\"uuid\":\"u2\"}\n]\n";
+        let on = rc("journal.time=on\n").config;
+        let now = crate::export::from_iso("20261124T101500Z").unwrap();
+        let tasks = with_time_tracking(parse(text).unwrap(), &on, now);
+        assert_eq!(
+            tasks[0].get(TIME_TRACKING).unwrap(),
+            &serde_json::json!({ "total": 2700, "sessions": [
+                { "start": "20261124T090000Z", "end": "20261124T093000Z", "duration": 1800, "description": "" },
+                { "start": "20261124T100000Z", "end": null, "duration": 900, "description": "" },
+            ]})
+        );
+        assert_eq!(
+            tasks[1].get(TIME_TRACKING).unwrap(),
+            &serde_json::json!({ "total": 0, "sessions": [] })
+        );
+        // The journal off: nothing is tracked.
+        let off = with_time_tracking(parse(text).unwrap(), &Config::default(), now);
+        assert_eq!(off[0].get(TIME_TRACKING).unwrap()["total"], 0);
+
+        // Chosen like any field, or added to the ones chosen.
+        let cols = w("uuid");
+        let table = Choice {
+            fields: Fields::Table,
+            ..Choice::default()
+        };
+        let all = fields_of(&tasks);
+        assert_eq!(chosen_fields(&table, &all, &cols), w("uuid"));
+        assert_eq!(
+            chosen_fields(
+                &Choice {
+                    time_tracking: true,
+                    ..table
+                },
+                &all,
+                &cols
+            ),
+            w("uuid time_tracking")
+        );
+        assert!(chosen_fields(&Choice::default(), &all, &cols).contains(&TIME_TRACKING.to_owned()));
+        // A sheet's cell is the total, in seconds.
+        assert_eq!(
+            to_tsv(&tasks, &w("uuid time_tracking"), &on, false, '\n'),
+            "u1\t2700\nu2\t0\n"
+        );
     }
 
     #[test]
@@ -453,7 +628,7 @@ mod tests {
             array: Some(false),
             ..Choice::default()
         };
-        let f = render("x.json", TEXT, &choice, &[], &Config::default()).unwrap();
+        let f = render("x.json", TEXT, &choice, &[], (&Config::default(), 0)).unwrap();
         let lines: Vec<&str> = f.text.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0].starts_with("{\"id\":1,\"description\":"), "{}", lines[0]);
@@ -467,10 +642,13 @@ mod tests {
                 ..Choice::default()
             },
             &[],
-            &off,
+            (&off, 0),
         )
         .unwrap();
-        assert_eq!(f.text, "[\n{\"id\":1}\n]\n");
+        assert_eq!(
+            f.text,
+            "[\n{\"id\":1,\"time_tracking\":{\"total\":0,\"sessions\":[]}}\n]\n"
+        );
         assert_eq!(parse("{\"id\":1}\n{\"id\":2}\n").unwrap().len(), 2);
         assert!(parse("").unwrap().is_empty());
     }
@@ -483,7 +661,7 @@ mod tests {
             fields: Fields::Table,
             ..Choice::default()
         };
-        let f = render("x.json", TEXT, &choice, &cols, &Config::default()).unwrap();
+        let f = render("x.json", TEXT, &choice, &cols, (&Config::default(), 0)).unwrap();
         assert!(
             f.text
                 .starts_with("[\n{\"id\":1,\"description\":\"Buy, \\\"milk\\\"\"},\n"),
@@ -518,7 +696,14 @@ mod tests {
             format: Format::Csv,
             ..Choice::default()
         };
-        let f = render("tasks-20261116-010203.json", TEXT, &choice, &[], &Config::default()).unwrap();
+        let f = render(
+            "tasks-20261116-010203.json",
+            TEXT,
+            &choice,
+            &[],
+            (&Config::default(), 0),
+        )
+        .unwrap();
         assert_eq!(
             (f.name.as_str(), f.mime.as_str()),
             ("tasks-20261116-010203.csv", "text/csv")
@@ -579,7 +764,14 @@ mod tests {
             format: Format::Tsv,
             ..Choice::default()
         };
-        let f = render("tasks-20261116-010203.json", TEXT, &choice, &[], &Config::default()).unwrap();
+        let f = render(
+            "tasks-20261116-010203.json",
+            TEXT,
+            &choice,
+            &[],
+            (&Config::default(), 0),
+        )
+        .unwrap();
         assert_eq!(
             (f.name.as_str(), f.mime.as_str()),
             ("tasks-20261116-010203.tsv", "text/tab-separated-values")

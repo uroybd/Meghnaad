@@ -15,12 +15,14 @@ pub struct Note {
     pub text: String,
 }
 
-/// One stretch of tracked work. `end` is `None` for the session that is still running.
+/// One stretch of tracked work. `end` is `None` for the session that is still running. `description` is the notes
+/// written during it (between its start and stop notes), one to a line; empty when there are none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Session {
     pub start: i64,
     pub end: Option<i64>,
     pub seconds: i64,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -220,13 +222,15 @@ impl Facts {
     }
 
     /// The work sessions recorded by `journal.time`: each start marker paired with the next stop
-    /// marker, plus the current one (no `end`) if the task is active right now.
+    /// marker, plus the current one (no `end`) if the task is active right now. A session's description is the other
+    /// notes written during it, in order, one to a line.
     pub fn sessions(&self, start_text: &str, stop_text: &str, now: i64) -> Vec<Session> {
         let mut notes: Vec<&Note> = self.annotations.iter().collect();
         notes.sort_by_key(|n| n.entry);
         let mut out = Vec::new();
         let mut began: Option<i64> = None;
-        for n in notes {
+        let mut said: Vec<&str> = Vec::new();
+        for n in &notes {
             if n.text == start_text {
                 // A second start while already started is ignored: the session began at the first.
                 began.get_or_insert(n.entry);
@@ -237,17 +241,33 @@ impl Facts {
                         start: b,
                         end: Some(n.entry),
                         seconds: (n.entry - b).max(0),
+                        description: said.join("\n"),
                     });
                 }
+                said.clear();
+            } else if began.is_some() {
+                said.push(&n.text);
             }
         }
         if let Some(s) = self.start {
-            // Active now; an earlier start marker (if any) says when this session really began.
+            // Active now; an earlier start marker (if any) says when this session really began, and the notes since
+            // then are what it has said so far.
             let b = began.unwrap_or(s);
+            let description = if began.is_some() {
+                said.join("\n")
+            } else {
+                let since: Vec<&str> = notes
+                    .iter()
+                    .filter(|n| n.entry >= b && n.text != start_text && n.text != stop_text)
+                    .map(|n| n.text.as_str())
+                    .collect();
+                since.join("\n")
+            };
             out.push(Session {
                 start: b,
                 end: None,
                 seconds: (now - b).max(0),
+                description,
             });
         }
         out
@@ -258,6 +278,32 @@ impl Facts {
     pub fn active_seconds(&self, start_text: &str, stop_text: &str, now: i64) -> Option<i64> {
         let s = self.sessions(start_text, stop_text, now);
         (!s.is_empty()).then(|| s.iter().map(|x| x.seconds).sum())
+    }
+
+    /// Its tracked time as hooks and `meghnaad export` hand it out (spec 0041): `{ total, sessions: [{ start, end,
+    /// duration, description }] }`, durations in seconds, each date written by `date` (a number for a hook, Taskwarrior's text for an
+    /// export), `end` null for the running session. Nothing tracked, or `journal` (`journal.time`) off, is a zero
+    /// total and no sessions, so totals add up over tasks without a check.
+    pub fn time_tracking(
+        &self,
+        journal: Option<&(String, String)>,
+        now: i64,
+        date: impl Fn(i64) -> serde_json::Value,
+    ) -> serde_json::Value {
+        let sessions = journal.map_or_else(Vec::new, |(start, stop)| self.sessions(start, stop, now));
+        let total: i64 = sessions.iter().map(|s| s.seconds).sum();
+        let sessions: Vec<serde_json::Value> = sessions
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "start": date(s.start),
+                    "end": s.end.map_or(serde_json::Value::Null, &date),
+                    "duration": s.seconds,
+                    "description": s.description,
+                })
+            })
+            .collect();
+        serde_json::json!({ "total": total, "sessions": sessions })
     }
 
     /// Properties on this task that the taskrc doesn't define as UDAs (e.g. a UDA that was
@@ -601,12 +647,14 @@ mod session_tests {
                 Session {
                     start: NOW,
                     end: Some(NOW + 600),
-                    seconds: 600
+                    seconds: 600,
+                    description: String::new(),
                 },
                 Session {
                     start: NOW + 1000,
                     end: Some(NOW + 1300),
-                    seconds: 300
+                    seconds: 300,
+                    description: String::new(),
                 },
             ]
         );
@@ -624,7 +672,8 @@ mod session_tests {
             Session {
                 start: NOW + 1000,
                 end: None,
-                seconds: 500
+                seconds: 500,
+                description: String::new(),
             }
         );
         assert_eq!(t.active_seconds(S, E, NOW + 1500), Some(1100));
@@ -639,7 +688,8 @@ mod session_tests {
             vec![Session {
                 start: NOW,
                 end: None,
-                seconds: 90
+                seconds: 90,
+                description: String::new(),
             }]
         );
     }
@@ -654,10 +704,37 @@ mod session_tests {
             vec![Session {
                 start: NOW + 5,
                 end: Some(NOW + 5),
-                seconds: 0
+                seconds: 0,
+                description: String::new(),
             }]
         );
         assert_eq!(t.active_seconds(S, E, NOW + 100), Some(0));
+    }
+
+    /// Spec 0041: what a session says is the notes written between its start and stop, one to a line; the running one's,
+    /// those since it started.
+    #[test]
+    fn a_sessions_description_is_the_notes_written_during_it() {
+        let mut t = task("x");
+        t.start = Some(NOW + 1000);
+        t.annotations = vec![
+            n(NOW - 5, "before any session"),
+            n(NOW, S),
+            n(NOW + 100, "wrote the tests"),
+            n(NOW + 200, "fixed the parser"),
+            n(NOW + 600, E),
+            n(NOW + 700, "between sessions"),
+            n(NOW + 1000, S),
+            n(NOW + 1100, "reviewing"),
+        ];
+        let s = t.sessions(S, E, NOW + 1500);
+        assert_eq!(s[0].description, "wrote the tests\nfixed the parser");
+        assert_eq!(s[1].description, "reviewing");
+        // Running with no start note: the notes since its start date.
+        let mut t = task("y");
+        t.start = Some(NOW);
+        t.annotations = vec![n(NOW - 1, "old"), n(NOW + 1, "new")];
+        assert_eq!(t.sessions(S, E, NOW + 10)[0].description, "new");
     }
 
     #[test]

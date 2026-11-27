@@ -321,17 +321,43 @@ local CORE = {
 for _, k in ipairs(DATES) do CORE[k] = true end
 for _, k in ipairs(STRINGS) do CORE[k] = true end
 for alias in pairs(ALIAS) do CORE[alias] = true end
+CORE.time_tracking = true
+
+-- Each task's `time_tracking`, kept beside it rather than in it, so that setting it reaches `__newindex` and fails.
+local TRACKED = setmetatable({}, { __mode = "k" })
 
 Task.__index = function(t, key)
   local real = ALIAS[key]
   if real ~= nil then
     return rawget(t, real)
   end
+  if key == "time_tracking" then
+    return TRACKED[t]
+  end
   return Task[key]
 end
 
 Task.__newindex = function(t, key, value)
+  if key == "time_tracking" then
+    error("task.time_tracking can't be changed: it is worked out from the start and stop notes", 2)
+  end
   rawset(t, ALIAS[key] or key, value)
+end
+
+-- `time_tracking` as the engine sends it (seconds), as dates and durations: `{ total, sessions = { { start, finish,
+-- duration, description } } }`, `finish` nil for the running session (`end` is a Lua keyword), `description` the
+-- notes written during it, one to a line.
+local function tracked_of(raw)
+  local sessions = {}
+  for i, s in ipairs(raw and raw.sessions or {}) do
+    sessions[i] = {
+      start = new_date(s.start),
+      finish = s["end"] ~= nil and new_date(s["end"]) or nil,
+      duration = new_duration(s.duration),
+      description = s.description or "",
+    }
+  end
+  return { total = new_duration(raw and raw.total or 0), sessions = sessions }
 end
 
 --- Is the task in this project or one below it? `task:in_project("Work")` is true for `Work` and `Work.Mail`.
@@ -379,6 +405,7 @@ function Task.wrap(raw)
     if raw[k] ~= nil then rawset(t, k, new_date(raw[k])) end
   end
   for k, v in pairs(raw.uda or {}) do rawset(t, k, v) end
+  TRACKED[t] = tracked_of(raw.time_tracking)
   return t
 end
 

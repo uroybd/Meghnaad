@@ -798,6 +798,10 @@ fn table_to_json(t: &Table, depth: usize) -> Result<Json, String> {
 pub struct LuaHooks {
     runner: LuaRunner,
     defined: Vec<&'static str>,
+    /// The taskrc's `journal.time` notes, for a task's `time_tracking`; none while it is off.
+    journal: Option<(String, String)>,
+    /// The command's time, for the running session.
+    now: i64,
 }
 
 impl LuaHooks {
@@ -809,7 +813,23 @@ impl LuaHooks {
     pub fn load_with(source: &str, clock: Clock, net: Option<Rc<dyn Net>>) -> Result<LuaHooks, Problem> {
         let runner = LuaRunner::load_with(source, clock, net)?;
         let defined = runner.defined();
-        Ok(LuaHooks { runner, defined })
+        Ok(LuaHooks {
+            runner,
+            defined,
+            journal: None,
+            now: clock.now,
+        })
+    }
+
+    /// With the taskrc's `journal.time` notes (`Config::journal`), so a task's `time_tracking` has its sessions.
+    #[must_use]
+    pub fn with_journal(mut self, journal: Option<(String, String)>) -> LuaHooks {
+        self.journal = journal;
+        self
+    }
+
+    fn task(&self, f: &crate::model::Facts) -> Json {
+        crate::hooks::task_to_json(f, self.journal.as_ref(), self.now)
     }
 
     async fn call(
@@ -855,7 +875,7 @@ impl crate::hooks::HookHost for LuaHooks {
         h: &mut crate::hooks::Hooked,
         task: crate::model::Facts,
     ) -> Result<crate::model::Facts, crate::hooks::Reject> {
-        let value = self.call(h, "on_add", &[crate::hooks::task_to_json(&task)]).await?;
+        let value = self.call(h, "on_add", &[self.task(&task)]).await?;
         if value.is_null() {
             return Ok(task);
         }
@@ -868,13 +888,7 @@ impl crate::hooks::HookHost for LuaHooks {
         old: &crate::model::Facts,
         new: crate::model::Facts,
     ) -> Result<crate::model::Facts, crate::hooks::Reject> {
-        let value = self
-            .call(
-                h,
-                "on_modify",
-                &[crate::hooks::task_to_json(old), crate::hooks::task_to_json(&new)],
-            )
-            .await?;
+        let value = self.call(h, "on_modify", &[self.task(old), self.task(&new)]).await?;
         if value.is_null() {
             return Ok(new);
         }
@@ -882,7 +896,7 @@ impl crate::hooks::HookHost for LuaHooks {
     }
 
     async fn on_exit(&self, h: &mut crate::hooks::Hooked, changed: &[crate::model::Facts]) {
-        let tasks = Json::Array(changed.iter().map(crate::hooks::task_to_json).collect());
+        let tasks = Json::Array(changed.iter().map(|f| self.task(f)).collect());
         if let Err(message) = self.call(h, "on_exit", &[tasks]).await {
             // `on_exit` can only talk: a failure in it is said, not a reason to stop.
             h.warn(message);

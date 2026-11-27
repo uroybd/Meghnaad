@@ -314,7 +314,11 @@ async fn the_sandbox_has_no_files_no_process_no_loading_and_stops_a_loop() {
     let failed = runner
         .call(
             "on_add",
-            &[tc_core::hooks::task_to_json(&tc_core::model::Facts::default())],
+            &[tc_core::hooks::task_to_json(
+                &tc_core::model::Facts::default(),
+                None,
+                NOW,
+            )],
         )
         .await
         .unwrap_err();
@@ -360,7 +364,11 @@ async fn a_set_counts_lists_and_iterates_in_order() {
     let got = runner
         .call(
             "on_add",
-            &[tc_core::hooks::task_to_json(&tc_core::model::Facts::default())],
+            &[tc_core::hooks::task_to_json(
+                &tc_core::model::Facts::default(),
+                None,
+                NOW,
+            )],
         )
         .await
         .unwrap();
@@ -391,4 +399,76 @@ async fn hooks_see_an_iterative_task_and_not_the_next_one_it_makes() {
     run(&mut r, script, "add Fiddle iter:daily iter_type:fixed due:tomorrow").await;
     let (res, _) = run(&mut r, script, "Fiddle modify +x").await;
     assert!(message(&res).contains("iter_count"), "{}", message(&res));
+}
+
+/// Run `line` at `at` with `cfg`, the hooks seeing the same time and the taskrc's `journal.time` notes.
+#[allow(
+    clippy::arc_with_non_send_sync,
+    reason = "the engine runs on one thread; `Options.hooks` is an `Arc` for every kind of hook, and a Lua VM is not `Send`"
+)]
+async fn run_at(r: &mut R, cfg: &Config, script: &str, line: &str, at: i64) -> (CliResult, Vec<String>) {
+    let hooks = LuaHooks::load(script, Clock::utc(at))
+        .unwrap_or_else(|p| panic!("the script does not load: {p:?}"))
+        .with_journal(cfg.journal());
+    let mut undo = UndoStack::default();
+    let opts = Options {
+        confirmed: true,
+        hooks: Some(Arc::new(hooks)),
+        ..Options::default()
+    };
+    let done = execute(r, cfg, Clock::utc(at), &split_words(line), opts, &mut undo).await;
+    (done.result, done.feedback.into_iter().map(|l| l.text).collect())
+}
+
+/// Spec 0041: a hook reads a task's tracked time as the Time log has it, in dates and durations, and can't change it.
+#[tokio::test(flavor = "current_thread")]
+async fn a_hook_reads_the_tracked_time_as_dates_and_durations_and_cannot_change_it() {
+    let mut r = replica();
+    let cfg = tc_core::taskrc::parse("journal.time=on\n").config;
+    let none = "";
+    run_at(&mut r, &cfg, none, "add Work", NOW).await;
+    run_at(&mut r, &cfg, none, "1 start", NOW + 100).await;
+    run_at(&mut r, &cfg, none, "1 stop", NOW + 700).await;
+    run_at(&mut r, &cfg, none, "1 start", NOW + 1000).await;
+    let script = r#"
+        function on_modify(old, new)
+          local t = new.time_tracking
+          local a, b = t.sessions[1], t.sessions[2]
+          say(t.total:in_seconds(), #t.sessions, a.duration:in_seconds(), (a.finish - a.start):in_seconds(),
+              b.duration:in_seconds(), b.finish == nil, b.start == date("2026-10-12T10:16:40Z"), a.description == "",
+              b.description)
+        end
+    "#;
+    let (_, said) = run_at(&mut r, &cfg, script, "1 annotate x", NOW + 1300).await;
+    // The running session's description is the note this very command adds.
+    assert_eq!(said, ["900 2 600 600 300 true true true x"]);
+
+    // Read-only, as `uuid` is.
+    let (res, _) = run_at(
+        &mut r,
+        &cfg,
+        "function on_modify(old, new) new.time_tracking = nil end",
+        "1 annotate y",
+        NOW + 1400,
+    )
+    .await;
+    assert!(
+        message(&res).contains("task.time_tracking can't be changed"),
+        "{}",
+        message(&res)
+    );
+
+    // Nothing tracked, or the journal off: a zero total, so totals add up without a check.
+    let script = "function on_add(t) say(t.time_tracking.total:in_seconds(), #t.time_tracking.sessions) end";
+    let (_, said) = run_at(&mut r, &cfg, script, "add Fresh", NOW + 1500).await;
+    assert_eq!(said, ["0 0"]);
+    let (_, said) = run_at(
+        &mut r,
+        &Config::default(),
+        "function on_modify(o, n) say(n.time_tracking.total:in_seconds()) end",
+        "1 annotate z",
+        NOW + 1600,
+    )
+    .await;
+    assert_eq!(said, ["0"]);
 }

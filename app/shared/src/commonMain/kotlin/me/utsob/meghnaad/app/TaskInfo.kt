@@ -278,6 +278,8 @@ fun TaskInfo(store: Store, task: Row, onOpen: (String) -> Unit) {
                                     Pill("running", background = extras.ok.copy(alpha = 0.15f), color = extras.ok)
                                 }
                             }
+                            // The notes written during it, a line each.
+                            if (s.description.isNotEmpty()) Dim(s.description, size = 12)
                         }
                         Text(formatSeconds(s.seconds), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                     }

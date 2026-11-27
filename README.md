@@ -389,6 +389,7 @@ brew install uroybd/tap/meghnaad   # or a prebuilt from the release, or cargo in
 meghnaad
 meghnaad 3 fail                    # a line as the app's command line runs it: task commands, chains
 meghnaad export -f tsv -F id,due,description -r next   # task export for scripts: JSON, CSV or TSV
+meghnaad export --rich project:Work                    # task export, each task with its tracked time
 ```
 
 ![The terminal app on the Tasks page: the reports down the side, the next report in task's colours, and the page's keys along the bottom](docs/screenshots/terminal-tasks.png)

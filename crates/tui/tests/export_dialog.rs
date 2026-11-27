@@ -75,7 +75,7 @@ fn e_opens_the_dialog_and_it_saves_the_file_asking_before_it_replaces_one() {
     assert!(matches!(app.mode, Mode::Normal), "saved and closed");
     assert_eq!(
         std::fs::read_to_string(&out).unwrap(),
-        "id\tdescription\tdue\tuuid\n1\ttwo\\nlines\t2026-11-19 18:00:00\tu1\n"
+        "id\tdescription\tdue\tuuid\ttime_tracking\n1\ttwo\\nlines\t2026-11-19 18:00:00\tu1\t0\n"
     );
     assert!(app.status.starts_with("Exported 1 task to"), "{}", app.status);
     let kept: serde_json::Value =

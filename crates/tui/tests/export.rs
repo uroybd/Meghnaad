@@ -99,6 +99,43 @@ fn meghnaad_export_is_task_export_and_shapes_it_as_asked() {
     let nul = ours(&["-f", "tsv", "-F", "uuid", "-H", "-0"]).stdout;
     assert_eq!(nul.iter().filter(|b| **b == 0).count(), 2);
 
+    // Spec 0041: `--rich` is task's export with each task's `time_tracking` after its own fields; with the journal on, a
+    // start and a stop are a session. Without options it stays task's own (above).
+    let rc = std::fs::read_to_string(dir.join("rc")).unwrap();
+    std::fs::write(dir.join("rc"), format!("{rc}journal.time=on\n")).unwrap();
+    assert!(task(&["project:work", "start"]).status.success());
+    assert!(task(&["project:work", "stop"]).status.success());
+    let rich: Vec<serde_json::Value> = serde_json::from_slice(&ours(&["--rich", "rc.json.array=on"]).stdout).unwrap();
+    let plain: Vec<serde_json::Value> = serde_json::from_slice(&task(&["rc.json.array=on", "export"]).stdout).unwrap();
+    assert_eq!(rich.len(), plain.len());
+    for (r, p) in rich.iter().zip(&plain) {
+        let mut own = r.clone();
+        let tracked = own.as_object_mut().unwrap().remove("time_tracking").unwrap();
+        assert_eq!(&own, p, "the task's own fields are task's");
+        let sessions = tracked["sessions"].as_array().unwrap();
+        if p["project"] == "work" {
+            assert_eq!(sessions.len(), 1, "{tracked}");
+            assert!(sessions[0]["start"].as_str().unwrap().ends_with('Z') && sessions[0]["end"].is_string());
+            assert_eq!(tracked["total"], sessions[0]["duration"]);
+        } else {
+            assert_eq!(tracked, serde_json::json!({ "total": 0, "sessions": [] }));
+        }
+    }
+    let csv = String::from_utf8(
+        ours(&[
+            "-f",
+            "csv",
+            "-F",
+            "description",
+            "--include-time-tracking",
+            "-H",
+            "project:home",
+        ])
+        .stdout,
+    )
+    .unwrap();
+    assert_eq!(csv, "\"two\nlines\twith a tab\",0\r\n");
+
     // A mistake is said before task runs.
     let bad = ours(&["--fromat", "csv"]);
     assert_eq!(bad.status.code(), Some(2));

@@ -27,12 +27,16 @@ export const jsonArrayOf = (cfg: ConfigResponse['config'] | undefined): boolean 
 /** The fields a table shows, once each, in its order (`due.relative` is `due`). */
 export const tableFields = (columns: string[]): string[] => callHelper<string[]>('table_fields', columns);
 
-/** The file for `choice`: the engine's name with the format's extension, the text, its type. */
+/**
+ * The file for `choice`: the engine's name with the format's extension, the text, its type. Each task has its tracked
+ * time (`time_tracking`), a running session counted to `now` (seconds since 1970).
+ */
 export function renderExport(
   exported: { name: string; text: string },
   choice: ExportChoice,
   columns: string[],
   cfg: ConfigResponse['config'] | undefined,
+  now: number = Math.floor(Date.now() / 1000),
 ): { name: string; text: string; mime: string } {
-  return callHelper('export_file', exported.name, exported.text, choice, columns, cfg ?? {});
+  return callHelper('export_file', exported.name, exported.text, choice, columns, cfg ?? {}, now);
 }

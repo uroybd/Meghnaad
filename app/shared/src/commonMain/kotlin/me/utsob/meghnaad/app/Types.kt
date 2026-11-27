@@ -28,7 +28,8 @@ data class Resolved(
 )
 
 @Serializable
-data class Session(val start: Long, val end: Long? = null, val seconds: Long = 0)
+/** A stretch of tracked work; [description] is the notes written during it, one to a line (empty when none). */
+data class Session(val start: Long, val end: Long? = null, val seconds: Long = 0, val description: String = "")
 
 @Serializable
 data class Row(

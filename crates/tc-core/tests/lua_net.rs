@@ -106,11 +106,15 @@ fn runner(script: &str, net: Option<Rc<FakeNet>>) -> LuaRunner {
 }
 
 fn task() -> Value {
-    task_to_json(&Facts {
-        description: "Pay the invoice".into(),
-        status: "pending".into(),
-        ..Facts::default()
-    })
+    task_to_json(
+        &Facts {
+            description: "Pay the invoice".into(),
+            status: "pending".into(),
+            ..Facts::default()
+        },
+        None,
+        0,
+    )
 }
 
 #[tokio::test(flavor = "current_thread")]

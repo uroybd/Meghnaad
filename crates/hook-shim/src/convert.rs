@@ -151,9 +151,9 @@ pub fn facts_of(task: &Value, cfg: &Config) -> Result<Facts, String> {
     Ok(f)
 }
 
-/// The table the script is given for a task.
-pub fn table_of(f: &Facts) -> Value {
-    task_to_json(f)
+/// The table the script is given for a task: its `time_tracking` from the taskrc's `journal.time` notes, as of `now`.
+pub fn table_of(f: &Facts, cfg: &Config, now: i64) -> Value {
+    task_to_json(f, cfg.journal().as_ref(), now)
 }
 
 /// What the script returned for a task, checked against `before` as the engine checks a hook's (it may not change a
@@ -282,10 +282,38 @@ mod tests {
         assert!(!f.extra.contains_key("urgency") && !f.extra.contains_key("id"));
     }
 
+    /// Spec 0041: the script reads `time_tracking` as the engine's hooks do, from the taskrc `task` named.
+    #[test]
+    fn the_script_gets_the_tracked_time_from_the_taskrcs_journal() {
+        let mut t = sent();
+        t["annotations"] = json!([
+            { "entry": "20261027T100000Z", "description": "Started task" },
+            { "entry": "20261027T101500Z", "description": "landlord" },
+            { "entry": "20261027T103000Z", "description": "Stopped task" },
+        ]);
+        let on = tc_core::taskrc::parse("journal.time=on\n").config;
+        let f = facts_of(&t, &on).unwrap();
+        let start = f.annotations[0].entry;
+        assert_eq!(
+            table_of(&f, &on, 0)["time_tracking"],
+            json!({ "total": 1800, "sessions": [
+                { "start": start, "end": start + 1800, "duration": 1800, "description": "landlord" }
+            ]})
+        );
+        assert_eq!(
+            table_of(&f, &cfg(), 0)["time_tracking"],
+            json!({ "total": 0, "sessions": [] })
+        );
+        // A change to it is not one the task can take: the task goes back as it came.
+        let mut back = table_of(&f, &on, 0);
+        back["time_tracking"] = json!({ "total": 5 });
+        assert!(changes_of(&f, &back).unwrap().is_empty());
+    }
+
     #[test]
     fn nothing_changed_means_the_task_goes_back_as_it_came() {
         let f = facts_of(&sent(), &cfg()).unwrap();
-        let changes = changes_of(&f, &table_of(&f)).unwrap();
+        let changes = changes_of(&f, &table_of(&f, &cfg(), 0)).unwrap();
         assert!(changes.is_empty());
         assert_eq!(apply(sent(), &changes, &cfg()), sent());
     }
@@ -293,7 +321,7 @@ mod tests {
     #[test]
     fn what_a_script_changed_is_written_in_task_s_form() {
         let f = facts_of(&sent(), &cfg()).unwrap();
-        let mut t = table_of(&f);
+        let mut t = table_of(&f, &cfg(), 0);
         t["description"] = json!("Pay rent today");
         t["tags"] = json!(["money", "office"]);
         t["due"] = json!(1_793_577_600);
@@ -315,7 +343,7 @@ mod tests {
     #[test]
     fn removing_the_last_tag_or_dependency_leaves_no_empty_list() {
         let f = facts_of(&sent(), &cfg()).unwrap();
-        let mut t = table_of(&f);
+        let mut t = table_of(&f, &cfg(), 0);
         t["tags"] = json!([]);
         t["depends"] = json!([]);
         let out = apply(sent(), &changes_of(&f, &t).unwrap(), &cfg());
@@ -325,7 +353,7 @@ mod tests {
     #[test]
     fn a_script_may_not_change_what_a_hook_may_not() {
         let f = facts_of(&sent(), &cfg()).unwrap();
-        let mut t = table_of(&f);
+        let mut t = table_of(&f, &cfg(), 0);
         t["status"] = json!("completed");
         assert!(changes_of(&f, &t).unwrap_err().contains("status"));
     }

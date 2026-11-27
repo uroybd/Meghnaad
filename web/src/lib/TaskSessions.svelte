@@ -33,6 +33,9 @@
           </td>
           <td class="num mono">{formatSeconds(s.seconds)}</td>
         </tr>
+        {#if s.description}
+          <tr class="said"><td></td><td colspan="3">{s.description}</td></tr>
+        {/if}
       {/each}
     </tbody>
     <tfoot>
@@ -48,6 +51,12 @@
     display: flex;
     align-items: center;
     gap: 5px;
+  }
+  /* The notes written during a session, under its row, a line each. */
+  .sessions .said td {
+    white-space: pre-line;
+    color: var(--dim);
+    padding-top: 0;
   }
   .live {
     display: inline-flex;

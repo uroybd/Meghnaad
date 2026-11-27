@@ -510,7 +510,9 @@ its tables (a box asks which when there are several).
 ### `meghnaad export`, from a shell
 
 `meghnaad export` is `task export` for scripts, with the dialog's choices as options. With no options it is
-`task <words> export` exactly: the same output, messages and exit status, and, like `task export`, no context.
+`task <words> export` exactly: the same output, messages and exit status, and, like `task export`, no context. With any
+option, each task also has its tracked time, `time_tracking` ([below](#tracked-time-in-an-export)); `--rich` asks for
+that and changes nothing else.
 
 ```text
 meghnaad export [options] [--] [filter and rc. words]
@@ -518,8 +520,10 @@ meghnaad export [options] [--] [filter and rc. words]
 
 | Option | Does |
 | --- | --- |
+| `--rich` | `task`'s export with each task's `time_tracking` after its own fields, nothing else changed |
 | `-f`, `--format json\|csv\|tsv` | The output; JSON when left out |
 | `-F`, `--fields all\|table\|a,b,c` | Every field (the default), the report's columns (needs `-r`), or these, in this order |
+| `--include-time-tracking` | `time_tracking` as well as the fields `-F` chose |
 | `-r`, `--report NAME` | `task <filter> export NAME`: the report's filter and sort apply (`export` ignores its limit) |
 | `-a`, `--array` / `-A`, `--no-array` | JSON: a list, or one task to a line; as `json.array` says when left out |
 | `-H`, `--no-header` | CSV and TSV: no header line |
@@ -547,6 +551,34 @@ report, make one on the line (with an empty filter it exports the same tasks as 
 ```bash
 meghnaad export -f tsv -r next rc.report.next.sort=due+,priority- +work
 meghnaad export -f csv -r _x rc.report._x.columns=id rc.report._x.filter= rc.report._x.sort=entry- > tasks.csv
+```
+
+#### Tracked time in an export
+
+With `journal.time=on`, `start` and `stop` write notes that the info's **Time log** pairs into sessions
+([Time tracking](using/time-tracking.md)). `meghnaad export` with any option gives each task the same, as
+`time_tracking`, after `task`'s own fields:
+
+```json
+"time_tracking": {
+  "total": 2700,
+  "sessions": [
+    { "start": "20261124T090000Z", "end": "20261124T093000Z", "duration": 1800, "description": "wrote the tests" },
+    { "start": "20261124T100000Z", "end": null, "duration": 900, "description": "" }
+  ]
+}
+```
+
+Dates are written as `task export` writes them (UTC); `total` and `duration` are seconds. The running session is last,
+with `end` null and its duration counted to now. A session's `description` is the annotations written during it, one to
+a line. Every task has `time_tracking`: one with nothing tracked, or any task while `journal.time` is off, has
+`{ "total": 0, "sessions": [] }`, so totals add up without a check. It is a field like the others: `-F all` keeps it,
+`-F table` and a list leave it out unless they name it or `--include-time-tracking` is given, and in CSV and TSV its cell
+is the total in seconds.
+
+```bash
+meghnaad export --rich project:Work | jq '[.[].time_tracking.total] | add / 3600'   # hours on Work
+meghnaad export -f tsv -F description --include-time-tracking -H project:Work
 ```
 
 ## The Settings page

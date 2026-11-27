@@ -18,16 +18,29 @@ pub struct RemoteHooks {
     defined: BTreeSet<String>,
     clock: Clock,
     dateformat: Option<String>,
+    /// The taskrc's `journal.time` notes, for a task's `time_tracking`; none while it is off.
+    journal: Option<(String, String)>,
 }
 
 impl RemoteHooks {
-    pub fn new(base: String, defined: BTreeSet<String>, clock: Clock, dateformat: Option<String>) -> Self {
+    pub fn new(
+        base: String,
+        defined: BTreeSet<String>,
+        clock: Clock,
+        dateformat: Option<String>,
+        journal: Option<(String, String)>,
+    ) -> Self {
         RemoteHooks {
             base,
             defined,
             clock,
             dateformat,
+            journal,
         }
+    }
+
+    fn task(&self, f: &Facts) -> Value {
+        task_to_json(f, self.journal.as_ref(), self.clock.now)
     }
 
     /// One call to the script. `Ok(Null)` when there is nothing to do, or the Worker could not be asked.
@@ -90,7 +103,7 @@ impl HookHost for RemoteHooks {
     }
 
     async fn on_add(&self, h: &mut Hooked, task: Facts) -> Result<Facts, Reject> {
-        let value = self.call(h, "on_add", vec![task_to_json(&task)]).await?;
+        let value = self.call(h, "on_add", vec![self.task(&task)]).await?;
         if value.is_null() {
             return Ok(task);
         }
@@ -98,9 +111,7 @@ impl HookHost for RemoteHooks {
     }
 
     async fn on_modify(&self, h: &mut Hooked, old: &Facts, new: Facts) -> Result<Facts, Reject> {
-        let value = self
-            .call(h, "on_modify", vec![task_to_json(old), task_to_json(&new)])
-            .await?;
+        let value = self.call(h, "on_modify", vec![self.task(old), self.task(&new)]).await?;
         if value.is_null() {
             return Ok(new);
         }
@@ -108,7 +119,7 @@ impl HookHost for RemoteHooks {
     }
 
     async fn on_exit(&self, h: &mut Hooked, changed: &[Facts]) {
-        let tasks = Value::Array(changed.iter().map(task_to_json).collect());
+        let tasks = Value::Array(changed.iter().map(|f| self.task(f)).collect());
         // `on_exit` can only talk: a failure in it is said, not a reason to stop.
         if let Err(message) = self.call(h, "on_exit", vec![tasks]).await {
             h.warn(message);

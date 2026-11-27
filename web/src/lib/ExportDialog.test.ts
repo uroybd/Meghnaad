@@ -67,7 +67,7 @@ describe('the Export dialog', () => {
     flushSync();
     expect(saveAs).toHaveBeenCalledWith(
       'tasks-next.tsv',
-      'id\tdescription\tdue\tuuid\n1\tone\t2026-11-19 18:00:00\tu1\n',
+      'id\tdescription\tdue\tuuid\ttime_tracking\n1\tone\t2026-11-19 18:00:00\tu1\t0\n',
       'text/tab-separated-values',
     );
     expect(JSON.parse(localStorage.getItem('tw-web-export')!).format).toBe('tsv');
