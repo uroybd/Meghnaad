@@ -173,7 +173,30 @@ impl App {
             if problem.is_some() || !checked || field.locked || field.value().is_empty() {
                 continue;
             }
-            let pv = self.preview(&format!("x {}:{}", field.key, crate::form::quote(field.value())));
+            // Iter and Iter type are checked as a pair (`task` refuses either alone, and an iterative task with no date),
+            // the other one as the form has it, or a stand-in that `task` takes; a rule that can't be read is still said.
+            let or = |key: &str, stand_in: &'static str| {
+                let v = f.value(key);
+                if v.trim().is_empty() {
+                    stand_in.to_owned()
+                } else {
+                    crate::form::quote(v)
+                }
+            };
+            let line = match field.key.as_str() {
+                "iter" => format!(
+                    "x iter:{} iter_type:{} due:now",
+                    crate::form::quote(field.value()),
+                    or("iter_type", "fixed")
+                ),
+                "iter_type" => format!(
+                    "x iter:{} iter_type:{} due:now",
+                    or("iter", "daily"),
+                    crate::form::quote(field.value())
+                ),
+                _ => format!("x {}:{}", field.key, crate::form::quote(field.value())),
+            };
+            let pv = self.preview(&line);
             *problem = pv
                 .errors
                 .into_iter()

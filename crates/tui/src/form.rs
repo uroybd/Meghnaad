@@ -540,7 +540,7 @@ impl Form {
         self.fields.iter().find(|f| f.key == key)
     }
 
-    fn value(&self, key: &str) -> &str {
+    pub fn value(&self, key: &str) -> &str {
         self.field(key).map_or("", Field::value)
     }
 

@@ -1182,3 +1182,26 @@ fn tab_goes_to_the_next_field_where_nothing_completes() {
     app.key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
     assert_eq!(at(&app), "description");
 }
+
+/// Iter and Iter type are checked as a pair: `task` refuses either alone, so each alone would always be "wrong", and the
+/// form could never be saved. A rule that can't be read is still said.
+#[test]
+fn an_iterative_task_s_rule_and_type_are_checked_together() {
+    let app = app();
+    let t = serde_json::json!({
+        "uuid": "u", "id": 2, "status": "iterative", "description": "Rent",
+        "iter": "monthly", "iter_type": "fixed", "due": "20261220T000000Z"
+    });
+    let mut f = crate::form::Form::modify(&t, &app.cfg, &[]).for_task(true);
+    let at = |f: &crate::form::Form, k: &str| f.fields.iter().position(|x| x.key == k).unwrap();
+    let problems = app.task_form_problems(&f);
+    assert_eq!(problems[at(&f, "iter")], None, "{problems:?}");
+    assert_eq!(problems[at(&f, "iter_type")], None, "{problems:?}");
+
+    let i = at(&f, "iter");
+    f.fields[i].input = Input::new("every blue moon");
+    assert!(
+        app.task_form_problems(&f)[i].is_some(),
+        "a rule task can't read is said"
+    );
+}
