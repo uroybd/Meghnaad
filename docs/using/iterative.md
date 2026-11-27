@@ -64,7 +64,8 @@ series starts at 1. `duplicate` also starts a new series at 1.
 - An iterative task has a mark after its title, in reports and on cards: Lucide's `iteration-cw` on the web and the
   phone, `↪` in the terminal (a recurring one has `repeat`, `↻`).
 - The columns `iter`, `iter_type` and `iter_count` can go in a report. The `status` column shows `iterative` (`I`).
-- In bulk edit, **Iter** and **Iter type** are next to Repeat. The info view shows Iter, Iter type and Iter count.
+- In bulk edit, **Iter type** and **Iter** are next to Repeat (in the terminal app, `Ctrl+O` on Iter opens its picker
+  there too). The info view shows Iter, Iter type and Iter count.
 - `stats` has an Iterative row. `info` shows the three rows and the `ITERATIVE` tag.
 - There are no settings for it: `recurrence`, `recurrence.limit`, `recurrence.indicator` and `color.recurring` are for
   recurring tasks only.
@@ -73,8 +74,22 @@ series starts at 1. `duplicate` also starts a new series at 1.
 
 The add and edit forms (web, phone and terminal) have one **Repeat** choice: *Doesn't repeat*, *Iterative* or
 *Recurring*. Each shows its own fields right under it, set apart as the choice's by a bar in the accent down their left
-edge (on the web and the phone, in a tinted box too), on every platform. Iter and Iter type for an iterative task, How often
-for a recurring one. Tags come after them. In the terminal app `Space` goes to the next choice.
+edge (on the web and the phone, in a tinted box too), on every platform. Iter type then Iter for an iterative task, How
+often for a recurring one. Tags come after them. In the terminal app `Space` goes to the next choice.
+
+**Iter** is a picker, as a date is: a button that says the rule in words and opens a panel (on the phone, a dialog; in
+the terminal app, `Ctrl+O` on the field opens a box over the form). It has two modes:
+
+- **Taskwarrior**: its periods (Every day, Every weekday, Every week, Every 2 weeks, Every month, Every 3 months, Every
+  year) to tap, or anything `task` takes, typed: `3d`, `2wk`, `P2W`, `every other day`.
+- **Calendar (RRULE)**: as a calendar app sets a repeat. *Repeats every* a number of days, weeks, months or years; for
+  weeks, *on* which weekdays; for months, on the day of the month or on its weekday (the fourth Friday, the last
+  Friday), from the task's due date (or its scheduled or wait date, else today); and *Ends* never, on a day, or after a
+  number of times. It writes an RFC 5545 recurrence rule, the first of the forms `iter` takes:
+  `FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR;UNTIL=20271231` is every 2 weeks on Monday and Friday, until 2027-12-31.
+
+A rule opens in the mode that wrote it; one the Calendar mode can't show (an RRULE with other parts, English) opens in
+the Taskwarrior mode, as typed. Switching modes and back keeps what was typed.
 
 Switching clears the other mode's fields when you save, in the same `modify` (the form's command line shows it, and the
 form says so under Repeat):

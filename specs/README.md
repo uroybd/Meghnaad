@@ -71,3 +71,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0036 | [One Repeat choice in the task form](0036-repeat-mode.md) | done | both | all | Task 71b0056f; iterative to recurring blocked in the form; the console makes it in one modify |
 | 0037 | [A mark after a repeating task's title](0037-repeat-marks.md) | done | 2 (UI) | all | `repeat` / `iteration-cw`; `↻` / `↪` in the terminal |
 | 0038 | [`meghnaad --sync <line>`](0038-cli-sync.md) | done | 2 (UI) | terminal | Task b0cf7ad6 |
+| 0039 | [The Iter picker](0039-iter-picker.md) | done | both | all | Taskwarrior and Calendar (RRULE) modes; Iter type before Iter |

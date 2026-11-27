@@ -304,16 +304,12 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                             }
                         }
                         if (st.mode == RepeatMode.Iterative) RepeatGroup {
-                            GroupLabel("Iter (the rule)")
-                            OutlinedTextField(
-                                st.iter, { st.iter = it }, Modifier.fillMaxWidth(), singleLine = true,
-                                placeholder = { Text("monthly, every weekday, FREQ=…", fontSize = 14.sp) },
-                                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
-                            )
-                            GroupLabel("Iter type", Modifier.padding(top = 10.dp))
+                            GroupLabel("Iter type")
                             val labels = listOf("choose…") + st.iterTypes
                             val values = listOf("") + st.iterTypes
                             Choice(labels.getOrElse(values.indexOf(st.iterType).coerceAtLeast(0)) { "choose…" }, labels) { i -> st.iterType = values[i] }
+                            GroupLabel("Iter (the rule)", Modifier.padding(top = 10.dp))
+                            IterInput(st.iter, { st.iter = it }, anchorOf(listOf(st.due, st.scheduled, st.wait), isoDate(store.now, store.utcOffset)))
                             when {
                                 st.needsIterDate -> Text("An iterative task needs a due, scheduled or wait date.", color = colors.error, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                                 st.iter.isNotBlank() -> Dim(

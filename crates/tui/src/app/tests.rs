@@ -1227,3 +1227,36 @@ fn the_repeat_choice_s_fields_are_drawn_as_its_group() {
     assert!(row("Iter type").contains("▎"));
     assert!(!row("Repeat").contains("▎") && !row("Tags").contains("▎"));
 }
+
+/// `Ctrl+O` on the Iter field opens the picker over the form; ↵ puts its rule in the field, Esc leaves the field as it
+/// was. Iter type comes before Iter.
+#[test]
+fn ctrl_o_on_iter_opens_the_picker_and_its_rule_goes_in_the_field() {
+    let mut app = app();
+    let t = serde_json::json!({
+        "uuid": "u", "id": 2, "status": "iterative", "description": "Rent",
+        "iter": "monthly", "iter_type": "fixed", "due": "20261225T000000Z"
+    });
+    let mut f = crate::form::Form::modify(&t, &app.cfg, &[]).for_task(true);
+    let at = |f: &crate::form::Form, k: &str| f.fields.iter().position(|x| x.key == k).unwrap();
+    assert!(at(&f, "iter_type") < at(&f, "iter"));
+    f.sel = at(&f, "iter");
+    app.mode = Mode::Form(f);
+    let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    app.key(ctrl('o'));
+    assert!(matches!(app.mode, Mode::IterPick(_)));
+    app.key(key(KeyCode::Esc));
+    let Mode::Form(f) = &app.mode else {
+        panic!("expected the form back");
+    };
+    assert_eq!(f.value("iter"), "monthly");
+    app.key(ctrl('o'));
+    // The Calendar mode: every week on the due date's weekday (a Friday).
+    app.key(key(KeyCode::Right));
+    app.key(key(KeyCode::Enter));
+    let Mode::Form(f) = &app.mode else {
+        panic!("expected the form back");
+    };
+    assert_eq!(f.value("iter"), "FREQ=WEEKLY;BYDAY=FR");
+    assert_eq!(f.statements(), vec![vec!["u", "modify", "iter:FREQ=WEEKLY;BYDAY=FR"]]);
+}

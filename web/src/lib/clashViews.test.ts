@@ -74,7 +74,10 @@ describe('the task form, for an iterative task', () => {
     const seed = { ...seedOf(preview({}), 'Rent'), due: '2026-11-20', iter: 'monthly', iterType: 'fixed' };
     app = mount(TaskEditor, { target: document.body, props: { seed, onclose: () => {} } });
     flushSync();
-    expect((document.getElementById('te-iter') as HTMLInputElement).value).toBe('monthly');
+    // The rule is the Iter picker's button, which says it in words; Iter type comes first.
+    expect((document.getElementById('te-iter') as HTMLButtonElement).title).toBe('monthly');
+    const at = (id: string) => [...document.querySelectorAll('[id]')].findIndex((e) => e.id === id);
+    expect(at('te-iter-type')).toBeLessThan(at('te-iter'));
     expect((document.getElementById('te-iter-type') as HTMLSelectElement).value).toBe('fixed');
     expect(shown()).toContain('iter:monthly iter_type:fixed');
   });

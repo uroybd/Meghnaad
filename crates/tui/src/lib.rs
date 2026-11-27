@@ -15,6 +15,7 @@ pub mod export;
 pub mod form;
 pub mod groups;
 pub mod info;
+pub mod iterpick;
 pub mod kanban;
 pub mod kanbanui;
 pub mod keys;

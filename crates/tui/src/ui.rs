@@ -161,6 +161,10 @@ fn screen(f: &mut Frame, app: &App) {
         }
         Mode::Commands { uuid, query, sel } => commands(f, app, uuid, query, *sel, main),
         Mode::Form(form) => form_box(f, app, form, main),
+        Mode::IterPick(pick) => {
+            form_box(f, app, &pick.form, main);
+            iter_box(f, pick, main);
+        }
         Mode::Sort(edit) => sort_box(f, app, edit, main),
         Mode::KeyAdd(add) => key_add_box(f, app, add, main),
         Mode::Question(asking) => question_box(f, &asking.question, main),
@@ -665,6 +669,132 @@ fn export_box(f: &mut Frame, b: &ExportBox, main: Rect) {
 }
 
 /// The Reminders box, as the web app's dialog: the options, and the `remind_in` UDA.
+/// The Iter picker, over the form: a line for each of its choices, the chosen one marked, then the rule in words and as
+/// it is stored. A choice is drawn `‹ value ›`; the weekdays as letters, the ones on in the accent and the cursor's
+/// underlined.
+fn iter_box(f: &mut Frame, pick: &crate::iterpick::IterPick, main: Rect) {
+    use crate::iterpick::Row as R;
+    use tc_core::iter_rule::{Freq, WEEKDAYS};
+    let rule = pick.rule.as_ref().filter(|_| pick.calendar);
+    let choice = |s: &str| Span::from(format!("‹ {s} ›"));
+    let mut lines: Vec<Line> = Vec::new();
+    let mut caret = None;
+    for (i, row) in pick.rows().into_iter().enumerate() {
+        let chosen = i == pick.sel;
+        let mark = Span::styled(if chosen { MARK } else { "  " }, theme::accent());
+        let label = Span::styled(
+            format!("{:>11} ", row.label()),
+            if chosen { theme::accent() } else { theme::dim() },
+        );
+        let value: Vec<Span> = match row {
+            R::Mode => vec![choice(if pick.calendar {
+                "Calendar (RRULE)"
+            } else {
+                "Taskwarrior"
+            })],
+            R::Preset => {
+                let now = pick.typed.line.trim();
+                let label = tc_core::complete::RECUR_PRESETS
+                    .iter()
+                    .find(|(v, _)| *v == now)
+                    .map_or("choose…", |(_, l)| *l);
+                vec![choice(label)]
+            }
+            R::Typed => {
+                if chosen {
+                    caret = Some((lines.len(), pick.typed.caret_chars()));
+                }
+                vec![Span::from(pick.typed.line.clone())]
+            }
+            R::Every => vec![Span::from(rule.map_or(1, |r| r.interval).to_string())],
+            R::Unit => {
+                let (n, unit) = rule.map_or((1, "week"), |r| {
+                    (
+                        r.interval,
+                        match r.freq {
+                            Freq::Daily => "day",
+                            Freq::Weekly => "week",
+                            Freq::Monthly => "month",
+                            Freq::Yearly => "year",
+                        },
+                    )
+                });
+                vec![choice(&if n == 1 { unit.to_owned() } else { format!("{unit}s") })]
+            }
+            R::Days => WEEKDAYS
+                .iter()
+                .enumerate()
+                .flat_map(|(d, w)| {
+                    let on = rule.is_some_and(|r| r.days.iter().any(|x| x == w));
+                    let mut style = if on {
+                        theme::accent().add_modifier(Modifier::BOLD)
+                    } else {
+                        theme::dim()
+                    };
+                    if chosen && d == pick.day {
+                        style = style.add_modifier(Modifier::UNDERLINED | Modifier::REVERSED);
+                    }
+                    [Span::styled(w[..1].to_owned(), style), Span::from(" ")]
+                })
+                .collect(),
+            R::Month => {
+                let options = pick.month_options();
+                vec![choice(options.get(pick.month_at()).map_or("", |o| o.label.as_str()))]
+            }
+            R::Ends => vec![choice(match rule {
+                Some(r) if r.until.is_some() => "on a day",
+                Some(r) if r.count.is_some() => "after a number of times",
+                _ => "never",
+            })],
+            R::Until => {
+                if chosen {
+                    caret = Some((lines.len(), pick.until.caret_chars()));
+                }
+                vec![Span::from(pick.until.line.clone())]
+            }
+            R::Count => vec![Span::from(format!(
+                "{} times",
+                rule.and_then(|r| r.count).unwrap_or(10)
+            ))],
+        };
+        let mut spans = vec![mark, label];
+        spans.extend(value);
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::default());
+    let words = pick.words();
+    lines.push(Line::from(if words.is_empty() {
+        "No rule yet.".to_owned()
+    } else {
+        words
+    }));
+    let value = pick.value();
+    if pick.calendar && !value.is_empty() {
+        lines.push(Line::styled(value, theme::dim()));
+    }
+    lines.push(Line::styled(
+        "↑↓ line · ←→ change · Space a weekday · ↵ done · Esc cancel",
+        theme::dim(),
+    ));
+    let w = u16::try_from(lines.iter().map(Line::width).max().unwrap_or(0).max(44) + 4)
+        .unwrap_or(60)
+        .min(main.width);
+    let h = u16::try_from(lines.len() + 2).unwrap_or(10).min(main.height);
+    let area = Rect::new(
+        main.x + main.width.saturating_sub(w) / 2,
+        main.y + main.height.saturating_sub(h) / 2,
+        w,
+        h,
+    );
+    f.render_widget(Clear, area);
+    f.render_widget(Paragraph::new(lines).block(boxed(" iter ".to_owned())), area);
+    if let Some((row, col)) = caret {
+        let x = area.x + 1 + u16::try_from(MARK.chars().count() + 12 + col).unwrap_or(0);
+        let y = area.y + 1 + u16::try_from(row).unwrap_or(0);
+        f.set_cursor_position((x.min(area.right().saturating_sub(2)), y));
+    }
+}
+
 fn reminders_box(f: &mut Frame, app: &App, b: &RemindBox, main: Rect) {
     let s = app.remind;
     let tick = |on: bool| if on { "[x] " } else { "[ ] " };
@@ -1758,6 +1888,14 @@ fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
             let read = date(app, ts);
             (read != v).then(|| Span::from(format!("  → {read}")).quiet())
         }
+        // A calendar rule (`FREQ=…`) said in words, as the picker says it.
+        Kind::Value if field.key == "iter" && tc_core::iter_rule::from_rrule(v).is_some() => Some(
+            Span::from(format!(
+                "  {} · Ctrl+O changes it",
+                tc_core::iter_rule::describe_iter(v)
+            ))
+            .quiet(),
+        ),
         Kind::Value if field.key == "recur" => {
             Some(Span::from(format!("  {}", tc_core::helpers::describe_recur(v))).quiet())
         }

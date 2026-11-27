@@ -274,7 +274,8 @@ Tasks page clears them, and they are cleared after an action.
 The web app's task form, in a box over the page: a line for each part of a task, its name on the left and its value on
 a shaded bar, underlined, the chosen one's underline in the accent. Description,
 project, priority, due, wait, scheduled, until, Repeat (doesn't repeat, iterative or recurring: `Space` switches it, and
-only its own fields show, under it with a bar in the accent down their left edge, [as on the web](using/iterative.md#repeat-in-the-form)), tags (space separated), each UDA your taskrc defines, and what it
+only its own fields show, under it with a bar in the accent down their left edge; `Ctrl+O` on Iter opens its picker,
+Taskwarrior or calendar style, [as on the web](using/iterative.md#repeat-in-the-form)), tags (space separated), each UDA your taskrc defines, and what it
 depends on (task ids); for a new task, whether to start it now and a note, and for one that exists, an annotation to add
 under the ones it has. `Ctrl+N` and `Ctrl+P` (or `↑` `↓`) go from line to line, `Tab` completes the line's word as the command line would
 (`project:Ho` → `project:Home`) and goes to the next line where nothing completes (`Shift+Tab` back), `Space` ticks Start

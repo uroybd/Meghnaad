@@ -114,6 +114,13 @@ impl App {
             }
             KeyCode::Enter => return self.save_form(f),
             KeyCode::Char('s') if ctrl => return self.save_form(f),
+            // The Iter picker, over the form.
+            KeyCode::Char('o') if ctrl && f.current().is_some_and(|x| x.key == "iter" && !x.locked) => {
+                let value = f.value("iter").to_owned();
+                let anchor = iter_anchor(&f);
+                self.mode = Mode::IterPick(Box::new(crate::iterpick::IterPick::new(f, &value, &anchor)));
+                return Action::None;
+            }
             KeyCode::Char('n') if ctrl => f.next(),
             KeyCode::Char('p') if ctrl => f.prev(),
             // In a field of several lines ↑ ↓ go between its lines, and on to the next field only past the last.
@@ -365,4 +372,14 @@ fn note_words(line: &str, words: Vec<String>) -> Vec<String> {
     } else {
         words
     }
+}
+
+/// The day a new iter rule counts from: the form's due, scheduled or wait date when one is a day (`2026-12-25`), else
+/// today.
+fn iter_anchor(f: &Form) -> String {
+    ["due", "scheduled", "wait"]
+        .iter()
+        .map(|k| f.value(k).get(..10).unwrap_or(""))
+        .find(|d| d.len() == 10 && chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())
+        .map_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string(), str::to_owned)
 }

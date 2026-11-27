@@ -14,6 +14,8 @@
   import { visibleNotes } from './journal';
   import { describeRecur, presetFor, PRESETS } from './recurrence';
   import { modeOf, REPEAT_MODES, repeatChanges, type RepeatMode } from './repeat';
+  import IterField from './IterField.svelte';
+  import { anchorOf } from './iterRule';
   import { ITER_TYPES } from './iterative';
   import { store, type Entry } from './store.svelte';
   import type { Row, UdaDef } from './types';
@@ -341,21 +343,15 @@
               <div class="repeat-group" data-mode="iterative">
                 <div class="pair iter">
                   <div class="cell">
-                    <label for="te-iter">Iter (the rule)</label>
-                    <input
-                      id="te-iter"
-                      bind:value={iter}
-                      placeholder="monthly, every weekday, FREQ=…"
-                      autocapitalize="off"
-                      spellcheck="false"
-                    />
-                  </div>
-                  <div class="cell">
                     <label for="te-iter-type">Iter type</label>
-                    <select id="te-iter-type" bind:value={iterType} disabled={iter.trim() === ''}>
+                    <select id="te-iter-type" bind:value={iterType}>
                       <option value="">choose…</option>
                       {#each iterTypes as t (t)}<option value={t}>{t}</option>{/each}
                     </select>
+                  </div>
+                  <div class="cell">
+                    <label for="te-iter">Iter (the rule)</label>
+                    <IterField id="te-iter" bind:value={iter} anchor={anchorOf([due, scheduled, wait])} />
                   </div>
                 </div>
                 {#if needsIterDate}
@@ -612,7 +608,7 @@
     background: color-mix(in srgb, var(--text) 4%, transparent);
   }
   .pair.iter {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   }
   @media (max-width: 520px) {
     .pair.project,

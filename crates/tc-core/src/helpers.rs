@@ -266,6 +266,13 @@ fn dispatch(name: &str, a: &Args) -> Result<serde_json::Value, String> {
         "shell_quote" => json!(shell_quote(&a.req::<String>(0)?)),
         "is_uuid" => json!(crate::filter::is_uuid_word(&a.req::<String>(0)?)),
         "describe_recur" => json!(describe_recur(&a.req::<String>(0)?)),
+        // The Iter picker's Calendar mode (`iter_rule`): a rule read from, and written as, an RRULE.
+        "iter_rule_parse" => json!(crate::iter_rule::from_rrule(&a.req::<String>(0)?)),
+        "iter_rule_build" => json!(crate::iter_rule::to_rrule(&a.req::<crate::iter_rule::CalendarRule>(0)?)),
+        "iter_rule_default" => json!(crate::iter_rule::default_for(&a.req::<String>(0)?)),
+        "iter_rule_describe" => json!(crate::iter_rule::describe(&a.req::<crate::iter_rule::CalendarRule>(0)?)),
+        "iter_month_choices" => json!(crate::iter_rule::month_choices(&a.req::<String>(0)?)),
+        "describe_iter" => json!(crate::iter_rule::describe_iter(&a.req::<String>(0)?)),
         "remind_offsets" => json!(remind_offsets(&a.req::<String>(0)?)),
         "set_vocab" => {
             *VOCAB.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
@@ -825,6 +832,15 @@ mod tests {
     #[test]
     fn a_helper_is_called_by_name_with_its_arguments_as_json() {
         assert_eq!(call("describe_recur", r#"["3d"]"#), r#""every 3 days""#);
+        assert_eq!(
+            call("iter_rule_build", r#"[{"freq":"weekly","interval":2,"days":["FR"]}]"#),
+            r#""FREQ=WEEKLY;INTERVAL=2;BYDAY=FR""#
+        );
+        assert!(call("iter_rule_parse", r#"["FREQ=MONTHLY;BYDAY=3FR"]"#).contains(r#""nth":3"#));
+        assert_eq!(call("iter_rule_parse", r#"["monthly"]"#), "null");
+        // What a front end leaves out is the default: every 1, no days, never ending.
+        assert_eq!(call("iter_rule_build", r#"[{"freq":"yearly"}]"#), r#""FREQ=YEARLY""#);
+        assert_eq!(call("describe_iter", r#"["FREQ=YEARLY"]"#), r#""Every year""#);
         assert!(call("describe_recur", "[]").contains("argument 1 is missing"));
         assert!(call("describe_recur", "[3]").contains("is not what it takes"));
         assert!(call("describe_recur", "not json").contains("not a JSON array"));

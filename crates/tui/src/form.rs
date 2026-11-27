@@ -217,7 +217,7 @@ impl Field {
             (_, "description") => "what the task is",
             (_, "project") => "Home, or Home.Garden for a part of it; Tab completes",
             (_, "recur") => "how often: daily, weekly, 2w, monthly, …; it needs a due date",
-            (_, "iter") => "monthly, every weekday, FREQ=…: done, it makes the next one",
+            (_, "iter") => "Ctrl+O picks it (Taskwarrior or calendar style), or type monthly, FREQ=…",
             (_, "iter_type") => "fixed, fixed+ or chained",
             _ => match (choices, uda.map(|u| u.ty)) {
                 (Some(c), _) => return c,
@@ -318,13 +318,13 @@ impl Form {
         let mode = RepeatMode::of(p.recur.as_deref().unwrap_or(""), p.iter.as_deref().unwrap_or(""));
         fields.push(blank("repeat", "Repeat", Kind::Mode, mode.word()));
         fields.push(blank("recur", "Every", Kind::Value, p.recur.as_deref().unwrap_or("")));
-        fields.push(blank("iter", "Iter", Kind::Value, p.iter.as_deref().unwrap_or("")));
         fields.push(blank(
             "iter_type",
             "Iter type",
             Kind::Value,
             p.iter_type.as_deref().unwrap_or(""),
         ));
+        fields.push(blank("iter", "Iter", Kind::Value, p.iter.as_deref().unwrap_or("")));
         fields.push(blank("tags", "Tags", Kind::Tags, &p.tags.join(" ")));
         for (name, label, ty) in udas(cfg) {
             let raw = p.udas.get(&name).cloned().unwrap_or_default();
@@ -393,7 +393,7 @@ impl Form {
         // One task of a series follows its template: the period is changed there.
         recur.locked = t.get("parent").is_some();
         fields.push(recur);
-        for (key, label) in [("iter", "Iter"), ("iter_type", "Iter type")] {
+        for (key, label) in [("iter_type", "Iter type"), ("iter", "Iter")] {
             let mut field = same(key, label, Kind::Value, &s(key));
             field.locked = recurring;
             fields.push(field);
@@ -468,8 +468,8 @@ impl Form {
             fields.push(blank(k, &title(k), Kind::Date));
         }
         fields.push(blank("recur", "Repeat", Kind::Value));
-        fields.push(blank("iter", "Iter", Kind::Value));
         fields.push(blank("iter_type", "Iter type", Kind::Value));
+        fields.push(blank("iter", "Iter", Kind::Value));
         fields.push(blank("tags", "Tags", Kind::Tags));
         for (name, label, ty) in udas(cfg) {
             let mut field = blank(&name, &label, uda_kind(ty));

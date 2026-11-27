@@ -244,6 +244,8 @@ pub enum Mode {
     },
     /// Sorting the report, in a box.
     Sort(SortEdit),
+    /// Choosing an iterative task's rule, in a box over the task form (`Ctrl+O` on its Iter field).
+    IterPick(Box<crate::iterpick::IterPick>),
     /// Adding a key on the Keybindings section, in a box.
     KeyAdd(KeyAdd),
     /// `task` asked something and waits for the answer, in a box.
@@ -1280,6 +1282,23 @@ impl App {
                 Action::None
             }
             Mode::Sort(edit) => self.in_sort(edit, key),
+            Mode::IterPick(mut pick) => {
+                match pick.key(key) {
+                    crate::iterpick::Outcome::Stay => self.mode = Mode::IterPick(pick),
+                    crate::iterpick::Outcome::Cancel => self.mode = Mode::Form(*pick.form),
+                    crate::iterpick::Outcome::Done(rule) => {
+                        let mut f = *pick.form;
+                        if let Some(field) = f.fields.iter_mut().find(|x| x.key == "iter") {
+                            if field.value() != rule {
+                                field.input = Input::new(&rule);
+                                field.touched = true;
+                            }
+                        }
+                        self.mode = Mode::Form(f);
+                    }
+                }
+                Action::None
+            }
             Mode::KeyAdd(add) => self.in_key_add(add, key),
             Mode::Export(b) => self.in_export(b, key),
             Mode::Reminders(b) => self.in_reminders(b, key),
