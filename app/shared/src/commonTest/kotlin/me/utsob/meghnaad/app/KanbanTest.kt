@@ -310,4 +310,19 @@ class KanbanTest {
             forIterative(moveSteps("inprogress", uuid, moves), clears, udas),
         )
     }
+
+    @Test
+    fun aTaskCommandLeavesItsStatusOutOnAnIterativeTask() {
+        val c = TaskCommand("doing", "modify status:pending progressState:inprogress ; annotate started")
+        val udas = listOf("progressState")
+        assertEquals(
+            listOf(listOf("u1", "modify", "progressState:inprogress"), listOf("u1", "annotate", "started")),
+            commandStepsOn(c, listOf("u1"), true, udas).map { it.words },
+        )
+        assertEquals(
+            listOf(listOf("u1", "modify", "status:pending", "progressState:inprogress"), listOf("u1", "annotate", "started")),
+            commandStepsOn(c, listOf("u1"), false, udas).map { it.words },
+        )
+        assertEquals(emptyList(), commandStepsOn(TaskCommand("reopen", "modify status:pending"), listOf("u1"), true, udas))
+    }
 }

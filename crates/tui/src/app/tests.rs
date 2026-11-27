@@ -1260,3 +1260,47 @@ fn ctrl_o_on_iter_opens_the_picker_and_its_rule_goes_in_the_field() {
     assert_eq!(f.value("iter"), "FREQ=WEEKLY;BYDAY=FR");
     assert_eq!(f.statements(), vec![vec!["u", "modify", "iter:FREQ=WEEKLY;BYDAY=FR"]]);
 }
+
+/// A task command chosen from the menu runs on an iterative task without its `status:` (Taskwarrior refuses it on
+/// one), and as it is on another.
+#[test]
+fn a_task_command_leaves_its_status_out_on_an_iterative_task() {
+    let mut app = app();
+    app.cfg = tc_core::taskrc::parse("uda.progressState.type=string\n").config;
+    app.settings = AppSettings::parse(
+        r#"{ "taskCommands": [ { "name": "doing", "command": "modify status:pending progressState:inprogress" } ] }"#,
+    )
+    .unwrap();
+    let (it, plain) = (
+        "1499a653-f3c1-4764-b952-39d3a165870f",
+        "2599a653-f3c1-4764-b952-39d3a165870f",
+    );
+    app.report.uuids = vec![it.into(), plain.into()];
+    app.report.repeats = vec![Some(crate::model::Repeats::Iterative), None];
+    app.key(key(KeyCode::Char('c')));
+    app.key(key(KeyCode::Enter));
+    let ran = |l: &str| app.log.iter().any(|x| x.to_string() == l);
+    assert!(
+        ran(&format!("$ task {it} modify progressState:inprogress")),
+        "{:?}",
+        app.log
+    );
+    // Running reads the settings again (here, the test's own file): put the command back.
+    app.settings = AppSettings::parse(
+        r#"{ "taskCommands": [ { "name": "doing", "command": "modify status:pending progressState:inprogress" } ] }"#,
+    )
+    .unwrap();
+    app.report.uuids = vec![it.into(), plain.into()];
+    app.report.repeats = vec![Some(crate::model::Repeats::Iterative), None];
+    app.selected = 1;
+    app.key(key(KeyCode::Char('c')));
+    app.key(key(KeyCode::Enter));
+    let ran = |l: &str| app.log.iter().any(|x| x.to_string() == l);
+    assert!(
+        ran(&format!(
+            "$ task {plain} modify status:pending progressState:inprogress"
+        )),
+        "{:?}",
+        app.log
+    );
+}

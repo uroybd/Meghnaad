@@ -743,7 +743,7 @@ pub fn for_iterative(steps: Vec<Statement>, clears: &[String], cfg: &Config) -> 
 }
 
 /// The statements written as one line, `a && b`.
-fn line_of(steps: &[Statement]) -> String {
+pub fn line_of(steps: &[Statement]) -> String {
     steps
         .iter()
         .map(|s| match s.join {

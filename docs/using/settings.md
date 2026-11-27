@@ -479,6 +479,15 @@ and the bar over selected tasks runs it on all of them, a batch at a time. The m
 commands. Where a table is wider than its box (a narrow board card, say), each row's buttons (Done, Start or Stop, Edit,
 Delete, then the commands) fold into that menu, and open out again when there's room.
 
+**On an iterative task** (`+ITERATIVE`) a command runs without its `status:` changes, because Taskwarrior refuses to
+change one's status by hand ("Clear iter to end the series instead"): `doing` for `modify status:pending
+progressState:inprogress` runs `modify progressState:inprogress` there. A statement left with nothing to run is
+skipped, and a command that only changes the status says so and runs nothing. This holds wherever the app runs a
+command on a task for you (the ⋯ menu, the bar over selected tasks, where iterative tasks get theirs apart from the
+rest, the terminal app's `c` menu, and a [kanban's moves](kanban.md#iterative-tasks-on-a-kanban)), on every platform,
+but not on the console: what you type there runs as typed. The Commands tab shows, muted under a command, the line it
+runs on an iterative task where that is another one. A taskrc alias is `task`'s own to write out, so it runs as it is.
+
 **Your taskrc's aliases** are in the same menus, after the commands, with a terminal icon: each `alias.<name>` your
 taskrc defines runs on the task as `task <uuid> <name>` would. Taskwarrior's own (`rm`, `history`, `ghistory`,
 `burndown`) are left out unless you change them, as is one that stands for nothing, and a command of the same name

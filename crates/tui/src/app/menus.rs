@@ -9,6 +9,25 @@ impl App {
         [own.clone(), crate::commands::alias_commands(&self.cfg.settings, own)].concat()
     }
 
+    /// Whether the task is iterative (`+ITERATIVE`), as the report or the kanban on screen has it.
+    pub(super) fn is_iterative(&self, uuid: &str) -> bool {
+        let iterative = Some(crate::model::Repeats::Iterative);
+        let in_report = self
+            .report
+            .uuids
+            .iter()
+            .position(|u| u == uuid)
+            .is_some_and(|i| self.report.repeats.get(i).copied().flatten() == iterative);
+        in_report
+            || self.kanban_data.as_ref().is_some_and(|d| {
+                d.columns
+                    .iter()
+                    .flatten()
+                    .chain(&d.other)
+                    .any(|c| c.uuid == uuid && c.repeats == iterative)
+            })
+    }
+
     /// The task commands and aliases whose name or command line has `query` in it, in their order.
     pub fn matching_commands(&self, query: &str) -> Vec<TaskCommand> {
         let q = query.to_lowercase();
@@ -34,12 +53,31 @@ impl App {
                 // (their uuids, space-separated) go a batch at a time, each batch while the last worked.
                 let uuids: Vec<String> = uuid.split_whitespace().map(str::to_owned).collect();
                 self.marks.clear();
-                let line = super::selection::batches(&uuids, &[name])
+                // An iterative task (`+ITERATIVE`) gets the command without its `status:`, which Taskwarrior refuses
+                // on one (`tc_core::board_move`); the others get it as it is.
+                let (iterative, others): (Vec<String>, Vec<String>) =
+                    uuids.into_iter().partition(|u| self.is_iterative(u));
+                let mut lines: Vec<String> = super::selection::batches(&others, std::slice::from_ref(&name))
                     .iter()
                     .map(|words| words.join(" "))
-                    .collect::<Vec<_>>()
-                    .join(" && ");
-                return self.console(&line);
+                    .collect();
+                for words in super::selection::batches(&iterative, std::slice::from_ref(&name)) {
+                    let line = words.join(" ");
+                    match crate::commands::plan_chain(&line, &self.settings.task_commands) {
+                        Ok(steps) => {
+                            let steps = crate::kanban::for_iterative(steps, &[], &self.cfg);
+                            if !steps.is_empty() {
+                                lines.push(crate::kanban::line_of(&steps));
+                            }
+                        }
+                        Err(_) => lines.push(line),
+                    }
+                }
+                if lines.is_empty() {
+                    self.status = format!("{name} only changes the status, which an iterative task keeps.");
+                    return Action::None;
+                }
+                return self.console(&lines.join(" && "));
             }
             KeyCode::Down | KeyCode::Tab => sel = (sel + 1).min(n.saturating_sub(1)),
             KeyCode::Up | KeyCode::BackTab => sel = sel.saturating_sub(1),

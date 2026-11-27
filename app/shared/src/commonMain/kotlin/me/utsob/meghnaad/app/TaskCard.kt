@@ -418,7 +418,10 @@ fun Actions(
                 }
             }
         }
-        MoreMenu(store.menuCommands, extra = own, box = box) { c -> store.go { actSteps(from, commandSteps(c).map { it.copy(words = listOf(row.uuid) + it.words) }) } }
+        MoreMenu(store.menuCommands, extra = own, box = box) { c ->
+            val steps = commandStepsOn(c, listOf(row.uuid), row.status == "iterative", udaNames(store.config))
+            if (steps.isEmpty()) store.notify("${c.name} only changes the status, which an iterative task keeps.", bad = true) else store.go { actSteps(from, steps) }
+        }
     }
 }
 

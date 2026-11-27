@@ -33,7 +33,7 @@ fun BulkBar(store: Store) {
     // The ticked tasks, as the list shows them (their numbers come from the rows), in the order they were ticked.
     val rows = (store.live?.result as? CliResult.Report)?.value?.rows ?: emptyList()
     val byUuid = rows.associateBy { it.uuid }
-    val picks = store.selection.uuids.mapNotNull { u -> byUuid[u]?.let { Pick(u, it.id) } }
+    val picks = store.selection.uuids.mapNotNull { u -> byUuid[u]?.let { Pick(u, it.id, it.status == "iterative") } }
     var busy by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var modifying by remember { mutableStateOf(false) }
@@ -43,10 +43,10 @@ fun BulkBar(store: Store) {
      * Run [words] on the ticked tasks, a batch at a time. The tap is the answer to Taskwarrior's "are you sure?" questions, so
      * they are answered yes; questions about recurring tasks and dependencies are still asked. Whether everything went through.
      */
-    suspend fun Store.run(words: List<String>): Boolean {
+    suspend fun Store.run(words: List<String>, on: List<Pick> = picks): Boolean {
         busy = true
         try {
-            for (batch in batches(picks)) {
+            for (batch in batches(on)) {
                 val res = act(live, filterWords(batch) + words, Answers(approved = batch.map { it.uuid }, confirmed = true))
                 if (res?.wrote != true) return false
             }
@@ -80,9 +80,16 @@ fun BulkBar(store: Store) {
                 // Name the tasks at the prompt and leave the rest to the user.
                 OutlinedButton(enabled = !busy, onClick = { store.requestPrompt(promptFor(picks)) }) { LucideIcon("terminal", size = 15.dp); Text("  CLI") }
                 MoreMenu(store.menuCommands, "More actions for the selected tasks", enabled = !busy) { c ->
-                    store.go {
-                        val steps = commandSteps(c)
-                        if (runSequence(steps.map { it.join }) { i -> run(steps[i].words) }) selection.clear()
+                    // An iterative task (`+ITERATIVE`) gets it without its `status:`; the rest as it is.
+                    val udas = udaNames(store.config)
+                    val groups = listOf(false, true)
+                        .map { iterative -> picks.filter { it.iterative == iterative } to commandStepsOn(c, emptyList(), iterative, udas) }
+                        .filter { (on, steps) -> on.isNotEmpty() && steps.isNotEmpty() }
+                    if (groups.isEmpty()) store.notify("${c.name} only changes the status, which an iterative task keeps.", bad = true) else store.go {
+                        for ((on, steps) in groups) {
+                            if (!runSequence(steps.map { it.join }) { i -> run(steps[i].words, on) }) return@go
+                        }
+                        selection.clear()
                     }
                 }
                 TextButton(onClick = { store.selection.clear() }) { LucideIcon("x", size = 15.dp); Text("  Clear") }

@@ -192,6 +192,12 @@ fun CommandsPanel(store: Store, st: CommandsState) {
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
                 )
                 if (why != null) Text(why, color = colors.error, fontSize = 12.sp)
+                // What it runs on an iterative task, where that is another line (its `status:` left out).
+                if (r.command.isNotBlank()) {
+                    iterativeMove(r.command, emptyList(), store.taskCommands, udaNames(store.config))?.let { line ->
+                        Text("On an iterative task: ${line.ifEmpty { "nothing" }}", color = colors.onSurfaceVariant, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
             }
         }
         OutlinedButton(onClick = st::add) { LucideIcon("plus", size = 14.dp); Text("  Add a command") }

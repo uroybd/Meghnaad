@@ -8,6 +8,8 @@ import type { UdaDef } from './types';
 export interface Pick {
   uuid: string;
   id: number | null;
+  /** An iterative task (`+ITERATIVE`): a task command runs on it without its `status:`. */
+  iterative?: boolean;
 }
 
 /**

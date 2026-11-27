@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { iterativeMove, udaNames } from './kanban';
   import { untrack } from 'svelte';
   import { putAppSettings } from './api';
   import {
@@ -39,6 +40,13 @@
 
   const saved = $derived(store.taskCommands);
   let rows = $state<Row[]>(untrack(() => toRows(saved)));
+  // What each command runs on an iterative task, where that is another line (its `status:` left out).
+  const iterRuns = $derived.by(() => {
+    const udas = udaNames(store.config);
+    return new Map(
+      rows.map((r) => [r.key, r.command.trim() ? iterativeMove(r.command, [], store.taskCommands, udas) : null]),
+    );
+  });
   let busy = $state(false);
   let error = $state<string | null>(null);
   let done = $state(false);
@@ -214,6 +222,9 @@
             onclick={() => ((rows = rows.filter((x) => x.key !== r.key)), (done = false))}><X size={15} /></button
           >
           {#if why}<span class="why" role="alert">{why}</span>{/if}
+          {#if iterRuns.get(r.key) != null}
+            <span class="iter-run">On an iterative task: <code>{iterRuns.get(r.key) || 'nothing'}</code></span>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -344,6 +355,12 @@
   }
   .row-item.invalid input {
     border-color: var(--err);
+  }
+  /* What the command runs on an iterative task, where that is another line: muted, under the row. */
+  .iter-run {
+    grid-column: 1 / -1;
+    color: var(--dim);
+    font-size: 12.5px;
   }
   .why {
     grid-column: 1 / -1;

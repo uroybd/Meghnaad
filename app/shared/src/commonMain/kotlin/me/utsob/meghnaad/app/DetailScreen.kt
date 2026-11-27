@@ -138,7 +138,10 @@ fun DetailScreen(store: Store, ref: DetailRef) {
                                 }
                             }
                         }
-                        MoreMenu(store.menuCommands) { c -> store.go { actSteps(ref.from, commandSteps(c).map { it.copy(words = listOf(uuid) + it.words) }) } }
+                        MoreMenu(store.menuCommands) { c ->
+                            val steps = commandStepsOn(c, listOf(uuid), live?.status == "iterative", udaNames(store.config))
+                            if (steps.isEmpty()) store.notify("${c.name} only changes the status, which an iterative task keeps.", bad = true) else store.go { actSteps(ref.from, steps) }
+                        }
                     }
                     if (live.start != null && live.activeSeconds != null) {
                         Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

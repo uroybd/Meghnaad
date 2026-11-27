@@ -503,6 +503,20 @@ fun iterativeMove(move: String, clears: List<String>, commands: List<TaskCommand
     return lineOf(changed).takeIf { it != lineOf(steps) }
 }
 
+/**
+ * A task command's statements as they run on a task: [uuids] in front of each, and on an iterative task (`+ITERATIVE`)
+ * without their `status:` (`board_move`; a statement left with nothing goes). Empty when it runs nothing there. For a
+ * menu, a key or the selection; the console runs what is typed. As the web's `commandStepsOn`.
+ */
+fun commandStepsOn(c: TaskCommand, uuids: List<String>, iterative: Boolean, udas: List<String>): List<CommandStep> {
+    val steps = commandSteps(c)
+    val own = if (iterative) forIterative(steps, emptyList(), udas) else steps
+    return own.map { it.copy(words = uuids + it.words) }
+}
+
+/** The taskrc's UDAs, by name: what the engine needs to read a command's words. */
+fun udaNames(config: ConfigResponse?): List<String> = config?.config?.udas?.keys?.toList() ?: emptyList()
+
 fun moveSteps(move: String, uuid: String, commands: List<TaskCommand>): List<CommandStep> {
     val line = splitChain(move).mapIndexed { i, s -> (if (i > 0) " ${s.join?.text} " else "") + "$ONLY_THIS_TASK $uuid ${s.line}" }.joinToString("")
     return planChain(line, commands).map { CommandStep(splitWords(it.line), it.join) }

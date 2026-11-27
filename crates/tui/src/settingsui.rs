@@ -277,15 +277,19 @@ fn commands(app: &App) -> Vec<Row> {
                 .into(),
         ),
     ];
-    for (i, c) in app.settings.task_commands.iter().enumerate() {
-        rows.push(Row::Item(
-            Act::Command(i),
-            Line::from(vec![
-                Span::from(format!("{:<16}", c.name)).bold(),
-                Span::from(format!("{:<22}", c.label())).quiet(),
-                Span::from(c.command.clone()),
-            ]),
-        ));
+    let commands = &app.settings.task_commands;
+    for (i, c) in commands.iter().enumerate() {
+        let mut spans = vec![
+            Span::from(format!("{:<16}", c.name)).bold(),
+            Span::from(format!("{:<22}", c.label())).quiet(),
+            Span::from(c.command.clone()),
+        ];
+        // What it runs on an iterative task, where that is another line (its `status:` left out).
+        if let Some(line) = crate::kanban::iterative_move(&c.command, &[], commands, &app.cfg) {
+            let shown = if line.is_empty() { "nothing".to_owned() } else { line };
+            spans.push(Span::from(format!("  iterative: {shown}")).quiet());
+        }
+        rows.push(Row::Item(Act::Command(i), Line::from(spans)));
     }
     rows.push(Row::Action(Act::AddCommand, "Add a command".into()));
     rows.extend(app.settings.command_errors.iter().map(|e| Row::Problem(e.clone())));

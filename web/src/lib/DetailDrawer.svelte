@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { commandStepsOn, udaNames } from './kanban';
   import { isOpen as isOpenStatus } from './iterative';
   import Description from './Description.svelte';
   import { submitOnEnter } from './multiline';
@@ -9,7 +10,6 @@
   import { taskLink } from './route';
   import TaskInfo from './TaskInfo.svelte';
   import { store } from './store.svelte';
-  import { commandSteps } from './taskCommands';
   import type { Row } from './types';
 
   let { uuid }: { uuid: string } = $props();
@@ -146,11 +146,11 @@
       {/if}
       <MoreMenu
         commands={store.menuCommands}
-        onrun={(c) =>
-          store.actSteps(
-            store.detail?.from ?? null,
-            commandSteps(c).map((s) => ({ ...s, args: [uuid, ...s.words] })),
-          )}
+        onrun={(c) => {
+          const steps = commandStepsOn(c, [uuid], live.status === 'iterative', udaNames(store.config));
+          if (steps.length) store.actSteps(store.detail?.from ?? null, steps);
+          else store.notify(`${c.name} only changes the status, which an iterative task keeps.`, 'err');
+        }}
       />
     </div>
 

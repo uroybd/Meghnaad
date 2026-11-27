@@ -18,7 +18,7 @@ import { freshId, SLUG } from './boards';
 import { callHelper } from '../engine/helpers';
 import { shellQuote, splitWords } from './cmdline';
 import { splitChain, type Joiner } from './compound';
-import { planChain } from './taskCommands';
+import { commandSteps, planChain } from './taskCommands';
 import { inlineText, type MdNode } from './markdown';
 import type { ConfigResponse, Row } from './types';
 
@@ -543,6 +543,33 @@ export function iterativeMove(move: string, clears: string[], commands: TaskComm
   const line = (xs: { args: string[]; join: Joiner | null }[]) =>
     xs.map((s) => (s.join ? ` ${s.join} ` : '') + s.args.map(shellQuote).join(' ')).join('');
   return line(changed) === line(steps) ? null : line(changed);
+}
+
+/**
+ * A task command's statements as they run on one task: its uuid in front of each, and on an iterative task
+ * (`+ITERATIVE`) without their `status:` (`board_move`; a statement left with nothing goes). Empty when it runs nothing
+ * there. For a menu, a key or the selection; the console runs what is typed.
+ */
+export function commandStepsOn(
+  c: TaskCommand,
+  uuids: string[],
+  iterative: boolean,
+  udas: string[],
+): { words: string[]; args: string[]; join: Joiner | null }[] {
+  const steps = commandSteps(c);
+  const own = iterative
+    ? forIterative(
+        steps.map((s) => ({ args: s.words, join: s.join })),
+        [],
+        udas,
+      ).map((s) => ({ words: s.args, join: s.join }))
+    : steps;
+  return own.map((s) => ({ ...s, args: [...uuids, ...s.words] }));
+}
+
+/** The taskrc's UDAs, by name: what the engine needs to read a command's words. */
+export function udaNames(config: ConfigResponse | null): string[] {
+  return Object.keys(config?.config.udas ?? {});
 }
 
 export function moveSteps(

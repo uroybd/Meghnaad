@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { commandStepsOn, udaNames } from './kanban';
   import { isOpen as isOpenStatus } from './iterative';
   import { Check, Pencil, Play, Square, Trash2 } from './icons';
   import MoreMenu, { type MenuAction } from './MoreMenu.svelte';
   import { store, type Entry } from './store.svelte';
-  import { commandSteps } from './taskCommands';
   import type { Row } from './types';
 
   let {
@@ -102,11 +102,11 @@
 <MoreMenu
   commands={store.menuCommands}
   actions={card ? menuActions(false) : folded ? menuActions() : []}
-  onrun={(c) =>
-    store.actSteps(
-      entry,
-      commandSteps(c).map((s) => ({ ...s, args: [row.uuid, ...s.words] })),
-    )}
+  onrun={(c) => {
+    const steps = commandStepsOn(c, [row.uuid], row.status === 'iterative', udaNames(store.config));
+    if (steps.length) store.actSteps(entry, steps);
+    else store.notify(`${c.name} only changes the status, which an iterative task keeps.`, 'err');
+  }}
 />
 
 <style>

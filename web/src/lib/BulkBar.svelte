@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { commandStepsOn, udaNames } from './kanban';
   import { batches, filterWords, promptFor, type Pick } from './bulk';
   import BulkModify from './BulkModify.svelte';
   import type { TaskCommand } from './appsettings';
@@ -6,7 +7,6 @@
   import MoreMenu from './MoreMenu.svelte';
   import { selection } from './selection.svelte';
   import { store } from './store.svelte';
-  import { commandSteps } from './taskCommands';
   import { runSequence } from './compound';
 
   // The ticked tasks, as the table shows them (their numbers come from the rows), in the order they were ticked.
@@ -16,7 +16,7 @@
     const byUuid = new Map(r.rows.map((row) => [row.uuid, row]));
     return selection.uuids.flatMap((u) => {
       const row = byUuid.get(u);
-      return row ? [{ uuid: u, id: row.id }] : [];
+      return row ? [{ uuid: u, id: row.id, iterative: row.status === 'iterative' }] : [];
     });
   });
 
@@ -29,10 +29,10 @@
    * the answer to Taskwarrior's "are you sure?" questions, so they are answered yes; questions about recurring tasks
    * and dependencies are still asked. Returns whether everything went through.
    */
-  async function run(words: string[]): Promise<boolean> {
+  async function run(words: string[], on: Pick[] = picks): Promise<boolean> {
     busy = true;
     try {
-      for (const batch of batches(picks)) {
+      for (const batch of batches(on)) {
         const uuids = batch.map((t) => t.uuid);
         const res = await store.act(store.live, [...filterWords(batch), ...words], {
           approved: uuids,
@@ -68,15 +68,27 @@
   }
 
   // A task command from settings.json, run on the ticked tasks.
+  // An iterative task (`+ITERATIVE`) gets it without its `status:`, which Taskwarrior refuses on one; the rest as it is.
   async function runCommand(c: TaskCommand) {
-    const steps = commandSteps(c);
-    if (
-      await runSequence(
-        steps.map((s) => s.join),
-        (i) => run(steps[i].words),
-      )
-    )
-      selection.clear();
+    const udas = udaNames(store.config);
+    const groups = [false, true]
+      .map((iterative) => ({
+        on: picks.filter((p) => !!p.iterative === iterative),
+        steps: commandStepsOn(c, [], iterative, udas),
+      }))
+      .filter((g) => g.on.length && g.steps.length);
+    if (!groups.length) {
+      store.notify(`${c.name} only changes the status, which an iterative task keeps.`, 'err');
+      return;
+    }
+    for (const g of groups) {
+      const ok = await runSequence(
+        g.steps.map((s) => s.join),
+        (i) => run(g.steps[i].words, g.on),
+      );
+      if (!ok) return;
+    }
+    selection.clear();
   }
 
   // Name the tasks at the prompt and leave the rest to the user.

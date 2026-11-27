@@ -1,4 +1,4 @@
-# 0040: Iterative tasks on a kanban
+# 0040: Iterative tasks on a kanban, and task commands on one
 
 - **Status:** done
 - **Created:** 2026-11-27
@@ -37,3 +37,14 @@ iterative task is edited (its only question is "End the iterative series…?" wh
 - [x] `+PENDING` columns and the migration.
 - [x] Tests: `board_move::tests`, `version_6_automatic_open_columns_take_iterative_tasks`, the kanban tests of the three.
 - [x] Docs: `docs/using/kanban.md`, `docs/using/iterative.md`.
+
+## Implementation notes
+
+**2026-11-27, task commands.** The same `status:` rewrite runs a task command on an iterative task wherever the app
+runs one for the person: the ⋯ menu (web `RowActions`, `DetailDrawer`; phone `TaskCard`, `DetailScreen`), the bar over
+selected tasks (web and phone `BulkBar`, which runs iterative tasks apart from the rest), and the terminal's `c` menu
+(`app/menus.rs`). Not the console, which runs what is typed (uroybd: "except for console"). A `done` there clears
+nothing: only a board knows its columns. The Commands settings show the iterative line muted, on the three. Splitting
+by filter (`<uuids> +ITERATIVE …` and `-ITERATIVE …`) was tried and dropped: a filter that matches nothing makes `task`
+exit 1 ("No tasks specified."), which would end a chain; the rows on screen already say which tasks are iterative.
+Helpers: web `commandStepsOn`, `udaNames` (`kanban.ts`); phone the same (`Kanban.kt`); terminal `App::is_iterative`.

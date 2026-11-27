@@ -3,7 +3,8 @@ package me.utsob.meghnaad.app
 // Pure helpers for the bulk actions: how tasks are named to the engine, and the fields the Modify editor offers (bulk.ts).
 
 /** A task as the bulk actions need it. */
-data class Pick(val uuid: String, val id: Int?)
+/** A ticked task; [iterative] for one with `+ITERATIVE`, which a task command runs on without its `status:`. */
+data class Pick(val uuid: String, val id: Int?, val iterative: Boolean = false)
 
 /** Task numbers as a short list (`1,3-5,9`). Taskwarrior reads the same list back, and a long selection stays short enough to see. */
 fun idList(ids: List<Int>): String {

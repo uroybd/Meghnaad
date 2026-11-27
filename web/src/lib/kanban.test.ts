@@ -3,6 +3,7 @@ import { lintSettings, parseSettings, serializeKanban } from './appsettings';
 import {
   automaticColumns,
   boardClears,
+  commandStepsOn,
   forIterative,
   iterativeMove,
   automaticSettings,
@@ -446,5 +447,22 @@ describe('a move on an iterative card', () => {
     expect(forIterative(moveSteps('inprogress', uuid, moves), clears, udas)).toEqual([
       { args: ['rc.recurrence.confirmation:no', uuid, 'modify', 'progressState:inprogress'], join: null },
     ]);
+  });
+});
+
+describe('a task command on an iterative task', () => {
+  const c = { name: 'doing', command: 'modify status:pending progressState:inprogress ; annotate started' };
+  const udas = ['progressState'];
+
+  it('leaves the status out there, and runs as it is elsewhere', () => {
+    expect(commandStepsOn(c, ['u1'], true, udas).map((s) => s.args)).toEqual([
+      ['u1', 'modify', 'progressState:inprogress'],
+      ['u1', 'annotate', 'started'],
+    ]);
+    expect(commandStepsOn(c, ['u1'], false, udas).map((s) => s.args)).toEqual([
+      ['u1', 'modify', 'status:pending', 'progressState:inprogress'],
+      ['u1', 'annotate', 'started'],
+    ]);
+    expect(commandStepsOn({ name: 'reopen', command: 'modify status:pending' }, ['u1'], true, udas)).toEqual([]);
   });
 });

@@ -72,4 +72,4 @@ A spec is never deleted or renumbered: a later one that replaces it says `Supers
 | 0037 | [A mark after a repeating task's title](0037-repeat-marks.md) | done | 2 (UI) | all | `repeat` / `iteration-cw`; `↻` / `↪` in the terminal |
 | 0038 | [`meghnaad --sync <line>`](0038-cli-sync.md) | done | 2 (UI) | terminal | Task b0cf7ad6 |
 | 0039 | [The Iter picker](0039-iter-picker.md) | done | both | all | Taskwarrior and Calendar (RRULE) modes; Iter type before Iter |
-| 0040 | [Iterative tasks on a kanban](0040-iterative-kanban-moves.md) | done | both | all | Moves leave out status:, done clears the columns, +PENDING columns |
+| 0040 | [Iterative tasks on a kanban, and task commands on one](0040-iterative-kanban-moves.md) | done | both | all | Moves and task commands leave out status:, done clears the columns, +PENDING columns |
