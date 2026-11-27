@@ -1205,3 +1205,25 @@ fn an_iterative_task_s_rule_and_type_are_checked_together() {
         "a rule task can't read is said"
     );
 }
+
+/// The fields the Repeat choice brings are drawn as its group: a bar in the accent down their left edge, and only theirs.
+#[test]
+fn the_repeat_choice_s_fields_are_drawn_as_its_group() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let mut app = app();
+    let t = serde_json::json!({
+        "uuid": "u", "id": 2, "status": "iterative", "description": "Rent",
+        "iter": "monthly", "iter_type": "fixed", "due": "20261220T000000Z"
+    });
+    app.mode = Mode::Form(crate::form::Form::modify(&t, &app.cfg, &[]).for_task(true));
+    let mut term = Terminal::new(TestBackend::new(110, 40)).unwrap();
+    term.draw(|fr| crate::ui::draw(fr, &app)).unwrap();
+    let b = term.backend().buffer().clone();
+    let lines: Vec<String> = (0..40)
+        .map(|y| (0..110).map(|x| b[(x, y)].symbol().to_owned()).collect())
+        .collect();
+    let row = |label: &str| lines.iter().find(|l| l.contains(label)).unwrap().clone();
+    assert!(row("     Iter  monthly").contains("▎"), "{lines:#?}");
+    assert!(row("Iter type").contains("▎"));
+    assert!(!row("Repeat").contains("▎") && !row("Tags").contains("▎"));
+}

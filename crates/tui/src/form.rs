@@ -738,6 +738,16 @@ impl Form {
         }
     }
 
+    /// Whether field `i` is one the Repeat choice brings (the period, Iter, Iter type): drawn under it, marked as its own.
+    /// Never on a form with no Repeat choice (`task` 3.5), where the period is the Repeat field itself.
+    pub fn under_repeat(&self, i: usize) -> bool {
+        self.field("repeat").is_some()
+            && self
+                .fields
+                .get(i)
+                .is_some_and(|f| matches!(f.key.as_str(), "recur" | "iter" | "iter_type"))
+    }
+
     /// What saving clears that the task had, when its mode was switched: said under the Repeat field.
     pub fn clears(&self) -> Option<&'static str> {
         let f = self.field("repeat")?;
@@ -976,6 +986,11 @@ mod tests {
         let mut new = Form::add(&Preview::default(), &cfg()).for_task(true);
         set(&mut new, "repeat", "recurring");
         assert!(new.shown(at(&new, "recur")) && !new.shown(at(&new, "iter")));
+
+        // The mode's own fields are drawn as the Repeat choice's; the rest are not.
+        assert!(f.under_repeat(at(&f, "iter")) && !f.under_repeat(at(&f, "tags")) && !f.under_repeat(at(&f, "repeat")));
+        // Tags come after them.
+        assert!(at(&f, "tags") > at(&f, "iter_type"));
 
         // Moving between fields skips the ones of the other modes.
         f.sel = at(&f, "repeat");

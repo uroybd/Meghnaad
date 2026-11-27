@@ -1767,6 +1767,21 @@ fn field_hint(app: &App, field: &form::Field) -> Option<Span<'static>> {
 
 /// A field's row of a form, the label (if it is beside it) on the left and the value on a bar of `bar` columns
 /// (`theme::field`), what is said about it (its problem, what it will be, what it takes) inside the bar after the value.
+/// Draw `rows` (a field's) as the Repeat choice's own, as the web and the phone draw its box: a bar in the accent down
+/// the left edge, in the two blank columns before the right-aligned label (the labels it brings are short enough).
+fn in_repeat_group(rows: &mut [Line<'static>]) {
+    for row in rows {
+        let Some(first) = row.spans.first_mut() else {
+            continue;
+        };
+        let Some(rest) = first.content.strip_prefix("  ").map(str::to_owned) else {
+            continue;
+        };
+        first.content = rest.into();
+        row.spans.insert(0, Span::styled("▎ ", theme::accent()));
+    }
+}
+
 fn field_row(label: Option<Span<'static>>, mut value: Vec<Span<'static>>, chosen: bool, bar: usize) -> Line<'static> {
     let style = theme::field(chosen);
     value.insert(0, Span::from(" "));
@@ -1794,9 +1809,17 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
     let indent = || Span::from(" ".repeat(usize::from(LABEL)));
     let mut rows: Vec<Line> = Vec::new();
     let mut caret = None;
+    // The rows of a field the Repeat choice brings (from this one on), to be drawn as its group once they are made.
+    let mut group_from: Option<usize> = None;
     for (i, (field, problem)) in form.fields.iter().zip(&problems).enumerate() {
+        if let Some(from) = group_from.take() {
+            in_repeat_group(&mut rows[from..]);
+        }
         if !form.shown(i) {
             continue;
+        }
+        if form.under_repeat(i) {
+            group_from = Some(rows.len());
         }
         let chosen = i == form.sel;
         let label_style = match (chosen, problem.is_some()) {
@@ -1862,6 +1885,9 @@ fn form_box(f: &mut Frame, app: &App, form: &Form, main: Rect) {
             let lead = if n == 0 { label.clone() } else { indent() };
             rows.push(field_row(Some(lead), value, chosen, bar));
         }
+    }
+    if let Some(from) = group_from {
+        in_repeat_group(&mut rows[from..]);
     }
     if !form.notes.is_empty() {
         rows.push(Line::default());

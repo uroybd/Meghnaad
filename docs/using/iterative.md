@@ -72,8 +72,9 @@ series starts at 1. `duplicate` also starts a new series at 1.
 ## Repeat in the form
 
 The add and edit forms (web, phone and terminal) have one **Repeat** choice: *Doesn't repeat*, *Iterative* or
-*Recurring*. Each shows its own fields: Iter and Iter type for an iterative task, the period for a recurring one. In the
-terminal app `Space` goes to the next.
+*Recurring*. Each shows its own fields right under it, set apart as the choice's by a bar in the accent down their left
+edge (on the web and the phone, in a tinted box too), on every platform. Iter and Iter type for an iterative task, How often
+for a recurring one. Tags come after them. In the terminal app `Space` goes to the next choice.
 
 Switching clears the other mode's fields when you save, in the same `modify` (the form's command line shows it, and the
 form says so under Repeat):

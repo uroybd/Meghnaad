@@ -277,7 +277,9 @@
       </div>
     </div>
 
-    <div class="pair repeat-tags">
+    <!-- Repeat, then the chosen mode's own fields in a box under it, so what each choice brings is plain to see; Tags
+         after them. -->
+    <div class="pair repeat-section">
       <div class="cell">
         <label for="te-recur-mode">Repeat</label>
         {#if instance}
@@ -300,78 +302,84 @@
           </div>
         {:else}
           <div class="repeat">
-            <div class="row wrapline">
-              <select id="te-recur-mode" bind:value={mode} aria-label="Repeat" disabled={template}>
-                {#each modes as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
-              </select>
-              {#if mode === 'recurring'}
-                <select id="te-recur" bind:value={recurChoice} aria-label="How often">
-                  {#if recurChoice === ''}<option value="">how often…</option>{/if}
-                  {#each PRESETS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
-                  <option value="custom">Custom…</option>
-                </select>
-                {#if recurChoice === 'custom'}
-                  <input
-                    bind:value={recurCustom}
-                    aria-label="Custom repeat period"
-                    placeholder="3d, 2w, P1M, 6mo…"
-                    autocapitalize="off"
-                    spellcheck="false"
-                  />
-                {/if}
-              {/if}
-            </div>
+            <select id="te-recur-mode" bind:value={mode} aria-label="Repeat" disabled={template}>
+              {#each modes as m (m.value)}<option value={m.value}>{m.label}</option>{/each}
+            </select>
             {#if clears}
               <div class="dim hint">{clears}</div>
             {/if}
-            {#if needsDue}
-              <div class="err hint" role="alert">A repeating task needs a due date.</div>
-            {:else if mode === 'recurring' && recur && !template}
-              <div class="dim hint">Repeats {describeRecur(recur)}, starting from the due date.</div>
-            {:else if template}
-              <div class="dim hint">
-                Changes to a repeating task also apply to its open instances (not their dates).
+            {#if mode === 'recurring'}
+              <div class="repeat-group" data-mode="recurring">
+                <label for="te-recur">How often</label>
+                <div class="row wrapline">
+                  <select id="te-recur" bind:value={recurChoice}>
+                    {#if recurChoice === ''}<option value="">choose…</option>{/if}
+                    {#each PRESETS as p (p.value)}<option value={p.value}>{p.label}</option>{/each}
+                    <option value="custom">Custom…</option>
+                  </select>
+                  {#if recurChoice === 'custom'}
+                    <input
+                      bind:value={recurCustom}
+                      aria-label="Custom repeat period"
+                      placeholder="3d, 2w, P1M, 6mo…"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  {/if}
+                </div>
+                {#if needsDue}
+                  <div class="err hint" role="alert">A repeating task needs a due date.</div>
+                {:else if recur && !template}
+                  <div class="dim hint">Repeats {describeRecur(recur)}, starting from the due date.</div>
+                {:else if template}
+                  <div class="dim hint">
+                    Changes to a repeating task also apply to its open instances (not their dates).
+                  </div>
+                {/if}
+              </div>
+            {:else if mode === 'iterative'}
+              <div class="repeat-group" data-mode="iterative">
+                <div class="pair iter">
+                  <div class="cell">
+                    <label for="te-iter">Iter (the rule)</label>
+                    <input
+                      id="te-iter"
+                      bind:value={iter}
+                      placeholder="monthly, every weekday, FREQ=…"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div class="cell">
+                    <label for="te-iter-type">Iter type</label>
+                    <select id="te-iter-type" bind:value={iterType} disabled={iter.trim() === ''}>
+                      <option value="">choose…</option>
+                      {#each iterTypes as t (t)}<option value={t}>{t}</option>{/each}
+                    </select>
+                  </div>
+                </div>
+                {#if needsIterDate}
+                  <div class="err hint" role="alert">An iterative task needs a due, scheduled or wait date.</div>
+                {:else if iter.trim() !== ''}
+                  <div class="dim hint">
+                    When it is done, the next one is made: {iterType === 'chained' || iterType === 'ch'
+                      ? 'from the day it is done'
+                      : 'on the next date of the rule'}{row?.iter_count ? `. This is number ${row.iter_count}.` : '.'}
+                  </div>
+                {/if}
               </div>
             {/if}
           </div>
         {/if}
       </div>
+    </div>
+
+    <div class="pair tags">
       <div class="cell">
         <label for="te-tags">Tags</label>
         <TagsInput id="te-tags" bind:value={tags} names={store.tags} placeholder="space separated" />
       </div>
     </div>
-
-    {#if mode === 'iterative'}
-      <div class="pair iter">
-        <div class="cell">
-          <label for="te-iter">Iter</label>
-          <input
-            id="te-iter"
-            bind:value={iter}
-            placeholder="monthly, every weekday, FREQ=…"
-            autocapitalize="off"
-            spellcheck="false"
-          />
-        </div>
-        <div class="cell">
-          <label for="te-iter-type">Iter type</label>
-          <select id="te-iter-type" bind:value={iterType} disabled={iter.trim() === ''}>
-            <option value="">choose…</option>
-            {#each iterTypes as t (t)}<option value={t}>{t}</option>{/each}
-          </select>
-        </div>
-        {#if needsIterDate}
-          <div class="err hint wide" role="alert">An iterative task needs a due, scheduled or wait date.</div>
-        {:else if iter.trim() !== ''}
-          <div class="dim hint wide">
-            When it is done, the next one is made: {iterType === 'chained' || iterType === 'ch'
-              ? 'from the day it is done'
-              : 'on the next date of the rule'}{row?.iter_count ? `. This is number ${row.iter_count}.` : '.'}
-          </div>
-        {/if}
-      </div>
-    {/if}
 
     {#each defined as u (u.name)}
       <label for="te-uda-{u.name}">{udaLabel(u)}</label>
@@ -586,18 +594,28 @@
   .pair.dates {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 11em), 1fr));
   }
-  .pair.repeat-tags {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  .pair.repeat-section,
+  .pair.tags {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .repeat select#te-recur-mode {
+    justify-self: start;
+  }
+  /* The fields one Repeat choice brings: a tinted box with a bar down its left edge in the accent, just under it. */
+  .repeat-group {
+    display: grid;
+    gap: 4px;
+    margin-top: 4px;
+    padding: 10px 12px 12px;
+    border-left: 3px solid color-mix(in srgb, var(--accent) 70%, transparent);
+    border-radius: 0 8px 8px 0;
+    background: color-mix(in srgb, var(--text) 4%, transparent);
   }
   .pair.iter {
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   }
-  .pair .wide {
-    grid-column: 1 / -1;
-  }
   @media (max-width: 520px) {
     .pair.project,
-    .pair.repeat-tags,
     .pair.iter {
       grid-template-columns: minmax(0, 1fr);
     }

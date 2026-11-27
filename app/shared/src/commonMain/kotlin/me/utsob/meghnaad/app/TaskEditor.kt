@@ -14,6 +14,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -255,9 +260,9 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                         FieldCell("Scheduled") { DateTimeInput(st.scheduled, { st.scheduled = it }, "Scheduled", store.now, store.utcOffset, Modifier.fillMaxWidth(), warn = scheduledClash?.message) },
                         FieldCell("Until") { DateTimeInput(st.until, { st.until = it }, "Until", store.now, store.utcOffset, Modifier.fillMaxWidth()) },
                     ))
-                    FieldGrid(240.dp, listOf(
-                        FieldCell("Repeat", 1f) {
-                            Column {
+                    // Repeat, then the chosen mode's own fields in a box under it, so what each choice brings is plain to see;
+                    // Tags after them.
+                    FieldLabel("Repeat")
                     if (st.instance) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Pill(describeRecur(row?.recur))
@@ -280,55 +285,49 @@ fun TaskEditor(store: Store, row: Row?, from: Entry?, seed: FormSeed? = null, on
                             Choice(st.mode.label, modes.map { it.label }) { i -> st.mode = modes[i] }
                         }
                         if (st.clears.isNotEmpty()) Dim(st.clears, Modifier.padding(top = 4.dp), 12)
-                        if (st.mode == RepeatMode.Recurring) {
-                            val labels = (if (st.recurChoice.isEmpty()) listOf("how often…") else emptyList()) + PRESETS.map { it.label } + "Custom…"
+                        if (st.mode == RepeatMode.Recurring) RepeatGroup {
+                            GroupLabel("How often")
+                            val labels = (if (st.recurChoice.isEmpty()) listOf("choose…") else emptyList()) + PRESETS.map { it.label } + "Custom…"
                             val values = (if (st.recurChoice.isEmpty()) listOf("") else emptyList()) + PRESETS.map { it.value } + "custom"
-                            Box(Modifier.padding(top = 6.dp)) {
-                                Choice(labels.getOrElse(values.indexOf(st.recurChoice).coerceAtLeast(0)) { "how often…" }, labels) { i -> st.recurChoice = values[i] }
-                            }
-                        }
-                        if (st.mode == RepeatMode.Recurring && st.recurChoice == "custom") {
-                            OutlinedTextField(
-                                st.recurCustom, { st.recurCustom = it }, Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
-                                placeholder = { Text("3d, 2w, P1M, 6mo…", fontSize = 14.sp) },
-                                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
-                            )
-                        }
-                        when {
-                            st.needsDue -> Text("A repeating task needs a due date.", color = colors.error, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                            st.mode == RepeatMode.Recurring && st.recur.isNotEmpty() && !st.template -> Dim("Repeats ${describeRecur(st.recur)}, starting from the due date.", Modifier.padding(top = 4.dp), 12)
-                            st.template -> Dim("Changes to a repeating task also apply to its open instances (not their dates).", Modifier.padding(top = 4.dp), 12)
-                        }
-                    }
-                            }
-                        },
-                        FieldCell("Tags", 2f) { SuggestField(st.tags, { st.tags = it }, store.tags, "tag", list = true, placeholder = "space separated") },
-                    ))
-                    if (st.mode == RepeatMode.Iterative) {
-                        FieldGrid(240.dp, listOf(
-                            FieldCell("Iter", 2f) {
+                            Choice(labels.getOrElse(values.indexOf(st.recurChoice).coerceAtLeast(0)) { "choose…" }, labels) { i -> st.recurChoice = values[i] }
+                            if (st.recurChoice == "custom") {
                                 OutlinedTextField(
-                                    st.iter, { st.iter = it }, Modifier.fillMaxWidth(), singleLine = true,
-                                    placeholder = { Text("monthly, every weekday, FREQ=…", fontSize = 14.sp) },
+                                    st.recurCustom, { st.recurCustom = it }, Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
+                                    placeholder = { Text("3d, 2w, P1M, 6mo…", fontSize = 14.sp) },
                                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
                                 )
-                            },
-                            FieldCell("Iter type", 1f) {
-                                val labels = listOf("choose…") + st.iterTypes
-                                val values = listOf("") + st.iterTypes
-                                Choice(labels.getOrElse(values.indexOf(st.iterType).coerceAtLeast(0)) { "choose…" }, labels) { i -> st.iterType = values[i] }
-                            },
-                        ))
-                        when {
-                            st.needsIterDate -> Text("An iterative task needs a due, scheduled or wait date.", color = colors.error, fontSize = 12.sp)
-                            st.iter.isNotBlank() -> Dim(
-                                "When it is done, the next one is made: " +
-                                    (if (st.iterType == "chained" || st.iterType == "ch") "from the day it is done" else "on the next date of the rule") +
-                                    (st.iterCount?.let { ". This is number $it." } ?: "."),
-                                size = 12,
+                            }
+                            when {
+                                st.needsDue -> Text("A repeating task needs a due date.", color = colors.error, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                                st.recur.isNotEmpty() && !st.template -> Dim("Repeats ${describeRecur(st.recur)}, starting from the due date.", Modifier.padding(top = 4.dp), 12)
+                                st.template -> Dim("Changes to a repeating task also apply to its open instances (not their dates).", Modifier.padding(top = 4.dp), 12)
+                            }
+                        }
+                        if (st.mode == RepeatMode.Iterative) RepeatGroup {
+                            GroupLabel("Iter (the rule)")
+                            OutlinedTextField(
+                                st.iter, { st.iter = it }, Modifier.fillMaxWidth(), singleLine = true,
+                                placeholder = { Text("monthly, every weekday, FREQ=…", fontSize = 14.sp) },
+                                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
                             )
+                            GroupLabel("Iter type", Modifier.padding(top = 10.dp))
+                            val labels = listOf("choose…") + st.iterTypes
+                            val values = listOf("") + st.iterTypes
+                            Choice(labels.getOrElse(values.indexOf(st.iterType).coerceAtLeast(0)) { "choose…" }, labels) { i -> st.iterType = values[i] }
+                            when {
+                                st.needsIterDate -> Text("An iterative task needs a due, scheduled or wait date.", color = colors.error, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                                st.iter.isNotBlank() -> Dim(
+                                    "When it is done, the next one is made: " +
+                                        (if (st.iterType == "chained" || st.iterType == "ch") "from the day it is done" else "on the next date of the rule") +
+                                        (st.iterCount?.let { ". This is number $it." } ?: "."),
+                                    Modifier.padding(top = 6.dp),
+                                    size = 12,
+                                )
+                            }
                         }
                     }
+                    FieldLabel("Tags")
+                    SuggestField(st.tags, { st.tags = it }, store.tags, "tag", list = true, placeholder = "space separated")
                     for (u in st.defined) {
                         FieldLabel(udaLabel(u))
                         val current = st.udaValues[u.name] ?: ""
@@ -457,4 +456,31 @@ private fun DependsField(store: Store, value: String, onChange: (String) -> Unit
             }
         }
     }
+}
+
+/**
+ * The fields one Repeat choice brings, in a tinted box with a bar down its left edge in the accent, just under the choice,
+ * so they read as its own (the web's `.repeat-group`).
+ */
+@Composable
+private fun RepeatGroup(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    Row(
+        Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surfaceVariant.copy(alpha = 0.45f))
+            .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(colors.primary.copy(alpha = 0.7f)))
+        Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp), content = content)
+    }
+}
+
+/** A field's name inside a [RepeatGroup]. */
+@Composable
+private fun GroupLabel(text: String, modifier: Modifier = Modifier) {
+    Text(text, modifier.padding(bottom = 4.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
