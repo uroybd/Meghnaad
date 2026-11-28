@@ -252,8 +252,6 @@ flowchart TB
   tcd <-. "task sync, sync.git.*" .-> repo
   wk <-. "the git Worker: the forge's API" .-> repo
   tcn <-. "the forge's API" .-> repo
-  sh <-. "counterpart" .-> cmds
-  tsh <-. "counterpart" .-> rev
 
   classDef ui fill:#d8f0d2,stroke:#40a02b,color:#1e1e2e
   classDef engine fill:#fde2c8,stroke:#fe640b,color:#1e1e2e
